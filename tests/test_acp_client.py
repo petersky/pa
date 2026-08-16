@@ -26,6 +26,7 @@ from pa.acp.configuration import (
 )
 from pa.acp.providers.base import AgentProviderSpec
 from pa.config import Settings
+from pa.packaging.paths import build_service_path
 from pa.domain.models import AgentSession
 from pa.instance.agent_session import AgentSessionRuntime
 
@@ -612,11 +613,12 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     patch("pa.acp.client.spawn_agent", return_value=context) as spawn,
                     patch("pa.acp.client.pa_mcp_servers", return_value=[]),
                 ):
+                    expected_path = build_service_path()
                     await connection.connect()
                 environment = spawn.call_args.kwargs["env"]
                 self.assertEqual(environment["SAFE_PROVIDER_VALUE"], "yes")
                 self.assertEqual(environment["SAFE_SESSION_VALUE"], "yes")
-                self.assertEqual(environment["PATH"], "/bin")
+                self.assertEqual(environment["PATH"], expected_path)
                 for private_name in (
                     "PA_OWNER_SOCKET",
                     "PA_OWNER_API_URL",
@@ -683,8 +685,11 @@ class AgentSessionRestoreTests(unittest.TestCase):
                 environment = spawn.call_args.kwargs["env"]
                 self.assertEqual(environment["DISABLE_MCP_CONFIG_FILTERING"], "true")
                 config = json.loads(environment["CODEX_CONFIG"])
+                self.assertEqual(config["default_permissions"], "pa-owner")
                 self.assertEqual(
-                    config["permissions"]["network"]["unix_sockets"][str(socket)],
+                    config["permissions"]["pa-owner"]["network"]["unix_sockets"][
+                        str(socket)
+                    ],
                     "allow",
                 )
                 kwargs = acp.new_session.await_args.kwargs

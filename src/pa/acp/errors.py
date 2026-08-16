@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import re
 from typing import Any
 
@@ -109,7 +110,18 @@ def classify_acp_failure(
     text = sanitize_provider_error(raw, limit=2500)
     code = "acp_internal_error"
     message = text
-    if RequestError and isinstance(exc, RequestError):
+    missing_executable = isinstance(exc, FileNotFoundError) or (
+        isinstance(exc, OSError) and getattr(exc, "errno", None) == errno.ENOENT
+    )
+    if missing_executable:
+        missing = getattr(exc, "filename", None) or text
+        code = "provider_not_installed"
+        message = (
+            "ACP provider executable was not found"
+            + (f" during {stage}" if stage else "")
+            + f" ({missing}). Install the provider CLI or set PA_AGENT_COMMAND."
+        )
+    elif RequestError and isinstance(exc, RequestError):
         code_num = getattr(exc, "code", None)
         if code_num == -32603 or "internal error" in str(exc).lower():
             code = "acp_internal_error"

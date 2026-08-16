@@ -147,12 +147,47 @@ def owner_sandbox_directories(
     return [str(Path(endpoint.uds).parent)]
 
 
+_OWNER_PERMISSIONS_PROFILE = "pa-owner"
+
+
+def _grant_unix_socket(network: dict[str, Any], socket_path: str) -> dict[str, Any]:
+    sockets = dict(network.get("unix_sockets") or {})
+    sockets[socket_path] = "allow"
+    network["unix_sockets"] = sockets
+    return network
+
+
+def _is_legacy_network_grant(value: Any) -> bool:
+    """True when ``permissions.network`` is PA's old unix-socket grant, not a profile."""
+    if not isinstance(value, dict) or "extends" in value:
+        return False
+    keys = set(value)
+    return "unix_sockets" in keys and keys <= {"unix_sockets", "enabled"}
+
+
+def _codex_permissions_profile_name(payload: Mapping[str, Any]) -> str:
+    """Pick the named profile Codex will actually apply for this session."""
+    current = payload.get("default_permissions")
+    if isinstance(current, str):
+        name = current.strip()
+        if name and not name.startswith(":"):
+            return name
+    return _OWNER_PERMISSIONS_PROFILE
+
+
 def merge_codex_owner_sandbox_config(
     existing_config: str | None,
     *,
     socket_path: str,
 ) -> str:
-    """Grant the PA owner socket without widening Codex sandbox roots."""
+    """Grant the PA owner socket without widening Codex sandbox roots.
+
+    Recent Codex treats ``permissions`` as named profiles selected by
+    ``default_permissions``. A top-level ``permissions.network`` block is
+    interpreted as a profile named ``network`` and rejected unless that key
+    is set. Put the socket grant on a real profile and keep the older
+    ``sandbox_workspace_write`` roots for CLIs that still use that path.
+    """
     payload: dict[str, Any] = {}
     if existing_config and existing_config.strip():
         try:
@@ -174,18 +209,48 @@ def merge_codex_owner_sandbox_config(
     payload["sandbox_workspace_write"] = sandbox
 
     permissions = dict(payload.get("permissions") or {})
-    network = dict(permissions.get("network") or {})
-    sockets = dict(network.get("unix_sockets") or {})
-    sockets[socket_path] = "allow"
-    network["unix_sockets"] = sockets
-    permissions["network"] = network
+    legacy_network = permissions.get("network")
+    if _is_legacy_network_grant(legacy_network):
+        permissions.pop("network", None)
+    else:
+        legacy_network = None
+
+    existing_default = payload.get("default_permissions")
+    profile_name = _codex_permissions_profile_name(payload)
+    profile = dict(permissions.get(profile_name) or {})
+    if profile_name == _OWNER_PERMISSIONS_PROFILE:
+        parent = (
+            existing_default.strip()
+            if isinstance(existing_default, str) and existing_default.strip().startswith(":")
+            else ":workspace"
+        )
+        profile.setdefault("extends", parent)
+        payload["default_permissions"] = profile_name
+    elif not (isinstance(existing_default, str) and existing_default.strip()):
+        payload["default_permissions"] = profile_name
+
+    network = dict(profile.get("network") or {})
+    if isinstance(legacy_network, dict):
+        legacy_sockets = dict(legacy_network.get("unix_sockets") or {})
+        sockets = dict(network.get("unix_sockets") or {})
+        sockets.update(
+            {
+                str(path): action
+                for path, action in legacy_sockets.items()
+                if isinstance(path, str) and isinstance(action, str)
+            }
+        )
+        network["unix_sockets"] = sockets
+        if "enabled" in legacy_network and "enabled" not in network:
+            network["enabled"] = legacy_network["enabled"]
+    network = _grant_unix_socket(network, socket_path)
+    profile["network"] = network
+    permissions[profile_name] = profile
     payload["permissions"] = permissions
 
     features = dict(payload.get("features") or {})
     proxy = dict(features.get("network_proxy") or {})
-    proxy_sockets = dict(proxy.get("unix_sockets") or {})
-    proxy_sockets[socket_path] = "allow"
-    proxy["unix_sockets"] = proxy_sockets
+    proxy = _grant_unix_socket(proxy, socket_path)
     features["network_proxy"] = proxy
     payload["features"] = features
     return json.dumps(payload)

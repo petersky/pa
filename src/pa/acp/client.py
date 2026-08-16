@@ -59,7 +59,7 @@ from pa.domain.models import AgentSession
 from pa.domain.store import Store
 from pa.instance.quiesce import ImageAttachment
 from pa.knowledge.capture import has_policy_memory_candidate
-from pa.packaging.paths import resolve_executable
+from pa.packaging.paths import build_service_path, resolve_executable
 
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
@@ -908,6 +908,9 @@ class AgentConnection:
             spec.env,
             self.extra_env,
         )
+        # LaunchAgents often inherit /usr/bin:/bin. Prepend Homebrew and
+        # ~/.local/bin so npx/node/codex-acp resolve the same way as a login shell.
+        child_env["PATH"] = build_service_path()
         if spec.id == "codex":
             child_env = apply_codex_owner_sandbox_environment(
                 child_env, self.settings

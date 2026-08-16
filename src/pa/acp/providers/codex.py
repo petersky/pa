@@ -75,10 +75,11 @@ class CodexProvider:
                 spec.command = str(resolved)
                 spec.args = list(args_override) if args_override is not None else []
             else:
-                # Fall back to npx without requiring a global install.
-                npx = shutil.which("npx")
+                # Fall back to npx without requiring a global install. Resolve
+                # against the service PATH so LaunchAgents can find Homebrew.
+                npx = resolve_executable("npx") or shutil.which("npx")
                 if npx:
-                    spec.command = npx
+                    spec.command = str(npx)
                     spec.args = list(_NPX_ARGS)
                     if args_override:
                         spec.args = list(_NPX_ARGS) + list(args_override)
@@ -116,7 +117,8 @@ class CodexProvider:
             display_name=self.display_name,
             installed=bool(direct)
             or bool(meta and meta.install_method in {"npm", "npx"}),
-            available=bool(direct) or bool(shutil.which("npx")),
+            available=bool(direct)
+            or bool(resolve_executable("npx") or shutil.which("npx")),
             command=spec.command,
             resolved_path=str(direct) if direct else None,
             version=version or (meta.version if meta else None),
