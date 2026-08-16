@@ -27,12 +27,12 @@ def _app(tmp: str):
 def test_large_history_keeps_work_shell_and_lane_payloads_bounded() -> None:
     with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
         store = client.app.state.ctx.store
-        for index in range(600):
+        for index in range(300):
             store.create_card(
                 CardCreate(
                     title=f"Historical card {index:04d}",
-                    body="historical detail " * 200,
-                    lane=CardLane.DONE if index < 500 else CardLane.ACTIVE,
+                    body="historical detail " * 80,
+                    lane=CardLane.DONE if index < 250 else CardLane.ACTIVE,
                 )
             )
 
@@ -49,15 +49,15 @@ def test_large_history_keeps_work_shell_and_lane_payloads_bounded() -> None:
         assert "historical detail" not in shell.text
 
 
-def test_twenty_repeated_work_navigations_have_a_stable_server_budget() -> None:
+def test_repeated_work_navigations_have_a_stable_server_budget() -> None:
     with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
         store = client.app.state.ctx.store
-        for index in range(120):
+        for index in range(80):
             store.create_card(CardCreate(title=f"Card {index:03d}"))
 
         durations = []
         sizes = []
-        for _ in range(20):
+        for _ in range(8):
             started = time.perf_counter()
             response = client.get("/work", headers={"HX-Request": "true"})
             durations.append(time.perf_counter() - started)

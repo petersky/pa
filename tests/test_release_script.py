@@ -50,7 +50,8 @@ def test_ship_uses_head_captured_before_confirmation() -> None:
     with (
         patch("pa.release.script._warn_if_behind_origin_main", return_value=0),
         patch("pa.release.script.read_version", return_value="1.2.2"),
-        patch("pa.release.script.resolve_version", return_value="1.2.3"),
+        patch("pa.release.script.resolve_release_target", return_value=("1.2.3", False)),
+        patch("pa.release.script.release_already_prepared", return_value=False),
         patch("pa.release.script.latest_tag", return_value="v1.2.2"),
         patch("pa.release.script.ensure_tag_available"),
         patch("pa.release.script.ensure_release_branch", return_value="release/v1.2.3"),
@@ -81,3 +82,42 @@ def test_ship_uses_head_captured_before_confirmation() -> None:
         "https://example.test/pr/1", head_commit="pushed-pr-sha"
     )
     cleanup.assert_called_once_with("v1.2.3", "release/v1.2.3")
+
+
+def test_run_resumes_prepared_release_without_regenerating_notes() -> None:
+    with (
+        patch("pa.release.script._warn_if_behind_origin_main", return_value=0),
+        patch("pa.release.script.read_version", return_value="1.2.3"),
+        patch("pa.release.script.resolve_release_target", return_value=("1.2.3", True)),
+        patch("pa.release.script.origin_main_version", return_value="1.2.2"),
+        patch("pa.release.script.release_already_prepared", return_value=True),
+        patch("pa.release.script.latest_tag", return_value="v1.2.2"),
+        patch("pa.release.script.ensure_tag_available"),
+        patch("pa.release.script.ensure_release_branch", return_value="release/v1.2.3"),
+        patch("pa.release.script.generate_release_notes") as generate,
+        patch("pa.release.script.write_release_notes") as write_notes,
+        patch(
+            "pa.release.script.create_release",
+            return_value=SimpleNamespace(
+                old_version="1.2.3", new_version="1.2.3", tag="v1.2.3"
+            ),
+        ) as create,
+        patch(
+            "pa.release.script.ensure_release_pr",
+            return_value="https://example.test/pr/1",
+        ),
+        patch("pa.release.script.head_commit", return_value="pushed-pr-sha"),
+        patch("pa.release.script.merge_release_pr") as merge_pr,
+        patch("pa.release.script._publish"),
+        patch("pa.release.script._cleanup_finished_release_branch"),
+    ):
+        assert script._run(["patch", "--ship", "--no-agent"]) == 0
+
+    generate.assert_not_called()
+    write_notes.assert_not_called()
+    create.assert_called_once()
+    assert create.call_args.kwargs["target_version"] == "1.2.3"
+    assert create.call_args.kwargs["notes_content"] is None
+    merge_pr.assert_called_once_with(
+        "https://example.test/pr/1", head_commit="pushed-pr-sha"
+    )

@@ -18,7 +18,9 @@ files under the data dir) — there is no separate database, cache, or broker to
   separate lint step configured in CI; the CI "checks" are the boot smoke test + pytest
   (see `.github/workflows/ci.yml`).
 - Boot smoke test: `uv run python -c "from pa.core.kernel import Kernel; Kernel.boot().build_app()"`.
-- Tests: `uv run pytest -q` (the full suite takes ~7-8 min).
+- Tests: `uv run pytest -q` (serial) or `uv run pytest -n auto --dist worksteal`
+  (parallel; CI uses this plus two shards). Chrome dump-dom layout tests are
+  ignored in CI.
 - Build artifacts: `uv build`.
 
 ### Non-obvious caveats
@@ -32,8 +34,7 @@ files under the data dir) — there is no separate database, cache, or broker to
   CSRF token (cookie `pa_csrf` echoed in the `X-CSRF-Token` header — grab it from any GET
   with a cookie jar) and creation endpoints also require an `Idempotency-Key` header. The
   web UI handles both automatically, so prefer the UI for manual testing.
-- **Headless-Chrome layout tests do not run in this VM.** The three browser-rendered
-  layout tests (`tests/test_header_layout.py`, `tests/test_fleet_topology_layout.py`)
-  spawn `google-chrome --dump-dom`; Chrome renders the DOM correctly but never exits under
-  Firecracker (no flag combination fixes the hang), so they time out. The other ~1796
-  tests pass. Treat these three as environment-limited, not code failures.
+- **Headless-Chrome layout tests are excluded from CI.** `tests/test_header_layout.py`
+  and `tests/test_fleet_topology_layout.py` spawn `google-chrome --dump-dom`; Chrome
+  can hang until timeout under Firecracker and is not part of the GitHub suite.
+  Run them locally only when Chrome is installed.

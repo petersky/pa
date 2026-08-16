@@ -30,8 +30,10 @@ from pa.release.runner import (
     head_commit,
     merge_release_pr,
     origin_main_release_notes,
+    origin_main_version,
     publish_github_release,
-    resolve_version,
+    release_already_prepared,
+    resolve_release_target,
     tag_merged_release,
     wait_for_github_release,
 )
@@ -238,8 +240,8 @@ def _run(argv: list[str] | None = None) -> int:
             tag = args.tag or latest_tag() or "?"
             print(f"dry-run: amend {tag}")
         elif args.version:
-            new = resolve_version(args.version)
-            action = "ship" if args.ship else "prepare"
+            new, resuming = resolve_release_target(args.version)
+            action = "resume" if resuming else ("ship" if args.ship else "prepare")
             print(
                 f"dry-run: {action} {args.version} -> {new} (v{new}) "
                 f"channel={args.channel or track_for_version(new)}"
@@ -312,32 +314,41 @@ def _run(argv: list[str] | None = None) -> int:
     if _warn_if_behind_origin_main(require_up_to_date=do_push):
         return 1
 
-    old = read_version()
-    new = resolve_version(args.version)
+    checkout_version = read_version()
+    new, resuming = resolve_release_target(args.version)
     tag = tag_for_version(new)
     channel = args.channel or track_for_version(new)
     prev = latest_tag()
+    old = (origin_main_version() or checkout_version) if resuming else checkout_version
 
-    _log(f"Releasing {old} -> {tag} (track: {channel})...")
+    if resuming:
+        _log(f"Resuming in-progress release {old} -> {tag} (track: {channel})...")
+    else:
+        _log(f"Releasing {old} -> {tag} (track: {channel})...")
     _log(f"==> Checking that tag {tag} is available...")
     ensure_tag_available(tag)
     _log(f"  Tag {tag} is free.")
     branch = ensure_release_branch(tag)
     _log(f"==> Preparing release PR on {branch}...")
 
-    content = generate_release_notes(
-        version=new,
-        tag=tag,
-        channel=channel,
-        since_tag=prev,
-        use_agent=not args.no_agent,
-        agent_cmd=args.agent_cmd,
-        agent_args=args.agent_args,
-        agent_timeout=agent_timeout,
-    )
-    _log(f"==> Writing release notes to {args.notes_file or notes_path_for_tag(tag)}...")
-    notes_path = write_release_notes(tag, content, path=args.notes_file)
-    _log(f"  Wrote {notes_path}")
+    notes_path = args.notes_file or notes_path_for_tag(tag)
+    if release_already_prepared(new, notes_path):
+        _log("  Reusing existing release commit and notes.")
+        content = None
+    else:
+        content = generate_release_notes(
+            version=new,
+            tag=tag,
+            channel=channel,
+            since_tag=prev,
+            use_agent=not args.no_agent,
+            agent_cmd=args.agent_cmd,
+            agent_args=args.agent_args,
+            agent_timeout=agent_timeout,
+        )
+        _log(f"==> Writing release notes to {notes_path}...")
+        notes_path = write_release_notes(tag, content, path=args.notes_file)
+        _log(f"  Wrote {notes_path}")
 
     result = create_release(
         args.version,
