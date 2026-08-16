@@ -23,6 +23,11 @@
     <integer>300</integer>
     <key>ProcessType</key>
     <string>Background</string>
+    <key>LimitLoadToSessionType</key>
+    <array>
+        <string>Aqua</string>
+        <string>Background</string>
+    </array>
     <key>SoftResourceLimits</key>
     <dict>
         <key>NumberOfFiles</key>

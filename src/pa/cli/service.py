@@ -650,7 +650,9 @@ def _bootstrap_launchd_plist(plist: Path, *, attempts: int = 8) -> str:
     """Load the LaunchAgent and return the domain that accepted it.
 
     Prefer ``gui/$UID`` (console login). If that domain rejects the action —
-    typical over SSH on a Mac mini — fall back to ``user/$UID``.
+    typical over SSH on a Mac mini — fall back to ``user/$UID``. The unit
+    must allow ``Background`` in ``LimitLoadToSessionType`` or the user
+    domain also rejects bootstrap with error 125.
     """
     delays = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)
     errors: list[str] = []
@@ -1111,6 +1113,19 @@ def tail_logs(
         component=component,
         json_output=json_output,
     )
+
+
+def invoke_installed_pa(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run a CLI command with the installed PA binary, not this process.
+
+    After ``pa update``, this process still has the previous version imported.
+    Start/restart must use the newly installed executable so its unit template
+    and launchd domain logic apply.
+    """
+    pa_bin = find_service_binary() or find_pa_binary()
+    if pa_bin is None:
+        raise RuntimeError("pa binary not found")
+    return subprocess.run([str(pa_bin), *args], check=False, text=True)
 
 
 def service_supported() -> bool:
