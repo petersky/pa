@@ -86,12 +86,23 @@ def apply_update(
     restarted = False
     status = svc.get_status(settings)
     if status.installed:
-        service_bin = svc.find_service_binary()
-        if service_bin:
-            svc.install_service(settings, service_bin)
+        # Rewrite the unit and restart with the newly installed binary. This
+        # process still has the previous version imported, so in-process
+        # install_service/restart would keep the old launchd template.
         if restart:
-            svc.restart(settings)
+            result = svc.invoke_installed_pa("restart")
+            if result.returncode != 0:
+                err = (result.stderr or result.stdout or "").strip()
+                raise RuntimeError(err or "installed pa restart failed")
             restarted = True
+        elif svc.find_service_binary():
+            result = svc.invoke_installed_pa(
+                "install", "--service-only", "--no-start"
+            )
+            if result.returncode != 0:
+                service_bin = svc.find_service_binary()
+                if service_bin:
+                    svc.install_service(settings, service_bin)
 
     return UpdateResult(
         current=installed_version,

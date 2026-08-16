@@ -545,13 +545,15 @@ def update(
         return
 
     try:
-        svc.restart(
-            settings,
-            progress=lambda message: ui.progress(f"Service:     {message}"),
-        )
+        # The running process still has the pre-update module imported.
+        # Restart through the newly installed binary so its launchd domain
+        # fallback and unit template are used.
+        result = svc.invoke_installed_pa("restart")
     except RuntimeError as exc:
         ui.echo(str(exc), style="failure", err=True)
         raise typer.Exit(1) from exc
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
     ui.echo("Service restarted.", style="success")
 
 

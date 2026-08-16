@@ -99,12 +99,15 @@ class InstallPlistTests(unittest.TestCase):
             "ThrottleInterval",
             "ExitTimeOut",
             "ProcessType",
+            "LimitLoadToSessionType",
             "SoftResourceLimits",
             "HardResourceLimits",
         ):
             self.assertIn(control, rendered)
         self.assertIn("<key>KeepAlive</key>\n    <true/>", rendered)
         self.assertIn("<key>ExitTimeOut</key>\n    <integer>300</integer>", rendered)
+        self.assertIn("<string>Aqua</string>", rendered)
+        self.assertIn("<string>Background</string>", rendered)
 
     def test_loaded_launchd_definition_preserves_runtime_owner_environment(
         self,
@@ -379,6 +382,17 @@ class LaunchdDomainFallbackTests(unittest.TestCase):
         self.assertIn("gui/$UID/com.pa.server", command)
         self.assertIn("user/$UID/com.pa.server", command)
 
+    def test_invoke_installed_pa_runs_service_binary(self) -> None:
+        completed = MagicMock(returncode=0)
+        pa_bin = Path("/usr/local/bin/pa")
+        with (
+            patch.object(service, "find_service_binary", return_value=pa_bin),
+            patch.object(service.subprocess, "run", return_value=completed) as run,
+        ):
+            result = service.invoke_installed_pa("restart")
+        run.assert_called_once_with([str(pa_bin), "restart"], check=False, text=True)
+        self.assertEqual(result, completed)
+
 
 class AutonomousHostControlsTests(unittest.TestCase):
     def test_shutdown_snapshots_open_sessions_after_transport_loss(self) -> None:
@@ -476,6 +490,42 @@ class AutonomousHostControlsTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         bootstrap.assert_not_called()
         self.assertIn("Service left stopped", result.output)
+
+    def test_update_restart_invokes_installed_binary(self) -> None:
+        from pa.cli.main import app
+        from pa.update.runner import UpdateResult
+
+        checked = UpdateResult(
+            current="1.0.9",
+            latest="1.0.10",
+            upgrade_available=True,
+            previous="1.0.9",
+        )
+        applied = UpdateResult(
+            current="1.0.10",
+            latest="1.0.10",
+            upgrade_available=True,
+            previous="1.0.9",
+        )
+        with (
+            patch("pa.update.runner.check_update", return_value=checked),
+            patch("pa.update.runner.apply_update", return_value=applied),
+            patch("pa.update.runner.format_release_notes", return_value="notes"),
+            patch(
+                "pa.cli.service.get_status",
+                return_value=MagicMock(installed=True, running=False),
+            ),
+            patch(
+                "pa.cli.service.invoke_installed_pa",
+                return_value=MagicMock(returncode=0),
+            ) as invoke,
+            patch("pa.cli.service.restart") as restart,
+        ):
+            result = CliRunner().invoke(app, ["update"], input="y\ny\n")
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        invoke.assert_called_once_with("restart")
+        restart.assert_not_called()
 
 
 if __name__ == "__main__":
