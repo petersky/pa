@@ -42,7 +42,8 @@ from pa.acp.final_message import normalize_provider_phase
 from pa.acp.mcp_config import (
     McpHandshakeError,
     OwnerChannelError,
-    owner_endpoint,
+    apply_codex_owner_sandbox_environment,
+    owner_sandbox_directories,
     pa_mcp_servers,
     probe_owner_channel,
     probe_pa_mcp_stdio,
@@ -82,6 +83,16 @@ def _tolerated_client_method(method: str) -> bool:
         return False
     name = method.removeprefix("_")
     return name.startswith(_TOLERATED_CLIENT_METHOD_PREFIXES)
+
+
+def _is_hard_mcp_startup_failure(detail: str) -> bool:
+    """Return True for Codex MCP handshake failures, not cancelled races."""
+    text = (detail or "").lower()
+    if not text.strip():
+        return False
+    if "startup was cancelled" in text and "failed to start" not in text:
+        return False
+    return True
 
 
 def permission_selected(option_id: str) -> RequestPermissionResponse:
@@ -415,19 +426,45 @@ class PAClient(Client):
     async def wait_for_pa_mcp_startup_failure(
         self, session_id: str, *, timeout: float
     ) -> str | None:
-        """Observe provider-reported PA MCP startup failure for a bounded window."""
+        """Observe a hard PA MCP startup failure for a bounded window.
+
+        Codex ACP forwards both handshake errors and a generic "startup was
+        cancelled" terminal state. Recent Codex app-server builds emit that
+        cancelled status spuriously during thread/start, including for servers
+        that then become ready. Treat cancelled-only reports as non-fatal and
+        keep watching for an actual failed-to-start error.
+        """
         key = str(session_id)
-        failure = self._mcp_startup_failures.get(key)
-        if failure is not None:
-            return failure
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
         event = self._mcp_startup_events.setdefault(key, asyncio.Event())
+        ignored_cancellation = False
         try:
-            await asyncio.wait_for(event.wait(), timeout=timeout)
-        except TimeoutError:
-            return None
+            while True:
+                failure = self._mcp_startup_failures.get(key)
+                if failure and _is_hard_mcp_startup_failure(failure):
+                    return failure
+                if failure and not ignored_cancellation:
+                    logger.info(
+                        "Ignoring Codex PA MCP startup cancellation",
+                        extra={"pa_mcp_startup": failure[:200]},
+                    )
+                    ignored_cancellation = True
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    return None
+                if event.is_set():
+                    event.clear()
+                    continue
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=remaining)
+                except TimeoutError:
+                    failure = self._mcp_startup_failures.get(key)
+                    if failure and _is_hard_mcp_startup_failure(failure):
+                        return failure
+                    return None
         finally:
             self._mcp_startup_events.pop(key, None)
-        return self._mcp_startup_failures.get(key)
 
     async def read_text_file(
         self,
@@ -736,7 +773,8 @@ class AgentConnection:
             session_environment=self.extra_env,
             private_environment=self.mcp_private_env,
         )
-        provider_id = self.agent_name or DEFAULT_PROVIDER_ID
+        spec = self._resolved_spec()
+        provider_id = spec.id or self.agent_name or DEFAULT_PROVIDER_ID
         if provider_id in {"instance", ""}:
             provider_id = DEFAULT_PROVIDER_ID
         auxiliary_state = load_auxiliary_mcp_state(self.settings.data_dir)
@@ -760,9 +798,9 @@ class AgentConnection:
         # directory, not PA_DATA_DIR or another mutable PA store.
         mcp_additional_directories: list[str] | None = None
         if provider_id == "codex" and mcp:
-            endpoint = owner_endpoint(self.settings)
-            if endpoint.uds:
-                mcp_additional_directories = [str(Path(endpoint.uds).parent)]
+            directories = owner_sandbox_directories(self.settings)
+            if directories:
+                mcp_additional_directories = directories
         if mcp:
             try:
                 owner_health = await self._offload(
@@ -870,6 +908,10 @@ class AgentConnection:
             spec.env,
             self.extra_env,
         )
+        if spec.id == "codex":
+            child_env = apply_codex_owner_sandbox_environment(
+                child_env, self.settings
+            )
         self._ctx = spawn_agent(
             self._client,
             command,

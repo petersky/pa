@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.metadata
+import json
 import os
 import platform
 import sys
@@ -134,6 +135,79 @@ def _ensure_supported_mcp_sdk(context: Mapping[str, Any]) -> None:
             context=context,
             root_exception=f"UnsupportedMcpSdkVersion: {version}",
         )
+
+
+def owner_sandbox_directories(
+    settings: Settings, environment: Mapping[str, str] | None = None
+) -> list[str]:
+    """Return the owner-socket directory Codex must admit for PA MCP stdio."""
+    endpoint = owner_endpoint(settings, environment)
+    if not endpoint.uds:
+        return []
+    return [str(Path(endpoint.uds).parent)]
+
+
+def merge_codex_owner_sandbox_config(
+    existing_config: str | None,
+    *,
+    socket_path: str,
+) -> str:
+    """Grant the PA owner socket without widening Codex sandbox roots."""
+    payload: dict[str, Any] = {}
+    if existing_config and existing_config.strip():
+        try:
+            loaded = json.loads(existing_config)
+        except json.JSONDecodeError:
+            loaded = None
+        if isinstance(loaded, dict):
+            payload = dict(loaded)
+    socket_dir = str(Path(socket_path).parent)
+    sandbox = dict(payload.get("sandbox_workspace_write") or {})
+    roots = [
+        str(item)
+        for item in sandbox.get("writable_roots") or []
+        if isinstance(item, str) and item
+    ]
+    if socket_dir not in roots:
+        roots.append(socket_dir)
+    sandbox["writable_roots"] = roots
+    payload["sandbox_workspace_write"] = sandbox
+
+    permissions = dict(payload.get("permissions") or {})
+    network = dict(permissions.get("network") or {})
+    sockets = dict(network.get("unix_sockets") or {})
+    sockets[socket_path] = "allow"
+    network["unix_sockets"] = sockets
+    permissions["network"] = network
+    payload["permissions"] = permissions
+
+    features = dict(payload.get("features") or {})
+    proxy = dict(features.get("network_proxy") or {})
+    proxy_sockets = dict(proxy.get("unix_sockets") or {})
+    proxy_sockets[socket_path] = "allow"
+    proxy["unix_sockets"] = proxy_sockets
+    features["network_proxy"] = proxy
+    payload["features"] = features
+    return json.dumps(payload)
+
+
+def apply_codex_owner_sandbox_environment(
+    environment: Mapping[str, str],
+    settings: Settings,
+    *,
+    owner_environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Pin Codex MCP injection and owner-socket sandbox grants for this process."""
+    merged = dict(environment)
+    # Keep PA's injected `pa` stdio server when ~/.codex already names one.
+    merged["DISABLE_MCP_CONFIG_FILTERING"] = "true"
+    endpoint = owner_endpoint(settings, owner_environment)
+    if endpoint.uds:
+        merged["CODEX_CONFIG"] = merge_codex_owner_sandbox_config(
+            merged.get("CODEX_CONFIG"),
+            socket_path=endpoint.uds,
+        )
+    return merged
 
 
 def owner_endpoint(

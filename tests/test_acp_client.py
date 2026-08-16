@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from pa.acp.client import (
     PAClient,
     _agent_supports_load,
     _agent_supports_session_list,
+    _is_hard_mcp_startup_failure,
     _resolve_session_load_target,
     _tolerated_client_method,
 )
@@ -57,6 +59,100 @@ class PAClientFileSystemTests(unittest.TestCase):
 
         failure = asyncio.run(run())
         self.assertIn("owner socket permission denied", failure or "")
+
+    def test_cancelled_pa_mcp_startup_is_not_a_hard_failure(self) -> None:
+        cancelled = (
+            "[codex-acp forwarded startup error] MCP server `pa` startup was cancelled."
+        )
+        self.assertFalse(_is_hard_mcp_startup_failure(cancelled))
+        self.assertTrue(
+            _is_hard_mcp_startup_failure(
+                "[codex-acp forwarded startup error] MCP server `pa` "
+                "failed to start: owner socket permission denied"
+            )
+        )
+        client = PAClient(MagicMock())
+
+        async def run() -> str | None:
+            await client.session_update(
+                "agent-session",
+                {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mcp_startup.pa",
+                    "title": "mcp__pa__startup",
+                    "status": "failed",
+                    "content": [
+                        {
+                            "type": "content",
+                            "content": {
+                                "type": "text",
+                                "text": cancelled,
+                            },
+                        }
+                    ],
+                },
+            )
+            return await client.wait_for_pa_mcp_startup_failure(
+                "agent-session", timeout=0.05
+            )
+
+        self.assertIsNone(asyncio.run(run()))
+
+    def test_cancelled_mcp_startup_still_observes_a_later_hard_failure(self) -> None:
+        client = PAClient(MagicMock())
+
+        async def run() -> str | None:
+            await client.session_update(
+                "agent-session",
+                {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mcp_startup.pa",
+                    "status": "failed",
+                    "content": [
+                        {
+                            "type": "content",
+                            "content": {
+                                "type": "text",
+                                "text": (
+                                    "[codex-acp forwarded startup error] "
+                                    "MCP server `pa` startup was cancelled."
+                                ),
+                            },
+                        }
+                    ],
+                },
+            )
+            waiter = asyncio.create_task(
+                client.wait_for_pa_mcp_startup_failure(
+                    "agent-session", timeout=0.5
+                )
+            )
+            await asyncio.sleep(0.02)
+            await client.session_update(
+                "agent-session",
+                {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mcp_startup.pa",
+                    "status": "failed",
+                    "content": [
+                        {
+                            "type": "content",
+                            "content": {
+                                "type": "text",
+                                "text": (
+                                    "[codex-acp forwarded startup error] "
+                                    "MCP server `pa` failed to start: sandbox denied"
+                                ),
+                            },
+                        }
+                    ],
+                },
+            )
+            return await waiter
+
+        failure = asyncio.run(run())
+        self.assertIn("failed to start", failure or "")
+        self.assertIn("sandbox denied", failure or "")
 
     def test_read_and_write_text_file_requests_are_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -531,6 +627,71 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     "PA_INSTANCE_ID",
                 ):
                     self.assertNotIn(private_name, environment)
+
+            asyncio.run(run())
+
+    def test_codex_spawn_environment_grants_owner_socket_sandbox(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            acp = MagicMock()
+            acp.initialize = AsyncMock(return_value={"agentCapabilities": {}})
+            acp.new_session = AsyncMock(
+                return_value=SimpleNamespace(session_id="agent-session")
+            )
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            socket = Path(tmp) / "runtime" / "owner.sock"
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp), instance_id="owner-instance"),
+                store,
+                agent_name="codex",
+                provider_spec=AgentProviderSpec(
+                    id="codex",
+                    display_name="Codex",
+                    command="codex-acp",
+                ),
+            )
+
+            async def run() -> None:
+                with (
+                    patch.dict(
+                        "os.environ",
+                        {
+                            "PATH": "/bin",
+                            "PA_OWNER_SOCKET": str(socket),
+                            "PA_OWNER_API_URL": "",
+                        },
+                        clear=True,
+                    ),
+                    patch("pa.acp.client.spawn_agent", return_value=context) as spawn,
+                    patch(
+                        "pa.acp.client.probe_owner_channel",
+                        return_value={"state": "connected", "endpoint_type": "unix"},
+                    ),
+                    patch(
+                        "pa.acp.client.probe_pa_mcp_stdio",
+                        return_value={"state": "connected", "classification": "ok"},
+                    ),
+                    patch.object(
+                        PAClient,
+                        "wait_for_pa_mcp_startup_failure",
+                        AsyncMock(return_value=None),
+                    ),
+                ):
+                    await connection.connect()
+                environment = spawn.call_args.kwargs["env"]
+                self.assertEqual(environment["DISABLE_MCP_CONFIG_FILTERING"], "true")
+                config = json.loads(environment["CODEX_CONFIG"])
+                self.assertEqual(
+                    config["permissions"]["network"]["unix_sockets"][str(socket)],
+                    "allow",
+                )
+                kwargs = acp.new_session.await_args.kwargs
+                self.assertEqual(
+                    kwargs["additional_directories"],
+                    [str(socket.parent)],
+                )
 
             asyncio.run(run())
 
