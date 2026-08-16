@@ -6,6 +6,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import sqlite3
 import time
 from collections import Counter
 from datetime import UTC, datetime
@@ -366,6 +368,16 @@ def cache_for(data_dir: Path) -> FleetOverviewCache:
             cache = FleetOverviewCache(data_dir)
             _caches[key] = cache
         return cache
+
+
+def overview_refresh_enabled() -> bool:
+    """Background probes are for long-lived servers, not TestClient boots."""
+    explicit = os.environ.get("PA_FLEET_OVERVIEW_REFRESH", "").strip().lower()
+    if explicit in {"0", "false", "no", "off"}:
+        return False
+    if explicit in {"1", "true", "yes", "on"}:
+        return True
+    return "PYTEST_CURRENT_TEST" not in os.environ
 
 
 def observation_attempt(field: dict[str, Any] | None) -> str:
@@ -1033,6 +1045,7 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
         TypeError,
         AttributeError,
         KeyError,
+        sqlite3.Error,
     ) as exc:
         elapsed = (time.perf_counter() - started) * 1000
         return field(

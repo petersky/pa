@@ -1579,6 +1579,16 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(activity["capacity"]["consumed"], 0)
             self.assertEqual(activity["capacity_consumer_links"], [])
 
+    def test_overview_refresh_defaults_off_under_pytest(self) -> None:
+        from pa.fleet.overview import overview_refresh_enabled
+
+        self.assertIn("PYTEST_CURRENT_TEST", os.environ)
+        self.assertFalse(overview_refresh_enabled())
+        with patch.dict(os.environ, {"PA_FLEET_OVERVIEW_REFRESH": "1"}):
+            self.assertTrue(overview_refresh_enabled())
+        with patch.dict(os.environ, {"PA_FLEET_OVERVIEW_REFRESH": "0"}, clear=False):
+            self.assertFalse(overview_refresh_enabled())
+
     def test_required_readiness_ignores_stale_inconsistent_sync(self) -> None:
         from pa.fleet.overview import field, required_readiness
 

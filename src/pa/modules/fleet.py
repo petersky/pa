@@ -151,6 +151,7 @@ from pa.fleet.overview import (
     DIMENSIONS,
     build_overview,
     cache_for,
+    overview_refresh_enabled,
     probe_dimension,
     refresh_required_dimensions,
 )
@@ -14105,11 +14106,12 @@ class FleetModule(Module):
             name="fleet-membership-convergence",
         )
         ctx.register_service("membership_convergence_task", convergence_task)
-        overview_refresh_task = asyncio.create_task(
-            _overview_refresh_loop(ctx),
-            name="fleet-overview-refresh",
-        )
-        ctx.register_service("overview_refresh_task", overview_refresh_task)
+        if overview_refresh_enabled():
+            overview_refresh_task = asyncio.create_task(
+                _overview_refresh_loop(ctx),
+                name="fleet-overview-refresh",
+            )
+            ctx.register_service("overview_refresh_task", overview_refresh_task)
         recoverable = await async_runtime.run_blocking(
             "fleet.update_recovery",
             prepare_update_job_recovery,
