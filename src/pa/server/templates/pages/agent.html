@@ -121,6 +121,9 @@
       <span>Provider</span>
       <select name="provider" data-agent-new-provider>
         <option value="">Instance default</option>
+        {% for provider in agent_providers | default([]) %}
+        <option value="{{ provider.id }}">{{ provider.display_name }}</option>
+        {% endfor %}
       </select>
     </label>
     <label data-agent-new-model-provider-wrap hidden>
@@ -159,6 +162,7 @@
       <span>Working directory</span>
       <input name="cwd" placeholder="Instance default" autocomplete="off">
     </label>
+    <p class="muted" data-agent-new-status hidden role="status" aria-live="polite">Loading session options…</p>
     <p class="agent-new-session-error" data-agent-new-error hidden></p>
     <div class="form-actions">
       <button type="button" class="ghost" data-agent-new-cancel>Cancel</button>

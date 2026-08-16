@@ -147,7 +147,7 @@ def _settings_context(request: Request) -> dict:
     global_prefs = get_preferences_store(settings.data_dir).load()
     requested = request.query_params.get("section", "agent")
     section = requested if requested in _SETTINGS_SECTIONS else "agent"
-    from pa.acp.providers.registry import list_providers
+    from pa.acp.providers.registry import provider_catalog
 
     result = {
         "active_settings_section": section,
@@ -158,10 +158,7 @@ def _settings_context(request: Request) -> dict:
             "service": {"state": "deferred", "backend": "none", "installed": False}
         },
         "themes": get_theme_catalog(),
-        "agent_providers": [
-            {"id": provider.id, "display_name": provider.display_name}
-            for provider in list_providers()
-        ],
+        "agent_providers": provider_catalog(),
         "prompt_catalog": [],
         "prompt_adapters": [],
         "telemetry_health": {"state": "deferred"},
@@ -297,6 +294,8 @@ def _agent_context(request: Request) -> dict:
                     watch.card_id and watch.card_id == session.card_id
                 ):
                     watches_by_session[session.id].append(watch)
+    from pa.acp.providers.registry import provider_catalog
+
     return {
         "agent_connected": agent.connected,
         "agent_startup": startup_state(agent),
@@ -317,6 +316,7 @@ def _agent_context(request: Request) -> dict:
             key=lambda project: (project.title.casefold(), project.id),
         ),
         "pr_watches_by_session": watches_by_session,
+        "agent_providers": provider_catalog(),
     }
 
 

@@ -30,6 +30,14 @@ def list_providers() -> list[AgentProvider]:
     return list(_PROVIDERS.values())
 
 
+def provider_catalog() -> list[dict[str, str]]:
+    """Registered runtimes for pickers. No subprocess probes."""
+    return [
+        {"id": provider.id, "display_name": provider.display_name}
+        for provider in list_providers()
+    ]
+
+
 def list_provider_ids() -> list[str]:
     return [p.id for p in list_providers()]
 

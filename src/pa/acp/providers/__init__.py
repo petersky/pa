@@ -13,6 +13,7 @@ from pa.acp.providers.registry import (
     known_provider_ids,
     list_provider_ids,
     list_providers,
+    provider_catalog,
     register_provider,
 )
 from pa.acp.providers.resolve import (
@@ -35,6 +36,7 @@ __all__ = [
     "list_provider_ids",
     "list_provider_summaries",
     "list_providers",
+    "provider_catalog",
     "register_provider",
     "resolve_agent_provider",
     "resolve_provider_id",
