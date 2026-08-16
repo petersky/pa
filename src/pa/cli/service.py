@@ -146,9 +146,36 @@ def _systemd_template_path() -> Path:
     )
 
 
+def _launchd_uid() -> int:
+    return os.getuid()
+
+
+def _launchd_candidate_domains() -> tuple[str, ...]:
+    """Domains that can host the LaunchAgent, preferred first.
+
+    ``gui/$UID`` is the Aqua session used after a console login. ``user/$UID``
+    is the per-user domain that exists over SSH and on a headless Mac mini
+    without a GUI session. ``launchctl bootstrap gui/$UID`` fails with error
+    125 ("Domain does not support specified action") in those sessions.
+    """
+    uid = _launchd_uid()
+    return (f"gui/{uid}", f"user/{uid}")
+
+
+def _launchd_service_target(domain: str) -> str:
+    return f"{domain}/{LABEL}"
+
+
+def launchd_inspect_command() -> str:
+    """Operator-facing command that checks both launchd domains."""
+    return f"launchctl print gui/$UID/{LABEL} || launchctl print user/$UID/{LABEL}"
+
+
 def _domain_target() -> str:
-    uid = os.getuid()
-    return f"gui/{uid}/{LABEL}"
+    found = _launchd_job_print_result()
+    if found:
+        return _launchd_service_target(found[0])
+    return _launchd_service_target(_launchd_candidate_domains()[0])
 
 
 def find_pa_binary() -> Path | None:
@@ -384,9 +411,10 @@ def _systemd_environment(output: str) -> dict[str, str]:
 def loaded_service_definition() -> LoadedServiceDefinition | None:
     """Read the command and environment held by the active service manager."""
     if _is_darwin():
-        result = _run_launchctl("print", _domain_target())
-        if result.returncode != 0 or "Could not find service" in result.stdout:
+        found = _launchd_job_print_result()
+        if found is None:
             return None
+        result = found[1]
         loaded = _launchd_definition(result.stdout)
         return LoadedServiceDefinition(
             loaded.backend,
@@ -514,20 +542,44 @@ def _launchctl_io_error(result: subprocess.CompletedProcess[str]) -> bool:
     return "input/output error" in text or "bootstrap failed: 5" in text
 
 
-def _launchd_job_loaded() -> bool:
-    result = _run_launchctl("print", _domain_target())
+def _launchctl_domain_unsupported(result: subprocess.CompletedProcess[str]) -> bool:
+    text = f"{result.stderr or ''}\n{result.stdout or ''}".lower()
+    return (
+        result.returncode == 125
+        or "domain does not support specified action" in text
+        or "could not find domain" in text
+        or "no such domain" in text
+    )
+
+
+def _launchd_print_shows_job(result: subprocess.CompletedProcess[str]) -> bool:
     if result.returncode != 0:
         return False
     text = f"{result.stderr or ''}\n{result.stdout or ''}"
     return "Could not find service" not in text
 
 
+def _launchd_job_print_result(
+    domain: str | None = None,
+) -> tuple[str, subprocess.CompletedProcess[str]] | None:
+    domains = (domain,) if domain else _launchd_candidate_domains()
+    for candidate in domains:
+        result = _run_launchctl("print", _launchd_service_target(candidate))
+        if _launchd_print_shows_job(result):
+            return candidate, result
+    return None
+
+
+def _launchd_job_loaded() -> bool:
+    return _launchd_job_print_result() is not None
+
+
 def _launchd_job_summary() -> str:
-    result = _run_launchctl("print", _domain_target())
-    if result.returncode != 0:
+    found = _launchd_job_print_result()
+    if found is None:
         return "no longer registered"
     values: dict[str, str] = {}
-    for raw in result.stdout.splitlines():
+    for raw in found[1].stdout.splitlines():
         line = raw.strip()
         for key in ("state", "pid", "last exit code"):
             prefix = f"{key} = "
@@ -544,15 +596,19 @@ def _unload_launchd_job(
     A short sleep is not enough: launchd often keeps a SIGTERMed job visible
     briefly, and an immediate re-bootstrap then fails with I/O error 5.
     """
-    target = _domain_target()
+    targets = [
+        _launchd_service_target(domain) for domain in _launchd_candidate_domains()
+    ]
+    target_label = " / ".join(targets)
     _report(
         progress,
         f"Asked launchd to stop PA; waiting up to {timeout:g}s for graceful shutdown.",
     )
-    result = _run_launchctl("bootout", target)
-    if result.returncode != 0 and "No such process" not in (result.stderr or ""):
-        # Still try to wait it out; print may already show the job as gone.
-        pass
+    for target in targets:
+        result = _run_launchctl("bootout", target)
+        if result.returncode != 0 and "No such process" not in (result.stderr or ""):
+            # Still try to wait it out; print may already show the job as gone.
+            pass
 
     deadline = time.monotonic() + timeout
     started = time.monotonic()
@@ -579,41 +635,57 @@ def _unload_launchd_job(
             next_progress = 5.0 if elapsed < 5.0 else next_progress + 5.0
         time.sleep(delay)
         delay = min(delay * 1.5, 1.5)
-        _run_launchctl("bootout", target)
+        for target in targets:
+            _run_launchctl("bootout", target)
 
     if _launchd_job_loaded():
         raise RuntimeError(
-            f"Timed out after {timeout:g}s waiting for launchd job {target} "
+            f"Timed out after {timeout:g}s waiting for launchd job {target_label} "
             f"({_launchd_job_summary()}). The service manager may be terminating a "
             "hung process; inspect `pa logs` before retrying."
         )
 
 
-def _bootstrap_launchd_plist(plist: Path, *, attempts: int = 8) -> None:
-    gui_domain = f"gui/{os.getuid()}"
+def _bootstrap_launchd_plist(plist: Path, *, attempts: int = 8) -> str:
+    """Load the LaunchAgent and return the domain that accepted it.
+
+    Prefer ``gui/$UID`` (console login). If that domain rejects the action —
+    typical over SSH on a Mac mini — fall back to ``user/$UID``.
+    """
     delays = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)
-    last: subprocess.CompletedProcess[str] | None = None
-    for attempt in range(attempts):
-        last = _run_launchctl("bootstrap", gui_domain, str(plist))
-        if last.returncode == 0:
-            return
-        # Already loaded is fine for callers that only need the job present.
-        text = f"{last.stderr or ''}\n{last.stdout or ''}".lower()
-        if "already bootstrapped" in text or "service already loaded" in text:
-            return
-        if attempt + 1 < attempts and _launchctl_io_error(last):
-            time.sleep(delays[min(attempt, len(delays) - 1)])
-            continue
-        break
-    err = ((last.stderr if last else "") or (last.stdout if last else "") or "").strip()
-    raise RuntimeError(err or "launchctl bootstrap failed")
+    errors: list[str] = []
+    for domain in _launchd_candidate_domains():
+        last: subprocess.CompletedProcess[str] | None = None
+        for attempt in range(attempts):
+            last = _run_launchctl("bootstrap", domain, str(plist))
+            if last.returncode == 0:
+                return domain
+            # Already loaded is fine for callers that only need the job present.
+            text = f"{last.stderr or ''}\n{last.stdout or ''}".lower()
+            if "already bootstrapped" in text or "service already loaded" in text:
+                return domain
+            if _launchctl_domain_unsupported(last):
+                break
+            if attempt + 1 < attempts and _launchctl_io_error(last):
+                time.sleep(delays[min(attempt, len(delays) - 1)])
+                continue
+            break
+        if last is not None:
+            err = ((last.stderr or last.stdout) or "").strip()
+            errors.append(f"{domain}: {err or f'exit {last.returncode}'}")
+    detail = "; ".join(errors) or "launchctl bootstrap failed"
+    raise RuntimeError(
+        f"{detail}. On a Mac without a console GUI session (typical over SSH), "
+        "bootstrap into gui/$UID fails with error 125 and PA retries the "
+        "user/$UID domain automatically."
+    )
 
 
-def _wait_launchd_running(*, timeout: float = 15.0) -> bool:
+def _wait_launchd_running(*, timeout: float = 15.0, domain: str | None = None) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = _run_launchctl("print", _domain_target())
-        if result.returncode == 0 and "state = running" in result.stdout:
+        found = _launchd_job_print_result(domain)
+        if found is not None and "state = running" in found[1].stdout:
             return True
         time.sleep(0.25)
     return False
@@ -708,16 +780,16 @@ def restart(
         if pa_bin:
             install_plist(settings, pa_bin)
         _report(progress, "Starting PA under launchd.")
-        _bootstrap_launchd_plist(_plist_path())
-        if _wait_launchd_running(timeout=8.0):
+        domain = _bootstrap_launchd_plist(_plist_path())
+        if _wait_launchd_running(timeout=8.0, domain=domain):
             _report(progress, "PA reached the running state.")
             return
         _report(progress, "PA has not started yet; asking launchd to kick-start it.")
-        result = _run_launchctl("kickstart", "-k", _domain_target())
+        result = _run_launchctl("kickstart", "-k", _launchd_service_target(domain))
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(err or "launchctl kickstart failed")
-        if not _wait_launchd_running():
+        if not _wait_launchd_running(domain=domain):
             raise RuntimeError("PA service did not reach running state after restart")
         _report(progress, "PA reached the running state.")
         return
@@ -742,8 +814,32 @@ def _schedule_launchd_rebootstrap(
     definition until the service is bootstrapped again. Doing that synchronously
     from inside the running job kills the updater before it records success.
     """
-    target = _domain_target()
-    gui_domain = f"gui/{os.getuid()}"
+    domains = _launchd_candidate_domains()
+    targets = [_launchd_service_target(domain) for domain in domains]
+    target_label = " / ".join(targets)
+    print_checks = "\n".join(
+        f"""  out=$(launchctl print {shlex.quote(target)} 2>&1)
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    case "$out" in
+      *"Could not find service"*) ;;
+      *) return 0 ;;
+    esac
+  fi"""
+        for target in targets
+    )
+    bootouts = "\n".join(
+        f"  launchctl bootout {shlex.quote(target)} >/dev/null 2>&1"
+        for target in targets
+    )
+    bootstraps = "\n".join(
+        f"""  if launchctl bootstrap {shlex.quote(domain)} {shlex.quote(str(plist))}; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap succeeded on {domain}"
+    exit 0
+  fi
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed on {domain}" """
+        for domain in domains
+    )
     log_file = str(log_path) if log_path else "/dev/null"
     if log_path:
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -751,41 +847,32 @@ def _schedule_launchd_rebootstrap(
     # draining ACP session, and bootstrap can hit transient I/O error 5.
     # launchctl print can exit 0 with "Could not find service" after bootout —
     # treat that the same as unloaded (see `_launchd_job_loaded`).
+    # Prefer gui/$UID, then user/$UID when Aqua is unavailable (SSH / headless).
     script = f"""
 set +e
 exec >>{shlex.quote(log_file)} 2>&1
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) scheduling launchd rebootstrap for {shlex.quote(target)}"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) scheduling launchd rebootstrap for {shlex.quote(target_label)}"
 sleep 1
 deadline=$(( $(date +%s) + 300 ))
 job_loaded() {{
-  out=$(launchctl print {shlex.quote(target)} 2>&1)
-  status=$?
-  if [ "$status" -ne 0 ]; then
-    return 1
-  fi
-  case "$out" in
-    *"Could not find service"*) return 1 ;;
-  esac
-  return 0
+{print_checks}
+  return 1
 }}
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  launchctl bootout {shlex.quote(target)} >/dev/null 2>&1
+{bootouts}
   if ! job_loaded; then
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launchd released {shlex.quote(target)}"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launchd released {shlex.quote(target_label)}"
     break
   fi
   sleep 1
 done
 if job_loaded; then
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) timed out waiting for bootout of {shlex.quote(target)}"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) timed out waiting for bootout of {shlex.quote(target_label)}"
   exit 1
 fi
 sleep 0.5
 for delay in 0.5 1 1.5 2 3 4 5 6; do
-  if launchctl bootstrap {shlex.quote(gui_domain)} {shlex.quote(str(plist))}; then
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap succeeded"
-    exit 0
-  fi
+{bootstraps}
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) bootstrap failed; retrying in ${{delay}}s"
   sleep "$delay"
 done
@@ -975,12 +1062,10 @@ def get_status(settings: Settings | None = None) -> ServiceStatus:
         unit_path = _plist_path()
         installed = unit_path.exists()
         if installed:
-            result = _run_launchctl("print", _domain_target())
-            if result.returncode == 0 and "Could not find service" not in (
-                f"{result.stderr or ''}\n{result.stdout or ''}"
-            ):
+            found = _launchd_job_print_result()
+            if found is not None:
                 loaded = True
-                running = "state = running" in result.stdout
+                running = "state = running" in found[1].stdout
 
     elif _is_linux():
         backend = "systemd"

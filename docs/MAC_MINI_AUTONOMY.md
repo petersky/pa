@@ -52,8 +52,9 @@ values or credential-file contents.
 These assertions intentionally are not automated in CI because they alter the
 production login session, power state, credentials, or network:
 
-1. Log out and back in. Confirm `launchctl print gui/$(id -u)/com.pa.server`,
-   `pa status`, and `/api/health` all report the service running.
+1. Log out and back in. Confirm `launchctl print gui/$(id -u)/com.pa.server`
+   (or `user/$(id -u)` over SSH without a console session), `pa status`, and
+   `/api/health` all report the service running.
 2. Reboot the Mac mini. Without opening a terminal, confirm the same checks from
    another fleet peer. A user LaunchAgent starts after that user logs in; enable
    automatic login only if its physical-security tradeoff is accepted. For true

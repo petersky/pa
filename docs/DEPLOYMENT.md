@@ -350,7 +350,7 @@ PA_PEERS=http://macbook.local:8080 pa serve
 **Service won't start (macOS)**
 
 ```bash
-launchctl print gui/$UID/com.pa.server
+launchctl print gui/$UID/com.pa.server || launchctl print user/$UID/com.pa.server
 pa logs -n 100
 ```
 

@@ -288,9 +288,96 @@ class InstallPlistTests(unittest.TestCase):
         script = popen.call_args.args[0][2]
         self.assertIn("deadline=$(( $(date +%s) + 300 ))", script)
         self.assertIn("for delay in 0.5 1 1.5 2 3 4 5 6", script)
-        self.assertIn('*"Could not find service"*) return 1 ;;', script)
+        self.assertIn('*"Could not find service"*) ;;', script)
         self.assertIn("job_loaded", script)
         self.assertIn(str(log_path), script)
+        self.assertIn("bootstrap gui/", script)
+        self.assertIn("bootstrap user/", script)
+
+
+class LaunchdDomainFallbackTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.plist = Path(self._tmp.name) / service.PLIST_NAME
+        self.plist.write_text("installed")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_bootstrap_falls_back_to_user_domain_when_gui_rejects(self) -> None:
+        gui_fail = MagicMock(
+            returncode=125,
+            stderr="Bootstrap failed: 125: Domain does not support specified action",
+            stdout="",
+        )
+        user_ok = MagicMock(returncode=0, stderr="", stdout="")
+        with (
+            patch.object(service, "_launchd_uid", return_value=501),
+            patch.object(
+                service, "_run_launchctl", side_effect=[gui_fail, user_ok]
+            ) as run,
+        ):
+            domain = service._bootstrap_launchd_plist(self.plist, attempts=8)
+
+        self.assertEqual(domain, "user/501")
+        self.assertEqual(
+            [call.args for call in run.call_args_list],
+            [
+                ("bootstrap", "gui/501", str(self.plist)),
+                ("bootstrap", "user/501", str(self.plist)),
+            ],
+        )
+
+    def test_bootstrap_keeps_gui_when_aqua_accepts(self) -> None:
+        gui_ok = MagicMock(returncode=0, stderr="", stdout="")
+        with (
+            patch.object(service, "_launchd_uid", return_value=501),
+            patch.object(service, "_run_launchctl", return_value=gui_ok) as run,
+        ):
+            domain = service._bootstrap_launchd_plist(self.plist, attempts=1)
+
+        self.assertEqual(domain, "gui/501")
+        run.assert_called_once_with("bootstrap", "gui/501", str(self.plist))
+
+    def test_bootstrap_error_mentions_both_domains(self) -> None:
+        rejected = MagicMock(
+            returncode=125,
+            stderr="Bootstrap failed: 125: Domain does not support specified action",
+            stdout="",
+        )
+        with (
+            patch.object(service, "_launchd_uid", return_value=501),
+            patch.object(service, "_run_launchctl", return_value=rejected),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                service._bootstrap_launchd_plist(self.plist, attempts=1)
+
+        message = str(raised.exception)
+        self.assertIn("gui/501", message)
+        self.assertIn("user/501", message)
+        self.assertIn("125", message)
+
+    def test_status_finds_job_in_user_domain(self) -> None:
+        missing = MagicMock(returncode=113, stderr="Could not find service", stdout="")
+        loaded = MagicMock(returncode=0, stderr="", stdout="state = running\n")
+        settings = Settings(data_dir=Path(self._tmp.name))
+        with (
+            patch.object(service, "_is_darwin", return_value=True),
+            patch.object(service, "_is_linux", return_value=False),
+            patch.object(service, "_plist_path", return_value=self.plist),
+            patch.object(service, "_launchd_uid", return_value=501),
+            patch.object(service, "_run_launchctl", side_effect=[missing, loaded]),
+        ):
+            status = service.get_status(settings)
+
+        self.assertTrue(status.loaded)
+        self.assertTrue(status.running)
+        self.assertEqual(status.backend, "launchd")
+
+    def test_inspect_command_covers_both_domains(self) -> None:
+        command = service.launchd_inspect_command()
+        self.assertIn("gui/$UID/com.pa.server", command)
+        self.assertIn("user/$UID/com.pa.server", command)
 
 
 class AutonomousHostControlsTests(unittest.TestCase):

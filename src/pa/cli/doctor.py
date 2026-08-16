@@ -253,7 +253,7 @@ def _service_findings(
                     Command(
                         "systemctl --user status pa-server.service"
                         if status.backend == "systemd"
-                        else "launchctl print gui/$UID/com.pa.server"
+                        else svc.launchd_inspect_command()
                     )
                 ],
             )
