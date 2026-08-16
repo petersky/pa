@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -19,7 +20,10 @@ from pa.acp.environment import (
 )
 from pa.acp.mcp_config import (
     OwnerChannelError,
+    apply_codex_owner_sandbox_environment,
+    merge_codex_owner_sandbox_config,
     owner_endpoint,
+    owner_sandbox_directories,
     pa_mcp_servers,
     probe_owner_channel,
     probe_pa_mcp_stdio,
@@ -297,3 +301,102 @@ class PaMcpServersTests(unittest.TestCase):
             self.assertEqual(result["state"], "connected")
             self.assertEqual(result["classification"], "ok")
             self.assertGreater(result["tool_count"], 0)
+
+
+class CodexOwnerSandboxConfigTests(unittest.TestCase):
+    def test_owner_sandbox_directories_use_socket_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="owner-instance",
+                host="127.0.0.1",
+                port=9123,
+                agent_enabled=False,
+            )
+            socket = Path(tmp) / "runtime" / "owner.sock"
+            with patch.dict(
+                os.environ,
+                {"PA_OWNER_API_URL": "", "PA_OWNER_SOCKET": str(socket)},
+                clear=False,
+            ):
+                self.assertEqual(
+                    owner_sandbox_directories(settings),
+                    [str(socket.parent)],
+                )
+
+    def test_http_owner_endpoint_has_no_sandbox_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="owner-instance",
+                host="127.0.0.1",
+                port=9123,
+                agent_enabled=False,
+            )
+            with patch.dict(
+                os.environ,
+                {"PA_OWNER_API_URL": "http://127.0.0.1:8081"},
+                clear=False,
+            ):
+                self.assertEqual(owner_sandbox_directories(settings), [])
+                self.assertIsNone(owner_endpoint(settings).uds)
+
+    def test_codex_config_grants_owner_socket_without_replacing_existing_roots(self):
+        socket = "/tmp/pa-501/abcd/owner.sock"
+        merged = json.loads(
+            merge_codex_owner_sandbox_config(
+                json.dumps(
+                    {
+                        "sandbox_workspace_write": {
+                            "writable_roots": ["/workspace"],
+                            "network_access": True,
+                        }
+                    }
+                ),
+                socket_path=socket,
+            )
+        )
+        self.assertEqual(
+            merged["sandbox_workspace_write"]["writable_roots"],
+            ["/workspace", "/tmp/pa-501/abcd"],
+        )
+        self.assertTrue(merged["sandbox_workspace_write"]["network_access"])
+        self.assertEqual(
+            merged["permissions"]["network"]["unix_sockets"][socket],
+            "allow",
+        )
+        self.assertEqual(
+            merged["features"]["network_proxy"]["unix_sockets"][socket],
+            "allow",
+        )
+
+    def test_codex_spawn_environment_pins_owner_sandbox_and_keeps_pa_mcp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="owner-instance",
+                host="127.0.0.1",
+                port=9123,
+                agent_enabled=False,
+            )
+            socket = Path(tmp) / "runtime" / "owner.sock"
+            with patch.dict(
+                os.environ,
+                {"PA_OWNER_API_URL": "", "PA_OWNER_SOCKET": str(socket)},
+                clear=False,
+            ):
+                environment = apply_codex_owner_sandbox_environment(
+                    {
+                        "PATH": "/bin",
+                        "CODEX_CONFIG": json.dumps({"model": "gpt-5.4"}),
+                    },
+                    settings,
+                )
+            config = json.loads(environment["CODEX_CONFIG"])
+            self.assertEqual(environment["DISABLE_MCP_CONFIG_FILTERING"], "true")
+            self.assertEqual(config["model"], "gpt-5.4")
+            self.assertIn(str(socket.parent), config["sandbox_workspace_write"]["writable_roots"])
+            self.assertEqual(
+                config["permissions"]["network"]["unix_sockets"][str(socket)],
+                "allow",
+            )
