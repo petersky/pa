@@ -150,6 +150,8 @@ def _require_memory_editor(request: Request) -> str:
 
 @router.get("/cards/events")
 async def card_events(request: Request, realm: str | None = None) -> StreamingResponse:
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown_or
+
     realm_id = realm or request.app.state.ctx.settings.primary_realm
     broker = request.app.state.ctx.require_service("live_updates")
 
@@ -157,12 +159,16 @@ async def card_events(request: Request, realm: str | None = None) -> StreamingRe
         queue = broker.subscribe(realm_id)
         try:
             yield ": connected\n\n"
-            while not await request.is_disconnected():
+            while not is_shutting_down() and not await request.is_disconnected():
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
+                    stopping, event = await wait_for_shutdown_or(
+                        queue.get(), timeout=20.0
+                    )
                 except TimeoutError:
                     yield ": keepalive\n\n"
                     continue
+                if stopping or event is None:
+                    return
                 yield (
                     "event: cards-changed\n"
                     f"data: {json.dumps(event, separators=(',', ':'))}\n\n"

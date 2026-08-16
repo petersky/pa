@@ -180,6 +180,37 @@ class AgentChatSseTests(unittest.TestCase):
         )
         self.assertEqual(subscriber_counts, [0] * 25)
 
+    def test_multiplex_stream_exits_when_server_shutdown_begins(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        async def run() -> None:
+            reset_shutdown_event()
+            manager = MagicMock()
+            manager.list_runtimes.return_value = []
+            request = MagicMock()
+            request.query_params.get.side_effect = lambda _name: None
+            request.headers.get.return_value = None
+            request.is_disconnected = AsyncMock(return_value=False)
+            try:
+                with patch(
+                    "pa.modules.agent_chat._require_session_traffic_ready",
+                    return_value=manager,
+                ):
+                    response = await multiplexed_session_events(request)
+                    iterator = response.body_iterator
+                    ready = await anext(iterator)
+                    self.assertIn("event: ready", ready)
+                    next_chunk = asyncio.create_task(anext(iterator))
+                    await asyncio.sleep(0)
+                    signal_shutdown()
+                    with self.assertRaises(StopAsyncIteration):
+                        await asyncio.wait_for(next_chunk, timeout=1.0)
+                    await iterator.aclose()
+            finally:
+                reset_shutdown_event()
+
+        asyncio.run(run())
+
     def test_restart_ui_race_is_gated_then_distinguishes_durable_loss(self) -> None:
         manager = MagicMock()
         manager.startup_state.return_value = {

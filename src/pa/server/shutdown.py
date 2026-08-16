@@ -12,11 +12,13 @@ T = TypeVar("T")
 
 _shutdown_event: asyncio.Event | None = None
 _shutdown_loop: asyncio.AbstractEventLoop | None = None
+_shutdown_flag = False
 
 
 def reset_shutdown_event() -> asyncio.Event:
     """Create the event used by the next server run."""
-    global _shutdown_event, _shutdown_loop
+    global _shutdown_event, _shutdown_loop, _shutdown_flag
+    _shutdown_flag = False
     _shutdown_event = asyncio.Event()
     try:
         _shutdown_loop = asyncio.get_running_loop()
@@ -39,21 +41,45 @@ def shutdown_event() -> asyncio.Event:
     ):
         _shutdown_event = asyncio.Event()
         _shutdown_loop = loop
+        if _shutdown_flag:
+            _shutdown_event.set()
     elif loop is not None and _shutdown_loop is None:
         _shutdown_loop = loop
     return _shutdown_event
 
 
 def signal_shutdown() -> None:
-    shutdown_event().set()
+    """Mark shutdown from any thread, including Uvicorn's signal handler."""
+    global _shutdown_flag
+    _shutdown_flag = True
+    event = _shutdown_event
+    loop = _shutdown_loop
+    if event is None:
+        event = shutdown_event()
+        loop = _shutdown_loop
+    if loop is not None:
+        try:
+            if loop.is_running():
+                loop.call_soon_threadsafe(event.set)
+                return
+        except RuntimeError:
+            pass
+    event.set()
 
 
 def is_shutting_down() -> bool:
-    return shutdown_event().is_set()
+    # Do not call shutdown_event() here: a logging filter or signal-handler
+    # context can see a different loop and would otherwise replace a set event
+    # with a fresh unset one.
+    return _shutdown_flag or (
+        _shutdown_event is not None and _shutdown_event.is_set()
+    )
 
 
 async def wait_for_shutdown(timeout: float | None = None) -> bool:
     """Return True when shutdown begins, or False when *timeout* elapses."""
+    if is_shutting_down():
+        return True
     try:
         await asyncio.wait_for(shutdown_event().wait(), timeout=timeout)
     except TimeoutError:
@@ -66,6 +92,10 @@ async def wait_for_shutdown_or(
 ) -> tuple[bool, T | None]:
     """Race an operation against shutdown and cancel the losing waiter."""
     operation_task = asyncio.ensure_future(operation)
+    if is_shutting_down():
+        operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        return True, None
     shutdown_task = asyncio.create_task(shutdown_event().wait())
     try:
         done, _ = await asyncio.wait(
@@ -75,7 +105,7 @@ async def wait_for_shutdown_or(
         )
         if not done:
             raise TimeoutError
-        if shutdown_task in done:
+        if shutdown_task in done or is_shutting_down():
             return True, None
         return False, await operation_task
     finally:
@@ -87,6 +117,10 @@ async def wait_for_shutdown_or(
 
 class ShutdownAwareServer(uvicorn.Server):
     """Notify response streams as soon as Uvicorn receives TERM/INT."""
+
+    async def startup(self, sockets: list | None = None) -> None:
+        shutdown_event()
+        await super().startup(sockets=sockets)
 
     def handle_exit(self, sig: int, frame) -> None:
         signal_shutdown()

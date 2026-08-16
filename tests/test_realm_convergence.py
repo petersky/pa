@@ -1109,5 +1109,53 @@ class RealmSyncWebUiTests(unittest.TestCase):
         reset_settings()
 
 
+class SyncObjectListTests(unittest.IsolatedAsyncioTestCase):
+    async def test_converge_lists_local_hashes_once_per_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="local",
+                instance_name="Local",
+                instance_url="http://local",
+                subscribed_realms=["default"],
+                agent_enabled=False,
+            )
+            store = MagicMock()
+            store.list_hashes.return_value = ["abc"]
+            log = MagicMock()
+            log.get_head.return_value = None
+            peer_table = MagicMock()
+            peer_table.prefer_same_zone.return_value = [
+                PeerRoute(realm_id="default", target_url="http://peer-a"),
+                PeerRoute(realm_id="default", target_url="http://peer-b"),
+                PeerRoute(realm_id="default", target_url="http://peer-c"),
+            ]
+            engine = SyncEngine(
+                settings,
+                store,
+                log,
+                peer_table,
+                MagicMock(),
+            )
+            fetches: list[list[str] | None] = []
+
+            async def fetch(_client, _realm_id, route, *, local_hashes=None):
+                fetches.append(local_hashes)
+                return {
+                    "instance_id": route.target_url,
+                    "name": route.target_url,
+                    "url": route.target_url,
+                    "status": "unavailable",
+                    "head": None,
+                    "imported": 0,
+                }
+
+            engine._client = object()
+            engine._fetch_peer = fetch
+            await engine.converge_realm("default")
+            store.list_hashes.assert_called_once()
+            self.assertEqual(fetches, [["abc"], ["abc"], ["abc"]])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -113,6 +113,18 @@ def uvicorn_log_config() -> dict[str, object]:
         )
     )
     config["formatters"]["access"]["datefmt"] = "%Y-%m-%dT%H:%M:%S%z"
+    # Uvicorn's error logger has no handlers of its own; it propagates to
+    # "uvicorn". Put the filter in dictConfig so Config.load() cannot drop it.
+    filters = dict(config.get("filters") or {})
+    filters["expected_shutdown_cancellation"] = {
+        "()": "pa.core.logging.ExpectedShutdownCancellationFilter",
+    }
+    config["filters"] = filters
+    default_handler = config["handlers"]["default"]
+    handler_filters = list(default_handler.get("filters") or [])
+    if "expected_shutdown_cancellation" not in handler_filters:
+        handler_filters.append("expected_shutdown_cancellation")
+    default_handler["filters"] = handler_filters
     return config
 
 
@@ -144,9 +156,12 @@ def configure_logging(settings: Settings) -> None:
     # httpx logs every successful request at INFO. PA logs actionable transport
     # and HTTP failures at their call sites, so keep routine 2xx traffic quiet.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    # Uvicorn configures non-propagating handlers before the app factory runs.
-    # Apply the same shutdown classification directly to those handlers.
-    for handler in logging.getLogger("uvicorn.error").handlers:
-        handler.addFilter(cancellation_filter)
+    # Uvicorn.error has no handlers; records propagate to the uvicorn logger.
+    # Attach the filter to both loggers and any handlers that already exist.
+    for name in ("uvicorn", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.addFilter(cancellation_filter)
+        for handler in uvicorn_logger.handlers:
+            handler.addFilter(cancellation_filter)
     if settings.debug:
         logging.getLogger("pa").setLevel(logging.DEBUG)

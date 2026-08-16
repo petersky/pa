@@ -76,7 +76,10 @@ class SessionLifecyclePolicy:
             dispatch_store = self.services.get("dispatch_store")
             dispatches = (
                 await self.manager._offload(
-                    "session_lifecycle.dispatches", dispatch_store.list, limit=10000
+                    "session_lifecycle.dispatches",
+                    dispatch_store.list,
+                    limit=10000,
+                    deep=False,
                 )
                 if dispatch_store
                 else []

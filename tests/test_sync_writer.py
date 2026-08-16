@@ -367,6 +367,13 @@ class EventLogWriterSafetyTests(unittest.TestCase):
             self.assertEqual(replica_card.title, "resolved")
             self.assertEqual(replica_card.updated_at, resolved.updated_at)
 
+    def test_list_hashes_returns_sharded_object_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            objects = ObjectStore(Path(tmp) / "objects")
+            first = objects.put(b"one")
+            second = objects.put(b"two")
+            self.assertEqual(sorted(objects.list_hashes()), sorted([first, second]))
+
     def test_rebuild_replays_delete_without_appending_another_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)

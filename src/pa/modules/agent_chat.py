@@ -1047,7 +1047,7 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
     per-session ordering and replay boundary.
     """
     from pa.core.sse_observability import sse_connections
-    from pa.server.shutdown import is_shutting_down
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown, wait_for_shutdown_or
 
     manager = _require_session_traffic_ready(request)
     initial_cursors = _multiplex_after_cursors(request)
@@ -1160,11 +1160,22 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
                     for session_id, (runtime, queue) in subscriptions.items()
                 }
                 if not pending:
-                    await asyncio.sleep(1.0)
+                    if await wait_for_shutdown(1.0):
+                        break
                     continue
-                done, waiting = await asyncio.wait(
-                    pending, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                stopping, waited = await wait_for_shutdown_or(
+                    asyncio.wait(
+                        pending, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                    )
                 )
+                if stopping or waited is None:
+                    for task in pending:
+                        if not task.done():
+                            task.cancel()
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+                    break
+                done, waiting = waited
                 for task in waiting:
                     task.cancel()
                 if waiting:

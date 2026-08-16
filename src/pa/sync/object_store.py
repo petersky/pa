@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -48,12 +49,18 @@ class ObjectStore:
 
     def list_hashes(self) -> list[str]:
         hashes: list[str] = []
-        for sub in self.base_dir.iterdir():
-            if not sub.is_dir() or len(sub.name) != 2:
-                continue
-            for f in sub.iterdir():
-                if f.is_file():
-                    hashes.append(sub.name + f.name)
+        try:
+            entries = os.scandir(self.base_dir)
+        except FileNotFoundError:
+            return hashes
+        with entries:
+            for sub in entries:
+                if not sub.is_dir(follow_symlinks=False) or len(sub.name) != 2:
+                    continue
+                with os.scandir(sub.path) as files:
+                    for item in files:
+                        if item.is_file(follow_symlinks=False):
+                            hashes.append(sub.name + item.name)
         return hashes
 
     def get_many(self, hashes: list[str]) -> dict[str, bytes]:

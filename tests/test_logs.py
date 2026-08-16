@@ -202,6 +202,11 @@ class LoggingConfigurationTests(unittest.TestCase):
         config = uvicorn_log_config()
         self.assertIn("asctime", config["formatters"]["default"]["fmt"])
         self.assertIn("asctime", config["formatters"]["access"]["fmt"])
+        self.assertIn("expected_shutdown_cancellation", config["filters"])
+        self.assertIn(
+            "expected_shutdown_cancellation",
+            config["handlers"]["default"]["filters"],
+        )
 
     def test_json_formatter_preserves_ids_and_redacts_extra_strings(self) -> None:
         record = logging.LogRecord(
@@ -244,6 +249,29 @@ class LoggingConfigurationTests(unittest.TestCase):
         ExpectedShutdownCancellationFilter().filter(record)
         self.assertEqual(record.levelname, "ERROR")
         self.assertIsNotNone(record.exc_info)
+
+    def test_shutdown_flag_classifies_cancellation_without_event_loop(self) -> None:
+        import asyncio
+
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        reset_shutdown_event()
+        signal_shutdown()
+        record = logging.LogRecord(
+            "uvicorn.error",
+            logging.ERROR,
+            __file__,
+            1,
+            "Exception in ASGI application",
+            (),
+            (asyncio.CancelledError, asyncio.CancelledError(), None),
+        )
+        try:
+            self.assertTrue(ExpectedShutdownCancellationFilter().filter(record))
+            self.assertEqual(record.levelname, "WARNING")
+            self.assertIsNone(record.exc_info)
+        finally:
+            reset_shutdown_event()
 
 
 if __name__ == "__main__":

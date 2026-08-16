@@ -65,6 +65,7 @@ class _ResponsivenessMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        import asyncio
         import time
 
         started = time.perf_counter()
@@ -79,6 +80,12 @@ class _ResponsivenessMiddleware:
 
         try:
             await self.app(scope, receive, send_wrapper)
+        except asyncio.CancelledError:
+            from pa.server.shutdown import is_shutting_down
+
+            if is_shutting_down():
+                return
+            raise
         finally:
             runtime = self.runtime_getter()
             if runtime:
@@ -237,7 +244,9 @@ class Kernel:
         from pa.instance.agent_session import get_instance_agent
         from pa.network.peer_table import PeerTable
         from pa.network.registry import PeerRegistry
+        from pa.server.shutdown import shutdown_event
 
+        shutdown_event()
         async_runtime = self.ctx.require_service("async_runtime")
         await async_runtime.start()
         agent = await async_runtime.run_blocking(

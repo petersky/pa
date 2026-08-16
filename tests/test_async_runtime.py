@@ -56,10 +56,14 @@ class AsyncRuntimeTests(unittest.IsolatedAsyncioTestCase):
             await self.runtime.run_blocking(
                 "sync.object_collect", lambda: time.sleep(0.01)
             )
+            await self.runtime.run_blocking(
+                "session_lifecycle.sessions", lambda: time.sleep(0.01)
+            )
         warning.assert_not_called()
-        metrics = self.runtime.snapshot()["operations"]["sync.object_collect"]
-        self.assertEqual(metrics["completed"], 1)
-        self.assertGreater(metrics["max_runtime_ms"], 1)
+        metrics = self.runtime.snapshot()["operations"]
+        self.assertEqual(metrics["sync.object_collect"]["completed"], 1)
+        self.assertGreater(metrics["sync.object_collect"]["max_runtime_ms"], 1)
+        self.assertEqual(metrics["session_lifecycle.sessions"]["completed"], 1)
 
     async def test_queue_is_bounded(self) -> None:
         release = threading.Event()
