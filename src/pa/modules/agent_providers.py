@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from pa.acp.providers.base import ProviderConfigureBody
 from pa.acp.providers.codex_auth import get_codex_login_store, resolve_codex_cli
-from pa.acp.providers.registry import get_provider
+from pa.acp.providers.registry import get_provider, provider_catalog
 from pa.acp.providers.resolve import list_provider_summaries_bounded
 from pa.acp.sandbox_health import sandbox_health_registry
 from pa.core.async_runtime import AsyncRuntime, BlockingQueueFull
@@ -133,6 +133,12 @@ async def list_local_providers(request: Request) -> list[dict]:
     return await list_provider_summaries_bounded(
         _data_dir(request), manager=manager, async_runtime=runtime
     )
+
+
+@router.get("/catalog")
+def list_provider_catalog() -> list[dict[str, str]]:
+    """Registered ACP runtimes without install/auth probes."""
+    return provider_catalog()
 
 
 @router.get("/mcp-bootstrap")

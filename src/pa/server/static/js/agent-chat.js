@@ -3277,6 +3277,58 @@
     }
   }
 
+  function newSessionOptionSelects(dialog) {
+    return dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]");
+  }
+
+  function setNewSessionBusy(dialog, busy, message) {
+    const form = dialog.querySelector("[data-agent-new-form]");
+    const submit = dialog.querySelector("[data-agent-new-submit]");
+    const status = dialog.querySelector("[data-agent-new-status]");
+    dialog.setAttribute("aria-busy", busy ? "true" : "false");
+    if (form) form.setAttribute("aria-busy", busy ? "true" : "false");
+    if (submit && submit.textContent !== "Starting…") submit.disabled = !!busy;
+    if (status) {
+      status.hidden = !busy;
+      if (message) status.textContent = message;
+    }
+    newSessionOptionSelects(dialog).forEach(function (select) {
+      select.disabled = !!busy;
+    });
+  }
+
+  function fillProviderSelect(select, providers) {
+    if (!select) return;
+    const selected = select.value;
+    const seen = {};
+    Array.prototype.forEach.call(select.options, function (option) {
+      seen[option.value] = true;
+    });
+    (providers || []).forEach(function (item) {
+      if (!item || !item.id || seen[item.id]) return;
+      seen[item.id] = true;
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.display_name || item.id;
+      select.appendChild(option);
+    });
+    if (selected) select.value = selected;
+  }
+
+  function loadProviderCatalog(select) {
+    if (!select) return Promise.resolve([]);
+    const existing = Array.prototype.filter.call(select.options, function (option) {
+      return option.value;
+    }).map(function (option) {
+      return { id: option.value, display_name: option.textContent };
+    });
+    if (existing.length) return Promise.resolve(existing);
+    return csrfFetch("/providers/catalog").then(function (providers) {
+      fillProviderSelect(select, providers);
+      return providers || [];
+    });
+  }
+
   function populateNewSessionOptions(dialog, snap) {
     const modelProviderWrap = dialog.querySelector("[data-agent-new-model-provider-wrap]");
     const modelProviderSelect = dialog.querySelector("[data-agent-new-model-provider]");
@@ -3353,9 +3405,7 @@
       : "";
     const requestId = Number(dialog._acwOptionsRequest || 0) + 1;
     dialog._acwOptionsRequest = requestId;
-    dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
-      select.disabled = true;
-    });
+    setNewSessionBusy(dialog, true, "Loading session options…");
     return newSessionSnapshotForProvider(widget, providerId, modelProviderId)
       .then(function (snap) {
         if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, snap);
@@ -3365,9 +3415,7 @@
       })
       .finally(function () {
         if (dialog._acwOptionsRequest !== requestId) return;
-        dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
-          select.disabled = false;
-        });
+        setNewSessionBusy(dialog, false);
       });
   }
 
@@ -3400,13 +3448,16 @@
   }
 
   function prepareNewSessionDialog(dialog, widget) {
+    const form = dialog.querySelector("[data-agent-new-form]");
     const provider = dialog.querySelector("[data-agent-new-provider]");
     const snap = widget && widget._acw && widget._acw.lastSnapshot;
     const activeProvider = snap && snap.session && snap.session.agent_name;
-    populateNewSessionOptions(dialog, snap);
-    return Promise.all([csrfFetch("/providers"), csrfFetch("/preferences")])
+    dialog._acwProviderTouched = false;
+    if (form) form.reset();
+    populateNewSessionOptions(dialog, null);
+    setNewSessionBusy(dialog, true, "Loading session options…");
+    return Promise.all([loadProviderCatalog(provider), csrfFetch("/preferences")])
       .then(function (results) {
-        const providers = results[0];
         const prefs = results[1] || {};
         const userSurfaces = prefs.user && prefs.user.agent_surfaces || {};
         const globalSurfaces = prefs.global && prefs.global.agent_surfaces || {};
@@ -3420,22 +3471,16 @@
           effort: userDefaults.effort || globalDefaults.effort || "",
           config: Object.assign({}, globalDefaults.config || {}, userDefaults.config || {}),
         };
-        if (!provider) return;
-        provider.innerHTML = '<option value="">Instance default</option>';
-        (providers || []).forEach(function (item) {
-          if (!item || !item.id || item.available === false) return;
-          const option = document.createElement("option");
-          option.value = item.id;
-          option.textContent = item.display_name || item.id;
-          if (item.id === defaults.provider) option.selected = true;
-          provider.appendChild(option);
-        });
-        if (!provider.value && defaults.provider) provider.value = defaults.provider;
+        if (provider && !dialog._acwProviderTouched && defaults.provider) {
+          provider.value = defaults.provider;
+        }
         return refreshNewSessionOptions(dialog, widget).then(function () {
-          applyNewSessionDefaults(dialog, defaults);
+          if (!dialog._acwProviderTouched) applyNewSessionDefaults(dialog, defaults);
         });
       })
-      .catch(function () { /* the instance default remains available */ });
+      .catch(function () {
+        setNewSessionBusy(dialog, false);
+      });
   }
 
   function bindSessionSidebar(scope) {
@@ -3562,6 +3607,7 @@
       const provider = dialog.querySelector("[data-agent-new-provider]");
       if (provider) {
         provider.addEventListener("change", function () {
+          dialog._acwProviderTouched = true;
           dialog.querySelectorAll("[data-agent-new-model-provider], [data-agent-new-model], [data-agent-new-mode], [data-agent-new-effort]").forEach(function (select) {
             select.value = "";
           });
@@ -3583,6 +3629,7 @@
       const form = dialog.querySelector("[data-agent-new-form]");
       if (form) form.addEventListener("submit", function (event) {
         event.preventDefault();
+        if (dialog.getAttribute("aria-busy") === "true") return;
         const data = new FormData(form);
         const body = {};
         ["title", "provider", "model_provider", "model_id", "mode_id", "effort", "cwd"].forEach(function (key) {

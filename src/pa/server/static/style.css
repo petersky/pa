@@ -3071,6 +3071,15 @@ code {
   gap: 0.5rem;
 }
 
+.agent-new-session-dialog[aria-busy="true"] [data-agent-new-submit] {
+  opacity: 0.7;
+}
+
+[data-agent-new-status] {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .fleet-update-dialog {
   width: min(44rem, calc(100vw - 2rem));
   max-height: min(92vh, 52rem);
