@@ -124,7 +124,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         reset_settings()
         self.tmp.cleanup()
 
-    def test_sections_are_sorted_bounded_actionable_and_link_to_filtered_work(
+    def test_shell_defers_sections_and_partial_is_sorted_bounded_actionable(
         self,
     ) -> None:
         with (
@@ -133,12 +133,23 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
             ),
             TestClient(self.app) as client,
         ):
-            response = client.get("/?q=no-match&blocked=blocked&kind=concern")
+            shell = client.get("/?q=no-match&blocked=blocked&kind=concern")
+            response = client.get("/partials/home/sections")
+
+        self.assertEqual(shell.status_code, 200)
+        self.assertIn("data-home-attention-queue", shell.text)
+        self.assertIn('id="home-command-grid"', shell.text)
+        self.assertIn('hx-get="/partials/home/sections?realm=', shell.text)
+        self.assertIn('hx-trigger="load, homeRefresh from:body"', shell.text)
+        self.assertIn("data-home-refresh-status", shell.text)
+        self.assertIn("Loading actionable work…", shell.text)
+        self.assertIn("Loading work in motion…", shell.text)
+        self.assertIn("Loading recent outcomes…", shell.text)
+        self.assertIn("Loading fleet health…", shell.text)
+        self.assertNotIn("data-attention-card", shell.text)
+        self.assertNotIn("data-contextual-work-action", shell.text)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("data-home-attention-queue", response.text)
-        self.assertIn('hx-trigger="homeRefresh from:body"', response.text)
-        self.assertIn("data-home-refresh-status", response.text)
         self.assertIn('data-contextual-work-action="respond"', response.text)
         self.assertEqual(response.text.count('data-attention-group="attention"'), 6)
         self.assertEqual(response.text.count('data-attention-group="motion"'), 8)
@@ -172,7 +183,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
             ),
             TestClient(self.app) as client,
         ):
-            response = client.get("/")
+            response = client.get("/partials/home/sections")
 
         self.assertIn("Showing 6 of 109 actionable cards", response.text)
         self.assertIn("Showing 8 of 121 cards in motion", response.text)
@@ -208,7 +219,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
                     preserve_lease=False,
                 )
 
-            response = client.get("/")
+            response = client.get("/partials/home/sections")
 
         self.assertEqual(store.count_cards(realm_id="default"), 250)
         self.assertEqual(response.status_code, 200)
@@ -270,7 +281,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
             promoted = supervisor.list_actionable_card_ids(
                 realm_id="default", limit=80
             )
-            response = client.get("/")
+            response = client.get("/partials/home/sections")
 
         self.assertEqual(promoted, [actionable.id])
         self.assertEqual(response.status_code, 200)
@@ -505,7 +516,11 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
             TestClient(app) as client,
         ):
             html = client.get("/").text
+            sections = client.get("/partials/home/sections").text
         (root / "index.html").write_text(html)
+        sections_path = root / "partials" / "home" / "sections"
+        sections_path.parent.mkdir(parents=True, exist_ok=True)
+        sections_path.write_text(sections)
         shutil.copytree(ROOT / "src/pa/server/static", root / "static")
         (root / "pagination-next.html").write_text(
             '<div class="compact-card-list">'
@@ -543,7 +558,16 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
             width=1440,
             height=1000,
         )
-        await asyncio.sleep(0.25)
+        session = self.manager.resolve(self.scope)
+        for _ in range(20):
+            loaded = await session.page.evaluate(
+                "Boolean(document.querySelector('[data-attention-card]'))"
+            )
+            if loaded:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            raise AssertionError("Home section partial did not load in the browser")
 
     async def asyncTearDown(self) -> None:
         await self.manager.close()

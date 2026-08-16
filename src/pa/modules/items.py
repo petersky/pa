@@ -1521,7 +1521,12 @@ def _work_context(request: Request) -> dict:
 
 
 def _home_context(request: Request) -> dict:
-    """Build Home from one bounded, cached-first operational projection."""
+    """Build only Home chrome; section rows load as a bounded partial."""
+    return {"active_realm": _active_realm(request)}
+
+
+def _home_sections_context(request: Request) -> dict:
+    """Build Home sections from one bounded, cached-first operational projection."""
     from pa.fleet.overview import build_overview
     from pa.fleet.workshop import build_workshop_snapshot
 
@@ -1598,6 +1603,7 @@ def _home_context(request: Request) -> dict:
         "home_inventory": snapshot["inventory"],
         "agent_connected": bool(agent and agent.connected),
         "fleet_instances": fleet_instances,
+        "instance_id": ctx.settings.instance_id,
         "instance_name": ctx.settings.instance_name,
         "realms": ctx.settings.subscribed_realms,
         "active_realm": realm,
@@ -2725,6 +2731,15 @@ def items_partial(request: Request, kind: ItemKind | None = None) -> HTMLRespons
         request,
         "partials/items.html",
         context,
+    )
+
+
+@ui_router.get("/partials/home/sections", response_class=HTMLResponse)
+def home_sections_partial(request: Request) -> HTMLResponse:
+    return _templates(request).TemplateResponse(
+        request,
+        "partials/home/sections.html",
+        _home_sections_context(request),
     )
 
 

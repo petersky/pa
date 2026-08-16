@@ -112,16 +112,17 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
     response = HTMLResponse(html)
     response.headers["Server-Timing"] = timings.header()
     response_bytes = len(html.encode("utf-8"))
-    if page.id == "work":
+    if page.id in {"work", "home"}:
         diagnostics = {
-            "event": "work.render",
+            "event": f"{page.id}.render",
             "timings_ms": {name: round(value, 1) for name, value in timings.values},
             "total_ms": round((perf_counter() - timings.started) * 1000, 1),
             "response_bytes": response_bytes,
             "htmx": bool(request.headers.get("HX-Request")),
         }
-        response.headers["X-PA-Work-Bytes"] = str(response_bytes)
-        logger.info("work_render %s", json.dumps(diagnostics, sort_keys=True))
+        header = "X-PA-Work-Bytes" if page.id == "work" else "X-PA-Home-Bytes"
+        response.headers[header] = str(response_bytes)
+        logger.info("%s_render %s", page.id, json.dumps(diagnostics, sort_keys=True))
     if page.id == "settings":
         section = str(context.get("active_settings_section") or "agent")
         diagnostics = {

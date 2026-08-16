@@ -633,8 +633,14 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 )
             )
 
-            response = client.get("/?q=no-match&blocked=blocked&kind=concern")
+            shell = client.get("/?q=no-match&blocked=blocked&kind=concern")
+            response = client.get(
+                "/partials/home/sections?q=no-match&blocked=blocked&kind=concern"
+            )
 
+            self.assertEqual(shell.status_code, 200)
+            self.assertNotIn(card.title, shell.text)
+            self.assertIn("Loading work in motion…", shell.text)
             self.assertEqual(response.status_code, 200)
             self.assertNotIn(card.title, response.text)
             self.assertIn("No autonomous work in motion", response.text)
