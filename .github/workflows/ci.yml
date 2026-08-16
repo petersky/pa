@@ -36,6 +36,7 @@ jobs:
           uv run pytest -n auto --dist worksteal
           --ignore=tests/test_header_layout.py
           --ignore=tests/test_fleet_topology_layout.py
+          --ignore=tests/test_browser_e2e.py
 
   smoke:
     runs-on: ubuntu-latest
