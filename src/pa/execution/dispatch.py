@@ -1910,6 +1910,7 @@ class DispatchStore:
         *,
         target_instance_id: str | None = None,
         realm_id: str | None = None,
+        card_id: str | None = None,
         limit: int = 100,
         deep: bool = True,
     ) -> list[DispatchRecord]:
@@ -1926,6 +1927,8 @@ class DispatchStore:
             ]
         if realm_id:
             records = [record for record in records if record.realm_id == realm_id]
+        if card_id:
+            records = [record for record in records if record.card_id == card_id]
         selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[
             :limit
         ]

@@ -71,7 +71,9 @@ class SessionLifecyclePolicy:
         now = now or datetime.now(UTC)
         async with self._lock:
             sessions = await self.manager._offload(
-                "session_lifecycle.sessions", self.manager.store.list_sessions
+                "session_lifecycle.sessions",
+                self.manager.store.list_sessions,
+                exclude_statuses=("closed",),
             )
             dispatch_store = self.services.get("dispatch_store")
             dispatches = (

@@ -235,3 +235,20 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             await self.decide(dispatches=[failed]), ("close", "dispatch_terminal")
         )
+
+    async def test_run_once_excludes_closed_sessions_from_store_query(self):
+        recorded = {}
+
+        class _RecordingStore(_Store):
+            def list_sessions(self, **kwargs):
+                recorded["kwargs"] = kwargs
+                return []
+
+            def close_session(self, *args, **kwargs):
+                return None, None
+
+        manager = _Manager()
+        manager.store = _RecordingStore()
+        manager.workspace_manager.list = lambda: []
+        await SessionLifecyclePolicy(manager, {}).run_once()
+        self.assertEqual(recorded["kwargs"], {"exclude_statuses": ("closed",)})

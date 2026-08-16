@@ -22,6 +22,7 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
@@ -407,28 +408,9 @@ def _latest_card_progress(request: Request, card_id: str) -> dict | None:
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     if not dispatch_store:
         return None
-    records = [
-        record
-        for record in dispatch_store.list(limit=1000)
-        if record.card_id == card_id
-    ]
-    if not records:
+    record = dispatch_store.latest_by_card({card_id}).get(card_id)
+    if not record:
         return None
-    active = [
-        record
-        for record in records
-        if record.state
-        in {
-            "queued",
-            "checking_sync",
-            "materializing",
-            "provisioning",
-            "starting_session",
-            "delivering_prompt",
-            "running",
-        }
-    ]
-    record = max(active or records, key=lambda item: item.updated_at)
     public = canonicalize_dispatch_public(request.app.state.ctx, record)
     progress = dict(public.get("progress") or {})
     progress.update(
@@ -603,11 +585,7 @@ def _card_project_impact(request: Request, card, project_id: str | None) -> dict
         )
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     dispatches = (
-        [
-            record
-            for record in dispatch_store.list(limit=1000)
-            if record.card_id == card.id
-        ]
+        dispatch_store.list(card_id=card.id, limit=1000, deep=False)
         if dispatch_store
         else []
     )
@@ -667,11 +645,7 @@ def _card_summary_context(request: Request, card) -> dict:
             if card.parent_id
             else None
         ),
-        "children": [
-            candidate
-            for candidate in store.list_cards(realm_id=realm_id)
-            if candidate.parent_id == card.id
-        ],
+        "children": store.list_cards(realm_id=realm_id, parent_id=card.id),
         "critical_watch": critical_watch,
         "current_progress": _latest_card_progress(request, card.id),
         "work_presentation": _work_presentation_for_card(request, card),
@@ -682,9 +656,10 @@ def _card_summary_context(request: Request, card) -> dict:
                     "dispatch_id": record.dispatch_id,
                     "session_id": record.session_id,
                 }
-                for record in dispatch_store.list(limit=1000)
-                if record.card_id == card.id
-                and record.reconciliation_state != "not_requested"
+                for record in dispatch_store.list(
+                    card_id=card.id, limit=1000, deep=False
+                )
+                if record.reconciliation_state != "not_requested"
             ]
             if dispatch_store
             else []
@@ -773,8 +748,9 @@ def _card_agent_context(request: Request, card) -> dict:
     dispatches = (
         [
             canonicalize_dispatch_public(ctx, record)
-            for record in dispatch_store.list(limit=100)
-            if record.card_id == card.id and record.realm_id == card.realm_id
+            for record in dispatch_store.list(
+                card_id=card.id, realm_id=card.realm_id, limit=100
+            )
         ]
         if dispatch_store
         else []
@@ -886,47 +862,42 @@ def _card_activity_context(request: Request, card) -> dict:
 
     event_log = request.app.state.ctx.services.get("event_log")
     if event_log:
-        head = event_log.get_head(card.realm_id)
-        if head:
-
-            def add_card_event(event) -> None:
-                if event.card_id != card.id:
-                    return
-                fields = [
-                    key
-                    for key in event.payload
-                    if key
-                    not in {
-                        "created_at",
-                        "updated_at",
-                        "summary_updated_at",
-                        "summary_source",
-                        "summary_stale",
-                    }
-                ]
-                if event.type.value == "card_created":
-                    label = "Card created"
-                elif event.type.value == "card_updated":
-                    label = "Card updated"
-                    if fields:
-                        label += ": " + ", ".join(
-                            field.replace("_", " ") for field in fields
-                        )
-                else:
-                    label = event.type.value.replace("_", " ").capitalize()
-                entries.append(
-                    {
-                        "id": f"card-{event.id}",
-                        "kind": "card",
-                        "label": label,
-                        "actor": event.author_principal,
-                        "instance_id": event.author_instance,
-                        "detail": "",
-                        "timestamp": event.timestamp,
-                    }
-                )
-
-            event_log.apply_commit_chain(head, add_card_event)
+        for event in event_log.recent_entity_events(
+            card.realm_id, "card", card.id, limit=80, max_commits=2000
+        ):
+            fields = [
+                key
+                for key in event.payload
+                if key
+                not in {
+                    "created_at",
+                    "updated_at",
+                    "summary_updated_at",
+                    "summary_source",
+                    "summary_stale",
+                }
+            ]
+            if event.type.value == "card_created":
+                label = "Card created"
+            elif event.type.value == "card_updated":
+                label = "Card updated"
+                if fields:
+                    label += ": " + ", ".join(
+                        field.replace("_", " ") for field in fields
+                    )
+            else:
+                label = event.type.value.replace("_", " ").capitalize()
+            entries.append(
+                {
+                    "id": f"card-{event.id}",
+                    "kind": "card",
+                    "label": label,
+                    "actor": event.author_principal,
+                    "instance_id": event.author_instance,
+                    "detail": "",
+                    "timestamp": event.timestamp,
+                }
+            )
 
     if not any(entry["label"] == "Card created" for entry in entries):
         entries.append(
@@ -941,9 +912,7 @@ def _card_activity_context(request: Request, card) -> dict:
             }
         )
 
-    for session in store.list_sessions():
-        if session.card_id != card.id:
-            continue
+    for session in store.list_sessions_for_cards({card.id}):
         context = (session.config_json or {}).get("execution_context") or {}
         instance = context.get("instance") or {}
         entries.append(
@@ -960,9 +929,7 @@ def _card_activity_context(request: Request, card) -> dict:
 
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     if dispatch_store:
-        for dispatch in dispatch_store.list(limit=500):
-            if dispatch.card_id != card.id:
-                continue
+        for dispatch in dispatch_store.list(card_id=card.id, limit=500):
             for event in dispatch.events:
                 message = present_instance_references(
                     request.app.state.ctx,
@@ -1625,7 +1592,7 @@ def _new_card_context(request: Request) -> dict:
         "kinds": list(CardKind),
         "lanes": list(CardLane),
         "projects": projects,
-        "parent_cards": store.list_cards(realm_id=realm),
+        "parent_cards": store.list_cards(realm_id=realm, limit=500),
         "instance_options": instances,
         "csrf_token": token_for_request(request),
         "max_attachments": MAX_CARD_ATTACHMENTS,
@@ -1650,8 +1617,8 @@ def _knowledge_context(request: Request) -> dict:
             scope=scope,
             source=source,
         ),
-        "cards": store.list_cards(realm_id=realm),
-        "items": store.list_cards(realm_id=realm),
+        "cards": store.list_cards(realm_id=realm, limit=500),
+        "items": store.list_cards(realm_id=realm, limit=500),
         "projects": store.list_projects(realm_id=realm),
         "knowledge_kinds": list(KnowledgeKind),
         "knowledge_statuses": list(KnowledgeStatus),
@@ -1675,9 +1642,13 @@ def list_cards_api(
     realm: str | None = None,
     lane: CardLane | None = None,
     kind: CardKind | None = None,
+    limit: int = Query(default=1000, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
-    cards = get_store().list_cards(realm_id=realm_id, lane=lane, kind=kind)
+    cards = get_store().list_cards(
+        realm_id=realm_id, lane=lane, kind=kind, limit=limit, offset=offset
+    )
     return [c.model_dump(mode="json") for c in cards]
 
 
@@ -2600,17 +2571,9 @@ def card_attachment(
 ) -> FileResponse:
     if not ATTACHMENT_ID_RE.fullmatch(attachment_id) or Path(filename).name != filename:
         raise HTTPException(status_code=404, detail="Attachment not found")
-    for manifest_card in get_store().list_cards():
-        manifest_item = next(
-            (
-                item
-                for item in manifest_card.attachments
-                if item.attachment_id == attachment_id and item.filename == filename
-            ),
-            None,
-        )
-        if not manifest_item:
-            continue
+    found = get_store().find_card_attachment(attachment_id, filename)
+    if found:
+        _manifest_card, manifest_item = found
         blobs = _ensure_attachment_available(request, manifest_item)
         inline = (
             manifest_item.media_type in SAFE_IMAGE_TYPES

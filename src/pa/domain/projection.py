@@ -342,6 +342,8 @@ class CardProjection:
                 );
                 CREATE INDEX IF NOT EXISTS idx_mutation_operations_realm
                     ON mutation_operations(realm_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_mutation_operations_state_updated
+                    ON mutation_operations(state, updated_at);
                 CREATE TABLE IF NOT EXISTS instance_groups (
                     realm_id TEXT NOT NULL,
                     id TEXT NOT NULL,
@@ -473,6 +475,14 @@ class CardProjection:
             "ON cards(updated_at DESC, id DESC) "
             "WHERE summary_source != 'manual' AND summary != ''"
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cards_realm_project_updated "
+            "ON cards(realm_id, project_id, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cards_realm_parent "
+            "ON cards(realm_id, parent_id)"
+        )
 
         notification_cols = {
             row[1]
@@ -530,6 +540,10 @@ class CardProjection:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_history "
             "ON agent_sessions(realm_id, project_id, status, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status_updated "
+            "ON agent_sessions(status, updated_at DESC)"
         )
         conn.execute(
             """
@@ -604,6 +618,10 @@ class CardProjection:
         if knowledge_cols and "updated_at" not in knowledge_cols:
             conn.execute("UPDATE knowledge SET updated_at = created_at")
         conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_card "
+            "ON knowledge(card_id, updated_at DESC)"
+        )
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS knowledge_audit_events (
                 id TEXT PRIMARY KEY,
@@ -656,6 +674,10 @@ class CardProjection:
                 )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_repositories_realm_status ON repositories(realm_id, status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mutation_operations_state_updated "
+            "ON mutation_operations(state, updated_at)"
         )
 
     def _migrate_items_to_cards(self, conn: sqlite3.Connection) -> None:
@@ -2304,6 +2326,7 @@ class CardProjection:
         lane: CardLane | None = None,
         kind: CardKind | None = None,
         project_id: str | None = None,
+        parent_id: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[Card]:
@@ -2321,6 +2344,9 @@ class CardProjection:
         if project_id:
             query += " AND project_id = ?"
             params.append(project_id)
+        if parent_id:
+            query += " AND parent_id = ?"
+            params.append(parent_id)
         query += " ORDER BY updated_at DESC"
         if limit is not None:
             query += " LIMIT ? OFFSET ?"
@@ -2328,6 +2354,49 @@ class CardProjection:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def list_card_lanes(self, realm_id: str | None = None) -> dict[str, str]:
+        """Return id → lane without materializing card bodies."""
+        query = "SELECT id, lane FROM cards"
+        params: list[str] = []
+        if realm_id:
+            query += " WHERE realm_id = ?"
+            params.append(realm_id)
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return {row["id"]: row["lane"] for row in rows}
+
+    def find_card_attachment(
+        self, attachment_id: str, filename: str
+    ) -> tuple[Card, CardAttachment] | None:
+        """Locate one attachment manifest without scanning every card."""
+        sql = """
+            SELECT cards.*
+            FROM cards, json_each(cards.attachments) AS attachment
+            WHERE json_extract(attachment.value, '$.attachment_id') = ?
+              AND json_extract(attachment.value, '$.filename') = ?
+            LIMIT 1
+        """
+        try:
+            with self._conn() as conn:
+                row = conn.execute(sql, (attachment_id, filename)).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if row is None:
+            return None
+        card = self._row_to_card(row)
+        item = next(
+            (
+                candidate
+                for candidate in card.attachments
+                if candidate.attachment_id == attachment_id
+                and candidate.filename == filename
+            ),
+            None,
+        )
+        if item is None:
+            return None
+        return card, item
 
     def count_cards(
         self, *, realm_id: str | None = None, lane: CardLane | None = None
@@ -4027,18 +4096,36 @@ class CardProjection:
             ).fetchall()
         return [self._row_to_card(row) for row in rows]
 
-    def list_sessions(self, *, label: str | None = None) -> list[AgentSession]:
+    def list_sessions(
+        self,
+        *,
+        label: str | None = None,
+        statuses: tuple[str, ...] | list[str] | None = None,
+        exclude_statuses: tuple[str, ...] | list[str] | None = None,
+    ) -> list[AgentSession]:
+        query = "SELECT * FROM agent_sessions WHERE 1=1"
+        params: list[str] = []
+        if label is not None:
+            query += " AND label = ?"
+            params.append(label)
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            query += f" AND status IN ({placeholders})"
+            params.extend(statuses)
+        if exclude_statuses:
+            placeholders = ",".join("?" for _ in exclude_statuses)
+            query += f" AND status NOT IN ({placeholders})"
+            params.extend(exclude_statuses)
+        query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
-            if label is not None:
-                rows = conn.execute(
-                    "SELECT * FROM agent_sessions WHERE label = ? ORDER BY updated_at DESC",
-                    (label,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM agent_sessions ORDER BY updated_at DESC"
-                ).fetchall()
+            rows = conn.execute(query, params).fetchall()
         return [self._row_to_session(row) for row in rows]
+
+    def list_session_statuses(self) -> dict[str, str]:
+        """Return id → status without materializing session transcripts."""
+        with self._conn() as conn:
+            rows = conn.execute("SELECT id, status FROM agent_sessions").fetchall()
+        return {row["id"]: row["status"] for row in rows}
 
     def list_sessions_for_workshop(
         self, *, realm_id: str, limit: int
@@ -4643,6 +4730,54 @@ class CardProjection:
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [self._row_to_transcript(row) for row in rows]
+
+    def prune_closed_session_transcripts(self, *, before: datetime) -> int:
+        """Delete transcript events for closed sessions older than ``before``.
+
+        Session rows stay so history and lifecycle remain intact. Only the
+        bulky per-turn payload is removed.
+        """
+        with self._conn() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM agent_transcript_events
+                WHERE session_id IN (
+                    SELECT id FROM agent_sessions
+                    WHERE status = 'closed' AND updated_at < ?
+                )
+                """,
+                (before.isoformat(),),
+            )
+            return max(0, cursor.rowcount)
+
+    def prune_mutation_operations(self, *, before: datetime) -> int:
+        """Delete succeeded/failed mutation receipts older than ``before``."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM mutation_operations
+                WHERE state IN ('succeeded', 'failed') AND updated_at < ?
+                """,
+                (before.isoformat(),),
+            )
+            return max(0, cursor.rowcount)
+
+    def optimize(self) -> dict[str, int]:
+        """Run SQLite maintenance that does not rewrite the whole database."""
+        with self._conn() as conn:
+            conn.execute("PRAGMA optimize")
+            checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            page_count = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+            freelist = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+        return {
+            "page_count": page_count,
+            "page_size": page_size,
+            "freelist_count": freelist,
+            "wal_busy": int(checkpoint[0]) if checkpoint else 0,
+            "wal_log": int(checkpoint[1]) if checkpoint else 0,
+            "wal_checkpointed": int(checkpoint[2]) if checkpoint else 0,
+        }
 
     @serialized_mutation
     def rebuild_from_log(self, realm_id: str) -> None:

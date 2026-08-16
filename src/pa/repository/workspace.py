@@ -1108,21 +1108,19 @@ class WorkspaceManager:
             "nonterminal_cards": 0,
             "retained": 0,
         }
-        cards = {card.id: card for card in self.store.list_cards()}
-        sessions = {session.id: session for session in self.store.list_sessions()}
+        cards = self.store.list_card_lanes()
+        sessions = self.store.list_session_statuses()
         for lease in self.list():
             if lease.state == "cleaned":
                 continue
             result["examined"] += 1
-            session = sessions.get(lease.session_id)
-            session_closed = bool(session and session.status == "closed")
+            session_status = sessions.get(lease.session_id)
+            session_closed = session_status == "closed"
             terminal = False
             if lease.card_id:
-                card = cards.get(lease.card_id)
-                terminal = bool(
-                    card and str(getattr(card.lane, "value", card.lane)) == "done"
-                )
-                if card is None:
+                lane = cards.get(lease.card_id)
+                terminal = lane == "done"
+                if lane is None:
                     result["missing_cards"] += 1
                     if session_closed:
                         terminal = True
