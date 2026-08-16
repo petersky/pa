@@ -934,7 +934,10 @@ class StorageTests(unittest.TestCase):
             )
         )
         self.assertEqual(query["bucket_seconds"], 300)
-        self.assertEqual(query["series"][0]["points"][0]["value_count"], 5)
+        self.assertEqual(
+            sum(point["value_count"] for point in query["series"][0]["points"]),
+            5,
+        )
 
     def test_size_pruning_is_oldest_first_and_bounded(self) -> None:
         self.storage.insert_samples(

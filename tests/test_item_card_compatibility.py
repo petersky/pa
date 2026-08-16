@@ -27,7 +27,7 @@ from pa.domain.models import (
     legacy_status_from_lane,
 )
 from pa.domain.projection import CardProjection
-from pa.domain.store import reset_store
+from pa.domain.store import get_store, reset_store
 from pa.instance.agent_session import reset_instance_agent
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -174,6 +174,21 @@ class ItemCardHttpCompatibilityTests(unittest.TestCase):
                     headers={**headers, "Idempotency-Key": "compat-conflict"},
                 )
                 self.assertEqual(conflict.status_code, 422)
+
+
+class StoreSingletonTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        reset_store()
+        reset_settings()
+
+    def test_get_store_replaces_singleton_when_data_dir_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as stale:
+            get_store(Settings(data_dir=Path(stale), agent_enabled=False))
+        with tempfile.TemporaryDirectory() as live:
+            store = get_store(Settings(data_dir=Path(live), agent_enabled=False))
+            self.assertEqual(store.db_path, Path(live) / "pa.db")
+            with store._conn() as conn:
+                conn.execute("SELECT 1 FROM cards LIMIT 1")
 
 
 if __name__ == "__main__":

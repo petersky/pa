@@ -34,6 +34,17 @@ def test_odd_shard_keeps_the_complement(monkeypatch) -> None:
     assert [item.nodeid for item in items] == ["t1", "t3", "t5"]
 
 
+def test_four_way_shard_keeps_every_fourth_item(monkeypatch) -> None:
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
+    monkeypatch.setenv("PYTEST_SHARD", "2/4")
+    items = _items(8)
+    config = MagicMock()
+
+    pytest_collection_modifyitems(config, items)
+
+    assert [item.nodeid for item in items] == ["t2", "t6"]
+
+
 def test_no_shard_env_leaves_collection_intact(monkeypatch) -> None:
     monkeypatch.delenv("PYTEST_SHARD", raising=False)
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw0")
