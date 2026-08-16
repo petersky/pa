@@ -9,19 +9,19 @@ on:
 jobs:
   test:
     # Release PRs only bump the version and add notes. Feature work already
-    # passed this suite; waiting on two pytest shards just delays publish.
+    # passed this suite; waiting on four pytest shards just delays publish.
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2, 3]
     env:
-      PYTEST_SHARD: ${{ matrix.shard }}/2
+      PYTEST_SHARD: ${{ matrix.shard }}/4
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
 
@@ -40,9 +40,9 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
 

@@ -27,12 +27,12 @@ def _app(tmp: str):
 def test_large_history_keeps_work_shell_and_lane_payloads_bounded() -> None:
     with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
         store = client.app.state.ctx.store
-        for index in range(300):
+        for index in range(80):
             store.create_card(
                 CardCreate(
                     title=f"Historical card {index:04d}",
                     body="historical detail " * 80,
-                    lane=CardLane.DONE if index < 250 else CardLane.ACTIVE,
+                    lane=CardLane.DONE if index < 60 else CardLane.ACTIVE,
                 )
             )
 

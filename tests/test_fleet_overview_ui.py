@@ -250,6 +250,37 @@ assert.ok(!presentation.summary.includes("1/4 used"));
 """
         )
 
+    def test_stale_inconsistent_sync_is_timeout_not_live_error(self) -> None:
+        self.run_node(
+            r"""
+const current = overview(["local"]);
+current.nodes[0].dimensions.reachability = {
+  state: "stale", last_attempt_state: "fresh", value: { health: "up" }, error: null
+};
+current.nodes[0].dimensions.status = {
+  state: "stale", last_attempt_state: "timeout", value: { version: "1.0.1" },
+  error: "status exceeded 4s deadline"
+};
+current.nodes[0].dimensions.sync = {
+  state: "stale", last_attempt_state: "timeout",
+  value: { consistent: false, head: "old", projection_head: "older" },
+  error: "sync exceeded 4s deadline"
+};
+const snapshot = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.nodesById.local.topologyStatus, "timeout");
+assert.strictEqual(model.syncStatusLabel(current.nodes[0].dimensions.sync), "last known heads");
+
+current.nodes[0].dimensions.sync = {
+  state: "fresh", last_attempt_state: "fresh",
+  value: { consistent: false, head: "a", projection_head: "b" }, error: null
+};
+current.nodes[0].dimensions.status = field("status", "fresh");
+const live = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(live.nodesById.local.topologyStatus, "error");
+assert.strictEqual(model.syncStatusLabel(current.nodes[0].dimensions.sync), "head mismatch");
+"""
+        )
+
     def test_required_sync_timeout_still_marks_node_timed_out(self) -> None:
         self.run_node(
             r"""

@@ -6,6 +6,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import sqlite3
 import time
 from collections import Counter
 from datetime import UTC, datetime
@@ -58,6 +60,10 @@ MCP_BOOTSTRAP_CACHE_TTL = 30.0
 # page-frame budget even on modest fleet hosts.
 MCP_BOOTSTRAP_WARM_CACHE_SLO = 0.5
 GOOD_STATES = {"fresh", "stale"}
+REQUIRED_DIMENSIONS = ("reachability", "status", "sync")
+BACKGROUND_REFRESH_INTERVAL = 15.0
+BACKGROUND_FAILED_RETRY_AFTER = 15.0
+BACKGROUND_STARTUP_DELAY = 1.0
 EDGE_STATUS_SEVERITY = {
     "healthy": 0,
     "stale": 1,
@@ -364,12 +370,101 @@ def cache_for(data_dir: Path) -> FleetOverviewCache:
         return cache
 
 
+def overview_refresh_enabled() -> bool:
+    """Background probes are for long-lived servers, not TestClient boots."""
+    explicit = os.environ.get("PA_FLEET_OVERVIEW_REFRESH", "").strip().lower()
+    if explicit in {"0", "false", "no", "off"}:
+        return False
+    if explicit in {"1", "true", "yes", "on"}:
+        return True
+    return "PYTEST_CURRENT_TEST" not in os.environ
+
+
+def observation_attempt(field: dict[str, Any] | None) -> str:
+    """Return the last probe outcome, not merely the last successful payload."""
+    if not field:
+        return "unavailable"
+    return str(field.get("last_attempt_state") or field.get("state") or "unavailable")
+
+
+def required_readiness(dimensions: dict[str, Any] | None) -> str:
+    """Classify a node from live attempts; last-good payloads are not current errors.
+
+    A timed-out refresh keeps the previous sync snapshot. That snapshot's
+    ``consistent is False`` is history until a fresh attempt confirms it.
+    """
+    dimensions = dimensions or {}
+    reach = dimensions.get("reachability") or {}
+    health = (reach.get("value") or {}).get("health")
+    if health != "up":
+        if health == "unknown":
+            return observation_attempt(reach)
+        return str(health or observation_attempt(reach))
+    sync = dimensions.get("sync") or {}
+    if observation_attempt(sync) == "fresh" and (sync.get("value") or {}).get(
+        "consistent"
+    ) is False:
+        return "error"
+    order = {"error": 5, "timeout": 4, "unavailable": 3, "stale": 2, "fresh": 1}
+    worst = "fresh"
+    for name in REQUIRED_DIMENSIONS:
+        attempt = observation_attempt(dimensions.get(name))
+        if order.get(attempt, 5) > order.get(worst, 1):
+            worst = attempt or "error"
+    return worst
+
+
+def should_skip_background_probe(
+    cached: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+    retry_after: float = BACKGROUND_FAILED_RETRY_AFTER,
+) -> bool:
+    """Backoff failed attempts so a background loop does not stampede timeouts."""
+    if not cached:
+        return False
+    if observation_attempt(cached) not in {"timeout", "error"}:
+        return False
+    raw = cached.get("last_attempted_at")
+    if not raw:
+        return False
+    try:
+        attempted = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return False
+    if attempted.tzinfo is None:
+        attempted = attempted.replace(tzinfo=UTC)
+    stamp = now or datetime.now(UTC)
+    return (stamp - attempted).total_seconds() < retry_after
+
+
+async def refresh_required_dimensions(
+    ctx: Any,
+    instances: list[FleetInstance],
+    *,
+    force: bool = False,
+) -> None:
+    """Probe reachability, status, and sync without waiting for the Fleet page."""
+    cache = cache_for(ctx.settings.data_dir)
+    jobs = []
+    for inst in instances:
+        if getattr(inst, "lifecycle_state", "active") != "active":
+            continue
+        for dimension in REQUIRED_DIMENSIONS:
+            cached = None if force else cache.get(inst.instance_id, dimension)
+            if not force and should_skip_background_probe(cached):
+                continue
+            jobs.append(probe_dimension(ctx, inst, dimension, force=force))
+    if jobs:
+        await asyncio.gather(*jobs, return_exceptions=True)
+
+
 def _cached_or_default(
     cache: FleetOverviewCache, inst: FleetInstance, dimension: str
 ) -> dict[str, Any]:
     cached = cache.get(inst.instance_id, dimension)
     if cached:
-        return {**cached, "state": "stale"}
+        return dict(cached)
     if dimension == "reachability":
         value = {"health": "up" if inst.healthy else "unknown"}
         return field(
@@ -950,6 +1045,7 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
         TypeError,
         AttributeError,
         KeyError,
+        sqlite3.Error,
     ) as exc:
         elapsed = (time.perf_counter() - started) * 1000
         return field(
@@ -1216,6 +1312,7 @@ def build_overview(
             "local": inst.instance_id == ctx.settings.instance_id,
             "last_seen": inst.last_seen.isoformat() if inst.last_seen else None,
             "dimensions": dimensions,
+            "topology_status": required_readiness(dimensions),
         }
         nodes.append(node)
         by_id[inst.instance_id] = node

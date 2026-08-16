@@ -15,12 +15,20 @@ from pa.cli.doctor import (
     _provider_findings,
     _safe,
     _service_findings,
+    _serving_findings,
     _socket_evidence,
+    _sync_findings,
     run_doctor,
 )
 from pa.cli.service import LoadedServiceDefinition
 from pa.config import Settings
 from pa.packaging.service_env import service_environment
+from pa.status.serving import (
+    BindReport,
+    HealthProbe,
+    ServingDiagnosis,
+    SyncDiagnosis,
+)
 
 
 def _status(settings: Settings, socket_path: str | None = None) -> dict:
@@ -112,6 +120,10 @@ def _run(
         patch("pa.acp.providers.resolve.list_provider_summaries", return_value=[]),
         patch("pa.sync.infrastructure.get_event_log", return_value=event_log),
         patch("pa.sync.infrastructure.get_object_store", return_value=object_store),
+        patch(
+            "pa.cli.doctor.diagnose_sync",
+            return_value=SyncDiagnosis("default", None, None, True),
+        ),
     ):
         result = run_doctor()
     if owner_error:
@@ -267,3 +279,72 @@ def test_doctor_uses_live_owner_socket_instead_of_fabricated_local_path(
 ) -> None:
     live_socket = "/run/user/1000/pa/instance/owner.sock"
     assert _run(tmp_path, live_socket=live_socket) == 0
+
+
+def test_doctor_loopback_only_bind_recommends_wildcard_host() -> None:
+    settings = Settings(
+        host="127.0.0.1",
+        port=8080,
+        instance_url="http://100.113.226.91:8080",
+    )
+    findings = _serving_findings(
+        ServingDiagnosis(
+            service_running=True,
+            bind=BindReport((("127.0.0.1", 8080),), True, False, "loopback"),
+            advertised_url="http://100.113.226.91:8080",
+            loopback_url="http://127.0.0.1:8080",
+            loopback=HealthProbe(
+                "http://127.0.0.1:8080/api/health", True, 2.0, 200, None
+            ),
+            advertised=HealthProbe(
+                "http://100.113.226.91:8080/api/health", False, 6.0, None, "refused"
+            ),
+            serving="loopback_only",
+            health_ok=False,
+        ),
+        settings,
+        0,
+    )
+    assert {finding.code for finding in findings} == {"PA-DOC-BIND-LOOPBACK-ONLY"}
+    commands = [command.command for finding in findings for command in finding.next_commands]
+    assert "pa config set host 0.0.0.0" in commands
+    assert "pa install --service-only" in commands
+    assert "pa restart" in commands
+
+
+def test_doctor_timeout_without_loopback_recommends_restart_and_rebind() -> None:
+    settings = Settings(host="100.78.2.112", port=8080, instance_url="http://100.78.2.112:8080")
+    findings = _serving_findings(
+        ServingDiagnosis(
+            service_running=True,
+            bind=BindReport((("100.78.2.112", 8080),), False, True, "specific"),
+            advertised_url="http://100.78.2.112:8080",
+            loopback_url="http://127.0.0.1:8080",
+            loopback=HealthProbe(
+                "http://127.0.0.1:8080/api/health", False, 3.0, None, "refused"
+            ),
+            advertised=HealthProbe(
+                "http://100.78.2.112:8080/api/health", False, 3000.0, None, "timeout"
+            ),
+            serving="timeout",
+            health_ok=False,
+        ),
+        settings,
+        0,
+    )
+    assert {finding.code for finding in findings} == {
+        "PA-DOC-BIND-NO-LOOPBACK",
+        "PA-DOC-HEALTH-TIMEOUT",
+    }
+    commands = [command.command for finding in findings for command in finding.next_commands]
+    assert "pa config set host 0.0.0.0" in commands
+    assert "pa restart" in commands
+
+
+def test_doctor_sync_inconsistency_recommends_reconcile() -> None:
+    findings = _sync_findings(
+        SyncDiagnosis("default", "durable-head", "projection-head", False)
+    )
+    assert {finding.code for finding in findings} == {"PA-DOC-SYNC-INCONSISTENT"}
+    commands = [command.command for finding in findings for command in finding.next_commands]
+    assert commands == ["pa sync status", "pa sync reconcile"]

@@ -1592,17 +1592,28 @@
       : { state: "unavailable", value: null, observed_at: null, error: null };
   }
 
+  function observationAttempt(field) {
+    return field && (field.last_attempt_state || field.state) || "unavailable";
+  }
+
+  function syncStatusLabel(sync) {
+    if (!sync || !sync.value) return (sync && sync.state) || "unavailable";
+    if (sync.value.consistent) return "heads aligned";
+    return observationAttempt(sync) === "fresh" ? "head mismatch" : "last known heads";
+  }
+
   function requiredReadiness(node) {
     var reach = fieldValue(node, "reachability");
     var health = reach.value && reach.value.health;
-    if (health !== "up") return health === "unknown" ? reach.state : (health || reach.state);
+    if (health !== "up") return health === "unknown" ? observationAttempt(reach) : (health || observationAttempt(reach));
     var sync = fieldValue(node, "sync");
-    if (sync.value && sync.value.consistent === false) return "error";
+    if (observationAttempt(sync) === "fresh" && sync.value && sync.value.consistent === false) return "error";
     var order = { error: 5, timeout: 4, unavailable: 3, stale: 2, fresh: 1 };
     var worst = "fresh";
     ["reachability", "status", "sync"].forEach(function (name) {
       var item = fieldValue(node, name);
-      if ((order[item.state] || 5) > (order[worst] || 1)) worst = item.state || "error";
+      var attempt = observationAttempt(item);
+      if ((order[attempt] || 5) > (order[worst] || 1)) worst = attempt || "error";
     });
     return worst;
   }
@@ -1632,9 +1643,7 @@
     var update = fieldValue(node, "update");
     var health = reach.value && reach.value.health || reach.state;
     var version = status.value && status.value.version || status.state;
-    var syncLabel = sync.value
-      ? (sync.value.consistent ? "heads aligned" : "head mismatch")
-      : sync.state;
+    var syncLabel = syncStatusLabel(sync);
     var providerValues = Array.isArray(providers.value) ? providers.value : [];
     var readyProviders = providerValues.filter(function (provider) {
       return provider.available !== false && providerAuthState(provider) === "authenticated";
@@ -1868,7 +1877,7 @@
     var syncEl = $("[data-fleet-sync]", tr);
     if (syncEl) {
       syncEl.textContent = sync.value
-        ? (sync.value.consistent ? "in sync" : "head mismatch")
+        ? (sync.value.consistent ? "in sync" : (observationAttempt(sync) === "fresh" ? "head mismatch" : "last known"))
         : sync.state;
       setFieldState(syncEl, sync.state);
     }
@@ -2651,7 +2660,7 @@
       var health = reach.value && reach.value.health || reach.state;
       var mark = health === "up" ? "✓" : (health === "unknown" ? "?" : "!");
       var version = status.value && status.value.version || status.state;
-      var syncLabel = sync.value ? (sync.value.consistent ? "heads aligned" : "head mismatch") : sync.state;
+      var syncLabel = syncStatusLabel(sync);
       var providerValues = Array.isArray(providers.value) ? providers.value : [];
       var readyProviders = providerValues.filter(function (provider) {
         return provider.available !== false && providerAuthState(provider) === "authenticated";
@@ -4277,6 +4286,8 @@
     mergeMetadata: mergeFleetOverviewMetadata,
     worstFreshness: worstFreshness,
     requiredReadiness: requiredReadiness,
+    observationAttempt: observationAttempt,
+    syncStatusLabel: syncStatusLabel,
     mergeFieldAttemptFailure: mergeFieldAttemptFailure,
     providerAuthState: providerAuthState,
     providerBadgeClass: providerBadgeClass,

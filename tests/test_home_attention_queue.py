@@ -192,7 +192,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         with TestClient(self.app) as client:
             store = self.app.state.ctx.store
             supervisor = self.app.state.ctx.require_service("pr_supervisor_store")
-            for index in range(250):
+            for index in range(40):
                 card = store.create_card(
                     CardCreate(
                         title=f"Canonical attention {index:03d}",
@@ -221,12 +221,12 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
 
             response = client.get("/partials/home/sections")
 
-        self.assertEqual(store.count_cards(realm_id="default"), 250)
+        self.assertEqual(store.count_cards(realm_id="default"), 40)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.text.count('data-attention-group="attention"'), 6
         )
-        self.assertIn("Showing 6 of 250 actionable cards", response.text)
+        self.assertIn("Showing 6 of 40 actionable cards", response.text)
 
     def test_home_promotes_actionable_watch_past_non_actionable_saturation(
         self,

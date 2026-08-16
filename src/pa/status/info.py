@@ -13,6 +13,7 @@ from pa.acp.environment import (
 from pa.cli import service as svc
 from pa.core.context import AppContext
 from pa.install.metadata import load_install_metadata
+from pa.status.serving import classify_bind, sync_from_context
 
 
 def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
@@ -75,7 +76,10 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "server_url": f"http://{settings.host}:{settings.port}",
         "host": settings.host,
         "port": settings.port,
+        "instance_url": settings.instance_url or None,
         "web_listeners": web_listeners,
+        "bind": classify_bind(settings).as_dict(),
+        "sync": sync_from_context(ctx).as_dict(),
         "owner_channel": owner_channel_health(settings),
         "mcp_bridge": bridge_health,
         "provider_execution_environment": {

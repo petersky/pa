@@ -26,8 +26,11 @@ class Store(CardProjection):
 
 def get_store(settings: Settings | None = None) -> Store:
     global _store
-    settings = settings or get_settings()
-    if _store is None:
+    if settings is None:
+        if _store is not None:
+            return _store
+        settings = get_settings()
+    if _store is None or Path(_store.db_path) != Path(settings.db_path):
         obj_store = get_object_store(settings)
         event_log = get_event_log(settings)
         _store = Store(settings.db_path, obj_store, event_log)

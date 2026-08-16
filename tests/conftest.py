@@ -15,9 +15,9 @@ def pytest_configure(config) -> None:
 
 
 def pytest_collection_modifyitems(config, items) -> None:
-    # xdist workers collect the full suite; only the controller shards.
-    if os.environ.get("PYTEST_XDIST_WORKER"):
-        return
+    # xdist does not collect on the controller. Each worker collects and the
+    # scheduler requires identical nodeid lists, so the shard filter must run
+    # on workers (and on a non-xdist controller when PYTEST_SHARD is set).
     raw = os.environ.get("PYTEST_SHARD")
     if not raw:
         return

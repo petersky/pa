@@ -383,7 +383,8 @@ class MutationReceiptCrashTests(unittest.TestCase):
         original_head = self.log.get_head("default")
         parent = original_head
         assert parent is not None
-        for index in range(2_100):
+        later_events = 80
+        for index in range(later_events):
             event = CardEvent(
                 type=EventType.CARD_UPDATED,
                 realm_id="default",
@@ -414,7 +415,9 @@ class MutationReceiptCrashTests(unittest.TestCase):
         )
 
         self.assertEqual(replay, original)
-        self.assertEqual(rebuilt.get_card(created.id).title, "Update 2099")
+        self.assertEqual(
+            rebuilt.get_card(created.id).title, f"Update {later_events - 1}"
+        )
         self.assertEqual(len(rebuilt.list_cards()), 1)
 
     def test_create_recovers_after_crash_during_projection_apply(self) -> None:

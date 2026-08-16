@@ -1732,6 +1732,15 @@ _ENVIRONMENT_ONLY_DEFINITIONS = (
         rationale="One-shot lifecycle fence managed by PA restart/update orchestration.",
     ),
     _env_only(
+        "fleet_overview_refresh",
+        "PA_FLEET_OVERVIEW_REFRESH",
+        "Background fleet overview probe loop.",
+        "Internal runtime",
+        191,
+        secret=False,
+        rationale="Process-level override so TestClient boots do not start the long-lived Fleet refresh loop.",
+    ),
+    _env_only(
         "provider_result",
         "PA_PROVIDER_RESULT",
         "Provider action result marker.",
