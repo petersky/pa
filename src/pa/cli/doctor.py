@@ -37,6 +37,12 @@ from pa.core.logging import redact_log_text
 from pa.domain.instance_config import load_instance_config
 from pa.install.metadata import load_install_metadata
 from pa.packaging.service_env import service_environment
+from pa.status.serving import (
+    ServingDiagnosis,
+    SyncDiagnosis,
+    diagnose_serving,
+    diagnose_sync,
+)
 
 SECRET_NAMES = re.compile(
     r"(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|COOKIE|KEY)$", re.IGNORECASE
@@ -176,6 +182,137 @@ def _repair_commands(active_sessions: int) -> list[Command]:
             True,
         ),
         Command("pa restart", True, True, risk),
+    ]
+
+
+def _bind_repair_commands(active_sessions: int) -> list[Command]:
+    return [
+        Command("pa config set host 0.0.0.0", True),
+        Command("pa install --service-only", True),
+        Command("pa restart", True, True, active_sessions > 0),
+    ]
+
+
+def _serving_findings(
+    diagnosis: ServingDiagnosis, settings: Any, active_sessions: int
+) -> list[Finding]:
+    if diagnosis.serving in {"ok", "stopped"}:
+        return []
+    findings: list[Finding] = []
+    evidence = diagnosis.as_dict()
+    advertised = (
+        settings.instance_url or diagnosis.advertised_url or diagnosis.loopback_url
+    )
+    if diagnosis.serving == "loopback_only" or (
+        diagnosis.service_running
+        and diagnosis.bind.mode == "loopback"
+        and diagnosis.advertised_url
+    ):
+        findings.append(
+            Finding(
+                "PA-DOC-BIND-LOOPBACK-ONLY",
+                "error",
+                "The process is listening on 127.0.0.1 only, so the advertised instance URL cannot accept connections.",
+                "Peers, the fleet page, and Tailscale clients get connection refused even though pa status reports the service running.",
+                evidence,
+                _bind_repair_commands(active_sessions),
+                f"curl -fsS {advertised.rstrip('/')}/api/health",
+                root_cause="bind",
+            )
+        )
+    if diagnosis.serving == "no_loopback" or (
+        diagnosis.service_running and not diagnosis.bind.binds_loopback
+    ):
+        findings.append(
+            Finding(
+                "PA-DOC-BIND-NO-LOOPBACK",
+                "error",
+                "The process is not listening on 127.0.0.1, so local CLI and health checks cannot reach /api/health.",
+                "pa sync reconcile, pa config set, and local tooling fail even when a specific interface is bound.",
+                evidence,
+                _bind_repair_commands(active_sessions),
+                "curl -fsS http://127.0.0.1:%s/api/health" % settings.port,
+                root_cause="bind",
+            )
+        )
+    if diagnosis.serving == "timeout":
+        findings.append(
+            Finding(
+                "PA-DOC-HEALTH-TIMEOUT",
+                "error",
+                "The service is running but /api/health did not respond in time; the event loop or thread pool is likely starved.",
+                "The fleet page marks this node error and Home/sync probes time out.",
+                evidence,
+                [
+                    Command("pa logs --stderr -n 100"),
+                    Command("pa restart", True, True, active_sessions > 0),
+                ],
+                "curl -fsS --max-time 5 http://127.0.0.1:%s/api/health" % settings.port,
+                root_cause="overload",
+            )
+        )
+    if diagnosis.serving == "refused":
+        findings.append(
+            Finding(
+                "PA-DOC-HTTP-NOT-SERVING",
+                "error",
+                "The service manager reports running, but nothing is accepting HTTP on the configured port.",
+                "The UI, API, and fleet probes are unavailable.",
+                evidence,
+                [
+                    Command("pa logs --stderr -n 100"),
+                    Command("pa restart", True, True, active_sessions > 0),
+                ],
+                "curl -fsS http://127.0.0.1:%s/api/health" % settings.port,
+                root_cause="http",
+            )
+        )
+    if diagnosis.serving in {"advertised_unreachable", "unreachable"} and not findings:
+        findings.append(
+            Finding(
+                "PA-DOC-PUBLIC-HEALTH-UNREACHABLE",
+                "error",
+                f"The public health endpoint at {advertised} is unreachable.",
+                "PA's UI and HTTP API are unavailable.",
+                evidence,
+                [
+                    Command("pa logs --stderr -n 100"),
+                    Command("pa restart", True, True, active_sessions > 0),
+                ],
+                f"curl -fsS {advertised.rstrip('/')}/api/health",
+                root_cause="http",
+            )
+        )
+    return findings
+
+
+def _sync_findings(sync: SyncDiagnosis) -> list[Finding]:
+    if sync.error:
+        return [
+            Finding(
+                "PA-DOC-SYNC-UNAVAILABLE",
+                "warning",
+                "Local sync heads could not be read.",
+                "Doctor cannot tell whether the SQLite projection matches the durable event log.",
+                sync.as_dict(),
+                [Command("pa sync status")],
+                "pa sync status",
+                root_cause="sync",
+            )
+        ]
+    if sync.consistent:
+        return []
+    return [
+        Finding(
+            "PA-DOC-SYNC-INCONSISTENT",
+            "error",
+            "The SQLite projection head does not match the durable event-log head.",
+            "Fleet topology reports a head mismatch and local queries can be stale.",
+            sync.as_dict(),
+            [Command("pa sync status"), Command("pa sync reconcile", True)],
+            "pa sync status",
+            root_cause="sync",
+        )
     ]
 
 
@@ -524,7 +661,15 @@ def _provider_findings(settings: Any) -> list[Finding]:
 
 def _dedupe_plan(findings: list[Finding]) -> list[Command]:
     commands, seen = [], set()
-    priority = {"service_drift": 0, "stale_process_environment": 0, "owner_channel": 1}
+    priority = {
+        "service_drift": 0,
+        "stale_process_environment": 0,
+        "overload": 1,
+        "bind": 1,
+        "http": 1,
+        "owner_channel": 2,
+        "sync": 3,
+    }
     for finding in sorted(
         findings, key=lambda item: priority.get(item.root_cause or "", 2)
     ):
@@ -652,23 +797,41 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
                 root_cause="credential_storage",
             )
         )
-    instance_url = settings.instance_url or f"http://{settings.host}:{settings.port}"
-    public_ok = asyncio.run(_check_health(instance_url, settings.sync_token))
-    public_status = asyncio.run(_fetch_status(instance_url, settings.sync_token))
-    if not public_ok:
-        findings.append(
-            Finding(
-                "PA-DOC-PUBLIC-HEALTH-UNREACHABLE",
-                "error",
-                f"The public health endpoint at {instance_url} is unreachable.",
-                "PA's UI and HTTP API are unavailable.",
-                next_commands=[
-                    Command("pa logs --stderr -n 100"),
-                    Command("pa restart", True, True),
-                ],
-            )
+    loaded_preview = svc.loaded_service_definition() if status.running else None
+    process_environment = None
+    if loaded_preview is not None:
+        process_environment = (
+            loaded_preview.process_environment or loaded_preview.environment
         )
+    serving = diagnose_serving(
+        settings,
+        service_running=bool(status.running),
+        token=settings.sync_token,
+        environment=process_environment,
+        probe=bool(status.running or status.installed),
+    )
+    status_url = serving.loopback_url
+    if serving.advertised and serving.advertised.ok:
+        status_url = serving.advertised_url or serving.loopback_url
+    elif serving.loopback and serving.loopback.ok:
+        status_url = serving.loopback_url
+    elif serving.advertised_url:
+        status_url = serving.advertised_url
+    health_reachable = (serving.loopback and serving.loopback.ok) or (
+        serving.advertised and serving.advertised.ok
+    )
+    if health_reachable:
+        public_status = asyncio.run(_fetch_status(status_url, settings.sync_token))
+    elif serving.loopback is None and serving.advertised is None:
+        instance_url = (
+            settings.instance_url or f"http://{settings.host}:{settings.port}"
+        )
+        public_status = asyncio.run(_fetch_status(instance_url, settings.sync_token))
+    else:
+        public_status = None
     active_sessions = int((public_status or {}).get("session_count") or 0)
+    findings.extend(_serving_findings(serving, settings, active_sessions))
+    findings.extend(_sync_findings(diagnose_sync(settings)))
     cli_version = _binary_version(pa_bin)
     service_version = _binary_version(service_bin)
     running_version = str((public_status or {}).get("version") or "") or None

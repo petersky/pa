@@ -204,6 +204,44 @@ def status() -> None:
         typer.echo(f"  Service:     {svc_info['state']} ({svc_info['backend']})")
         if svc_info["installed"]:
             typer.echo(f"  Unit:        {svc_info['unit_path']}")
+    from pa.status.serving import (
+        diagnose_serving,
+        format_probe,
+        format_serving_line,
+    )
+
+    serving = diagnose_serving(
+        settings,
+        service_running=bool(svc_info.get("running")),
+        token=settings.sync_token,
+    )
+    serving_line = format_serving_line(serving)
+    serving_style = None if serving.health_ok else "warning"
+    if serving.serving in {"timeout", "refused", "unreachable", "stopped"}:
+        serving_style = "failure" if svc_info.get("running") else "warning"
+    ui.echo(f"  Serving:     {serving_line}", style=serving_style)
+    typer.echo(f"  Health:      /api/health {format_probe(serving.loopback)}")
+    if serving.advertised_url:
+        typer.echo(
+            f"  Advertised:  {serving.advertised_url} "
+            f"{format_probe(serving.advertised)}"
+        )
+    bind = snap.get("bind") or {}
+    listeners = bind.get("listeners") or []
+    bind_label = ", ".join(
+        f"{item['host']}:{item['port']}" for item in listeners
+    ) or bind.get("mode") or "unknown"
+    typer.echo(f"  Bind:        {bind_label} ({bind.get('mode') or 'unknown'})")
+    sync = snap.get("sync") or {}
+    if sync.get("error"):
+        ui.echo(f"  Sync:        unavailable ({sync['error']})", style="warning")
+    elif sync.get("consistent"):
+        typer.echo("  Sync:        consistent")
+    else:
+        ui.echo(
+            "  Sync:        head mismatch (run: pa sync reconcile)",
+            style="warning",
+        )
     typer.echo(f"  Debug:       {snap['debug']}")
     typer.echo(f"  Agent:       {'enabled' if snap['agent_enabled'] else 'disabled'}")
     typer.echo(f"  Fleet:       {snap['fleet_id']}")
