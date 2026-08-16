@@ -423,6 +423,26 @@ def list_sessions(request: Request) -> list[dict]:
     return [s.model_dump(mode="json") for s in sessions]
 
 
+@router.get("/instance/maintenance")
+def maintenance_status(request: Request) -> dict:
+    service = request.app.state.ctx.services.get("instance_maintenance")
+    if not service:
+        return {"available": False, "running": False}
+    return {"available": True, **service.snapshot()}
+
+
+@router.post("/instance/maintenance/run")
+async def maintenance_run(request: Request) -> dict:
+    service = request.app.state.ctx.services.get("instance_maintenance")
+    if not service:
+        raise HTTPException(
+            status_code=503,
+            detail="Maintenance is not available in this process",
+        )
+    result = await service.run_once()
+    return {"available": True, **service.snapshot(), "result": result}
+
+
 @router.get("/agent/status")
 def agent_status(request: Request) -> dict:
     agent = request.app.state.ctx.services.get("instance_agent")
@@ -1028,6 +1048,25 @@ class InstanceModule(Module):
             "repository_state",
             RepositoryStateService(ctx.settings.data_dir, ctx.settings.instance_id),
         )
+
+    async def on_startup(self, app, ctx: AppContext) -> None:
+        if "writer_lock" not in ctx.services:
+            return
+        from pa.instance.maintenance import InstanceMaintenanceService
+
+        service = InstanceMaintenanceService(
+            ctx.settings,
+            ctx.store,
+            ctx.services,
+            async_runtime=ctx.services.get("async_runtime"),
+        )
+        ctx.register_service("instance_maintenance", service)
+        service.start()
+
+    async def on_shutdown(self, app, ctx: AppContext) -> None:
+        service = ctx.services.get("instance_maintenance")
+        if service:
+            await service.close()
 
     def api_routers(self):
         return [("/api", router, ["instance"])]

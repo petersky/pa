@@ -10,6 +10,7 @@ import hmac
 import json
 import os
 import threading
+from collections import deque
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -430,6 +431,48 @@ class EventLog:
                 if provenance_handler is not None:
                     provenance_handler(current_hash, event_hash, event)
                 handler(event)
+
+    def recent_entity_events(
+        self,
+        realm_id: str,
+        entity: str,
+        entity_id: str,
+        *,
+        limit: int = 80,
+        max_commits: int = 2000,
+    ) -> list[CardEvent]:
+        """Return newest matching events without walking the full parent-first DAG.
+
+        Activity panels need recent card history, not a complete projection
+        replay. Missing objects stop that branch instead of failing the page.
+        """
+        limit = max(1, min(int(limit), MAX_HISTORY_COMMITS))
+        max_commits = max(1, min(int(max_commits), MAX_HISTORY_COMMITS))
+        head = self.get_head(realm_id)
+        if not head:
+            return []
+        events: list[CardEvent] = []
+        queue: deque[str] = deque([head])
+        visited: set[str] = set()
+        while queue and len(events) < limit and len(visited) < max_commits:
+            current = queue.popleft()
+            if not current or current in visited:
+                continue
+            visited.add(current)
+            commit = self.get_commit(current)
+            if not commit:
+                continue
+            for event_hash in reversed(list(commit.event_hashes)):
+                event = self.get_event(event_hash)
+                if not event:
+                    continue
+                if _event_entity(event) != (entity, entity_id):
+                    continue
+                events.append(event)
+                if len(events) >= limit:
+                    return events
+            queue.extend(parent for parent in commit.parent_hashes if parent)
+        return events
 
     def merge_heads(
         self,

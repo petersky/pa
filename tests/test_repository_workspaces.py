@@ -409,10 +409,8 @@ def test_reconcile_done_card_on_lease_owner_enables_safe_cleanup(
     lease = manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="card-1"
     )
-    manager.store.list_cards.return_value = [SimpleNamespace(id="card-1", lane="done")]
-    manager.store.list_sessions.return_value = [
-        AgentSession(id="session-1", agent_name="codex", status="closed")
-    ]
+    manager.store.list_card_lanes.return_value = {"card-1": "done"}
+    manager.store.list_session_statuses.return_value = {"session-1": "closed"}
 
     result = manager.reconcile_terminal_state()
     reconciled = manager.get(linked.repository.id, "session-1")
@@ -441,10 +439,8 @@ def test_reconcile_closed_standalone_session_preserves_unpushed_work(
     (worktree / "README.md").write_text("unpushed\n")
     git(worktree, "add", "README.md")
     git(worktree, "commit", "-m", "preserve me")
-    manager.store.list_cards.return_value = []
-    manager.store.list_sessions.return_value = [
-        AgentSession(id="session-1", agent_name="codex", status="closed")
-    ]
+    manager.store.list_card_lanes.return_value = {}
+    manager.store.list_session_statuses.return_value = {"session-1": "closed"}
 
     result = manager.reconcile_terminal_state()
 
@@ -466,10 +462,8 @@ def test_reconcile_closed_session_collects_missing_card_workspace(
     lease = manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="missing-card"
     )
-    manager.store.list_cards.return_value = []
-    manager.store.list_sessions.return_value = [
-        AgentSession(id="session-1", agent_name="codex", status="closed")
-    ]
+    manager.store.list_card_lanes.return_value = {}
+    manager.store.list_session_statuses.return_value = {"session-1": "closed"}
 
     result = manager.reconcile_terminal_state()
     reconciled = manager.get(linked.repository.id, "session-1")
@@ -490,12 +484,8 @@ def test_reconcile_retains_nonterminal_card_workspace(tmp_path: Path) -> None:
     manager.provision_repository(
         linked, project_id="project-1", session_id="session-1", card_id="card-1"
     )
-    manager.store.list_cards.return_value = [
-        SimpleNamespace(id="card-1", lane="active")
-    ]
-    manager.store.list_sessions.return_value = [
-        AgentSession(id="session-1", agent_name="codex", status="closed")
-    ]
+    manager.store.list_card_lanes.return_value = {"card-1": "active"}
+    manager.store.list_session_statuses.return_value = {"session-1": "closed"}
 
     result = manager.reconcile_terminal_state()
     retained = manager.get(linked.repository.id, "session-1")
