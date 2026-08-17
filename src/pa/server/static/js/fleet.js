@@ -1212,7 +1212,9 @@
   async function loadRemoteProviders(instanceId, generation) {
     var select = $("[data-remote-provider]");
     if (!select) return;
-    var providers = await api(remoteApiBase(instanceId) + "/providers");
+    var providers = await api(remoteApiBase(instanceId) + "/providers/catalog").catch(function () {
+      return api(remoteApiBase(instanceId) + "/providers");
+    });
     if (
       generation !== remoteLoadGeneration ||
       instanceId !== remoteInstanceId ||
@@ -1228,7 +1230,7 @@
     defaultOption.textContent = "Instance default";
     options.appendChild(defaultOption);
     (providers || []).forEach(function (provider) {
-      if (!provider || !provider.id || provider.available === false) return;
+      if (!provider || !provider.id) return;
       var option = document.createElement("option");
       option.value = provider.id;
       option.textContent = provider.display_name || provider.id;

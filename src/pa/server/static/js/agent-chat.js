@@ -3315,17 +3315,25 @@
     if (selected) select.value = selected;
   }
 
+  function readProviderCatalog() {
+    const script = document.getElementById("pa-provider-catalog");
+    if (!script) return [];
+    try {
+      const parsed = JSON.parse(script.textContent || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
   function loadProviderCatalog(select) {
     if (!select) return Promise.resolve([]);
-    const existing = Array.prototype.filter.call(select.options, function (option) {
-      return option.value;
-    }).map(function (option) {
-      return { id: option.value, display_name: option.textContent };
-    });
-    if (existing.length) return Promise.resolve(existing);
+    fillProviderSelect(select, readProviderCatalog());
     return csrfFetch("/providers/catalog").then(function (providers) {
       fillProviderSelect(select, providers);
       return providers || [];
+    }).catch(function () {
+      return readProviderCatalog();
     });
   }
 
@@ -3454,6 +3462,7 @@
     const activeProvider = snap && snap.session && snap.session.agent_name;
     dialog._acwProviderTouched = false;
     if (form) form.reset();
+    fillProviderSelect(provider, readProviderCatalog());
     populateNewSessionOptions(dialog, null);
     setNewSessionBusy(dialog, true, "Loading session options…");
     return Promise.all([loadProviderCatalog(provider), csrfFetch("/preferences")])
@@ -3771,6 +3780,13 @@
       el._acw = new AgentChatWidget(el);
     });
     bindSessionSidebar(root);
+    const dialog = root.querySelector("[data-agent-new-dialog]");
+    if (dialog) {
+      fillProviderSelect(
+        dialog.querySelector("[data-agent-new-provider]"),
+        readProviderCatalog()
+      );
+    }
   }
 
   function destroyAll(scope, reason) {

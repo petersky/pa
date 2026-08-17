@@ -34,6 +34,7 @@
   </script>
   <script src="{{ static_url('js/theme.js') }}" defer></script>
   <script type="application/json" id="pa-instance-identities">{{ instance_identity_directory() | tojson }}</script>
+  <script type="application/json" id="pa-provider-catalog">{{ agent_providers | default([]) | tojson }}</script>
   <script src="{{ static_url('js/instance-identity.js') }}" defer></script>
   <script src="{{ static_url('js/history-policy.js') }}" defer></script>
   <script src="{{ static_url('js/navigation.js') }}" defer></script>

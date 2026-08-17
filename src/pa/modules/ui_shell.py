@@ -60,6 +60,8 @@ def _user_id_from_request(request: Request) -> str | None:
 
 
 def _shell_context(request: Request) -> dict:
+    from pa.acp.providers.registry import provider_catalog
+
     ctx: AppContext = request.app.state.ctx
     settings = ctx.settings
     prefs = get_preferences_store(
@@ -90,6 +92,7 @@ def _shell_context(request: Request) -> dict:
         "telemetry_session_header": prefs.telemetry_session_header,
         "pa_version": __import__("pa").__version__,
         "build_id": f"{__import__('pa').__version__}+{assets.version}",
+        "agent_providers": provider_catalog(),
     }
 
 
