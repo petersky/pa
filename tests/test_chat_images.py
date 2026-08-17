@@ -12,10 +12,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
 from pydantic import ValidationError
 
 from pa.acp.client import AgentConnection
+from pa.config import Settings
+from pa.core.kernel import Kernel
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.instance.quiesce import ImageAttachment, QueuedPrompt
 from pa.modules.agent_chat import PromptBody, session_prompt
@@ -643,11 +646,14 @@ setImmediate(function () {
         self.assertIn('!child.hasAttribute("data-acw-load-older-status")', script)
         self.assertIn("newSessionSnapshotForProvider", script)
         self.assertIn("loadProviderCatalog", script)
+        self.assertIn("readProviderCatalog", script)
         self.assertIn("setNewSessionBusy", script)
         self.assertIn('csrfFetch("/providers/catalog")', script)
         self.assertIn('csrfFetch("/preferences")', script)
         self.assertNotIn('csrfFetch("/providers")', script)
         self.assertNotIn("item.available === false", script)
+        shell = (template_root / "shell.html").read_text()
+        self.assertIn('id="pa-provider-catalog"', shell)
         self.assertIn('provider.addEventListener("change"', script)
         self.assertIn('"requested: "', script)
         self.assertIn('"effective: "', script)
@@ -664,6 +670,28 @@ setImmediate(function () {
         self.assertIn("Discard unsaved Agent settings changes", script)
         self.assertIn("sessionConfigSummary", script)
         self.assertGreaterEqual(script.count("self.applyOptionSnapshot(snap);"), 2)
+
+    def test_agent_page_html_includes_registered_provider_options(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                data_dir=Path(tmp),
+                instance_id="test",
+                agent_enabled=True,
+            )
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                page = client.get("/agent")
+                catalog = client.get("/api/agent/providers/catalog")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('value="cursor"', page.text)
+        self.assertIn('value="codex"', page.text)
+        self.assertIn('value="openinterpreter"', page.text)
+        self.assertIn('id="pa-provider-catalog"', page.text)
+        self.assertEqual(catalog.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in catalog.json()},
+            {"cursor", "codex", "openinterpreter"},
+        )
 
     def test_agent_page_defaults_to_collapsed_sessions_and_mobile_safe_composer(
         self,
