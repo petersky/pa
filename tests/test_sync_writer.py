@@ -29,6 +29,7 @@ from pa.mcp.local_api import (
     LocalPARequestError,
     LocalPAServerUnavailable,
     LocalPAUnknownOutcome,
+    local_pa_url,
     request_local_pa,
 )
 from pa.modules.items import ItemsModule
@@ -499,10 +500,63 @@ class LocalMcpApiTests(unittest.TestCase):
             self.assertIn("operation=POST", str(raised.exception))
             self.assertNotIn("has no attribute", str(raised.exception))
             self.assertIn("same idempotency key", str(raised.exception))
+            self.assertIn("cause=timeout type=ReadTimeout", str(raised.exception))
             self.assertEqual(raised.exception.recovery_action, "get_operation_outcome")
             self.assertEqual(raised.exception.recovery_state, "lookup_required")
             sent_key = request.call_args.kwargs["headers"]["Idempotency-Key"]
             self.assertEqual(raised.exception.idempotency_key, sent_key)
+
+    def test_get_read_timeout_reports_timeout_cause(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            with (
+                patch(
+                    "httpx.request",
+                    side_effect=httpx.ReadTimeout("slow owner"),
+                ),
+                self.assertRaises(LocalPAServerUnavailable) as raised,
+            ):
+                request_local_pa(settings, "GET", "/api/instance/maintenance")
+            self.assertIn("operation=GET", str(raised.exception))
+            self.assertIn("endpoint=/api/instance/maintenance", str(raised.exception))
+            self.assertIn("cause=timeout type=ReadTimeout", str(raised.exception))
+            self.assertNotIsInstance(raised.exception, LocalPAUnknownOutcome)
+
+    def test_connect_timeout_is_classified_unreachable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            with (
+                patch(
+                    "httpx.request",
+                    side_effect=httpx.ConnectTimeout("no listener"),
+                ),
+                self.assertRaises(LocalPAServerUnavailable) as raised,
+            ):
+                request_local_pa(
+                    settings,
+                    "GET",
+                    "/api/instance/maintenance",
+                    timeout_seconds=0.1,
+                )
+            self.assertIn("unreachable", str(raised.exception))
+            from pa.mcp.local_api import _circuit, _circuit_lock
+
+            with _circuit_lock:
+                _circuit.failures = 0
+                _circuit.retry_at = 0.0
+                _circuit.last_failure = None
+
+    def test_local_pa_url_uses_loopback_for_wildcard_and_localhost(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for host in ("0.0.0.0", "::", "[::]", "localhost"):
+                settings = Settings(
+                    data_dir=Path(tmp),
+                    host=host,
+                    port=8080,
+                    agent_enabled=False,
+                )
+                with patch.dict(os.environ, {"PA_LOCAL_API_URL": ""}, clear=False):
+                    self.assertEqual(local_pa_url(settings), "http://127.0.0.1:8080")
 
     def test_mutation_server_errors_are_unknown_without_noncommit_proof(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

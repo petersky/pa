@@ -143,8 +143,21 @@ def local_pa_url(settings: Settings) -> str:
     explicit = os.environ.get("PA_LOCAL_API_URL", "").strip()
     if explicit:
         return explicit.rstrip("/")
-    host = settings.host if settings.host not in {"0.0.0.0", "::"} else "127.0.0.1"
+    host = settings.host
+    if host in {"0.0.0.0", "::", "[::]", "localhost"}:
+        host = "127.0.0.1"
     return f"http://{host}:{settings.port}"
+
+
+def _transport_cause(exc: BaseException) -> str:
+    """Bounded diagnostic for httpx failures that have no HTTP response."""
+    kind = type(exc).__name__
+    if isinstance(exc, httpx.TimeoutException):
+        return f" cause=timeout type={kind}"
+    detail = " ".join(str(exc).split())[:160]
+    if detail:
+        return f" cause={kind}: {detail}"
+    return f" cause={kind}"
 
 
 def _validation_details(response: httpx.Response) -> list[dict[str, Any]] | None:
@@ -413,7 +426,7 @@ def request_local_pa(
                     f"status={response.status_code} "
                     f"correlation_id={response_correlation_id})."
                 ) from exc
-        except httpx.ConnectError as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             if time.monotonic() >= deadline:
                 with _circuit_lock:
                     _circuit.failures += 1
@@ -464,11 +477,12 @@ def request_local_pa(
                         detail=error.detail,
                     ) from exc
                 raise error from exc
+            cause = _transport_cause(exc)
             if operation_id:
                 raise LocalPAUnknownOutcome(
                     f"The PA API request failed (operation={method.upper()} "
                     f"endpoint={path} correlation_id={correlation_id} "
-                    f"operation_id={operation_id}). The mutation outcome is "
+                    f"operation_id={operation_id}{cause}). The mutation outcome is "
                     "unknown. Call get_operation_outcome with the same "
                     "idempotency key; if it reports safe_to_retry_with_same_key, "
                     "retry with that exact key.",
@@ -478,5 +492,5 @@ def request_local_pa(
                 ) from exc
             raise LocalPAServerUnavailable(
                 f"The PA API request failed (operation={method.upper()} "
-                f"endpoint={path} correlation_id={correlation_id})."
+                f"endpoint={path} correlation_id={correlation_id}{cause})."
             ) from exc

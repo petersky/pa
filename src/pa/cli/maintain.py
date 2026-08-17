@@ -6,7 +6,11 @@ from typing import Annotated
 import typer
 
 from pa.config import get_settings
-from pa.mcp.local_api import LocalPAServerUnavailable, request_local_pa
+from pa.mcp.local_api import (
+    LocalPARequestError,
+    LocalPAServerUnavailable,
+    request_local_pa,
+)
 
 maintain_app = typer.Typer(help="Local cruft cleanup and SQLite maintenance")
 
@@ -15,12 +19,24 @@ def _print(payload) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def _status_error(exc: LocalPAServerUnavailable) -> str:
+    if isinstance(exc, LocalPARequestError) and exc.status == 404:
+        return (
+            "The running PA service does not expose /api/instance/maintenance; "
+            "restart or update it to match this CLI."
+        )
+    return str(exc)
+
+
 @maintain_app.command("status")
 def status() -> None:
     """Show the last maintenance sweep and retention settings."""
     try:
         payload = request_local_pa(
-            get_settings(), "GET", "/api/instance/maintenance"
+            get_settings(),
+            "GET",
+            "/api/instance/maintenance",
+            timeout_seconds=10.0,
         )
     except LocalPAServerUnavailable as exc:
         settings = get_settings()
@@ -28,7 +44,7 @@ def status() -> None:
             {
                 "available": False,
                 "running": False,
-                "server_error": str(exc),
+                "server_error": _status_error(exc),
                 "interval_seconds": settings.maintenance_interval_seconds,
                 "transcript_retention_days": settings.transcript_retention_days,
                 "mutation_operation_retention_days": (
