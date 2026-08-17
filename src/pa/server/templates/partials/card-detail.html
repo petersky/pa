@@ -142,7 +142,7 @@
           Model: {{ summary_diagnostics.effective_model }} ·
           Authentication: {{ summary_diagnostics.authentication_source }}
           {% if card.summary_failure_code %}
-          <br>Last failure: {{ card.summary_failure_code }}{% if card.summary_failure %} — {{ card.summary_failure }}{% endif %}
+          <br>{% if card.summary_status.value == 'disabled' %}Setup needed{% else %}Last failure{% endif %}: {{ card.summary_failure_code }}{% if card.summary_failure %} — {{ card.summary_failure }}{% endif %}
           {% elif summary_diagnostics.setup_guidance and card.summary_status.value == 'disabled' %}
           <br>{{ summary_diagnostics.setup_guidance }}
           {% endif %}
