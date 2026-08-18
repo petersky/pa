@@ -78,6 +78,7 @@
     this.projectId = null;
     this.attachmentMetadata = [];
     this.submissionId = null;
+    this.restoringSubmission = false;
     this.dirty = false;
     this.composing = false;
     this.timer = null;
@@ -133,8 +134,15 @@
   };
 
   WidgetDraftController.prototype.changed = function () {
-    if (this.submissionId && !this.widget.submissionPending) {
+    // Any edit is a new logical draft. The in-flight request keeps its captured
+    // id, while the edited text must not inherit that id across a refresh.
+    if (this.submissionId) {
+      const wasRestoring = this.restoringSubmission;
       this.submissionId = null;
+      this.restoringSubmission = false;
+      if (wasRestoring && typeof this.widget.setSubmissionState === "function") {
+        this.widget.setSubmissionState("editing", false);
+      }
     }
     this.dirty = true;
     if (!this.composing && this.widget.els.input && !this.widget.els.input.value) {
@@ -230,6 +238,7 @@
   WidgetDraftController.prototype.apply = function (record, message) {
     this.record = record || null;
     this.submissionId = record && record.submission_id || null;
+    this.restoringSubmission = !!this.submissionId;
     this.attachmentMetadata = record && !record.cleared
       ? (record.attachments || []).slice()
       : [];
@@ -250,7 +259,12 @@
     }
     this.renderAttachmentNotice();
     this.dirty = false;
-    if (message) this.setStatus(message);
+    if (this.restoringSubmission) {
+      if (typeof this.widget.setSubmissionState === "function") {
+        this.widget.setSubmissionState("reconnecting", true);
+      }
+      this.setStatus("Reconnecting — checking whether the previous prompt was accepted…");
+    } else if (message) this.setStatus(message);
     else if (record && !record.cleared) this.setStatus("Draft restored from this browser.");
     else this.setStatus("No local draft.");
   };
@@ -270,6 +284,7 @@
     this.cardId = null;
     this.projectId = null;
     this.submissionId = null;
+    this.restoringSubmission = false;
     this.attachmentMetadata = [];
     this.restore();
   };
@@ -309,11 +324,55 @@
     this.apply(null, "Select a session to restore its local draft.");
   };
 
-  WidgetDraftController.prototype.onSnapshot = function (session) {
-    session = session || {};
+  WidgetDraftController.prototype.onSnapshot = function (snapshot) {
+    snapshot = snapshot || {};
+    const session = snapshot.session || snapshot;
     this.cardId = session.card_id || this.widget.cardId || null;
     this.projectId = session.project_id || null;
-    if (session.status === "closed") this.clear(true, "Draft cleared because this session ended.");
+    if (session.status === "closed") {
+      this.clear(true, "Draft cleared because this session ended.");
+      return;
+    }
+    if (!this.submissionId || !this.restoringSubmission) return;
+    const promptId = this.submissionId;
+    const accepted = (snapshot.transcript || []).some(function (event) {
+      const type = event && (event.type || event.event_type);
+      const payload = event && event.payload || {};
+      return (type === "queue_enqueued" || type === "user_message") &&
+        payload.id === promptId;
+    }) || (snapshot.queue || []).some(function (item) {
+      return item && item.id === promptId;
+    });
+    if (accepted) {
+      this.observeAcceptance(promptId, (snapshot.queue || []).some(function (item) {
+        return item && item.id === promptId;
+      }));
+      return;
+    }
+    this.restoringSubmission = false;
+    if (typeof this.widget.setSubmissionState === "function") {
+      this.widget.setSubmissionState("retryable", false);
+    }
+    this.setStatus("Previous send was not confirmed; retry will reuse the same submission ID.");
+  };
+
+  WidgetDraftController.prototype.observeAcceptance = function (promptId, queued) {
+    if (!this.restoringSubmission || !promptId || promptId !== this.submissionId) {
+      return false;
+    }
+    const rawText = this.record && !this.record.cleared
+      ? this.record.text
+      : (this.widget.els.input && this.widget.els.input.value || "");
+    this.restoringSubmission = false;
+    this.submissionAccepted({
+      rawText: rawText,
+      images: [],
+      message: queued ? "Prompt queued." : "Prompt accepted.",
+    });
+    if (typeof this.widget.setSubmissionState === "function") {
+      this.widget.setSubmissionState(queued ? "queued" : "accepted", false);
+    }
+    return true;
   };
 
   WidgetDraftController.prototype.onStorage = function (event) {
@@ -335,6 +394,7 @@
       this.timer = null;
     }
     this.submissionId = null;
+    this.restoringSubmission = false;
     this.attachmentMetadata = [];
     this._discardBinaryAttachments();
     if (clearInput && this.widget.els.input) this.widget.els.input.value = "";
@@ -349,6 +409,7 @@
 
   WidgetDraftController.prototype.beginSubmission = function () {
     if (!this.submissionId) this.submissionId = Drafts.randomId();
+    this.restoringSubmission = false;
     this.flush({ force: true });
     return this.submissionId;
   };
@@ -364,12 +425,13 @@
     });
     this.widget.renderPendingImages();
     this.submissionId = null;
+    this.restoringSubmission = false;
     this.attachmentMetadata = [];
     if (
       (!input || !input.value) &&
       !(this.widget.pendingImages && this.widget.pendingImages.length)
     ) {
-      this.clear(false, "Draft cleared after the prompt was accepted.");
+      this.clear(false, submission.message || "Draft cleared after the prompt was accepted.");
     } else {
       this.dirty = true;
       this.flush({ force: true });
@@ -378,6 +440,7 @@
 
   WidgetDraftController.prototype.submissionFailed = function (submission) {
     submission = submission || {};
+    this.restoringSubmission = false;
     const inputChanged = this.widget.els.input &&
       this.widget.els.input.value !== submission.rawText;
     const currentImages = this.widget.pendingImages || [];

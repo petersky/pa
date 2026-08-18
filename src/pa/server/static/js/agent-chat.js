@@ -255,6 +255,8 @@
     this.queuePaused = false;
     this.prompting = false;
     this.submissionPending = false;
+    this.submissionState = "idle";
+    this.composerEnabled = true;
     this.turnActive = false;
     this.sessionClosed = false;
     this.connectionNoticeShown = false;
@@ -457,10 +459,12 @@
 
   AgentChatWidget.prototype.api = function (path, opts) {
     opts = opts || {};
-    return fetch(this.apiBase + path, Object.assign({
+    const requestOptions = Object.assign({
       headers: csrfHeaders(),
       credentials: "same-origin",
-    }, opts)).then(function (res) {
+    }, opts);
+    requestOptions.headers = Object.assign({}, csrfHeaders(), opts.headers || {});
+    return fetch(this.apiBase + path, requestOptions).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (body) {
           const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
@@ -1165,7 +1169,7 @@
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
-    if (this.drafts) this.drafts.onSnapshot(session);
+    if (this.drafts) this.drafts.onSnapshot(snap);
     this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
@@ -1430,6 +1434,12 @@
         readyState: es.readyState,
       });
       self.setStatus("offline");
+      if (self.submissionPending) {
+        self.setSubmissionState("reconnecting", true);
+        if (self.drafts) {
+          self.drafts.setStatus("Reconnecting — the prompt is not confirmed yet.");
+        }
+      }
       if (!self.connectionNoticeShown) {
         self.connectionNoticeShown = true;
         self.addBubble(
@@ -1499,6 +1509,9 @@
 
     switch (type) {
       case "user_message":
+        if (this.drafts && typeof this.drafts.observeAcceptance === "function") {
+          this.drafts.observeAcceptance(payload.id, false);
+        }
         const userText = payload.message || imageSummary(payload.images);
         // Skip duplicate if we already painted an optimistic bubble for this text.
         if (!this._isDuplicateUserBubble(userText)) {
@@ -1552,6 +1565,11 @@
         if (payload.usage) this.renderMetrics({ last_usage: payload.usage });
         break;
       case "queue_enqueued":
+        if (this.drafts && typeof this.drafts.observeAcceptance === "function") {
+          this.drafts.observeAcceptance(payload.id, true);
+        }
+        this.refreshQueue();
+        break;
       case "queue_dequeued":
       case "queue_removed":
       case "queue_reordered":
@@ -2446,23 +2464,46 @@
   };
 
   AgentChatWidget.prototype.setComposerEnabled = function (enabled) {
+    this.composerEnabled = !!enabled;
     const controls = [
       this.els.input,
-      this.els.send,
       this.els.attach,
       this.els.fileInput,
     ];
     controls.forEach(function (control) {
       if (control) control.disabled = !enabled;
     });
-    this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
-      control.disabled = !enabled;
-    });
+    this._syncSubmissionControls();
     if (this.els.input) {
       this.els.input.placeholder = enabled
         ? "Message the agent, type / for commands, or drop images here…"
         : "This session has ended. Start or select another session.";
     }
+  };
+
+  AgentChatWidget.prototype._syncSubmissionControls = function () {
+    const disabled = !this.composerEnabled || this.submissionPending || this.sessionClosed;
+    if (this.els.send) {
+      this.els.send.disabled = disabled;
+      this.els.send.textContent = this.submissionPending
+        ? (this.submissionState === "reconnecting" ? "Checking…" : "Sending…")
+        : "Send";
+    }
+    this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
+      control.disabled = disabled;
+    });
+    if (this.els.form && typeof this.els.form.setAttribute === "function") {
+      this.els.form.setAttribute("aria-busy", this.submissionPending ? "true" : "false");
+    }
+    if (this.root && this.root.dataset) {
+      this.root.dataset.submissionState = this.submissionState;
+    }
+  };
+
+  AgentChatWidget.prototype.setSubmissionState = function (state, pending) {
+    this.submissionState = state || "idle";
+    this.submissionPending = !!pending;
+    this._syncSubmissionControls();
   };
 
   AgentChatWidget.prototype.markSessionEnded = function (message) {
@@ -2725,13 +2766,11 @@
     const promptId = this.drafts
       ? this.drafts.beginSubmission()
       : (window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : String(Date.now()));
-    this.submissionPending = true;
-    if (this.els.send) this.els.send.disabled = true;
-    this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
-      control.disabled = true;
-    });
+    this.setSubmissionState("sending", true);
+    if (this.drafts) this.drafts.setStatus("Sending — waiting for durable acknowledgement…");
     this.api("/sessions/" + this.sessionId + "/prompt", {
       method: "POST",
+      headers: { "Idempotency-Key": promptId },
       body: JSON.stringify({
         message: text,
         images: displayImages.map(function (image) {
@@ -2756,6 +2795,7 @@
           self.drafts.submissionAccepted({
             rawText: draftRawText,
             images: submittedImages,
+            message: res.queued ? "Prompt queued." : "Prompt accepted.",
           });
         } else {
           if (self.els.input && self.els.input.value === draftRawText) self.els.input.value = "";
@@ -2764,15 +2804,18 @@
         if (res.queued) self.refreshQueue();
       })
       .catch(function (err) {
+        const code = apiErrorCode(err);
         if (self.drafts) {
           self.drafts.submissionFailed({
             rawText: draftRawText,
             images: submittedImages,
-            conflict: err.status === 409,
+            conflict: code === "client_prompt_id_conflict",
           });
         }
-        const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
+          if (self.drafts && code === "session_not_live") {
+            self.drafts.setStatus("Reconnecting — retry will reuse the same submission ID.");
+          }
           self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
           self.resolveSessionNotLive(err, self.sessionId);
           return;
@@ -2780,11 +2823,7 @@
         self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
       })
       .finally(function () {
-        self.submissionPending = false;
-        if (self.els.send) self.els.send.disabled = self.sessionClosed;
-        self.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
-          control.disabled = self.sessionClosed;
-        });
+        self.setSubmissionState("idle", false);
       });
   };
 

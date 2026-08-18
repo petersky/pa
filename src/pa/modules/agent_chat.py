@@ -2030,6 +2030,18 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     message = body.message.strip()
     if not message and not body.images:
         raise HTTPException(status_code=400, detail="message or image required")
+    if body.client_prompt_id:
+        header_value = request.headers.get("Idempotency-Key", "")
+        header_key = header_value.strip() if isinstance(header_value, str) else ""
+        if header_key and header_key != body.client_prompt_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "client_prompt_id_header_mismatch",
+                    "message": "Idempotency-Key must match client_prompt_id.",
+                    "recoverable": False,
+                },
+            )
     runtime = None
     durable_session = None
     needs_recovery = False

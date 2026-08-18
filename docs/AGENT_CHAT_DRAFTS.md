@@ -54,8 +54,12 @@ newer revision, making the conflict rule deterministic without merging prompt
 text.
 
 Prompt submission uses a stable client prompt ID stored with the draft. The
-server serializes admission per session and looks up that ID in the durable
-transcript. A retry after a timeout or lost response returns the original
-acceptance instead of enqueueing the prompt twice. PA clears the composer draft
-only after durable acceptance; validation, network, storage, or recoverable
-server failures retain it.
+browser sends that same value as both `client_prompt_id` and the HTTP
+`Idempotency-Key`; the server serializes admission per session and looks up the
+ID in the durable transcript. A retry after a timeout, restart, refresh, or lost
+response returns the original acceptance instead of enqueueing the prompt twice.
+Transient recovery errors retain the ID. After refresh, the composer shows a
+reconnecting/checking state and reconciles the saved ID against the durable
+transcript before offering a same-ID retry. PA clears the composer draft only
+after durable acceptance; validation, network, storage, or recoverable server
+failures retain it.

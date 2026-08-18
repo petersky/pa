@@ -129,13 +129,13 @@ class AgentChatDraftContractTests(unittest.TestCase):
             1
         ].split("AgentChatWidget.prototype.applyOptionSnapshot", 1)[0]
 
-        self.assertIn("this.drafts.onSnapshot(session)", apply_snapshot)
+        self.assertIn("this.drafts.onSnapshot(snap)", apply_snapshot)
         self.assertIn(
             "this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked)",
             apply_snapshot,
         )
         self.assertLess(
-            apply_snapshot.index("this.drafts.onSnapshot(session)"),
+            apply_snapshot.index("this.drafts.onSnapshot(snap)"),
             apply_snapshot.index("this.setComposerEnabled"),
         )
 
@@ -148,6 +148,8 @@ class AgentChatDraftContractTests(unittest.TestCase):
         self.assertIn("self.drafts.submissionFailed", send)
         self.assertIn('code === "session_not_live"', send)
         self.assertIn('code === "session_deleted"', send)
+        self.assertIn('conflict: code === "client_prompt_id_conflict"', send)
+        self.assertIn('headers: { "Idempotency-Key": promptId }', send)
         self.assertLess(
             send.index("self.drafts.submissionFailed"),
             send.index("self.resolveSessionNotLive"),
@@ -164,6 +166,30 @@ class AgentChatDraftContractTests(unittest.TestCase):
                 client_prompt_id="browser-prompt-2",
                 dispatch_id="dispatch-1",
             )
+
+    def test_client_prompt_header_must_match_body_id(self) -> None:
+        request = MagicMock()
+        request.headers = {"Idempotency-Key": "browser-prompt-other"}
+
+        async def run() -> None:
+            with patch("pa.modules.agent_chat._runtime_or_404") as runtime:
+                with self.assertRaises(HTTPException) as raised:
+                    await session_prompt(
+                        request,
+                        "session-1",
+                        PromptBody(
+                            message="hello",
+                            client_prompt_id="browser-prompt-stable",
+                        ),
+                    )
+                self.assertEqual(raised.exception.status_code, 409)
+                self.assertEqual(
+                    raised.exception.detail["code"],
+                    "client_prompt_id_header_mismatch",
+                )
+                runtime.assert_not_called()
+
+        asyncio.run(run())
 
     def test_projection_finds_durable_prompt_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -276,6 +302,37 @@ class ClientPromptAdmissionTests(unittest.TestCase):
             self.assertEqual(raised.exception.status_code, 409)
 
         asyncio.run(run())
+
+    def test_restart_replay_uses_durable_acceptance_without_requeue(self) -> None:
+        runtime, store = self._runtime()
+        store.events[("session-1", "browser-prompt-restart")] = TranscriptEvent(
+            session_id="session-1",
+            seq=7,
+            event_type="queue_enqueued",
+            payload={
+                "id": "browser-prompt-restart",
+                "message": "hello after restart",
+                "images": [],
+                "action": "run",
+            },
+        )
+
+        response = asyncio.run(
+            _submit_client_prompt(
+                MagicMock(),
+                "session-1",
+                PromptBody(
+                    message="hello after restart",
+                    client_prompt_id="browser-prompt-restart",
+                ),
+                runtime,
+                "hello after restart",
+            )
+        )
+
+        self.assertTrue(response["accepted"])
+        self.assertTrue(response["duplicate"])
+        runtime.prompt.assert_not_awaited()
         runtime.prompt.assert_not_awaited()
 
     def test_client_prompt_id_does_not_bypass_session_authorization(self) -> None:
@@ -602,6 +659,7 @@ function makeWidget(sessionId) {
     "[data-acw-draft-attachments]": notice,
     "[data-acw-clear-draft]": clear,
   };
+  const submissionStates = [];
   return {
     sessionId,
     cardId: "card-a",
@@ -615,6 +673,11 @@ function makeWidget(sessionId) {
       isConnected: true,
     },
     renderPendingImages: function () {},
+    setSubmissionState: function (state, pending) {
+      this.submissionPending = pending;
+      submissionStates.push({ state, pending });
+    },
+    submissionStates,
     status, notice, clear,
   };
 }
@@ -678,6 +741,25 @@ refreshed.submissionAccepted({ rawText: acceptedText, images: [] });
 assert.strictEqual(refreshedWidget.els.input.value, "");
 assert.strictEqual(refreshed.store.read("session-a").cleared, true);
 
+refreshedWidget.els.input.value = "accepted while page reloads";
+refreshed.changed();
+refreshed.flush({ force: true });
+const refreshPendingId = refreshed.beginSubmission();
+refreshedWidget.root.isConnected = false;
+const pendingReloadWidget = makeWidget("session-a");
+const pendingReload = window.PAAgentDrafts.installWidget(pendingReloadWidget);
+assert.strictEqual(pendingReload.submissionId, refreshPendingId);
+assert.strictEqual(pendingReloadWidget.submissionPending, true);
+assert.ok(pendingReloadWidget.status.textContent.includes("checking"));
+pendingReload.onSnapshot({
+  session: { status: "idle" },
+  transcript: [{ type: "queue_enqueued", payload: { id: refreshPendingId } }],
+  queue: [{ id: refreshPendingId }],
+});
+assert.strictEqual(pendingReloadWidget.els.input.value, "");
+assert.strictEqual(pendingReload.store.read("session-a").cleared, true);
+assert.strictEqual(pendingReloadWidget.submissionPending, false);
+
 firstWidget.root.isConnected = false;
 windowListeners.pagehide();
 assert.strictEqual(refreshed.store.read("session-a").cleared, true);
@@ -698,6 +780,103 @@ refreshed.flush({ force: true });
 assert.strictEqual(refreshed.store.read("session-a").text, "unfinished composition");
 """
         self._run_node(program, store_script, widget_script)
+
+    def test_delayed_ack_suppresses_repeated_send_and_transient_409_keeps_key(
+        self,
+    ) -> None:
+        script = SERVER / "static" / "js" / "agent-chat.js"
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+const noop = function () {};
+global.document = {
+  body: { addEventListener: noop },
+  addEventListener: noop,
+  querySelector: function () { return null; },
+  querySelectorAll: function () { return []; },
+};
+global.window = {
+  addEventListener: noop,
+  location: { href: "http://127.0.0.1:8080/agent" },
+};
+global.URL = URL;
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+
+const Widget = window.PAAgentChat.AgentChatWidget;
+const widget = Object.create(Widget.prototype);
+const send = { disabled: false, textContent: "Send" };
+const form = { setAttribute: noop };
+const action = { disabled: false };
+let calls = [];
+let resolveRequest;
+let rejectRequest;
+let failure = null;
+const drafts = {
+  beginSubmission: function () { return "browser-prompt-stable"; },
+  setStatus: noop,
+  submissionAccepted: noop,
+  submissionFailed: function (value) { failure = value; },
+};
+Object.assign(widget, {
+  sessionId: "session-1",
+  sessionClosed: false,
+  submissionPending: false,
+  submissionState: "idle",
+  composerEnabled: true,
+  prompting: false,
+  pendingImages: [],
+  drafts,
+  els: { input: { value: "hello" }, send, form, messages: null },
+  root: {
+    dataset: {},
+    querySelectorAll: function () { return [action]; },
+  },
+  commandInvocation: function () { return null; },
+  api: function (path, options) {
+    calls.push({ path, options });
+    return new Promise(function (resolve, reject) {
+      resolveRequest = resolve;
+      rejectRequest = reject;
+    });
+  },
+  _isDuplicateUserBubble: function () { return false; },
+  addBubble: noop,
+  setTurnActive: noop,
+  scrollToBottom: noop,
+  refreshQueue: noop,
+  resolveSessionNotLive: noop,
+});
+
+(async function () {
+  widget.send("append");
+  widget.send("append"); // repeated button gesture
+  widget.send("append"); // repeated Enter gesture reaches the same guard
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].options.headers["Idempotency-Key"], "browser-prompt-stable");
+  assert.strictEqual(JSON.parse(calls[0].options.body).client_prompt_id, "browser-prompt-stable");
+  assert.strictEqual(send.disabled, true);
+  assert.strictEqual(send.textContent, "Sending…");
+  resolveRequest({ accepted: true, queued: true });
+  await new Promise(setImmediate);
+  assert.strictEqual(widget.submissionPending, false);
+  assert.strictEqual(send.disabled, false);
+
+  widget.els.input.value = "hello";
+  widget.send("append");
+  assert.strictEqual(calls.length, 2);
+  const transient = new Error("session restarting");
+  transient.status = 409;
+  transient.detail = { code: "session_not_live", recoverable: true };
+  rejectRequest(transient);
+  await new Promise(setImmediate);
+  assert.strictEqual(failure.conflict, false);
+})().catch(function (error) {
+  process.stderr.write(error.stack || String(error));
+  process.exitCode = 1;
+});
+"""
+        self._run_node(program, script)
 
 
 if __name__ == "__main__":
