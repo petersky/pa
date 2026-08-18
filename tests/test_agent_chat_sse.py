@@ -22,6 +22,8 @@ from pa.instance.agent_session import AgentSessionManager
 from pa.modules.agent_chat import (
     CreateSessionBody,
     _apply_initial_options,
+    _configuration_request,
+    _requested_effort,
     _runtime_or_404,
     create_session,
     get_agent_session_history,
@@ -310,6 +312,14 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.set_mode.assert_awaited_once_with("code")
         runtime.set_config.assert_any_await("sandbox", "workspace")
         runtime.set_config.assert_any_await("reasoningEffort", "high")
+
+    def test_default_effort_is_treated_as_unset(self) -> None:
+        self.assertIsNone(_requested_effort("default"))
+        self.assertIsNone(_requested_effort("Default"))
+        self.assertIsNone(_requested_effort(""))
+        requested = _configuration_request(CreateSessionBody(effort="default"))
+        self.assertIsNone(requested.reasoning)
+        self.assertTrue(requested.empty)
 
     def test_provider_options_synthesizes_openinterpreter_catalog(self) -> None:
         manager = MagicMock()

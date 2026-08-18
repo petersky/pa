@@ -415,6 +415,14 @@ class AcpProviderTests(unittest.TestCase):
         self.assertTrue(snap["models"]["availableModels"])
         self.assertTrue(snap["modes"]["availableModes"])
         self.assertTrue(snap["config_options"])
+        self.assertFalse(
+            any(
+                str(item.get("id") or "").lower().replace("-", "_")
+                in {"reasoning_effort", "reasoning", "effort"}
+                for item in snap["config_options"]
+            ),
+            "OpenInterpreter catalog must not invent effort levels MiniMax cannot confirm",
+        )
         self.assertTrue(
             any(item["id"] == "minimax-coding-plan" for item in snap["model_providers"])
         )

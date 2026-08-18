@@ -293,6 +293,17 @@ def _config_option_id(runtime, requested: str) -> str:
     return "reasoning_effort" if requested == "effort" else requested
 
 
+_UNSET_EFFORT = {"", "default", "none", "auto"}
+
+
+def _requested_effort(value: str | None) -> str | None:
+    """Treat provider-default aliases as unset so PA does not force a no-op apply."""
+    raw = str(value or "").strip()
+    if not raw or raw.lower() in _UNSET_EFFORT:
+        return None
+    return raw
+
+
 def _configuration_request(
     body: CreateSessionBody, defaults=None
 ) -> SessionConfigurationRequest:
@@ -301,7 +312,8 @@ def _configuration_request(
     return SessionConfigurationRequest.from_values(
         model_id=body.model_id or (defaults.model_id if defaults else None),
         mode_id=body.mode_id or (defaults.mode_id if defaults else None),
-        reasoning=body.effort or (defaults.effort if defaults else None),
+        reasoning=_requested_effort(body.effort)
+        or _requested_effort(defaults.effort if defaults else None),
         model_provider=body.model_provider
         or (defaults.model_provider if defaults else None),
         config=config,

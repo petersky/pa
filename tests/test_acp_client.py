@@ -18,6 +18,7 @@ from pa.acp.client import (
     _is_hard_mcp_startup_failure,
     _resolve_session_load_target,
     _tolerated_client_method,
+    normalize_session_update,
 )
 from pa.acp.configuration import (
     ACPConfigurationError,
@@ -326,6 +327,80 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             connection.session.config_json["configuration"]["state"], "ready"
         )
+
+    def test_unchanged_config_option_skips_set_config_option(self) -> None:
+        options = [
+            {
+                "id": "reasoning_effort",
+                "name": "Reasoning",
+                "type": "select",
+                "currentValue": "default",
+                "options": [
+                    {"value": "default", "name": "Default"},
+                    {"value": "high", "name": "High"},
+                ],
+            }
+        ]
+
+        class ConfigClient:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, str]] = []
+
+            async def set_config_option(self, **kwargs):
+                self.calls.append((kwargs["config_id"], kwargs["value"]))
+                return {"configOptions": options}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = ConfigClient()
+            connection, _store = self._connection(tmp, client, options=options)
+            effective = asyncio.run(
+                connection.configure(
+                    SessionConfigurationRequest.from_values(reasoning="default")
+                )
+            )
+
+        self.assertEqual(client.calls, [])
+        self.assertEqual(effective["reasoning"], "default")
+        self.assertEqual(
+            connection.session.config_json["configuration"]["strategies"]["reasoning"],
+            "config:reasoning_effort:unchanged",
+        )
+
+    def test_reasoning_mismatch_explains_fixed_thinking_models(self) -> None:
+        options = [
+            {
+                "id": "reasoning_effort",
+                "name": "Reasoning",
+                "type": "select",
+                "currentValue": "default",
+                "options": [
+                    {"value": "default", "name": "Default"},
+                    {"value": "high", "name": "High"},
+                ],
+            }
+        ]
+
+        class IgnoreClient:
+            async def set_config_option(self, **kwargs):
+                return {"configOptions": options}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            connection, _store = self._connection(tmp, IgnoreClient(), options=options)
+            with self.assertRaisesRegex(
+                ACPConfigurationError, "fixed thinking and ignore effort"
+            ):
+                asyncio.run(
+                    connection.configure(
+                        SessionConfigurationRequest.from_values(reasoning="high")
+                    )
+                )
+
+    def test_thought_session_updates_normalize_to_agent_thought_chunk(self) -> None:
+        normalized = normalize_session_update(
+            {"sessionUpdate": "thought", "content": {"type": "text", "text": "hmm"}}
+        )
+        self.assertEqual(normalized["type"], "agent_thought_chunk")
+        self.assertEqual(normalized["text"], "hmm")
 
     def test_dedicated_setters_are_preferred_when_advertised(self) -> None:
         class DedicatedClient:
