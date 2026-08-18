@@ -361,12 +361,78 @@ class CodexOwnerSandboxConfigTests(unittest.TestCase):
             ["/workspace", "/tmp/pa-501/abcd"],
         )
         self.assertTrue(merged["sandbox_workspace_write"]["network_access"])
+        self.assertEqual(merged["default_permissions"], "pa-owner")
+        self.assertEqual(merged["permissions"]["pa-owner"]["extends"], ":workspace")
         self.assertEqual(
-            merged["permissions"]["network"]["unix_sockets"][socket],
+            merged["permissions"]["pa-owner"]["network"]["unix_sockets"][socket],
             "allow",
         )
+        self.assertNotIn("network", merged["permissions"])
         self.assertEqual(
             merged["features"]["network_proxy"]["unix_sockets"][socket],
+            "allow",
+        )
+
+    def test_codex_config_migrates_legacy_network_grant_into_named_profile(self):
+        socket = "/tmp/pa-501/abcd/owner.sock"
+        merged = json.loads(
+            merge_codex_owner_sandbox_config(
+                json.dumps(
+                    {
+                        "permissions": {
+                            "network": {
+                                "unix_sockets": {
+                                    "/tmp/old.sock": "allow",
+                                }
+                            }
+                        }
+                    }
+                ),
+                socket_path=socket,
+            )
+        )
+        self.assertEqual(merged["default_permissions"], "pa-owner")
+        sockets = merged["permissions"]["pa-owner"]["network"]["unix_sockets"]
+        self.assertEqual(sockets["/tmp/old.sock"], "allow")
+        self.assertEqual(sockets[socket], "allow")
+        self.assertNotIn("network", merged["permissions"])
+
+    def test_codex_config_grants_socket_on_existing_named_profile(self):
+        socket = "/tmp/pa-501/abcd/owner.sock"
+        merged = json.loads(
+            merge_codex_owner_sandbox_config(
+                json.dumps(
+                    {
+                        "default_permissions": "project-edit",
+                        "permissions": {
+                            "project-edit": {
+                                "extends": ":workspace",
+                            }
+                        },
+                    }
+                ),
+                socket_path=socket,
+            )
+        )
+        self.assertEqual(merged["default_permissions"], "project-edit")
+        self.assertEqual(
+            merged["permissions"]["project-edit"]["network"]["unix_sockets"][socket],
+            "allow",
+        )
+        self.assertNotIn("pa-owner", merged["permissions"])
+
+    def test_codex_config_wraps_builtin_default_permissions(self):
+        socket = "/tmp/pa-501/abcd/owner.sock"
+        merged = json.loads(
+            merge_codex_owner_sandbox_config(
+                json.dumps({"default_permissions": ":read-only"}),
+                socket_path=socket,
+            )
+        )
+        self.assertEqual(merged["default_permissions"], "pa-owner")
+        self.assertEqual(merged["permissions"]["pa-owner"]["extends"], ":read-only")
+        self.assertEqual(
+            merged["permissions"]["pa-owner"]["network"]["unix_sockets"][socket],
             "allow",
         )
 
@@ -396,7 +462,8 @@ class CodexOwnerSandboxConfigTests(unittest.TestCase):
             self.assertEqual(environment["DISABLE_MCP_CONFIG_FILTERING"], "true")
             self.assertEqual(config["model"], "gpt-5.4")
             self.assertIn(str(socket.parent), config["sandbox_workspace_write"]["writable_roots"])
+            self.assertEqual(config["default_permissions"], "pa-owner")
             self.assertEqual(
-                config["permissions"]["network"]["unix_sockets"][str(socket)],
+                config["permissions"]["pa-owner"]["network"]["unix_sockets"][str(socket)],
                 "allow",
             )

@@ -26,6 +26,7 @@ from pa.acp.providers.base import (
     ProviderStatus,
 )
 from pa.acp.providers.codex import (
+    NPM_PACKAGE,
     CodexProvider,
     _codex_auth_state,
     _codex_auth_status,
@@ -226,6 +227,36 @@ class AcpProviderTests(unittest.TestCase):
             or cmd.endswith("\\npx"),
             f"unexpected command: {cmd!r}",
         )
+
+    def test_codex_spawn_resolves_npx_on_service_path(self) -> None:
+        npx = Path("/opt/homebrew/bin/npx")
+
+        def fake_resolve(name: str, **_kwargs: object) -> Path | None:
+            if name == "npx":
+                return npx
+            return None
+
+        with (
+            patch(
+                "pa.acp.providers.codex.resolve_executable",
+                side_effect=fake_resolve,
+            ),
+            patch("pa.acp.providers.codex.shutil.which", return_value=None),
+        ):
+            spec = CodexProvider().resolve_spawn(data_dir=self.data_dir)
+        self.assertEqual(spec.command, str(npx))
+        self.assertEqual(spec.args[:2], ["-y", NPM_PACKAGE])
+
+    def test_missing_provider_executable_is_classified(self) -> None:
+        classified = classify_acp_failure(
+            FileNotFoundError(2, "No such file or directory", "codex-acp"),
+            provider_id="codex",
+            stage="provider_spawn",
+        )
+        self.assertEqual(classified["code"], "provider_not_installed")
+        self.assertIn("codex-acp", classified["message"])
+        self.assertIn("PA_AGENT_COMMAND", classified["message"])
+        self.assertTrue(classified["recoverable"])
 
     def test_openinterpreter_spawn_uses_acp_and_managed_home(self) -> None:
         settings = Settings(data_dir=self.data_dir, agent_provider="openinterpreter")
