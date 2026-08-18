@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from pa.acp.client import AgentConnection
+from pa.acp.startup_trace import SessionStartupTrace
 from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import (
@@ -37,6 +38,44 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_manager_records_resolution_workspace_and_publication_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.next_transcript_seq.return_value = 1
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp), agent_provider="codex"), store
+            )
+            spec = MagicMock(id="codex", env={})
+            resolved = SimpleNamespace(
+                provider_id="codex", spec=spec, source="instance"
+            )
+            trace = SessionStartupTrace()
+
+            async def run():
+                with (
+                    patch(
+                        "pa.instance.agent_session.resolve_agent_provider",
+                        return_value=resolved,
+                    ),
+                    patch.object(AgentSessionRuntime, "start", new=AsyncMock()),
+                ):
+                    return await manager.create_session(
+                        label="traced", startup_trace=trace
+                    )
+
+            runtime = asyncio.run(run())
+
+        phases = runtime.session.config_json["startup_trace"]["phases"]
+        self.assertEqual(
+            [phase["name"] for phase in phases],
+            [
+                "provider_resolution",
+                "workspace_preparation",
+                "persistence_publication",
+            ],
+        )
+        self.assertIs(manager.get(runtime.session_id), runtime)
+
     def test_live_close_audits_prior_status_and_is_idempotent(self) -> None:
         runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
         runtime.session = AgentSession(

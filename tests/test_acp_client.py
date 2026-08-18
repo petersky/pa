@@ -25,7 +25,9 @@ from pa.acp.configuration import (
     SessionConfigurationRequest,
     parse_model_selector,
 )
+from pa.acp.errors import ProviderTurnError
 from pa.acp.providers.base import AgentProviderSpec
+from pa.acp.startup_trace import SessionStartupTrace
 from pa.config import Settings
 from pa.packaging.paths import build_service_path
 from pa.domain.models import AgentSession
@@ -171,6 +173,65 @@ class PAClientFileSystemTests(unittest.TestCase):
                 self.assertEqual(response.content, "two\n")
 
             asyncio.run(run())
+
+    def test_empty_end_turn_is_a_recoverable_failure_and_disconnects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)), store, agent_name="openinterpreter"
+            )
+            connection.session = AgentSession(
+                id="session-1",
+                agent_name="openinterpreter",
+                external_session_id="provider-session",
+            )
+            connection._conn = MagicMock()
+            connection._conn.prompt = AsyncMock(
+                return_value=SimpleNamespace(stop_reason="end_turn", usage=None)
+            )
+            connection._client = MagicMock()
+            connection._client.drain_updates.side_effect = [
+                [{"sessionUpdate": "tool_call", "title": "startup"}],
+                [],
+            ]
+
+            async def run() -> None:
+                with self.assertRaises(ProviderTurnError) as raised:
+                    await connection.prompt("Do work")
+                self.assertEqual(raised.exception.payload["code"], "empty_provider_turn")
+
+            asyncio.run(run())
+
+        self.assertEqual(connection.session.status, "disconnected")
+        self.assertIsNone(connection._conn)
+
+    def test_agent_message_allows_usage_less_end_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)), MagicMock(), agent_name="openinterpreter"
+            )
+            connection.session = AgentSession(
+                id="session-1",
+                agent_name="openinterpreter",
+                external_session_id="provider-session",
+            )
+            connection._conn = MagicMock()
+            connection._conn.prompt = AsyncMock(
+                return_value=SimpleNamespace(stop_reason="end_turn", usage=None)
+            )
+            connection._client = MagicMock()
+            connection._client.drain_updates.side_effect = [
+                [],
+                [
+                    {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {"type": "text", "text": "done"},
+                    }
+                ],
+            ]
+
+            self.assertEqual(asyncio.run(connection.prompt("Do work")), "end_turn")
+            self.assertEqual(connection.session.status, "idle")
 
     def test_file_requests_require_absolute_paths(self) -> None:
         client = PAClient(MagicMock())
@@ -640,6 +701,46 @@ class AgentConfigurationAdmissionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentSessionRestoreTests(unittest.TestCase):
+    def test_connect_records_launch_initialize_and_session_creation_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            acp = MagicMock()
+            acp.initialize = AsyncMock(return_value={"agentCapabilities": {}})
+            acp.new_session = AsyncMock(
+                return_value=SimpleNamespace(session_id="provider-session")
+            )
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            trace = SessionStartupTrace()
+            session = AgentSession(id="session-1", agent_name="cursor")
+            trace.attach(session)
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                store,
+                agent_name="cursor",
+                provider_spec=AgentProviderSpec(
+                    id="cursor", display_name="Cursor", command="cursor-agent"
+                ),
+                startup_trace=trace,
+            )
+
+            async def run() -> None:
+                with (
+                    patch("pa.acp.client.spawn_agent", return_value=context),
+                    patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                ):
+                    await connection.connect(existing_session=session)
+
+            asyncio.run(run())
+
+        phases = session.config_json["startup_trace"]["phases"]
+        self.assertEqual(
+            [phase["name"] for phase in phases],
+            ["provider_launch", "provider_initialize", "session_creation"],
+        )
+        self.assertTrue(all(phase["status"] == "ok" for phase in phases))
+
     def test_provider_spawn_environment_excludes_private_owner_controls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()

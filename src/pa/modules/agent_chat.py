@@ -442,6 +442,9 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _require_session_traffic_ready(request)
     principal_id = get_principal_id(request)
     created_runtime = False
+    from pa.acp.startup_trace import SessionStartupTrace
+
+    startup_trace = SessionStartupTrace()
     from pa.acp.providers.resolve import (
         resolve_provider_id,
         resolve_surface_preferences,
@@ -452,20 +455,21 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
     settings = request.app.state.ctx.settings
     surface_defaults = SurfaceAgentPrefs()
-    if isinstance(settings.data_dir, (str, Path)):
-        surface_defaults = await _offload(
-            mgr,
-            "preferences.agent_surface_read",
-            resolve_surface_preferences,
-            settings,
-            AgentInvocationContext(
-                surface=surface,
-                principal_id=principal_id,
-                card_id=body.card_id,
-                project_id=body.project_id,
-            ),
-            timeout=10.0,
-        )
+    with startup_trace.phase("preference_resolution"):
+        if isinstance(settings.data_dir, (str, Path)):
+            surface_defaults = await _offload(
+                mgr,
+                "preferences.agent_surface_read",
+                resolve_surface_preferences,
+                settings,
+                AgentInvocationContext(
+                    surface=surface,
+                    principal_id=principal_id,
+                    card_id=body.card_id,
+                    project_id=body.project_id,
+                ),
+                timeout=10.0,
+            )
     project_tool_config = None
     new_logical_session = True
     dispatch_record = None
@@ -648,6 +652,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         provider_override=body.provider,
                         project_tool_config=project_tool_config,
                         initial_configuration=new_session_configuration,
+                        startup_trace=startup_trace,
                     )
                     created_runtime = True
                 elif not stored or stored.status in {"closed", "quiesced"}:
@@ -678,6 +683,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             if not explicit_configuration.empty
                             else None
                         ),
+                        startup_trace=startup_trace,
                     )
                     created_runtime = True
             elif body.resume:
@@ -702,6 +708,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     provider_override=body.provider,
                     project_tool_config=project_tool_config,
                     initial_configuration=new_session_configuration,
+                    startup_trace=startup_trace,
                 )
                 created_runtime = True
         elif body.attach_default or body.label == "default":
@@ -725,6 +732,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     if not explicit_configuration.empty
                     else None
                 ),
+                startup_trace=startup_trace,
             )
         elif body.label and not body.fresh:
             # Reuse a live/persisted session with the same label (e.g. card:{id}).
@@ -762,6 +770,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                                 if not explicit_configuration.empty
                                 else None
                             ),
+                            startup_trace=startup_trace,
                         )
                         created_runtime = True
                     else:
@@ -776,6 +785,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             provider_override=body.provider,
                             project_tool_config=project_tool_config,
                             initial_configuration=new_session_configuration,
+                            startup_trace=startup_trace,
                         )
                         created_runtime = True
                 else:
@@ -793,8 +803,10 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 provider_override=body.provider,
                 project_tool_config=project_tool_config,
                 initial_configuration=new_session_configuration,
+                startup_trace=startup_trace,
             )
             created_runtime = True
+        created_runtime = created_runtime or startup_trace.attached
         actual_provider = str(
             getattr(getattr(runtime, "session", None), "agent_name", "") or ""
         )
@@ -924,6 +936,15 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             )
 
         await _offload(mgr, "dispatch.session_link", persist_dispatch_link)
+    if startup_trace.attached:
+        with startup_trace.phase("response_readiness"):
+            await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+        await _offload(
+            mgr,
+            "sqlite.agent_session_save",
+            mgr.store.save_session,
+            runtime.session,
+        )
     return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 

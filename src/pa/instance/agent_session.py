@@ -7,6 +7,7 @@ import inspect
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
@@ -32,6 +33,7 @@ from pa.acp.final_message import (
 )
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, known_provider_ids
 from pa.acp.providers.resolve import resolve_agent_provider, resolve_provider_id
+from pa.acp.startup_trace import SessionStartupTrace
 from pa.acp.surfaces import (
     SURFACE_CHAT_DEFAULT,
     SURFACE_EXECUTION,
@@ -155,6 +157,7 @@ class AgentSessionRuntime:
         agent_env: dict[str, str] | None = None,
         mcp_private_env: dict[str, str] | None = None,
         initial_transcript_seq: int | None = None,
+        startup_trace: SessionStartupTrace | None = None,
     ) -> None:
         self.manager = manager
         self.async_runtime = (
@@ -169,6 +172,7 @@ class AgentSessionRuntime:
         # snapshots, execution context, or transcripts. Values passed through an
         # ACP MCP server descriptor must nevertheless be non-secret.
         self.mcp_private_env = dict(mcp_private_env or {})
+        self.startup_trace = startup_trace
         self.connection: AgentConnection | None = None
         self._prompt_lock = asyncio.Lock()
         self._prompt_admission_lock = asyncio.Lock()
@@ -935,6 +939,7 @@ class AgentSessionRuntime:
             async_runtime=self.async_runtime,
             extra_env=self.agent_env,
             mcp_private_env=self.mcp_private_env,
+            startup_trace=self.startup_trace,
         )
         try:
             self.session = await self.connection.connect(
@@ -956,9 +961,15 @@ class AgentSessionRuntime:
             configuration = initial_configuration
             if configuration is None and persisted:
                 configuration = SessionConfigurationRequest.from_dict(persisted)
-            if configuration is not None and not configuration.empty:
-                await self.connection.configure(configuration, force=True)
-                self.session = self.connection.session or self.session
+            configuration_phase = (
+                self.startup_trace.phase("session_configuration")
+                if self.startup_trace
+                else nullcontext()
+            )
+            with configuration_phase:
+                if configuration is not None and not configuration.empty:
+                    await self.connection.configure(configuration, force=True)
+                    self.session = self.connection.session or self.session
         except Exception as exc:
             failed_configuration = dict(
                 ((self.session.config_json or {}).get("configuration") or {})
@@ -2279,6 +2290,7 @@ class AgentSessionManager:
         *,
         agent_env: dict[str, str] | None = None,
         mcp_private_env: dict[str, str] | None = None,
+        startup_trace: SessionStartupTrace | None = None,
     ) -> AgentSessionRuntime:
         supplied_mcp_environment = dict(mcp_private_env or {})
         derived_mcp_environment: dict[str, str] = {}
@@ -2317,6 +2329,7 @@ class AgentSessionManager:
             agent_env=agent_env,
             mcp_private_env=supplied_mcp_environment,
             initial_transcript_seq=initial_seq,
+            startup_trace=startup_trace,
         )
 
     def label_lock(self, label: str) -> asyncio.Lock:
@@ -3485,6 +3498,7 @@ class AgentSessionManager:
         project_tool_config: dict | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
         execution_context_seed: dict[str, Any] | None = None,
+        startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
@@ -3551,9 +3565,15 @@ class AgentSessionManager:
             )
             return resolved.provider_id, resolved.spec, resolved.source
 
-        provider_id, resolved_spec, source = await self._offload(
-            "agent.provider_resolve", resolve_provider_spec, timeout=30.0
+        provider_phase = (
+            startup_trace.phase("provider_resolution")
+            if startup_trace
+            else nullcontext()
         )
+        with provider_phase:
+            provider_id, resolved_spec, source = await self._offload(
+                "agent.provider_resolve", resolve_provider_spec, timeout=30.0
+            )
 
         requested_mode = (
             initial_configuration.mode_id
@@ -3584,10 +3604,13 @@ class AgentSessionManager:
                 preflight_session_start,
             )
 
-            failure = preflight_session_start(
+            failure = await self._offload(
+                "agent.openinterpreter_preflight",
+                preflight_session_start,
                 self.settings.data_dir,
                 model_provider=requested_model_provider,
                 model_id=requested_model,
+                timeout=30.0,
             )
             if failure:
                 raise ProviderStartError(failure)
@@ -3655,6 +3678,8 @@ class AgentSessionManager:
                     session.agent_name = provider_id
         else:
             session.agent_name = provider_id
+        if startup_trace:
+            startup_trace.attach(session)
         if requested_mode:
             session.mode_id = requested_mode
         if execution_context_seed:
@@ -3663,12 +3688,18 @@ class AgentSessionManager:
             execution.update(execution_context_seed)
             config["execution_context"] = execution
             session.config_json = config
-        workspace_env = await self._prepare_workspace(
-            session,
-            requested_cwd=cwd or (existing.cwd if existing else None),
-            provider_id=provider_id,
-            mode_id=requested_mode,
+        workspace_phase = (
+            startup_trace.phase("workspace_preparation")
+            if startup_trace
+            else nullcontext()
         )
+        with workspace_phase:
+            workspace_env = await self._prepare_workspace(
+                session,
+                requested_cwd=cwd or (existing.cwd if existing else None),
+                provider_id=provider_id,
+                mode_id=requested_mode,
+            )
         effective_agent_env = dict(agent_env or {})
         effective_agent_env.update(workspace_env)
         resolved_spec.env.update(workspace_env)
@@ -3677,6 +3708,7 @@ class AgentSessionManager:
             session,
             agent_env=effective_agent_env,
             mcp_private_env=mcp_private_env,
+            startup_trace=startup_trace,
         )
         try:
             start_kwargs: dict[str, Any] = {
@@ -3733,7 +3765,16 @@ class AgentSessionManager:
                     session.id,
                 )
             raise RuntimeError(classified.get("message") or str(exc)) from exc
-        await self._publish_runtime(runtime)
+        publication_phase = (
+            startup_trace.phase("persistence_publication")
+            if startup_trace
+            else nullcontext()
+        )
+        with publication_phase:
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, runtime.session
+            )
+            await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
 
@@ -3745,6 +3786,7 @@ class AgentSessionManager:
         agent_env: dict[str, str] | None = None,
         provider_override: str | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
+        startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
         async with self._lock:
@@ -3779,6 +3821,7 @@ class AgentSessionManager:
                 surface=SURFACE_CHAT_DEFAULT,
                 provider_override=provider_override,
                 initial_configuration=initial_configuration,
+                startup_trace=startup_trace,
                 _startup_recovery=_startup_recovery,
             )
 

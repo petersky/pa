@@ -87,6 +87,14 @@ class ProviderStartError(RuntimeError):
         super().__init__(self.payload.get("message") or "Provider start failed")
 
 
+class ProviderTurnError(RuntimeError):
+    """Typed provider failure after ACP accepted a prompt."""
+
+    def __init__(self, payload: dict[str, Any]):
+        self.payload = dict(payload or {})
+        super().__init__(self.payload.get("message") or "Provider turn failed")
+
+
 def classify_acp_failure(
     exc: BaseException,
     *,
@@ -95,7 +103,7 @@ def classify_acp_failure(
     stderr: str | None = None,
 ) -> dict[str, Any]:
     """Map an exception to a structured, UI-safe failure payload."""
-    if isinstance(exc, ProviderStartError):
+    if isinstance(exc, (ProviderStartError, ProviderTurnError)):
         detail = dict(exc.payload)
         detail.setdefault("recoverable", True)
         detail.setdefault("stage", stage)

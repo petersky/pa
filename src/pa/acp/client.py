@@ -6,6 +6,7 @@ import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -52,6 +53,7 @@ from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
 from pa.acp.sandbox_health import sandbox_health_registry
+from pa.acp.startup_trace import SessionStartupTrace
 from pa.acp.transport import spawn_agent
 from pa.config import Settings
 from pa.core.logging import redact_log_text
@@ -157,6 +159,15 @@ _THOUGHT_UPDATE_TYPES = {
     "reasoning",
     "reasoning_chunk",
 }
+_PROVIDER_OUTPUT_UPDATE_TYPES = {
+    "agent_message_chunk",
+    "agent_message",
+    "agent_message_final",
+    "agent_thought_chunk",
+    "tool_call",
+    "tool_call_update",
+    "plan",
+}
 
 
 def normalize_session_update(update: Any) -> dict[str, Any]:
@@ -233,6 +244,15 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
             ) or []
 
     return payload
+
+
+def has_provider_turn_output(updates: list[Any]) -> bool:
+    """Return whether a turn emitted response, thought, tool, or plan output."""
+    return any(
+        str(normalize_session_update(update).get("type") or "")
+        in _PROVIDER_OUTPUT_UPDATE_TYPES
+        for update in updates
+    )
 
 
 def extract_models_modes_config(response: Any) -> dict[str, Any]:
@@ -631,6 +651,7 @@ class AgentConnection:
         async_runtime: AsyncRuntime | None = None,
         extra_env: dict[str, str] | None = None,
         mcp_private_env: dict[str, str] | None = None,
+        startup_trace: SessionStartupTrace | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -644,6 +665,7 @@ class AgentConnection:
         self.async_runtime = async_runtime
         self.extra_env = dict(extra_env or {})
         self.mcp_private_env = dict(mcp_private_env or {})
+        self.startup_trace = startup_trace
         self._ctx = None
         self._conn: Any = None
         self._proc: Any = None
@@ -927,36 +949,48 @@ class AgentConnection:
             child_env = apply_codex_owner_sandbox_environment(
                 child_env, self.settings
             )
-        self._ctx = spawn_agent(
-            self._client,
-            command,
-            *list(spec.args or []),
-            env=child_env,
+        launch_phase = (
+            self.startup_trace.phase("provider_launch")
+            if self.startup_trace
+            else nullcontext()
         )
-        try:
-            self._conn, self._proc = await self._ctx.__aenter__()
-        except Exception as exc:
-            health = sandbox_health_registry.failure(
-                spec.id,
-                "workspace-write",
-                exc,
-                metadata={"stage": "provider_spawn", "session_level": True},
+        with launch_phase:
+            self._ctx = spawn_agent(
+                self._client,
+                command,
+                *list(spec.args or []),
+                env=child_env,
             )
-            logger.error(
-                "ACP provider sandbox admission failed",
-                extra={"sandbox_health": health},
-            )
-            raise
-        await self._abort_connect_if_shutting_down(stage="initialize")
-        self._init_response = await self._conn.initialize(
-            protocol_version=PROTOCOL_VERSION,
-            client_capabilities=ClientCapabilities(
-                fs=FileSystemCapabilities(
-                    read_text_file=True,
-                    write_text_file=True,
+            try:
+                self._conn, self._proc = await self._ctx.__aenter__()
+            except Exception as exc:
+                health = sandbox_health_registry.failure(
+                    spec.id,
+                    "workspace-write",
+                    exc,
+                    metadata={"stage": "provider_spawn", "session_level": True},
                 )
-            ),
+                logger.error(
+                    "ACP provider sandbox admission failed",
+                    extra={"sandbox_health": health},
+                )
+                raise
+        await self._abort_connect_if_shutting_down(stage="initialize")
+        initialize_phase = (
+            self.startup_trace.phase("provider_initialize")
+            if self.startup_trace
+            else nullcontext()
         )
+        with initialize_phase:
+            self._init_response = await self._conn.initialize(
+                protocol_version=PROTOCOL_VERSION,
+                client_capabilities=ClientCapabilities(
+                    fs=FileSystemCapabilities(
+                        read_text_file=True,
+                        write_text_file=True,
+                    )
+                ),
+            )
         await self._abort_connect_if_shutting_down(stage="post-initialize")
         self._resume_supported = _agent_supports_resume(self._init_response)
         self._load_supported = _agent_supports_load(self._init_response)
@@ -987,103 +1021,109 @@ class AgentConnection:
             restore_methods.append("session/resume")
         if self._load_supported:
             restore_methods.append("session/load")
-        if resume_external_id:
-            for restore_method in restore_methods:
-                load_cwd = session_cwd
-                if restore_method == "session/load" and self._list_supported:
-                    resolved = await _resolve_session_load_target(
-                        self._conn,
-                        session_id=resume_external_id,
-                        cwd=session_cwd,
-                    )
-                    if resolved is None:
-                        continue
-                    resume_external_id, load_cwd = resolved
-                    self.session_cwd = load_cwd
-                await self._abort_connect_if_shutting_down(stage=restore_method)
-                try:
-                    restore = (
-                        self._conn.resume_session
-                        if restore_method == "session/resume"
-                        else self._conn.load_session
-                    )
-                    self._wire_log(
-                        "out",
-                        {
-                            "method": restore_method,
-                            "params": {
-                                "session_id": resume_external_id,
-                                "cwd": load_cwd,
-                            },
-                        },
-                    )
-                    restore_kwargs: dict[str, Any] = {
-                        "cwd": load_cwd,
-                        "session_id": resume_external_id,
-                        "mcp_servers": mcp,
-                    }
-                    if mcp_additional_directories:
-                        restore_kwargs["additional_directories"] = (
-                            mcp_additional_directories
+        session_phase = (
+            self.startup_trace.phase("session_creation")
+            if self.startup_trace
+            else nullcontext()
+        )
+        with session_phase:
+            if resume_external_id:
+                for restore_method in restore_methods:
+                    load_cwd = session_cwd
+                    if restore_method == "session/load" and self._list_supported:
+                        resolved = await _resolve_session_load_target(
+                            self._conn,
+                            session_id=resume_external_id,
+                            cwd=session_cwd,
                         )
-                    restore_resp = await restore(**restore_kwargs)
-                    session_meta = extract_models_modes_config(restore_resp)
-                    restored = True
-                    break
-                except Exception as exc:
-                    logger.warning(
-                        "ACP %s failed (%s); trying the next restore method",
-                        restore_method,
-                        _format_acp_error(exc),
-                    )
+                        if resolved is None:
+                            continue
+                        resume_external_id, load_cwd = resolved
+                        self.session_cwd = load_cwd
+                    await self._abort_connect_if_shutting_down(stage=restore_method)
+                    try:
+                        restore = (
+                            self._conn.resume_session
+                            if restore_method == "session/resume"
+                            else self._conn.load_session
+                        )
+                        self._wire_log(
+                            "out",
+                            {
+                                "method": restore_method,
+                                "params": {
+                                    "session_id": resume_external_id,
+                                    "cwd": load_cwd,
+                                },
+                            },
+                        )
+                        restore_kwargs: dict[str, Any] = {
+                            "cwd": load_cwd,
+                            "session_id": resume_external_id,
+                            "mcp_servers": mcp,
+                        }
+                        if mcp_additional_directories:
+                            restore_kwargs["additional_directories"] = (
+                                mcp_additional_directories
+                            )
+                        restore_resp = await restore(**restore_kwargs)
+                        session_meta = extract_models_modes_config(restore_resp)
+                        restored = True
+                        break
+                    except Exception as exc:
+                        logger.warning(
+                            "ACP %s failed (%s); trying the next restore method",
+                            restore_method,
+                            _format_acp_error(exc),
+                        )
 
-        if restored:
-            if existing_session:
-                self.session = existing_session
-                self.session.external_session_id = resume_external_id
-                self.session.status = "idle"
-                self.session.updated_at = datetime.now(UTC)
+            if restored:
+                if existing_session:
+                    self.session = existing_session
+                    self.session.external_session_id = resume_external_id
+                    self.session.status = "idle"
+                    self.session.updated_at = datetime.now(UTC)
+                else:
+                    self.session = AgentSession(
+                        agent_name=self.agent_name,
+                        external_session_id=resume_external_id,
+                        status="idle",
+                    )
             else:
-                self.session = AgentSession(
-                    agent_name=self.agent_name,
-                    external_session_id=resume_external_id,
-                    status="idle",
+                # Missing session/list entries fall back to session/new. Never do that
+                # while the host is dying — Cursor often omits brand-new unprompted
+                # sessions from the next process's session/list, which cascades into
+                # more orphan creates on the following boot.
+                await self._abort_connect_if_shutting_down(stage="session/new")
+                new_session_kwargs: dict[str, Any] = {
+                    "cwd": session_cwd,
+                    "mcp_servers": mcp,
+                }
+                if mcp_additional_directories:
+                    new_session_kwargs["additional_directories"] = (
+                        mcp_additional_directories
+                    )
+                acp_session = await self._conn.new_session(**new_session_kwargs)
+                session_meta = extract_models_modes_config(acp_session)
+                self._wire_log(
+                    "out",
+                    {
+                        "method": "session/new",
+                        "params": {"cwd": session_cwd},
+                        "result": {"session_id": acp_session.session_id},
+                    },
                 )
-        else:
-            # Missing session/list entries fall back to session/new. Never do that
-            # while the host is dying — Cursor often omits brand-new unprompted
-            # sessions from the next process's session/list, which cascades into
-            # more orphan creates on the following boot.
-            await self._abort_connect_if_shutting_down(stage="session/new")
-            new_session_kwargs: dict[str, Any] = {
-                "cwd": session_cwd,
-                "mcp_servers": mcp,
-            }
-            if mcp_additional_directories:
-                new_session_kwargs["additional_directories"] = (
-                    mcp_additional_directories
-                )
-            acp_session = await self._conn.new_session(**new_session_kwargs)
-            session_meta = extract_models_modes_config(acp_session)
-            self._wire_log(
-                "out",
-                {
-                    "method": "session/new",
-                    "params": {"cwd": session_cwd},
-                    "result": {"session_id": acp_session.session_id},
-                },
-            )
-            if existing_session:
-                self.session = existing_session
-                self.session.external_session_id = acp_session.session_id
-                self.session.status = "connected"
-                self.session.updated_at = datetime.now(UTC)
-            else:
-                self.session = AgentSession(
-                    agent_name=self.agent_name,
-                    external_session_id=acp_session.session_id,
-                    status="connected",
-                )
+                if existing_session:
+                    self.session = existing_session
+                    self.session.external_session_id = acp_session.session_id
+                    self.session.status = "connected"
+                    self.session.updated_at = datetime.now(UTC)
+                else:
+                    self.session = AgentSession(
+                        agent_name=self.agent_name,
+                        external_session_id=acp_session.session_id,
+                        status="connected",
+                    )
 
         assert self.session is not None
         if mcp and spec.id == "codex" and self.session.external_session_id:
@@ -1183,6 +1223,7 @@ class AgentConnection:
                 "ACP session configuration is not confirmed; the prompt was not delivered. "
                 "Retry session admission after resolving the provider compatibility error."
             )
+        self.last_usage = None
 
         if item_id:
             self.session.item_id = item_id
@@ -1218,6 +1259,10 @@ class AgentConnection:
         prompt.extend(
             image_block(image.data, image.mime_type) for image in images or []
         )
+        # Session initialization/configuration updates are not evidence that this
+        # prompt produced output. Start the turn's validation window explicitly.
+        if self._client:
+            self._client.drain_updates()
         try:
             response = await self._conn.prompt(
                 session_id=self.session.external_session_id,
@@ -1256,6 +1301,31 @@ class AgentConnection:
                 "result": {"stop_reason": stop_reason, "usage": usage},
             },
         )
+
+        if (
+            self.agent_name == "openinterpreter"
+            and stop_reason == "end_turn"
+            and not usage
+            and not has_provider_turn_output(updates)
+        ):
+            from pa.acp.errors import ProviderTurnError
+
+            await self._mark_transport_dead()
+            raise ProviderTurnError(
+                {
+                    "code": "empty_provider_turn",
+                    "message": (
+                        "OpenInterpreter ended the turn without a response, thought, "
+                        "tool event, or usage record. The provider session was "
+                        "disconnected so it can be retried safely after checking the "
+                        "MiniMax model-provider configuration and credential."
+                    ),
+                    "recoverable": True,
+                    "stage": "prompt",
+                    "provider": self.agent_name,
+                    "stop_reason": stop_reason,
+                }
+            )
 
         self.session.status = "idle"
         self.session.updated_at = datetime.now(UTC)
