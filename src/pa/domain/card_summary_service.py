@@ -145,9 +145,30 @@ class CardSummaryService:
         # owner performs provider work and emits authoritative summary events.
         return not bool(self.settings.fleet_owner_url)
 
-    def _dedicated_configuration(self) -> SummaryConfiguration:
+    def _provider_model(self) -> tuple[str, str]:
         provider = self.settings.card_summary_provider.strip() or "openai"
         model = self.settings.card_summary_model.strip() or "gpt-5-mini"
+        return provider, model
+
+    def _unconfigured_configuration(self) -> SummaryConfiguration:
+        provider, model = self._provider_model()
+        return SummaryConfiguration(
+            enabled=False,
+            provider=provider,
+            model=model,
+            auth_source="none",
+            state="disabled",
+            setup_guidance=(
+                "Set PA_CARD_SUMMARY_API_KEY on the summary-authority instance, or "
+                "configure a provider-scoped Codex API key with `pa agent-provider "
+                "configure --provider codex --api-key ...`. ChatGPT OAuth tokens are "
+                "not exported to direct HTTP services."
+            ),
+            failure_code=SummaryFailureCode.UNCONFIGURED,
+        )
+
+    def _dedicated_configuration(self) -> SummaryConfiguration:
+        provider, model = self._provider_model()
         if self.settings.card_summary_api_key:
             return SummaryConfiguration(
                 enabled=True,
@@ -157,90 +178,85 @@ class CardSummaryService:
                 state="configured",
                 api_key=self.settings.card_summary_api_key,
             )
-        return SummaryConfiguration(
-            enabled=False,
-            provider=provider,
-            model=model,
-            auth_source="none",
-            state="disabled",
-            setup_guidance=(
-                "Set PA_CARD_SUMMARY_API_KEY on the summary-authority instance. "
-                "Alternatively set PA_CARD_SUMMARY_AUTH_SOURCE=codex to reuse a "
-                "provider-scoped Codex API key; ChatGPT OAuth tokens are not exported "
-                "to direct HTTP services."
-            ),
-            failure_code=SummaryFailureCode.UNCONFIGURED,
-        )
+        return self._unconfigured_configuration()
 
-    async def _configuration(self) -> SummaryConfiguration:
-        if self._resolved_configuration is not None:
-            return self._resolved_configuration
-        if self.settings.card_summary_auth_source == "dedicated":
-            self._resolved_configuration = self._dedicated_configuration()
-            return self._resolved_configuration
-
-        credentials = await asyncio.to_thread(
-            load_credentials, self.settings.data_dir, "codex"
-        )
+    def _configured_from_files(self) -> SummaryConfiguration | None:
+        """Use a dedicated key or Codex JSON credentials. No Codex CLI probe."""
+        dedicated = self._dedicated_configuration()
+        if dedicated.enabled:
+            return dedicated
+        credentials = load_credentials(self.settings.data_dir, "codex")
         api_key = (
             credentials.get("CODEX_API_KEY")
             or credentials.get("OPENAI_API_KEY")
             or credentials.get("CODEX_ACCESS_TOKEN")
             or ""
         )
-        provider = self.settings.card_summary_provider.strip() or "openai"
-        model = self.settings.card_summary_model.strip() or "gpt-5-mini"
-        if api_key:
-            method = (
-                "codex_access_token"
-                if credentials.get("CODEX_ACCESS_TOKEN")
-                else "codex_provider_api_key"
-            )
-            self._resolved_configuration = SummaryConfiguration(
-                enabled=True,
-                provider=provider,
-                model=model,
-                auth_source=method,
-                state="configured",
-                api_key=api_key,
-            )
+        if not api_key:
+            return None
+        provider, model = self._provider_model()
+        method = (
+            "codex_access_token"
+            if credentials.get("CODEX_ACCESS_TOKEN")
+            else "codex_provider_api_key"
+        )
+        return SummaryConfiguration(
+            enabled=True,
+            provider=provider,
+            model=model,
+            auth_source=method,
+            state="configured",
+            api_key=api_key,
+        )
+
+    async def _configuration(self) -> SummaryConfiguration:
+        if self._resolved_configuration is not None:
+            return self._resolved_configuration
+        configured = self._configured_from_files()
+        if configured is not None:
+            self._resolved_configuration = configured
+            return configured
+        if self.settings.card_summary_auth_source != "codex":
+            self._resolved_configuration = self._unconfigured_configuration()
             return self._resolved_configuration
 
+        provider, model = self._provider_model()
         # This bounded probe runs only in the background worker/request, never
         # in a card write, page render, sync callback, or startup critical path.
         status = await asyncio.to_thread(CodexProvider().status, self.settings.data_dir)
         oauth = status.auth_configured and status.auth_method == "chatgpt_oauth"
-        self._resolved_configuration = SummaryConfiguration(
-            enabled=False,
-            provider=provider,
-            model=model,
-            auth_source="codex_chatgpt_oauth" if oauth else "none",
-            state="disabled",
-            setup_guidance=(
-                "ChatGPT OAuth is authorized for Codex, but PA does not export its tokens "
-                "or launch an agentic CLI for untrusted card text. Configure a provider-scoped "
-                "key with `pa agent-provider configure --provider codex --api-key ...`, or set "
-                "PA_CARD_SUMMARY_API_KEY on the summary-authority instance."
-                if oauth
-                else "Authenticate Codex with a provider-scoped API key using `pa "
-                "agent-provider configure --provider codex --api-key ...`, or set "
-                "PA_CARD_SUMMARY_API_KEY on the summary-authority instance."
-            ),
-            failure_code=(
-                SummaryFailureCode.OAUTH_UNSUPPORTED
-                if oauth
-                else SummaryFailureCode.UNCONFIGURED
-            ),
+        self._resolved_configuration = (
+            SummaryConfiguration(
+                enabled=False,
+                provider=provider,
+                model=model,
+                auth_source="codex_chatgpt_oauth",
+                state="disabled",
+                setup_guidance=(
+                    "ChatGPT OAuth is authorized for Codex, but PA does not export its "
+                    "tokens or launch an agentic CLI for untrusted card text. Configure "
+                    "a provider-scoped key with `pa agent-provider configure --provider "
+                    "codex --api-key ...`, or set PA_CARD_SUMMARY_API_KEY on the "
+                    "summary-authority instance."
+                ),
+                failure_code=SummaryFailureCode.OAUTH_UNSUPPORTED,
+            )
+            if oauth
+            else self._unconfigured_configuration()
         )
         return self._resolved_configuration
 
     def diagnostics(self) -> dict[str, object]:
         configuration = self._resolved_configuration
+        if configuration is None:
+            configuration = self._configured_from_files()
+            if configuration is not None:
+                self._resolved_configuration = configuration
         if (
             configuration is None
             and self.settings.card_summary_auth_source == "dedicated"
         ):
-            configuration = self._dedicated_configuration()
+            configuration = self._unconfigured_configuration()
         if configuration is None:
             public: dict[str, object] = {
                 "state": "configuration_pending",
@@ -297,15 +313,13 @@ class CardSummaryService:
 
     def disable_if_unconfigured(self, card, *, force: bool = False):
         """Persist an obvious disabled state without starting background work."""
-        if (
-            not self.is_authority
-            or self.settings.card_summary_auth_source != "dedicated"
-            or self.settings.card_summary_api_key
-            or (card.summary_source == CardSummarySource.MANUAL and not force)
+        if not self.is_authority or (
+            card.summary_source == CardSummarySource.MANUAL and not force
         ):
             return card
-        configuration = self._dedicated_configuration()
-        self._resolved_configuration = configuration
+        if self._configured_from_files() is not None:
+            return card
+        configuration = self._unconfigured_configuration()
         input_hash = summary_input_hash(card.title, card.body)
         if (
             card.summary_status.value != "disabled"

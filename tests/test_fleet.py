@@ -178,6 +178,7 @@ class FleetRegistryReloadTests(unittest.TestCase):
         self,
     ) -> None:
         source = Path("src/pa/server/static/js/fleet.js").read_text()
+        self.assertIn("/providers/catalog", source)
         self.assertIn('return "/api/agent/providers/codex/login-jobs"', source)
         self.assertIn('data-codex-login-resume="', source)
         self.assertIn("Use any browser to finish signing in", source)

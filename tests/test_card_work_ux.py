@@ -332,7 +332,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertEqual(detail.status_code, 200)
             self.assertIn("Summary generation is disabled.", detail.text)
             self.assertIn("Authentication: none", detail.text)
-            self.assertIn("Last failure: unconfigured", detail.text)
+            self.assertIn("Setup needed: unconfigured", detail.text)
 
             disabled_excerpt = "LEGACY DISABLED PREFIX MUST NOT RENDER"
             disabled = self.app.state.ctx.store.create_card(

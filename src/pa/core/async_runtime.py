@@ -115,6 +115,11 @@ class AsyncRuntime:
             self._monitor_loop_lag(), name="pa-event-loop-lag"
         )
 
+    def reset_lag_samples(self) -> None:
+        """Drop collected lag so a caller can measure one load window."""
+        self._lag_samples_ms.clear()
+        self._lag_max_ms = 0.0
+
     async def close(self, *, drain_timeout: float = 5.0) -> None:
         self._closing = True
         if self._lag_task and not self._lag_task.done():

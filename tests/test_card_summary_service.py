@@ -348,6 +348,39 @@ def test_codex_scoped_key_is_reused_without_exposure() -> None:
     asyncio.run(_codex_scoped_key_is_reused_without_exposure())
 
 
+async def _dedicated_auth_reuses_codex_file_credentials() -> None:
+    async def provider(title, body):
+        return "Reuse the stored Codex provider key when no dedicated key is set."
+
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(data_dir=Path(tmp), card_summary_api_key="")
+        ctx = SimpleNamespace(
+            settings=settings,
+            store=CardProjection(Path(tmp) / "pa.db"),
+        )
+        card = ctx.store.create_card(CardCreate(title="Fallback", body="details"))
+        service = CardSummaryService(ctx, provider_call=provider)
+        with patch(
+            "pa.domain.card_summary_service.load_credentials",
+            return_value={"CODEX_API_KEY": "never-expose-this"},
+        ):
+            unchanged = service.disable_if_unconfigured(card)
+            assert unchanged.summary_status.value != "disabled"
+            await service.generate(card.id, card.realm_id)
+
+        current = ctx.store.get_card(card.id)
+        assert current is not None
+        assert current.summary_status.value == "ready"
+        assert current.summary_auth_source == "codex_provider_api_key"
+        diagnostics = service.diagnostics()
+        assert diagnostics["authentication_source"] == "codex_provider_api_key"
+        assert "never-expose-this" not in str(diagnostics)
+
+
+def test_dedicated_auth_reuses_codex_file_credentials() -> None:
+    asyncio.run(_dedicated_auth_reuses_codex_file_credentials())
+
+
 async def _oauth_only_has_safe_precise_setup_path() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         settings = Settings(

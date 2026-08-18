@@ -54,6 +54,7 @@ from pa.acp.providers.registry import (
     DEFAULT_PROVIDER_ID,
     get_provider,
     list_provider_ids,
+    provider_catalog,
 )
 from pa.acp.providers.resolve import (
     list_provider_summaries_bounded,
@@ -75,6 +76,7 @@ from pa.modules.agent_providers import (
     LoginBody,
     ProviderActionGate,
     _run_provider_action,
+    list_provider_catalog,
     start_provider_login,
 )
 
@@ -97,6 +99,21 @@ class AcpProviderTests(unittest.TestCase):
         self.assertEqual(
             get_provider("openinterpreter").display_name, "OpenInterpreter"
         )
+
+    def test_provider_catalog_lists_runtimes_without_status_probes(self) -> None:
+        with patch.object(
+            CursorProvider, "status", side_effect=AssertionError("status probed")
+        ):
+            catalog = provider_catalog()
+        self.assertEqual(
+            {item["id"] for item in catalog},
+            {"cursor", "codex", "openinterpreter"},
+        )
+        self.assertEqual(
+            {item["display_name"] for item in catalog},
+            {"Cursor", "Codex", "OpenInterpreter"},
+        )
+        self.assertEqual(list_provider_catalog(), catalog)
 
     def test_surface_for_label(self) -> None:
         self.assertEqual(surface_for_label("default"), SURFACE_CHAT_DEFAULT)
