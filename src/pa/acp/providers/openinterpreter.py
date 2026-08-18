@@ -676,22 +676,10 @@ def provider_options_snapshot(
         if available_models
         else None
     )
-    config_options: list[dict[str, Any]] = [
-        {
-            "id": "reasoning_effort",
-            "name": "Reasoning",
-            "category": "thought_level",
-            "type": "select",
-            "currentValue": "default",
-            "options": [
-                {"name": "Default", "value": "default"},
-                {"name": "Minimal", "value": "minimal"},
-                {"name": "Low", "value": "low"},
-                {"name": "Medium", "value": "medium"},
-                {"name": "High", "value": "high"},
-            ],
-        }
-    ]
+    # Do not invent OpenAI-style effort levels. OpenInterpreter only confirms
+    # those values when the live model advertises an effort-shaped control;
+    # MiniMax-M2.x uses fixed thinking and leaves ACP currentValue at "default".
+    config_options: list[dict[str, Any]] = []
     if available_models:
         config_options.insert(
             0,

@@ -70,7 +70,17 @@ logger = logging.getLogger(__name__)
 
 _RETRY_SECONDS = 30
 _QUIESCE_POLL_SECONDS = 0.4
+TURN_WAITING_SECONDS = 15.0
 TRANSCRIPT_WINDOW_LIMIT = 1000
+_TURN_STREAM_EVENT_TYPES = {
+    "agent_message_chunk",
+    "agent_message",
+    "agent_thought_chunk",
+    "user_message_chunk",
+    "tool_call",
+    "tool_call_update",
+    "plan",
+}
 PromptAction = Literal["append", "prepend", "interrupt"]
 _DURABLE_RUNTIME_KEY = "durable_runtime"
 RECOVERY_BLOCKED_STATUS = "recovery_blocked"
@@ -186,6 +196,7 @@ class AgentSessionRuntime:
         self._closed = False
         self._turn_started_at: datetime | None = None
         self._turn_agent_events: list[dict[str, Any]] = []
+        self._turn_streamed = False
         self._runtime_observed_at: datetime = datetime.now(UTC)
         self._connection_generation = 0
 
@@ -398,6 +409,8 @@ class AgentSessionRuntime:
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
         event_type = str(normalized.get("type") or "session_update")
+        if event_type in _TURN_STREAM_EVENT_TYPES:
+            self._turn_streamed = True
         if is_agent_message_type(event_type) and self._in_flight:
             self._turn_agent_events.append(dict(normalized))
         if event_type == "usage_update" and normalized.get("usage"):
@@ -1361,6 +1374,7 @@ class AgentSessionRuntime:
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
             self._turn_agent_events = []
+            self._turn_streamed = False
             await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
                 composition = await self._offload(
@@ -1464,6 +1478,7 @@ class AgentSessionRuntime:
             except BaseException:
                 self._finish_turn_state()
                 raise
+            stall_task = asyncio.create_task(self._watch_turn_waiting(item))
             try:
                 try:
                     stop_reason = await self.connection.prompt(
@@ -1618,6 +1633,11 @@ class AgentSessionRuntime:
                         logger.exception("Failed to queue card completion")
                 return stop_reason
             finally:
+                stall_task.cancel()
+                try:
+                    await stall_task
+                except asyncio.CancelledError:
+                    pass
                 self._finish_turn_state()
 
     async def _surface_final_input_fallback(
@@ -1709,9 +1729,43 @@ class AgentSessionRuntime:
         self._flush_transcript()
         await self._drain_transcripts()
 
+    def _turn_waiting_payload(
+        self, item: QueuedPrompt, elapsed_s: float
+    ) -> dict[str, Any]:
+        pending = bool(self._pending_permissions)
+        if pending:
+            message = (
+                "The agent is waiting for a permission response. "
+                "Approve or deny the request to continue."
+            )
+        else:
+            message = (
+                "The agent has not streamed any output yet. Thinking models "
+                "can stay quiet for a while; use Stop if this looks stuck."
+            )
+        return {
+            "id": item.id,
+            "elapsed_s": int(elapsed_s),
+            "pending_permissions": pending,
+            "message": message,
+        }
+
+    async def _watch_turn_waiting(self, item: QueuedPrompt) -> None:
+        elapsed = 0.0
+        while True:
+            await asyncio.sleep(TURN_WAITING_SECONDS)
+            elapsed += TURN_WAITING_SECONDS
+            if self._in_flight is not item or self._turn_streamed:
+                return
+            self._append_transcript(
+                "turn_waiting", self._turn_waiting_payload(item, elapsed)
+            )
+            self._flush_transcript()
+
     def _finish_turn_state(self) -> None:
         self._in_flight = None
         self._turn_started_at = None
+        self._turn_streamed = False
         self._checkpoint_runtime(lifecycle="ready")
 
     def _is_connection_loss(self, exc: BaseException) -> bool:

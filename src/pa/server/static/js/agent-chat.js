@@ -1406,6 +1406,8 @@
       "browser_attachment_changed",
       "connection_lost",
       "usage_update",
+      "turn_waiting",
+      "prompt_failed",
       "model_changed",
       "mode_changed",
       "config_changed",
@@ -1599,6 +1601,16 @@
         this.setTurnActive(false);
         this.setStatus("offline");
         this.addBubble("system", payload.message || "Connection to the agent was lost. You may want to retry the prompt.", created, { forceVisible: true });
+        break;
+      case "turn_waiting":
+        if (!this.turnActive) this.setTurnActive(true, created);
+        this.addBubble("system", payload.message || "Waiting for the agent…", created, { system: true, forceVisible: true });
+        break;
+      case "prompt_failed":
+        this.finalizeStreams(created);
+        this.finalizeActivity();
+        this.setTurnActive(false);
+        this.addBubble("system", payload.error || payload.message || "The prompt failed.", created, { system: true, forceVisible: true });
         break;
       case "error":
         this.addBubble("system", payload.message || "Error", created, { system: true });
@@ -2738,6 +2750,7 @@
         if (!self._isDuplicateUserBubble(text)) {
           self.addBubble("user", text, new Date().toISOString(), { images: displayImages });
         }
+        self.setTurnActive(true);
         self.scrollToBottom();
         if (self.drafts) {
           self.drafts.submissionAccepted({
@@ -3368,7 +3381,7 @@
       return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
     });
     const effortChoices = effort && (effort.options || effort.choices || effort.values);
-    populateSelect(dialog.querySelector("[data-agent-new-effort]"), effortChoices && effortChoices.length ? effortChoices : ["low", "medium", "high", "xhigh"], ["value", "id"], "Provider default");
+    populateSelect(dialog.querySelector("[data-agent-new-effort]"), effortChoices && effortChoices.length ? effortChoices : [], ["value", "id"], "Provider default");
     const related = dialog.querySelector("[data-agent-new-related]");
     if (!related) return;
     related.innerHTML = "";

@@ -1138,3 +1138,28 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertIs(kwargs["existing"], session)
             self.assertEqual(kwargs["resume_external_id"], "provider-thread-old")
             self.assertEqual(kwargs["provider_override"], "codex")
+
+
+class AgentSessionTurnWaitingTests(unittest.TestCase):
+    def test_watch_emits_turn_waiting_until_the_agent_streams(self) -> None:
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        item = QueuedPrompt(id="prompt-1", message="hello")
+        runtime._in_flight = item
+        runtime._turn_streamed = False
+        runtime._pending_permissions = {}
+        runtime._append_transcript = MagicMock()
+        runtime._flush_transcript = MagicMock()
+
+        async def run() -> None:
+            with patch("pa.instance.agent_session.TURN_WAITING_SECONDS", 0.02):
+                task = asyncio.create_task(runtime._watch_turn_waiting(item))
+                await asyncio.sleep(0.06)
+                runtime._turn_streamed = True
+                await asyncio.wait_for(task, timeout=1)
+
+        asyncio.run(run())
+        runtime._append_transcript.assert_called()
+        event_type, payload = runtime._append_transcript.call_args.args
+        self.assertEqual(event_type, "turn_waiting")
+        self.assertIn("not streamed", payload["message"])
+        self.assertFalse(payload["pending_permissions"])

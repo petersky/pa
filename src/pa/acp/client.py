@@ -149,10 +149,22 @@ def _content_text(content: Any) -> str:
     return ""
 
 
+_THOUGHT_UPDATE_TYPES = {
+    "agent_thought_chunk",
+    "agent_thought",
+    "thought",
+    "thought_chunk",
+    "reasoning",
+    "reasoning_chunk",
+}
+
+
 def normalize_session_update(update: Any) -> dict[str, Any]:
     """Normalize an ACP session update into a typed event payload."""
     plain = _to_plain(update)
     update_type = _session_update_type(update)
+    if update_type in _THOUGHT_UPDATE_TYPES:
+        update_type = "agent_thought_chunk"
     payload: dict[str, Any] = {"type": update_type, "raw": plain}
 
     if isinstance(plain, dict):
@@ -1369,6 +1381,9 @@ class AgentConnection:
                     )
                 if not existing:
                     bound_options[oid] = (value, setting)
+                    if option_current_value(option) == value:
+                        strategies[setting] = f"config:{oid}:unchanged"
+                        return
                     actions.append((setting, "config", oid, value))
                 strategies[setting] = f"config:{oid}"
 
@@ -1512,10 +1527,17 @@ class AgentConnection:
                         option_current_value(verified) if verified is not None else None
                     )
                     if verified is None or effective_value != value:
+                        hint = ""
+                        if setting == "reasoning":
+                            hint = (
+                                " This model may use fixed thinking and ignore effort "
+                                "controls. Choose Provider default, or a model that "
+                                "advertises this setting."
+                            )
                         raise ACPConfigurationError(
                             "ACP configuration compatibility error: the agent did not "
                             f"confirm {setting}={value!r}; effective value was "
-                            f"{effective_value!r}."
+                            f"{effective_value!r}.{hint}"
                         )
                     working_options = verified_options
 

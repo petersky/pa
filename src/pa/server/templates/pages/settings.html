@@ -939,7 +939,7 @@
       var id = String(item && (item.id || item.configId || item.config_id || item.name) || "").toLowerCase().replace(/[_ -]/g, "");
       return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
     });
-    fill(effort, effortOption && (effortOption.options || effortOption.choices || effortOption.values) || ["low", "medium", "high", "xhigh"], ["value", "id"], useSaved ? effort.dataset.savedValue : "");
+    fill(effort, effortOption && (effortOption.options || effortOption.choices || effortOption.values) || [], ["value", "id"], useSaved ? effort.dataset.savedValue : "");
     var related = container.querySelector("[data-settings-default-related]");
     related.innerHTML = "";
     raw.filter(function (item) { return item && item !== effortOption; }).forEach(function (item) {
