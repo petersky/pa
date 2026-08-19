@@ -34,9 +34,11 @@ from pa.acp.providers.codex import (
 from pa.acp.providers.cursor import CursorProvider, _cursor_auth_status
 from pa.acp.providers.openinterpreter import (
     OpenInterpreterProvider,
+    _cached_bundled_provider_catalog,
     _run_official_installer,
     _repair_managed_config_if_needed,
     _spawn_args,
+    discover_builtin_model_providers,
     preflight_session_start,
     provider_options_snapshot,
 )
@@ -440,6 +442,44 @@ class AcpProviderTests(unittest.TestCase):
         )
         self.assertEqual(classified["code"], "auth_missing")
         self.assertIn("-c", _spawn_args(model_provider="minimax-coding-plan"))
+
+    def test_openinterpreter_catalog_uses_bounded_embedded_json_and_cache(self) -> None:
+        executable = self.data_dir / "interpreter"
+        catalog = {
+            "generated_from": ["test"],
+            "providers": [
+                {
+                    "id": "minimax-coding-plan",
+                    "name": "MiniMax Coding Plan",
+                    "env_key": "MINIMAX_API_KEY",
+                    "base_url": "https://example.invalid",
+                    "wire_api": "messages",
+                    "models": [
+                        {"id": "MiniMax-M2.5", "display_name": "MiniMax M2.5"}
+                    ],
+                }
+            ],
+        }
+        executable.write_bytes(
+            b"binary-prefix\x00" + json.dumps(catalog, indent=2).encode() + b"\x00tail"
+        )
+        _cached_bundled_provider_catalog.cache_clear()
+
+        with patch(
+            "pa.acp.providers.openinterpreter.resolve_executable",
+            return_value=executable,
+        ):
+            first = discover_builtin_model_providers()
+            executable.chmod(0)
+            try:
+                second = discover_builtin_model_providers()
+            finally:
+                executable.chmod(0o600)
+
+        self.assertEqual(first, second)
+        minimax = next(item for item in first if item["id"] == "minimax-coding-plan")
+        self.assertEqual(minimax["wire_api"], "messages")
+        self.assertEqual(minimax["models"][0]["modelId"], "MiniMax-M2.5")
 
     def test_openinterpreter_rejects_unsafe_model_configuration(self) -> None:
         provider = OpenInterpreterProvider()

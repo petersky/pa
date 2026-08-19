@@ -461,6 +461,70 @@ class AgentChatSseTests(unittest.TestCase):
         runtime.set_mode.assert_awaited_once_with("code")
         runtime.set_config.assert_awaited_once_with("reasoningEffort", "high")
 
+    def test_new_session_response_persists_complete_startup_trace(self) -> None:
+        session = AgentSession(id="sess-traced", agent_name="codex")
+        runtime = MagicMock()
+        runtime.session = session
+        runtime.connection.config_options = []
+        runtime.snapshot.side_effect = lambda: {
+            "session": {
+                "id": session.id,
+                "config_json": dict(session.config_json or {}),
+            }
+        }
+        manager = MagicMock()
+        manager.store.save_session = MagicMock()
+
+        async def create(**kwargs):
+            trace = kwargs["startup_trace"]
+            trace.attach(session)
+            for phase in (
+                "provider_resolution",
+                "workspace_preparation",
+                "provider_launch",
+                "provider_initialize",
+                "session_creation",
+                "session_configuration",
+                "persistence_publication",
+            ):
+                trace.mark(phase)
+            return runtime
+
+        manager.create_session = AsyncMock(side_effect=create)
+        request = MagicMock()
+
+        async def run() -> dict:
+            with (
+                patch("pa.modules.agent_chat._manager", return_value=manager),
+                patch(
+                    "pa.modules.agent_chat.get_principal_id",
+                    return_value="user:local",
+                ),
+            ):
+                return await create_session(request, CreateSessionBody(fresh=True))
+
+        result = asyncio.run(run())
+        trace = result["session"]["config_json"]["startup_trace"]
+        self.assertTrue(trace["complete"])
+        self.assertEqual(
+            [phase["name"] for phase in trace["phases"]],
+            [
+                "preference_resolution",
+                "provider_resolution",
+                "workspace_preparation",
+                "provider_launch",
+                "provider_initialize",
+                "session_creation",
+                "session_configuration",
+                "persistence_publication",
+                "response_readiness",
+            ],
+        )
+        self.assertTrue(
+            all(phase["duration_ms"] >= 0 for phase in trace["phases"])
+        )
+        manager.store.save_session.assert_called()
+
     def test_new_session_does_not_apply_unscoped_defaults_to_other_provider(
         self,
     ) -> None:

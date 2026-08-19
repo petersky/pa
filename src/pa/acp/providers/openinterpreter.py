@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import mmap
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import subprocess
 import tempfile
 import urllib.request
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -68,11 +70,8 @@ _STATIC_MODES = [
     {"id": "workspace-write", "name": "Workspace Write"},
     {"id": "full-access", "name": "Full Access"},
 ]
-_PROVIDER_HEADER = re.compile(
-    rb'\{\s*"id":\s*"(?P<id>[^"]+)"\s*,\s*"name":\s*"(?P<name>(?:\\.|[^"\\])*)"'
-    rb'\s*,\s*"env_key":\s*"(?P<env>[^"]*)"\s*,\s*"base_url":\s*"(?P<url>[^"]*)"'
-    rb'\s*,\s*"wire_api":\s*"(?P<wire>[^"]*)"',
-)
+_BUNDLED_CATALOG_MARKER = b'{\n  "generated_from": ['
+_MAX_BUNDLED_CATALOG_BYTES = 16 * 1024 * 1024
 
 
 class OpenInterpreterProvider:
@@ -506,32 +505,15 @@ def discover_builtin_model_providers(
     providers: list[dict[str, Any]] = []
     if resolved:
         try:
-            data = Path(resolved).resolve().read_bytes()
-        except OSError:
-            data = b""
-        seen: set[str] = set()
-        for match in _PROVIDER_HEADER.finditer(data):
-            provider_id = match.group("id").decode("utf-8", "replace")
-            if provider_id in seen:
-                continue
-            seen.add(provider_id)
-            name = json.loads(
-                b'"' + match.group("name") + b'"'
+            target = Path(resolved).resolve()
+            stat = target.stat()
+            encoded = _cached_bundled_provider_catalog(
+                str(target), stat.st_size, stat.st_mtime_ns
             )
-            providers.append(
-                {
-                    "id": provider_id,
-                    "name": name,
-                    "env_key": match.group("env").decode("utf-8", "replace") or None,
-                    "base_url": match.group("url").decode("utf-8", "replace"),
-                    "wire_api": match.group("wire").decode("utf-8", "replace"),
-                    "requires_auth": provider_id not in _NO_AUTH_PROVIDERS,
-                    "source": "binary",
-                }
-            )
-        # Attach model catalogs for known providers when nearby in the binary.
-        for provider in providers:
-            provider["models"] = _extract_models_for_provider(data, provider["id"])
+        except (OSError, ValueError):
+            encoded = None
+        if encoded:
+            providers = json.loads(encoded)
     if providers:
         # Ensure local no-auth backends remain listed even if the binary layout
         # changes.
@@ -562,41 +544,70 @@ def discover_builtin_model_providers(
     ]
 
 
-def _extract_models_for_provider(data: bytes, provider_id: str) -> list[dict[str, str]]:
-    needle = f'"id": "{provider_id}"'.encode()
-    idx = data.find(needle)
-    if idx < 0:
-        return []
-    # Limit the search window to this provider object.
-    start = data.rfind(b"{", max(0, idx - 64), idx + 1)
-    if start < 0:
-        start = idx
-    depth = 0
-    end = min(len(data), start + 250_000)
-    stop = end
-    for i in range(start, end):
-        byte = data[i]
-        if byte == 0x7B:
-            depth += 1
-        elif byte == 0x7D:
-            depth -= 1
-            if depth == 0:
-                stop = i + 1
-                break
-    window = data[start:stop]
-    models: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for match in re.finditer(
-        rb'"id":\s*"([^"]+)"\s*,\s*"display_name":\s*"((?:\\.|[^"\\])*)"',
-        window,
-    ):
-        model_id = match.group(1).decode("utf-8", "replace")
-        if model_id in seen or model_id == provider_id:
+@lru_cache(maxsize=8)
+def _cached_bundled_provider_catalog(
+    executable: str, size: int, mtime_ns: int
+) -> str | None:
+    """Parse the embedded JSON catalog once per installed executable identity.
+
+    OpenInterpreter's standalone binary is hundreds of megabytes. A regex scan
+    over the whole file took more than twelve seconds on the request event loop.
+    mmap.find locates the one bounded JSON payload without copying the binary;
+    the file identity arguments invalidate the cache after an update.
+    """
+    del size, mtime_ns  # cache-key inputs; the path is the only runtime operand
+    with open(executable, "rb") as handle:
+        with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+            start = mapped.find(_BUNDLED_CATALOG_MARKER)
+            if start < 0:
+                return None
+            boundary = mapped.find(b"\x00", start)
+            if boundary < 0 or boundary - start > _MAX_BUNDLED_CATALOG_BYTES:
+                return None
+            try:
+                raw = mapped[start:boundary].decode("utf-8", "strict")
+            except UnicodeDecodeError:
+                return None
+    try:
+        catalog, _used = json.JSONDecoder().raw_decode(raw)
+    except json.JSONDecodeError:
+        return None
+    raw_providers = catalog.get("providers") if isinstance(catalog, dict) else None
+    if not isinstance(raw_providers, list):
+        return None
+    normalized: list[dict[str, Any]] = []
+    for item in raw_providers:
+        if not isinstance(item, dict):
             continue
-        seen.add(model_id)
-        name = json.loads(b'"' + match.group(2) + b'"')
-        models.append({"id": model_id, "modelId": model_id, "name": name})
-    return models
+        provider_id = str(item.get("id") or "").strip()
+        if not provider_id:
+            continue
+        models = []
+        for model in item.get("models") or []:
+            if not isinstance(model, dict):
+                continue
+            model_id = str(model.get("id") or "").strip()
+            if model_id:
+                models.append(
+                    {
+                        "id": model_id,
+                        "modelId": model_id,
+                        "name": model.get("display_name") or model_id,
+                    }
+                )
+        normalized.append(
+            {
+                "id": provider_id,
+                "name": item.get("name") or provider_id,
+                "env_key": item.get("env_key") or None,
+                "base_url": item.get("base_url") or "",
+                "wire_api": item.get("wire_api") or "",
+                "requires_auth": provider_id not in _NO_AUTH_PROVIDERS,
+                "source": "binary",
+                "models": models,
+            }
+        )
+    return json.dumps(normalized, separators=(",", ":")) if normalized else None
 
 
 def provider_options_snapshot(
