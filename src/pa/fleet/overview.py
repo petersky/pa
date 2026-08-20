@@ -28,6 +28,7 @@ from pa.fleet.capacity import (
     effective_queue_capacity,
     normalize_activity_capacity,
 )
+from pa.fleet.endpoints import request_peer
 from pa.fleet.update import TERMINAL_PHASES
 from pa.pr_supervisor.models import (
     PRWatchStatus,
@@ -905,6 +906,30 @@ async def _json_get(
     )
 
 
+async def _peer_json_get(
+    ctx: Any,
+    client: httpx.AsyncClient,
+    inst: FleetInstance,
+    path: str,
+    headers: dict[str, str],
+    *,
+    timeout: float = DETAIL_TIMEOUT,
+) -> Any:
+    runtime = _runtime(ctx)
+    request = request_peer(
+        ctx, client, inst, "GET", path, headers=headers, timeout=timeout
+    )
+    response, _selected_endpoint = (
+        await runtime.observe("http.fleet_overview", request, timeout=timeout + 0.05)
+        if runtime
+        else await request
+    )
+    response.raise_for_status()
+    return await _offload(
+        ctx, "fleet.overview_response_json", response.json, timeout=2.0
+    )
+
+
 async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any]:
     started = time.perf_counter()
     is_local = inst.instance_id == ctx.settings.instance_id
@@ -1004,42 +1029,44 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
             headers = {}
             if ctx.settings.sync_token:
                 headers["Authorization"] = f"Bearer {ctx.settings.sync_token}"
-            base = inst.url.rstrip("/")
             client = ctx.services.get("fleet_http_client")
             owns_client = client is None
             client = client or httpx.AsyncClient(timeout=timeout)
             try:
                 if dimension == "reachability":
-                    await _json_get(ctx, client, f"{base}/api/health", {})
+                    await _peer_json_get(ctx, client, inst, "api/ready", {})
                     value = {"health": "up"}
                 elif dimension == "status":
-                    value = await _json_get(
-                        ctx, client, f"{base}/api/status", headers
+                    value = await _peer_json_get(
+                        ctx, client, inst, "api/status", headers
                     )
                 elif dimension == "providers":
-                    value = await _json_get(
-                        ctx, client, f"{base}/api/agent/providers", headers
+                    value = await _peer_json_get(
+                        ctx, client, inst, "api/agent/providers", headers
                     )
                 elif dimension == "mcp_bootstrap":
-                    value = await _json_get(
+                    value = await _peer_json_get(
                         ctx,
                         client,
-                        f"{base}/api/agent/providers/mcp-bootstrap",
+                        inst,
+                        "api/agent/providers/mcp-bootstrap",
                         headers,
                         timeout=timeout,
                     )
                 elif dimension == "update":
-                    value = await _json_get(
+                    value = await _peer_json_get(
                         ctx,
                         client,
-                        f"{base}/api/fleet/peer-update-check",
+                        inst,
+                        "api/fleet/peer-update-check",
                         headers,
                     )
                 else:
-                    payload = await _json_get(
+                    payload = await _peer_json_get(
                         ctx,
                         client,
-                        f"{base}/api/fleet/overview/local?dimension={dimension}",
+                        inst,
+                        f"api/fleet/overview/local?dimension={dimension}",
                         headers,
                     )
                     value = (
