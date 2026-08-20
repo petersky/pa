@@ -820,12 +820,18 @@
         : "/api/fleet/instances/" +
           encodeURIComponent(this.ownerInstanceId) + "/agent";
       this.root.dataset.apiBase = this.apiBase;
-      durableHistory = this.api("/history/" + encodeURIComponent(sessionId))
-        .then(function (history) {
-          return self._applyDurableHistory(sessionId, history, generation);
-        })
-        .catch(function () { return null; });
     }
+    const loadDurableHistory = function () {
+      if (!durableHistory) {
+        durableHistory = self.apiWithTimeout(
+          "/history/" + encodeURIComponent(sessionId),
+          LIVE_SNAPSHOT_TIMEOUT_MS
+        ).then(function (history) {
+          return self._applyDurableHistory(sessionId, history, generation);
+        });
+      }
+      return durableHistory;
+    };
     return this.resolveSessionRoute(sessionId, this.ownerInstanceId)
       .then(function (route) {
         if (self.destroyed || generation !== self.subscriptionGeneration) return null;
@@ -841,14 +847,8 @@
           self.root.dataset.apiBase = self.apiBase;
         }
         self._writeSessionUrl(!!options.replace);
-        if (!durableHistory && route.history_url) {
-          durableHistory = self.api("/history/" + encodeURIComponent(sessionId))
-            .then(function (history) {
-              return self._applyDurableHistory(sessionId, history, generation);
-            });
-        }
         if (route.state === "owner_unreachable") {
-          return Promise.resolve(durableHistory).catch(function () { return null; }).then(function () {
+          return loadDurableHistory().catch(function () { return null; }).then(function () {
             self.setStatus("offline");
             self.setComposerEnabled(false);
             self.setPlaceholder(
@@ -869,16 +869,12 @@
           return null;
         }
         if (route.live) {
-          return Promise.resolve(durableHistory).catch(function () {
-            return null;
-          }).then(function () {
-            if (self.startupRetryId) clearTimeout(self.startupRetryId);
-            self.startupRetryId = null;
-            self.startupRetryCount = 0;
-            return self._loadLiveSnapshot(sessionId, generation);
-          });
+          if (self.startupRetryId) clearTimeout(self.startupRetryId);
+          self.startupRetryId = null;
+          self.startupRetryCount = 0;
+          return self._loadLiveSnapshot(sessionId, generation);
         }
-        return Promise.resolve(durableHistory).then(function (history) {
+        return loadDurableHistory().then(function (history) {
           self.setComposerEnabled(false);
           self.showRecoveryActions({
             recoverable: route.recoverable,
@@ -900,7 +896,7 @@
         if (code === "session_not_live" || code === "session_deleted") {
           return self.resolveSessionNotLive(err, sessionId, generation);
         }
-        return Promise.resolve(durableHistory).catch(function () { return null; }).then(function () {
+        return loadDurableHistory().catch(function () { return null; }).then(function () {
           self.sessionRoute = { state: "owner_unreachable" };
           self.setPlaceholder(
             "Live state is temporarily unavailable. Durable history is shown when available; PA will retry automatically."
@@ -2428,6 +2424,8 @@
     this.olderError = "";
     this.updateOlderControl();
     this.streaming = {};
+    this.lastSnapshot = null;
+    this.renderTranscript([], { scrollBottom: false });
     this.setPlaceholder("Loading session…");
     this.openSession(sessionId, ownerInstanceId || "", options || {}).catch(function () {});
   };

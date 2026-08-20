@@ -39,7 +39,8 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
 
     assert 'includeClosed ? "/history?limit=500" : "/sessions"' in script
-    assert 'self.api("/history/" + encodeURIComponent(sessionId))' in script
+    assert '"/history/" + encodeURIComponent(sessionId),' in script
+    assert "LIVE_SNAPSHOT_TIMEOUT_MS" in script
     assert "filterSessionList" in script
     assert 'li.dataset.sessionLive !== "false"' in script
     assert 'csrfFetch("/sessions/close-all"' in script
