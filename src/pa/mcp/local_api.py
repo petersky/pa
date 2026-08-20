@@ -242,7 +242,7 @@ def request_local_pa(
     files: dict | None = None,
     headers: dict[str, str] | None = None,
     allow_not_found: bool = False,
-    timeout_seconds: float = 2.0,
+    timeout_seconds: float = 10.0,
 ):
     method = method.upper()
     assigned_mode = os.environ.get(ASSIGNED_SERVICE_MODE_ENV, "") == "1"

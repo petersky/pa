@@ -937,31 +937,53 @@ async def _probe(ctx: Any, inst: FleetInstance, dimension: str) -> dict[str, Any
         elif is_local and dimension == "mcp_bootstrap":
             from pa.acp.mcp_config import McpHandshakeError, probe_pa_mcp_stdio
 
-            try:
-                value = await _offload(
-                    ctx,
-                    "fleet.overview.mcp_bootstrap",
-                    partial(
-                        probe_pa_mcp_stdio,
-                        ctx.settings,
-                        timeout=MCP_STDIO_HANDSHAKE_TIMEOUT,
-                    ),
-                    timeout=timeout,
-                )
-            except McpHandshakeError as exc:
+            manager = ctx.services.get("instance_agent")
+            list_runtimes = getattr(manager, "list_runtimes", None)
+            runtimes = list_runtimes() if callable(list_runtimes) else []
+            live_health = next(
+                (
+                    dict(connection.pa_mcp_health)
+                    for runtime in runtimes
+                    if not getattr(runtime, "_closed", False)
+                    and (connection := getattr(runtime, "connection", None))
+                    and isinstance(getattr(connection, "pa_mcp_health", None), dict)
+                    and connection.pa_mcp_health.get("state") == "connected"
+                ),
+                None,
+            )
+            if live_health is not None:
                 value = {
-                    "state": "unavailable",
-                    "classification": exc.classification,
-                    "phase": exc.phase,
-                    "detail": exc.detail,
-                    "context": exc.context,
-                    "recoverable": True,
-                    "recovery_actions": [
-                        "run pa doctor --verbose on the target instance",
-                        "repair or upgrade the target PA installation and restart it",
-                        "retry this instance or choose an alternate instance/provider",
-                    ],
+                    **live_health,
+                    "state": "connected",
+                    "classification": "live_agent_runtime",
+                    "source": "live_agent_runtime",
                 }
+            else:
+                try:
+                    value = await _offload(
+                        ctx,
+                        "fleet.overview.mcp_bootstrap",
+                        partial(
+                            probe_pa_mcp_stdio,
+                            ctx.settings,
+                            timeout=MCP_STDIO_HANDSHAKE_TIMEOUT,
+                        ),
+                        timeout=timeout,
+                    )
+                except McpHandshakeError as exc:
+                    value = {
+                        "state": "unavailable",
+                        "classification": exc.classification,
+                        "phase": exc.phase,
+                        "detail": exc.detail,
+                        "context": exc.context,
+                        "recoverable": True,
+                        "recovery_actions": [
+                            "run pa doctor --verbose on the target instance",
+                            "repair or upgrade the target PA installation and restart it",
+                            "retry this instance or choose an alternate instance/provider",
+                        ],
+                    }
         elif is_local and dimension == "update":
             from pa.update.runner import check_update
 
@@ -1131,7 +1153,17 @@ async def probe_dimension(
     cached = await _offload(
         ctx, "fleet.overview_cache_read", cache.get, inst.instance_id, dimension
     )
-    if cached and not force and cached.get("state") == "fresh":
+    if (
+        cached
+        and cached.get("state") == "fresh"
+        and (
+            not force
+            or (
+                dimension == "mcp_bootstrap"
+                and (cached.get("value") or {}).get("state") == "connected"
+            )
+        )
+    ):
         try:
             observed = datetime.fromisoformat(str(cached.get("observed_at")))
             age = (datetime.now(UTC) - observed).total_seconds()

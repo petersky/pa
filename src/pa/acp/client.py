@@ -324,6 +324,7 @@ class PAClient(Client):
         self.async_runtime = async_runtime
         self._updates: list[Any] = []
         self._mcp_startup_failures: dict[str, str] = {}
+        self._mcp_startup_successes: set[str] = set()
         self._mcp_startup_events: dict[str, asyncio.Event] = {}
 
     async def _offload(
@@ -431,13 +432,17 @@ class PAClient(Client):
         if (
             normalized.get("type") == "tool_call"
             and normalized.get("tool_call_id") == "mcp_startup.pa"
-            and normalized.get("status") == "failed"
         ):
-            detail = redact_log_text(
-                json.dumps(normalized.get("content") or [], default=str)
-            )
-            self._mcp_startup_failures[str(session_id)] = detail[:1000]
-            event = self._mcp_startup_events.get(str(session_id))
+            key = str(session_id)
+            status = str(normalized.get("status") or "").lower()
+            if status == "failed":
+                detail = redact_log_text(
+                    json.dumps(normalized.get("content") or [], default=str)
+                )
+                self._mcp_startup_failures[key] = detail[:1000]
+            elif status in {"completed", "success", "succeeded"}:
+                self._mcp_startup_successes.add(key)
+            event = self._mcp_startup_events.get(key)
             if event is not None:
                 event.set()
         self._wire(
@@ -458,13 +463,13 @@ class PAClient(Client):
     async def wait_for_pa_mcp_startup_failure(
         self, session_id: str, *, timeout: float
     ) -> str | None:
-        """Observe a hard PA MCP startup failure for a bounded window.
+        """Observe PA MCP startup until success, hard failure, or a deadline.
 
         Codex ACP forwards both handshake errors and a generic "startup was
         cancelled" terminal state. Recent Codex app-server builds emit that
         cancelled status spuriously during thread/start, including for servers
         that then become ready. Treat cancelled-only reports as non-fatal and
-        keep watching for an actual failed-to-start error.
+        keep watching for a success or an actual failed-to-start error.
         """
         key = str(session_id)
         loop = asyncio.get_running_loop()
@@ -473,6 +478,8 @@ class PAClient(Client):
         ignored_cancellation = False
         try:
             while True:
+                if key in self._mcp_startup_successes:
+                    return None
                 failure = self._mcp_startup_failures.get(key)
                 if failure and _is_hard_mcp_startup_failure(failure):
                     return failure
@@ -497,6 +504,8 @@ class PAClient(Client):
                     return None
         finally:
             self._mcp_startup_events.pop(key, None)
+            self._mcp_startup_failures.pop(key, None)
+            self._mcp_startup_successes.discard(key)
 
     async def read_text_file(
         self,
@@ -868,44 +877,59 @@ class AgentConnection:
             logger.info(
                 "PA MCP owner channel verified", extra={"pa_mcp": self.pa_mcp_health}
             )
-            try:
-                bridge_health = await self._offload(
-                    "acp.pa_mcp_stdio_probe",
-                    partial(
-                        probe_pa_mcp_stdio,
-                        self.settings,
-                        timeout=12.0,
-                        session_environment=self.extra_env,
-                        private_environment=self.mcp_private_env,
-                    ),
-                    timeout=15.0,
-                )
-            except McpHandshakeError as exc:
-                self.pa_mcp_health = {
-                    **self.pa_mcp_health,
-                    "state": "disconnected",
-                    "classification": f"mcp_{exc.classification}",
-                    "bridge_probe": {
-                        "state": "disconnected",
-                        "classification": exc.classification,
+            if provider_id == "codex":
+                # Codex launches the supplied stdio MCP server in the actual
+                # session sandbox. Launching a second child here duplicates the
+                # expensive initialize/tools-list handshake and still cannot
+                # prove that the provider sandbox can reach the owner socket.
+                self.pa_mcp_health.update(
+                    state="checking",
+                    classification=None,
+                    bridge_probe={
+                        "state": "delegated",
+                        "classification": "provider_context_probe",
                     },
-                    "last_failure": datetime.now(UTC).isoformat(),
-                    "retry_state": "session_reconnect_required",
-                    "recovery": exc.recovery,
-                }
-                logger.error(
-                    "PA MCP stdio bridge admission failed",
-                    extra={"pa_mcp": self.pa_mcp_health},
+                    retry_state="provider_context_probe_pending",
                 )
-                raise
-            self.pa_mcp_health.update(
-                state="connected",
-                classification=None,
-                bridge_probe=bridge_health,
-                last_success=datetime.now(UTC).isoformat(),
-                last_failure=None,
-                retry_state="connected",
-            )
+            else:
+                try:
+                    bridge_health = await self._offload(
+                        "acp.pa_mcp_stdio_probe",
+                        partial(
+                            probe_pa_mcp_stdio,
+                            self.settings,
+                            timeout=12.0,
+                            session_environment=self.extra_env,
+                            private_environment=self.mcp_private_env,
+                        ),
+                        timeout=15.0,
+                    )
+                except McpHandshakeError as exc:
+                    self.pa_mcp_health = {
+                        **self.pa_mcp_health,
+                        "state": "disconnected",
+                        "classification": f"mcp_{exc.classification}",
+                        "bridge_probe": {
+                            "state": "disconnected",
+                            "classification": exc.classification,
+                        },
+                        "last_failure": datetime.now(UTC).isoformat(),
+                        "retry_state": "session_reconnect_required",
+                        "recovery": exc.recovery,
+                    }
+                    logger.error(
+                        "PA MCP stdio bridge admission failed",
+                        extra={"pa_mcp": self.pa_mcp_health},
+                    )
+                    raise
+                self.pa_mcp_health.update(
+                    state="connected",
+                    classification=None,
+                    bridge_probe=bridge_health,
+                    last_success=datetime.now(UTC).isoformat(),
+                    last_failure=None,
+                    retry_state="connected",
+                )
 
         if self.wire_path:
             self._wire = await self._offload(
@@ -1151,6 +1175,13 @@ class AgentConnection:
                 "state": "usable",
                 "classification": "no_startup_failure",
             }
+            self.pa_mcp_health.update(
+                state="connected",
+                classification=None,
+                last_success=datetime.now(UTC).isoformat(),
+                last_failure=None,
+                retry_state="connected",
+            )
 
         sandbox_health_registry.success(
             spec.id,
