@@ -152,6 +152,7 @@
     this.root = root;
     this.sessionId = root.dataset.sessionId || "";
     this.ownerInstanceId = root.dataset.ownerInstanceId || "";
+    this.currentInstanceId = root.dataset.currentInstanceId || "";
     this.sessionRoute = null;
     this.createLabel = root.dataset.createLabel || "default";
     this.cardId = root.dataset.cardId || "";
@@ -770,8 +771,10 @@
     this.setPlaceholder("Locating session owner…");
     let durableHistory = null;
     if (this.ownerInstanceId) {
-      this.apiBase = "/api/fleet/instances/" +
-        encodeURIComponent(this.ownerInstanceId) + "/agent";
+      this.apiBase = this.ownerInstanceId === this.currentInstanceId
+        ? "/api/agent"
+        : "/api/fleet/instances/" +
+          encodeURIComponent(this.ownerInstanceId) + "/agent";
       this.root.dataset.apiBase = this.apiBase;
       durableHistory = this.api("/history/" + encodeURIComponent(sessionId))
         .then(function (history) {

@@ -104,7 +104,9 @@ def test_provisions_cached_fenced_worktree_and_provider_context(tmp_path: Path) 
     context = workspace.execution_context(manager.settings, "codex")
     assert context["provider_context"]["sandbox"] == "workspace-write"
     assert context["repositories"][0]["fencing_token"] == lease.fencing_token
-    manager.store.set_repository_checkout.assert_called_once()
+    # The object cache intentionally has no checkout. It must not replace a
+    # real, operator-configured repository checkout in the fleet registry.
+    manager.store.set_repository_checkout.assert_not_called()
     assert manager.metrics()["provisioned_workspaces"] == 1
     assert manager.metrics()["cache_clones"] == 1
 
