@@ -5950,8 +5950,18 @@ async def _assert_dispatch_sync_health(
             )
         target = _fleet_instance_or_404(request, target_instance_id)
         target_url = target.url.rstrip("/")
+        target_is_local = target_instance_id == settings.instance_id
         peer_urls = list(
-            dict.fromkeys([target_url, *(url.rstrip("/") for url in settings.peers)])
+            dict.fromkeys(
+                [
+                    *([] if target_is_local else [target_url]),
+                    *(
+                        url.rstrip("/")
+                        for url in settings.peers
+                        if not target_is_local or url.rstrip("/") != target_url
+                    ),
+                ]
+            )
         )
         headers = _peer_headers(request)
 
@@ -6009,10 +6019,29 @@ async def _assert_dispatch_sync_health(
                     "error": str(exc),
                 }
 
-        async with _borrow_fleet_client(request, timeout=5.0) as client:
-            observations = await asyncio.gather(
-                *(read_peer_head(client, url) for url in peer_urls)
+        observations: list[dict[str, Any]] = []
+        if target_is_local:
+            # The authority already authenticated the dispatch request and owns
+            # both values.  Do not make a network round trip through its advertised
+            # fleet URL to prove its own identity; that path can be unavailable to
+            # the server even while the local ASGI application is healthy.
+            observations.append(
+                {
+                    "url": target_url,
+                    "status": "reachable",
+                    "head": durable_head,
+                    "projection_head": projection_head,
+                    "source": "authority_local_state",
+                    "authenticated": True,
+                }
             )
+        if peer_urls:
+            async with _borrow_fleet_client(request, timeout=5.0) as client:
+                observations.extend(
+                    await asyncio.gather(
+                        *(read_peer_head(client, url) for url in peer_urls)
+                    )
+                )
         target_observation = next(
             item for item in observations if item["url"] == target_url
         )

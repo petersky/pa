@@ -32,6 +32,7 @@ def test_agent_sidebar_exposes_opt_in_history_controls() -> None:
         assert marker in template
     assert "data-acw-recover" in widget
     assert "data-acw-history" in widget
+    assert 'data-current-instance-id="{{ current_id }}"' in widget
 
 
 def test_agent_sidebar_loads_and_selects_durable_history() -> None:

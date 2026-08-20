@@ -3779,6 +3779,33 @@ class ScopedDispatchHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(evidence["target_head"], "shared-head")
         self.assertEqual(evidence["degraded_peers"][0]["status"], "unavailable")
 
+    async def test_local_target_uses_authenticated_local_heads_without_self_probe(
+        self,
+    ) -> None:
+        request = self._request()
+        request.app.state.ctx.settings.instance_id = TARGET_ID
+        observer = MagicMock()
+        observer.json.return_value = [
+            {
+                "realm_id": "default",
+                "head_hash": "shared-head",
+                "projection_head": "shared-head",
+            }
+        ]
+        with patch("pa.modules.fleet.httpx.AsyncClient") as client:
+            get = client.return_value.__aenter__.return_value.get = AsyncMock(
+                return_value=observer
+            )
+            evidence = await _assert_dispatch_sync_health(
+                request, "default", TARGET_ID
+            )
+
+        self.assertEqual(evidence["code"], "scoped_sync_healthy")
+        self.assertEqual(evidence["target_head"], "shared-head")
+        self.assertEqual(evidence["target_projection_head"], "shared-head")
+        self.assertEqual(get.await_count, 1)
+        self.assertIn("http://observer:8080/api/sync/refs", get.await_args.args[0])
+
     async def test_selected_target_offline_blocks_recoverably(self) -> None:
         request = self._request()
         observer = MagicMock()

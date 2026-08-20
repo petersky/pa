@@ -26,7 +26,7 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
-from pa.domain.models import Repository, RepositoryCheckout
+from pa.domain.models import Repository
 
 
 class WorkspaceProvisioningError(RuntimeError):
@@ -811,7 +811,10 @@ class WorkspaceManager:
             lease.stage = "verified"
             lease.updated_at = datetime.now(UTC)
             self._save(lease)
-            self._record_checkout(repository, cache_path, linked.branch)
+            # The shared clone is an object cache created with --no-checkout,
+            # not an operator checkout.  Publishing it as the instance checkout
+            # makes repository inspection report every tracked file as deleted
+            # and can overwrite a verified checkout configured by the operator.
             self._increment_metric("provisioned_workspaces")
             return lease
         except Exception as exc:
@@ -1044,34 +1047,6 @@ class WorkspaceManager:
         entries = [entry for entry in output.split("\0") if entry]
         return any(not entry.startswith("?? ") for entry in entries), sum(
             entry.startswith("?? ") for entry in entries
-        )
-
-    def _record_checkout(
-        self, repository: Repository, cache_path: Path, branch: str | None
-    ) -> None:
-        setter = getattr(self.store, "set_repository_checkout", None)
-        if not callable(setter):
-            return
-        lister = getattr(self.store, "list_repository_checkouts", None)
-        if callable(lister):
-            for checkout in lister(repository.id):
-                if (
-                    checkout.instance_id == self.settings.instance_id
-                    and Path(checkout.path).expanduser().resolve()
-                    == cache_path.resolve()
-                    and checkout.branch == branch
-                ):
-                    return
-        setter(
-            RepositoryCheckout(
-                repository_id=repository.id,
-                instance_id=self.settings.instance_id,
-                path=str(cache_path),
-                branch=branch,
-            ),
-            realm_id=repository.realm_id,
-            principal_id="instance:workspace-manager",
-            instance_id=self.settings.instance_id,
         )
 
     def mark_card_completed(self, card_id: str, *, merged: bool) -> int:
