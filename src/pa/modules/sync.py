@@ -260,6 +260,11 @@ def _sync_status_local(ctx: AppContext, realm_id: str) -> dict:
         consistent=durable_head == projection_head,
         writer="server",
         metrics=metrics.snapshot(),
+        dag_index=(
+            log.index_status(realm_id)
+            if hasattr(log, "index_status")
+            else {"state": "unavailable", "ready": False}
+        ),
     )
     return status
 
@@ -799,6 +804,8 @@ def sync_reconcile(
     try:
         log.reload_refs()
         durable_head = log.get_head(realm_id)
+        if durable_head:
+            log.ensure_indexed(realm_id, durable_head)
         projection_head = store.get_projection_head(realm_id)
         rebuilt = False
         if durable_head and projection_head != durable_head:
@@ -819,12 +826,46 @@ def sync_reconcile(
             "projection_head": store.get_projection_head(realm_id),
             "rebuilt": rebuilt,
             "consistent": durable_head == store.get_projection_head(realm_id),
+            "dag_index": log.index_status(realm_id),
         }
         store.complete_operation(key, result)
         return result
     except Exception as exc:
         store.fail_operation(key, type(exc).__name__)
         raise
+
+
+@router.post("/sync/index/maintenance")
+async def dag_index_maintenance(
+    request: Request,
+    body: dict,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
+) -> dict:
+    """Verify or safely rebuild the disposable DAG index through the server."""
+    realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
+    action = str(body.get("action") or "verify")
+    if action not in {"verify", "rebuild"}:
+        raise HTTPException(status_code=400, detail="action must be verify or rebuild")
+    _check_realm_access(request, realm_id)
+    ctx: AppContext = request.app.state.ctx
+    log: EventLog = ctx.require_service("event_log")
+    head = log.get_head(realm_id)
+
+    def maintain() -> dict:
+        if head:
+            log.verify_index(realm_id, head)
+        status = log.index_status(realm_id)
+        return {
+            "realm_id": realm_id,
+            "action": action,
+            "verified": bool(status["ready"]),
+            "dag_index": status,
+        }
+
+    return await _offload(ctx, f"sync.index_{action}", maintain, timeout=120.0)
 
 
 class SyncModule(Module):
@@ -917,6 +958,8 @@ class SyncModule(Module):
         def repair_local_projections() -> None:
             for realm in settings.subscribed_realms:
                 durable_head = event_log.get_head(realm)
+                if durable_head:
+                    event_log.ensure_indexed(realm, durable_head)
                 if durable_head and store.get_projection_head(realm) != durable_head:
                     if event_log.get_commit(durable_head):
                         store.rebuild_from_log(realm)
@@ -972,6 +1015,26 @@ class SyncModule(Module):
                 "/api/sync/reconcile",
                 json={"realm_id": realm},
                 headers={"Idempotency-Key": key},
+            )
+
+        @mcp.tool()
+        async def dag_index_maintenance(
+            idempotency_key: str,
+            action: str = "verify",
+            realm: str = "default",
+        ) -> dict:
+            """Verify or rebuild the derived DAG index through the PA server."""
+            if action not in {"verify", "rebuild"}:
+                raise ValueError("action must be verify or rebuild")
+            return await _offload(
+                ctx,
+                "mcp.dag_index_maintenance_http",
+                request_local_pa,
+                ctx.settings,
+                "POST",
+                "/api/sync/index/maintenance",
+                json={"realm_id": realm, "action": action},
+                headers={"Idempotency-Key": idempotency_key},
             )
 
         @mcp.tool()
