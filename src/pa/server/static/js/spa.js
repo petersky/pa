@@ -747,10 +747,15 @@
       region.appendChild(explanation);
     }
     if (dispatch.last_error) {
+      var cardLane = detail && detail.dataset ? detail.dataset.cardLane : "";
+      var agentTurn = dispatch.agent_turn || {};
+      var hideStaleStartupFailure = cardLane === "done" && !agentTurn.ended;
+      if (!hideStaleStartupFailure) {
       var error = document.createElement("p");
       error.className = "danger";
       error.textContent = dispatch.last_error;
       region.appendChild(error);
+      }
     }
 
     var links = document.createElement("div");

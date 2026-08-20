@@ -162,6 +162,30 @@ def _operator_prompt(latest: dict[str, Any]) -> str | None:
     return _text(request)
 
 
+def _completion_delivery_error(dispatch: dict[str, Any]) -> str | None:
+    """Return a completion-delivery error only when turn-end delivery was attempted."""
+    progress = dispatch.get("progress") or {}
+    progress_error = _text(progress.get("delivery_error"))
+    if progress_error:
+        return progress_error
+    delivery = dispatch.get("completion_outbox") or {}
+    delivery_class = str(delivery.get("classification") or "")
+    last_error = _text(delivery.get("last_error"))
+    if not last_error:
+        return None
+    if delivery_class in FAILED_DELIVERY_CLASSES:
+        return last_error
+    agent_turn = dispatch.get("agent_turn") or {}
+    if agent_turn.get("ended"):
+        return last_error
+    if dispatch.get("completion_payload") or dispatch.get("completion_received_at"):
+        return last_error
+    state = str(dispatch.get("effective_state") or dispatch.get("state") or "")
+    if state == "completion_pending":
+        return last_error
+    return None
+
+
 def _watch_gate(watch: Any) -> tuple[bool, str | None, str | None]:
     status = str(_enum_value(_value(watch, "status", "")) or "")
     if _value(watch, "retired_at") is not None or status not in CURRENT_WATCH_STATES:
@@ -302,7 +326,7 @@ def present_work_item(
     blockers = [text for item in latest.get("blockers") or [] if (text := _text(item))]
     delivery = dispatch.get("completion_outbox") or {}
     delivery_class = str(delivery.get("classification") or "")
-    delivery_error = _text(delivery.get("last_error") or progress.get("delivery_error"))
+    delivery_error = _completion_delivery_error(dispatch)
     reconciliation = dispatch.get("card_reconciliation") or {}
     reconciliation_state = str(reconciliation.get("state") or "")
     reconciliation_reason = _text(
@@ -366,6 +390,25 @@ def present_work_item(
             external=bool(review_url),
         )
         action_explanation = None
+    elif (
+        lane == "done"
+        and state in {"failed", "cancelled"}
+        and not session_facts["active"]
+    ):
+        group = "outcome"
+        state_code = "completed"
+        state_label = "Completed"
+        evaluation = dispatch.get("post_turn_evaluation") or {}
+        summary = (
+            _text(evaluation.get("operator_status_text"))
+            or latest_summary
+            or "Work completed."
+        )
+        reason = "The card is Done; the linked dispatch did not finish autonomously."
+        tone = "success"
+        priority = 50
+        action = _action("open_card", "Open card", href=card_href)
+        action_explanation = "No operator action is required for this outcome."
     elif delivery_error or delivery_class in FAILED_DELIVERY_CLASSES:
         group = "attention"
         state_code = "delivery_failed"

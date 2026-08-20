@@ -268,3 +268,43 @@ def test_retired_or_terminal_watch_history_never_drives_current_attention(watch)
 
     assert result["group"] == "quiet"
     assert result["attention"] is False
+
+
+def test_startup_dispatch_failure_on_done_card_shows_completed_outcome() -> None:
+    done_card = {**CARD, "lane": "done"}
+    value = dispatch(
+        "failed",
+        can_retry=True,
+        last_error="blocking operation 'sqlite.card_write' exceeded 30.000s",
+        completion_outbox={
+            "pending": False,
+            "last_error": None,
+            "classification": None,
+        },
+        agent_turn={"ended": False, "completed": False, "stop_reason": None},
+    )
+
+    result = present(card=done_card, dispatch_value=value)
+
+    assert result["group"] == "outcome"
+    assert result["state_label"] == "Completed"
+    assert result["attention"] is False
+
+
+def test_startup_dispatch_failure_does_not_surface_as_delivery_failed() -> None:
+    value = dispatch(
+        "failed",
+        can_retry=True,
+        last_error="blocking operation 'sqlite.card_write' exceeded 30.000s",
+        completion_outbox={
+            "pending": False,
+            "last_error": "blocking operation 'sqlite.card_write' exceeded 30.000s",
+            "classification": None,
+        },
+        agent_turn={"ended": False, "completed": False, "stop_reason": None},
+    )
+
+    result = present(dispatch_value=value)
+
+    assert result["attention_code"] != "delivery_failure"
+    assert result["state_label"] != "Delivery failed"
