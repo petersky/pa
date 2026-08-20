@@ -136,6 +136,14 @@ class GoalDispatchProvenance(BaseModel):
     release_reason: str | None = Field(default=None, max_length=500)
 
 
+COMPLETION_OUTBOX_ERROR_CLASSES = {
+    "transport_exhausted",
+    "permanent_failure",
+    "semantic_conflict",
+    "failed",
+}
+
+
 class DispatchRecord(BaseModel):
     dispatch_id: str = Field(default_factory=lambda: str(uuid4()))
     mutation_id: str
@@ -263,6 +271,23 @@ class DispatchRecord(BaseModel):
         )
 
     @property
+    def completion_outbox_last_error(self) -> str | None:
+        """Expose dispatch errors through completion_outbox only when delivery ran."""
+        if self.completion_delivery_class == "acknowledged":
+            return None
+        if self.state == "completion_pending":
+            return self.last_error
+        if (
+            self.completion_received_at is not None
+            or self.completion_payload is not None
+            or self.completion_envelope is not None
+        ):
+            return self.last_error
+        if self.completion_delivery_class in COMPLETION_OUTBOX_ERROR_CLASSES:
+            return self.last_error
+        return None
+
+    @property
     def accepts_late_completion_after_terminal_repair(self) -> bool:
         """Whether immutable completion may supersede an abandonment repair."""
         return bool(
@@ -323,9 +348,7 @@ class DispatchRecord(BaseModel):
         data["completion_outbox"] = {
             "pending": self.state == "completion_pending",
             "attempts": self.attempts,
-            "last_error": self.last_error
-            if self.completion_delivery_class != "acknowledged"
-            else None,
+            "last_error": self.completion_outbox_last_error,
             "classification": self.completion_delivery_class,
             "next_retry_at": (
                 self.completion_next_retry_at.isoformat()

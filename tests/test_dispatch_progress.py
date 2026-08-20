@@ -242,6 +242,17 @@ class ProgressStoreTests(unittest.TestCase):
         self.assertEqual(public["progress"]["reporting"], "lifecycle_only")
         self.assertEqual(public["progress"]["freshness"]["state"], "disconnected")
 
+    def test_startup_failure_does_not_populate_completion_outbox_error(self) -> None:
+        failed = record().model_copy(
+            update={
+                "state": "failed",
+                "last_error": "blocking operation 'sqlite.card_write' exceeded 30.000s",
+            }
+        )
+        public = failed.public_dict()
+        self.assertIsNone(public["completion_outbox"]["last_error"])
+        self.assertEqual(public["last_error"], failed.last_error)
+
     def test_authority_transfer_preserves_and_continues_stream_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = DispatchStore(Path(tmp))
