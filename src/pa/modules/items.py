@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -87,6 +88,7 @@ from pa.sync.event_log import HISTORY_PAGE_LIMIT, EventHistoryError
 
 router = APIRouter()
 ui_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 MAX_CARD_ATTACHMENTS = 10
 MAX_CARD_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -679,15 +681,31 @@ def _schedule_card_summary(
     force: bool = False,
 ):
     service = request.app.state.ctx.require_service("card_summary_service")
-    card = service.disable_if_unconfigured(card, force=force)
-    if card.summary_status.value != "disabled":
-        background_tasks.add_task(
-            service.schedule,
-            card.id,
-            card.realm_id,
-            force=force,
-        )
+    background_tasks.add_task(
+        service.schedule,
+        card.id,
+        card.realm_id,
+        force=force,
+    )
     return card
+
+
+async def _schedule_card_enrichment(ctx, card, explicit_fields: set[str]) -> None:
+    """Detach optional enrichment from the response-owned callback."""
+    task = asyncio.create_task(
+        enrich_card(ctx, card.id, card.realm_id, explicit_fields),
+        name=f"card-enrichment:{card.id}",
+    )
+    task.add_done_callback(_log_card_post_response_failure)
+
+
+def _log_card_post_response_failure(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except Exception:
+        logger.exception("Post-response card work failed")
 
 
 def _card_session_view(session, local_instance_id: str) -> dict:
@@ -1809,18 +1827,17 @@ def create_card_api(
             idempotency_key=key,
             request_fingerprint=fingerprint,
         )
+        result = card.model_dump(mode="json")
+        store.complete_operation(key, result)
         if data.auto_enrich:
             background_tasks.add_task(
-                enrich_card,
+                _schedule_card_enrichment,
                 request.app.state.ctx,
-                card.id,
-                card.realm_id,
+                card,
                 explicit_enrichment_fields(data),
             )
         if not data.summary.strip():
-            card = _schedule_card_summary(request, background_tasks, card)
-        result = card.model_dump(mode="json")
-        store.complete_operation(key, result)
+            _schedule_card_summary(request, background_tasks, card)
         return result
     except Exception as exc:
         store.fail_operation(key, type(exc).__name__)
@@ -1980,10 +1997,10 @@ def update_card_api(
     if not card:
         store.fail_operation(key, "card_not_found")
         raise HTTPException(status_code=404, detail="Card not found")
-    if {"title", "body"} & data.model_fields_set:
-        card = _schedule_card_summary(request, background_tasks, card)
     result = card.model_dump(mode="json")
     store.complete_operation(key, result)
+    if {"title", "body"} & data.model_fields_set:
+        _schedule_card_summary(request, background_tasks, card)
     return result
 
 
