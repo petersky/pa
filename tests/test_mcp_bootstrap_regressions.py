@@ -435,12 +435,50 @@ def test_warm_bootstrap_is_cache_only_and_within_slo(tmp_path: Path) -> None:
             "pa.fleet.overview._probe",
             side_effect=AssertionError("warm cache must not spawn a probe"),
         ):
-            cached = await probe_dimension(ctx, instance, "mcp_bootstrap")
+            cached = await probe_dimension(
+                ctx, instance, "mcp_bootstrap", force=True
+            )
         return cached, time.perf_counter() - started_at
 
     cached, elapsed = asyncio.run(exercise())
     assert cached["cache_hit"] is True
     assert elapsed < MCP_BOOTSTRAP_WARM_CACHE_SLO
+
+
+def test_local_bootstrap_reuses_connected_live_agent_runtime(tmp_path: Path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        instance_id="local-bootstrap-runtime",
+        agent_enabled=False,
+    )
+    connection = SimpleNamespace(
+        pa_mcp_health={
+            "state": "connected",
+            "last_success": datetime.now(UTC).isoformat(),
+        }
+    )
+    runtime = SimpleNamespace(_closed=False, connection=connection)
+    manager = SimpleNamespace(list_runtimes=lambda: [runtime])
+    ctx = SimpleNamespace(
+        settings=settings,
+        services={"instance_agent": manager},
+    )
+    instance = FleetInstance(
+        instance_id=settings.instance_id,
+        name="local-bootstrap-runtime",
+        url="http://127.0.0.1:8090",
+    )
+
+    with patch(
+        "pa.acp.mcp_config.probe_pa_mcp_stdio",
+        side_effect=AssertionError("live runtime proof must avoid a child probe"),
+    ):
+        result = asyncio.run(
+            probe_dimension(ctx, instance, "mcp_bootstrap", force=True)
+        )
+
+    assert result["value"]["state"] == "connected"
+    assert result["value"]["source"] == "live_agent_runtime"
 
 
 def test_failed_handshake_is_cached_as_fresh_unavailable_state(

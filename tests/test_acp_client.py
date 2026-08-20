@@ -158,6 +158,32 @@ class PAClientFileSystemTests(unittest.TestCase):
         self.assertIn("failed to start", failure or "")
         self.assertIn("sandbox denied", failure or "")
 
+    def test_successful_pa_mcp_startup_ends_observation_immediately(self) -> None:
+        client = PAClient(MagicMock())
+
+        async def run() -> tuple[str | None, float]:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            waiter = asyncio.create_task(
+                client.wait_for_pa_mcp_startup_failure(
+                    "agent-session", timeout=1.0
+                )
+            )
+            await asyncio.sleep(0)
+            await client.session_update(
+                "agent-session",
+                {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "mcp_startup.pa",
+                    "status": "completed",
+                },
+            )
+            return await waiter, loop.time() - started
+
+        failure, elapsed = asyncio.run(run())
+        self.assertIsNone(failure)
+        self.assertLess(elapsed, 0.2)
+
     def test_read_and_write_text_file_requests_are_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "notes.txt"
@@ -850,7 +876,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     patch(
                         "pa.acp.client.probe_pa_mcp_stdio",
                         return_value={"state": "connected", "classification": "ok"},
-                    ),
+                    ) as stdio_probe,
                     patch.object(
                         PAClient,
                         "wait_for_pa_mcp_startup_failure",
@@ -873,6 +899,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     kwargs["additional_directories"],
                     [str(socket.parent)],
                 )
+                stdio_probe.assert_not_called()
 
             asyncio.run(run())
 

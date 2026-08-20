@@ -79,6 +79,7 @@ class PlacementRequest(BaseModel):
     provider: str | None = None
     model_id: str | None = None
     required_capabilities: list[str] = Field(default_factory=list)
+    preferred_capabilities: list[str] = Field(default_factory=list)
     repository_ids: list[str] = Field(default_factory=list)
     workload_profile: str = "research"
     project_id: str | None = None
@@ -527,12 +528,21 @@ def _evaluate(
     if reachability.get("health") != "up":
         reject("instance_unreachable", "instance is not online and healthy")
 
-    missing = sorted(set(request.required_capabilities) - set(candidate.capabilities))
+    available_capabilities = set(candidate.capabilities)
+    missing = sorted(
+        set(request.required_capabilities) - available_capabilities
+    )
     if missing:
         reject(
             "capability_unavailable",
             f"missing required capabilities: {', '.join(missing)}",
         )
+    preferred = set(request.preferred_capabilities)
+    matched_preferred = sorted(preferred & available_capabilities)
+    missing_preferred = sorted(preferred - available_capabilities)
+    capability_match = (
+        len(matched_preferred) / len(preferred) if preferred else 1.0
+    )
 
     activity = _envelope(candidate, "activity").get("value") or {}
     lifecycle = str(activity.get("state") or "unknown")
@@ -708,7 +718,7 @@ def _evaluate(
 
     scores = {
         "provider_readiness": provider_score,
-        "capability_match": 1.0 if not missing else 0.0,
+        "capability_match": capability_match,
         "repository_locality": locality,
         "authority_locality": 1.0 if candidate.local else 0.0,
         "available_capacity": max(0.0, 1.0 - normalized),
@@ -722,6 +732,9 @@ def _evaluate(
             candidate, request.provider, request.model_id
         ),
         "mcp_bootstrap_classification": bootstrap_classification,
+        "preferred_capabilities": sorted(preferred),
+        "matched_preferred_capabilities": matched_preferred,
+        "missing_preferred_capabilities": missing_preferred,
         "active": counts["active"],
         "queued": counts["queued"],
         "reserved": counts["reservations"],

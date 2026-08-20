@@ -7258,8 +7258,10 @@ async def _resolve_policy_placement(
     required_capabilities = sorted(
         set(body.required_capabilities)
         | {f"mcp:{name}" for name in body.required_mcp_servers}
-        | set(card.preferred_capabilities if card else [])
         | set(plan.requirements.required_capabilities)
+    )
+    preferred_capabilities = sorted(
+        set(card.preferred_capabilities if card else [])
     )
     placement: PlacementService = ctx.require_service("placement_service")
     decision = await _offload_request(
@@ -7275,6 +7277,7 @@ async def _resolve_policy_placement(
             provider=body.provider,
             model_id=body.model_id,
             required_capabilities=required_capabilities,
+            preferred_capabilities=preferred_capabilities,
             repository_ids=repository_ids,
             workload_profile=plan.profile.value,
             project_id=project_id,

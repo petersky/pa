@@ -625,6 +625,21 @@ class LocalMcpApiTests(unittest.TestCase):
             self.assertGreater(request.call_args.kwargs["timeout"], 29.0)
             self.assertLessEqual(request.call_args.kwargs["timeout"], 30.0)
 
+    def test_default_owner_request_budget_tolerates_normal_write_contention(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            response = httpx.Response(
+                200,
+                json={"outcome": "succeeded"},
+                request=httpx.Request(
+                    "GET", "http://127.0.0.1/api/operations/operation-1"
+                ),
+            )
+            with patch("httpx.request", return_value=response) as request:
+                request_local_pa(settings, "GET", "/api/operations/operation-1")
+
+            self.assertGreater(request.call_args.kwargs["timeout"], 9.9)
+
     def test_no_content_mutation_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)

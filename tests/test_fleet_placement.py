@@ -153,6 +153,61 @@ def test_best_match_scores_readiness_locality_capacity_and_breaks_ties() -> None
         assert tied.chosen_instance_id == "a"
 
 
+def test_preferred_capabilities_score_candidates_without_rejecting_them() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        service = PlacementService(RoundRobinCursorStore(Path(tmp)))
+        preferred = _candidate("preferred")
+        fallback = _candidate("fallback")
+        fallback.capabilities = ["capacity:4"]
+        decision = service.resolve(
+            PlacementRequest(
+                realm_id="default",
+                fleet_id="fleet",
+                policy=PlacementPolicy.BEST_MATCH,
+                provider="codex",
+                preferred_capabilities=["browser"],
+            ),
+            [fallback, preferred],
+        )
+
+        assert decision.chosen_instance_id == "preferred"
+        assert {item["instance_id"] for item in decision.eligible_candidates} == {
+            "fallback",
+            "preferred",
+        }
+        assert decision.scores["preferred"]["capability_match"] == 1.0
+        assert decision.scores["fallback"]["capability_match"] == 0.0
+        fallback_detail = next(
+            item
+            for item in decision.eligible_candidates
+            if item["instance_id"] == "fallback"
+        )
+        assert fallback_detail["missing_preferred_capabilities"] == ["browser"]
+
+
+def test_required_capabilities_remain_hard_admission_requirements() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        service = PlacementService(RoundRobinCursorStore(Path(tmp)))
+        candidate = _candidate("fallback")
+        candidate.capabilities = ["capacity:4"]
+        with pytest.raises(PlacementError) as raised:
+            service.resolve(
+                PlacementRequest(
+                    realm_id="default",
+                    fleet_id="fleet",
+                    instance_id="fallback",
+                    required_capabilities=["browser"],
+                ),
+                [candidate],
+            )
+
+        assert "capability_unavailable" in {
+            code
+            for item in raised.value.rejected_candidates
+            for code in item["rejection_codes"]
+        }
+
+
 def test_least_busy_normalizes_load_and_breaks_ties_deterministically() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         service = PlacementService(RoundRobinCursorStore(Path(tmp)))

@@ -9,6 +9,7 @@
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
   const TRANSCRIPT_PAGE_LIMIT = 1000;
+  const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
 
@@ -236,6 +237,7 @@
     this.externalEventTransport = false;
     this.destroyed = false;
     this.subscriptionGeneration = 0;
+    this.routeAbortController = null;
     this.lastSeq = 0;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -553,10 +555,22 @@
     }
   };
 
-  AgentChatWidget.prototype.loadDurableSession = function (sessionId) {
+  AgentChatWidget.prototype._isCurrentSessionRequest = function (sessionId, generation) {
+    return !this.destroyed && sessionId === this.sessionId &&
+      (generation == null || generation === this.subscriptionGeneration);
+  };
+
+  AgentChatWidget.prototype.loadDurableSession = function (sessionId, generation) {
     if (!sessionId) return Promise.reject(new Error("No session selected"));
+    const requestGeneration = generation == null
+      ? this.subscriptionGeneration
+      : generation;
+    if (!this._isCurrentSessionRequest(sessionId, requestGeneration)) {
+      return Promise.resolve(null);
+    }
     const self = this;
     return this.api("/history/" + encodeURIComponent(sessionId)).then(function (history) {
+      if (!self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
       const snap = {
         session: history.session,
         transcript: history.events || [],
@@ -580,15 +594,23 @@
     });
   };
 
-  AgentChatWidget.prototype.resolveSessionNotLive = function (error, sessionId) {
+  AgentChatWidget.prototype.resolveSessionNotLive = function (error, sessionId, generation) {
     const detail = error && typeof error.detail === "object" ? error.detail : {};
     const code = apiErrorCode(error);
     if (code !== "session_not_live" && code !== "session_deleted") return Promise.reject(error);
+    const requestGeneration = generation == null
+      ? this.subscriptionGeneration
+      : generation;
+    if (!this._isCurrentSessionRequest(sessionId, requestGeneration)) {
+      return Promise.resolve(null);
+    }
     const self = this;
     if (code === "session_not_live" && detail.recoverable === true) {
       this.showRecoveryActions(detail);
-      return this.recoverSession(sessionId).catch(function (recoveryError) {
-        return self.loadDurableSession(sessionId).then(function () {
+      return this.recoverSession(sessionId, requestGeneration).catch(function (recoveryError) {
+        if (!self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
+        return self.loadDurableSession(sessionId, requestGeneration).then(function (history) {
+          if (!history || !self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
           self.addBubble(
             "system",
             "Provider recovery is still unavailable: " + recoveryError.message,
@@ -601,7 +623,8 @@
     }
     const durable = detail.durable_session || {};
     if (durable.exists && detail.history_url) {
-      return this.loadDurableSession(sessionId).catch(function () {
+      return this.loadDurableSession(sessionId, requestGeneration).catch(function () {
+        if (!self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
         self.clearSelectedSession();
         return null;
       });
@@ -660,7 +683,16 @@
     if (ownerInstanceId) {
       url += "?owner_instance_id=" + encodeURIComponent(ownerInstanceId);
     }
-    return fetch(url, { headers: csrfHeaders(), credentials: "same-origin" })
+    if (this.routeAbortController) this.routeAbortController.abort();
+    const self = this;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function () { controller.abort(); }, SESSION_ROUTE_TIMEOUT_MS);
+    this.routeAbortController = controller;
+    return fetch(url, {
+      headers: csrfHeaders(),
+      credentials: "same-origin",
+      signal: controller.signal,
+    })
       .then(function (res) {
         if (!res.ok) {
           return res.json().catch(function () { return {}; }).then(function (body) {
@@ -668,6 +700,16 @@
           });
         }
         return res.json();
+      })
+      .catch(function (error) {
+        if (error && error.name === "AbortError") {
+          throw new Error("Session owner lookup exceeded its latency budget.");
+        }
+        throw error;
+      })
+      .finally(function () {
+        clearTimeout(timeoutId);
+        if (self.routeAbortController === controller) self.routeAbortController = null;
       });
   };
 
@@ -768,6 +810,8 @@
     }
     this._setRecoveryControl(false);
     this.showRecoveryActions({});
+    this.sessionClosed = true;
+    this.setComposerEnabled(false);
     this.setPlaceholder("Locating session owner…");
     let durableHistory = null;
     if (this.ownerInstanceId) {
@@ -854,7 +898,7 @@
         if (self.retryAfterStartupRecovery(err)) return null;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
-          return self.resolveSessionNotLive(err, sessionId);
+          return self.resolveSessionNotLive(err, sessionId, generation);
         }
         return Promise.resolve(durableHistory).catch(function () { return null; }).then(function () {
           self.sessionRoute = { state: "owner_unreachable" };
@@ -870,10 +914,16 @@
       });
   };
 
-  AgentChatWidget.prototype.recoverSession = function (sessionId) {
+  AgentChatWidget.prototype.recoverSession = function (sessionId, generation) {
     const self = this;
     const targetSessionId = sessionId || this.sessionId;
     if (!targetSessionId) return Promise.reject(new Error("No session selected"));
+    const requestGeneration = generation == null
+      ? this.subscriptionGeneration
+      : generation;
+    if (!this._isCurrentSessionRequest(targetSessionId, requestGeneration)) {
+      return Promise.resolve(null);
+    }
     this._setRecoveryControl(false);
     if (
       this.sessionRoute &&
@@ -888,6 +938,7 @@
       body: "{}",
     })
       .then(function (snap) {
+        if (!self._isCurrentSessionRequest(targetSessionId, requestGeneration)) return null;
         if (self.startupRetryId) clearTimeout(self.startupRetryId);
         self.startupRetryId = null;
         self.sessionId = targetSessionId;
@@ -905,13 +956,14 @@
         return snap;
       })
       .catch(function (err) {
+        if (!self._isCurrentSessionRequest(targetSessionId, requestGeneration)) return null;
         if (self.retryAfterStartupRecovery(err)) return null;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
-          return self.resolveSessionNotLive(err, targetSessionId);
+          return self.loadDurableSession(targetSessionId, requestGeneration);
         }
         if (code === "session_recovery_blocked" || code === "session_closed") {
-          return self.loadDurableSession(targetSessionId);
+          return self.loadDurableSession(targetSessionId, requestGeneration);
         }
         self.setPlaceholder("Session recovery is still unavailable: " + err.message);
         self.setStatus("offline");
@@ -1354,6 +1406,7 @@
     this.closeSSE("replaced");
     const url = this.apiBase + "/sessions/" + this.sessionId + "/events?after=" + this.lastSeq;
     const es = new EventSource(url);
+    const generation = this.subscriptionGeneration;
     this.es = es;
     this.esSessionId = this.sessionId;
     this.esApiBase = this.apiBase;
@@ -1370,14 +1423,14 @@
         return;
       }
       self.connectionNoticeShown = false;
-      self.api("/sessions/" + self.sessionId).then(function (snap) {
-        if (self.es !== es || self.destroyed) return;
+      self.api("/sessions/" + self.esSessionId).then(function (snap) {
+        if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) return;
         self.applySnapshot(snap);
       }).catch(function (err) {
-        if (self.es !== es || self.destroyed) return;
+        if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) return;
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
-          self.resolveSessionNotLive(err, self.sessionId);
+          self.resolveSessionNotLive(err, self.esSessionId, generation);
         } else if (err.status === 404) self.markSessionEnded("This session is no longer running.");
       });
     };
@@ -1481,6 +1534,8 @@
   AgentChatWidget.prototype.destroy = function (reason) {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.routeAbortController) this.routeAbortController.abort();
+    this.routeAbortController = null;
     this.closeSSE(reason || "widget-destroyed");
     this.stopBrowserRefresh();
     this.setTurnActive(false);
@@ -2757,6 +2812,8 @@
       return;
     }
     const act = action || "append";
+    const targetSessionId = this.sessionId;
+    const generation = this.subscriptionGeneration;
     const submittedImages = this.pendingImages.slice();
     const displayImages = submittedImages.map(function (image) {
       return {
@@ -2771,7 +2828,7 @@
       : (window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : String(Date.now()));
     this.setSubmissionState("sending", true);
     if (this.drafts) this.drafts.setStatus("Sending — waiting for durable acknowledgement…");
-    this.api("/sessions/" + this.sessionId + "/prompt", {
+    this.api("/sessions/" + targetSessionId + "/prompt", {
       method: "POST",
       headers: { "Idempotency-Key": promptId },
       body: JSON.stringify({
@@ -2784,6 +2841,7 @@
       }),
     })
       .then(function (res) {
+        if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
         if (!res || !res.accepted) {
           const error = new Error("PA could not confirm durable prompt acceptance.");
           error.acceptanceUnconfirmed = true;
@@ -2807,6 +2865,7 @@
         if (res.queued) self.refreshQueue();
       })
       .catch(function (err) {
+        if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
         const code = apiErrorCode(err);
         if (self.drafts) {
           self.drafts.submissionFailed({
@@ -2820,7 +2879,7 @@
             self.drafts.setStatus("Reconnecting — retry will reuse the same submission ID.");
           }
           self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
-          self.resolveSessionNotLive(err, self.sessionId);
+          self.resolveSessionNotLive(err, targetSessionId, generation);
           return;
         }
         self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });

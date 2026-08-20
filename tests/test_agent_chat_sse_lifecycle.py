@@ -186,6 +186,103 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_failed_stale_recovery_cannot_overwrite_new_session(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }},
+              addEventListener: noop,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            const window = {{
+              addEventListener: noop,
+              location: {{ href: "http://127.0.0.1:8080/agent" }},
+            }};
+            const context = {{
+              window, document, console: {{ debug: noop }}, URL,
+              setTimeout, clearTimeout, AbortController,
+            }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              context
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            let rejectRecovery;
+            let durableLoads = 0;
+            let composerEnabled = true;
+            Object.assign(widget, {{
+              destroyed: false,
+              subscriptionGeneration: 4,
+              sessionId: "stale-session",
+              sessionRoute: {{ state: "recoverable" }},
+              root: {{ dataset: {{ sessionId: "stale-session" }} }},
+              els: {{}},
+              startupRetryId: null,
+              _setRecoveryControl: noop,
+              showRecoveryActions: noop,
+              setPlaceholder: noop,
+              setStatus: noop,
+              setComposerEnabled: (enabled) => {{ composerEnabled = enabled; }},
+              retryAfterStartupRecovery: () => false,
+              api: () => new Promise((_resolve, reject) => {{ rejectRecovery = reject; }}),
+              loadDurableSession: () => {{
+                durableLoads += 1;
+                return Promise.resolve(null);
+              }},
+              addBubble: noop,
+            }});
+            const notLive = new Error("session is not live");
+            notLive.detail = {{ code: "session_not_live", recoverable: true }};
+            const pending = widget.resolveSessionNotLive(
+              notLive, "stale-session", 4
+            );
+            widget.sessionId = "good-session";
+            widget.root.dataset.sessionId = "good-session";
+            widget.subscriptionGeneration = 5;
+            composerEnabled = true;
+            rejectRecovery(new Error("stale provider is unavailable"));
+            pending.then(() => {{
+              if (widget.sessionId !== "good-session") {{
+                throw new Error("stale recovery replaced the new selection");
+              }}
+              if (durableLoads !== 0) {{
+                throw new Error("stale recovery loaded history into the new selection");
+              }}
+              if (!composerEnabled) {{
+                throw new Error("stale recovery disabled the new session composer");
+              }}
+            }}).catch((error) => {{
+              process.stderr.write(error.stack || String(error));
+              process.exitCode = 1;
+            }});
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_switching_more_than_six_sessions_keeps_one_stream(self) -> None:
         node = shutil.which("node")
         if not node:
@@ -294,6 +391,9 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
         self.assertIn('destroyAll(target || document, "spa-swap")', agent_chat)
         self.assertIn('destroyAll(document, "pagehide")', agent_chat)
         self.assertIn('closeAll(document, "pagehide-persisted")', agent_chat)
+        self.assertIn("const SESSION_ROUTE_TIMEOUT_MS = 4000", agent_chat)
+        self.assertIn("signal: controller.signal", agent_chat)
+        self.assertIn("this.routeAbortController.abort()", agent_chat)
         self.assertIn("root._acw.connectSSE()", agent_chat)
         self.assertIn('window.PAAgentChat.destroy(content, "card-closed")', spa)
         self.assertIn('window.PAAgentChat.destroy(content, "card-replaced")', spa)
