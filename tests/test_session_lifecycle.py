@@ -215,14 +215,35 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
             ("close", "single_purpose_terminal"),
         )
 
-    async def test_deleted_and_completed_card_close(self):
+    async def test_deleted_card_closes_but_completed_card_retains_interactive_session(self):
         linked = _session(card_id="card-1")
         self.assertEqual(
             await self.decide(linked), ("close", "card_deleted")
         )
         card = SimpleNamespace(lane=CardLane.DONE)
         self.assertEqual(
-            await self.decide(linked, card=card), ("close", "card_completed")
+            await self.decide(linked, card=card),
+            ("retained", "card_completed_followup_window"),
+        )
+
+    async def test_completed_card_uses_idle_retention_before_closing(self):
+        card = SimpleNamespace(lane=CardLane.DONE)
+        expired = _session(
+            card_id="card-1", updated_at=datetime.now(UTC) - timedelta(hours=25)
+        )
+        self.assertEqual(
+            await self.decide(expired, card=card),
+            ("close", "idle_retention_expired"),
+        )
+
+    async def test_completed_card_preserves_single_purpose_close_provenance(self):
+        card = SimpleNamespace(lane=CardLane.DONE)
+        self.assertEqual(
+            await self.decide(
+                _session(card_id="card-1", label="card-enrichment:card-1"),
+                card=card,
+            ),
+            ("close", "single_purpose_finished"),
         )
 
     async def test_recoverable_terminal_dispatch_is_retained(self):
