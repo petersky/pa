@@ -1,11 +1,13 @@
 {# Modular agent chat widget — embeddable on Agent page or card panes.
    Context / data attributes:
-     session_id, owner_instance_id, create_label, card_id, fresh, show_model, show_mode, show_thinking,
+     session_id, owner_instance_id, current_instance_id, create_label, card_id, fresh,
+     show_model, show_mode, show_thinking,
      show_system_prompts, show_queue, show_metrics, compact, api_base, auto_start,
      allow_card_capture
 #}
 {% set sid = session_id | default('') %}
 {% set owner_id = owner_instance_id | default('') %}
+{% set current_id = current_instance_id | default(settings.instance_id if settings is defined else '') %}
 {% set label = create_label | default('default') %}
 {% set cid = card_id | default('') %}
 {% set show_model = show_model if show_model is defined else true %}
@@ -25,7 +27,7 @@
      data-agent-chat
      data-session-id="{{ sid }}"
      data-owner-instance-id="{{ owner_id }}"
-     data-current-instance-id="{{ settings.instance_id }}"
+     data-current-instance-id="{{ current_id }}"
      data-create-label="{{ label }}"
      data-card-id="{{ cid }}"
      data-fresh="{{ '1' if fresh else '0' }}"
