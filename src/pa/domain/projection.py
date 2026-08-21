@@ -275,6 +275,17 @@ class CardProjection:
                     retired_by_principal TEXT,
                     PRIMARY KEY(session_id, card_id)
                 );
+                CREATE TABLE IF NOT EXISTS agent_session_card_history (
+                    session_id TEXT NOT NULL,
+                    card_id TEXT NOT NULL,
+                    realm_id TEXT NOT NULL DEFAULT 'default',
+                    linked_by_principal TEXT,
+                    linked_at TEXT NOT NULL,
+                    retired_at TEXT NOT NULL,
+                    retired_reason TEXT,
+                    retired_by_principal TEXT,
+                    PRIMARY KEY(session_id, card_id, linked_at, retired_at)
+                );
                 CREATE TABLE IF NOT EXISTS knowledge (
                     id TEXT PRIMARY KEY,
                     session_id TEXT,
@@ -554,6 +565,19 @@ class CardProjection:
         for col in ("retired_at", "retired_reason", "retired_by_principal"):
             if col not in link_cols:
                 conn.execute(f"ALTER TABLE agent_session_cards ADD COLUMN {col} TEXT")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS agent_session_card_history (
+                   session_id TEXT NOT NULL,
+                   card_id TEXT NOT NULL,
+                   realm_id TEXT NOT NULL DEFAULT 'default',
+                   linked_by_principal TEXT,
+                   linked_at TEXT NOT NULL,
+                   retired_at TEXT NOT NULL,
+                   retired_reason TEXT,
+                   retired_by_principal TEXT,
+                   PRIMARY KEY(session_id, card_id, linked_at, retired_at)
+               )"""
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_history "
             "ON agent_sessions(realm_id, project_id, status, updated_at DESC)"
@@ -3996,6 +4020,9 @@ class CardProjection:
                 ),
             )
             if session.card_id or session.item_id:
+                self._archive_retired_session_card(
+                    conn, session.id, session.card_id or session.item_id
+                )
                 conn.execute(
                     """
                     INSERT INTO agent_session_cards
@@ -4014,6 +4041,22 @@ class CardProjection:
                     ),
                 )
         return session
+
+    @staticmethod
+    def _archive_retired_session_card(
+        conn: sqlite3.Connection, session_id: str, card_id: str
+    ) -> None:
+        """Preserve a completed association interval before reactivating its key."""
+        conn.execute(
+            """INSERT OR IGNORE INTO agent_session_card_history
+                   (session_id, card_id, realm_id, linked_by_principal, linked_at,
+                    retired_at, retired_reason, retired_by_principal)
+               SELECT session_id, card_id, realm_id, linked_by_principal, linked_at,
+                      retired_at, retired_reason, retired_by_principal
+               FROM agent_session_cards
+               WHERE session_id = ? AND card_id = ? AND retired_at IS NOT NULL""",
+            (session_id, card_id),
+        )
 
     def link_session_card(
         self,
@@ -4038,6 +4081,7 @@ class CardProjection:
             ).fetchone()
             if card_row is None:
                 raise ValueError("Card not found in the session realm")
+            self._archive_retired_session_card(conn, session_id, card_id)
             conn.execute(
                 """
                 INSERT INTO agent_session_cards
@@ -4169,9 +4213,13 @@ class CardProjection:
             rows = conn.execute(
                 """SELECT card_id, realm_id, linked_by_principal, linked_at,
                           retired_at, retired_reason, retired_by_principal
+                   FROM agent_session_card_history WHERE session_id = ?
+                   UNION ALL
+                   SELECT card_id, realm_id, linked_by_principal, linked_at,
+                          retired_at, retired_reason, retired_by_principal
                    FROM agent_session_cards WHERE session_id = ?
                    ORDER BY linked_at ASC, card_id ASC""",
-                (session_id,),
+                (session_id, session_id),
             ).fetchall()
         return [dict(row) for row in rows]
 

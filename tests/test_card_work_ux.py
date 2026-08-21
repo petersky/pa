@@ -83,6 +83,28 @@ class CardSummaryTests(unittest.TestCase):
                 {item.id for item in store.list_sessions_for_cards({second.id})},
             )
 
+            store.link_session_card(
+                session.id,
+                second.id,
+                principal_id="user:relinker",
+                make_primary=True,
+            )
+
+            intervals = [
+                item
+                for item in store.list_session_card_history(session.id)
+                if item["card_id"] == second.id
+            ]
+            self.assertEqual(len(intervals), 2)
+            self.assertEqual(
+                intervals[0]["retired_reason"], "associated_card_terminal"
+            )
+            self.assertEqual(
+                intervals[0]["retired_by_principal"], "system:session_lifecycle"
+            )
+            self.assertIsNone(intervals[1]["retired_at"])
+            self.assertEqual(intervals[1]["linked_by_principal"], "user:relinker")
+
     def test_unsummarized_cards_are_pending_and_edits_are_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = CardProjection(Path(tmp) / "pa.db")
