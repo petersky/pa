@@ -62,6 +62,9 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert 'item.setAttribute("aria-label"' in script
     assert "sessionListExecution" in script
     assert "sessionListState" in script
+    assert "sessionRuntimeLabel" in script
+    assert "patchSessionListFromSnapshot" in script
+    assert "controller.start(!!force)" in script
     assert "compactSessionNumber" in script
     assert "sessionElapsed" in script
 
@@ -112,6 +115,8 @@ def test_agent_session_layout_regression_contracts_cover_density_and_viewports()
     assert "min-height: 2.5rem" in css
     assert "agent-session-actions" in template
     assert "agent-session-actions" in script
+    assert "Live provider, model, and settings" in template
+    assert "<b>Live</b>" in template
 
 
 def test_agent_deep_link_survives_refresh_and_back_forward_without_close() -> None:

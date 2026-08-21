@@ -903,6 +903,106 @@ class AgentSessionRestoreTests(unittest.TestCase):
 
             asyncio.run(run())
 
+    def _connect_with_mcp_admission(
+        self,
+        tmp: str,
+        *,
+        provider_id: str,
+        display_name: str,
+        command: str,
+    ) -> tuple[MagicMock, MagicMock, AgentConnection]:
+        store = MagicMock()
+        acp = MagicMock()
+        acp.initialize = AsyncMock(return_value={"agentCapabilities": {}})
+        acp.new_session = AsyncMock(
+            return_value=SimpleNamespace(session_id="agent-session")
+        )
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+        context.__aexit__ = AsyncMock()
+        socket = Path(tmp) / "runtime" / "owner.sock"
+        connection = AgentConnection(
+            Settings(data_dir=Path(tmp), instance_id="owner-instance"),
+            store,
+            agent_name=provider_id,
+            provider_spec=AgentProviderSpec(
+                id=provider_id,
+                display_name=display_name,
+                command=command,
+            ),
+        )
+        owner_probe = MagicMock(
+            return_value={"state": "connected", "endpoint_type": "unix"}
+        )
+        stdio_probe = MagicMock(
+            return_value={"state": "connected", "classification": "ok"}
+        )
+
+        async def run() -> None:
+            with (
+                patch.dict(
+                    "os.environ",
+                    {
+                        "PATH": "/bin",
+                        "PA_OWNER_SOCKET": str(socket),
+                        "PA_OWNER_API_URL": "",
+                    },
+                    clear=True,
+                ),
+                patch("pa.acp.client.spawn_agent", return_value=context),
+                patch("pa.acp.client.probe_owner_channel", owner_probe),
+                patch("pa.acp.client.probe_pa_mcp_stdio", stdio_probe),
+                patch.object(
+                    PAClient,
+                    "wait_for_pa_mcp_startup_failure",
+                    AsyncMock(return_value=None),
+                ),
+            ):
+                await connection.connect()
+
+        asyncio.run(run())
+        return owner_probe, stdio_probe, connection
+
+    def test_cursor_and_openinterpreter_skip_duplicate_pa_mcp_stdio_probe(
+        self,
+    ) -> None:
+        for provider_id, display_name, command in (
+            ("cursor", "Cursor", "cursor-agent"),
+            ("openinterpreter", "Open Interpreter", "openinterpreter-acp"),
+        ):
+            with self.subTest(provider_id=provider_id), tempfile.TemporaryDirectory() as tmp:
+                owner_probe, stdio_probe, connection = self._connect_with_mcp_admission(
+                    tmp,
+                    provider_id=provider_id,
+                    display_name=display_name,
+                    command=command,
+                )
+                owner_probe.assert_called()
+                stdio_probe.assert_not_called()
+                self.assertEqual(
+                    connection.pa_mcp_health.get("bridge_probe"),
+                    {
+                        "state": "delegated",
+                        "classification": "provider_context_probe",
+                    },
+                )
+                self.assertEqual(connection.pa_mcp_health.get("state"), "connected")
+
+    def test_unknown_provider_still_runs_pa_mcp_stdio_probe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            owner_probe, stdio_probe, connection = self._connect_with_mcp_admission(
+                tmp,
+                provider_id="generic",
+                display_name="Generic",
+                command="agent",
+            )
+            owner_probe.assert_called()
+            stdio_probe.assert_called()
+            self.assertNotEqual(
+                (connection.pa_mcp_health.get("bridge_probe") or {}).get("state"),
+                "delegated",
+            )
+
     def test_load_capability_is_detected_in_dict_and_object_responses(self) -> None:
         self.assertTrue(
             _agent_supports_load({"agentCapabilities": {"loadSession": True}})

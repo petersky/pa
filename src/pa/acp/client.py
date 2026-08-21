@@ -79,6 +79,14 @@ WireLogger = Callable[[str, dict[str, Any]], None]
 # ACP `_` extension prefix. Treat those as optional acknowledgements.
 _TOLERATED_CLIENT_METHOD_PREFIXES = ("cursor/", "elicitation/")
 
+# Built-in providers receive PA MCP through session/new mcpServers and spawn
+# their own child. A second pre-session stdio handshake is duplicate work and
+# cannot prove that the provider sandbox can reach the owner socket. Keep this
+# set explicit so a future provider still gets the admission probe by default.
+_DELEGATED_PA_MCP_STDIO_PROBE_PROVIDERS = frozenset(
+    {"codex", "cursor", "openinterpreter"}
+)
+
 
 def _tolerated_client_method(method: str) -> bool:
     if not isinstance(method, str) or not method:
@@ -877,20 +885,32 @@ class AgentConnection:
             logger.info(
                 "PA MCP owner channel verified", extra={"pa_mcp": self.pa_mcp_health}
             )
-            if provider_id == "codex":
-                # Codex launches the supplied stdio MCP server in the actual
-                # session sandbox. Launching a second child here duplicates the
-                # expensive initialize/tools-list handshake and still cannot
-                # prove that the provider sandbox can reach the owner socket.
-                self.pa_mcp_health.update(
-                    state="checking",
-                    classification=None,
-                    bridge_probe={
-                        "state": "delegated",
-                        "classification": "provider_context_probe",
-                    },
-                    retry_state="provider_context_probe_pending",
-                )
+            if provider_id in _DELEGATED_PA_MCP_STDIO_PROBE_PROVIDERS:
+                # Codex, Cursor, and OpenInterpreter launch the supplied stdio
+                # MCP server in the actual session. Launching a second child
+                # here duplicates the expensive initialize/tools-list handshake
+                # and still cannot prove that the provider sandbox can reach
+                # the owner socket. The owner-channel probe above still runs.
+                delegated_probe = {
+                    "state": "delegated",
+                    "classification": "provider_context_probe",
+                }
+                if provider_id == "codex":
+                    self.pa_mcp_health.update(
+                        state="checking",
+                        classification=None,
+                        bridge_probe=delegated_probe,
+                        retry_state="provider_context_probe_pending",
+                    )
+                else:
+                    self.pa_mcp_health.update(
+                        state="connected",
+                        classification=None,
+                        bridge_probe=delegated_probe,
+                        last_success=datetime.now(UTC).isoformat(),
+                        last_failure=None,
+                        retry_state="connected",
+                    )
             else:
                 try:
                     bridge_health = await self._offload(

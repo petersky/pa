@@ -81,8 +81,18 @@
     var self = this;
     if (this.cancelled) this.cancelled = false;
     if (!this.active()) return Promise.resolve(null);
-    if (this.promise) return this.promise;
-    if (this.timer) {
+    if (this.promise) {
+      if (!force) return this.promise;
+      this.generation += 1;
+      this.attempt = 0;
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+      if (this.abortController) {
+        this.abortController.abort("session-recovery-forced");
+      }
+      this.abortController = null;
+      this.promise = null;
+    } else if (this.timer) {
       if (!force) return Promise.resolve(null);
       clearTimeout(this.timer);
       this.timer = null;

@@ -1672,6 +1672,8 @@
         if (!replay) {
           this.api("/sessions/" + this.sessionId).then(function (snap) {
             self.applyOptionSnapshot(snap);
+            patchSessionListFromSnapshot(self.sessionId, snap);
+            refreshSessionList(self.sessionId, true);
           }).catch(function () { /* ignore */ });
         }
         break;
@@ -2332,7 +2334,8 @@
       .then(function (fresh) {
         self.settingsDirty = false;
         self.applyOptionSnapshot(fresh);
-        refreshSessionList(self.sessionId);
+        patchSessionListFromSnapshot(self.sessionId, fresh);
+        refreshSessionList(self.sessionId, true);
         if (errors.length) throw new Error(errors.map(function (error) { return error.message; }).join("; "));
         if (self.els.settingsStatus) {
           self.els.settingsStatus.classList.remove("is-error");
@@ -3155,9 +3158,8 @@
                 (sessionIdentity || escapeHtml(s.origin_instance_name || "Local instance")) + "</span>" +
               '<span class="agent-session-age" title="Elapsed time">' +
                 escapeHtml(sessionElapsed(s.created_at)) + "</span>" +
-              '<span class="agent-session-runtime" title="Provider and model">' +
-                escapeHtml((s.agent_name || "Default provider") + " · " +
-                  (s.model_id || "default model") + (s.mode_id ? " · " + s.mode_id : "")) +
+              '<span class="agent-session-runtime" title="Live provider, model, and settings">' +
+                escapeHtml(sessionRuntimeLabel(s)) +
                 "</span>" +
               '<span class="agent-session-usage' + (usageParts.length ? "" : " muted") +
                 '" title="Session usage">' +
@@ -3167,7 +3169,7 @@
         "</div>" +
         '<div class="agent-session-related">' + related + "</div>" +
         '<details class="agent-session-details"><summary>Details</summary>' +
-          '<div class="agent-session-details-body">' + sessionConfigSummary(s.config_json) +
+          '<div class="agent-session-details-body">' + sessionConfigSummary(s) +
             '<span class="muted small">Last activity <time datetime="' +
               escapeHtml(s.updated_at || "") + '">' + escapeHtml(sessionTimestamp(s.updated_at)) +
               "</time></span>" +
@@ -3203,7 +3205,7 @@
     sessionListRecovery = null;
   }
 
-  function refreshSessionList(activeId) {
+  function refreshSessionList(activeId, force) {
     const list = document.querySelector("[data-agent-session-list]");
     if (!list) return Promise.resolve(null);
     const toggle = document.querySelector("[data-agent-history-toggle]");
@@ -3256,7 +3258,7 @@
     } else {
       sessionListRecovery.activeId = activeId || "";
     }
-    return sessionListRecovery.controller.start(false);
+    return sessionListRecovery.controller.start(!!force);
   }
 
   function compactSessionNumber(value) {
@@ -3353,36 +3355,149 @@
     }
   }
 
-  function sessionConfigSummary(config) {
-    const admission = config && config.configuration;
-    if (admission && (admission.requested || admission.effective)) {
-      const requested = admission.requested || {};
-      const effective = admission.effective || {};
-      const requestedParts = [
-        requested.model_id && ("model " + requested.model_id),
-        requested.mode_id && ("mode " + requested.mode_id),
-        requested.reasoning && ("reasoning " + requested.reasoning)
-      ].filter(Boolean);
-      const effectiveParts = [
-        effective.model_id && ("model " + effective.model_id),
-        effective.mode_id && ("mode " + effective.mode_id),
-        effective.reasoning && ("reasoning " + effective.reasoning)
-      ].filter(Boolean);
-      const summary = [
-        requestedParts.length && ("requested: " + requestedParts.join(", ")),
-        effectiveParts.length && ("effective: " + effectiveParts.join(", ")),
-        admission.state && ("settings status: " + admission.state)
-      ].filter(Boolean).join("\n");
-      if (summary) {
-        return '<span class="muted small agent-session-config">' +
-          escapeHtml(summary) + "</span>";
+  function formatSessionModelId(modelId) {
+    const raw = String(modelId || "").trim();
+    if (!raw) return "";
+    if (raw.charAt(raw.length - 1) === "]") {
+      const opened = raw.lastIndexOf("[");
+      if (opened > 0) {
+        const name = raw.slice(0, opened).trim();
+        const inner = raw.slice(opened + 1, -1).trim();
+        if (!inner) return name || "default";
       }
     }
-    const values = config && config.values;
-    if (!values || !Object.keys(values).length) return "";
-    return '<span class="muted small agent-session-config">' + escapeHtml(
-      Object.keys(values).map(function (key) { return key + ": " + values[key]; }).join("\n")
-    ) + "</span>";
+    return raw;
+  }
+
+  function sessionConfigOptionLabel(key) {
+    const compact = String(key || "").toLowerCase().replace(/[_-]+/g, "");
+    if ([
+      "effort", "reasoning", "reasoningeffort", "reasoninglevel",
+      "thought", "thoughteffort", "thoughtlevel"
+    ].indexOf(compact) !== -1) {
+      return "effort";
+    }
+    if (["thinking", "thinkingeffort", "thinkinglevel"].indexOf(compact) !== -1) {
+      return "thinking";
+    }
+    return key;
+  }
+
+  function sessionConfigOptionParts(values) {
+    if (!values || typeof values !== "object") return [];
+    const seen = {};
+    return Object.keys(values).reduce(function (parts, key) {
+      const compact = String(key).toLowerCase().replace(/[_-]+/g, "");
+      if ([
+        "model", "models", "modelid", "languagemodel",
+        "mode", "sessionmode", "agentmode", "interactionmode",
+        "collaborationmode"
+      ].indexOf(compact) !== -1) {
+        return parts;
+      }
+      const value = values[key];
+      if (value == null || value === "" || typeof value === "object") return parts;
+      const label = sessionConfigOptionLabel(key);
+      if (seen[label]) return parts;
+      seen[label] = true;
+      parts.push(label + " " + value);
+      return parts;
+    }, []);
+  }
+
+  function sessionRecord(sessionOrConfig) {
+    if (sessionOrConfig && sessionOrConfig.config_json) return sessionOrConfig;
+    return { config_json: sessionOrConfig || {} };
+  }
+
+  function sessionRuntimeLabel(session) {
+    const record = sessionRecord(session);
+    const values = (record.config_json && record.config_json.values) || {};
+    const model = formatSessionModelId(record.model_id) || "default model";
+    const parts = [record.agent_name || "Default provider", model];
+    if (record.mode_id) parts.push(record.mode_id);
+    return parts.concat(sessionConfigOptionParts(values)).join(" · ");
+  }
+
+  function sessionConfigSummary(sessionOrConfig) {
+    const record = sessionRecord(sessionOrConfig);
+    const config = record.config_json || {};
+    const values = config.values || {};
+    const liveParts = [];
+    const model = formatSessionModelId(record.model_id);
+    if (model) liveParts.push("model " + model);
+    if (record.mode_id) liveParts.push("mode " + record.mode_id);
+    liveParts.push.apply(liveParts, sessionConfigOptionParts(values));
+    const admission = config.configuration;
+    const requested = (admission && admission.requested) || {};
+    const effective = (admission && admission.effective) || {};
+    const requestedParts = [
+      requested.model_id && ("model " + requested.model_id),
+      requested.mode_id && ("mode " + requested.mode_id),
+      requested.reasoning && ("reasoning " + requested.reasoning)
+    ].filter(Boolean);
+    const effectiveParts = [
+      effective.model_id && ("model " + effective.model_id),
+      effective.mode_id && ("mode " + effective.mode_id),
+      effective.reasoning && ("reasoning " + effective.reasoning)
+    ].filter(Boolean);
+    const summary = [
+      liveParts.length && ("live: " + liveParts.join(", ")),
+      requestedParts.length && ("requested: " + requestedParts.join(", ")),
+      effectiveParts.length && ("effective: " + effectiveParts.join(", ")),
+      admission && admission.state && ("settings status: " + admission.state)
+    ].filter(Boolean).join("\n");
+    if (!summary) return "";
+    return '<span class="muted small agent-session-config">' +
+      escapeHtml(summary) + "</span>";
+  }
+
+  function sessionRecordFromSnapshot(snap, fallback) {
+    const nested = (snap && snap.session) || {};
+    const base = fallback || {};
+    return {
+      id: nested.id || base.id,
+      agent_name: nested.agent_name || base.agent_name,
+      model_id: nested.model_id != null ? nested.model_id : base.model_id,
+      mode_id: nested.mode_id != null ? nested.mode_id : base.mode_id,
+      config_json: nested.config_json || base.config_json || {}
+    };
+  }
+
+  function sessionListItem(sessionId) {
+    const list = document.querySelector("[data-agent-session-list]");
+    if (!list || !sessionId) return null;
+    const items = list.querySelectorAll("[data-session-id]");
+    for (let i = 0; i < items.length; i += 1) {
+      if (items[i].dataset.sessionId === sessionId) return items[i];
+    }
+    return null;
+  }
+
+  function patchSessionListFromSnapshot(sessionId, snap) {
+    const item = sessionListItem(sessionId);
+    if (!item) return;
+    const runtime = item.querySelector(".agent-session-runtime");
+    const fallbackName = runtime
+      ? String(runtime.textContent || "").split(" · ")[0]
+      : "";
+    const record = sessionRecordFromSnapshot(snap, {
+      id: sessionId,
+      agent_name: fallbackName
+    });
+    if (runtime) {
+      runtime.title = "Live provider, model, and settings";
+      runtime.textContent = sessionRuntimeLabel(record);
+    }
+    const html = sessionConfigSummary(record);
+    const details = item.querySelector(".agent-session-config");
+    if (details) {
+      if (html) details.outerHTML = html;
+      else details.remove();
+    } else if (html) {
+      const body = item.querySelector(".agent-session-details-body");
+      if (body) body.insertAdjacentHTML("afterbegin", html);
+    }
   }
 
   function populateSelect(select, values, idKeys, defaultLabel) {
@@ -3423,13 +3538,18 @@
     const form = dialog.querySelector("[data-agent-new-form]");
     const submit = dialog.querySelector("[data-agent-new-submit]");
     const status = dialog.querySelector("[data-agent-new-status]");
+    const spinner = dialog.querySelector("[data-agent-new-model-spinner]");
+    const model = dialog.querySelector("[data-agent-new-model]");
     dialog.setAttribute("aria-busy", busy ? "true" : "false");
+    dialog.dataset.agentNewOptionsLoaded = busy ? "false" : "true";
     if (form) form.setAttribute("aria-busy", busy ? "true" : "false");
     if (submit && submit.textContent !== "Starting…") submit.disabled = !!busy;
     if (status) {
       status.hidden = !busy;
       if (message) status.textContent = message;
     }
+    if (spinner) spinner.hidden = !busy;
+    if (model) model.setAttribute("aria-busy", busy ? "true" : "false");
     newSessionOptionSelects(dialog).forEach(function (select) {
       select.disabled = !!busy;
     });
@@ -3958,6 +4078,9 @@
     destroy: destroyAll,
     AgentChatWidget: AgentChatWidget,
     refreshSessionList: refreshSessionList,
+    patchSessionListFromSnapshot: patchSessionListFromSnapshot,
+    sessionRuntimeLabel: sessionRuntimeLabel,
+    sessionConfigSummary: sessionConfigSummary,
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
     renderMarkdownAsync: renderMarkdownAsync,
