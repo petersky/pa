@@ -10,6 +10,126 @@ from pathlib import Path
 
 
 class AgentChatSseLifecycleTests(unittest.TestCase):
+    def test_owner_lookup_deadline_does_not_depend_on_fetch_abort(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }},
+              addEventListener: noop,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            const window = {{ addEventListener: noop }};
+            const immediateTimeout = (callback) => {{ callback(); return 1; }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              {{
+                window, document, console: {{ debug: noop }}, URL, AbortController,
+                fetch: () => new Promise(() => {{}}),
+                setTimeout: immediateTimeout, clearTimeout: noop,
+              }}
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            widget.routeAbortController = null;
+            widget.resolveSessionRoute("session-1", "owner-1")
+              .then(() => {{ throw new Error("owner lookup unexpectedly resolved"); }})
+              .catch((error) => {{
+                if (!String(error.message).includes("latency budget")) throw error;
+              }});
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness], check=False, capture_output=True, text=True
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_known_owner_falls_back_to_live_snapshot_when_routing_fails(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }}, addEventListener: noop,
+              querySelector: () => null, querySelectorAll: () => [],
+            }};
+            const window = {{
+              addEventListener: noop,
+              location: {{ href: "http://127.0.0.1:8080/agent" }},
+              history: {{ replaceState: noop, pushState: noop }},
+            }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              {{ window, document, console: {{ debug: noop }}, URL, AbortController,
+                 setTimeout, clearTimeout }}
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            let liveBase = "";
+            Object.assign(widget, {{
+              destroyed: false, subscriptionGeneration: 0,
+              currentInstanceId: "local", apiBase: "/api/agent",
+              root: {{ dataset: {{}}, closest: () => null }},
+              els: {{ promote: null }}, drafts: null,
+              _setRecoveryControl: noop, showRecoveryActions: noop,
+              setPlaceholder: noop, setComposerEnabled: noop,
+              retryAfterStartupRecovery: () => false,
+              resolveSessionRoute: () => Promise.reject(new Error("route timeout")),
+              _loadLiveSnapshot: () => {{
+                liveBase = widget.apiBase;
+                return Promise.resolve({{ connected: true }});
+              }},
+            }});
+            widget.openSession("session-1", "remote-owner", {{ replace: true }})
+              .then(() => {{
+                if (liveBase !== "/api/fleet/instances/remote-owner/agent") {{
+                  throw new Error("known-owner fallback used " + liveBase);
+                }}
+                if (widget.sessionRoute.state !== "live_degraded") {{
+                  throw new Error("fallback did not record degraded routing");
+                }}
+              }})
+              .catch((error) => {{
+                process.stderr.write(error.stack || String(error));
+                process.exitCode = 1;
+              }});
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness], check=False, capture_output=True, text=True
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_switch_clears_rendered_transcript_before_owner_lookup(self) -> None:
         node = shutil.which("node")
         if not node:
