@@ -324,12 +324,23 @@
           Wake an executor when action is required
         </label>
         <label>
+          <input type="checkbox" name="repair_failed_checks"
+                 {% if pr_policy.get('repair_failed_checks', true) %}checked{% endif %}>
+          Wake the executor for any terminal failed check, including non-required checks
+        </label>
+        <label>Required checks (comma separated)
+          <input name="required_checks" value="{{ pr_policy.get('required_checks', []) | join(', ') }}">
+        </label>
+        <label>
           <input type="checkbox" name="agent_merge_on_green"
                  {% if pr_policy.get('agent_merge_on_green', true) %}checked{% endif %}>
           Ask the executor to revalidate and merge a stable green PR
         </label>
         <button type="submit">Save PR policy</button>
+        <p class="muted small">Source: {% if pr_policy %}project configuration{% else %}built-in default (not yet explicitly configured){% endif %}. Existing watches keep their frozen policy snapshot.</p>
       </form>
+      {% set pr_policy_audit = (project.tool_config or {}).get('pr_policy_audit', []) %}
+      {% if pr_policy_audit %}<h4>Policy change history</h4><ul class="item-list">{% for change in pr_policy_audit | reverse %}<li class="item"><code>{{ change.field }}</code> {{ change.old_value }} → {{ change.new_value }}<p class="muted small">{{ change.scope }} · {{ change.actor }} · {{ change.instance_id }} · {{ change.timestamp }}</p></li>{% endfor %}</ul>{% endif %}
     </details>
     <h2>Work overview</h2>
     {% if not cards %}

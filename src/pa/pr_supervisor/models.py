@@ -34,6 +34,7 @@ class PRPolicy(BaseModel):
 
     ready_by_default: bool = True
     auto_notify: bool = True
+    repair_failed_checks: bool = True
     agent_merge_on_green: bool = True
     integration_branch: str | None = None
     required_checks: list[str] = Field(default_factory=list)
@@ -163,6 +164,9 @@ class PRWatch(BaseModel):
     creation_reason: str | None = Field(default=None, max_length=500)
     qualifying_evidence: str | None = Field(default=None, max_length=2_000)
     policy: PRPolicy = Field(default_factory=PRPolicy)
+    policy_source: str = "default"
+    policy_revision: str = "default-v1"
+    policy_snapshot_at: datetime = Field(default_factory=utcnow)
     required_capabilities: list[str] = Field(default_factory=list)
     status: PRWatchStatus = PRWatchStatus.ACTIVE
     owner_instance_id: str | None = None
@@ -245,6 +249,7 @@ class GateResult(BaseModel):
     pending_checks: list[PRCheck] = Field(default_factory=list)
     unresolved_threads: list[ReviewThread] = Field(default_factory=list)
     fingerprint: str
+    repair_fingerprint: str | None = None
 
 
 class LeaseGrant(BaseModel):

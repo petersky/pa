@@ -37,6 +37,7 @@ def evaluate_gate(
     actionable_reasons: list[str] = []
     pending_reasons: list[str] = []
     failing: list[PRCheck] = []
+    merge_failing: list[PRCheck] = []
     pending: list[PRCheck] = []
     allowed = _SUCCESS | {value.lower() for value in policy.allowed_neutral_conclusions}
 
@@ -53,12 +54,18 @@ def evaluate_gate(
 
     for check in snapshot.checks:
         conclusion = (check.conclusion or "").lower()
-        if check.required:
-            if conclusion in _FAILURES:
+        if conclusion in _FAILURES and check.terminal:
+            if check.required:
+                merge_failing.append(check)
+            if check.required or policy.repair_failed_checks:
                 failing.append(check)
                 actionable_reasons.append(
-                    f"required check {check.name} concluded {conclusion}"
+                    f"{'required' if check.required else 'non-required'} check "
+                    f"{check.name} concluded {conclusion}"
                 )
+        if check.required:
+            if conclusion in _FAILURES:
+                pass
             elif not check.terminal or conclusion not in allowed:
                 pending.append(check)
                 pending_reasons.append(f"required check {check.name} is pending")
@@ -125,8 +132,31 @@ def evaluate_gate(
     }
     actionable = bool(actionable_reasons)
     is_pending = bool(pending_reasons)
+    merge_actionable = bool(merge_failing or unresolved)
+    merge_actionable = merge_actionable or snapshot.draft or decision == "CHANGES_REQUESTED"
+    merge_actionable = merge_actionable or snapshot.mergeable is False or merge_state in {
+        "dirty",
+        "conflicting",
+    }
+    repair_data = {
+        "head_sha": snapshot.head_sha,
+        "failed_checks": [
+            {
+                "name": check.name,
+                "required": check.required,
+                "conclusion": check.conclusion,
+                "details_url": check.details_url,
+            }
+            for check in sorted(failing, key=lambda item: item.name)
+        ],
+        "threads": [thread.id for thread in unresolved],
+        "draft": snapshot.draft,
+        "review_decision": snapshot.review_decision,
+        "conflicts": snapshot.mergeable is False
+        or merge_state in {"dirty", "conflicting"},
+    }
     return GateResult(
-        green=not actionable and not is_pending,
+        green=not merge_actionable and not is_pending,
         actionable=actionable,
         pending=is_pending,
         reasons=reasons,
@@ -134,6 +164,7 @@ def evaluate_gate(
         pending_checks=pending,
         unresolved_threads=unresolved,
         fingerprint=condition_fingerprint(fingerprint_data),
+        repair_fingerprint=(condition_fingerprint(repair_data) if actionable else None),
     )
 
 

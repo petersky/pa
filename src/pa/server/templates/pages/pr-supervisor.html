@@ -82,7 +82,21 @@
       Head {{ watch.head_sha or 'unknown' }} · base {{ watch.base_branch or 'unknown' }} ·
       owner {% if watch.owner_instance_id %}{{ instance_identity(watch.owner_instance_id) }}{% else %}unassigned{% endif %} · fence {{ watch.fence_token }}
     </p>
+    <p class="muted small">
+      Frozen policy {{ watch.policy_source }} · revision {{ watch.policy_revision }} ·
+      snapshot {{ watch.policy_snapshot_at }}. Later project changes apply only to new watches.
+      {% if watch_policy_differs %}<span class="badge">differs from current policy</span>{% endif %}
+    </p>
+    {% set failed_checks = (watch.state.get('gate') or {}).get('failing_checks', []) %}
+    {% if failed_checks %}
+    <h4>Failed checks requiring repair</h4>
+    <ul>{% for check in failed_checks %}<li>{% if not check.required %}<span class="badge">non-required</span> {% endif %}<a href="{{ check.details_url or watch.pr_url }}">{{ check.name }}</a>: {{ check.conclusion }}</li>{% endfor %}</ul>
+    {% endif %}
     {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
+    {% if watch_deliveries %}
+    <h4>Executor delivery</h4>
+    <ul class="item-list">{% for delivery in watch_deliveries %}<li class="item"><span class="badge">{{ delivery.state }}</span> {{ delivery.updated_at }} · destination {{ delivery.target_instance_id or 'local' }}/{{ delivery.target_session_id or 'unlinked' }}{% if delivery.detail %}<p class="muted small">{{ delivery.detail }}</p>{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
     <h4>Audit history</h4>
     {% if watch_events %}
     <ul class="item-list">
