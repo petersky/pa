@@ -800,6 +800,46 @@ class LocalMcpApiTests(unittest.TestCase):
             self.assertEqual(error.retry_after, 1)
             self.assertEqual(error.correlation_id, "authority-correlation")
 
+    def test_placement_409_surfaces_rejected_candidates_on_mcp_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            detail = {
+                "code": "no_eligible_instance",
+                "message": "No eligible instance remains after policy filters.",
+                "recoverable": True,
+                "rejected_candidates": [
+                    {
+                        "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                        "name": "macbook",
+                        "rejection_codes": ["policy_unknown_on_mixed_version_peer"],
+                    }
+                ],
+            }
+            response = httpx.Response(
+                409,
+                json={"detail": detail},
+                headers={"X-Request-ID": "placement-correlation"},
+                request=httpx.Request(
+                    "POST", "http://127.0.0.1/api/fleet/placement/preview"
+                ),
+            )
+            with (
+                patch("httpx.request", return_value=response),
+                self.assertRaises(LocalPARequestError) as raised,
+            ):
+                request_local_pa(
+                    settings, "POST", "/api/fleet/placement/preview", json={}
+                )
+            error = raised.exception
+            self.assertEqual(error.detail, detail)
+            self.assertEqual(error.rejected_candidates, detail["rejected_candidates"])
+            self.assertEqual(
+                error.rejection_codes, ["policy_unknown_on_mixed_version_peer"]
+            )
+            self.assertIn("rejected_candidates=", str(error))
+            self.assertIn("policy_unknown_on_mixed_version_peer", str(error))
+            self.assertIn("rejection_codes=", str(error))
+
     def test_server_identity_and_correlation_headers_are_exposed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(

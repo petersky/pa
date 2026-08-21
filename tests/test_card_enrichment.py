@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 from pa.domain.card_enrichment import (
     _close_enrichment_session,
+    advertised_capability_catalog,
     build_enrichment_update,
     explicit_enrichment_fields,
 )
@@ -34,6 +35,7 @@ class CardEnrichmentTest(unittest.TestCase):
             ),
             explicit_fields=explicit_enrichment_fields(data),
             project_ids=["project-1"],
+            advertised_capabilities=["github", "logs", "browser"],
         )
 
         self.assertEqual(
@@ -43,6 +45,67 @@ class CardEnrichmentTest(unittest.TestCase):
         self.assertEqual(update.project_id, "project-1")
         self.assertEqual(update.preferred_capabilities, ["github", "logs"])
         self.assertEqual(update.tags, ["deploy", "reliability"])
+
+    def test_invented_preferred_capabilities_are_dropped_without_catalog(self) -> None:
+        update = build_enrichment_update(
+            json.dumps(
+                {
+                    "description": "Investigate the live session.",
+                    "kind": "task",
+                    "preferred_capabilities": [
+                        "agent-session-diagnostics",
+                        "frontend-debugging",
+                        "performance-profiling",
+                    ],
+                    "tags": ["investigation"],
+                }
+            ),
+            explicit_fields=set(),
+            project_ids=[],
+            advertised_capabilities=[],
+        )
+
+        self.assertEqual(update.body, "Investigate the live session.")
+        self.assertIsNone(update.preferred_capabilities)
+        self.assertEqual(update.tags, ["investigation"])
+
+    def test_catalog_filters_invented_labels_but_keeps_advertised_ones(self) -> None:
+        update = build_enrichment_update(
+            json.dumps(
+                {
+                    "preferred_capabilities": [
+                        "browser",
+                        "agent-session-diagnostics",
+                        "frontend-debugging",
+                    ],
+                    "tags": ["ui"],
+                }
+            ),
+            explicit_fields=set(),
+            project_ids=[],
+            advertised_capabilities=["browser", "capacity:4"],
+        )
+
+        self.assertEqual(update.preferred_capabilities, ["browser"])
+        self.assertEqual(update.tags, ["ui"])
+
+    def test_advertised_catalog_unions_local_settings_and_fleet_instances(self) -> None:
+        ctx = SimpleNamespace(
+            settings=SimpleNamespace(capabilities=["browser"]),
+            services={
+                "fleet_registry": SimpleNamespace(
+                    list_instances=lambda: [
+                        SimpleNamespace(capabilities=[]),
+                        SimpleNamespace(capabilities=["gpu", " browser "]),
+                    ]
+                )
+            },
+        )
+
+        self.assertEqual(
+            advertised_capability_catalog(ctx),
+            frozenset({"browser", "gpu"}),
+        )
 
     def test_explicit_values_are_never_overwritten(self) -> None:
         data = CardCreate(

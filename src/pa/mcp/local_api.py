@@ -83,6 +83,51 @@ _ASSIGNED_MCP_ENDPOINTS = frozenset(
 )
 
 
+def _rejection_codes(rejected_candidates: Any) -> list[str] | None:
+    if not isinstance(rejected_candidates, list):
+        return None
+    codes: list[str] = []
+    seen: set[str] = set()
+    for item in rejected_candidates:
+        if not isinstance(item, dict):
+            continue
+        for code in item.get("rejection_codes") or []:
+            text = str(code).strip()
+            if text and text not in seen:
+                seen.add(text)
+                codes.append(text)
+    return codes or None
+
+
+def _rejected_candidate_suffix(detail: Any) -> str:
+    if not isinstance(detail, dict):
+        return ""
+    rejected = detail.get("rejected_candidates")
+    if not isinstance(rejected, list) or not rejected:
+        return ""
+    summaries: list[str] = []
+    for item in rejected[:12]:
+        if not isinstance(item, dict):
+            continue
+        instance_id = str(item.get("instance_id") or item.get("name") or "?").strip()
+        codes = [
+            str(code).strip()
+            for code in (item.get("rejection_codes") or [])
+            if str(code).strip()
+        ]
+        summaries.append(
+            f"{instance_id}:{','.join(codes)}" if codes else instance_id
+        )
+    extra = len(rejected) - 12
+    suffix = f" rejected_candidates=[{'; '.join(summaries)}]"
+    if extra > 0:
+        suffix += f" (+{extra} more)"
+    codes = _rejection_codes(rejected)
+    if codes:
+        suffix += f" rejection_codes={','.join(codes)}"
+    return suffix
+
+
 @dataclass
 class _Circuit:
     failures: int = 0
@@ -126,6 +171,10 @@ class LocalPARequestError(LocalPAServerUnavailable):
         self.retry_after = (
             detail.get("retry_after") if isinstance(detail, dict) else None
         )
+        self.rejected_candidates = (
+            detail.get("rejected_candidates") if isinstance(detail, dict) else None
+        )
+        self.rejection_codes = _rejection_codes(self.rejected_candidates)
 
 
 def _normalized_query_params(params: dict | None) -> dict | None:
@@ -220,6 +269,7 @@ def _http_error(
             suffix += f" code={code}"
         if detail_message:
             suffix += f" detail={detail_message}"
+        suffix += _rejected_candidate_suffix(structured_detail)
         message = f"The PA API rejected the MCP request ({context}).{suffix}"
     return LocalPARequestError(
         message,

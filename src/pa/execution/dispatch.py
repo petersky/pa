@@ -2498,7 +2498,13 @@ class DispatchStore:
                     ),
                     None,
                 )
-                if active:
+                same_session_resume = bool(
+                    record.resume_requested
+                    and record.resume_session_id
+                    and active is not None
+                    and active.session_id == record.resume_session_id
+                )
+                if active and not same_session_resume:
                     raise ConcurrentCardDispatch(self._snapshot(active))
 
             admission_state = "queued"

@@ -20,6 +20,30 @@ _JSON_FENCE = re.compile(
 _ENRICHABLE = {"body", "kind", "project_id", "preferred_capabilities", "tags"}
 
 
+def advertised_capability_catalog(ctx: Any) -> frozenset[str]:
+    """Return the capability vocabulary currently advertised by this fleet."""
+    catalog: set[str] = set()
+
+    def _add(values: Any) -> None:
+        for item in values or []:
+            text = str(item).strip()
+            if text:
+                catalog.add(text)
+
+    _add(getattr(getattr(ctx, "settings", None), "capabilities", None))
+    services = getattr(ctx, "services", None)
+    fleet = None
+    if isinstance(services, dict):
+        fleet = services.get("fleet_registry")
+    elif services is not None:
+        getter = getattr(services, "get", None)
+        fleet = getter("fleet_registry") if callable(getter) else None
+    if fleet is not None:
+        for instance in fleet.list_instances():
+            _add(getattr(instance, "capabilities", None))
+    return frozenset(catalog)
+
+
 async def _close_enrichment_session(
     manager: Any,
     session_id: str,
@@ -86,11 +110,13 @@ def build_enrichment_update(
     *,
     explicit_fields: Collection[str],
     project_ids: Collection[str],
+    advertised_capabilities: Collection[str] | None = None,
 ) -> CardUpdate:
     """Validate agent output and retain only safe, previously unset metadata."""
     payload = _extract_object(response)
     changes: dict[str, Any] = {}
     locked = set(explicit_fields)
+    catalog = {str(item).strip() for item in advertised_capabilities or [] if str(item).strip()}
     if "body" not in locked and isinstance(payload.get("description"), str):
         body = payload["description"].strip()
         if body:
@@ -104,14 +130,26 @@ def build_enrichment_update(
         project_id = payload.get("project_id")
         if isinstance(project_id, str) and project_id in set(project_ids):
             changes["project_id"] = project_id
-    for field in ("preferred_capabilities", "tags"):
-        value = payload.get(field)
-        if field not in locked and isinstance(value, list):
+    if "preferred_capabilities" not in locked:
+        value = payload.get("preferred_capabilities")
+        if isinstance(value, list):
+            cleaned = sorted(
+                {
+                    str(item).strip()
+                    for item in value
+                    if str(item).strip() and str(item).strip() in catalog
+                }
+            )[:20]
+            if cleaned:
+                changes["preferred_capabilities"] = cleaned
+    if "tags" not in locked:
+        value = payload.get("tags")
+        if isinstance(value, list):
             cleaned = sorted(
                 {str(item).strip() for item in value if str(item).strip()}
             )[:20]
             if cleaned:
-                changes[field] = cleaned
+                changes["tags"] = cleaned
     return CardUpdate(**changes)
 
 
@@ -129,6 +167,7 @@ async def enrich_card(
         {"id": project.id, "title": project.title, "description": project.description}
         for project in projects
     ]
+    capability_catalog = sorted(advertised_capability_catalog(ctx))
     card_context = {
         "title": card.title,
         "body": card.body,
@@ -142,9 +181,12 @@ async def enrich_card(
         "Return only one JSON object with keys description, kind, project_id, "
         "preferred_capabilities, and tags. kind must be goal, task, project, or "
         "concern. project_id must be null or an id from the supplied catalog. "
-        "Capabilities and tags must be short string arrays. Do not use tools.\n\n"
+        "preferred_capabilities must be a subset of the advertised capability "
+        "catalog; if the catalog is empty or none apply, return []. Do not invent "
+        "product-sounding labels. Tags must be short strings. Do not use tools.\n\n"
         f"Card: {json.dumps(card_context, default=str)}\n"
         f"Projects: {json.dumps(project_catalog)}\n"
+        f"Advertised capabilities: {json.dumps(capability_catalog)}\n"
         f"Fields that must not change: {json.dumps(sorted(explicit_fields))}"
     )
     manager = ctx.require_service("instance_agent")
@@ -172,6 +214,7 @@ async def enrich_card(
             final_text,
             explicit_fields=protected,
             project_ids=[project.id for project in projects],
+            advertised_capabilities=capability_catalog,
         )
         if update.model_fields_set:
             store.update_card(

@@ -185,6 +185,63 @@ def test_preferred_capabilities_score_candidates_without_rejecting_them() -> Non
         assert fallback_detail["missing_preferred_capabilities"] == ["browser"]
 
 
+def test_same_session_resume_keeps_existing_worktree_lease_eligible(tmp_path: Path) -> None:
+    candidate = _candidate("local", local=True, repositories=["repo-1"])
+    candidate.repositories = _fresh(
+        {
+            "observations": [
+                {
+                    "state": "fresh",
+                    "snapshot": {"repository_id": "repo-1"},
+                }
+            ],
+            "workspaces": [
+                {
+                    "card_id": "card-1",
+                    "session_id": "session-live",
+                    "repository_id": "repo-1",
+                    "state": "ready",
+                }
+            ],
+        }
+    )
+    request = _request(PlacementPolicy.BEST_MATCH, repository_ids=["repo-1"])
+    request.resume_session_id = "session-live"
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        request, [candidate]
+    )
+    assert decision.chosen_instance_id == "local"
+
+
+def test_other_session_worktree_still_requires_allow_concurrent(tmp_path: Path) -> None:
+    candidate = _candidate("local", local=True, repositories=["repo-1"])
+    candidate.repositories = _fresh(
+        {
+            "observations": [
+                {
+                    "state": "fresh",
+                    "snapshot": {"repository_id": "repo-1"},
+                }
+            ],
+            "workspaces": [
+                {
+                    "card_id": "card-1",
+                    "session_id": "session-other",
+                    "repository_id": "repo-1",
+                    "state": "ready",
+                }
+            ],
+        }
+    )
+    request = _request(PlacementPolicy.BEST_MATCH, repository_ids=["repo-1"])
+    request.resume_session_id = "session-live"
+    with pytest.raises(PlacementError) as raised:
+        PlacementService(RoundRobinCursorStore(tmp_path)).resolve(request, [candidate])
+    assert "workspace_unavailable" in raised.value.rejected_candidates[0][
+        "rejection_codes"
+    ]
+
+
 def test_required_capabilities_remain_hard_admission_requirements() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         service = PlacementService(RoundRobinCursorStore(Path(tmp)))
