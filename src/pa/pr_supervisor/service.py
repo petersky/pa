@@ -820,6 +820,9 @@ class PRSupervisor:
                 "qualifying_evidence": stored.qualifying_evidence,
                 "originating_agent": stored.originating_agent,
                 "policy": stored.policy.model_dump(mode="json"),
+                "policy_source": stored.policy_source,
+                "policy_revision": stored.policy_revision,
+                "policy_snapshot_at": stored.policy_snapshot_at.isoformat(),
             },
         )
         if replicate:
@@ -1066,10 +1069,56 @@ class PRSupervisor:
         watch.provenance_version = 1
         return watch
 
+    async def freeze_canonical_policy(self, watch: PRWatch) -> PRWatch:
+        """Freeze policy only after canonical project/repository provenance exists."""
+        if not watch.project_id:
+            watch.policy = PRPolicy()
+            watch.policy_source = "default (no canonical project)"
+        else:
+            project = await self._offload(
+                "sqlite.project_read",
+                self.domain_store.get_project,
+                watch.project_id,
+                realm_id=watch.realm_id,
+            )
+            if not project:
+                raise ProvenanceValidationError(
+                    "provenance_project_not_found",
+                    "Canonical project disappeared before PR policy resolution.",
+                    project_id=watch.project_id,
+                )
+            config = project.tool_config or {}
+            policy_data = dict(config.get("pr_policy") or {})
+            source = f"project:{watch.project_id}"
+            overrides = config.get("pr_repository_policies") or {}
+            repository_override = next(
+                (
+                    value
+                    for key, value in overrides.items()
+                    if canonical_repository_name(str(key))
+                    == canonical_repository_name(watch.repository)
+                ),
+                None,
+            )
+            if repository_override:
+                policy_data.update(repository_override)
+                source = f"repository:{watch.repository}"
+            watch.policy = PRPolicy.model_validate(policy_data)
+            watch.policy_source = source
+        encoded = json.dumps(
+            {"source": watch.policy_source, "policy": watch.policy.model_dump(mode="json")},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        watch.policy_revision = hashlib.sha256(encoded.encode()).hexdigest()[:16]
+        watch.policy_snapshot_at = utcnow()
+        return watch
+
     async def register_watch_from_session(
         self, watch: PRWatch, *, source: str = "api"
     ) -> PRWatch:
         resolved = await self.resolve_session_provenance(watch)
+        resolved = await self.freeze_canonical_policy(resolved)
         existing = await self._offload(
             "sqlite.pr_supervisor_watch_read",
             self.store.find_watch,
@@ -1677,6 +1726,20 @@ class PRSupervisor:
             changed = gate.fingerprint != watch.condition_fingerprint
             attempt = 0 if changed else min(watch.poll_attempt + 1, 16)
             next_poll = self._next_poll(watch.policy, attempt)
+            observation_state = self._safe_snapshot(snapshot, gate)
+            prior_repair = (watch.state or {}).get("repair_notification") or {}
+            repair_epoch = int(prior_repair.get("epoch") or 0)
+            repair_active = bool(gate.actionable and gate.repair_fingerprint)
+            if repair_active and (
+                not prior_repair.get("active")
+                or prior_repair.get("fingerprint") != gate.repair_fingerprint
+            ):
+                repair_epoch += 1
+            observation_state["repair_notification"] = {
+                "active": repair_active,
+                "fingerprint": gate.repair_fingerprint,
+                "epoch": repair_epoch,
+            }
             updated = await self._offload(
                 "sqlite.pr_supervisor_observation_write",
                 self.store.update_observation,
@@ -1685,7 +1748,7 @@ class PRSupervisor:
                 fence_token=grant.fence_token,
                 head_sha=snapshot.head_sha,
                 base_branch=snapshot.base_branch,
-                state=self._safe_snapshot(snapshot, gate),
+                state=observation_state,
                 condition_fingerprint=gate.fingerprint,
                 next_poll_at=next_poll,
                 poll_attempt=attempt,
@@ -1773,9 +1836,17 @@ class PRSupervisor:
         green: bool,
     ) -> None:
         kind = "green_for_agent_merge" if green else "action_required"
+        repair = (watch.state or {}).get("repair_notification") or {}
+        effect_fingerprint = gate.fingerprint if green else (
+            gate.repair_fingerprint or gate.fingerprint
+        )
+        effect_version = watch.condition_version if green else int(repair.get("epoch") or 0)
         event_key = (
-            f"{watch.id}:{gate.fingerprint}:{watch.condition_version}:"
+            f"{watch.id}:{effect_fingerprint}:{effect_version}:"
             f"{watch.originating_session_id or 'no-session'}:{kind}"
+        )
+        await self._offload(
+            "sqlite.pr_supervisor_metric", self.store.increment_metric, "effect_intents"
         )
         await self._audit(
             watch,
@@ -1805,6 +1876,29 @@ class PRSupervisor:
                 kind,
                 state,
             )
+            metric = (
+                "effect_delivery_accepted"
+                if state not in {"failed", "rejected"}
+                else "effect_delivery_rejected"
+            )
+            await self._offload(
+                "sqlite.pr_supervisor_metric", self.store.increment_metric, metric
+            )
+            await self._audit(
+                watch,
+                "effect_delivery_result",
+                f"{event_key}:delivery:{state}:{uuid4()}",
+                head_sha=snapshot.head_sha,
+                fingerprint=effect_fingerprint,
+                payload={
+                    "effect_kind": kind,
+                    "state": state,
+                    "event_key": event_key,
+                    "target_instance_id": watch.originating_instance_id,
+                    "target_session_id": watch.originating_session_id,
+                    "retryable": state in {"failed", "rejected"},
+                },
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "PR supervisor executor dispatch failed watch=%s event=%s: %s",
@@ -1816,6 +1910,27 @@ class PRSupervisor:
                 "sqlite.pr_supervisor_metric",
                 self.store.increment_metric,
                 "dispatch_errors",
+            )
+            await self._offload(
+                "sqlite.pr_supervisor_metric",
+                self.store.increment_metric,
+                "effect_delivery_retries",
+            )
+            await self._audit(
+                watch,
+                "effect_delivery_result",
+                f"{event_key}:delivery:error:{uuid4()}",
+                head_sha=snapshot.head_sha,
+                fingerprint=effect_fingerprint,
+                payload={
+                    "effect_kind": kind,
+                    "state": "failed",
+                    "reason": str(exc)[:500],
+                    "event_key": event_key,
+                    "target_instance_id": watch.originating_instance_id,
+                    "target_session_id": watch.originating_session_id,
+                    "retryable": True,
+                },
             )
 
     async def _dispatch_authorized_effect(
@@ -2006,7 +2121,18 @@ class PRSupervisor:
         return state
 
     async def _replicate_strict(self, watch: PRWatch) -> bool:
-        urls = self._fleet_urls()
+        # Authorization must be durable at the authority and fixed destination;
+        # unrelated configured peers are not participants in this effect. Requiring
+        # every peer made a disconnected fleet member veto otherwise safe delivery.
+        urls: set[str] = set()
+        authority = self._authority_url()
+        if authority:
+            urls.add(authority)
+        target = watch.originating_instance_id
+        if target and target != self.settings.instance_id:
+            target_url = self.dispatcher._instance_url(target)
+            if target_url:
+                urls.add(target_url.rstrip("/"))
         if not urls:
             return True
         payload = {"watch": watch.model_dump(mode="json")}

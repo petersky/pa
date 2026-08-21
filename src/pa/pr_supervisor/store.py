@@ -85,6 +85,9 @@ class PRSupervisorStore:
                     creation_reason TEXT,
                     qualifying_evidence TEXT,
                     policy_json TEXT NOT NULL DEFAULT '{}',
+                    policy_source TEXT NOT NULL DEFAULT 'default',
+                    policy_revision TEXT NOT NULL DEFAULT 'default-v1',
+                    policy_snapshot_at TEXT,
                     required_capabilities_json TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL DEFAULT 'active',
                     owner_instance_id TEXT,
@@ -162,6 +165,9 @@ class PRSupervisorStore:
                 ("creation_reason", "TEXT"),
                 ("qualifying_evidence", "TEXT"),
                 ("lease_version", "INTEGER NOT NULL DEFAULT 0"),
+                ("policy_source", "TEXT NOT NULL DEFAULT 'default'"),
+                ("policy_revision", "TEXT NOT NULL DEFAULT 'default-v1'"),
+                ("policy_snapshot_at", "TEXT"),
             ):
                 if column not in columns:
                     conn.execute(
@@ -267,7 +273,8 @@ class PRSupervisorStore:
                     originating_session_id, originating_principal_id,
                     originating_agent, executor_cwd, provenance_version,
                     creation_reason, qualifying_evidence,
-                    policy_json, required_capabilities_json, status,
+                    policy_json, policy_source, policy_revision, policy_snapshot_at,
+                    required_capabilities_json, status,
                     owner_instance_id, fence_token, lease_version, lease_expires_at, state_json,
                     condition_fingerprint, condition_version, stable_head_since,
                     stable_head_observations, next_poll_at, poll_attempt,
@@ -276,7 +283,7 @@ class PRSupervisorStore:
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 self._watch_values(watch),
@@ -306,6 +313,9 @@ class PRSupervisorStore:
             watch.creation_reason,
             watch.qualifying_evidence,
             watch.policy.model_dump_json(),
+            watch.policy_source,
+            watch.policy_revision,
+            watch.policy_snapshot_at.isoformat(),
             json.dumps(watch.required_capabilities),
             watch.status.value,
             watch.owner_instance_id,
@@ -1283,6 +1293,9 @@ class PRSupervisorStore:
             creation_reason=row["creation_reason"],
             qualifying_evidence=row["qualifying_evidence"],
             policy=json.loads(row["policy_json"] or "{}"),
+            policy_source=row["policy_source"] or "default",
+            policy_revision=row["policy_revision"] or "default-v1",
+            policy_snapshot_at=_dt(row["policy_snapshot_at"]) or _dt(row["created_at"]),
             required_capabilities=json.loads(row["required_capabilities_json"] or "[]"),
             status=row["status"],
             owner_instance_id=row["owner_instance_id"],

@@ -132,6 +132,7 @@ def snapshot(
     mergeable_state: str = "clean",
     threads: list[ReviewThread] | None = None,
     merge_commit_sha: str | None = None,
+    optional_conclusion: str | None = "success",
 ) -> PRSnapshot:
     return PRSnapshot(
         repository="owner/repo",
@@ -160,7 +161,7 @@ def snapshot(
             PRCheck(
                 name="optional-lint",
                 status="completed",
-                conclusion="failure",
+                conclusion=optional_conclusion,
                 required=False,
             ),
         ],
@@ -821,10 +822,24 @@ class PRSupervisorStoreTests(unittest.TestCase):
 
 
 class GateAndSecurityTests(unittest.TestCase):
-    def test_green_gate_ignores_optional_failure(self) -> None:
-        gate = evaluate_gate(snapshot(), PRPolicy(), stable_head=True)
+    def test_green_gate_repairs_optional_failure_without_blocking_merge(self) -> None:
+        gate = evaluate_gate(
+            snapshot(optional_conclusion="failure"), PRPolicy(), stable_head=True
+        )
+        self.assertTrue(gate.green)
+        self.assertTrue(gate.actionable)
+        self.assertEqual([check.name for check in gate.failing_checks], ["optional-lint"])
+        self.assertIn("non-required check optional-lint concluded failure", gate.reasons)
+
+    def test_optional_failure_repair_can_be_disabled_without_affecting_merge(self) -> None:
+        gate = evaluate_gate(
+            snapshot(optional_conclusion="failure"),
+            PRPolicy(repair_failed_checks=False),
+            stable_head=True,
+        )
         self.assertTrue(gate.green)
         self.assertFalse(gate.actionable)
+        self.assertEqual(gate.failing_checks, [])
 
     def test_failure_and_inline_thread_are_actionable(self) -> None:
         thread = ReviewThread(
@@ -1240,8 +1255,10 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(service._capability_checked_at)
 
     async def test_condition_change_rearms_same_failure(self) -> None:
-        failed = snapshot(conclusion="failure")
-        pending = snapshot(conclusion=None, status="in_progress")
+        failed = snapshot(conclusion="failure", optional_conclusion="success")
+        pending = snapshot(
+            conclusion=None, status="in_progress", optional_conclusion="success"
+        )
         service = await self.make_service([failed, failed, pending, failed])
         for _ in range(4):
             self.store.schedule_now(watch_id="watch-1")
@@ -2151,18 +2168,17 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         authorization = next(iter(current.state["effect_authorizations"].values()))
         self.assertEqual(authorization["state"], "accepted")
 
-    async def test_replication_failure_prevents_effect_acceptance(self) -> None:
+    async def test_unrelated_unavailable_peer_does_not_block_effect_acceptance(self) -> None:
         service = await self.make_service([snapshot()])
         self.settings.peers = ["http://unavailable-peer"]
         service._post_json = AsyncMock(side_effect=RuntimeError("partition"))
 
         await service.run_once()
 
-        self.assertEqual(self.dispatcher.calls, [])
+        self.assertEqual(len(self.dispatcher.calls), 1)
         current = self.store.get_watch("watch-1")
         authorization = next(iter(current.state["effect_authorizations"].values()))
-        self.assertEqual(authorization["state"], "failed")
-        self.assertEqual(authorization["result"], "replication_unavailable")
+        self.assertEqual(authorization["state"], "accepted")
 
     async def test_effect_upgrade_gate_reports_legacy_peer(self) -> None:
         service = await self.make_service([snapshot()])
@@ -3190,7 +3206,20 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 instance_id=self.settings.instance_id,
             )
             project = app.state.ctx.store.create_project(
-                ProjectCreate(title="Canonical provenance"),
+                ProjectCreate(
+                    title="Canonical provenance",
+                    tool_config={
+                        "pr_policy": {
+                            "agent_merge_on_green": False,
+                            "required_checks": ["canonical-ci"],
+                            "repair_failed_checks": True,
+                        }
+                    },
+                ),
+                instance_id=self.settings.instance_id,
+            )
+            wrong_project = app.state.ctx.store.create_project(
+                ProjectCreate(title="Wrong project"),
                 instance_id=self.settings.instance_id,
             )
             app.state.ctx.store.link_project_repository(
@@ -3258,6 +3287,22 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 forged.json()["detail"]["code"], "caller_provenance_mismatch"
             )
 
+            wrong_project_response = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "repository": "owner/repo",
+                    "pr_number": 18,
+                    "project_id": wrong_project.id,
+                    "originating_session_id": session_id,
+                },
+            )
+            self.assertEqual(wrong_project_response.status_code, 422)
+            self.assertEqual(
+                wrong_project_response.json()["detail"]["code"],
+                "caller_provenance_mismatch",
+            )
+
             cross_realm = client.post(
                 "/api/pr-supervisor/watches",
                 headers=headers,
@@ -3295,6 +3340,10 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 durable["authority_instance_id"], self.settings.instance_id
             )
             self.assertEqual(durable["provenance_version"], 1)
+            self.assertFalse(durable["policy"]["agent_merge_on_green"])
+            self.assertEqual(durable["policy"]["required_checks"], ["canonical-ci"])
+            self.assertEqual(durable["policy_source"], f"project:{project.id}")
+            self.assertNotEqual(durable["policy_revision"], "default-v1")
 
             remote_session_id = "88888888-8888-4888-8888-888888888888"
             dispatch_id = "99999999-9999-4999-8999-999999999999"
@@ -3495,7 +3544,12 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
         def request_side_effect(settings, method, path, **kwargs):
             if method == "GET":
                 return project
-            return {**project, "tool_config": kwargs["json"]["tool_config"]}
+            return {
+                "project_id": project["id"],
+                "repository": kwargs["json"].get("repository"),
+                "policy": kwargs["json"]["policy"],
+                "tool_config": project["tool_config"],
+            }
 
         local_api.side_effect = request_side_effect
         result = mcp.functions["set_project_pr_policy"]("project-1", auto_notify=False)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -73,6 +74,33 @@ def resolve_policy(
     return PRPolicy.model_validate(base)
 
 
+def _record_policy_audit(
+    config: dict[str, Any],
+    *,
+    old: dict[str, Any],
+    new: dict[str, Any],
+    scope: str,
+    actor: str,
+    instance_id: str,
+) -> None:
+    history = list(config.get("pr_policy_audit") or [])
+    timestamp = datetime.now(UTC).isoformat()
+    for field in sorted(set(old) | set(new)):
+        if old.get(field) != new.get(field):
+            history.append(
+                {
+                    "field": field,
+                    "old_value": old.get(field),
+                    "new_value": new.get(field),
+                    "scope": scope,
+                    "actor": actor,
+                    "instance_id": instance_id,
+                    "timestamp": timestamp,
+                }
+            )
+    config["pr_policy_audit"] = history[-100:]
+
+
 def _page_context(request: Request) -> dict[str, Any]:
     service = _service(request)
     realm = (
@@ -82,10 +110,25 @@ def _page_context(request: Request) -> dict[str, Any]:
     watches = service.store.list_watches(realm_id=realm, include_retired=True)
     selected_id = request.query_params.get("watch")
     selected = service.store.get_watch(selected_id) if selected_id else None
+    current_policy = (
+        resolve_policy(
+            request.app.state.ctx.store,
+            project_id=selected.project_id,
+            realm_id=selected.realm_id,
+            repository=selected.repository,
+        )
+        if selected
+        else None
+    )
     return {
         "watches": watches,
         "watch": selected,
         "watch_events": service.store.list_events(selected.id) if selected else [],
+        "watch_deliveries": service.store.list_dispatches(selected.id) if selected else [],
+        "watch_policy_differs": bool(
+            selected and current_policy and selected.policy != current_policy
+        ),
+        "watch_current_policy": current_policy,
         "capability": service.capability,
         "capabilities": service.store.list_capabilities(),
         "metrics": service.store.metrics(),
@@ -144,7 +187,7 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
             },
         )
     policy = body.get("policy")
-    if not policy:
+    if not policy and not session_id:
         resolved_policy = await _offload(
             request,
             "sqlite.pr_policy_read",
@@ -155,6 +198,9 @@ async def create_watch(request: Request, body: dict[str, Any]) -> dict[str, Any]
             repository=repository,
         )
         policy = resolved_policy.model_dump(mode="json")
+    if session_id:
+        # Session-backed registration freezes policy after canonical provenance.
+        policy = PRPolicy().model_dump(mode="json")
     try:
         watch = PRWatch(
             realm_id=realm_id,
@@ -303,15 +349,7 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
                 "fields": sorted(linked_fields),
             },
         )
-    policy = await _offload(
-        request,
-        "sqlite.pr_policy_read",
-        resolve_policy,
-        request.app.state.ctx.store,
-        project_id=body.get("project_id"),
-        realm_id=realm_id,
-        repository=repository,
-    )
+    policy = PRPolicy()
     provisional = PRWatch(
         realm_id=realm_id,
         project_id=body.get("project_id"),
@@ -333,8 +371,21 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
     if session_id:
         try:
             provisional = await service.resolve_session_provenance(provisional)
+            provisional = await service.freeze_canonical_policy(provisional)
+            policy = provisional.policy
         except ProvenanceValidationError as exc:
             raise _provenance_http_error(exc) from exc
+    else:
+        policy = await _offload(
+            request,
+            "sqlite.pr_policy_read",
+            resolve_policy,
+            request.app.state.ctx.store,
+            project_id=None,
+            realm_id=realm_id,
+            repository=repository,
+        )
+        provisional.policy = policy
     try:
         pr = await service.github.create_pull_request(
             repository,
@@ -406,10 +457,20 @@ def update_policy(
     repository = body.get("repository")
     if repository:
         policies = dict(config.get("pr_repository_policies") or {})
+        old_policy = dict(policies.get(str(repository)) or {})
         policies[str(repository)] = policy.model_dump(mode="json")
         config["pr_repository_policies"] = policies
     else:
+        old_policy = dict(config.get("pr_policy") or {})
         config["pr_policy"] = policy.model_dump(mode="json")
+    _record_policy_audit(
+        config,
+        old=old_policy,
+        new=policy.model_dump(mode="json"),
+        scope=f"repository:{repository}" if repository else "project",
+        actor=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
     updated = request.app.state.ctx.store.update_project(
         project_id,
         ProjectUpdate(tool_config=config),
@@ -704,6 +765,8 @@ def update_project_policy_ui(
     ready_by_default: str | None = Form(None),
     auto_notify: str | None = Form(None),
     agent_merge_on_green: str | None = Form(None),
+    repair_failed_checks: str | None = Form(None),
+    required_checks: str = Form(""),
     realm: str | None = Form(None),
 ) -> HTMLResponse:
     from pa.modules.ui_shell import render_page
@@ -719,10 +782,23 @@ def update_project_policy_ui(
             "ready_by_default": ready_by_default is not None,
             "auto_notify": auto_notify is not None,
             "agent_merge_on_green": agent_merge_on_green is not None,
+            "repair_failed_checks": repair_failed_checks is not None,
+            "required_checks": [
+                item.strip() for item in required_checks.split(",") if item.strip()
+            ],
         }
     )
     policy = PRPolicy.model_validate(policy_data)
+    old_policy = dict(config.get("pr_policy") or {})
     config["pr_policy"] = policy.model_dump(mode="json")
+    _record_policy_audit(
+        config,
+        old=old_policy,
+        new=policy.model_dump(mode="json"),
+        scope="project",
+        actor=get_principal_id(request),
+        instance_id=request.app.state.ctx.settings.instance_id,
+    )
     request.app.state.ctx.store.update_project(
         project_id,
         ProjectUpdate(tool_config=config),
@@ -950,6 +1026,8 @@ class PRSupervisorModule(Module):
             ready_by_default: bool = True,
             auto_notify: bool = True,
             agent_merge_on_green: bool = True,
+            repair_failed_checks: bool = True,
+            required_checks: list[str] | None = None,
         ) -> dict[str, Any] | None:
             """Set project-wide or repository-specific PR supervision policy."""
             project_data = request_local_pa(
@@ -973,6 +1051,12 @@ class PRSupervisorModule(Module):
                         "ready_by_default": ready_by_default,
                         "auto_notify": auto_notify,
                         "agent_merge_on_green": agent_merge_on_green,
+                        "repair_failed_checks": repair_failed_checks,
+                        "required_checks": (
+                            required_checks
+                            if required_checks is not None
+                            else policy_data.get("required_checks", [])
+                        ),
                     }
                 )
                 policy = PRPolicy.model_validate(policy_data)
@@ -985,16 +1069,25 @@ class PRSupervisorModule(Module):
                         "ready_by_default": ready_by_default,
                         "auto_notify": auto_notify,
                         "agent_merge_on_green": agent_merge_on_green,
+                        "repair_failed_checks": repair_failed_checks,
+                        "required_checks": (
+                            required_checks
+                            if required_checks is not None
+                            else policy_data.get("required_checks", [])
+                        ),
                     }
                 )
                 policy = PRPolicy.model_validate(policy_data)
                 config["pr_policy"] = policy.model_dump(mode="json")
             updated = request_local_pa(
                 ctx.settings,
-                "PATCH",
-                f"/api/projects/{project_id}",
+                "PUT",
+                f"/api/pr-supervisor/policies/projects/{project_id}",
                 params={"realm": realm},
-                json={"tool_config": config},
+                json={
+                    "repository": repository,
+                    "policy": policy.model_dump(mode="json"),
+                },
             )
             return {
                 "project_id": project_id,
