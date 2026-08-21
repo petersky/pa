@@ -287,3 +287,47 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         manager.workspace_manager.list = lambda: []
         await SessionLifecyclePolicy(manager, {}).run_once()
         self.assertEqual(recorded["kwargs"], {"exclude_statuses": ("closed",)})
+
+    async def test_run_once_updates_runtime_to_remaining_primary_card(self):
+        completed = SimpleNamespace(lane=CardLane.DONE)
+        original = _session(card_id="card-done", item_id="card-done")
+        replacement = original.model_copy(
+            update={
+                "card_id": "card-active",
+                "item_id": "card-active",
+                "project_id": "project-active",
+            }
+        )
+        queue = SimpleNamespace(empty=lambda: True)
+        runtime = SimpleNamespace(
+            session=original.model_copy(deep=True),
+            prompting=False,
+            _queue=[],
+            _pending_permissions={},
+            _pending_elicitations={},
+            _transcript_buffer=[],
+            _transcript_queue=queue,
+            _closed=False,
+        )
+
+        class _RetiringStore(_Store):
+            def list_sessions(self, **_kwargs):
+                return [original]
+
+            def unlink_session_card(self, session_id, card_id, **kwargs):
+                self.retirement = (session_id, card_id, kwargs)
+                return replacement
+
+        manager = _Manager(runtime=runtime, card=completed)
+        manager.store = _RetiringStore(completed)
+        manager.workspace_manager.list = lambda: []
+
+        metrics = await SessionLifecyclePolicy(manager, {}).run_once()
+
+        self.assertEqual(runtime.session.card_id, "card-active")
+        self.assertEqual(runtime.session.item_id, "card-active")
+        self.assertEqual(runtime.session.project_id, "project-active")
+        self.assertEqual(metrics["association_retired"], 1)
+        self.assertEqual(
+            manager.store.retirement[:2], ("session-1", "card-done")
+        )
