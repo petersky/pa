@@ -37,8 +37,11 @@
       "HX-Target": "app-view",
       "X-PA-Navigation-Generation": String(requestGeneration)
     };
-    var csrf = document.querySelector('meta[name="csrf-token"]');
-    if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+    if (window.PACSRF) headers = window.PACSRF.headers(headers);
+    else {
+      var csrf = document.querySelector('meta[name="csrf-token"]');
+      if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+    }
     var request = {
       controller: controller,
       generation: requestGeneration,

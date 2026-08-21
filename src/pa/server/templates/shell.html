@@ -32,6 +32,7 @@
       if (link) link.href = "/static/themes/" + theme + "/" + (dark ? "dark" : "light") + ".css?v=" + v;
     })();
   </script>
+  <script src="{{ static_url('js/csrf.js') }}"></script>
   <script src="{{ static_url('js/theme.js') }}" defer></script>
   <script type="application/json" id="pa-instance-identities">{{ instance_identity_directory() | tojson }}</script>
   <script type="application/json" id="pa-provider-catalog">{{ agent_providers | default([]) | tojson }}</script>

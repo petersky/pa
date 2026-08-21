@@ -191,9 +191,27 @@ def _needs_csrf(request: Request) -> bool:
     )
 
 
-def _error(code: str, message: str, status: int) -> JSONResponse:
+def _error(
+    code: str, message: str, status: int, *, replacement_cookie_issued: bool = False
+) -> JSONResponse:
+    headers = {}
+    if code.startswith("csrf_"):
+        headers = {
+            "X-PA-CSRF-Error": code,
+            "X-PA-CSRF-Replacement": (
+                "issued" if replacement_cookie_issued else "none"
+            ),
+        }
     return JSONResponse(
-        {"detail": {"code": code, "message": message}}, status_code=status
+        {
+            "detail": {
+                "code": code,
+                "message": message,
+                "replacement_cookie_issued": replacement_cookie_issued,
+            }
+        },
+        status_code=status,
+        headers=headers,
     )
 
 
@@ -403,8 +421,14 @@ class AuthMiddleware:
                     "csrf_invalid": "The CSRF token is invalid.",
                     "csrf_expired": "The CSRF token has expired; use the rotated cookie and retry safely.",
                 }
-                response = _error(csrf.code, messages[csrf.code], 403)
-                if csrf.code in {"csrf_expired", "csrf_invalid"}:
+                replacement_issued = csrf.code in {"csrf_expired", "csrf_invalid"}
+                response = _error(
+                    csrf.code,
+                    messages[csrf.code],
+                    403,
+                    replacement_cookie_issued=replacement_issued,
+                )
+                if replacement_issued:
                     response.set_cookie(
                         COOKIE_NAME,
                         request.state.csrf_token,

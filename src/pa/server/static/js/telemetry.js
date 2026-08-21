@@ -683,6 +683,7 @@
   }
 
   function csrfHeader() {
+    if (window.PACSRF) return window.PACSRF.headers();
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta && meta.content ? {"X-CSRF-Token": meta.content} : {};
   }
