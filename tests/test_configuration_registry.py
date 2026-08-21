@@ -128,6 +128,25 @@ class RegistryCoverageTests(unittest.TestCase):
         self.assertIn("| sync_token |", report)
         self.assertIn("| local_api_token |", report)
 
+    def test_card_summary_provider_keys_are_editable_write_only_secrets(self) -> None:
+        keys = (
+            "card_summary_api_key",
+            "card_summary_anthropic_api_key",
+            "card_summary_minimax_api_key",
+        )
+        provider = SETTINGS["card_summary_provider"]
+        self.assertEqual(provider.allowed, ("openai", "anthropic", "minimax"))
+        self.assertTrue(provider.editable)
+        for key in keys:
+            definition = SETTINGS[key]
+            with self.subTest(key=key):
+                self.assertTrue(definition.secret)
+                self.assertEqual(definition.exposure, "editable")
+                self.assertTrue(definition.surfaces["web"].write)
+                self.assertTrue(definition.surfaces["web"].read)
+                self.assertEqual(definition.apply, "restart")
+                self.assertNotEqual(definition.exposure, "hidden")
+
 
 class ConfigurationApplicationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -255,6 +274,42 @@ class ConfigurationApplicationTests(unittest.TestCase):
                 principal_id="user:test",
                 interface="api",
             )
+
+    def test_card_summary_keys_are_redacted_in_snapshot_diff_and_audit(self) -> None:
+        fake_keys = {
+            "card_summary_api_key": "never-expose-openai",
+            "card_summary_anthropic_api_key": "never-expose-anthropic",
+            "card_summary_minimax_api_key": "never-expose-minimax",
+        }
+        diff = diff_update(self.data_dir, fake_keys, [])
+        self.assertNotIn("never-expose", json.dumps(diff))
+        self.assertTrue(diff["restart_required"])
+        revision = config_revision(load_instance_config(self.data_dir))
+        result = apply_update(
+            self.settings,
+            fake_keys,
+            [],
+            expected_revision=revision,
+            idempotency_key="card-summary-keys",
+            principal_id="user:test",
+            interface="web",
+        )
+        self.assertEqual(set(result.changed), set(fake_keys))
+        persisted = load_instance_config(self.data_dir)
+        self.assertEqual(persisted.card_summary_api_key, "never-expose-openai")
+        snapshot = configuration_snapshot(
+            Settings(
+                data_dir=self.data_dir,
+                instance_id="instance-test",
+                **fake_keys,
+            )
+        )
+        encoded = json.dumps(snapshot) + json.dumps(audit_events(self.data_dir))
+        for key, value in fake_keys.items():
+            row = next(item for item in snapshot["settings"] if item["key"] == key)
+            self.assertEqual(row["configured_value"], "<redacted>")
+            self.assertEqual(row["effective_value"], "<redacted>")
+            self.assertNotIn(value, encoded)
 
     def test_live_reload_and_restart_boundaries_are_explicit(self) -> None:
         base = load_instance_config(self.data_dir)

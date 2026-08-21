@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import threading
 import time
@@ -14,10 +15,17 @@ import pytest
 
 from pa.config import Settings
 from pa.domain.card_summary_service import (
+    ANTHROPIC_VERSION,
+    SUBMIT_SUMMARY_TOOL,
     CardSummaryService,
     SummaryConfiguration,
     SummaryFailureCode,
     SummaryProviderError,
+    anthropic_messages_url,
+    chat_completions_url,
+    parse_anthropic_summary,
+    resolve_summary_base_url,
+    resolve_summary_model,
     sanitize_summary,
     summary_messages,
 )
@@ -534,3 +542,286 @@ async def _fleet_member_does_not_run_legacy_migration() -> None:
 
 def test_fleet_member_does_not_run_legacy_migration() -> None:
     asyncio.run(_fleet_member_does_not_run_legacy_migration())
+
+
+def test_provider_defaults_and_url_helpers() -> None:
+    assert resolve_summary_model("anthropic", "") == "claude-haiku-4-5"
+    assert resolve_summary_model("anthropic", "gpt-5-mini") == "claude-haiku-4-5"
+    assert resolve_summary_model("anthropic", "claude-sonnet-4-6") == "claude-sonnet-4-6"
+    assert resolve_summary_model("minimax", "MiniMax-M2.5") == "MiniMax-M2.5"
+    assert resolve_summary_base_url("minimax", "") == "https://api.minimax.io/v1"
+    assert (
+        resolve_summary_base_url("minimax", "https://api.openai.com/v1")
+        == "https://api.minimax.io/v1"
+    )
+    assert (
+        resolve_summary_base_url("minimax", "https://api.minimaxi.com/v1")
+        == "https://api.minimaxi.com/v1"
+    )
+    assert anthropic_messages_url("https://api.anthropic.com") == (
+        "https://api.anthropic.com/v1/messages"
+    )
+    assert chat_completions_url("https://api.minimax.io/v1") == (
+        "https://api.minimax.io/v1/chat/completions"
+    )
+
+
+def test_parse_anthropic_submit_summary_tool() -> None:
+    summary = parse_anthropic_summary(
+        {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": SUBMIT_SUMMARY_TOOL,
+                    "input": {
+                        "summary": "Describe the problem and intended outcome clearly."
+                    },
+                }
+            ]
+        }
+    )
+    assert summary == "Describe the problem and intended outcome clearly."
+
+
+class _RecordingAsyncClient:
+    def __init__(self, responses: list[httpx.Response], calls: list[dict]) -> None:
+        self._responses = list(responses)
+        self.calls = calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, url, headers=None, json=None):
+        request = httpx.Request("POST", url, headers=headers)
+        template = self._responses.pop(0)
+        self.calls.append(
+            {"url": url, "headers": dict(headers or {}), "json": json}
+        )
+        return httpx.Response(
+            template.status_code, json=template.json(), request=request
+        )
+
+
+def test_anthropic_messages_request_shape() -> None:
+    calls: list[dict] = []
+    payload = {
+        "content": [
+            {
+                "type": "tool_use",
+                "name": SUBMIT_SUMMARY_TOOL,
+                "input": {"summary": "Keep Claude on the native Messages API."},
+            }
+        ]
+    }
+    configuration = SummaryConfiguration(
+        enabled=True,
+        provider="anthropic",
+        model="claude-haiku-4-5",
+        auth_source="dedicated_api_key",
+        state="configured",
+        base_url="https://api.anthropic.com",
+        api_key="never-expose-this",
+    )
+
+    async def run() -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), card_summary_provider="anthropic")
+            service = CardSummaryService(
+                SimpleNamespace(settings=settings, store=CardProjection(Path(tmp) / "pa.db"))
+            )
+            with patch(
+                "pa.domain.card_summary_service.httpx.AsyncClient",
+                return_value=_RecordingAsyncClient(
+                    [httpx.Response(200, json=payload)], calls
+                ),
+            ):
+                return await service._call_provider("Title", "Body", configuration)
+
+    summary = asyncio.run(run())
+    assert summary == "Keep Claude on the native Messages API."
+    assert len(calls) == 1
+    assert calls[0]["url"] == "https://api.anthropic.com/v1/messages"
+    assert "/chat/completions" not in calls[0]["url"]
+    assert calls[0]["headers"]["x-api-key"] == "never-expose-this"
+    assert calls[0]["headers"]["anthropic-version"] == ANTHROPIC_VERSION
+    assert "Authorization" not in calls[0]["headers"]
+    assert calls[0]["json"]["tool_choice"] == {
+        "type": "tool",
+        "name": SUBMIT_SUMMARY_TOOL,
+    }
+
+
+def test_minimax_uses_openai_compatible_chat_completions_url() -> None:
+    calls: list[dict] = []
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {"summary": "Use MiniMax through Chat Completions."}
+                    )
+                }
+            }
+        ]
+    }
+    configuration = SummaryConfiguration(
+        enabled=True,
+        provider="minimax",
+        model="MiniMax-M2.5",
+        auth_source="dedicated_api_key",
+        state="configured",
+        base_url="https://api.minimaxi.com/v1",
+        api_key="never-expose-this",
+    )
+
+    async def run() -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), card_summary_provider="minimax")
+            service = CardSummaryService(
+                SimpleNamespace(settings=settings, store=CardProjection(Path(tmp) / "pa.db"))
+            )
+            with patch(
+                "pa.domain.card_summary_service.httpx.AsyncClient",
+                return_value=_RecordingAsyncClient(
+                    [httpx.Response(200, json=payload)], calls
+                ),
+            ):
+                return await service._call_provider("Title", "Body", configuration)
+
+    summary = asyncio.run(run())
+    assert summary == "Use MiniMax through Chat Completions."
+    assert calls[0]["url"] == "https://api.minimaxi.com/v1/chat/completions"
+    assert calls[0]["headers"]["Authorization"] == "Bearer never-expose-this"
+    assert "x-api-key" not in calls[0]["headers"]
+
+
+async def _selected_provider_stays_unconfigured_without_its_own_key(
+    selected: str, other_kwargs: dict[str, str]
+) -> None:
+    async def provider(title, body):
+        raise AssertionError("wrong provider key must not authorize summaries")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            card_summary_provider=selected,
+            card_summary_api_key="",
+            **other_kwargs,
+        )
+        ctx = SimpleNamespace(
+            settings=settings,
+            store=CardProjection(Path(tmp) / "pa.db"),
+        )
+        card = ctx.store.create_card(CardCreate(title="Keys", body="details"))
+        service = CardSummaryService(ctx, provider_call=provider)
+        with patch(
+            "pa.domain.card_summary_service.load_credentials",
+            return_value={"CODEX_API_KEY": "never-expose-this"},
+        ) as load_credentials:
+            await service.generate(card.id, card.realm_id)
+            if selected != "openai":
+                load_credentials.assert_not_called()
+
+        current = ctx.store.get_card(card.id)
+        assert current is not None
+        assert current.summary_status.value == "disabled"
+        assert current.summary_failure_code == "unconfigured"
+        diagnostics = service.diagnostics()
+        assert diagnostics["effective_provider"] == selected
+        assert diagnostics["authentication_source"] == "none"
+        assert "never-expose-this" not in str(diagnostics)
+
+
+def test_anthropic_with_only_minimax_key_stays_unconfigured() -> None:
+    asyncio.run(
+        _selected_provider_stays_unconfigured_without_its_own_key(
+            "anthropic",
+            {"card_summary_minimax_api_key": "never-expose-this"},
+        )
+    )
+
+
+def test_minimax_with_only_anthropic_key_stays_unconfigured() -> None:
+    asyncio.run(
+        _selected_provider_stays_unconfigured_without_its_own_key(
+            "minimax",
+            {"card_summary_anthropic_api_key": "never-expose-this"},
+        )
+    )
+
+
+def test_codex_fallback_does_not_configure_anthropic() -> None:
+    asyncio.run(
+        _selected_provider_stays_unconfigured_without_its_own_key(
+            "anthropic",
+            {"card_summary_auth_source": "codex"},
+        )
+    )
+
+
+async def _selected_provider_uses_its_own_key(provider: str, key_field: str) -> None:
+    async def call(title, body):
+        return "The selected provider key is enough to generate a summary."
+
+    with tempfile.TemporaryDirectory() as tmp:
+        kwargs = {
+            "card_summary_provider": provider,
+            "card_summary_api_key": "",
+            "card_summary_anthropic_api_key": "",
+            "card_summary_minimax_api_key": "",
+            key_field: "test",
+        }
+        settings = Settings(data_dir=Path(tmp), **kwargs)
+        ctx = SimpleNamespace(
+            settings=settings,
+            store=CardProjection(Path(tmp) / "pa.db"),
+        )
+        card = ctx.store.create_card(CardCreate(title="Ready", body="details"))
+        service = CardSummaryService(ctx, provider_call=call)
+        await service.generate(card.id, card.realm_id)
+        current = ctx.store.get_card(card.id)
+        assert current is not None
+        assert current.summary_status.value == "ready"
+        assert current.summary_provider == provider
+        diagnostics = service.diagnostics()
+        assert diagnostics["authentication_source"] == "dedicated_api_key"
+        assert "test" not in json.dumps(diagnostics)
+
+
+def test_anthropic_key_configures_only_anthropic() -> None:
+    asyncio.run(
+        _selected_provider_uses_its_own_key("anthropic", "card_summary_anthropic_api_key")
+    )
+
+
+def test_minimax_key_configures_only_minimax() -> None:
+    asyncio.run(
+        _selected_provider_uses_its_own_key("minimax", "card_summary_minimax_api_key")
+    )
+
+
+def test_replaced_key_invalidates_cached_configuration() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            card_summary_provider="minimax",
+            card_summary_minimax_api_key="first-key",
+        )
+        service = CardSummaryService(
+            SimpleNamespace(settings=settings, store=CardProjection(Path(tmp) / "pa.db"))
+        )
+
+        async def run() -> tuple[str, str]:
+            first = await service._configuration()
+            settings.card_summary_minimax_api_key = "second-key"
+            second = await service._configuration()
+            return first.api_key, second.api_key
+
+        first_key, second_key = asyncio.run(run())
+        assert first_key == "first-key"
+        assert second_key == "second-key"
+        assert "first-key" not in str(service.diagnostics())
+        assert "second-key" not in str(service.diagnostics())

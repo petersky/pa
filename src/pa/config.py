@@ -140,14 +140,17 @@ class Settings(BaseSettings):
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
 
-    # Card summaries use an OpenAI-compatible structured-output endpoint.
-    # Authentication is either a dedicated key or an explicitly selected,
-    # provider-scoped Codex API credential. ChatGPT OAuth remains in Codex's
-    # credential store and is diagnosed with an actionable direct-key setup path.
+    # Card summaries use the selected provider's native HTTP contract.
+    # OpenAI and MiniMax are Chat Completions; Anthropic/Claude is Messages.
+    # Authentication is the matching write-only Settings key. OpenAI may also
+    # reuse a provider-scoped Codex API credential. ChatGPT OAuth remains in
+    # Codex's credential store and is diagnosed with a direct-key setup path.
     card_summary_provider: str = "openai"
     card_summary_model: str = "gpt-5-mini"
     card_summary_base_url: str = "https://api.openai.com/v1"
     card_summary_api_key: str = ""
+    card_summary_anthropic_api_key: str = ""
+    card_summary_minimax_api_key: str = ""
     card_summary_auth_source: Literal["dedicated", "codex"] = "dedicated"
     card_summary_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     card_summary_max_concurrency: int = Field(default=2, ge=1, le=16)
