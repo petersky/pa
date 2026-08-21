@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -199,6 +202,68 @@ class MutationReceiptCrashTests(unittest.TestCase):
             if item["event"]["idempotency_key"] == key
         ]
         self.assertEqual(len(attributable), 1)
+
+    def test_succeeded_outcome_does_not_wait_for_global_mutation_lock(self) -> None:
+        key = "fast-succeeded-outcome"
+        fingerprint = "fast-succeeded-fingerprint"
+        self._claim(key, "card.create", fingerprint)
+        created = self.projection.create_card(
+            CardCreate(title="Fast receipt"),
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+        )
+        result = created.model_dump(mode="json")
+        self.projection.complete_operation(key, result)
+        locked = threading.Event()
+        release = threading.Event()
+
+        def hold_mutation_lock() -> None:
+            with self.projection._mutation_lock:
+                locked.set()
+                release.wait(timeout=5)
+
+        holder = threading.Thread(target=hold_mutation_lock)
+        holder.start()
+        self.assertTrue(locked.wait(timeout=1))
+        started = time.monotonic()
+        try:
+            outcome = self.projection.get_operation_outcome(key)
+        finally:
+            release.set()
+            holder.join(timeout=1)
+
+        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertEqual(outcome["status"], "succeeded")
+        self.assertEqual(outcome["result"], result)
+
+    def test_pending_outcome_repair_stays_serialized(self) -> None:
+        key = "serialized-pending-outcome"
+        self._claim(key, "card.create", "pending-fingerprint")
+        locked = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+
+        def hold_mutation_lock() -> None:
+            with self.projection._mutation_lock:
+                locked.set()
+                release.wait(timeout=5)
+
+        def lookup() -> None:
+            self.projection.get_operation_outcome(key)
+            finished.set()
+
+        holder = threading.Thread(target=hold_mutation_lock)
+        holder.start()
+        self.assertTrue(locked.wait(timeout=1))
+        reader = threading.Thread(target=lookup)
+        reader.start()
+        try:
+            self.assertFalse(finished.wait(timeout=0.1))
+        finally:
+            release.set()
+            holder.join(timeout=1)
+            reader.join(timeout=1)
+        self.assertTrue(finished.is_set())
 
     def test_rebuild_rejects_distinct_events_with_the_same_key(self) -> None:
         key = "duplicate-durable-key"
@@ -712,6 +777,48 @@ class MutationHttpIdempotencyTests(unittest.TestCase):
                     in {"http-create-once", "http-update-once"}
                 ]
                 self.assertEqual(len(attributable), 2)
+
+    def test_create_response_does_not_wait_for_optional_card_work(self) -> None:
+        async def blocked_enrichment(*_args, **_kwargs) -> None:
+            await asyncio.sleep(10)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+            app = Kernel.boot(settings=settings).build_app()
+            with TestClient(app) as client:
+                summary_service = app.state.ctx.require_service(
+                    "card_summary_service"
+                )
+                started = time.monotonic()
+                with (
+                    patch("pa.modules.items.enrich_card", new=blocked_enrichment),
+                    patch.object(
+                        summary_service,
+                        "disable_if_unconfigured",
+                        side_effect=AssertionError("summary disable ran inline"),
+                    ),
+                ):
+                    response = client.post(
+                        "/api/cards",
+                        json={"title": "Prompt create", "auto_enrich": True},
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Idempotency-Key": "prompt-create",
+                        },
+                    )
+                elapsed = time.monotonic() - started
+
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertLess(elapsed, 5.0)
+                outcome = client.get(
+                    "/api/operations/prompt-create",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                self.assertEqual(outcome.json()["status"], "succeeded")
+                self.assertEqual(
+                    outcome.json()["result"]["id"], response.json()["id"]
+                )
 
     def test_dispatch_operation_lookup_is_fenced_to_the_requested_realm(
         self,

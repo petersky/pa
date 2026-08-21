@@ -1427,9 +1427,33 @@ class CardProjection:
                 (error_code, datetime.now(UTC).isoformat(), idempotency_key),
             )
 
-    @serialized_mutation
     def get_operation_outcome(
         self, idempotency_key: str, *, realm_id: str = "default"
+    ) -> dict:
+        """Read terminal receipts without joining the global mutation queue.
+
+        Missing and non-terminal receipts can require event-log repair, so those
+        cases are re-read and handled under the mutation lock.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM mutation_operations WHERE idempotency_key=?",
+                (idempotency_key,),
+            ).fetchone()
+        if row is not None:
+            record = dict(row)
+            if record["realm_id"] != realm_id:
+                return self._operation_not_found(idempotency_key)
+            if record["state"] == "succeeded" and record.get("result_json"):
+                return self._operation_outcome(idempotency_key, record)
+
+        with self._mutation_lock:
+            return self._get_operation_outcome_repair(
+                idempotency_key, realm_id=realm_id
+            )
+
+    def _get_operation_outcome_repair(
+        self, idempotency_key: str, *, realm_id: str
     ) -> dict:
         with self._conn() as conn:
             row = conn.execute(
@@ -1449,20 +1473,10 @@ class CardProjection:
                         (idempotency_key,),
                     ).fetchone()
         if row is None:
-            return {
-                "idempotency_key": idempotency_key,
-                "status": "not_found",
-                "durable": False,
-                "recovery_state": "safe_to_retry_with_same_key",
-            }
+            return self._operation_not_found(idempotency_key)
         record = dict(row)
         if record["realm_id"] != realm_id:
-            return {
-                "idempotency_key": idempotency_key,
-                "status": "not_found",
-                "durable": False,
-                "recovery_state": "safe_to_retry_with_same_key",
-            }
+            return self._operation_not_found(idempotency_key)
         if record["state"] in {"pending", "committed", "failed"}:
             recovered = self._recover_operation(record)
             if recovered is not None:
@@ -1472,6 +1486,18 @@ class CardProjection:
                         (idempotency_key,),
                     ).fetchone()
                 record = dict(row)
+        return self._operation_outcome(idempotency_key, record)
+
+    @staticmethod
+    def _operation_not_found(idempotency_key: str) -> dict:
+        return {
+            "idempotency_key": idempotency_key,
+            "status": "not_found",
+            "durable": False,
+            "recovery_state": "safe_to_retry_with_same_key",
+        }
+
+    def _operation_outcome(self, idempotency_key: str, record: dict) -> dict:
         stale_pending = (
             record["state"] in {"pending", "failed"}
             and not record.get("commit_hash")

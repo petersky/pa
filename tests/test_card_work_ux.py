@@ -823,7 +823,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             )
             self.assertEqual(created.status_code, 201, created.text)
             self.assertEqual(created.json()["summary"], "")
-            self.assertEqual(created.json()["summary_status"], "disabled")
+            self.assertEqual(created.json()["summary_status"], "pending")
             self.assertNotEqual(created.json()["summary"], "Works safely.")
 
     def test_card_project_change_simple_assign_change_and_clear(self) -> None:
