@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -673,6 +674,7 @@ class AgentSession(BaseModel):
     origin_instance_name: str | None = None
     authority_instance_id: str | None = None
     dispatch_id: str | None = None
+    lifecycle_owner: Literal["standalone", "dispatch"] = "standalone"
     realm_id: str = "default"
     item_id: str | None = None
     card_id: str | None = None
@@ -688,6 +690,13 @@ class AgentSession(BaseModel):
     metrics_json: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def infer_initial_lifecycle_owner(self) -> AgentSession:
+        """Infer worker ownership only at construction, never from later links."""
+        if "lifecycle_owner" not in self.model_fields_set and self.dispatch_id:
+            self.lifecycle_owner = "dispatch"
+        return self
 
 
 class TranscriptEvent(BaseModel):

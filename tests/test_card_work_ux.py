@@ -61,10 +61,27 @@ class CardSummaryTests(unittest.TestCase):
                 {session.id},
             )
 
-            store.unlink_session_card(session.id, second.id)
+            store.unlink_session_card(
+                session.id,
+                second.id,
+                reason="associated_card_terminal",
+                principal_id="system:session_lifecycle",
+            )
 
             self.assertEqual(store.get_session(session.id).card_id, first.id)
             self.assertEqual(store.list_card_ids_for_session(session.id), [first.id])
+            history = store.list_session_card_history(session.id)
+            retired = next(item for item in history if item["card_id"] == second.id)
+            self.assertIsNotNone(retired["linked_at"])
+            self.assertIsNotNone(retired["retired_at"])
+            self.assertEqual(retired["retired_reason"], "associated_card_terminal")
+            self.assertEqual(
+                retired["retired_by_principal"], "system:session_lifecycle"
+            )
+            self.assertNotIn(
+                session.id,
+                {item.id for item in store.list_sessions_for_cards({second.id})},
+            )
 
     def test_unsummarized_cards_are_pending_and_edits_are_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

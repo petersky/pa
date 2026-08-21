@@ -255,6 +255,7 @@ class CardProjection:
                     origin_instance_name TEXT,
                     authority_instance_id TEXT,
                     dispatch_id TEXT,
+                    lifecycle_owner TEXT NOT NULL DEFAULT 'standalone',
                     realm_id TEXT NOT NULL DEFAULT 'default',
                     item_id TEXT,
                     card_id TEXT,
@@ -269,6 +270,9 @@ class CardProjection:
                     realm_id TEXT NOT NULL DEFAULT 'default',
                     linked_by_principal TEXT,
                     linked_at TEXT NOT NULL,
+                    retired_at TEXT,
+                    retired_reason TEXT,
+                    retired_by_principal TEXT,
                     PRIMARY KEY(session_id, card_id)
                 );
                 CREATE TABLE IF NOT EXISTS knowledge (
@@ -526,6 +530,7 @@ class CardProjection:
             ("origin_instance_name", "TEXT"),
             ("authority_instance_id", "TEXT"),
             ("dispatch_id", "TEXT"),
+            ("lifecycle_owner", "TEXT NOT NULL DEFAULT 'standalone'"),
             ("realm_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("cwd", "TEXT"),
             ("title", "TEXT"),
@@ -537,6 +542,18 @@ class CardProjection:
         ):
             if col not in session_cols:
                 conn.execute(f"ALTER TABLE agent_sessions ADD COLUMN {col} {decl}")
+                if col == "lifecycle_owner":
+                    conn.execute(
+                        "UPDATE agent_sessions SET lifecycle_owner = 'dispatch' "
+                        "WHERE dispatch_id IS NOT NULL"
+                    )
+        link_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(agent_session_cards)").fetchall()
+        }
+        for col in ("retired_at", "retired_reason", "retired_by_principal"):
+            if col not in link_cols:
+                conn.execute(f"ALTER TABLE agent_session_cards ADD COLUMN {col} TEXT")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_project_history "
             "ON agent_sessions(realm_id, project_id, status, updated_at DESC)"
@@ -3946,10 +3963,11 @@ class CardProjection:
                 INSERT OR REPLACE INTO agent_sessions
                 (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
                  authority_instance_id, dispatch_id, realm_id,
+                 lifecycle_owner,
                  item_id, card_id, project_id, principal_id,
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -3960,6 +3978,7 @@ class CardProjection:
                     session.authority_instance_id,
                     session.dispatch_id,
                     session.realm_id,
+                    session.lifecycle_owner,
                     session.item_id or session.card_id,
                     session.card_id or session.item_id,
                     session.project_id,
@@ -3979,9 +3998,12 @@ class CardProjection:
             if session.card_id or session.item_id:
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO agent_session_cards
+                    INSERT INTO agent_session_cards
                         (session_id, card_id, realm_id, linked_by_principal, linked_at)
                     VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(session_id, card_id) DO UPDATE SET
+                        retired_at=NULL, retired_reason=NULL,
+                        retired_by_principal=NULL
                     """,
                     (
                         session.id,
@@ -4018,9 +4040,16 @@ class CardProjection:
                 raise ValueError("Card not found in the session realm")
             conn.execute(
                 """
-                INSERT OR IGNORE INTO agent_session_cards
+                INSERT INTO agent_session_cards
                     (session_id, card_id, realm_id, linked_by_principal, linked_at)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, card_id) DO UPDATE SET
+                    realm_id=excluded.realm_id,
+                    linked_by_principal=excluded.linked_by_principal,
+                    linked_at=excluded.linked_at,
+                    retired_at=NULL,
+                    retired_reason=NULL,
+                    retired_by_principal=NULL
                 """,
                 (
                     session_id,
@@ -4050,8 +4079,15 @@ class CardProjection:
             ).fetchone()
         return self._row_to_session(refreshed)
 
-    def unlink_session_card(self, session_id: str, card_id: str) -> AgentSession:
-        """Remove one association and select a remaining card as current if needed."""
+    def unlink_session_card(
+        self,
+        session_id: str,
+        card_id: str,
+        *,
+        reason: str = "manual_unlink",
+        principal_id: str | None = None,
+    ) -> AgentSession:
+        """Retire one association while preserving its durable audit history."""
         updated_at = datetime.now(UTC)
         with self._mutation_lock, self._conn() as conn:
             session_row = conn.execute(
@@ -4061,8 +4097,10 @@ class CardProjection:
                 raise ValueError("Session not found")
             session = self._row_to_session(session_row)
             conn.execute(
-                "DELETE FROM agent_session_cards WHERE session_id = ? AND card_id = ?",
-                (session_id, card_id),
+                """UPDATE agent_session_cards
+                   SET retired_at = ?, retired_reason = ?, retired_by_principal = ?
+                   WHERE session_id = ? AND card_id = ? AND retired_at IS NULL""",
+                (updated_at.isoformat(), reason, principal_id, session_id, card_id),
             )
             if session.card_id == card_id:
                 replacement = conn.execute(
@@ -4071,6 +4109,7 @@ class CardProjection:
                     FROM agent_session_cards AS links
                     JOIN cards ON cards.id = links.card_id
                     WHERE links.session_id = ? AND links.realm_id = ?
+                      AND links.retired_at IS NULL
                     ORDER BY links.linked_at DESC, links.card_id DESC
                     LIMIT 1
                     """,
@@ -4103,6 +4142,7 @@ class CardProjection:
                 """
                 SELECT card_id FROM agent_session_cards
                 WHERE session_id = ?
+                  AND retired_at IS NULL
                 ORDER BY linked_at ASC, card_id ASC
                 """,
                 (session_id,),
@@ -4116,11 +4156,24 @@ class CardProjection:
                 SELECT cards.* FROM cards
                 JOIN agent_session_cards AS links ON links.card_id = cards.id
                 WHERE links.session_id = ?
+                  AND links.retired_at IS NULL
                 ORDER BY links.linked_at ASC, cards.id ASC
                 """,
                 (session_id,),
             ).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def list_session_card_history(self, session_id: str) -> list[dict]:
+        """Return active and retired card links with their full provenance."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT card_id, realm_id, linked_by_principal, linked_at,
+                          retired_at, retired_reason, retired_by_principal
+                   FROM agent_session_cards WHERE session_id = ?
+                   ORDER BY linked_at ASC, card_id ASC""",
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def list_sessions(
         self,
@@ -4213,6 +4266,7 @@ class CardProjection:
                 FROM agent_sessions AS sessions
                 JOIN agent_session_cards AS links ON links.session_id = sessions.id
                 WHERE links.card_id IN ({placeholders})
+                  AND links.retired_at IS NULL
                 ORDER BY sessions.updated_at DESC
                 """,
                 tuple(card_ids),
@@ -4254,6 +4308,7 @@ class CardProjection:
                     WHERE cards.realm_id = ?
                       AND cards.project_id = ?
                       AND sessions.realm_id = ?
+                      AND links.retired_at IS NULL
                 )
                 SELECT * FROM ranked WHERE session_rank = 1
                 ORDER BY updated_at DESC, id DESC
@@ -4296,6 +4351,7 @@ class CardProjection:
                           FROM agent_session_cards AS links
                           JOIN cards ON cards.id = links.card_id
                           WHERE links.session_id = agent_sessions.id
+                            AND links.retired_at IS NULL
                             AND cards.realm_id = ? AND cards.project_id = ?
                       )
                   )
@@ -4335,6 +4391,7 @@ class CardProjection:
                           FROM agent_session_cards AS links
                           JOIN cards ON cards.id = links.card_id
                           WHERE links.session_id = agent_sessions.id
+                            AND links.retired_at IS NULL
                             AND cards.realm_id = ? AND cards.project_id = ?
                       )
                   )
@@ -5049,6 +5106,11 @@ class CardProjection:
                 else None
             ),
             dispatch_id=row["dispatch_id"] if "dispatch_id" in keys else None,
+            lifecycle_owner=(
+                row["lifecycle_owner"]
+                if "lifecycle_owner" in keys
+                else ("dispatch" if row["dispatch_id"] else "standalone")
+            ),
             realm_id=(row["realm_id"] if "realm_id" in keys else "default"),
             item_id=row["item_id"],
             card_id=row["card_id"] if "card_id" in keys else row["item_id"],

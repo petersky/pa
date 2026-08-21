@@ -97,7 +97,9 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_acknowledged_terminal_dispatch_closes(self):
         self.assertEqual(
-            await self.decide(dispatches=[_dispatch()]),
+            await self.decide(
+                _session(lifecycle_owner="dispatch"), dispatches=[_dispatch()]
+            ),
             ("close", "dispatch_completed"),
         )
 
@@ -149,7 +151,10 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         )
         active.status = PRWatchStatus.MERGED
         self.assertEqual(
-            await self.decide(watches=[active]), ("close", "pr_watch_terminal")
+            await self.decide(
+                _session(lifecycle_owner="dispatch"), watches=[active]
+            ),
+            ("close", "pr_watch_terminal"),
         )
 
     async def test_dirty_or_unknown_workspace_is_retained(self):
@@ -223,13 +228,15 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         card = SimpleNamespace(lane=CardLane.DONE)
         self.assertEqual(
             await self.decide(linked, card=card),
-            ("retained", "card_completed_followup_window"),
+            ("retire", "associated_card_terminal"),
         )
 
     async def test_completed_card_uses_idle_retention_before_closing(self):
         card = SimpleNamespace(lane=CardLane.DONE)
         expired = _session(
-            card_id="card-1", updated_at=datetime.now(UTC) - timedelta(hours=25)
+            card_id="card-1",
+            lifecycle_owner="dispatch",
+            updated_at=datetime.now(UTC) - timedelta(hours=25),
         )
         self.assertEqual(
             await self.decide(expired, card=card),
@@ -240,7 +247,11 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         card = SimpleNamespace(lane=CardLane.DONE)
         self.assertEqual(
             await self.decide(
-                _session(card_id="card-1", label="card-enrichment:card-1"),
+                _session(
+                    card_id="card-1",
+                    label="card-enrichment:card-1",
+                    lifecycle_owner="dispatch",
+                ),
                 card=card,
             ),
             ("close", "single_purpose_finished"),
@@ -254,7 +265,10 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         )
         failed.recoverable = False
         self.assertEqual(
-            await self.decide(dispatches=[failed]), ("close", "dispatch_terminal")
+            await self.decide(
+                _session(lifecycle_owner="dispatch"), dispatches=[failed]
+            ),
+            ("close", "dispatch_terminal"),
         )
 
     async def test_run_once_excludes_closed_sessions_from_store_query(self):
