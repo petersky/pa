@@ -3062,6 +3062,16 @@ code {
   gap: 0.65rem;
 }
 .agent-new-session-dialog label small { grid-column: 2; }
+.agent-new-select-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.agent-new-select-row select {
+  flex: 1;
+  min-width: 0;
+}
 .agent-new-related { border-top: 1px solid var(--pa-border); padding-top: 0.65rem; }
 .agent-session-runtime, .agent-session-config { overflow-wrap: anywhere; }
 

@@ -135,6 +135,36 @@ class SessionRecoveryUiTests(unittest.TestCase):
                 surfaced,
                 ["agent_recovery_failed", "peer_unreachable"]
               );
+
+              let forcedCalls = 0;
+              let firstSignal = null;
+              let forcedReady = null;
+              const forced = new Recovery.Controller({{
+                operation: (signal) => {{
+                  forcedCalls += 1;
+                  if (forcedCalls === 1) {{
+                    firstSignal = signal;
+                    return new Promise((_resolve, reject) => {{
+                      signal.addEventListener("abort", () => {{
+                        reject(new DOMException("aborted", "AbortError"));
+                      }});
+                    }});
+                  }}
+                  return Promise.resolve([{{ id: "fresh" }}]);
+                }},
+                onSuccess: (value) => {{ forcedReady = value; }},
+              }});
+              const stale = forced.start();
+              await Promise.resolve();
+              const refreshed = forced.start(true);
+              assert.notStrictEqual(stale, refreshed);
+              assert.strictEqual(firstSignal.aborted, true);
+              const staleResult = await stale;
+              const refreshedResult = await refreshed;
+              assert.strictEqual(staleResult, null);
+              assert.strictEqual(refreshedResult[0].id, "fresh");
+              assert.strictEqual(forcedCalls, 2);
+              assert.strictEqual(forcedReady[0].id, "fresh");
             }})().catch((error) => {{
               process.stderr.write(error.stack || String(error));
               process.exitCode = 1;
