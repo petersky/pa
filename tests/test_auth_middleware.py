@@ -270,6 +270,11 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
         )
         self.assertEqual(mismatch.status_code, 403)
         self.assertEqual(mismatch.json()["detail"]["code"], "csrf_mismatch")
+        self.assertFalse(
+            mismatch.json()["detail"]["replacement_cookie_issued"]
+        )
+        self.assertEqual(mismatch.headers["X-PA-CSRF-Error"], "csrf_mismatch")
+        self.assertEqual(mismatch.headers["X-PA-CSRF-Replacement"], "none")
 
         invalid_origin = self.client.post(
             "/api/agent/prompt",
@@ -286,7 +291,20 @@ class SyncTokenAuthSeparationTests(unittest.TestCase):
             json={},
         )
         self.assertEqual(rotated.json()["detail"]["code"], "csrf_expired")
+        self.assertTrue(rotated.json()["detail"]["replacement_cookie_issued"])
+        self.assertEqual(rotated.headers["X-PA-CSRF-Replacement"], "issued")
         self.assertNotEqual(rotated.cookies.get("pa_csrf"), expired)
+
+        self.client.cookies.set("pa_csrf", "invalid-token")
+        invalid = self.client.post(
+            "/api/agent/prompt",
+            headers={"X-CSRF-Token": "invalid-token"},
+            json={},
+        )
+        self.assertEqual(invalid.json()["detail"]["code"], "csrf_invalid")
+        self.assertTrue(invalid.json()["detail"]["replacement_cookie_issued"])
+        self.assertEqual(invalid.headers["X-PA-CSRF-Replacement"], "issued")
+        self.assertNotEqual(invalid.cookies.get("pa_csrf"), "invalid-token")
 
     def test_expired_browser_session_has_specific_401(self) -> None:
         self.settings.auth_required = True

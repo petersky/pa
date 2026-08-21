@@ -86,6 +86,7 @@
   }
 
   function csrfHeader() {
+    if (window.PACSRF) return window.PACSRF.headers();
     var meta = document.querySelector('meta[name="csrf-token"]');
     return meta && meta.content ? { "X-CSRF-Token": meta.content } : {};
   }

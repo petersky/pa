@@ -9,6 +9,7 @@
   function root() { return document.querySelector("[data-notification-chrome]"); }
   function panel() { var el = root(); return el && el.querySelector("[data-notification-list]"); }
   function csrf() {
+    if (window.PACSRF) return window.PACSRF.headers();
     var meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? { "X-CSRF-Token": meta.content } : {};
   }

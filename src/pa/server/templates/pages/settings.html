@@ -226,6 +226,7 @@
   }
   function headers() {
     var value = { "Content-Type": "application/json", Accept: "application/json" };
+    if (window.PACSRF) return window.PACSRF.headers(value);
     var csrf = document.querySelector('meta[name="csrf-token"]');
     if (csrf && csrf.content) value["X-CSRF-Token"] = csrf.content;
     return value;
@@ -819,9 +820,13 @@
   var status = document.getElementById("pa-mcp-status");
   var preview = null;
   var revision = null;
-  var headers = {"Content-Type": "application/json", Accept: "application/json"};
-  var csrf = document.querySelector('meta[name="csrf-token"]');
-  if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
+  function headers() {
+    var value = {"Content-Type": "application/json", Accept: "application/json"};
+    if (window.PACSRF) return window.PACSRF.headers(value);
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf && csrf.content) value["X-CSRF-Token"] = csrf.content;
+    return value;
+  }
   async function load() {
     var response = await fetch("/api/mcp-servers", {credentials: "same-origin"});
     if (!response.ok) return;
@@ -852,7 +857,7 @@
     status.textContent = "Validating…";
     try {
       var documentValue = JSON.parse(input.value);
-      var response = await fetch("/api/mcp-servers/import", {method: "POST", credentials: "same-origin", headers: headers, body: JSON.stringify({document: documentValue})});
+      var response = await fetch("/api/mcp-servers/import", {method: "POST", credentials: "same-origin", headers: headers(), body: JSON.stringify({document: documentValue})});
       var data = await response.json();
       if (!response.ok) throw data;
       preview = data.servers;
@@ -865,7 +870,7 @@
   form.addEventListener("submit", async function (event) {
     event.preventDefault();
     if (!preview) { status.textContent = "Validate a preview before saving."; return; }
-    var response = await fetch("/api/mcp-servers", {method: "PUT", credentials: "same-origin", headers: headers, body: JSON.stringify({servers: preview, expected_revision: revision, idempotency_key: crypto.randomUUID()})});
+    var response = await fetch("/api/mcp-servers", {method: "PUT", credentials: "same-origin", headers: headers(), body: JSON.stringify({servers: preview, expected_revision: revision, idempotency_key: crypto.randomUUID()})});
     var data = await response.json();
     status.textContent = response.ok ? "Saved. Running sessions were not changed." : ((data.detail && data.detail.message) || "Save failed.");
     if (response.ok) { preview = null; revision = data.revision; await load(); }
@@ -874,7 +879,7 @@
     var name = event.target.dataset && event.target.dataset.mcpProbe;
     if (!name) return;
     status.textContent = "Testing " + name + "…";
-    var response = await fetch("/api/mcp-servers/" + encodeURIComponent(name) + "/probe", {method: "POST", credentials: "same-origin", headers: headers});
+    var response = await fetch("/api/mcp-servers/" + encodeURIComponent(name) + "/probe", {method: "POST", credentials: "same-origin", headers: headers()});
     var data = await response.json();
     status.textContent = name + ": " + (data.state || "error") + (data.error ? " (" + data.error + ")" : "");
     await load();
@@ -984,6 +989,7 @@
     e.preventDefault();
     var status = document.getElementById("pa-agent-prefs-status");
     var headers = { "Content-Type": "application/json", Accept: "application/json" };
+    if (window.PACSRF) headers = window.PACSRF.headers(headers);
     var csrf = document.querySelector('meta[name="csrf-token"]');
     if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
     var userVal = !!form.user_auto_approve.checked;
@@ -1065,6 +1071,7 @@
     status.classList.remove("danger");
     status.textContent = "Validating telemetry settings…";
     var headers = {"Content-Type": "application/json", Accept: "application/json"};
+    if (window.PACSRF) headers = window.PACSRF.headers(headers);
     var csrf = document.querySelector('meta[name="csrf-token"]');
     if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
     var body = {
@@ -1105,6 +1112,7 @@
   if (!form && !run) return;
   function headers() {
     var value = {"Content-Type": "application/json", Accept: "application/json"};
+    if (window.PACSRF) return window.PACSRF.headers(value);
     var csrf = document.querySelector('meta[name="csrf-token"]');
     if (csrf && csrf.content) value["X-CSRF-Token"] = csrf.content;
     return value;
@@ -1231,6 +1239,7 @@
       return;
     }
     var headers = {"Content-Type": "application/json", Accept: "application/json"};
+    if (window.PACSRF) headers = window.PACSRF.headers(headers);
     var csrf = document.querySelector('meta[name="csrf-token"]');
     if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
     try {

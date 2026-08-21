@@ -50,8 +50,9 @@
   }
 
   function csrfHeaders() {
-    const meta = document.querySelector('meta[name="csrf-token"]');
     const headers = { "Content-Type": "application/json", Accept: "application/json" };
+    if (window.PACSRF) return window.PACSRF.headers(headers);
+    const meta = document.querySelector('meta[name="csrf-token"]');
     if (meta && meta.content) headers["X-CSRF-Token"] = meta.content;
     return headers;
   }
@@ -467,12 +468,14 @@
       credentials: "same-origin",
     }, opts);
     requestOptions.headers = Object.assign({}, csrfHeaders(), opts.headers || {});
-    return fetch(this.apiBase + path, requestOptions).then(function (res) {
+    const request = window.PACSRF ? window.PACSRF.fetch : fetch;
+    return request(this.apiBase + path, requestOptions).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (body) {
           const error = new Error(apiErrorMessage(body, res.statusText || "Request failed"));
           error.status = res.status;
           error.detail = body.detail;
+          error.csrfRecoveryFailed = Boolean(res.paCsrfRecoveryFailed);
           if (window.PASessionRecovery) {
             error.retryAfterMs = window.PASessionRecovery.responseRetryAfterMs(
               res, error.detail
@@ -2880,7 +2883,10 @@
           self.resolveSessionNotLive(err, targetSessionId, generation);
           return;
         }
-        self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+        const message = err.csrfRecoveryFailed
+          ? "Security token changed and automatic recovery failed. Your draft is preserved; retry once or reload PA."
+          : "Prompt not sent: " + err.message;
+        self.addBubble("system", message, new Date().toISOString(), { system: true, forceVisible: true });
       })
       .finally(function () {
         self.setSubmissionState("idle", false);

@@ -29,6 +29,7 @@
 
     function headers() {
       var result = {"Content-Type": "application/json", Accept: "application/json"};
+      if (window.PACSRF) return window.PACSRF.headers(result);
       var csrf = document.querySelector('meta[name="csrf-token"]');
       if (csrf && csrf.content) result["X-CSRF-Token"] = csrf.content;
       return result;
