@@ -802,6 +802,7 @@ async def _fleet_proxy(
     json_body: dict[str, Any] | None = None,
 ) -> Any:
     from pa.fleet.registry import FleetRegistry
+    from pa.fleet.endpoints import request_peer
 
     fleet: FleetRegistry = ctx.require_service("fleet_registry")
     inst = None
@@ -815,7 +816,6 @@ async def _fleet_proxy(
     headers: dict[str, str] = {}
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
-    url = f"{inst.url.rstrip('/')}{path}"
     client = ctx.services.get("fleet_http_client")
     owns_client = client is None
     client = client or httpx.AsyncClient(
@@ -824,17 +824,21 @@ async def _fleet_proxy(
     )
     runtime = ctx.require_service("async_runtime")
     try:
-        resp = await runtime.observe(
+        response = await runtime.observe(
             "http.provider_fleet_proxy",
-            client.request(
+            request_peer(
+                ctx,
+                client,
+                inst,
                 method,
-                url,
+                path,
                 headers=headers,
                 json=json_body,
                 timeout=120.0,
             ),
             timeout=125.0,
         )
+        resp, _selected_endpoint = response
         if resp.status_code >= 400:
             raise RuntimeError(
                 f"{method} {path} → {resp.status_code}: {resp.text[:300]}"

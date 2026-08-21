@@ -163,6 +163,10 @@ from pa.fleet.placement import (
     PlacementService,
     RoundRobinCursorStore,
 )
+from pa.fleet.endpoints import (
+    EndpointHealthRegistry,
+    request_peer,
+)
 from pa.fleet.policy import (
     BUILTIN_GROUPS,
     WORKLOAD_PROFILES,
@@ -5501,7 +5505,6 @@ async def _peer_agent_json(
     timeout: float = 120.0,
 ) -> dict | list:
     inst = _fleet_instance_or_404(request, instance_id)
-    url = f"{inst.url.rstrip('/')}/api/agent/{_agent_path(path)}"
     client = request.app.state.ctx.services.get("fleet_http_client")
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=timeout)
@@ -5513,12 +5516,15 @@ async def _peer_agent_json(
     if params is not None:
         request_kwargs["params"] = params
     try:
-        resp = await _fleet_http(
+        resp, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_agent",
-            client.request(
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
                 method,
-                url,
+                f"api/agent/{_agent_path(path)}",
                 **request_kwargs,
             ),
             timeout=timeout,
@@ -5548,11 +5554,15 @@ async def _peer_dispatch_json(
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=15.0)
     try:
-        resp = await _fleet_http(
+        resp, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_dispatch",
-            client.post(
-                f"{inst.url.rstrip('/')}/api/fleet/dispatch/materialize",
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
+                "POST",
+                "api/fleet/dispatch/materialize",
                 headers={
                     **_peer_headers(request),
                     "Idempotency-Key": str(body["mutation_id"]),
@@ -5562,12 +5572,23 @@ async def _peer_dispatch_json(
             ),
             timeout=15.0,
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
+        selected_endpoint = getattr(exc, "selected_endpoint", None)
+        if selected_endpoint is None:
+            registry = request.app.state.ctx.services.get("endpoint_health_registry")
+            if isinstance(registry, EndpointHealthRegistry):
+                choices = registry.choices(request.app.state.ctx.settings, inst)
+                selected_endpoint = choices[0].url if choices else None
         raise HTTPException(
             status_code=502,
             detail={
                 "code": "target_unavailable",
                 "message": str(exc),
+                "error_class": type(exc).__name__,
+                "selected_endpoint": selected_endpoint,
+                "attempted_endpoints": getattr(exc, "endpoints", None),
+                "retry_after_seconds": getattr(exc, "retry_after", None),
+                "retry_guidance": "Retry after the endpoint circuit reopens or choose another healthy fleet target.",
                 "recoverable": True,
             },
         ) from exc
@@ -5617,24 +5638,30 @@ async def _peer_authority_json(
     if key:
         headers["Idempotency-Key"] = str(key)
     try:
-        response = await _fleet_http(
+        response, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_authority",
-            client.request(
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
                 method,
-                f"{inst.url.rstrip('/')}/api/fleet/{path.lstrip('/')}",
+                f"api/fleet/{path.lstrip('/')}",
                 headers=headers,
                 json=body,
                 timeout=timeout,
             ),
             timeout=timeout,
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
         raise HTTPException(
             status_code=502,
             detail={
                 "code": "authority_unavailable",
                 "message": str(exc),
+                "error_class": type(exc).__name__,
+                "selected_endpoint": getattr(exc, "selected_endpoint", None),
+                "retry_after_seconds": getattr(exc, "retry_after", None),
                 "recoverable": True,
             },
         ) from exc
@@ -5673,14 +5700,15 @@ async def _peer_terminal_repair_evidence(
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
     try:
-        response = await _fleet_http(
+        response, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_terminal_repair_evidence",
-            client.post(
-                (
-                    f"{inst.url.rstrip('/')}/api/fleet/dispatch-jobs/"
-                    f"{quote(dispatch_id, safe='')}/terminal-repair-evidence"
-                ),
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
+                "POST",
+                f"api/fleet/dispatch-jobs/{quote(dispatch_id, safe='')}/terminal-repair-evidence",
                 headers={
                     **_peer_headers(request),
                     "Idempotency-Key": body.idempotency_key,
@@ -5758,14 +5786,15 @@ async def _peer_terminal_repair_commit(
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
     try:
-        response = await _fleet_http(
+        response, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_terminal_repair_commit",
-            client.post(
-                (
-                    f"{inst.url.rstrip('/')}/api/fleet/dispatch-jobs/"
-                    f"{quote(dispatch_id, safe='')}/terminal-repair-commit"
-                ),
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
+                "POST",
+                f"api/fleet/dispatch-jobs/{quote(dispatch_id, safe='')}/terminal-repair-commit",
                 headers={
                     **_peer_headers(request),
                     "Idempotency-Key": body.idempotency_key,
@@ -13389,11 +13418,15 @@ async def target_dispatches(request: Request, instance_id: str) -> list[dict[str
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=5.0)
     try:
-        response = await _fleet_http(
+        response, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_dispatch_status",
-            client.get(
-                f"{inst.url.rstrip('/')}/api/fleet/dispatch-jobs",
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
+                "GET",
+                "api/fleet/dispatch-jobs",
                 params={"target_instance_id": instance_id, "limit": 100},
                 headers=_peer_headers(request),
                 timeout=5.0,
@@ -13818,7 +13851,6 @@ async def _proxy_agent_providers(
     headers: dict[str, str] = {}
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
-    url = f"{inst.url.rstrip('/')}/api/agent/providers{suffix}"
     client = request.app.state.ctx.services.get("fleet_http_client")
     owns_client = client is None
     client = client or httpx.AsyncClient(
@@ -13826,10 +13858,19 @@ async def _proxy_agent_providers(
         limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
     )
     try:
-        resp = await _fleet_http(
+        resp, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_provider_proxy",
-            client.request(method, url, headers=headers, json=body, timeout=120.0),
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
+                method,
+                f"api/agent/providers{suffix}",
+                headers=headers,
+                json=body,
+                timeout=120.0,
+            ),
             timeout=125.0,
         )
     except httpx.HTTPError as exc:
@@ -13860,7 +13901,6 @@ async def _proxy_workspace_reconcile(
     headers: dict[str, str] = {}
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
-    url = f"{inst.url.rstrip('/')}/api/workspaces/reconcile"
     client = request.app.state.ctx.services.get("fleet_http_client")
     owns_client = client is None
     client = client or httpx.AsyncClient(
@@ -13868,10 +13908,19 @@ async def _proxy_workspace_reconcile(
         limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
     )
     try:
-        resp = await _fleet_http(
+        resp, _selected_endpoint = await _fleet_http(
             request,
             "http.fleet_workspace_reconcile",
-            client.post(url, headers=headers, json=body, timeout=305.0),
+            request_peer(
+                request.app.state.ctx,
+                client,
+                inst,
+                "POST",
+                "api/workspaces/reconcile",
+                headers=headers,
+                json=body,
+                timeout=305.0,
+            ),
             timeout=310.0,
         )
     except httpx.HTTPError as exc:
@@ -14133,6 +14182,9 @@ class FleetModule(Module):
             limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
         )
         ctx.register_service("fleet_http_client", fleet_http_client)
+        ctx.register_service(
+            "endpoint_health_registry", EndpointHealthRegistry(ctx.settings.data_dir)
+        )
         convergence_task = asyncio.create_task(
             _membership_convergence_loop(ctx),
             name="fleet-membership-convergence",
