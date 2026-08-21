@@ -64,6 +64,27 @@ def _contrast(first: str, second: str) -> float:
 
 
 class ThemeCatalogTests(unittest.TestCase):
+    def test_shell_applies_resolved_theme_before_loading_stylesheets(self) -> None:
+        shell = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "templates"
+            / "shell.html"
+        ).read_text()
+
+        resolver = shell.index('localStorage.getItem("pa.appearance")')
+        structural_styles = shell.index("static_url('style.css')")
+        variant_link = shell.index('id="pa-theme-variant"')
+        variant_assignment = shell.index('link.href = "/static/themes/"')
+        self.assertLess(resolver, structural_styles)
+        self.assertLess(resolver, variant_link)
+        self.assertLess(variant_link, variant_assignment)
+        self.assertIn("root.dataset.appearance = resolved", shell)
+        self.assertIn("root.style.colorScheme = resolved", shell)
+        self.assertNotIn("/light.css') }}", shell)
+
     def test_requested_themes_are_discoverable(self) -> None:
         catalog = {theme["id"]: theme for theme in get_theme_catalog()}
 

@@ -534,6 +534,46 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
         self.assertEqual(effective["model_id"], "gpt-next")
         self.assertEqual(effective["mode_id"], "code")
 
+    def test_dedicated_model_accepts_advertised_combined_effort_selector(self) -> None:
+        class CombinedModelClient:
+            def __init__(self) -> None:
+                self.model_ids: list[str] = []
+
+            async def set_session_model(self, **kwargs):
+                self.model_ids.append(kwargs["model_id"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = CombinedModelClient()
+            connection, _store = self._connection(
+                tmp,
+                client,
+                models={
+                    "currentModelId": "default",
+                    "availableModels": [
+                        {"modelId": "gpt-5.6-sol"},
+                        {"modelId": "gpt-5.6-sol[medium]"},
+                        {"modelId": "gpt-5.6-sol[high]"},
+                    ],
+                },
+                options=[],
+            )
+            effective = asyncio.run(
+                connection.configure(
+                    SessionConfigurationRequest.from_values(
+                        model_id="gpt-5.6-sol", reasoning="high"
+                    )
+                )
+            )
+
+        self.assertEqual(client.model_ids, ["gpt-5.6-sol[high]"])
+        self.assertEqual(effective["model_id"], "gpt-5.6-sol")
+        self.assertEqual(effective["reasoning"], "high")
+        self.assertEqual(connection.session.model_id, "gpt-5.6-sol")
+        self.assertEqual(
+            connection.session.config_json["configuration"]["strategies"],
+            {"model": "dedicated:set_session_model:combined"},
+        )
+
     def test_absent_support_fails_with_actionable_compatibility_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             connection, _store = self._connection(tmp, object(), options=[])
