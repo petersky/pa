@@ -14,22 +14,40 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>{{ page.label | default('PA') }} — {{ serving_identity.display_name }}</title>
-  <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
-  <link rel="icon" href="/favicon.ico" sizes="any">
-  <link rel="stylesheet" href="{{ static_url('style.css') }}">
-  <link id="pa-theme-variant" rel="stylesheet"
-        href="{{ static_url('themes/' ~ (theme_id | default('pa')) ~ '/light.css') }}">
   <script>
     window.PA_ASSETS = { version: "{{ asset_version }}" };
     window.PA_BUILD = "{{ build_id | default(pa_version ~ '+' ~ asset_version) }}";
     (function () {
+      function cookie(name) {
+        var match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        return match ? decodeURIComponent(match[1]) : null;
+      }
+      var root = document.documentElement;
+      var pref = localStorage.getItem("pa.appearance") || cookie("pa_appearance") ||
+        root.dataset.appearancePref || "system";
+      var theme = localStorage.getItem("pa.theme") || cookie("pa_theme") ||
+        root.dataset.themeId || "pa";
+      var resolved = pref === "dark" ||
+        (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        ? "dark" : "light";
+      root.dataset.theme = theme;
+      root.dataset.themeId = theme;
+      root.dataset.appearancePref = pref;
+      root.dataset.appearance = resolved;
+      root.style.colorScheme = resolved;
+      window.PA_INITIAL_THEME = { themeId: theme, appearance: resolved };
+    })();
+  </script>
+  <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  <link id="pa-theme-variant" rel="stylesheet">
+  <script>
+    (function () {
       var v = window.PA_ASSETS.version;
-      var pref = document.documentElement.dataset.appearancePref || "system";
-      var dark = pref === "dark" ||
-        (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      var theme = document.documentElement.dataset.themeId || "pa";
+      var initial = window.PA_INITIAL_THEME;
       var link = document.getElementById("pa-theme-variant");
-      if (link) link.href = "/static/themes/" + theme + "/" + (dark ? "dark" : "light") + ".css?v=" + v;
+      if (link) link.href = "/static/themes/" + initial.themeId + "/" + initial.appearance + ".css?v=" + v;
     })();
   </script>
   <script src="{{ static_url('js/csrf.js') }}"></script>

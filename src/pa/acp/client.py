@@ -35,6 +35,7 @@ from pa.acp.configuration import (
     find_option_by_id,
     option_current_value,
     option_id,
+    parse_model_selector,
     state_current_value,
     validate_option_value,
 )
@@ -1479,6 +1480,7 @@ class AgentConnection:
             actions: list[tuple[str, str, str, str | bool]] = []
             strategies: dict[str, str] = {}
             bound_options: dict[str, tuple[str | bool, str]] = {}
+            combined_model_selector: str | None = None
 
             def bind_option(
                 setting: str,
@@ -1512,6 +1514,7 @@ class AgentConnection:
                 strategies[setting] = f"config:{oid}"
 
             def build_plan() -> None:
+                nonlocal combined_model_selector
                 if desired.model_id:
                     advertised_models = advertised_state_values(
                         self.models,
@@ -1519,9 +1522,21 @@ class AgentConnection:
                         id_names=("modelId", "model_id", "id"),
                     )
                     if self.models is not None and callable(set_model):
+                        provider_model_id = desired.model_id
+                        combined = (
+                            f"{desired.model_id}[{desired.reasoning}]"
+                            if desired.reasoning
+                            else None
+                        )
                         if (
                             advertised_models
-                            and desired.model_id not in advertised_models
+                            and combined in advertised_models
+                        ):
+                            provider_model_id = combined
+                            combined_model_selector = combined
+                        elif (
+                            advertised_models
+                            and provider_model_id not in advertised_models
                         ):
                             supported = ", ".join(sorted(advertised_models))
                             raise ACPConfigurationError(
@@ -1530,9 +1545,13 @@ class AgentConnection:
                                 f"Supported models: {supported}."
                             )
                         actions.append(
-                            ("model", "dedicated", "model", desired.model_id)
+                            ("model", "dedicated", "model", provider_model_id)
                         )
-                        strategies["model"] = "dedicated:set_session_model"
+                        strategies["model"] = (
+                            "dedicated:set_session_model:combined"
+                            if combined_model_selector
+                            else "dedicated:set_session_model"
+                        )
                     else:
                         bind_option(
                             "model",
@@ -1561,7 +1580,7 @@ class AgentConnection:
                             "mode", find_option(options, "mode"), desired.mode_id
                         )
 
-                if desired.reasoning:
+                if desired.reasoning and not combined_model_selector:
                     bind_option(
                         "reasoning",
                         find_option(options, "reasoning"),
@@ -1699,6 +1718,10 @@ class AgentConnection:
                 effective_reasoning = (
                     option_current_value(reasoning_option) if reasoning_option else None
                 )
+                if combined_model_selector and effective_model == combined_model_selector:
+                    effective_model, effective_reasoning = parse_model_selector(
+                        effective_model
+                    )
                 effective = {
                     "model_id": effective_model,
                     "mode_id": effective_mode,
