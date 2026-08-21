@@ -10,7 +10,73 @@ from pathlib import Path
 
 
 class AgentChatSseLifecycleTests(unittest.TestCase):
-    def test_local_owner_history_bypasses_fleet_self_proxy(self) -> None:
+    def test_switch_clears_rendered_transcript_before_owner_lookup(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }},
+              addEventListener: noop,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            const window = {{ addEventListener: noop, confirm: () => true }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              {{ window, document, console: {{ debug: noop }}, URL, setTimeout, clearTimeout }}
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            const calls = [];
+            Object.assign(widget, {{
+              sessionId: "session-old",
+              ownerInstanceId: "local",
+              settingsDirty: false,
+              transcriptEvents: [{{ seq: 1 }}],
+              seenEvents: {{ "seq:1": true }},
+              hasOlder: true,
+              olderCursor: 1,
+              loadingOlder: false,
+              olderError: "",
+              streaming: {{ old: true }},
+              lastSnapshot: {{ session: {{ id: "session-old" }} }},
+              closeSSE: () => calls.push("close"),
+              updateOlderControl: noop,
+              renderTranscript: (events) => calls.push("render:" + events.length),
+              setPlaceholder: (message) => calls.push("placeholder:" + message),
+              openSession: () => {{
+                calls.push("open");
+                return Promise.resolve(null);
+              }},
+            }});
+            widget.switchSession("session-new", true, "local");
+            if (calls.join("|") !== "close|render:0|placeholder:Loading session…|open") {{
+              throw new Error("session transition order was " + calls.join("|"));
+            }}
+            if (widget.lastSnapshot !== null) throw new Error("stale snapshot was retained");
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness], check=False, capture_output=True, text=True
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_live_session_route_does_not_wait_for_durable_history(self) -> None:
         node = shutil.which("node")
         if not node:
             self.skipTest("node is required for the browser-side lifecycle harness")
@@ -50,7 +116,8 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
             );
             const Widget = window.PAAgentChat.AgentChatWidget;
             const widget = Object.create(Widget.prototype);
-            let historyBase = "";
+            const snapshotBases = [];
+            let historyLoads = 0;
             Object.assign(widget, {{
               destroyed: false,
               subscriptionGeneration: 0,
@@ -67,10 +134,9 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
               setComposerEnabled: noop,
               setStatus: noop,
               clearSelectedSession: noop,
-              _applyDurableHistory: (_sid, history) => history,
-              api: () => {{
-                historyBase = widget.apiBase;
-                return Promise.resolve({{ session: {{ id: "session-local" }}, events: [] }});
+              apiWithTimeout: () => {{
+                historyLoads += 1;
+                return new Promise(() => {{}});
               }},
               resolveSessionRoute: (_sessionId, ownerId) => Promise.resolve({{
                 owner: {{ instance_id: ownerId }},
@@ -81,19 +147,24 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
                 state: "live",
                 live: true,
               }}),
-              _loadLiveSnapshot: () => Promise.resolve(null),
+              _loadLiveSnapshot: () => {{
+                snapshotBases.push(widget.apiBase);
+                return Promise.resolve(null);
+              }},
             }});
             widget.openSession("session-local", "macbook-id", {{ replace: true }})
               .then(() => {{
-                if (historyBase !== "/api/agent") {{
-                  throw new Error("local history used fleet self-proxy: " + historyBase);
+                if (snapshotBases[0] !== "/api/agent") {{
+                  throw new Error("local snapshot used wrong API base: " + snapshotBases[0]);
                 }}
-                historyBase = "";
                 return widget.openSession("session-remote", "monica-id", {{ replace: true }});
               }})
               .then(() => {{
-                if (historyBase !== "/api/fleet/instances/monica-id/agent") {{
-                  throw new Error("remote history skipped fleet proxy: " + historyBase);
+                if (snapshotBases[1] !== "/api/fleet/instances/monica-id/agent") {{
+                  throw new Error("remote snapshot used wrong API base: " + snapshotBases[1]);
+                }}
+                if (historyLoads !== 0) {{
+                  throw new Error("live routing started a blocking durable-history request");
                 }}
               }})
               .catch((error) => {{
