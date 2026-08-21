@@ -689,9 +689,16 @@
     if (this.routeAbortController) this.routeAbortController.abort();
     const self = this;
     const controller = new AbortController();
-    const timeoutId = setTimeout(function () { controller.abort(); }, SESSION_ROUTE_TIMEOUT_MS);
+    let rejectDeadline;
+    const deadline = new Promise(function (_resolve, reject) {
+      rejectDeadline = reject;
+    });
+    const timeoutId = setTimeout(function () {
+      controller.abort();
+      rejectDeadline(new Error("Session owner lookup exceeded its latency budget."));
+    }, SESSION_ROUTE_TIMEOUT_MS);
     this.routeAbortController = controller;
-    return fetch(url, {
+    const lookup = fetch(url, {
       headers: csrfHeaders(),
       credentials: "same-origin",
       signal: controller.signal,
@@ -709,7 +716,11 @@
           throw new Error("Session owner lookup exceeded its latency budget.");
         }
         throw error;
-      })
+      });
+    // Some browser/network combinations do not settle a fetch promptly after
+    // AbortController.abort(). Keep owner resolution independently bounded so
+    // the composer cannot remain stuck in its locating state forever.
+    return Promise.race([lookup, deadline])
       .finally(function () {
         clearTimeout(timeoutId);
         if (self.routeAbortController === controller) self.routeAbortController = null;
@@ -898,6 +909,15 @@
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
           return self.resolveSessionNotLive(err, sessionId, generation);
+        }
+        // A supplied owner is already canonical enough to address the session.
+        // Try its live endpoint before falling back to history-only mode; this
+        // keeps an actively streaming standalone session usable when the fleet
+        // route lookup itself is slow or unavailable.
+        if (self.ownerInstanceId) {
+          self.sessionRoute = { state: "live_degraded", live: true };
+          self._writeSessionUrl(!!options.replace);
+          return self._loadLiveSnapshot(sessionId, generation);
         }
         return loadDurableHistory().catch(function () { return null; }).then(function () {
           self.sessionRoute = { state: "owner_unreachable" };
