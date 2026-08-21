@@ -21,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
+from pa.sync.dag_index import DagIndex
 from pa.sync.object_store import ObjectStore, object_hash
 
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
@@ -208,9 +209,62 @@ class EventLog:
         ).digest()
         self.refs_path = data_dir / "sync_refs.json"
         self.refs_lock_path = data_dir / "sync_refs.lock"
+        self.index = DagIndex(data_dir / "dag_index.db")
         self._refs: dict[str, str] = {}
         self._lock = threading.RLock()
         self._load_refs()
+
+    def index_status(self, realm_id: str) -> dict[str, Any]:
+        """Return bounded derived-index health without touching DAG objects."""
+        return self.index.status(realm_id, self.get_head(realm_id))
+
+    def _authoritative_index_records(
+        self, head: str
+    ) -> Iterator[tuple[str, SyncCommit, list[tuple[str, CardEvent]]]]:
+        for commit_hash, commit in self._iter_commits_parent_first(head):
+            events: list[tuple[str, CardEvent]] = []
+            for event_hash in commit.event_hashes:
+                event = self.get_event(event_hash)
+                if event is None:
+                    raise EventHistoryObjectError("missing_event", event_hash, "event")
+                events.append((event_hash, event))
+            yield commit_hash, commit, events
+
+    def ensure_indexed(self, realm_id: str, head: str | None = None) -> bool:
+        """Repair the disposable index from canonical objects, coalescing builders.
+
+        Production startup/reconcile code calls this off the event loop. Query
+        methods only invoke it for real object-store heads; synthetic test and
+        explicit verifier traversals retain the bounded authoritative fallback.
+        """
+        requested = head or self.get_head(realm_id)
+        if requested is None:
+            return True
+        if self.index.contains_commit(realm_id, requested):
+            return True
+        if not self.store.has(requested):
+            return False
+        try:
+            self.index.rebuild(
+                realm_id,
+                requested,
+                self._authoritative_index_records(requested),
+                _event_entity,
+            )
+            return True
+        except Exception as exc:
+            self.index.mark_failed(realm_id, f"{type(exc).__name__}: {exc}")
+            raise
+
+    def verify_index(self, realm_id: str, head: str) -> None:
+        """Force an atomic canonical comparison/rebuild without losing last-good data."""
+        self.index.rebuild(
+            realm_id,
+            head,
+            self._authoritative_index_records(head),
+            _event_entity,
+            force=True,
+        )
 
     @contextmanager
     def _refs_file_lock(self):
@@ -268,17 +322,24 @@ class EventLog:
         *,
         on_commit: Callable[[SyncCommit], None] | None = None,
     ) -> tuple[CardEvent, SyncCommit]:
+        # Potential repair is deliberately outside the event-log/ref critical
+        # section. The parent is fenced again after both locks are acquired.
+        realm_id = event.realm_id
+        prepared_parent = self.get_head(realm_id)
+        if prepared_parent:
+            self.ensure_indexed(realm_id, prepared_parent)
+        prior = (
+            self._indexed_entity_snapshot(prepared_parent, "card", event.card_id)
+            if prepared_parent and event.card_id
+            else None
+        )
         with self._lock:
             with self._refs_file_lock():
                 self._load_refs()
-                realm_id = event.realm_id
                 parent = self._refs.get(self.ref_key(realm_id))
+                if parent != prepared_parent:
+                    raise DagIndexStaleError(realm_id, prepared_parent, parent)
                 parent_hashes = [parent] if parent else []
-                prior = (
-                    self.entity_snapshot(parent, "card", event.card_id)
-                    if parent and event.card_id
-                    else None
-                )
                 if event.type == EventType.CARD_CREATED and prior is not None:
                     raise DuplicateCardCreateError(event.card_id or "", parent)
                 event = event.model_copy(
@@ -310,6 +371,17 @@ class EventLog:
 
                 self._refs[self.ref_key(realm_id)] = commit.hash
                 self._save_refs()
+                if not self.index.advance_linear(
+                    realm_id,
+                    parent,
+                    commit.hash,
+                    commit,
+                    [(event_hash, event)],
+                    _event_entity,
+                ):
+                    self.index.mark_failed(
+                        realm_id, "local append could not fence the indexed parent"
+                    )
 
         if on_commit:
             on_commit(commit)
@@ -451,6 +523,13 @@ class EventLog:
         head = self.get_head(realm_id)
         if not head:
             return []
+        if self.ensure_indexed(realm_id, head):
+            rows = self.index.entity_rows(realm_id, head, entity, entity_id)
+            if rows is not None:
+                return [
+                    CardEvent.model_validate_json(row["event_json"])
+                    for row in reversed(rows[-limit:])
+                ]
         events: list[CardEvent] = []
         queue: deque[str] = deque([head])
         visited: set[str] = set()
@@ -1006,6 +1085,27 @@ class EventLog:
         head = self.get_head(realm_id)
         if not head:
             return None
+        if self.ensure_indexed(realm_id, head):
+            rows = self.index.operation_rows(realm_id, head, idempotency_key)
+            if rows is not None:
+                found: tuple[str, str, CardEvent] | None = None
+                for row in rows:
+                    event = CardEvent.model_validate_json(row["event_json"])
+                    current = (str(row["commit_hash"]), str(row["event_hash"]), event)
+                    if found is None:
+                        self.validate_operation_event_origin(*current)
+                    else:
+                        if found[2].id != event.id:
+                            raise EventHistoryError(
+                                "duplicate_idempotency_key",
+                                "multiple durable events claim the same idempotency key",
+                                idempotency_key=idempotency_key,
+                                first_event_id=found[2].id,
+                                second_event_id=event.id,
+                            )
+                        self.validate_operation_event_revision(*found, *current)
+                    found = current
+                return found
         found: tuple[str, str, CardEvent] | None = None
         for commit_hash, commit in self._iter_commits_parent_first(
             head, max_commits=max_commits
@@ -1042,25 +1142,20 @@ class EventLog:
                 found = (commit_hash, event_hash, event)
         return found
 
-    def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
-        """Materialize one entity at an arbitrary immutable history head."""
+    @staticmethod
+    def _snapshot_from_events(
+        events: Iterator[CardEvent], entity: str
+    ) -> dict | None:
         state: dict | None = None
         card_seen_since_delete = False
-
-        def apply(event: CardEvent) -> None:
-            nonlocal card_seen_since_delete, state
-            event_entity, event_id = _event_entity(event)
-            matches = event_entity == entity and event_id == entity_id
-            if not matches:
-                return
+        for event in events:
             if event.type == EventType.GOAL_GOVERNANCE_UPSERTED:
                 state = dict(event.payload.get("entity") or {})
             elif event.type == EventType.CARD_CREATED:
                 if card_seen_since_delete:
-                    return
+                    continue
                 state = dict(event.payload)
                 card_seen_since_delete = True
-                return
             elif event.type in {
                 EventType.CARD_UPSERTED,
                 EventType.PROJECT_CREATED,
@@ -1098,9 +1193,47 @@ class EventLog:
                     card_seen_since_delete = False
             elif event.type == EventType.PROJECT_ARCHIVED and state is not None:
                 state["status"] = "archived"
+        return state
+
+    def _indexed_entity_snapshot(
+        self, head: str, entity: str, entity_id: str
+    ) -> dict | None:
+        # Realm is not encoded in public snapshot arguments. Resolve it from
+        # the indexed commit, avoiding canonical object reads on the hot path.
+        with self.index._conn() as conn:
+            found = conn.execute(
+                "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1", (head,)
+            ).fetchone()
+        if found is None:
+            raise DagIndexUnavailableError(head)
+        rows = self.index.entity_rows(str(found[0]), head, entity, entity_id)
+        assert rows is not None
+        return self._snapshot_from_events(
+            (CardEvent.model_validate_json(row["event_json"]) for row in rows), entity
+        )
+
+    def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
+        """Materialize one entity at an arbitrary immutable history head."""
+        with self.index._conn() as conn:
+            found = conn.execute(
+                "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1", (head,)
+            ).fetchone()
+        if found is not None:
+            rows = self.index.entity_rows(str(found[0]), head, entity, entity_id)
+            assert rows is not None
+            return self._snapshot_from_events(
+                (CardEvent.model_validate_json(row["event_json"]) for row in rows),
+                entity,
+            )
+
+        matched: list[CardEvent] = []
+
+        def apply(event: CardEvent) -> None:
+            if _event_entity(event) == (entity, entity_id):
+                matched.append(event)
 
         self.apply_commit_chain(head, apply)
-        return state
+        return self._snapshot_from_events(iter(matched), entity)
 
     @staticmethod
     def _history_query_digest(realm_id: str, entity: str, entity_id: str) -> str:
@@ -1205,6 +1338,62 @@ class EventLog:
                 "has_more": False,
                 "scanned_commits": 0,
             }
+
+        if self.ensure_indexed(realm_id, head):
+            indexed_rows = self.index.entity_rows(realm_id, head, entity, entity_id)
+            if indexed_rows is not None:
+                records: list[dict[str, Any]] = []
+                entity_present = False
+                entity_seen_since_delete = False
+                # Projection effects depend on earlier matching events, never
+                # unrelated commits. Replay that small indexed prefix.
+                for row_index, row in enumerate(indexed_rows[: offset + limit]):
+                    event = CardEvent.model_validate_json(row["event_json"])
+                    duplicate_create = event.type == EventType.CARD_CREATED and (
+                        entity_present or entity_seen_since_delete
+                    )
+                    if event.type in {EventType.CARD_CREATED, EventType.CARD_UPSERTED}:
+                        entity_present = True
+                        entity_seen_since_delete = True
+                    elif event.type == EventType.CARD_DELETED:
+                        entity_present = False
+                        entity_seen_since_delete = False
+                    else:
+                        entity_seen_since_delete = True
+                    if row_index < offset:
+                        continue
+                    parents = str(row["parents"] or "").split(chr(31))
+                    records.append(
+                        {
+                            "event_hash": row["event_hash"],
+                            "event": event.model_dump(mode="json"),
+                            "commit_hash": row["commit_hash"],
+                            "parent_hashes": [value for value in parents if value],
+                            "commit_instance": row["instance_id"],
+                            "commit_principal": row["author_principal"],
+                            "commit_timestamp": row["timestamp"],
+                            "projection_effect": (
+                                "ignored_duplicate_create" if duplicate_create else "applied"
+                            ),
+                        }
+                    )
+                has_more = len(indexed_rows) > offset + limit
+                next_cursor = (
+                    self._history_cursor(
+                        realm_id, head, entity, entity_id, offset + len(records)
+                    )
+                    if has_more
+                    else None
+                )
+                return {
+                    "head": head,
+                    "events": records,
+                    "next_cursor": next_cursor,
+                    "has_more": has_more,
+                    "scanned_commits": 0,
+                    "index_result": "hit",
+                    "indexed_head": self.index.indexed_head(realm_id),
+                }
 
         records: list[dict[str, Any]] = []
         seen_commits: set[str] = set()
@@ -1359,11 +1548,29 @@ class EventLog:
                     raise StaleSyncHeadError(realm_id, expected_head, current)
                 self._refs[key] = commit_hash
                 self._save_refs()
+        # Imported heads and merges may add many objects. Build outside the ref
+        # lock; readers observe an explicit stale/advancing status meanwhile.
+        commit = self.get_commit(commit_hash)
+        if commit and all(self.store.has(parent) for parent in commit.parent_hashes):
+            self.ensure_indexed(realm_id, commit_hash)
+        elif commit:
+            self.index.mark_failed(
+                realm_id, "head advancement references unavailable parent objects"
+            )
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         """Return True if ancestor is on the bounded parent DAG of descendant."""
         if ancestor == descendant:
             return True
+        with self.index._conn() as conn:
+            row = conn.execute(
+                "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1",
+                (descendant,),
+            ).fetchone()
+        if row is not None:
+            indexed = self.index.is_ancestor(str(row[0]), ancestor, descendant)
+            if indexed is not None:
+                return indexed
         return any(
             commit_hash == ancestor
             for commit_hash, _ in self._iter_commits_parent_first(descendant)
@@ -1383,6 +1590,27 @@ class StaleSyncHeadError(RuntimeError):
         self.realm_id = realm_id
         self.expected = expected
         self.actual = actual
+
+
+class DagIndexStaleError(RuntimeError):
+    """Retryable fence failure; never repaired by scanning under append locks."""
+
+    def __init__(self, realm_id: str, expected: str | None, actual: str | None) -> None:
+        super().__init__(
+            f"DAG index preflight for {realm_id} was fenced at {expected!r}; "
+            f"durable head is now {actual!r}"
+        )
+        self.realm_id = realm_id
+        self.expected = expected
+        self.actual = actual
+        self.recoverable = True
+
+
+class DagIndexUnavailableError(RuntimeError):
+    def __init__(self, head: str) -> None:
+        super().__init__(f"DAG index does not contain requested head {head}")
+        self.head = head
+        self.recoverable = True
 
 
 class DuplicateCardCreateError(RuntimeError):
