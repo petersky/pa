@@ -40,7 +40,7 @@ from pa.domain.instance_config import InstanceConfig, config_path, save_instance
 AUDIT_FILE = "configuration-audit.jsonl"
 IDEMPOTENCY_FILE = "configuration-idempotency.json"
 LOCK_FILE = ".configuration.lock"
-_SECRET_NAME_PARTS = ("token", "secret", "password", "credential", "cookie")
+_SECRET_NAME_PARTS = ("token", "secret", "password", "credential", "cookie", "api_key")
 
 
 def _json_value(value: Any) -> Any:

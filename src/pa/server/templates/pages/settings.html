@@ -508,7 +508,7 @@
             <span>Configured value</span>
             <select data-configuration-input>
               {% for option in row.allowed %}
-              <option value="{{ option }}" {% if option == (row.configured_value if row.configured else row.effective_value) %}selected{% endif %}>{{ option }}</option>
+              <option value="{{ option }}" {% if option == (row.configured_value if row.configured else row.effective_value) %}selected{% endif %}>{% if row.key == 'card_summary_provider' and option == 'anthropic' %}anthropic (Claude){% else %}{{ option }}{% endif %}</option>
               {% endfor %}
             </select>
           </label>
