@@ -250,8 +250,7 @@ class SessionLifecyclePolicy:
         )
         if session.card_id and card is None:
             return "close", "card_deleted"
-        if card and card.lane == CardLane.DONE:
-            return "close", "card_completed"
+        card_completed = bool(card and card.lane == CardLane.DONE)
         single_purpose = session.label in _SINGLE_PURPOSE_LABELS or str(
             session.label or ""
         ).startswith(_SINGLE_PURPOSE_LABEL_PREFIXES)
@@ -264,4 +263,6 @@ class SessionLifecyclePolicy:
         )
         if session.status == "idle" and now - session.updated_at >= retention:
             return "close", "idle_retention_expired"
+        if card_completed:
+            return "retained", "card_completed_followup_window"
         return "retained", "followup_window"
