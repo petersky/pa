@@ -26,6 +26,7 @@ from pa.fleet.policy import (
     InstanceParticipationPolicy,
     ParticipationMode,
     PlacementDefault,
+    compatibility_policy,
 )
 
 
@@ -279,6 +280,43 @@ def test_project_repository_group_and_unknown_policy_denials_are_explainable(
     assert "explicitly_excluded_from_group" in codes["excluded"]
     assert "policy_unknown_on_mixed_version_peer" in codes["mixed"]
     assert "will not fall back to the authority/local instance" in denied.value.message
+
+
+def test_local_compatibility_derived_instance_is_automatic_eligible(
+    tmp_path: Path,
+) -> None:
+    local = _candidate(
+        "local",
+        compatibility_policy("local"),
+        explicit=False,
+        supported=True,
+    )
+    local.local = True
+    decision = PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+        _request(PlacementPolicy.BEST_MATCH, workload="research"),
+        [local],
+    )
+    assert decision.chosen_instance_id == "local"
+    assert decision.eligible_candidates[0]["instance_id"] == "local"
+
+
+def test_remote_compatibility_derived_peer_stays_unknown_under_enforcement(
+    tmp_path: Path,
+) -> None:
+    remote = _candidate(
+        "peer",
+        compatibility_policy("peer"),
+        explicit=False,
+        supported=True,
+    )
+    with pytest.raises(PlacementError) as denied:
+        PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+            _request(PlacementPolicy.BEST_MATCH, workload="research"),
+            [remote],
+        )
+    assert "policy_unknown_on_mixed_version_peer" in denied.value.rejected_candidates[
+        0
+    ]["rejection_codes"]
 
 
 def test_durable_groups_policies_defaults_audit_and_rebuild(

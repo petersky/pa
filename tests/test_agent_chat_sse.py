@@ -871,6 +871,160 @@ class AgentChatSseTests(unittest.TestCase):
             self.assertEqual(raised.exception.detail["code"], "resume_session_mismatch")
             manager.create_session.assert_not_called()
 
+    def test_live_resume_attaches_matching_worktree_without_sibling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id="card-1",
+                    project_id="project-1",
+                    request_payload={"message": "resume"},
+                    materialization_plan={"profile": "repository"},
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-live",
+                    resume_requested=True,
+                    resume_session_id="session-live",
+                )
+            )
+            session = AgentSession(
+                id="session-live",
+                agent_name="codex",
+                cwd="/worktrees/session-live",
+                card_id="card-1",
+            )
+            runtime = MagicMock()
+            runtime._closed = False
+            runtime.connected = True
+            runtime.session_id = "session-live"
+            runtime.session = session
+            runtime.connection = SimpleNamespace(
+                session_cwd="/worktrees/session-live",
+                config_options=[],
+            )
+            runtime.snapshot.return_value = {"session": {"id": "session-live"}}
+            runtime.configure = AsyncMock()
+            manager = MagicMock()
+            manager.get.return_value = runtime
+            manager.create_session = AsyncMock()
+            manager.store.save_session = MagicMock()
+
+            async def prepare(target, *, requested_cwd, provider_id, mode_id=None):
+                target.cwd = "/worktrees/session-live"
+                return {}
+
+            manager._prepare_workspace = AsyncMock(side_effect=prepare)
+            request = MagicMock()
+            request.app.state.ctx.settings = SimpleNamespace(
+                data_dir=None, instance_id="target"
+            )
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+
+            async def run() -> dict:
+                with (
+                    patch("pa.modules.agent_chat._manager", return_value=manager),
+                    patch(
+                        "pa.modules.agent_chat.get_principal_id",
+                        return_value="user:local",
+                    ),
+                ):
+                    return await create_session(
+                        request,
+                        CreateSessionBody(
+                            dispatch_id="dispatch-1",
+                            card_id="card-1",
+                            project_id="project-1",
+                            resume=True,
+                            resume_session_id="session-live",
+                        ),
+                    )
+
+            result = asyncio.run(run())
+            self.assertEqual(result["session"]["id"], "session-live")
+            manager.create_session.assert_not_awaited()
+            manager._prepare_workspace.assert_awaited_once()
+            manager.store.save_session.assert_called()
+            self.assertEqual(session.dispatch_id, "dispatch-1")
+            self.assertEqual(session.cwd, "/worktrees/session-live")
+
+    def test_live_resume_does_not_spawn_sibling_when_cwd_cannot_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = DispatchStore(Path(tmp))
+            ledger.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-1",
+                    mutation_id="mutation-1",
+                    card_id="card-1",
+                    request_payload={"message": "resume"},
+                    materialization_plan={"profile": "repository"},
+                    authority_instance_id="authority",
+                    authority_url="http://authority",
+                    target_instance_id="target",
+                    session_id="session-live",
+                    resume_requested=True,
+                    resume_session_id="session-live",
+                )
+            )
+            session = AgentSession(
+                id="session-live",
+                agent_name="codex",
+                cwd="/var/pa-data",
+            )
+            runtime = MagicMock()
+            runtime._closed = False
+            runtime.connected = True
+            runtime.session_id = "session-live"
+            runtime.session = session
+            runtime.connection = SimpleNamespace(
+                session_cwd="/var/pa-data",
+                config_options=[],
+            )
+            manager = MagicMock()
+            manager.get.return_value = runtime
+            manager.create_session = AsyncMock()
+            manager.store.save_session = MagicMock()
+
+            async def prepare(target, *, requested_cwd, provider_id, mode_id=None):
+                target.cwd = "/worktrees/session-live"
+                return {}
+
+            manager._prepare_workspace = AsyncMock(side_effect=prepare)
+            request = MagicMock()
+            request.app.state.ctx.settings = SimpleNamespace(
+                data_dir=None, instance_id="target"
+            )
+            request.app.state.ctx.services = {"dispatch_store": ledger}
+
+            async def run() -> None:
+                with (
+                    patch("pa.modules.agent_chat._manager", return_value=manager),
+                    patch(
+                        "pa.modules.agent_chat.get_principal_id",
+                        return_value="user:local",
+                    ),
+                ):
+                    await create_session(
+                        request,
+                        CreateSessionBody(
+                            dispatch_id="dispatch-1",
+                            card_id="card-1",
+                            resume=True,
+                            resume_session_id="session-live",
+                        ),
+                    )
+
+            with self.assertRaises(HTTPException) as raised:
+                asyncio.run(run())
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual(
+                raised.exception.detail["code"], "live_session_cwd_immutable"
+            )
+            manager.create_session.assert_not_awaited()
+            self.assertEqual(session.cwd, "/var/pa-data")
+
     def test_session_list_exposes_provider_for_option_lookup(self) -> None:
         runtime = MagicMock()
         runtime._closed = False

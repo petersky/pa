@@ -4,6 +4,7 @@ import inspect
 import unittest
 from unittest.mock import MagicMock, patch
 
+from pa.fleet.placement import PlacementPolicy
 from pa.modules.fleet import FleetModule
 from pa.modules.items import ItemsModule
 
@@ -69,6 +70,11 @@ class FleetMcpTests(unittest.TestCase):
         )
         self.assertIn("authority_instance_id", dispatch.parameters)
         self.assertIn("config", dispatch.parameters)
+        self.assertIn("resume_session_id", dispatch.parameters)
+        self.assertIn(
+            "resume_session_id",
+            inspect.signature(self.mcp.functions["dispatch_card"]).parameters,
+        )
 
         bootstrap = inspect.signature(
             self.mcp.functions["create_fleet_bootstrap_job"]
@@ -137,6 +143,39 @@ class FleetMcpTests(unittest.TestCase):
                 "idempotency_key": "dispatch-key-1",
             },
             timeout_seconds=30.0,
+        )
+
+    def test_dispatch_card_tools_pass_resume_session_id_to_http(self) -> None:
+        self.local_api.return_value = {"accepted": True, "dispatch_id": "dispatch-1"}
+        named = self.mcp.functions["dispatch_card_to_instance"](
+            "card-1",
+            "target",
+            idempotency_key="resume-named",
+            resume_session_id="session-live",
+        )
+        self.assertEqual(named["dispatch_id"], "dispatch-1")
+        self.assertEqual(
+            self.local_api.call_args.kwargs["json"]["resume_session_id"],
+            "session-live",
+        )
+        self.assertEqual(
+            self.local_api.call_args.args[2],
+            "/api/fleet/instances/target/agent/start",
+        )
+
+        self.mcp.functions["dispatch_card"](
+            "card-1",
+            "resume-policy",
+            policy=PlacementPolicy.BEST_MATCH,
+            resume_session_id="session-live",
+        )
+        self.assertEqual(
+            self.local_api.call_args.args[2],
+            "/api/fleet/dispatch",
+        )
+        self.assertEqual(
+            self.local_api.call_args.kwargs["json"]["resume_session_id"],
+            "session-live",
         )
 
     def test_lifecycle_tools_preserve_normalized_dispatch_state(self) -> None:

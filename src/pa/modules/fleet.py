@@ -7341,6 +7341,7 @@ async def _resolve_policy_placement(
             ),
             workspace_reason=plan.summary,
             allow_concurrent=body.allow_concurrent,
+            resume_session_id=body.resume_session_id,
             capacity_override=body.capacity_override,
         ),
         candidates,
@@ -10897,6 +10898,7 @@ async def _admit_remote_agent_work(
         allow_concurrent=body.allow_concurrent,
         resume_requested=bool(body.resume_session_id),
         resume_session_id=body.resume_session_id,
+        session_id=body.resume_session_id,
         requested_priority=body.priority,
         state="admission_pending" if preadmission_record is not None else "queued",
         events=(
@@ -14744,6 +14746,7 @@ class FleetModule(Module):
             participation_override_reason: str | None = None,
             execution_contract: dict[str, Any] | None = None,
             priority: int = 0,
+            resume_session_id: str | None = None,
         ) -> dict:
             """Resolve a concrete target or policy and durably dispatch a card."""
             key = idempotency_key.strip()
@@ -14783,6 +14786,7 @@ class FleetModule(Module):
                     "participation_override_reason": (participation_override_reason),
                     "execution_contract": execution_contract,
                     "priority": priority,
+                    "resume_session_id": resume_session_id,
                     "idempotency_key": key,
                 },
                 timeout_seconds=30.0,
@@ -14812,6 +14816,7 @@ class FleetModule(Module):
             participation_override_reason: str | None = None,
             execution_contract: dict[str, Any] | None = None,
             priority: int = 0,
+            resume_session_id: str | None = None,
         ) -> dict:
             """Durably and idempotently dispatch an authoritative card to a fleet instance."""
             key = idempotency_key.strip()
@@ -14849,6 +14854,8 @@ class FleetModule(Module):
             if participation_override:
                 payload["participation_override"] = True
                 payload["participation_override_reason"] = participation_override_reason
+            if resume_session_id:
+                payload["resume_session_id"] = resume_session_id
             return request_local_pa(
                 ctx.settings,
                 "POST",

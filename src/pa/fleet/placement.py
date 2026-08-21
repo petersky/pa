@@ -96,6 +96,7 @@ class PlacementRequest(BaseModel):
     workspace_eligible: bool = True
     workspace_reason: str | None = None
     allow_concurrent: bool = False
+    resume_session_id: str | None = None
     capacity_override: bool = False
 
 
@@ -384,6 +385,7 @@ def _evaluate(
     )
     if (
         request.dispatch_intent == DispatchIntent.AUTOMATIC
+        and not candidate.local
         and (
             not candidate.participation_policy_supported
             or (
@@ -708,6 +710,10 @@ def _evaluate(
             and not request.allow_concurrent
             and workspace.get("card_id") == request.card_id
             and workspace.get("state") in {"provisioning", "ready"}
+            and (
+                not request.resume_session_id
+                or workspace.get("session_id") != request.resume_session_id
+            )
         ):
             reject(
                 "workspace_unavailable",

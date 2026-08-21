@@ -437,6 +437,112 @@ class PreferencesBody(BaseModel):
     scope: Literal["user", "global"] = "user"
 
 
+def _dispatch_requires_repository(record: Any) -> bool:
+    plan = getattr(record, "materialization_plan", None) or {}
+    if isinstance(plan, dict) and str(plan.get("profile") or "") == "repository":
+        return True
+    payload = getattr(record, "request_payload", None) or {}
+    contract = payload.get("execution_contract") if isinstance(payload, dict) else None
+    return isinstance(contract, dict) and str(contract.get("profile") or "") == "repository"
+
+
+def _live_acp_cwd(runtime: Any) -> str | None:
+    connection = getattr(runtime, "connection", None)
+    cwd = getattr(connection, "session_cwd", None) if connection is not None else None
+    if not cwd:
+        cwd = getattr(getattr(runtime, "session", None), "cwd", None)
+    text = str(cwd or "").strip()
+    return text or None
+
+
+def _paths_equivalent(left: str | None, right: str | None) -> bool:
+    if not left or not right:
+        return False
+    try:
+        return Path(left).expanduser().resolve() == Path(right).expanduser().resolve()
+    except OSError:
+        return left == right
+
+
+def _live_session_cwd_error(session_id: str, current: str | None, required: str | None) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "live_session_cwd_immutable",
+            "message": (
+                "The live ACP process is already running with a different cwd "
+                "and cannot switch to the leased worktree. Close this session "
+                "or wait until the provider process stops, then retry the same "
+                "resume_session_id. A sibling session was not started."
+            ),
+            "session_id": session_id,
+            "current_cwd": current,
+            "required_cwd": required,
+            "recoverable": True,
+        },
+    )
+
+
+async def _bind_live_dispatch_session(
+    mgr,
+    runtime,
+    dispatch_record,
+    dispatch_session_kwargs: dict[str, Any],
+    body: CreateSessionBody,
+) -> None:
+    """Attach dispatch provenance and, when required, a worktree to a live session."""
+    session = runtime.session
+    if body.card_id:
+        session.card_id = body.card_id
+        session.item_id = body.card_id
+    if body.project_id:
+        session.project_id = body.project_id
+    if dispatch_record.dispatch_id:
+        session.dispatch_id = dispatch_record.dispatch_id
+    principal_id = dispatch_session_kwargs.get("principal_id")
+    if principal_id:
+        session.principal_id = principal_id
+    authority = dispatch_session_kwargs.get("authority_instance_id")
+    if authority:
+        session.authority_instance_id = authority
+    realm_id = dispatch_session_kwargs.get("realm_id")
+    if realm_id:
+        session.realm_id = realm_id
+    seed = dispatch_session_kwargs.get("execution_context_seed")
+    if isinstance(seed, dict):
+        config = dict(session.config_json or {})
+        execution = dict(config.get("execution_context") or {})
+        execution.update(seed)
+        config["execution_context"] = execution
+        session.config_json = config
+    if not _dispatch_requires_repository(dispatch_record):
+        await _offload(
+            mgr, "sqlite.agent_session_save", mgr.store.save_session, session
+        )
+        return
+    live_cwd = _live_acp_cwd(runtime)
+    prior_cwd = session.cwd
+    provider_id = str(getattr(session, "agent_name", "") or "instance")
+    await mgr._prepare_workspace(
+        session,
+        requested_cwd=body.cwd or session.cwd,
+        provider_id=provider_id,
+        mode_id=session.mode_id,
+    )
+    new_cwd = session.cwd
+    connected = bool(
+        getattr(runtime, "connected", False) or getattr(runtime, "connection", None)
+    )
+    cwd_changed = bool(new_cwd) and not _paths_equivalent(live_cwd, new_cwd)
+    if connected and cwd_changed:
+        session.cwd = prior_cwd
+        await _offload(
+            mgr, "sqlite.agent_session_save", mgr.store.save_session, session
+        )
+        raise _live_session_cwd_error(session.id, live_cwd, new_cwd)
+    await _offload(mgr, "sqlite.agent_session_save", mgr.store.save_session, session)
+
+
 @router.post("/sessions")
 async def create_session(request: Request, body: CreateSessionBody) -> dict:
     mgr = _require_session_traffic_ready(request)
@@ -632,6 +738,13 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             if linked_runtime and not getattr(linked_runtime, "_closed", False):
                 new_logical_session = False
                 runtime = linked_runtime
+                await _bind_live_dispatch_session(
+                    mgr,
+                    runtime,
+                    dispatch_record,
+                    dispatch_session_kwargs,
+                    body,
+                )
             elif linked_session_id:
                 stored = await _offload(
                     mgr,

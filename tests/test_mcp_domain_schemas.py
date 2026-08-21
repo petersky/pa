@@ -116,6 +116,10 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
         dispatch = self.schemas["dispatch_card_to_instance"]
         self.assertIn("idempotency_key", dispatch["required"])
         self.assertIn("authority_instance_id", dispatch["properties"])
+        self.assertIn("resume_session_id", dispatch["properties"])
+        self.assertIn(
+            "resume_session_id", self.schemas["dispatch_card"]["properties"]
+        )
 
         followup = self.schemas["prompt_dispatch_session"]
         self.assertTrue(
