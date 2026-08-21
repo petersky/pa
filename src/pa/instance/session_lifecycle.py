@@ -110,6 +110,24 @@ class SessionLifecyclePolicy:
                     now=now,
                 )
                 self.metrics[f"{decision}:{reason}"] += 1
+                if decision == "retire":
+                    card_id = session.card_id
+                    if card_id:
+                        retired = await self.manager._offload(
+                            "session_lifecycle.retire_card",
+                            self.manager.store.unlink_session_card,
+                            session.id,
+                            card_id,
+                            reason=reason,
+                            principal_id="system:session_lifecycle",
+                        )
+                        runtime = self.manager.get(session.id)
+                        if runtime:
+                            runtime.session.card_id = retired.card_id
+                            runtime.session.item_id = retired.item_id
+                            runtime.session.project_id = retired.project_id
+                        self.metrics["association_retired"] += 1
+                    continue
                 if decision != "close":
                     continue
                 runtime = self.manager.get(session.id)
@@ -225,16 +243,16 @@ class SessionLifecyclePolicy:
         ]
         if newer:
             return "close", "superseded_duplicate"
-        if linked_dispatches and all(
+        if session.lifecycle_owner == "dispatch" and linked_dispatches and all(
             item.state == "completed" for item in linked_dispatches
         ):
             return "close", "dispatch_completed"
-        if linked_dispatches and all(
+        if session.lifecycle_owner == "dispatch" and linked_dispatches and all(
             item.state in {"failed", "cancelled"} and not item.recoverable
             for item in linked_dispatches
         ):
             return "close", "dispatch_terminal"
-        if linked_watches and all(
+        if session.lifecycle_owner == "dispatch" and linked_watches and all(
             watch.status not in _ACTIVE_WATCH_STATUSES for watch in linked_watches
         ):
             return "close", "pr_watch_terminal"
@@ -251,6 +269,8 @@ class SessionLifecyclePolicy:
         if session.card_id and card is None:
             return "close", "card_deleted"
         card_completed = bool(card and card.lane == CardLane.DONE)
+        if card_completed and session.lifecycle_owner == "standalone":
+            return "retire", "associated_card_terminal"
         single_purpose = session.label in _SINGLE_PURPOSE_LABELS or str(
             session.label or ""
         ).startswith(_SINGLE_PURPOSE_LABEL_PREFIXES)

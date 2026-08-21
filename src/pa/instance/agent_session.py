@@ -3636,6 +3636,7 @@ class AgentSessionManager:
             project_id=project_id,
             authority_instance_id=authority_instance_id or self.settings.instance_id,
             dispatch_id=dispatch_id,
+            lifecycle_owner="dispatch" if dispatch_id else "standalone",
             realm_id=realm_id or self.settings.primary_realm,
             item_id=card_id,
         )

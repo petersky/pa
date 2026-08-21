@@ -1814,6 +1814,7 @@ def list_session_cards(request: Request, session_id: str) -> dict:
         "session_id": session_id,
         "primary_card_id": session.card_id,
         "cards": _session_cards_payload(request, session),
+        "association_history": mgr.store.list_session_card_history(session_id),
     }
 
 
@@ -1843,6 +1844,7 @@ def link_session_card(
         "session_id": session_id,
         "primary_card_id": session.card_id,
         "cards": _session_cards_payload(request, session),
+        "association_history": mgr.store.list_session_card_history(session_id),
     }
 
 
@@ -1850,7 +1852,12 @@ def link_session_card(
 def unlink_session_card(request: Request, session_id: str, card_id: str) -> dict:
     mgr = _manager(request)
     try:
-        session = mgr.store.unlink_session_card(session_id, card_id)
+        session = mgr.store.unlink_session_card(
+            session_id,
+            card_id,
+            reason="manual_unlink",
+            principal_id=get_principal_id(request),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     runtime = mgr.get(session_id)
@@ -1862,6 +1869,7 @@ def unlink_session_card(request: Request, session_id: str, card_id: str) -> dict
         "session_id": session_id,
         "primary_card_id": session.card_id,
         "cards": _session_cards_payload(request, session),
+        "association_history": mgr.store.list_session_card_history(session_id),
     }
 
 
