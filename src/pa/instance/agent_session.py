@@ -3480,9 +3480,14 @@ class AgentSessionManager:
             provider_id=session.agent_name,
             mode_id=session.mode_id,
         )
+        if self._should_abort_recovery():
+            raise RuntimeError("Agent is quiescing")
         if provider_spec is not None:
             provider_spec.env.update(workspace_env)
         runtime = await self._new_runtime(session, agent_env=workspace_env)
+        if self._should_abort_recovery():
+            await runtime.close()
+            raise RuntimeError("Agent is quiescing")
         queued = list(snap.queued_prompts)
         interrupted = snap.in_flight
         # Version-1 snapshots briefly encoded an interrupted turn as the first
@@ -3514,6 +3519,9 @@ class AgentSessionManager:
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
         )
+        if self._should_abort_recovery():
+            await runtime.close()
+            raise RuntimeError("Agent is quiescing")
         await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime

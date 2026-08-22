@@ -39,6 +39,19 @@ def startup_recovery_error(manager: Any) -> HTTPException | None:
 
 
 def require_startup_ready(manager: Any) -> None:
+    if getattr(manager, "quiescing", False) is True or getattr(
+        manager, "_accepting", True
+    ) is False:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "agent_draining",
+                "message": "PA is draining agent sessions for shutdown.",
+                "recoverable": True,
+                "retry_after_ms": 1000,
+            },
+            headers={"Retry-After": "1"},
+        )
     error = startup_recovery_error(manager)
     if error:
         raise error

@@ -1154,7 +1154,16 @@ class AgentConnection:
                     new_session_kwargs["additional_directories"] = (
                         mcp_additional_directories
                     )
-                acp_session = await self._conn.new_session(**new_session_kwargs)
+                from pa.server.shutdown import wait_for_shutdown_or
+
+                stopping, acp_session = await wait_for_shutdown_or(
+                    self._conn.new_session(**new_session_kwargs)
+                )
+                if stopping:
+                    await self._abort_connect_if_shutting_down(
+                        stage="session/new"
+                    )
+                assert acp_session is not None
                 session_meta = extract_models_modes_config(acp_session)
                 self._wire_log(
                     "out",
