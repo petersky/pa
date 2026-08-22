@@ -33,6 +33,7 @@ def _session_payload(session: Any) -> dict[str, Any]:
         "model": _value(session, "model_id") or requested.get("model_id") or "Provider default",
         "mode": _value(session, "mode_id") or "Provider default",
         "owner_instance_id": _value(session, "origin_instance_id"),
+        "origin_instance_id": _value(session, "origin_instance_id"),
         "host": instance.get("name") or _value(session, "origin_instance_name"),
         "dispatch_id": _value(session, "dispatch_id"),
         "worktree": _value(session, "cwd"),
