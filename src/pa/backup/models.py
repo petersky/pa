@@ -76,6 +76,8 @@ class BackupManifest(BaseModel):
     included: list[str] = Field(
         default_factory=lambda: [
             "projection_database_online_snapshot",
+            "transcript_database_online_snapshot",
+            "transcript_cold_objects",
             "sync_refs",
             "event_log_objects",
         ]

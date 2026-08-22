@@ -136,7 +136,7 @@ def _observability(
     if runtime and getattr(runtime, "_closed", False):
         runtime = None
     if events is None:
-        events = mgr.store.list_transcript_events_before(session.id, limit=5000)
+        events = mgr.store.list_transcript_events_before(session.id, limit=1001)
     settings = request.app.state.ctx.settings
     result = build_session_observability(
         session,
@@ -1111,7 +1111,7 @@ def request_session_diagnostics(
     session = mgr.store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    events = mgr.store.list_transcript_events_before(session_id, limit=5000)
+    events = mgr.store.list_transcript_events_before(session_id, limit=1001)
     observed = _observability(request, session)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,

@@ -53,6 +53,7 @@ from pa.domain.models import (
     TranscriptEvent,
     lane_from_legacy_status,
 )
+from pa.domain.transcript_storage import TranscriptStorage
 from pa.domain.notifications import Notification
 from pa.fleet.policy import (
     FleetPolicyAuditEvent,
@@ -131,7 +132,12 @@ class CardProjection:
         self._legacy_integrity_upgrade_required = False
         self._operation_owner = str(uuid4())
         self._replaying_from_log = False
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
         self._init_db()
+        self.transcripts = TranscriptStorage(db_path)
+        self._migrate_legacy_transcripts()
         if self._legacy_integrity_upgrade_required and self.event_log:
             for realm in {ref.realm_id for ref in self.event_log.list_refs()}:
                 self.rebuild_from_log(realm)
@@ -140,7 +146,6 @@ class CardProjection:
     def _conn(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute("PRAGMA busy_timeout = 30000")
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.row_factory = sqlite3.Row
         try:
@@ -4491,12 +4496,13 @@ class CardProjection:
         reason: str,
         closed_at: datetime | None = None,
     ) -> tuple[AgentSession | None, str | None]:
-        """Atomically close a durable session and append its audit event.
+        """Close a durable session and idempotently append its audit event.
 
         The prior status is ``None`` when the session was already closed, which
         makes singleton and bulk closure idempotent.
         """
         closed_at = closed_at or datetime.now(UTC)
+        audit_event: TranscriptEvent | None = None
         with self._mutation_lock, self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
@@ -4512,54 +4518,31 @@ class CardProjection:
                 "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",
                 (closed_at.isoformat(), session_id),
             )
-            seq_row = conn.execute(
-                """
-                SELECT COALESCE(MAX(seq), 0) AS max_seq
-                FROM agent_transcript_events
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchone()
-            next_seq = int(seq_row["max_seq"] if seq_row else 0) + 1
-            event = TranscriptEvent(
+            audit_event = TranscriptEvent(
                 session_id=session_id,
-                seq=next_seq,
+                seq=self.transcripts.next_seq(session_id),
                 event_type="session_closed",
                 payload={"reason": reason, "prior_status": prior_status},
                 created_at=closed_at,
             )
-            conn.execute(
-                """
-                INSERT INTO agent_transcript_events
-                (id, session_id, seq, event_type, payload, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event.id,
-                    event.session_id,
-                    event.seq,
-                    event.event_type,
-                    json.dumps(event.payload),
-                    event.created_at.isoformat(),
-                ),
-            )
             session.status = "closed"
             session.updated_at = closed_at
-            return session, prior_status
+        # Separate WALs cannot form one SQLite transaction.  Ordering the small
+        # metadata commit first keeps session state authoritative; retrying this
+        # deterministic sequence is idempotent and recovery can append evidence.
+        assert audit_event is not None
+        self.append_transcript_events([audit_event])
+        return session, prior_status
 
     def next_transcript_seq(self, session_id: str) -> int:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_transcript_events WHERE session_id = ?",
-                (session_id,),
-            ).fetchone()
-        return int(row["max_seq"] if row else 0) + 1
+        return self.transcripts.next_seq(session_id)
 
     def append_transcript_events(
         self, events: list[TranscriptEvent]
     ) -> list[TranscriptEvent]:
         if not events:
             return events
+        mirrors = self.transcripts.append(events)
         with self._conn() as conn:
             conn.executemany(
                 """
@@ -4573,10 +4556,10 @@ class CardProjection:
                         e.session_id,
                         e.seq,
                         e.event_type,
-                        json.dumps(e.payload),
+                        json.dumps(payload),
                         e.created_at.isoformat(),
                     )
-                    for e in events
+                    for e, payload in mirrors
                 ],
             )
         return events
@@ -4588,56 +4571,19 @@ class CardProjection:
         after_seq: int = 0,
         limit: int = 500,
     ) -> list[TranscriptEvent]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM agent_transcript_events
-                WHERE session_id = ? AND seq > ?
-                ORDER BY seq ASC LIMIT ?
-                """,
-                (session_id, after_seq, limit),
-            ).fetchall()
-        return [self._row_to_transcript(row) for row in rows]
+        return self.transcripts.list(session_id, after_seq=after_seq, limit=limit)
 
     def get_prompt_acceptance(
         self, session_id: str, prompt_id: str
     ) -> TranscriptEvent | None:
         """Find a durable browser prompt admission by its stable client id."""
-        with self._conn() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM agent_transcript_events
-                WHERE session_id = ?
-                  AND event_type IN ('queue_enqueued', 'user_message')
-                  AND json_valid(payload)
-                  AND json_extract(payload, '$.id') = ?
-                ORDER BY
-                  CASE event_type WHEN 'user_message' THEN 0 ELSE 1 END,
-                  seq DESC
-                LIMIT 1
-                """,
-                (session_id, prompt_id),
-            ).fetchone()
-        return self._row_to_transcript(row) if row else None
+        return self.transcripts.find_prompt(session_id, prompt_id)
 
     def get_queued_prompt_acceptance(
         self, session_id: str, prompt_id: str
     ) -> TranscriptEvent | None:
         """Find the durable queue admission that records its accepted outcome."""
-        with self._conn() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM agent_transcript_events
-                WHERE session_id = ?
-                  AND event_type = 'queue_enqueued'
-                  AND json_valid(payload)
-                  AND json_extract(payload, '$.id') = ?
-                ORDER BY seq DESC
-                LIMIT 1
-                """,
-                (session_id, prompt_id),
-            ).fetchone()
-        return self._row_to_transcript(row) if row else None
+        return self.transcripts.find_prompt(session_id, prompt_id, queued_only=True)
 
     def list_transcript_events_before(
         self,
@@ -4647,24 +4593,7 @@ class CardProjection:
         limit: int = 500,
     ) -> list[TranscriptEvent]:
         """Return the newest events before a cursor, ordered chronologically."""
-        params: list[str | int] = [session_id]
-        cursor_clause = ""
-        if before_seq is not None:
-            cursor_clause = "AND seq < ?"
-            params.append(before_seq)
-        params.append(limit)
-        with self._conn() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT * FROM (
-                    SELECT * FROM agent_transcript_events
-                    WHERE session_id = ? {cursor_clause}
-                    ORDER BY seq DESC LIMIT ?
-                ) ORDER BY seq ASC
-                """,
-                params,
-            ).fetchall()
-        return [self._row_to_transcript(row) for row in rows]
+        return self.transcripts.list_before(session_id, before_seq=before_seq, limit=limit)
 
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         if not entry.content_hash:
@@ -4856,18 +4785,9 @@ class CardProjection:
         start_seq: int | None = None,
         end_seq: int | None = None,
     ) -> list[TranscriptEvent]:
-        sql = "SELECT * FROM agent_transcript_events WHERE session_id = ?"
-        params: list[str | int] = [session_id]
-        if start_seq is not None:
-            sql += " AND seq >= ?"
-            params.append(start_seq)
-        if end_seq is not None:
-            sql += " AND seq <= ?"
-            params.append(end_seq)
-        sql += " ORDER BY seq ASC"
-        with self._conn() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [self._row_to_transcript(row) for row in rows]
+        return self.transcripts.list_range(
+            session_id, start_seq=start_seq, end_seq=end_seq
+        )
 
     def prune_closed_session_transcripts(self, *, before: datetime) -> int:
         """Delete transcript events for closed sessions older than ``before``.
@@ -4876,17 +4796,20 @@ class CardProjection:
         bulky per-turn payload is removed.
         """
         with self._conn() as conn:
-            cursor = conn.execute(
-                """
-                DELETE FROM agent_transcript_events
-                WHERE session_id IN (
-                    SELECT id FROM agent_sessions
-                    WHERE status = 'closed' AND updated_at < ?
-                )
-                """,
+            session_ids = [row[0] for row in conn.execute(
+                "SELECT id FROM agent_sessions WHERE status='closed' AND updated_at < ?",
                 (before.isoformat(),),
-            )
-            return max(0, cursor.rowcount)
+            )]
+        deleted = self.transcripts.prune(session_ids, keep_audit=True)
+        # Compatibility rows follow the same evidence-preserving policy.
+        for session_id in session_ids:
+            kept = {event.seq for event in self.transcripts.list_range(session_id)}
+            with self._conn() as conn:
+                rows = conn.execute("SELECT seq FROM agent_transcript_events WHERE session_id=?", (session_id,)).fetchall()
+                for row in rows:
+                    if int(row[0]) not in kept:
+                        conn.execute("DELETE FROM agent_transcript_events WHERE session_id=? AND seq=?", (session_id, row[0]))
+        return deleted
 
     def prune_mutation_operations(self, *, before: datetime) -> int:
         """Delete succeeded/failed mutation receipts older than ``before``."""
@@ -4916,6 +4839,81 @@ class CardProjection:
             "wal_log": int(checkpoint[1]) if checkpoint else 0,
             "wal_checkpointed": int(checkpoint[2]) if checkpoint else 0,
         }
+
+    def transcript_storage_metrics(self) -> dict[str, object]:
+        """Operator-visible storage, integrity, redaction and migration health."""
+        metrics = self.transcripts.metrics()
+        with self._conn() as conn:
+            legacy = conn.execute("SELECT COUNT(*) FROM agent_transcript_events").fetchone()[0]
+        metrics["compatibility_rows"] = int(legacy)
+        operation = self.transcripts.operation("legacy-v1") or {}
+        metrics["migration"] = operation.get("state", "pending")
+        metrics["migration_examined"] = int(operation.get("examined", 0))
+        metrics["migration_changed"] = int(operation.get("changed", 0))
+        metrics["migration_error"] = operation.get("error")
+        return metrics
+
+    def _migrate_legacy_transcripts(self, *, batch_size: int = 500) -> None:
+        """Resume an idempotent legacy canary and verify each canonical hash.
+
+        The compatibility table is rewritten with bounded payload references as
+        rows are successfully copied.  A crash leaves already-copied rows safe
+        and a restart continues from the first missing sequence.
+        """
+        operation = self.transcripts.operation("legacy-v1") or {}
+        if operation.get("state") == "complete":
+            return
+        cursor = json.loads(operation["cursor"]) if operation.get("cursor") else ["", -1]
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    """SELECT * FROM agent_transcript_events
+                       WHERE session_id > ? OR (session_id=? AND seq>?)
+                       ORDER BY session_id,seq LIMIT ?""",
+                    (cursor[0], cursor[0], cursor[1], batch_size),
+                ).fetchall()
+            # Avoid rescanning compatibility rows already represented in cold DB.
+            pending = []
+            for row in rows:
+                if self.transcripts.list_range(row["session_id"], start_seq=int(row["seq"]), end_seq=int(row["seq"]), limit=1):
+                    continue
+                pending.append(self._row_to_transcript(row))
+            if pending:
+                self.append_transcript_events(pending)
+            next_cursor = json.dumps([rows[-1]["session_id"], int(rows[-1]["seq"])]) if rows else operation.get("cursor")
+            self.transcripts.record_operation("legacy-v1", cursor=next_cursor,
+                state="complete" if len(rows) < batch_size else "running",
+                examined=len(rows), changed=len(pending))
+        except Exception as exc:
+            self.transcripts.record_operation("legacy-v1", cursor=operation.get("cursor"), state="failed", examined=0, changed=0, error=str(exc))
+            raise
+
+    def migrate_legacy_transcripts(self, *, batch_size: int = 500) -> dict[str, object]:
+        """Advance one crash-safe migration batch and return verified health."""
+        self._migrate_legacy_transcripts(batch_size=batch_size)
+        return self.transcript_storage_metrics()
+
+    def rebuild_legacy_transcript_mirror(self, *, batch_size: int = 1000) -> int:
+        """Independently rebuild the bounded downgrade mirror from v1 storage."""
+        changed = 0
+        with self.transcripts._conn() as source, self._conn() as target:
+            rows = source.execute(
+                "SELECT * FROM transcript_events ORDER BY session_id,seq LIMIT ?",
+                (batch_size,),
+            ).fetchall()
+            for row in rows:
+                payload = TranscriptStorage.compatibility_payload(
+                    {}, row["payload_hash"], row["cold_hash"]
+                )
+                target.execute(
+                    """INSERT OR REPLACE INTO agent_transcript_events
+                       (id,session_id,seq,event_type,payload,created_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (row["id"], row["session_id"], row["seq"], row["event_type"],
+                     json.dumps(payload), row["created_at"]),
+                )
+                changed += 1
+        return changed
 
     @serialized_mutation
     def rebuild_from_log(self, realm_id: str) -> None:
