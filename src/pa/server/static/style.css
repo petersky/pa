@@ -122,6 +122,18 @@
   gap: 0.2rem;
 }
 
+.telemetry-filter-disclosure > summary {
+  margin-bottom: 0.65rem;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.telemetry-series-controls {
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+}
+
 .telemetry-report {
   display: grid;
   gap: 0.75rem;
@@ -157,10 +169,34 @@
   gap: 0.3rem;
 }
 
+.telemetry-legend-item button[aria-pressed="false"] {
+  opacity: 0.62;
+  text-decoration: line-through;
+}
+
+.telemetry-legend-item > button:not(.text-btn) {
+  padding: 0.15rem 0.3rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.telemetry-series-solo { font-size: 0.68rem; }
+
 .telemetry-legend i {
   display: inline-block;
   width: 0.8rem;
   height: 0.18rem;
+}
+
+.telemetry-legend i[data-pattern="1"], .telemetry-legend i[data-pattern="4"] {
+  background: repeating-linear-gradient(90deg, currentColor 0 0.3rem, transparent 0.3rem 0.5rem) !important;
+}
+
+.telemetry-legend i[data-pattern="2"], .telemetry-legend i[data-pattern="5"] {
+  height: 0.45rem;
+  background: radial-gradient(circle, currentColor 0 0.1rem, transparent 0.12rem) 0 50% / 0.35rem 0.35rem !important;
 }
 
 .telemetry-gap-banner {
@@ -316,6 +352,28 @@
 @media (max-width: 560px) {
   .telemetry-chart-grid { grid-template-columns: minmax(0, 1fr); }
   .acw-resource-grid { grid-template-columns: repeat(2, minmax(5rem, 1fr)); }
+  .page-telemetry { --pa-sidebar-left-width: min(100%, 24rem); }
+  .telemetry-filters { max-height: min(42vh, 22rem); overflow: auto; overscroll-behavior: contain; }
+  .telemetry-filter-disclosure:not([open]) + .telemetry-report-health { margin-top: 0.35rem; }
+  .telemetry-report-heading { position: relative; z-index: 0; }
+  .telemetry-report-heading p { overflow-wrap: anywhere; }
+  .telemetry-report { overflow-x: hidden; }
+  .telemetry-series-controls { justify-items: start; min-width: 0; }
+  .telemetry-legend { display: grid; width: 100%; max-height: 12rem; overflow: auto; }
+  .telemetry-legend-item {
+    display: grid !important;
+    grid-template-columns: 0.9rem minmax(0, 1fr) auto;
+    width: 100%;
+  }
+  .telemetry-legend-item > button:not(.text-btn) {
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .telemetry-chart-stage, .telemetry-chart-stage svg { min-height: 11rem; height: 11rem; }
+  .telemetry-table-wrap { max-height: 20rem; }
 }
 
 pa-instance-identity {
