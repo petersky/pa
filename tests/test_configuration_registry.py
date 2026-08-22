@@ -8,7 +8,7 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
 from typer.testing import CliRunner
@@ -146,6 +146,22 @@ class RegistryCoverageTests(unittest.TestCase):
                 self.assertTrue(definition.surfaces["web"].read)
                 self.assertEqual(definition.apply, "restart")
                 self.assertNotEqual(definition.exposure, "hidden")
+
+    def test_card_summary_connection_surface_is_accessible_and_secret_safe(
+        self,
+    ) -> None:
+        root = Path(__file__).parents[1]
+        page = (root / "src/pa/server/templates/pages/settings.html").read_text()
+        script = (root / "src/pa/server/static/js/configuration.js").read_text()
+        self.assertIn('id="pa-card-summary-test"', page)
+        self.assertIn('aria-live="polite"', page)
+        self.assertIn('aria-atomic="true"', page)
+        self.assertIn("Staged values (not saved)", script)
+        self.assertIn("Saved effective values", script)
+        self.assertIn("if (summaryTest.disabled) return", script)
+        self.assertIn("summaryTest.disabled = true", script)
+        self.assertIn("summaryTest.disabled = false", script)
+        self.assertNotIn("result.api_key", script)
 
 
 class ConfigurationApplicationTests(unittest.TestCase):
@@ -441,6 +457,7 @@ class ConfigurationCliContractTests(unittest.TestCase):
         self.assertIn("/api/configuration", paths)
         self.assertIn("/api/configuration/validate", paths)
         self.assertIn("/api/configuration/diff", paths)
+        self.assertIn("/api/configuration/card-summary/test", paths)
         self.assertIn("/api/configuration/audit", paths)
         source = (
             Path(__file__).parents[1] / "src" / "pa" / "modules" / "instance.py"
@@ -531,6 +548,42 @@ class ConfigurationCliContractTests(unittest.TestCase):
                 )
                 csrf = client.cookies.get("pa_csrf")
                 headers = {"X-CSRF-Token": csrf}
+                summary_service = app.state.ctx.require_service("card_summary_service")
+                probe_result = {
+                    "ok": False,
+                    "code": "authentication_failed",
+                    "provider": "anthropic",
+                    "model": "claude-test",
+                    "configuration": "staged",
+                    "elapsed_ms": 12,
+                    "message": "Replace the configured credential.",
+                }
+                with patch.object(
+                    summary_service,
+                    "test_connection",
+                    new=AsyncMock(return_value=probe_result),
+                ) as probe:
+                    tested = client.post(
+                        "/api/configuration/card-summary/test",
+                        headers=headers,
+                        json={
+                            "changes": {
+                                "card_summary_provider": "anthropic",
+                                "card_summary_model": "claude-test",
+                                "card_summary_anthropic_api_key": "private-test-key",
+                            },
+                            "idempotency_key": "summary-test-1",
+                        },
+                    )
+                self.assertEqual(tested.status_code, 200, tested.text)
+                self.assertEqual(tested.json(), probe_result)
+                self.assertNotIn("private-test-key", tested.text)
+                self.assertEqual(
+                    probe.await_args.kwargs["changes"][
+                        "card_summary_anthropic_api_key"
+                    ],
+                    "private-test-key",
+                )
                 payload = {
                     "changes": {"zone": "west"},
                     "expected_revision": initial.json()["revision"],

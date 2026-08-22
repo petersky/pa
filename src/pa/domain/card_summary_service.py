@@ -8,6 +8,9 @@ import json
 import logging
 import random
 import re
+import socket
+import ssl
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -40,9 +43,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
         "base_url": "https://api.minimax.io/v1",
     },
 }
-_KNOWN_DEFAULT_MODELS = frozenset(
-    item["model"] for item in PROVIDER_DEFAULTS.values()
-)
+_KNOWN_DEFAULT_MODELS = frozenset(item["model"] for item in PROVIDER_DEFAULTS.values())
 _KNOWN_DEFAULT_BASE_URLS = frozenset(
     item["base_url"].rstrip("/") for item in PROVIDER_DEFAULTS.values()
 )
@@ -54,7 +55,11 @@ class SummaryFailureCode(StrEnum):
     AUTHENTICATION = "authentication_failed"
     RATE_LIMITED = "rate_limited"
     TIMEOUT = "timeout"
+    DNS = "dns_failure"
+    CONNECT = "connection_failed"
+    TLS = "tls_failure"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
+    MODEL_NOT_FOUND = "model_not_found"
     INVALID_REQUEST = "invalid_request"
     INVALID_RESPONSE = "invalid_response"
     UNKNOWN = "unknown_provider_failure"
@@ -278,6 +283,7 @@ class CardSummaryService:
         self._resolved_configuration: SummaryConfiguration | None = None
         self._configuration_cache_key: str | None = None
         self._migration_cursor: tuple[datetime, str] | None = None
+        self._connection_tests: dict[str, asyncio.Task[dict[str, object]]] = {}
 
     @property
     def is_authority(self) -> bool:
@@ -343,7 +349,9 @@ class CardSummaryService:
     def _dedicated_api_key(self, provider: str) -> str:
         transport = summary_transport(provider)
         if transport == "anthropic":
-            return str(getattr(self.settings, "card_summary_anthropic_api_key", "") or "")
+            return str(
+                getattr(self.settings, "card_summary_anthropic_api_key", "") or ""
+            )
         if transport == "minimax":
             return str(getattr(self.settings, "card_summary_minimax_api_key", "") or "")
         return str(self.settings.card_summary_api_key or "")
@@ -504,6 +512,8 @@ class CardSummaryService:
         retryable_codes = {
             SummaryFailureCode.RATE_LIMITED.value,
             SummaryFailureCode.TIMEOUT.value,
+            SummaryFailureCode.DNS.value,
+            SummaryFailureCode.CONNECT.value,
             SummaryFailureCode.PROVIDER_UNAVAILABLE.value,
         }
         return {
@@ -760,6 +770,129 @@ class CardSummaryService:
                 client, title, body, configuration, minimax=transport == "minimax"
             )
 
+    async def test_connection(
+        self,
+        *,
+        changes: dict[str, object],
+        clear: set[str],
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        """Run a non-persisting, minimal invocation through the production adapter."""
+        fingerprint = hashlib.sha256(
+            json.dumps([changes, sorted(clear)], sort_keys=True, default=str).encode()
+        ).hexdigest()
+        task_key = f"{idempotency_key}:{fingerprint}"
+        task = self._connection_tests.get(task_key)
+        if task is None:
+            task = asyncio.create_task(self._run_connection_test(changes, clear))
+            if len(self._connection_tests) >= 64:
+                completed = next(
+                    (
+                        key
+                        for key, cached in self._connection_tests.items()
+                        if cached.done()
+                    ),
+                    None,
+                )
+                if completed is not None:
+                    self._connection_tests.pop(completed, None)
+            if len(self._connection_tests) < 64:
+                self._connection_tests[task_key] = task
+        return await asyncio.shield(task)
+
+    async def _run_connection_test(
+        self, changes: dict[str, object], clear: set[str]
+    ) -> dict[str, object]:
+        provider = (
+            str(
+                changes.get(
+                    "card_summary_provider", self.settings.card_summary_provider
+                )
+                or "openai"
+            )
+            .strip()
+            .lower()
+        )
+        model_value = changes.get(
+            "card_summary_model", self.settings.card_summary_model
+        )
+        base_value = changes.get(
+            "card_summary_base_url", self.settings.card_summary_base_url
+        )
+        model = resolve_summary_model(provider, str(model_value or ""))
+        base_url = resolve_summary_base_url(provider, str(base_value or ""))
+        key_name = {
+            "anthropic": "card_summary_anthropic_api_key",
+            "minimax": "card_summary_minimax_api_key",
+        }.get(summary_transport(provider), "card_summary_api_key")
+        api_key = (
+            ""
+            if key_name in clear
+            else str(changes.get(key_name, getattr(self.settings, key_name, "")) or "")
+        )
+        auth_source = "staged_api_key" if key_name in changes else "dedicated_api_key"
+        if not api_key and summary_transport(provider) == "openai":
+            credentials = load_credentials(self.settings.data_dir, "codex")
+            api_key = str(
+                credentials.get("CODEX_API_KEY")
+                or credentials.get("OPENAI_API_KEY")
+                or credentials.get("CODEX_ACCESS_TOKEN")
+                or ""
+            )
+            if api_key:
+                auth_source = "codex_provider_api_key"
+        configuration = SummaryConfiguration(
+            enabled=bool(api_key),
+            provider=provider,
+            model=model,
+            auth_source=auth_source if api_key else "none",
+            state="configured" if api_key else "disabled",
+            setup_guidance=None if api_key else self._setup_guidance(provider),
+            failure_code=None if api_key else SummaryFailureCode.UNCONFIGURED,
+            base_url=base_url,
+            api_key=api_key,
+        )
+        started = time.monotonic()
+        common = {
+            "provider": provider,
+            "model": model,
+            "configuration": "staged"
+            if any(key.startswith("card_summary_") for key in changes)
+            or any(key.startswith("card_summary_") for key in clear)
+            else "saved_effective",
+        }
+        if not configuration.enabled:
+            return {
+                **common,
+                "ok": False,
+                "code": SummaryFailureCode.UNCONFIGURED.value,
+                "message": configuration.setup_guidance,
+                "elapsed_ms": 0,
+            }
+        try:
+            value = await self._call_provider(
+                "Connection test",
+                "Validate that a short card summary can be generated.",
+                configuration,
+            )
+            sanitize_summary(value)
+        except Exception as exc:  # noqa: BLE001 - provider adapters expose varied errors
+            failure = self._classify_failure(exc, configuration)
+            return {
+                **common,
+                "ok": False,
+                "code": failure.code.value,
+                "message": failure.public_message,
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            }
+        return {
+            **common,
+            "ok": True,
+            "code": "success",
+            "message": "A usable summary response was generated and parsed.",
+            "elapsed_ms": round((time.monotonic() - started) * 1000),
+        }
+
     async def _call_anthropic(
         self,
         client: httpx.AsyncClient,
@@ -821,9 +954,7 @@ class CardSummaryService:
         }
         if minimax:
             payload["reasoning_split"] = True
-        url = chat_completions_url(
-            configuration.base_url or self._resolved_base_url()
-        )
+        url = chat_completions_url(configuration.base_url or self._resolved_base_url())
         headers = {"Authorization": f"Bearer {configuration.api_key}"}
         response = await client.post(url, headers=headers, json=payload)
         if minimax and response.status_code in {400, 422}:
@@ -888,6 +1019,14 @@ class CardSummaryService:
                     "The summary provider rate-limited this request.",
                     retryable=True,
                 )
+            if status == 404 or (
+                status in {400, 422} and "model" in exc.response.text[:1024].lower()
+            ):
+                return SummaryProviderError(
+                    SummaryFailureCode.MODEL_NOT_FOUND,
+                    "The selected model is unsupported or was not found for this credential.",
+                    retryable=False,
+                )
             if status in {408, 425} or status >= 500:
                 return SummaryProviderError(
                     SummaryFailureCode.PROVIDER_UNAVAILABLE,
@@ -900,9 +1039,26 @@ class CardSummaryService:
                 retryable=False,
             )
         if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):
+            cause: BaseException | None = exc
+            chain: list[BaseException] = []
+            while cause is not None and cause not in chain:
+                chain.append(cause)
+                cause = cause.__cause__ or cause.__context__
+            if any(isinstance(item, socket.gaierror) for item in chain):
+                return SummaryProviderError(
+                    SummaryFailureCode.DNS,
+                    "The provider hostname could not be resolved. Check the base URL and DNS.",
+                    retryable=True,
+                )
+            if any(isinstance(item, ssl.SSLError) for item in chain):
+                return SummaryProviderError(
+                    SummaryFailureCode.TLS,
+                    "TLS negotiation with the provider failed. Check the HTTPS endpoint and certificates.",
+                    retryable=False,
+                )
             return SummaryProviderError(
-                SummaryFailureCode.PROVIDER_UNAVAILABLE,
-                "The summary provider could not be reached.",
+                SummaryFailureCode.CONNECT,
+                "A connection to the provider could not be established. Check the base URL and network path.",
                 retryable=True,
             )
         if isinstance(exc, (ValueError, KeyError, TypeError, json.JSONDecodeError)):

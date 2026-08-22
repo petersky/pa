@@ -460,6 +460,27 @@
   </div>
   {% endif %}
 
+  <div class="panel" id="card-summary-connection-test" aria-labelledby="card-summary-test-heading">
+    <div class="panel-header">
+      <div>
+        <h3 id="card-summary-test-heading">Card summaries</h3>
+        <p class="muted small">Run a minimal real summary through the selected provider and model. Staged provider, model, base URL, and credential replacements are tested without saving them; otherwise the saved effective configuration is tested.</p>
+      </div>
+      <button type="button" class="secondary" id="pa-card-summary-test">Test connection</button>
+    </div>
+    <p id="pa-card-summary-test-progress" class="muted small" role="status" aria-live="polite"></p>
+    <div id="pa-card-summary-test-result" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <strong data-summary-test-outcome></strong>
+      <dl class="settings-dl">
+        <dt>Provider</dt><dd data-summary-test-provider></dd>
+        <dt>Model</dt><dd data-summary-test-model></dd>
+        <dt>Configuration</dt><dd data-summary-test-configuration></dd>
+        <dt>Elapsed</dt><dd data-summary-test-elapsed></dd>
+        <dt>Result</dt><dd data-summary-test-message></dd>
+      </dl>
+    </div>
+  </div>
+
   <form id="pa-configuration-form" class="configuration-catalog">
     {% for row in configuration.settings %}
     <article class="panel configuration-setting"

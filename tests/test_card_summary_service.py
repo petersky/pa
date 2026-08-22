@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
+import ssl
 import tempfile
 import threading
 import time
@@ -73,6 +75,106 @@ async def _semantic_summary_uses_full_input_and_persists_provenance() -> None:
 
 def test_semantic_summary_uses_full_input_and_persists_provenance() -> None:
     asyncio.run(_semantic_summary_uses_full_input_and_persists_provenance())
+
+
+def test_connection_reports_unconfigured_without_network_call() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, _ = context(tmp, None)
+            ctx.settings.card_summary_api_key = ""
+            service = CardSummaryService(ctx)
+            with patch.object(service, "_call_provider") as call:
+                result = await service.test_connection(
+                    changes={}, clear={"card_summary_api_key"}, idempotency_key="one"
+                )
+            assert result["code"] == "unconfigured"
+            assert result["provider"] == "openai"
+            assert result["model"] == "gpt-5-mini"
+            call.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_connection_uses_staged_values_without_mutating_settings_and_is_idempotent() -> (
+    None
+):
+    async def run() -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, _ = context(tmp, None)
+            service = CardSummaryService(ctx)
+            calls = 0
+
+            async def successful(*_args):
+                nonlocal calls
+                calls += 1
+                return "A usable summary response was generated."
+
+            with patch.object(service, "_call_provider", side_effect=successful):
+                changes = {
+                    "card_summary_provider": "anthropic",
+                    "card_summary_model": "claude-test",
+                    "card_summary_base_url": "https://summary.invalid",
+                    "card_summary_anthropic_api_key": "staged-secret",
+                }
+                first = await service.test_connection(
+                    changes=changes, clear=set(), idempotency_key="same"
+                )
+                second = await service.test_connection(
+                    changes=changes, clear=set(), idempotency_key="same"
+                )
+            assert calls == 1
+            assert first == second
+            assert first["ok"] is True
+            assert first["provider"] == "anthropic"
+            assert first["model"] == "claude-test"
+            assert first["configuration"] == "staged"
+            assert "staged-secret" not in json.dumps(first)
+            assert ctx.settings.card_summary_provider == "openai"
+            assert ctx.settings.card_summary_api_key == "test"
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "code"),
+    [
+        (401, "private-token bad key", "authentication_failed"),
+        (403, "private-token forbidden", "authentication_failed"),
+        (404, "private-token unknown model", "model_not_found"),
+        (400, "model private-token is unsupported", "model_not_found"),
+        (429, "private-token slow down", "rate_limited"),
+        (503, "private-token unavailable", "provider_unavailable"),
+    ],
+)
+def test_connection_http_failure_classification(
+    status: int, body: str, code: str
+) -> None:
+    request = httpx.Request("POST", "https://provider.invalid/v1/messages")
+    response = httpx.Response(status, request=request, text=body)
+    failure = CardSummaryService._classify_failure(
+        httpx.HTTPStatusError("provider rejected", request=request, response=response)
+    )
+    assert failure.code.value == code
+    assert "private-token" not in failure.public_message
+
+
+def test_connection_transport_and_response_failure_classification() -> None:
+    def wrapped(cause: Exception) -> httpx.ConnectError:
+        error = httpx.ConnectError("secret endpoint detail")
+        error.__cause__ = cause
+        return error
+
+    cases = [
+        (wrapped(socket.gaierror("private hostname")), "dns_failure"),
+        (wrapped(ssl.SSLError("private certificate")), "tls_failure"),
+        (httpx.ConnectError("private endpoint"), "connection_failed"),
+        (httpx.ReadTimeout("private timeout"), "timeout"),
+        (ValueError("secret malformed payload"), "invalid_response"),
+    ]
+    for error, code in cases:
+        failure = CardSummaryService._classify_failure(error)
+        assert failure.code.value == code
+        assert "private" not in failure.public_message
 
 
 async def _old_completion_cannot_overwrite_edited_card() -> None:
@@ -547,7 +649,9 @@ def test_fleet_member_does_not_run_legacy_migration() -> None:
 def test_provider_defaults_and_url_helpers() -> None:
     assert resolve_summary_model("anthropic", "") == "claude-haiku-4-5"
     assert resolve_summary_model("anthropic", "gpt-5-mini") == "claude-haiku-4-5"
-    assert resolve_summary_model("anthropic", "claude-sonnet-4-6") == "claude-sonnet-4-6"
+    assert (
+        resolve_summary_model("anthropic", "claude-sonnet-4-6") == "claude-sonnet-4-6"
+    )
     assert resolve_summary_model("minimax", "MiniMax-M2.5") == "MiniMax-M2.5"
     assert resolve_summary_base_url("minimax", "") == "https://api.minimax.io/v1"
     assert (
@@ -597,9 +701,7 @@ class _RecordingAsyncClient:
     async def post(self, url, headers=None, json=None):
         request = httpx.Request("POST", url, headers=headers)
         template = self._responses.pop(0)
-        self.calls.append(
-            {"url": url, "headers": dict(headers or {}), "json": json}
-        )
+        self.calls.append({"url": url, "headers": dict(headers or {}), "json": json})
         return httpx.Response(
             template.status_code, json=template.json(), request=request
         )
@@ -630,7 +732,9 @@ def test_anthropic_messages_request_shape() -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), card_summary_provider="anthropic")
             service = CardSummaryService(
-                SimpleNamespace(settings=settings, store=CardProjection(Path(tmp) / "pa.db"))
+                SimpleNamespace(
+                    settings=settings, store=CardProjection(Path(tmp) / "pa.db")
+                )
             )
             with patch(
                 "pa.domain.card_summary_service.httpx.AsyncClient",
@@ -681,7 +785,9 @@ def test_minimax_uses_openai_compatible_chat_completions_url() -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), card_summary_provider="minimax")
             service = CardSummaryService(
-                SimpleNamespace(settings=settings, store=CardProjection(Path(tmp) / "pa.db"))
+                SimpleNamespace(
+                    settings=settings, store=CardProjection(Path(tmp) / "pa.db")
+                )
             )
             with patch(
                 "pa.domain.card_summary_service.httpx.AsyncClient",
@@ -793,7 +899,9 @@ async def _selected_provider_uses_its_own_key(provider: str, key_field: str) -> 
 
 def test_anthropic_key_configures_only_anthropic() -> None:
     asyncio.run(
-        _selected_provider_uses_its_own_key("anthropic", "card_summary_anthropic_api_key")
+        _selected_provider_uses_its_own_key(
+            "anthropic", "card_summary_anthropic_api_key"
+        )
     )
 
 
@@ -811,7 +919,9 @@ def test_replaced_key_invalidates_cached_configuration() -> None:
             card_summary_minimax_api_key="first-key",
         )
         service = CardSummaryService(
-            SimpleNamespace(settings=settings, store=CardProjection(Path(tmp) / "pa.db"))
+            SimpleNamespace(
+                settings=settings, store=CardProjection(Path(tmp) / "pa.db")
+            )
         )
 
         async def run() -> tuple[str, str]:
