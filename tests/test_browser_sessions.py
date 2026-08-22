@@ -268,14 +268,51 @@ class BrowserInputTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(item["key"] == "Enter" for item in key_events))
         self.assertTrue(any(item["key"] == "Shift" for item in key_events))
 
-    async def test_stale_snapshot_reference_is_retryable(self):
+    async def test_snapshot_reference_survives_unrelated_dom_revision(self):
         snapshot = await self.manager.snapshot(scope("session-1"))
         ref = snapshot["elements"][0]["ref"]
         self.manager.resolve(scope("session-1")).page.revision += 1
+        result = await self.manager.click(scope("session-1"), ref=ref)
+        self.assertTrue(result["ok"])
+
+    async def test_snapshot_reference_is_stale_after_navigation(self):
+        snapshot = await self.manager.snapshot(scope("session-1"))
+        ref = snapshot["elements"][0]["ref"]
+        self.manager.resolve(scope("session-1")).page.document_id += "-next"
         with self.assertRaises(BrowserSessionError) as raised:
             await self.manager.click(scope("session-1"), ref=ref)
         self.assertEqual(raised.exception.code, "stale_snapshot_reference")
         self.assertTrue(raised.exception.retryable)
+
+    async def test_operation_outcome_reports_running_completed_and_not_started(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def work(_session):
+            started.set()
+            await release.wait()
+            return {"action": "test"}
+
+        task = asyncio.create_task(
+            self.manager.execute(
+                scope("session-1"), "test", work, operation_id="lookup-1"
+            )
+        )
+        await started.wait()
+        running = await self.manager.operation_outcome(
+            scope("session-1"), operation_id="lookup-1"
+        )
+        self.assertEqual(running["state"], "running")
+        release.set()
+        await task
+        completed = await self.manager.operation_outcome(
+            scope("session-1"), operation_id="lookup-1"
+        )
+        self.assertEqual(completed["state"], "completed")
+        missing = await self.manager.operation_outcome(
+            scope("session-1"), operation_id="lookup-missing"
+        )
+        self.assertEqual(missing["state"], "not_started")
 
     async def test_sequences_serialize_on_one_target_and_isolated_targets_parallelize(
         self,
@@ -376,6 +413,54 @@ class BrowserSecurityAndRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             list(self.browser.attachments).count("automation-session-race"), 1
         )
+
+    async def test_attach_retry_with_same_operation_id_is_deduplicated(self):
+        first = await self.manager.attach(
+            scope("session-attach"),
+            url="https://example.test/one",
+            operation_id="attach-1",
+        )
+        document_id = self.manager.resolve(scope("session-attach")).page.document_id
+        second = await self.manager.attach(
+            scope("session-attach"),
+            url="https://example.test/two",
+            operation_id="attach-1",
+        )
+        self.assertEqual(first["operation_id"], "attach-1")
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(
+            self.manager.resolve(scope("session-attach")).page.document_id,
+            document_id,
+        )
+
+    async def test_timeout_cancels_work_and_outcome_is_deterministic(self):
+        cancelled = asyncio.Event()
+
+        async def slow(_session):
+            try:
+                await asyncio.sleep(10)
+            finally:
+                cancelled.set()
+
+        with self.assertRaises(BrowserSessionError) as raised:
+            await self.manager.execute(
+                scope("session-1"),
+                "click",
+                slow,
+                operation_id="timeout-1",
+                timeout=0.01,
+            )
+        self.assertEqual(raised.exception.code, "timeout")
+        self.assertTrue(cancelled.is_set())
+        outcome = await self.manager.operation_outcome(
+            scope("session-1"), operation_id="timeout-1"
+        )
+        self.assertEqual(outcome["state"], "completed")
+        self.assertEqual(outcome["result"]["error"]["code"], "timeout")
+        replay = await self.manager.execute(
+            scope("session-1"), "click", slow, operation_id="timeout-1"
+        )
+        self.assertTrue(replay["deduplicated"])
 
     async def test_simultaneous_transport_retry_executes_operation_once(self):
         calls = 0

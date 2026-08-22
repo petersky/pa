@@ -8,7 +8,7 @@ import os
 import shutil
 import signal
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
@@ -57,10 +57,14 @@ class BrowserAttachment:
     width: int = 1440
     height: int = 900
     device_scale_factor: float = 1
+    _page: CdpPage = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._page = CdpPage(self.endpoint, self.target_id)
 
     @property
     def page(self) -> CdpPage:
-        return CdpPage(self.endpoint, self.target_id)
+        return self._page
 
     def environment(self) -> dict[str, str]:
         return {
