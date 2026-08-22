@@ -321,6 +321,20 @@ class DispatchRecord(BaseModel):
             "provisioning",
             "starting_session",
         }
+        latest_recovery = next(
+            (
+                item
+                for item in reversed(self.lifecycle_inconsistencies)
+                if item.get("kind") == "stale_closed_session_dispatch_recovered"
+            ),
+            None,
+        )
+        data["stale_session_recovery"] = {
+            "eligible_candidate": self.state in {"running", "dispatching", "queued"}
+            and bool(self.session_id),
+            "recovered": latest_recovery is not None,
+            "diagnostic": latest_recovery,
+        }
         data["collaboration"] = {
             "requested_mode": self.request_payload.get("collaboration_mode"),
             "decision": self.request_payload.get("collaboration_decision"),
