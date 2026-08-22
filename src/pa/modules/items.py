@@ -8,11 +8,12 @@ import mimetypes
 import os
 import re
 import shutil
+import time
 from datetime import UTC, datetime, timedelta
 from itertools import zip_longest
 from pathlib import Path
 from typing import Annotated, Literal
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 from uuid import uuid4
 
 import httpx
@@ -109,6 +110,36 @@ HOME_OUTCOME_LIMIT = 6
 HOME_FLEET_LIMIT = 50
 HOME_ROUTE_LIMIT = 200
 WORK_PRESENTATION_PAGE_LIMIT = 100
+WORK_FACET_LIMIT = 20
+
+
+class WorkSavedViewRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    query: str = Field(default="", max_length=4096)
+
+
+def _selected_tags(request: Request) -> list[str]:
+    # Sorted uniqueness makes reload/share/history stable without duplicating params.
+    values = {
+        value.strip()
+        for value in request.query_params.getlist("tag")
+        if value.strip()
+    }
+    return sorted(values, key=str.casefold)
+
+
+def _work_query_pairs(request: Request, *, realm: str) -> list[tuple[str, str]]:
+    allowed = (
+        "attention", "blocked", "instance", "kind", "owner", "project", "q",
+        "tag_mode", "updated",
+    )
+    pairs = [("realm", realm)]
+    for key in allowed:
+        value = request.query_params.get(key, "").strip()
+        if value:
+            pairs.append((key, value))
+    pairs.extend(("tag", tag) for tag in _selected_tags(request))
+    return pairs
 
 
 class KnowledgePromotionRequest(BaseModel):
@@ -1355,7 +1386,10 @@ def _cards_context(
     owner = request.query_params.get("owner", "").strip() if apply_filters else ""
     instance = request.query_params.get("instance", "").strip() if apply_filters else ""
     blocked = request.query_params.get("blocked", "").strip() if apply_filters else ""
-    tag = request.query_params.get("tag", "").strip() if apply_filters else ""
+    tags = _selected_tags(request) if apply_filters else []
+    tag_mode = request.query_params.get("tag_mode", "and").strip().lower()
+    if tag_mode not in {"and", "or"}:
+        tag_mode = "and"
     updated = request.query_params.get("updated", "").strip() if apply_filters else ""
     try:
         updated_days = int(updated) if updated else None
@@ -1372,7 +1406,8 @@ def _cards_context(
         owner=owner,
         instance=instance,
         blocked=blocked,
-        tag=tag,
+        tags=tags,
+        tag_mode=tag_mode,
         updated_days=updated_days,
         limit=page_limit,
         offset=max(0, result_offset),
@@ -1386,7 +1421,8 @@ def _cards_context(
         owner=owner,
         instance=instance,
         blocked=blocked,
-        tag=tag,
+        tags=tags,
+        tag_mode=tag_mode,
         updated_days=updated_days,
     )
     projects = store.list_projects(realm_id=realm)
@@ -1394,19 +1430,6 @@ def _cards_context(
     card_sessions, card_progress, card_presentations, _ = (
         _presentation_context_for_cards(request, cards)
     )
-    facets = store.list_card_filter_facets(realm_id=realm)
-    filter_params = {
-        "realm": realm,
-        "project": project_id or "",
-        "q": query,
-        "kind": kind.value if kind else "",
-        "owner": owner,
-        "instance": instance,
-        "blocked": blocked,
-        "tag": tag,
-        "updated": updated,
-        "attention": attention_filter,
-    }
     return {
         "cards": cards,
         "total_cards": total_cards,
@@ -1420,17 +1443,17 @@ def _cards_context(
         "card_sessions": card_sessions,
         "card_progress": card_progress,
         "card_presentations": card_presentations,
-        "owners": facets["owners"],
-        "instances": [
-            {
-                "id": instance_id,
+        "owners": [owner] if owner else [],
+        "instances": (
+            [{
+                "id": instance,
                 "display_name": resolve_instance_identity(
-                    request.app.state.ctx, instance_id
+                    request.app.state.ctx, instance
                 )["display_name"],
-            }
-            for instance_id in facets["instances"]
-        ],
-        "tags": facets["tags"],
+            }]
+            if instance else []
+        ),
+        "tags": tags,
         "filters": {
             "q": query,
             "project": project_id or "",
@@ -1438,13 +1461,12 @@ def _cards_context(
             "owner": owner,
             "instance": instance,
             "blocked": blocked,
-            "tag": tag,
+            "tags": tags,
+            "tag_mode": tag_mode,
             "updated": updated,
             "attention": attention_filter,
         },
-        "filter_query": urlencode(
-            {key: value for key, value in filter_params.items() if value}
-        ),
+        "filter_query": urlencode(_work_query_pairs(request, realm=realm), doseq=True),
         "realms": request.app.state.ctx.settings.subscribed_realms,
         "active_realm": realm,
         "active_project": project_id,
@@ -1462,7 +1484,6 @@ def _work_context(request: Request) -> dict:
     """Build only filter metadata; lane rows are fetched as bounded partials."""
     realm = _active_realm(request)
     store = get_store()
-    facets = store.list_card_filter_facets(realm_id=realm)
     projects = store.list_projects(realm_id=realm)
     project_id = _active_project(request)
     selected_lane = request.query_params.get("lane", CardLane.ACTIVE.value)
@@ -1475,33 +1496,32 @@ def _work_context(request: Request) -> dict:
             "owner",
             "instance",
             "blocked",
-            "tag",
             "updated",
             "attention",
         )
     }
     filters["project"] = project_id or ""
     filters["kind"] = request.query_params.get("kind", "").strip()
-    filter_params = {"realm": realm, **filters}
+    filters["tags"] = _selected_tags(request)
+    filters["tag_mode"] = request.query_params.get("tag_mode", "and") if filters["tags"] else "and"
+    principal = get_principal_id(request)
+    owner_options = store.search_card_filter_facet(realm_id=realm, facet="owner", limit=WORK_FACET_LIMIT)
+    instance_options = store.search_card_filter_facet(realm_id=realm, facet="instance", limit=WORK_FACET_LIMIT)
+    if filters["owner"] and filters["owner"] not in {str(option["value"]) for option in owner_options}:
+        owner_options.insert(0, {"value": filters["owner"], "count": 0})
+    if filters["instance"] and filters["instance"] not in {str(option["value"]) for option in instance_options}:
+        instance_options.insert(0, {"value": filters["instance"], "count": 0})
     return {
         "kinds": list(CardKind),
         "lanes": list(CardLane),
         "projects": projects,
-        "owners": facets["owners"],
-        "instances": [
-            {
-                "id": instance_id,
-                "display_name": resolve_instance_identity(
-                    request.app.state.ctx, instance_id
-                )["display_name"],
-            }
-            for instance_id in facets["instances"]
-        ],
-        "tags": facets["tags"],
+        "owners": [str(option["value"]) for option in owner_options],
+        "instances": [{"id": str(option["value"]), "display_name": resolve_instance_identity(request.app.state.ctx, str(option["value"]))["display_name"]} for option in instance_options],
+        "tags": filters["tags"],
         "filters": filters,
-        "filter_query": urlencode(
-            {key: value for key, value in filter_params.items() if value}
-        ),
+        "filter_query": urlencode(_work_query_pairs(request, realm=realm), doseq=True),
+        "saved_views": store.list_work_saved_views(realm_id=realm, principal_id=principal),
+        "principal_id": principal,
         "selected_lane": selected_lane,
         "active_realm": realm,
     }
@@ -1670,6 +1690,62 @@ def list_cards_api(
         realm_id=realm_id, lane=lane, kind=kind, limit=limit, offset=offset
     )
     return [c.model_dump(mode="json") for c in cards]
+
+
+@router.get("/cards/facets")
+def card_facets_api(
+    request: Request,
+    response: Response,
+    facet: Literal["tag", "owner", "instance"] = "tag",
+    q: str = Query(default="", max_length=120),
+    realm: str | None = None,
+    limit: int = Query(default=WORK_FACET_LIMIT, ge=1, le=50),
+) -> dict:
+    started = time.perf_counter()
+    realm_id = realm or _active_realm(request)
+    options = get_store().search_card_filter_facet(
+        realm_id=realm_id, facet=facet, query=q, limit=limit
+    )
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["Server-Timing"] = f'facet;dur={elapsed_ms:.2f};desc="Work facet query"'
+    response.headers["X-PA-Facet-Options"] = str(len(options))
+    return {"facet": facet, "query": q, "options": options, "count": len(options)}
+
+
+def _canonical_saved_query(raw: str, realm: str) -> str:
+    allowed = {"attention", "blocked", "instance", "kind", "owner", "project", "q", "tag", "tag_mode", "updated"}
+    pairs = [(key, value.strip()) for key, value in parse_qsl(raw.lstrip("?"), keep_blank_values=False) if key in allowed and value.strip()]
+    tags = sorted({value for key, value in pairs if key == "tag"}, key=str.casefold)
+    singles = {key: value for key, value in pairs if key != "tag"}
+    canonical = [("realm", realm), *sorted(singles.items()), *(("tag", tag) for tag in tags)]
+    return urlencode(canonical, doseq=True)
+
+
+@router.get("/cards/saved-views")
+def list_work_saved_views_api(request: Request, realm: str | None = None) -> dict:
+    realm_id = realm or _active_realm(request)
+    return {"views": get_store().list_work_saved_views(realm_id=realm_id, principal_id=get_principal_id(request))}
+
+
+@router.post("/cards/saved-views")
+def save_work_view_api(request: Request, body: WorkSavedViewRequest, realm: str | None = None) -> dict:
+    realm_id = realm or _active_realm(request)
+    return get_store().save_work_view(
+        view_id=uuid4().hex,
+        realm_id=realm_id,
+        principal_id=get_principal_id(request),
+        name=" ".join(body.name.split()),
+        query=_canonical_saved_query(body.query, realm_id),
+    )
+
+
+@router.delete("/cards/saved-views/{view_id}")
+def delete_work_view_api(request: Request, view_id: str, realm: str | None = None) -> Response:
+    realm_id = realm or _active_realm(request)
+    deleted = get_store().delete_work_view(view_id=view_id, realm_id=realm_id, principal_id=get_principal_id(request))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Saved view not found")
+    return Response(status_code=204)
 
 
 @router.get("/cards/summary/diagnostics")

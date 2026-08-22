@@ -200,6 +200,28 @@ class CardProjection:
                 CREATE INDEX IF NOT EXISTS idx_cards_lane ON cards(lane);
                 CREATE INDEX IF NOT EXISTS idx_cards_realm_lane_updated
                     ON cards(realm_id, lane, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS work_saved_views (
+                    id TEXT PRIMARY KEY,
+                    realm_id TEXT NOT NULL,
+                    principal_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(realm_id, principal_id, name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_work_saved_views_scope
+                    ON work_saved_views(realm_id, principal_id, name);
+                CREATE TABLE IF NOT EXISTS work_saved_view_audit (
+                    id TEXT PRIMARY KEY,
+                    view_id TEXT NOT NULL,
+                    principal_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    query TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY,
                     realm_id TEXT NOT NULL DEFAULT 'default',
@@ -2498,7 +2520,8 @@ class CardProjection:
         owner: str = "",
         instance: str = "",
         blocked: str = "",
-        tag: str = "",
+        tags: list[str] | None = None,
+        tag_mode: str = "and",
         updated_days: int | None = None,
     ) -> tuple[str, list[object]]:
         clauses = ["realm_id = ?"]
@@ -2525,11 +2548,21 @@ class CardProjection:
             clauses.append("lane = 'waiting'")
         elif blocked == "unblocked":
             clauses.append("lane != 'waiting'")
-        if tag:
-            clauses.append(
-                "EXISTS (SELECT 1 FROM json_each(cards.tags) WHERE value = ?)"
-            )
-            params.append(tag)
+        selected_tags = list(dict.fromkeys(tags or []))
+        if selected_tags:
+            if tag_mode == "or":
+                placeholders = ",".join("?" for _ in selected_tags)
+                clauses.append(
+                    "EXISTS (SELECT 1 FROM json_each(cards.tags) "
+                    f"WHERE value IN ({placeholders}))"
+                )
+                params.extend(selected_tags)
+            else:
+                for selected_tag in selected_tags:
+                    clauses.append(
+                        "EXISTS (SELECT 1 FROM json_each(cards.tags) WHERE value = ?)"
+                    )
+                    params.append(selected_tag)
         if updated_days is not None:
             cutoff = datetime.now(UTC) - timedelta(days=updated_days)
             clauses.append("updated_at >= ?")
@@ -2548,6 +2581,8 @@ class CardProjection:
         instance: str = "",
         blocked: str = "",
         tag: str = "",
+        tags: list[str] | None = None,
+        tag_mode: str = "and",
         updated_days: int | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -2562,7 +2597,8 @@ class CardProjection:
             owner=owner,
             instance=instance,
             blocked=blocked,
-            tag=tag,
+            tags=tags if tags is not None else ([tag] if tag else []),
+            tag_mode=tag_mode,
             updated_days=updated_days,
         )
         bounded_limit = max(1, min(int(limit), 100))
@@ -2597,6 +2633,8 @@ class CardProjection:
         instance: str = "",
         blocked: str = "",
         tag: str = "",
+        tags: list[str] | None = None,
+        tag_mode: str = "and",
         updated_days: int | None = None,
     ) -> int:
         where, params = self._card_work_clauses(
@@ -2608,7 +2646,8 @@ class CardProjection:
             owner=owner,
             instance=instance,
             blocked=blocked,
-            tag=tag,
+            tags=tags if tags is not None else ([tag] if tag else []),
+            tag_mode=tag_mode,
             updated_days=updated_days,
         )
         with self._conn() as conn:
@@ -2656,6 +2695,100 @@ class CardProjection:
                 )
             ]
         return {"owners": owners, "instances": instances, "tags": tags}
+
+    def search_card_filter_facet(
+        self, *, realm_id: str, facet: str, query: str = "", limit: int = 20
+    ) -> list[dict[str, object]]:
+        """Return a bounded, count-bearing facet page ranked for typeahead use."""
+        bounded_limit = max(1, min(int(limit), 50))
+        needle = query.strip().casefold()
+        with self._conn() as conn:
+            if facet == "tag":
+                rows = conn.execute(
+                    """
+                    SELECT CAST(j.value AS TEXT) AS value, COUNT(*) AS count
+                    FROM cards c, json_each(c.tags) j
+                    WHERE c.realm_id = ? AND j.value IS NOT NULL AND j.value != ''
+                      AND (? = '' OR LOWER(CAST(j.value AS TEXT)) LIKE ?)
+                    GROUP BY j.value
+                    ORDER BY CASE
+                      WHEN LOWER(CAST(j.value AS TEXT)) = ? THEN 0
+                      WHEN LOWER(CAST(j.value AS TEXT)) LIKE ? THEN 1 ELSE 2 END,
+                      count DESC, LOWER(CAST(j.value AS TEXT)), CAST(j.value AS TEXT)
+                    LIMIT ?
+                    """,
+                    (realm_id, needle, f"%{needle}%", needle, f"{needle}%", bounded_limit),
+                ).fetchall()
+            else:
+                column = {"owner": "owner_principal", "instance": "preferred_instance"}.get(facet)
+                if column is None:
+                    raise ValueError("unsupported facet")
+                rows = conn.execute(
+                    f"""SELECT {column} AS value, COUNT(*) AS count FROM cards
+                    WHERE realm_id = ? AND {column} IS NOT NULL AND {column} != ''
+                      AND (? = '' OR LOWER({column}) LIKE ?)
+                    GROUP BY {column}
+                    ORDER BY CASE WHEN LOWER({column}) = ? THEN 0
+                      WHEN LOWER({column}) LIKE ? THEN 1 ELSE 2 END,
+                      count DESC, LOWER({column}), {column} LIMIT ?""",
+                    (realm_id, needle, f"%{needle}%", needle, f"{needle}%", bounded_limit),
+                ).fetchall()
+        return [{"value": str(row["value"]), "count": int(row["count"])} for row in rows]
+
+    def list_work_saved_views(self, *, realm_id: str, principal_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_saved_views WHERE realm_id = ? AND principal_id = ? ORDER BY LOWER(name), id",
+                (realm_id, principal_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_work_view(
+        self, *, view_id: str, realm_id: str, principal_id: str, name: str, query: str
+    ) -> dict:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT * FROM work_saved_views WHERE realm_id=? AND principal_id=? AND name=?",
+                (realm_id, principal_id, name),
+            ).fetchone()
+            if existing:
+                view_id = str(existing["id"])
+                version = int(existing["version"]) + 1
+                conn.execute(
+                    "UPDATE work_saved_views SET query=?, version=?, updated_at=? WHERE id=?",
+                    (query, version, now, view_id),
+                )
+                action = "updated"
+            else:
+                version = 1
+                conn.execute(
+                    "INSERT INTO work_saved_views VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (view_id, realm_id, principal_id, name, query, version, now, now),
+                )
+                action = "created"
+            conn.execute(
+                "INSERT INTO work_saved_view_audit VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uuid4().hex, view_id, principal_id, action, version, query, now),
+            )
+            row = conn.execute("SELECT * FROM work_saved_views WHERE id=?", (view_id,)).fetchone()
+        return dict(row)
+
+    def delete_work_view(self, *, view_id: str, realm_id: str, principal_id: str) -> bool:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM work_saved_views WHERE id=? AND realm_id=? AND principal_id=?",
+                (view_id, realm_id, principal_id),
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute("DELETE FROM work_saved_views WHERE id=?", (view_id,))
+            conn.execute(
+                "INSERT INTO work_saved_view_audit VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uuid4().hex, view_id, principal_id, "deleted", int(row["version"]), str(row["query"]), now),
+            )
+        return True
 
     def list_cards_by_ids(
         self, card_ids: list[str], *, realm_id: str
