@@ -1082,6 +1082,18 @@
             escapeHtml(validation.status || "unknown") +
             "</summary><code>" + escapeHtml(command) + "</code></details></li>";
         }).join("");
+        var rangeLabel = function (range) {
+          return range[0] === range[1] ? String(range[0]) : range[0] + "–" + range[1];
+        };
+        var missingRanges = (progress.missing_ranges || []).map(rangeLabel).join(", ");
+        var compactedRanges = (progress.compacted_ranges || []).map(rangeLabel).join(", ");
+        var protocolDetail = missingRanges || compactedRanges || progress.conflicts || progress.late_arrivals
+          ? '<details><summary>Protocol delivery diagnostics</summary><p class="muted small">' +
+            (missingRanges ? 'Missing accepted sequence: ' + escapeHtml(missingRanges) + '. ' : '') +
+            (compactedRanges ? 'Intentionally compacted: ' + escapeHtml(compactedRanges) + '. ' : '') +
+            (progress.late_arrivals ? 'Late arrivals: ' + escapeHtml(progress.late_arrivals) + '. ' : '') +
+            (progress.conflicts ? 'Conflicts: ' + escapeHtml(progress.conflicts) + '.' : '') +
+            '</p></details>' : '';
         progressText = '<div class="dispatch-progress dispatch-progress-' +
           escapeHtml(freshness.state || "delayed") + '"><p><strong>' +
           escapeHtml((checkpoint.phase || "investigating").replace(/_/g, " ")) +
@@ -1092,7 +1104,7 @@
           "</p>" + (toolRows || validationRows
             ? "<details><summary>Sanitized tool and validation details</summary><ul>" +
               validationRows + toolRows + "</ul></details>"
-            : "") + "</div>";
+            : "") + protocolDetail + "</div>";
       } else if (progress.reporting === "lifecycle_only") {
         progressText = '<p class="muted small">Lifecycle-only reporting from an older peer.</p>';
       }
