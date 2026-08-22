@@ -46,24 +46,38 @@
 
   function formatAge(seconds) {
     if (seconds == null) return "Age unknown";
-    if (seconds < 60) return seconds + " seconds ago";
-    if (seconds < 3600) return Math.floor(seconds / 60) + " minutes ago";
-    if (seconds < 86400) return Math.floor(seconds / 3600) + " hours ago";
-    return Math.floor(seconds / 86400) + " days ago";
+    if (seconds < -5) {
+      var future = Math.abs(seconds);
+      if (future < 60) return "In " + future + "s";
+      if (future < 3600) return "In " + Math.floor(future / 60) + "m";
+      if (future < 86400) return "In " + Math.floor(future / 3600) + "h";
+      return "In " + Math.floor(future / 86400) + "d";
+    }
+    seconds = Math.max(0, seconds);
+    if (seconds < 10) return "Just now";
+    if (seconds < 60) return seconds + "s ago";
+    if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+    if (seconds < 86400) return Math.floor(seconds / 3600) + "h ago";
+    if (seconds < 604800) return Math.floor(seconds / 86400) + "d ago";
+    return "Earlier";
   }
 
   function observedAge(observedAt, fallbackSeconds) {
     var observed = observedAt ? Date.parse(observedAt) : NaN;
     if (!Number.isNaN(observed)) {
-      return Math.max(0, Math.floor((Date.now() - observed) / 1000));
+      return Math.floor((Date.now() - observed) / 1000);
     }
     return fallbackSeconds;
   }
 
   function ageMarkup(observedAt, fallbackSeconds) {
-    return '<span data-workshop-observed-at="' + escapeHtml(observedAt || "") +
+    var absolute = observedAt && !Number.isNaN(Date.parse(observedAt))
+      ? new Date(observedAt).toISOString().replace("T", " ").replace(".000Z", " UTC")
+      : "Time unavailable";
+    return '<time datetime="' + escapeHtml(observedAt || "") + '" title="' + escapeHtml(absolute) +
+      '" data-workshop-observed-at="' + escapeHtml(observedAt || "") +
       '" data-workshop-fallback-age="' + escapeHtml(fallbackSeconds == null ? "" : fallbackSeconds) +
-      '">' + escapeHtml(formatAge(observedAge(observedAt, fallbackSeconds))) + "</span>";
+      '">' + escapeHtml(formatAge(observedAge(observedAt, fallbackSeconds))) + "</time>";
   }
 
   function updateRelativeAges(root) {

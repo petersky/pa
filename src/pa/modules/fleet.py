@@ -9,6 +9,7 @@ import hmac
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -3809,8 +3810,25 @@ async def fleet_overview_dimension(
         raise HTTPException(status_code=422, detail="Unknown fleet overview dimension")
     ctx = request.app.state.ctx
     inst = _overview_instance(request, instance_id)
+    queued_at = time.perf_counter()
     value = await probe_dimension(ctx, inst, dimension, force=retry)
+    request_ms = (time.perf_counter() - queued_at) * 1000
     duration = value.get("duration_ms") or 0
+    correlation_id = getattr(request.state, "correlation_id", None) or request.headers.get(
+        "X-Request-ID", ""
+    )
+    logger.info(
+        "fleet_partial_refresh correlation_id=%s instance=%s dimension=%s "
+        "generation=%s state=%s request_ms=%.1f probe_ms=%s cache_hit=%s",
+        correlation_id,
+        instance_id,
+        dimension,
+        generation,
+        value.get("last_attempt_state") or value.get("state"),
+        request_ms,
+        duration,
+        bool(value.get("cache_hit")),
+    )
     return JSONResponse(
         {
             "instance_id": instance_id,
@@ -3820,7 +3838,10 @@ async def fleet_overview_dimension(
             **value,
         },
         headers={
-            "Server-Timing": f'fleet-{dimension};dur={duration};desc="{inst.name}"',
+            "Server-Timing": (
+                f'fleet-{dimension};dur={duration};desc="{inst.name}", '
+                f"partial-refresh;dur={request_ms:.1f}"
+            ),
             "X-Fleet-Generation": str(generation),
         },
     )

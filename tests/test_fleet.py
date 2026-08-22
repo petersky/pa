@@ -1036,7 +1036,7 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
             persisted = cache_for(settings.data_dir).get("remote", "reachability")
             self.assertEqual(persisted["value"], {"health": "up"})
 
-    async def test_manual_refresh_supersedes_older_background_timeout(self) -> None:
+    async def test_manual_refresh_joins_older_background_probe(self) -> None:
         from pa.fleet.overview import field, probe_dimension
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1072,16 +1072,16 @@ class FleetOverviewTests(unittest.IsolatedAsyncioTestCase):
                     probe_dimension(ctx, inst, "reachability", force=True)
                 )
                 await older_started.wait()
-                newer = await probe_dimension(
-                    ctx, inst, "reachability", force=True
+                newer_task = asyncio.create_task(
+                    probe_dimension(ctx, inst, "reachability", force=True)
                 )
+                await asyncio.sleep(0)
                 release_older.set()
-                older_result = await older
+                older_result, newer = await asyncio.gather(older, newer_task)
 
-            self.assertEqual(calls, 2)
-            self.assertEqual(newer["state"], "fresh")
-            self.assertEqual(older_result["state"], "fresh")
-            self.assertEqual(older_result["value"], {"health": "up"})
+            self.assertEqual(calls, 1)
+            self.assertEqual(newer["last_attempt_state"], "timeout")
+            self.assertEqual(older_result, newer)
 
     async def test_older_timeout_cannot_replace_newer_success(self) -> None:
         from pa.fleet.overview import FleetOverviewCache, field
@@ -1742,6 +1742,9 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("Object.assign({}, previous", script)
         self.assertIn("Health check failed", script)
         self.assertIn("performance.measure", script)
+        self.assertIn('" · Pending: " + pending.join', script)
+        self.assertIn('" · Failed: " + failed.join', script)
+        self.assertIn('(node.name || node.id) + " / " + dimension', script)
         self.assertIn('id="pa-fleet-refresh"', template)
 
     def test_page_refresh_is_single_flight_abort_safe_and_generation_fenced(self) -> None:

@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     agent_command: str | None = None
     agent_args: Annotated[list[str] | None, NoDecode] = None
     agent_enabled: bool = True
+    # Explicitly expose the instance-local PR-supervisor credential to ACP
+    # providers as GH_TOKEN. Ambient GitHub token variables are always stripped.
+    agent_github_token_enabled: bool = False
     # Provider processes are comparatively expensive. Keep restart recovery
     # bounded even when many sessions have durable unfinished work.
     agent_recovery_concurrency: int = Field(default=2, ge=1, le=16)

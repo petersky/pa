@@ -47,6 +47,12 @@ reviews, branch protection and threads, create/update pull requests, push the
 card branch, and merge. Capability output is safe to record; never record token
 values or credential-file contents.
 
+Agent GitHub CLI access is a separate, explicit blast-radius choice. Set
+`agent_github_token_enabled=true` in this instance's configuration to map that
+same local credential into ACP children as `GH_TOKEN`; PA service code continues
+to use `PA_GITHUB_TOKEN`/`github.json`. Leave it false to use host `gh auth login`
+OAuth only. `GH_TOKEN` takes precedence when both modes are available.
+
 ## Manual acceptance after deployment
 
 These assertions intentionally are not automated in CI because they alter the

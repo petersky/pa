@@ -159,6 +159,38 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         self.assertTrue(runtime._transcript_queue.empty())
         self.assertEqual(runtime._transcript_queue._unfinished_tasks, 0)
 
+    def test_transcript_writer_stops_retrying_when_async_runtime_closes(self) -> None:
+        from pa.core.async_runtime import AsyncRuntimeClosed
+
+        event = TranscriptEvent(
+            session_id="session-closing",
+            seq=1,
+            event_type="turn_completed",
+            payload={},
+        )
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.async_runtime = MagicMock()
+        runtime.store = MagicMock()
+        runtime.session = AgentSession(
+            id="session-closing",
+            agent_name="codex",
+        )
+        runtime._transcript_buffer = []
+        runtime._transcript_queue = asyncio.Queue(maxsize=128)
+        runtime._transcript_queue.put_nowait([event])
+        runtime._transcript_writer_task = None
+        runtime._offload = AsyncMock(side_effect=AsyncRuntimeClosed("closing"))
+
+        async def run() -> None:
+            await runtime._write_transcripts()
+
+        asyncio.run(run())
+
+        runtime.store.append_transcript_events.assert_called_once_with([event])
+        self.assertTrue(runtime._transcript_queue.empty())
+        self.assertEqual(runtime._transcript_queue._unfinished_tasks, 0)
+        self.assertEqual(runtime._transcript_buffer, [])
+
     def test_stale_default_session_uses_configured_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()

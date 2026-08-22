@@ -3430,7 +3430,6 @@ code {
 .board-column h3 {
   margin: 0 0 0.5rem;
   font-size: 0.85rem;
-  text-transform: capitalize;
   color: var(--pa-text-muted);
 }
 
@@ -3862,7 +3861,7 @@ a.ghost {
   font-size: 0.72rem;
   font-weight: 600;
 }
-.compact-card h3 { margin: 0.35rem 0 0.2rem; font-size: 0.95rem; line-height: 1.3; }
+.compact-card h3 { margin: 0.35rem 0 0.2rem; font-size: 0.95rem; line-height: 1.3; text-transform: none; }
 .compact-card h3 a { color: var(--pa-text); }
 .compact-card h3 a:hover { color: var(--pa-accent); text-decoration: underline; }
 .compact-card.is-title-only { padding: 0.5rem 0.6rem; }
@@ -3919,7 +3918,7 @@ a.ghost {
 }
 .compact-card-footer time { margin-left: auto; }
 .card-move-menu { position: relative; }
-.card-move-menu summary { cursor: pointer; color: var(--pa-accent); list-style: none; }
+.card-move-menu summary { cursor: pointer; color: var(--pa-accent); list-style: none; min-height: 2.75rem; min-width: 2.75rem; padding: .7rem; }
 .card-move-menu summary::-webkit-details-marker { display: none; }
 .card-move-menu > div {
   position: absolute;
@@ -3935,7 +3934,9 @@ a.ghost {
   background: var(--pa-surface-raised);
   box-shadow: var(--pa-shadow);
 }
-.card-move-menu button { border: 0; background: transparent; text-align: left; }
+.card-move-menu button { border: 0; background: transparent; text-align: left; min-height: 2.75rem; padding: .65rem .75rem; }
+.card-move-menu summary:focus-visible,
+.card-move-menu button:focus-visible { outline: 3px solid var(--pa-focus, var(--pa-accent)); outline-offset: 2px; }
 .done-list-actions {
   display: flex;
   align-items: center;
