@@ -198,6 +198,20 @@ restart merely to make an in-memory head notice a disk change. A true divergent
 history is resolved with `resolve_sync_conflicts`, which preserves both heads in
 an auditable merge commit.
 
+### Retrying HTTP/2 stream cancellation
+
+PA classifies HTTP/2 `CANCEL (0x8)` separately from application failures. Agents
+may automatically retry read-only MCP and fleet operations, including
+`sync_status`, fleet overview dimensions, placement probes, and dispatch/status
+lookups. PA uses a bounded retry budget and preserves the correlation ID.
+
+Mutating operations are safe to retry only when the request has a stable
+`Idempotency-Key`; every retry must reuse that exact key. If cancellation happens
+after a write may have committed, call `get_operation_outcome` with the key first
+and follow its recovery state. Never retry an unkeyed mutation: report its
+operation and correlation ID and inspect the durable outcome before taking any
+further action.
+
 Create a card on MacBook → confirm it appears on Mac mini (may take a few seconds).
 
 ---
