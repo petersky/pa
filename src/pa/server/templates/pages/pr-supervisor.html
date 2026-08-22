@@ -1,7 +1,7 @@
 {% from "macros/layout.html" import page_layout %}
 {% from "macros/instance_identity.html" import instance_identity %}
 {% macro watch_status(item) -%}
-{% if item.status.value == 'merged' %}Merged{% elif item.status.value == 'closed' %}Closed without merge{% elif item.status.value == 'retired' or item.retired_at %}Retired{% elif item.status.value == 'blocked' %}Blocked{% elif item.last_error %}Fetch failed; retry scheduled{% elif item.state.get('draft') %}Draft; waiting for author{% elif (item.state.get('gate') or {}).get('green') %}Ready; awaiting stable green evaluation{% elif (item.state.get('gate') or {}).get('reasons') %}{{ (item.state.get('gate') or {}).get('reasons') | join('; ') }}{% elif item.head_sha %}Observation incomplete; awaiting next evaluation{% else %}Awaiting first observation{% endif %}
+{% if item.status.value == 'merged' %}Merged{% elif item.status.value == 'closed' %}Closed without merge{% elif item.status.value == 'retired' or item.retired_at %}Retired{% elif item.state.get('draft') %}Draft; waiting for author{% elif item.status.value == 'blocked' %}Blocked{% elif item.last_error %}Fetch failed; retry scheduled{% elif (item.state.get('gate') or {}).get('green') %}Ready; awaiting stable green evaluation{% elif (item.state.get('gate') or {}).get('reasons') %}{{ (item.state.get('gate') or {}).get('reasons') | join('; ') }}{% elif item.head_sha %}Observation incomplete; awaiting next evaluation{% else %}Awaiting first observation{% endif %}
 {%- endmacro %}
 {% set base_query %}realm={{ active_realm }}&amp;view={{ view }}&amp;q={{ search | urlencode }}&amp;page={{ page_number }}{% endset %}
 {% set main %}
