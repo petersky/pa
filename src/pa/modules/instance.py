@@ -122,6 +122,13 @@ class ConfigurationPatch(BaseModel):
     target: str = "local"
 
 
+class SummaryConnectionTestRequest(BaseModel):
+    changes: dict[str, Any] = Field(default_factory=dict)
+    clear: list[str] = Field(default_factory=list)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    target: str = "local"
+
+
 class AuxiliaryMcpSaveRequest(BaseModel):
     servers: list[AuxiliaryMcpServer]
     expected_revision: str
@@ -836,6 +843,45 @@ def diff_configuration(request: Request, body: ConfigurationPatch) -> dict:
         )
     except ConfigError as exc:
         raise _configuration_error(exc) from exc
+
+
+@router.post("/configuration/card-summary/test")
+async def test_card_summary_connection(
+    request: Request, body: SummaryConnectionTestRequest
+) -> dict:
+    """Test staged or effective summary configuration without persisting it."""
+    require_user(request)
+    _require_local_configuration_target(request, body.target)
+    allowed = {
+        "card_summary_provider",
+        "card_summary_model",
+        "card_summary_base_url",
+        "card_summary_api_key",
+        "card_summary_anthropic_api_key",
+        "card_summary_minimax_api_key",
+    }
+    supplied = set(body.changes) | set(body.clear)
+    if not supplied <= allowed:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "summary_test_scope_invalid",
+                "message": "Only card-summary provider, model, base URL, and credentials may be tested.",
+            },
+        )
+    try:
+        _, normalized = validate_update(
+            request.app.state.ctx.settings.data_dir, body.changes, body.clear
+        )
+    except ConfigError as exc:
+        raise _configuration_error(exc) from exc
+    scoped_changes = {key: value for key, value in normalized.items() if key in allowed}
+    service = request.app.state.ctx.require_service("card_summary_service")
+    return await service.test_connection(
+        changes=scoped_changes,
+        clear=set(body.clear),
+        idempotency_key=body.idempotency_key,
+    )
 
 
 @router.patch("/configuration")
