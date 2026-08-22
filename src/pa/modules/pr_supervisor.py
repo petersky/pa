@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -107,9 +108,27 @@ def _page_context(request: Request) -> dict[str, Any]:
         request.query_params.get("realm")
         or request.app.state.ctx.settings.primary_realm
     )
-    watches = service.store.list_watches(realm_id=realm, include_retired=True)
+    view = request.query_params.get("view", "attention")
+    if view not in {"attention", "history", "all", "errors"}:
+        view = "attention"
+    search = request.query_params.get("q", "").strip()[:100]
+    try:
+        page_number = max(1, int(request.query_params.get("page", "1")))
+        audit_page = max(1, int(request.query_params.get("audit_page", "1")))
+    except ValueError:
+        page_number = audit_page = 1
+    page_size = 25
+    watches, watch_total = service.store.list_watch_page(
+        realm_id=realm,
+        view=view,
+        query_text=search,
+        limit=page_size,
+        offset=(page_number - 1) * page_size,
+    )
     selected_id = request.query_params.get("watch")
     selected = service.store.get_watch(selected_id) if selected_id else None
+    if selected and selected.realm_id != realm:
+        selected = None
     current_policy = (
         resolve_policy(
             request.app.state.ctx.store,
@@ -120,10 +139,77 @@ def _page_context(request: Request) -> dict[str, Any]:
         if selected
         else None
     )
+    domain_store = request.app.state.ctx.store
+    identities: dict[str, dict[str, str | None]] = {}
+    for item in [*watches, *([selected] if selected else [])]:
+        if item.id in identities:
+            continue
+        card = (
+            domain_store.get_card(item.card_id, realm_id=item.realm_id)
+            if item.card_id
+            else None
+        )
+        project = (
+            domain_store.get_project(item.project_id, realm_id=item.realm_id)
+            if item.project_id
+            else None
+        )
+        identities[item.id] = {
+            "card_title": card.title if card else None,
+            "project_title": project.title if project else None,
+        }
+    raw_events, event_total = (
+        service.store.list_event_page(
+            selected.id, limit=50, offset=(audit_page - 1) * 50
+        )
+        if selected
+        else ([], 0)
+    )
+    event_groups: list[dict[str, Any]] = []
+    for event in raw_events:
+        signature = (
+            event.event_type,
+            event.head_sha,
+            tuple(event.payload.get("reasons") or []),
+        )
+        if (
+            event_groups
+            and event.event_type == "observation"
+            and event_groups[-1]["signature"] == signature
+        ):
+            event_groups[-1]["count"] += 1
+            event_groups[-1]["oldest_at"] = event.created_at
+        else:
+            event_groups.append(
+                {
+                    "event": event,
+                    "signature": signature,
+                    "count": 1,
+                    "newest_at": event.created_at,
+                    "oldest_at": event.created_at,
+                }
+            )
+    metrics = service.store.metrics()
+    errors = metrics.get("poll_errors", 0) + metrics.get("dispatch_errors", 0)
+    polls = metrics.get("polls", 0)
+    operations = polls + metrics.get("executor_prompts", 0)
+    health = service.authority_health()
+    degradation = None
+    if capability := service.capability:
+        if capability.state != "ready" or not capability.authenticated:
+            degradation = (
+                capability.detail
+                or "GitHub data fetch is unavailable on this instance."
+            )
+    if health.get("stopped_renewers"):
+        degradation = f"{len(health['stopped_renewers'])} watch renewer(s) are stopped."
     return {
         "watches": watches,
         "watch": selected,
-        "watch_events": service.store.list_events(selected.id) if selected else [],
+        "watch_event_groups": event_groups,
+        "watch_event_total": event_total,
+        "audit_page": audit_page,
+        "audit_pages": max(1, math.ceil(event_total / 50)),
         "watch_deliveries": service.store.list_dispatches(selected.id) if selected else [],
         "watch_policy_differs": bool(
             selected and current_policy and selected.policy != current_policy
@@ -131,8 +217,23 @@ def _page_context(request: Request) -> dict[str, Any]:
         "watch_current_policy": current_policy,
         "capability": service.capability,
         "capabilities": service.store.list_capabilities(),
-        "metrics": service.store.metrics(),
-        "supervisor_health": service.authority_health(),
+        "metrics": metrics,
+        "operations": {
+            "window": "since this supervisor data store was initialized",
+            "errors": errors,
+            "polls": polls,
+            "denominator": operations,
+            "error_rate": (100 * errors / operations) if operations else 0,
+            "severity": "degraded" if degradation else "healthy",
+        },
+        "degradation": degradation,
+        "supervisor_health": health,
+        "watch_identities": identities,
+        "view": view,
+        "search": search,
+        "page_number": page_number,
+        "page_count": max(1, math.ceil(watch_total / page_size)),
+        "watch_total": watch_total,
         "active_realm": realm,
         "realms": request.app.state.ctx.settings.subscribed_realms,
     }
