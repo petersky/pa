@@ -81,6 +81,7 @@ from pa.execution.dispatch import (
     DispatchStore,
     DispatchWorker,
     GoalDispatchProvenance,
+    TERMINAL_DISPATCH_STATES,
     goal_admission_validation_proof,
     goal_dispatch_execution_identity_valid,
     goal_dispatch_materialization_binding_valid,
@@ -401,6 +402,7 @@ class RemoteAgentStartBody(BaseModel):
     idempotency_key: str | None = None
     resume_session_id: str | None = None
     allow_concurrent: bool = False
+    concurrent_reason: str | None = Field(default=None, max_length=500)
     capacity_override: bool = False
     capacity_override_reason: str | None = Field(default=None, max_length=500)
     participation_override: bool = False
@@ -418,6 +420,12 @@ class RemoteAgentStartBody(BaseModel):
         # Legacy form serialization emitted the Python display value. It is
         # never a stable provider/model ID, so preserve automatic selection.
         return None if not normalized or normalized.casefold() == "none" else normalized
+
+    @model_validator(mode="after")
+    def require_concurrent_reason(self) -> RemoteAgentStartBody:
+        if self.allow_concurrent and not str(self.concurrent_reason or "").strip():
+            raise ValueError("concurrent_reason is required when allow_concurrent is true")
+        return self
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -3252,6 +3260,16 @@ def _fleet_context(request: Request) -> dict:
             or route.target_url.rstrip("/") in canonical_urls
         )
     ]
+    cards = ctx.store.list_cards(realm_id=primary_realm)
+    dispatch_store = ctx.services.get("dispatch_store")
+    active_card_dispatches = {}
+    if dispatch_store:
+        latest_dispatches = dispatch_store.latest_by_card({card.id for card in cards})
+        for card_id, record in latest_dispatches.items():
+            if record.state not in TERMINAL_DISPATCH_STATES:
+                active_card_dispatches[card_id] = canonicalize_dispatch_public(
+                    ctx, record
+                )
     return {
         "fleet_instances": instances,
         "fleet_overview": build_overview(ctx, instances, routes),
@@ -3272,7 +3290,8 @@ def _fleet_context(request: Request) -> dict:
         or {"status": "idle", "peers": {}},
         "membership_convergence": _membership_convergence_snapshot(ctx),
         "primary_realm": primary_realm,
-        "cards": ctx.store.list_cards(realm_id=primary_realm),
+        "cards": cards,
+        "active_card_dispatches": active_card_dispatches,
         "projects": ctx.store.list_projects(realm_id=primary_realm),
         "instance_groups": policy_service.list_groups(
             primary_realm, include_archived=True

@@ -417,8 +417,8 @@
             <label>Card
               <select name="card_id">
                 <option value="">Standalone session</option>
-                {% for card in cards if card.lane.value != 'done' %}
-                <option value="{{ card.id }}" data-project-id="{{ card.project_id or '' }}">{{ card.title }}</option>
+                {% for card in cards if card.lane.value != 'done' %}{% set active_dispatch = active_card_dispatches.get(card.id) %}
+                <option value="{{ card.id }}" data-project-id="{{ card.project_id or '' }}" data-active-dispatch-id="{{ active_dispatch.dispatch_id if active_dispatch else '' }}" data-active-session-id="{{ active_dispatch.session_id if active_dispatch else '' }}" data-active-target-id="{{ active_dispatch.target_instance_id if active_dispatch else '' }}">{{ card.title }}{% if active_dispatch %} — active on {{ active_dispatch.target_instance_name }}{% endif %}</option>
                 {% endfor %}
               </select>
             </label>
@@ -459,8 +459,11 @@
             <label>Initial instruction
               <textarea name="message" rows="4" placeholder="For a card, PA supplies the card and project context automatically."></textarea>
             </label>
+            <label class="checkbox-row" data-remote-concurrent-wrap hidden><input type="checkbox" name="allow_concurrent" data-remote-concurrent><span>Start parallel work intentionally</span></label>
+            <label data-remote-concurrent-reason-wrap hidden>Reason for parallel work <input name="concurrent_reason" data-remote-concurrent-reason maxlength="500" autocomplete="off"></label>
             <div class="form-actions">
-              <button type="submit" class="primary" data-remote-start>Start on selected instance</button>
+              <a class="button" data-remote-open-current hidden>Open current session</a>
+              <button type="submit" class="primary" data-remote-start disabled aria-disabled="true" title="Choose a remote instance first">Start on selected instance</button>
             </div>
           </form>
         </details>
