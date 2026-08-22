@@ -3650,7 +3650,11 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
 
     def test_detail_coalesces_observations_and_preserves_filter_url(self) -> None:
         app = Kernel.boot(settings=self.settings).build_app()
-        with TestClient(app) as client:
+        # This test owns the audit-ledger fixture.  Keep the background
+        # supervisor from racing it with capability observations at startup.
+        with patch(
+            "pa.modules.pr_supervisor.PRSupervisor.start", new=AsyncMock()
+        ), TestClient(app) as client:
             store = app.state.ctx.require_service("pr_supervisor_store")
             target = PRWatch(
                 id="draft-watch", repository="owner/repo", pr_number=17,
