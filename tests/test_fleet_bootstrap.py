@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ from pa.fleet.bootstrap import (
     TargetDiscovery,
     accept_bootstrap_input,
     build_bootstrap_plan,
+    _probe_github_repositories,
     run_bootstrap_job,
 )
 from pa.fleet.remote_install import (
@@ -83,6 +85,35 @@ class BootstrapRequestTests(unittest.TestCase):
             "device_or_browser_login",
             by_phase["provider_auth"]["required_interactions"],
         )
+
+    def test_github_probe_accepts_noninteractive_gh_token_auth(self) -> None:
+        connection = MagicMock()
+        connection.run = AsyncMock(
+            return_value=MagicMock(exit_status=0)
+        )
+        connection.wait_closed = AsyncMock()
+
+        async def exercise():
+            with patch(
+                "pa.fleet.bootstrap._connect_ssh",
+                new=AsyncMock(return_value=connection),
+            ):
+                return await _probe_github_repositories(
+                    _request(
+                        github_transport="https",
+                        repositories=["petersky/pa"],
+                    ),
+                    {},
+                )
+
+        evidence = asyncio.run(exercise())
+        self.assertTrue(evidence["authenticated"])
+        self.assertEqual(evidence["auth_mode"], "verified_gh_cli")
+        command = connection.run.await_args.args[0]
+        self.assertIn("gh auth status", command)
+        self.assertIn("agent_github_token_enabled", command)
+        self.assertIn("github.json", command)
+        self.assertNotIn("token-that-must-not-leak", command)
 
 
 class BootstrapJobStoreTests(unittest.TestCase):

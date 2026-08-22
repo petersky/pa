@@ -16,6 +16,7 @@ from pa.acp.environment import (
     ASSIGNED_SERVICE_MODE_ENV,
     ASSIGNED_SERVICE_SESSION_ENV,
     assigned_service_mcp_environment,
+    inject_agent_github_environment,
     sanitize_provider_environment,
 )
 from pa.acp.mcp_config import (
@@ -227,6 +228,57 @@ class PaMcpServersTests(unittest.TestCase):
             ),
             {"PUBLIC_PROVIDER_VALUE": "visible"},
         )
+
+    def test_provider_sanitizer_strips_all_ambient_github_tokens(self):
+        environment = sanitize_provider_environment(
+            {
+                "PA_GITHUB_TOKEN": "pa-secret",
+                "PA_GITHUB_WEBHOOK_SECRET": "webhook-secret",
+                "GH_TOKEN": "ambient-gh-secret",
+                "GITHUB_TOKEN": "ambient-github-secret",
+                "SAFE": "yes",
+            },
+            {"PA_GITHUB_TOKEN": "override", "GH_TOKEN": "override"},
+        )
+        self.assertEqual(environment, {"SAFE": "yes"})
+
+    def test_managed_github_token_injection_is_explicit_and_non_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            integration = data_dir / "integrations"
+            integration.mkdir()
+            (integration / "github.json").write_text(
+                json.dumps(
+                    {
+                        "token": "managed-secret",
+                        "allowed_repositories": ["petersky/pa"],
+                    }
+                )
+            )
+            disabled, source = inject_agent_github_environment(
+                {"SAFE": "yes"}, Settings(data_dir=data_dir)
+            )
+            self.assertEqual(disabled, {"SAFE": "yes"})
+            self.assertEqual(source, "disabled")
+
+            enabled, source = inject_agent_github_environment(
+                {"SAFE": "yes"},
+                Settings(data_dir=data_dir, agent_github_token_enabled=True),
+            )
+            self.assertEqual(enabled["GH_TOKEN"], "managed-secret")
+            self.assertNotIn("PA_GITHUB_TOKEN", enabled)
+            self.assertEqual(source, "instance_file")
+
+    def test_enabled_injection_without_credential_preserves_oauth_environment(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {}, clear=True
+        ):
+            environment, source = inject_agent_github_environment(
+                {"PATH": "/bin"},
+                Settings(data_dir=Path(tmp), agent_github_token_enabled=True),
+            )
+        self.assertEqual(environment, {"PATH": "/bin"})
+        self.assertEqual(source, "missing")
 
     def test_owner_endpoint_is_independent_of_web_binds(self):
         with tempfile.TemporaryDirectory() as tmp:

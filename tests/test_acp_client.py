@@ -819,7 +819,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
             context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
             context.__aexit__ = AsyncMock()
             connection = AgentConnection(
-                Settings(data_dir=Path(tmp)),
+                Settings(data_dir=Path(tmp), agent_github_token_enabled=True),
                 store,
                 provider_spec=AgentProviderSpec(
                     id="generic",
@@ -849,6 +849,8 @@ class AgentSessionRestoreTests(unittest.TestCase):
                             "PA_OWNER_SOCKET": "/service/owner.sock",
                             "PA_LOCAL_API_TOKEN": "service-token",
                             "PA_GITHUB_TOKEN": "github-secret",
+                            "GH_TOKEN": "ambient-gh-secret",
+                            "GITHUB_TOKEN": "ambient-github-secret",
                         },
                         clear=True,
                     ),
@@ -861,12 +863,14 @@ class AgentSessionRestoreTests(unittest.TestCase):
                 self.assertEqual(environment["SAFE_PROVIDER_VALUE"], "yes")
                 self.assertEqual(environment["SAFE_SESSION_VALUE"], "yes")
                 self.assertEqual(environment["PATH"], expected_path)
+                self.assertEqual(environment["GH_TOKEN"], "github-secret")
                 for private_name in (
                     "PA_OWNER_SOCKET",
                     "PA_OWNER_API_URL",
                     "PA_LOCAL_API_TOKEN",
                     "PA_SYNC_TOKEN",
                     "PA_GITHUB_TOKEN",
+                    "GITHUB_TOKEN",
                     "PA_DATA_DIR",
                     "PA_INSTANCE_ID",
                 ):
