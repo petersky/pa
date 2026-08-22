@@ -48,7 +48,9 @@
         </div>
       </div>
       <div class="card-detail-actions">
-        <button type="button" data-card-dispatch-open data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">Dispatch</button>
+        {% if work_presentation.action.kind == 'open_agent' %}<a class="button" href="{{ work_presentation.action.href }}" aria-label="View running work for {{ card.title }}">View running work</a>
+        {% elif work_presentation.action.kind == 'respond' %}<a class="button" href="{{ work_presentation.action.href }}" aria-label="Follow up with running work for {{ card.title }}">Respond</a>
+        {% else %}<button type="button" data-card-dispatch-open data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">Dispatch</button>{% endif %}
         <button type="button" class="ghost danger"
                 hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
                 hx-target="#card-detail-dialog-content"

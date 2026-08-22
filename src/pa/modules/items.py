@@ -43,6 +43,7 @@ from pa.auth.middleware import get_principal_id
 from pa.config import get_settings
 from pa.core.context import AppContext
 from pa.core.contracts import Module
+from pa.core.ui.card_executions import build_card_execution_index
 from pa.core.ui.instance_identity import (
     canonical_instance_identities,
     canonicalize_dispatch_public,
@@ -774,6 +775,14 @@ def _card_agent_context(request: Request, card) -> dict:
         if dispatch_store
         else []
     )
+    dispatch_records = (
+        dispatch_store.list(card_id=card.id, realm_id=card.realm_id, limit=100)
+        if dispatch_store
+        else []
+    )
+    execution_index = build_card_execution_index(
+        ctx, sessions=related_sessions, dispatches=dispatch_records
+    )
     fleet = ctx.services.get("fleet_registry")
     instances = (
         sorted(
@@ -864,6 +873,8 @@ def _card_agent_context(request: Request, card) -> dict:
         "current_session": current_session,
         "dispatches": dispatches,
         "latest_dispatch": dispatches[0] if dispatches else None,
+        "execution_index": execution_index,
+        "card_executions": execution_index["executions"],
         "fleet_instances": instances,
         "fleet_capacity": fleet_capacity,
         "dispatch_inventory": dispatch_inventory,
