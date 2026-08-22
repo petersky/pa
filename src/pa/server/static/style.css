@@ -2117,12 +2117,14 @@ code {
   padding: 0.25rem 1rem;
 }
 
-.acw-load-older {
+.acw-load-older,
+.acw-load-newer {
   align-self: center;
   flex: 0 0 auto;
 }
 
-.acw-load-older-status {
+.acw-load-older-status,
+.acw-load-newer-status {
   align-self: center;
   margin: -0.3rem 0 0;
   color: var(--pa-danger);
