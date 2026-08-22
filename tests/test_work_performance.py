@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -66,6 +66,41 @@ def test_repeated_work_navigations_have_a_stable_server_budget() -> None:
         assert max(sizes) == min(sizes)
         assert max(durations) < 1.0
         assert sum(durations[-5:]) / 5 < 2 * (sum(durations[:5]) / 5) + 0.02
+
+
+def test_all_page_shells_ignore_fifteen_second_optional_probes() -> None:
+    """Desktop/mobile navigation is bounded by local projections, not discovery."""
+    with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
+        paths = (
+            "/",
+            "/work",
+            "/goals",
+            "/projects",
+            "/workshop",
+            "/fleet",
+            "/settings",
+        )
+        # Exercise Jinja compilation outside the navigation SLO, as a
+        # long-lived PA process has already compiled its page templates.
+        for path in paths:
+            assert client.get(path).status_code == 200
+        slow_probe = Mock(side_effect=lambda *_args, **_kwargs: time.sleep(15))
+        viewports = ("1440x1000", "390x844")
+        with patch("pa.fleet.overview._probe", slow_probe):
+            for viewport in viewports:
+                for path in paths:
+                    started = time.perf_counter()
+                    response = client.get(
+                        path,
+                        headers={"X-PA-Test-Viewport": viewport},
+                    )
+                    elapsed = time.perf_counter() - started
+                    assert response.status_code == 200, (path, response.text)
+                    assert elapsed < 0.5, (viewport, path, elapsed)
+                    assert "page_shell" in response.headers.get("server-timing", "") or (
+                        "shell" in response.headers.get("server-timing", "")
+                    )
+        slow_probe.assert_not_called()
 
 
 def test_lane_batches_sessions_and_dispatch_progress_once() -> None:

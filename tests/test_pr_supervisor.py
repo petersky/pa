@@ -6,6 +6,7 @@ import hmac
 import json
 import random
 import tempfile
+import time
 import unittest
 from datetime import timedelta
 from pathlib import Path
@@ -3556,3 +3557,90 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
         self.assertEqual(result["policy"]["integration_branch"], "release")
         self.assertEqual(result["policy"]["required_checks"], ["release-ci"])
         self.assertFalse(result["policy"]["auto_notify"])
+
+
+class PRSupervisorTriagePageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        reset_store()
+        reset_instance_agent()
+        self.settings = Settings(
+            data_dir=Path(self.tmp.name),
+            instance_id="11111111-1111-4111-8111-111111111111",
+            instance_url="http://api-instance",
+            fleet_owner_url="http://api-instance",
+            sync_token="fleet-secret",
+            agent_enabled=False,
+            peers=[],
+            subscribed_realms=["default"],
+        )
+
+    def tearDown(self) -> None:
+        reset_instance_agent()
+        reset_store()
+        self.tmp.cleanup()
+
+    def test_production_history_is_bounded_and_terminal_copy_is_truthful(self) -> None:
+        app = Kernel.boot(settings=self.settings).build_app()
+        with TestClient(app) as client:
+            store = app.state.ctx.require_service("pr_supervisor_store")
+            for number in range(1, 121):
+                store.upsert_watch(
+                    PRWatch(
+                        id=f"terminal-{number}", repository="owner/history",
+                        pr_number=number, pr_url=f"https://example.test/{number}",
+                        status=PRWatchStatus.RETIRED, retired_at=utcnow(),
+                        state={"supervisor_state": "waiting for observation"},
+                    )
+                )
+            active = PRWatch(
+                id="active-watch", repository="owner/active", pr_number=246,
+                pr_url="https://example.test/246", head_sha="a" * 40,
+                state={"draft": True, "review_decision": None,
+                       "mergeable_state": "clean",
+                       "gate": {"green": False, "actionable": True,
+                                "reasons": ["pull request is draft"],
+                                "failing_checks": [], "pending_checks": []}},
+            )
+            store.upsert_watch(active)
+            started = time.perf_counter()
+            page = client.get("/pull-requests")
+            self.assertLess(time.perf_counter() - started, 2.0)
+            self.assertIn("owner/active #246", page.text)
+            self.assertNotIn("owner/history #1<", page.text)
+            self.assertIn("1 result", page.text)
+
+            history = client.get("/pull-requests?view=history")
+            self.assertEqual(history.text.count("owner/history #"), 25)
+            self.assertIn("Page 1 of 5", history.text)
+            self.assertNotIn("Retired</strong> · waiting for observation", history.text)
+            self.assertNotIn("waiting for observation", history.text)
+
+    def test_detail_coalesces_observations_and_preserves_filter_url(self) -> None:
+        app = Kernel.boot(settings=self.settings).build_app()
+        with TestClient(app) as client:
+            store = app.state.ctx.require_service("pr_supervisor_store")
+            target = PRWatch(
+                id="draft-watch", repository="owner/repo", pr_number=17,
+                pr_url="https://example.test/17", head_sha="b" * 40,
+                state={"draft": True, "mergeable_state": "clean",
+                       "gate": {"green": False, "actionable": True,
+                                "reasons": ["pull request is draft"],
+                                "failing_checks": [], "pending_checks": []}},
+            )
+            store.upsert_watch(target)
+            for index in range(3):
+                store.append_event(PRWatchEvent(
+                    watch_id=target.id, event_key=f"observation-{index}",
+                    event_type="observation", head_sha=target.head_sha,
+                    payload={"reasons": ["pull request is draft"]},
+                ))
+            page = client.get(
+                "/pull-requests?view=attention&q=owner%2Frepo&page=1&watch=draft-watch"
+            )
+            self.assertIn("Draft; waiting for author", page.text)
+            self.assertIn("Durable audit ledger (3 events)", page.text)
+            self.assertIn("× 3", page.text)
+            self.assertIn("q=owner/repo", page.text)
+            self.assertIn('id="watch-title" tabindex="-1"', page.text)
+            self.assertIn('title="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"', page.text)

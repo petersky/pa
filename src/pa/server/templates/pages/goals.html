@@ -8,8 +8,9 @@
 </article>
 <div class="card-list">
 {% for goal in goals %}
+  {% set goal_status = presentation_state('goal', goal.state.value) %}
   <article class="card">
-    <header><strong>{{ goal.objective }}</strong><span class="badge">{{ goal.state.value }}</span><span class="badge">{{ goal.supervision.drift_state.value }}</span></header>
+    <header><strong>{{ goal.objective }}</strong><span class="badge" title="{{ goal_status.explanation }}">{{ goal_status.label }}</span><span class="badge">{{ goal.supervision.drift_state.value }}</span></header>
     <p>{{ goal.progress_summary or goal.motivation }}</p>
     <p>{{ goal.criteria | selectattr('verdict.value', 'equalto', 'satisfied') | list | length }}/{{ goal.criteria | length }} criteria satisfied · revision {{ goal.revision }} · policy {{ goal.policy.revision }}</p>
     <p>Priority {{ autonomy[goal.id].priority }} · autonomy {{ goal.policy.autonomy_level }} · ${{ '%.2f' | format(autonomy[goal.id].usage.cost_usd) }} used · {{ autonomy[goal.id].provider_runs | length }} provider runs</p>

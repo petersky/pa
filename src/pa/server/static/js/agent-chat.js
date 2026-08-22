@@ -159,7 +159,9 @@
     this.createLabel = root.dataset.createLabel || "default";
     this.cardId = root.dataset.cardId || "";
     this.apiBase = (root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
+    this.defaultApiBase = this.apiBase === "" ? "/api/agent" : this.apiBase;
     this.autoStart = root.dataset.autoStart !== "0";
+    this._missingRestartAttempted = false;
     this.showThinking = root.dataset.showThinking !== "0";
     this.showSystem = root.dataset.showSystemPrompts === "1";
     this.showQueue = root.dataset.showQueue !== "0";
@@ -264,6 +266,7 @@
     this.composerEnabled = true;
     this.turnActive = false;
     this.sessionClosed = false;
+    this.ownerResolutionPending = false;
     this.connectionNoticeShown = false;
     this.rawText = false;
     this.pendingImages = [];
@@ -536,14 +539,35 @@
     if (this.els.end) this.els.end.hidden = detail.live !== true;
   };
 
+  AgentChatWidget.prototype._apiBaseForOwner = function (ownerInstanceId) {
+    const owner = String(ownerInstanceId || "");
+    if (!owner) return this.defaultApiBase || "/api/agent";
+    // Local ownership must never go through the fleet self-proxy. An empty
+    // currentInstanceId used to treat every owner as remote, which after a
+    // network change left the chat stuck proxying via a stale instance URL.
+    if (!this.currentInstanceId || owner === this.currentInstanceId) {
+      return "/api/agent";
+    }
+    return "/api/fleet/instances/" + encodeURIComponent(owner) + "/agent";
+  };
+
   AgentChatWidget.prototype.clearSelectedSession = function () {
     this.closeSSE("session-cleared");
+    if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
+    this.liveStateRetryId = null;
+    if (this.startupRetryId) clearTimeout(this.startupRetryId);
+    this.startupRetryId = null;
+    if (this.routeAbortController) {
+      this.routeAbortController.abort();
+      this.routeAbortController = null;
+    }
     this.sessionId = "";
     this.ownerInstanceId = "";
     this.sessionRoute = null;
     this.root.dataset.sessionId = "";
     this.root.dataset.ownerInstanceId = "";
-    this.apiBase = String(this.root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
+    this.apiBase = this.defaultApiBase || "/api/agent";
+    this.root.dataset.apiBase = this.apiBase;
     this.lastSeq = 0;
     this.sessionClosed = true;
     this.setTurnActive(false);
@@ -634,7 +658,8 @@
     }
     this.clearSelectedSession();
     refreshSessionList(null);
-    if (code === "session_deleted" && this.autoStart) {
+    if (code === "session_deleted" && this.autoStart && !this._missingRestartAttempted) {
+      this._missingRestartAttempted = true;
       setTimeout(function () { self.init(); }, 0);
     }
     return Promise.resolve(null);
@@ -813,6 +838,8 @@
     const self = this;
     options = options || {};
     const generation = ++this.subscriptionGeneration;
+    if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
+    this.liveStateRetryId = null;
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
@@ -825,14 +852,12 @@
     this._setRecoveryControl(false);
     this.showRecoveryActions({});
     this.sessionClosed = true;
+    this.ownerResolutionPending = true;
     this.setComposerEnabled(false);
     this.setPlaceholder("Locating session owner…");
     let durableHistory = null;
     if (this.ownerInstanceId) {
-      this.apiBase = this.ownerInstanceId === this.currentInstanceId
-        ? "/api/agent"
-        : "/api/fleet/instances/" +
-          encodeURIComponent(this.ownerInstanceId) + "/agent";
+      this.apiBase = this._apiBaseForOwner(this.ownerInstanceId);
       this.root.dataset.apiBase = this.apiBase;
     }
     const loadDurableHistory = function () {
@@ -849,6 +874,7 @@
     return this.resolveSessionRoute(sessionId, this.ownerInstanceId)
       .then(function (route) {
         if (self.destroyed || generation !== self.subscriptionGeneration) return null;
+        self.ownerResolutionPending = false;
         self.sessionRoute = route;
         self.ownerInstanceId = route.owner && route.owner.instance_id || self.ownerInstanceId;
         self.root.dataset.ownerInstanceId = self.ownerInstanceId;
@@ -879,9 +905,16 @@
           refreshSessionList(null);
           self.setStatus("error");
           self.setPlaceholder(route.message || "This agent session was deleted or has expired.");
-          if (self.autoStart) setTimeout(function () { self.init(); }, 0);
+          // Replace a missing auto-started session once. Without this guard,
+          // a poisoned fleet apiBase (or remote 404) creates sessions that
+          // immediately resolve as missing again and flicker forever.
+          if (self.autoStart && !self._missingRestartAttempted) {
+            self._missingRestartAttempted = true;
+            setTimeout(function () { self.init(); }, 0);
+          }
           return null;
         }
+        self._missingRestartAttempted = false;
         if (route.live) {
           if (self.startupRetryId) clearTimeout(self.startupRetryId);
           self.startupRetryId = null;
@@ -916,11 +949,13 @@
         // keeps an actively streaming standalone session usable when the fleet
         // route lookup itself is slow or unavailable.
         if (self.ownerInstanceId) {
+          self.ownerResolutionPending = false;
           self.sessionRoute = { state: "live_degraded", live: true };
           self._writeSessionUrl(!!options.replace);
           return self._loadLiveSnapshot(sessionId, generation);
         }
         return loadDurableHistory().catch(function () { return null; }).then(function () {
+          self.ownerResolutionPending = false;
           self.sessionRoute = { state: "owner_unreachable" };
           self.setPlaceholder(
             "Live state is temporarily unavailable. Durable history is shown when available; PA will retry automatically."
@@ -1108,7 +1143,9 @@
 
   AgentChatWidget.prototype.setPlaceholder = function (text) {
     if (this.els.placeholder) {
-      this.els.placeholder.textContent = text;
+      if (this.els.placeholder.textContent !== text) {
+        this.els.placeholder.textContent = text;
+      }
       this.els.placeholder.hidden = false;
     }
   };
@@ -1237,6 +1274,76 @@
     this.els.status.className = "acw-status-dot is-" + state;
   };
 
+  AgentChatWidget.prototype._hasTurnHistory = function () {
+    const turnEvents = {
+      user_message: true,
+      agent_message: true,
+      agent_message_chunk: true,
+      agent_thought_chunk: true,
+      tool_call: true,
+      tool_call_update: true,
+      turn_completed: true,
+      turn_waiting: true,
+      prompt_failed: true,
+      cancelled: true,
+    };
+    return (this.transcriptEvents || []).some(function (event) {
+      return !!turnEvents[event && (event.type || event.event_type)];
+    });
+  };
+
+  AgentChatWidget.prototype.updateEmptyChatStatus = function (snap) {
+    snap = snap || this.lastSnapshot || {};
+    if (this._hasTurnHistory()) {
+      this.clearPlaceholder();
+      return;
+    }
+    if (this.ownerResolutionPending) {
+      this.setPlaceholder("Locating session owner…");
+      return;
+    }
+    const session = snap.session || {};
+    const provisioning = session.config_json && session.config_json.provisioning || {};
+    const status = session.status || "";
+    const queue = snap.queue || [];
+    if (status === "closed") {
+      this.setPlaceholder("Session ended. Its durable history is still available.");
+    } else if (status === "provisioning") {
+      this.setPlaceholder("Preparing the session workspace…");
+    } else if (status === "connecting") {
+      this.setPlaceholder("Connecting to the agent provider…");
+    } else if (status === "configuring") {
+      this.setPlaceholder("Configuring the agent provider…");
+    } else if (status === "provisioning_failed" || status === "configuration_failed") {
+      this.setPlaceholder(
+        provisioning.error || provisioning.action ||
+        (status === "provisioning_failed"
+          ? "Session provisioning failed. Retry or end the session."
+          : "Provider configuration failed. Retry or end the session.")
+      );
+    } else if (status === "recovery_blocked" || provisioning.state === "blocked") {
+      this.setPlaceholder(
+        provisioning.action || "Session recovery is blocked. Retry or end the session."
+      );
+    } else if (snap.prompting) {
+      this.setPlaceholder("The agent is working…");
+    } else if (queue.length) {
+      this.setPlaceholder("Prompt queued — waiting to start.");
+    } else if (
+      status === "recoverable_interrupted" || status === "disconnected" ||
+      status === "quiesced" || !snap.connected
+    ) {
+      this.setPlaceholder("The provider connection is recovering…");
+    } else if (
+      this.sessionRoute && this.sessionRoute.live &&
+      snap.connected && this.composerEnabled && !this.sessionClosed
+    ) {
+      this.setPlaceholder("Ready to chat — send your first prompt.");
+    } else {
+      this.setPlaceholder("Send a message to the agent.");
+    }
+  };
+
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
@@ -1286,6 +1393,7 @@
     (snap.pending_permissions || []).forEach(function (req) {
       if (req && typeof req === "object") self.showPermission(req);
     });
+    this.updateEmptyChatStatus(snap);
     refreshSessionList(this.sessionId);
   };
 
@@ -2222,8 +2330,10 @@
     const self = this;
     if (!this.sessionId) return;
     this.api("/sessions/" + this.sessionId).then(function (snap) {
+      self.lastSnapshot = Object.assign({}, self.lastSnapshot || {}, snap);
       self.queuePaused = !!snap.queue_paused;
       self.renderQueue(snap.queue || []);
+      self.updateEmptyChatStatus(snap);
     }).catch(function () { /* ignore */ });
   };
 
@@ -2464,9 +2574,14 @@
     this.closeSSE("api-base-changed");
     this.stopBrowserRefresh();
     this.apiBase = next;
+    this.root.dataset.apiBase = next;
+    // Remote operations call setApiBase before selecting a session. Preserve
+    // that base so clearSelectedSession does not bounce back to /api/agent.
+    if (instanceId && this.currentInstanceId && instanceId !== this.currentInstanceId) {
+      this.defaultApiBase = next;
+    }
     if (this.drafts) this.drafts.setInstance(instanceId);
     this.sessionId = "";
-    this.root.dataset.apiBase = next;
     this.root.dataset.sessionId = "";
     this.lastSeq = 0;
     this.transcriptEvents = [];
@@ -2591,15 +2706,17 @@
   };
 
   AgentChatWidget.prototype.markSessionEnded = function (message) {
+    const endedMessage = message || "Session ended.";
     this.sessionClosed = true;
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setComposerEnabled(false);
     this.closeSSE("session-ended");
-    this.addBubble("system", message || "Session ended.", new Date().toISOString(), {
+    this.addBubble("system", endedMessage, new Date().toISOString(), {
       system: true,
       forceVisible: true,
     });
+    if (!this._hasTurnHistory()) this.setPlaceholder(endedMessage);
   };
 
   AgentChatWidget.prototype.scrollToBottom = function () {

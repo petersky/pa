@@ -127,6 +127,12 @@ pa doctor
 pa status
 ```
 
+For headless GitHub CLI use, store the token locally in
+`integrations/github.json` (or `PA_GITHUB_TOKEN`) and explicitly enable
+`agent_github_token_enabled`. PA injects only `GH_TOKEN` into ACP children and
+does not fleet-sync it. Interactive OAuth/keyring remains supported when the
+setting is off or no managed token exists; `GH_TOKEN` wins when both are present.
+
 Join tokens (server-aware):
 
 ```bash

@@ -83,6 +83,65 @@ FRESHNESS_LABELS = {
     "unavailable": "Unavailable",
 }
 
+PRESENTATION_STATES = {
+    "lane": {
+        "inbox": ("Inbox", "Authored work that has not started."),
+        "active": ("Active", "Work currently selected for delivery."),
+        "waiting": ("Waiting", "Work intentionally paused or awaiting a dependency."),
+        "done": ("Done", "The card's workflow lane is complete."),
+    },
+    "session": {
+        "working": ("Working", "The agent has a current turn or tool."),
+        "idle": ("Agent idle", "The session is connected without an active turn."),
+        "completed": ("Session ended", "The agent session has ended."),
+        "failed": ("Session failed", "The agent session ended with a failure."),
+        "stale": ("Session signal overdue", "The worker has no current runtime signal."),
+    },
+    "goal": {
+        "proposed": ("Proposed", "The goal is awaiting authorization."),
+        "active": ("Active", "The goal is authorized and in progress."),
+        "paused": ("Paused", "Goal execution is intentionally paused."),
+        "blocked": ("Blocked", "The goal needs a decision or dependency."),
+        "achieved": ("Achieved", "The goal's success criteria were met."),
+        "failed": ("Failed", "The goal ended without meeting its criteria."),
+        "abandoned": ("Abandoned", "The goal was intentionally ended."),
+    },
+    "freshness": {
+        key: (
+            label,
+            {
+                "fresh": "The signal is current.",
+                "live": "The signal is current.",
+                "delayed": "The signal is later than expected.",
+                "stale": "The signal is old and may not describe current state.",
+                "stalled": "The expected update is overdue.",
+                "disconnected": "The runtime is not connected.",
+                "completed": "The reported activity is complete.",
+                "failed": "The reported activity failed.",
+                "unavailable": "No signal is available.",
+            }[key],
+        )
+        for key, label in FRESHNESS_LABELS.items()
+    },
+    "dispatch": {
+        key: (label, f"Dispatch state: {label}.")
+        for key, label in DISPATCH_LABELS.items()
+    },
+}
+
+
+def presentation_state(domain: str, state: Any) -> dict[str, str]:
+    """Map persisted state to stable human language without mutating it."""
+    key = str(_enum_value(state) or "").casefold()
+    label, explanation = PRESENTATION_STATES.get(domain, {}).get(
+        key,
+        (
+            key.replace("_", " ").replace("-", " ").capitalize() or "Unknown",
+            "No additional status detail is available.",
+        ),
+    )
+    return {"state": key, "label": label, "explanation": explanation}
+
 
 def _value(source: Any, key: str, default: Any = None) -> Any:
     if source is None:
@@ -131,7 +190,19 @@ def relative_time(value: Any, *, now: datetime | None = None) -> str:
     if observed is None:
         return "Time unavailable"
     current = now or datetime.now(UTC)
-    seconds = max(0, int((current - observed).total_seconds()))
+    delta = int((current - observed).total_seconds())
+    if delta < -5:
+        seconds = abs(delta)
+        if seconds < 60:
+            return f"In {seconds}s"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"In {minutes}m"
+        hours = minutes // 60
+        if hours < 24:
+            return f"In {hours}h"
+        return f"In {hours // 24}d"
+    seconds = max(0, delta)
     if seconds < 10:
         return "Just now"
     if seconds < 60:
@@ -145,7 +216,8 @@ def relative_time(value: Any, *, now: datetime | None = None) -> str:
     days = hours // 24
     if days < 7:
         return f"{days}d ago"
-    return observed.astimezone(UTC).strftime("%b %-d, %Y")
+    utc_observed = observed.astimezone(UTC)
+    return f"{utc_observed:%b} {utc_observed.day}, {utc_observed.year}"
 
 
 def absolute_time(value: Any) -> str:

@@ -37,6 +37,7 @@ from pa.core.logging import redact_log_text
 from pa.domain.instance_config import load_instance_config
 from pa.install.metadata import load_install_metadata
 from pa.packaging.service_env import service_environment
+from pa.pr_supervisor.github import GitHubCredentials
 from pa.status.serving import (
     ServingDiagnosis,
     SyncDiagnosis,
@@ -101,6 +102,42 @@ def _canonical(name: str, value: str | None) -> Any:
     if value.lower() in {"true", "false"}:
         return value.lower() == "true"
     return value
+
+
+def _github_agent_auth(settings: Any) -> dict[str, Any]:
+    """Report credential modes without returning credential material."""
+    credentials = GitHubCredentials.load(settings.data_dir)
+    try:
+        oauth = subprocess.run(
+            ["gh", "auth", "status"],
+            env=sanitize_provider_environment(os.environ),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        ).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        oauth = False
+    injected = bool(settings.agent_github_token_enabled and credentials.token)
+    if oauth and injected:
+        mode = "both"
+    elif injected:
+        mode = "injected_gh_token"
+    elif oauth:
+        mode = "oauth_keyring"
+    else:
+        mode = "neither"
+    source = credentials.token_source
+    if source == "environment":
+        source = "gh_token_env"
+    return {
+        "mode": mode,
+        "oauth_keyring": oauth,
+        "injected_gh_token": injected,
+        "injection_enabled": bool(settings.agent_github_token_enabled),
+        "token_source": source or "missing",
+        "allowed_repository_count": len(credentials.allowed_repositories),
+    }
 
 
 async def _check_health(url: str, token: str) -> bool:
@@ -930,6 +967,16 @@ def run_doctor(*, verbose: bool = False, json_output: bool = False) -> int:
                 )
             )
     findings.extend(_provider_findings(settings))
+    github_auth = _github_agent_auth(settings)
+    findings.append(
+        Finding(
+            "PA-DOC-AGENT-GITHUB-AUTH",
+            "info",
+            f"Agent GitHub authentication mode: {github_auth['mode']}.",
+            "Reports OAuth and PA-managed GH_TOKEN availability without credential values.",
+            github_auth,
+        )
+    )
     if settings.peers:
         for peer, ok in asyncio.run(_check_peers(settings.peers, settings.sync_token)):
             if not ok:

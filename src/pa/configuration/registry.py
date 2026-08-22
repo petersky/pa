@@ -767,6 +767,16 @@ _DEFINITIONS = (
         apply="restart",
     ),
     _s(
+        "agent_github_token_enabled",
+        "bool",
+        False,
+        "Inject the instance-local GitHub credential into ACP providers as GH_TOKEN.",
+        "Agent",
+        45,
+        "Enabling gives every agent process on this instance the credential's repository access.",
+        apply="restart",
+    ),
+    _s(
         "agent_recovery_concurrency",
         "int",
         2,

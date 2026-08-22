@@ -26,6 +26,14 @@
     var cancel = scope.querySelector("#pa-configuration-cancel");
     var status = scope.querySelector("#pa-configuration-status");
     var validationTimer = null;
+    var summaryTest = scope.querySelector("#pa-card-summary-test");
+    var summaryProgress = scope.querySelector("#pa-card-summary-test-progress");
+    var summaryResult = scope.querySelector("#pa-card-summary-test-result");
+    var summaryKeys = new Set([
+      "card_summary_provider", "card_summary_model", "card_summary_base_url",
+      "card_summary_api_key", "card_summary_anthropic_api_key",
+      "card_summary_minimax_api_key"
+    ]);
 
     function headers() {
       var result = {"Content-Type": "application/json", Accept: "application/json"};
@@ -67,6 +75,52 @@
     function stagedCount() {
       return Object.keys(staged).length + clear.size;
     }
+
+    function summaryTestPayload() {
+      var changes = {};
+      Object.keys(staged).forEach(function (key) {
+        if (summaryKeys.has(key)) changes[key] = staged[key];
+      });
+      return {
+        changes: changes,
+        clear: Array.from(clear).filter(function (key) { return summaryKeys.has(key); }),
+        target: "local",
+        idempotency_key: "web-summary-test:" + (
+          window.crypto && window.crypto.randomUUID
+            ? window.crypto.randomUUID()
+            : Date.now() + ":" + Math.random()
+        )
+      };
+    }
+
+    if (summaryTest) summaryTest.addEventListener("click", async function () {
+      if (summaryTest.disabled) return;
+      summaryTest.disabled = true;
+      summaryResult.hidden = true;
+      summaryProgress.textContent = "Testing the card-summary provider with a minimal model invocation…";
+      try {
+        var result = await request(
+          "/api/configuration/card-summary/test", "POST", summaryTestPayload()
+        );
+        summaryResult.querySelector("[data-summary-test-outcome]").textContent =
+          result.ok ? "Connection succeeded" : "Connection failed (" + result.code + ")";
+        summaryResult.querySelector("[data-summary-test-provider]").textContent = result.provider;
+        summaryResult.querySelector("[data-summary-test-model]").textContent = result.model;
+        summaryResult.querySelector("[data-summary-test-configuration]").textContent =
+          result.configuration === "staged" ? "Staged values (not saved)" : "Saved effective values";
+        summaryResult.querySelector("[data-summary-test-elapsed]").textContent =
+          result.elapsed_ms + " ms";
+        summaryResult.querySelector("[data-summary-test-message]").textContent = result.message;
+        summaryResult.hidden = false;
+        summaryProgress.textContent = result.ok
+          ? "Card-summary connection test completed successfully."
+          : "Card-summary connection test completed with an actionable failure.";
+      } catch (error) {
+        summaryProgress.textContent = errorMessage(error, "The connection test could not be completed.");
+      } finally {
+        summaryTest.disabled = false;
+      }
+    });
 
     function updateActions() {
       var total = stagedCount();

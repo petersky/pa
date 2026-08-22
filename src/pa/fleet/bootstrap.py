@@ -878,8 +878,22 @@ async def _probe_github_repositories(
     )
     conn = await _connect_ssh(remote)
     try:
+        # An SSH login may not share the PA service environment. If explicit
+        # agent injection is enabled, reproduce the same instance-file mapping
+        # in this short-lived shell without placing the token in the command,
+        # output, or durable bootstrap evidence.
+        credential_loader = (
+            "import json,os,pathlib;"
+            "d=pathlib.Path(os.environ.get('PA_DATA_DIR') or pathlib.Path.home()/'.pa');"
+            "load=lambda p:json.loads(p.read_text()) if p.exists() else {};"
+            "c=load(d/'config.json');g=load(d/'integrations'/'github.json');"
+            "print(g.get('token','') if c.get('agent_github_token_enabled',False) else '',end='')"
+        )
         commands = [
             "command -v gh >/dev/null",
+            f"managed_token=$(python3 -c {shlex.quote(credential_loader)} 2>/dev/null || true)",
+            '[ -z "$managed_token" ] || export GH_TOKEN="$managed_token"',
+            "unset managed_token",
             "gh auth status >/dev/null 2>&1",
             "gh api user --jq .login >/dev/null",
         ]
@@ -911,6 +925,7 @@ async def _probe_github_repositories(
     return {
         "authenticated": True,
         "api": True,
+        "auth_mode": "verified_gh_cli",
         "transport": request.github_transport,
         "repositories": {
             repository: {"read": True, "push": True, "pr_api": True}
