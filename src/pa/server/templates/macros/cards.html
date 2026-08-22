@@ -85,7 +85,7 @@
     </div>
     <span class="muted small">
       {{ progress.freshness.state }}
-      {% if progress.freshness.age_seconds is not none %} · {{ progress.freshness.age_seconds }}s ago{% endif %}
+      {% if progress.freshness.last_activity_at %} · <time datetime="{{ progress.freshness.last_activity_at }}" title="{{ absolute_time(progress.freshness.last_activity_at) }}">{{ relative_time(progress.freshness.last_activity_at) }}</time>{% endif %}
     </span>
   </div>
   {% elif progress and progress.reporting == 'lifecycle_only' %}
@@ -111,14 +111,15 @@
     </time>
     {% endif %}
     {% if movable %}
-    <details class="card-move-menu">
-      <summary>Move</summary>
-      <div role="menu">
+    <details class="card-move-menu" data-card-action-menu>
+      <summary aria-label="Actions for {{ card.title }}">Actions</summary>
+      <div role="menu" aria-label="Actions for {{ card.title }}">
         {% for target_lane in lanes %}
         {% if target_lane != card.lane %}
         <button type="button" role="menuitem"
-                data-card-move-to="{{ target_lane.value }}">
-          {{ target_lane.value | capitalize }}
+                data-card-move-to="{{ target_lane.value }}"
+                aria-label="Move {{ card.title }} to {{ presentation_state('lane', target_lane.value).label }}">
+          Move to {{ presentation_state('lane', target_lane.value).label }}
         </button>
         {% endif %}
         {% endfor %}
