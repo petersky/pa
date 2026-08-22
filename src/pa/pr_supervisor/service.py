@@ -1628,6 +1628,51 @@ class PRSupervisor:
     async def _process_watch(self, watch: PRWatch, grant: LeaseGrant) -> None:
         now = utcnow()
         try:
+            # Watches do not retain autonomous authority from a stale policy
+            # snapshot. Refresh canonical policy before every observation/effect;
+            # a change also advances the durable hold version so prepared effect
+            # receipts can no longer be accepted.
+            canonical_project = None
+            if watch.project_id:
+                canonical_project = await self._offload(
+                    "sqlite.project_read",
+                    self.domain_store.get_project,
+                    watch.project_id,
+                    realm_id=watch.realm_id,
+                )
+            refreshed = (
+                await self.freeze_canonical_policy(watch.model_copy(deep=True))
+                if not watch.project_id or canonical_project is not None
+                else watch
+            )
+            if refreshed.policy_revision != watch.policy_revision:
+                prior_revision = watch.policy_revision
+                refreshed.state = {
+                    **(watch.state or {}),
+                    "review_hold_version": int(
+                        (watch.state or {}).get("review_hold_version") or 0
+                    )
+                    + 1,
+                    "policy_stale": False,
+                    "policy_changed_from": prior_revision,
+                }
+                watch = await self._offload(
+                    "sqlite.pr_supervisor_policy_refresh",
+                    self.store.upsert_watch,
+                    refreshed,
+                    preserve_lease=True,
+                )
+                await self._audit(
+                    watch,
+                    "watch_policy_reauthorized",
+                    f"{watch.id}:policy:{watch.policy_revision}",
+                    payload={
+                        "previous_revision": prior_revision,
+                        "policy_revision": watch.policy_revision,
+                        "policy_source": watch.policy_source,
+                        "review_hold_version": watch.state["review_hold_version"],
+                    },
+                )
             snapshot = await self._observe(
                 "http.github_snapshot",
                 self.github.snapshot(
@@ -1727,6 +1772,23 @@ class PRSupervisor:
             attempt = 0 if changed else min(watch.poll_attempt + 1, 16)
             next_poll = self._next_poll(watch.policy, attempt)
             observation_state = self._safe_snapshot(snapshot, gate)
+            prior_hold = dict((watch.state or {}).get("publication_fence") or {})
+            hold_active = bool(snapshot.draft)
+            hold_version = int((watch.state or {}).get("review_hold_version") or 0)
+            if hold_active != bool(prior_hold.get("active")):
+                hold_version += 1
+            observation_state["review_hold_version"] = hold_version
+            observation_state["publication_fence"] = {
+                "active": hold_active,
+                "reason": "pull_request_draft" if hold_active else None,
+                "source": "github_observation",
+                "head_sha": snapshot.head_sha,
+                "version": hold_version,
+                "state": "paused_for_review" if hold_active else "released",
+            }
+            observation_state["policy_source"] = watch.policy_source
+            observation_state["policy_revision"] = watch.policy_revision
+            observation_state["policy_stale"] = False
             prior_repair = (watch.state or {}).get("repair_notification") or {}
             repair_epoch = int(prior_repair.get("epoch") or 0)
             repair_active = bool(gate.actionable and gate.repair_fingerprint)
