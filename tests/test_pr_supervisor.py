@@ -3774,7 +3774,8 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
                 "/pull-requests?view=attention&q=owner%2Frepo&page=1&watch=draft-watch"
             )
             self.assertIn("Draft; waiting for author", page.text)
-            self.assertIn("Durable audit ledger (3 events)", page.text)
+            self.assertRegex(page.text, r"Durable audit ledger \([34] events\)")
+            self.assertIn("observation</span> × 3", page.text)
             self.assertIn("× 3", page.text)
             self.assertIn("q=owner/repo", page.text)
             self.assertIn('id="watch-title" tabindex="-1"', page.text)
