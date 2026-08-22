@@ -186,6 +186,9 @@
       systemToggle: root.querySelector("[data-acw-toggle-system]"),
       rawToggle: root.querySelector("[data-acw-toggle-raw]"),
       recover: root.querySelector("[data-acw-recover]"),
+      restart: root.querySelector("[data-acw-restart]"),
+      end: root.querySelector("[data-acw-end]"),
+      sessionActionStatus: root.querySelector("[data-acw-session-action-status]"),
       history: root.querySelector("[data-acw-history]"),
       promote: root.querySelector("[data-acw-promote]"),
       working: root.querySelector("[data-acw-working]"),
@@ -262,7 +265,14 @@
     this.submissionState = "idle";
     this.composerEnabled = true;
     this.turnActive = false;
-    this.sessionClosed = false;
+    // Treat a preselected session as unavailable until its durable/live state
+    // is known; this prevents server-rendered controls from briefly going stale.
+    this.sessionClosed = !!this.sessionId;
+    this.sessionRecoverable = false;
+    this.durableHistoryAvailable = false;
+    this.recoveryControlVisible = false;
+    this.recoveryControlLabel = "Recover session";
+    this.closePending = false;
     this.connectionNoticeShown = false;
     this.rawText = false;
     this.pendingImages = [];
@@ -281,6 +291,7 @@
     this.startupRetryCount = 0;
     this.liveStateRetryId = null;
     this._bind();
+    this.renderSessionActions();
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
       ? window.PAAgentDrafts.installWidget(this) : null;
     const self = this;
@@ -313,9 +324,9 @@
       });
     });
     if (this.els.stop) this.els.stop.addEventListener("click", function () { self.cancel(); });
-    const end = this.root.querySelector("[data-acw-end]");
+    const end = this.els.end;
     if (end) end.addEventListener("click", function () { self.closeSession(); });
-    const restart = this.root.querySelector("[data-acw-restart]");
+    const restart = this.els.restart;
     if (restart) restart.addEventListener("click", function () { self.restartSession(); });
     const cardLink = this.root.querySelector("[data-acw-card-link]");
     if (cardLink) cardLink.addEventListener("click", function () {
@@ -531,9 +542,56 @@
 
   AgentChatWidget.prototype.showRecoveryActions = function (detail) {
     detail = detail || {};
-    const recoverable = detail.recoverable === true;
-    if (this.els.recover) this.els.recover.hidden = !recoverable;
-    if (this.els.history) this.els.history.hidden = !detail.history_url;
+    this.sessionRecoverable = detail.recoverable === true;
+    this.durableHistoryAvailable = !!detail.history_url;
+    this.recoveryControlVisible = false;
+    this.renderSessionActions();
+  };
+
+  AgentChatWidget.prototype.renderSessionActions = function (state) {
+    state = state || {};
+    const terminal = Object.prototype.hasOwnProperty.call(state, "terminal")
+      ? !!state.terminal : !!this.sessionClosed;
+    const recoverable = Object.prototype.hasOwnProperty.call(state, "recoverable")
+      ? !!state.recoverable : !!this.sessionRecoverable;
+    const ownerUnreachable = !!(this.sessionRoute &&
+      (this.sessionRoute.state === "owner_unreachable" || this.sessionRoute.state === "live_degraded"));
+    const hasSession = !!this.sessionId;
+    const canEnd = hasSession && !terminal && !ownerUnreachable;
+    const canRestart = hasSession && terminal && recoverable;
+    if (this.els.end) {
+      this.els.end.hidden = !canEnd;
+      this.els.end.disabled = !canEnd || this.closePending;
+      this.els.end.setAttribute("aria-disabled", this.els.end.disabled ? "true" : "false");
+      this.els.end.title = this.closePending ? "End session request is in progress." : "End this live session.";
+    }
+    if (this.els.restart) {
+      this.els.restart.hidden = !canRestart;
+      this.els.restart.disabled = !canRestart;
+      this.els.restart.setAttribute("aria-disabled", canRestart ? "false" : "true");
+      this.els.restart.title = canRestart
+        ? "Resume this session using its existing durable provider identity."
+        : "Restart is unavailable for this session.";
+    }
+    if (this.els.recover) {
+      const showRecover = hasSession && this.recoveryControlVisible && !canRestart;
+      this.els.recover.hidden = !showRecover;
+      this.els.recover.disabled = !showRecover;
+      this.els.recover.setAttribute("aria-disabled", showRecover ? "false" : "true");
+      this.els.recover.textContent = this.recoveryControlLabel;
+    }
+    if (this.els.history) this.els.history.hidden = !this.durableHistoryAvailable;
+    if (this.els.sessionActionStatus) {
+      this.els.sessionActionStatus.textContent = this.closePending
+        ? "Ending this session…"
+        : canRestart
+          ? "This session has ended and can be resumed from durable state."
+          : terminal
+            ? "This session has ended. End session is unavailable."
+            : ownerUnreachable
+              ? "Live session controls are unavailable while the owner cannot be reached."
+              : canEnd ? "This session is live." : "No session is selected.";
+    }
   };
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
@@ -546,10 +604,14 @@
     this.apiBase = String(this.root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
     this.lastSeq = 0;
     this.sessionClosed = true;
+    this.sessionRecoverable = false;
+    this.durableHistoryAvailable = false;
+    this.recoveryControlVisible = false;
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setComposerEnabled(false);
     this.showRecoveryActions({});
+    this.renderSessionActions({ terminal: true, recoverable: false });
     if (this.root.closest(".page-agent")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("session");
@@ -593,6 +655,7 @@
       self.setStatus("offline");
       const recovery = history.recovery || {};
       self.showRecoveryActions({ recoverable: recovery.recoverable, history_url: "/api/agent/history/" + sessionId });
+      self.renderSessionActions({ terminal: true, recoverable: recovery.recoverable === true });
       return history;
     });
   };
@@ -793,10 +856,9 @@
   };
 
   AgentChatWidget.prototype._setRecoveryControl = function (visible, label) {
-    const button = this.root.querySelector("[data-acw-recover]");
-    if (!button) return;
-    button.hidden = !visible;
-    if (label) button.textContent = label;
+    this.recoveryControlVisible = !!visible;
+    if (label) this.recoveryControlLabel = label;
+    this.renderSessionActions();
   };
 
   AgentChatWidget.prototype._writeSessionUrl = function (replace) {
@@ -816,6 +878,7 @@
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
+    this.closePending = false;
     this.ownerInstanceId = ownerInstanceId || "";
     this.root.dataset.sessionId = sessionId;
     this.root.dataset.ownerInstanceId = this.ownerInstanceId;
@@ -825,6 +888,7 @@
     this._setRecoveryControl(false);
     this.showRecoveryActions({});
     this.sessionClosed = true;
+    this.renderSessionActions({ terminal: true, recoverable: false });
     this.setComposerEnabled(false);
     this.setPlaceholder("Locating session owner…");
     let durableHistory = null;
@@ -889,11 +953,13 @@
           return self._loadLiveSnapshot(sessionId, generation);
         }
         return loadDurableHistory().then(function (history) {
+          self.sessionClosed = true;
           self.setComposerEnabled(false);
           self.showRecoveryActions({
             recoverable: route.recoverable,
             history_url: "/api/agent/history/" + sessionId,
           });
+          self.renderSessionActions({ terminal: true, recoverable: route.recoverable === true });
           if (route.recoverable) {
             self._setRecoveryControl(true, "Recover session");
             self.addBubble("system", "PA restored this session's durable history. Reconnect it to continue.", new Date().toISOString(), { system: true, forceVisible: true });
@@ -969,6 +1035,7 @@
         self.showRecoveryActions({});
         self.applySnapshot(snap);
         self.sessionClosed = false;
+        self.renderSessionActions({ terminal: false, recoverable: false });
         self.setComposerEnabled(true);
         self.connectSSE();
         refreshSessionList(targetSessionId);
@@ -1243,8 +1310,10 @@
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
+    if (!this.sessionClosed) this.sessionRecoverable = false;
     if (this.drafts) this.drafts.onSnapshot(snap);
     this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
+    this.renderSessionActions();
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
     }
@@ -2590,10 +2659,12 @@
 
   AgentChatWidget.prototype.markSessionEnded = function (message) {
     this.sessionClosed = true;
+    this.closePending = false;
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setComposerEnabled(false);
     this.closeSSE("session-ended");
+    this.renderSessionActions();
     this.addBubble("system", message || "Session ended.", new Date().toISOString(), {
       system: true,
       forceVisible: true,
@@ -2924,12 +2995,20 @@
 
   AgentChatWidget.prototype.closeSession = function () {
     const self = this;
-    if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
+    if (!this.sessionId || this.sessionClosed || this.closePending) return;
+    const targetSessionId = this.sessionId;
+    const generation = this.subscriptionGeneration;
+    this.closePending = true;
+    this.renderSessionActions();
+    this.api("/sessions/" + targetSessionId + "/close", { method: "POST", body: "{}" }).then(function () {
+      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
       if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
       self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
       refreshSessionList(null);
     }).catch(function (err) {
+      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
+      self.closePending = false;
+      self.renderSessionActions();
       self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
     });
   };
@@ -2955,29 +3034,8 @@
   };
 
   AgentChatWidget.prototype.restartSession = function () {
-    const self = this;
-    if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
-      .then(function () {
-        self.closeSSE("session-restarted");
-        if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
-        if (self.drafts) self.drafts.switchSession("");
-        self.sessionId = "";
-        self.root.dataset.sessionId = "";
-        self.lastSeq = 0;
-        self.streaming = {};
-        Object.keys(self.toolTimers).forEach(function (id) {
-          const timer = self.toolTimers[id];
-          if (timer && timer.interval) clearInterval(timer.interval);
-        });
-        self.toolTimers = {};
-        self.setTurnActive(false);
-        self.setPlaceholder("Restarting session…");
-        self.init();
-      })
-      .catch(function (err) {
-        self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true });
-      });
+    if (!this.sessionId || !this.sessionClosed || !this.sessionRecoverable) return;
+    return this.recoverSession(this.sessionId);
   };
 
   AgentChatWidget.prototype.queueControl = function (action) {

@@ -81,12 +81,13 @@
           <label><input type="checkbox" data-acw-toggle-system> Show system messages</label>
           <label><input type="checkbox" data-acw-toggle-raw> Raw text</label>
           <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
-          <button type="button" class="ghost" data-acw-restart>Restart session</button>
+          <button type="button" class="ghost" data-acw-restart hidden>Restart session</button>
           <button type="button" class="ghost" data-acw-history hidden>Open durable history</button>
           {% if allow_card_capture %}<button type="button" class="ghost" data-acw-card-link>Capture in card…</button>{% endif %}
           <a class="text-btn" data-acw-promote
              href="/knowledge{% if sid %}?session={{ sid }}{% endif %}">Promote to memory</a>
           <button type="button" class="ghost danger" data-acw-end>End session</button>
+          <p class="muted small" data-acw-session-action-status role="status" aria-live="polite"></p>
         </div>
       </details>
     </div>
