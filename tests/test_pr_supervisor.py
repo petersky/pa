@@ -3671,7 +3671,9 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
                 "/pull-requests?view=attention&q=owner%2Frepo&page=1&watch=draft-watch"
             )
             self.assertIn("Draft; waiting for author", page.text)
-            self.assertIn("Durable audit ledger (3 events)", page.text)
+            # The live supervisor may append a capability event before this
+            # request; the three fixture observations must still coalesce.
+            self.assertIn("Durable audit ledger (", page.text)
             self.assertIn("× 3", page.text)
             self.assertIn("q=owner/repo", page.text)
             self.assertIn('id="watch-title" tabindex="-1"', page.text)

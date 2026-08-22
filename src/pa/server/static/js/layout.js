@@ -115,7 +115,10 @@
       el.classList.toggle("hidden", !show);
     });
     root.querySelectorAll("[data-section-link]").forEach(function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("data-section-link") === sectionId);
+      var active = btn.getAttribute("data-section-link") === sectionId;
+      btn.classList.toggle("active", active);
+      if (active) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
     });
     try {
       var url = new URL(window.location.href);
