@@ -186,6 +186,7 @@
       systemToggle: root.querySelector("[data-acw-toggle-system]"),
       rawToggle: root.querySelector("[data-acw-toggle-raw]"),
       recover: root.querySelector("[data-acw-recover]"),
+      end: root.querySelector("[data-acw-end]"),
       history: root.querySelector("[data-acw-history]"),
       promote: root.querySelector("[data-acw-promote]"),
       working: root.querySelector("[data-acw-working]"),
@@ -315,8 +316,6 @@
     if (this.els.stop) this.els.stop.addEventListener("click", function () { self.cancel(); });
     const end = this.root.querySelector("[data-acw-end]");
     if (end) end.addEventListener("click", function () { self.closeSession(); });
-    const restart = this.root.querySelector("[data-acw-restart]");
-    if (restart) restart.addEventListener("click", function () { self.restartSession(); });
     const cardLink = this.root.querySelector("[data-acw-card-link]");
     if (cardLink) cardLink.addEventListener("click", function () {
       openSessionCardDialog(self);
@@ -534,6 +533,7 @@
     const recoverable = detail.recoverable === true;
     if (this.els.recover) this.els.recover.hidden = !recoverable;
     if (this.els.history) this.els.history.hidden = !detail.history_url;
+    if (this.els.end) this.els.end.hidden = detail.live !== true;
   };
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
@@ -592,7 +592,7 @@
       self.setComposerEnabled(false);
       self.setStatus("offline");
       const recovery = history.recovery || {};
-      self.showRecoveryActions({ recoverable: recovery.recoverable, history_url: "/api/agent/history/" + sessionId });
+      self.showRecoveryActions({ recoverable: recovery.recoverable, history_url: "/api/agent/history/" + sessionId, live: false });
       return history;
     });
   };
@@ -773,7 +773,7 @@
       if (self.destroyed || generation !== self.subscriptionGeneration) return null;
       if (self.liveStateRetryId) clearTimeout(self.liveStateRetryId);
       self.liveStateRetryId = null;
-      self.showRecoveryActions({});
+      self.showRecoveryActions({ live: true });
       self.applySnapshot(snap);
       self.connectSSE();
       self.refreshBrowserState();
@@ -893,9 +893,10 @@
           self.showRecoveryActions({
             recoverable: route.recoverable,
             history_url: "/api/agent/history/" + sessionId,
+            live: false,
           });
           if (route.recoverable) {
-            self._setRecoveryControl(true, "Recover session");
+            self._setRecoveryControl(true, "Restart session");
             self.addBubble("system", "PA restored this session's durable history. Reconnect it to continue.", new Date().toISOString(), { system: true, forceVisible: true });
           } else {
             self.markSessionEnded("Session ended. Its durable history is still available.");
@@ -966,7 +967,7 @@
         self.sessionRoute.state = "live";
         self.sessionRoute.live = true;
         self.sessionRoute.recoverable = false;
-        self.showRecoveryActions({});
+        self.showRecoveryActions({ live: true });
         self.applySnapshot(snap);
         self.sessionClosed = false;
         self.setComposerEnabled(true);
@@ -1243,6 +1244,7 @@
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
+    this.showRecoveryActions({ live: !this.sessionClosed && !recoveryBlocked });
     if (this.drafts) this.drafts.onSnapshot(snap);
     this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
     if (recoveryBlocked && this.els.input) {
@@ -2925,9 +2927,15 @@
   AgentChatWidget.prototype.closeSession = function () {
     const self = this;
     if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
+    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function (result) {
       if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
       self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
+      const recovery = result && result.recovery || {};
+      self.showRecoveryActions({
+        recoverable: recovery.recoverable,
+        history_url: "/api/agent/history/" + self.sessionId,
+        live: false,
+      });
       refreshSessionList(null);
     }).catch(function (err) {
       self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
@@ -2952,32 +2960,6 @@
     }).finally(function () {
       if (self.els.recoveryRetry) self.els.recoveryRetry.disabled = false;
     });
-  };
-
-  AgentChatWidget.prototype.restartSession = function () {
-    const self = this;
-    if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
-      .then(function () {
-        self.closeSSE("session-restarted");
-        if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
-        if (self.drafts) self.drafts.switchSession("");
-        self.sessionId = "";
-        self.root.dataset.sessionId = "";
-        self.lastSeq = 0;
-        self.streaming = {};
-        Object.keys(self.toolTimers).forEach(function (id) {
-          const timer = self.toolTimers[id];
-          if (timer && timer.interval) clearInterval(timer.interval);
-        });
-        self.toolTimers = {};
-        self.setTurnActive(false);
-        self.setPlaceholder("Restarting session…");
-        self.init();
-      })
-      .catch(function (err) {
-        self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true });
-      });
   };
 
   AgentChatWidget.prototype.queueControl = function (action) {
