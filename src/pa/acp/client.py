@@ -5,6 +5,7 @@ import copy
 import inspect
 import json
 import logging
+from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from datetime import UTC, datetime
@@ -711,9 +712,11 @@ class AgentConnection:
             "last_failure": None,
         }
         self.auxiliary_mcp_provenance: list[dict[str, Any]] = []
-        self._wire_lock = asyncio.Lock()
-        self._wire_tasks: set[asyncio.Task[None]] = set()
-        self._wire_task_limit = 1024
+        self._wire_queue: deque[tuple[str, dict[str, Any]]] = deque()
+        self._wire_queue_limit = 256
+        self._wire_task: asyncio.Task[None] | None = None
+        self._wire_dropped = 0
+        self._wire_drop_report_at = 0.0
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -771,29 +774,69 @@ class AgentConnection:
         except RuntimeError:
             self._wire.log(direction, message)
             return
-        if len(self._wire_tasks) >= self._wire_task_limit:
-            logger.error("ACP wire-log queue is full; dropping one diagnostic record")
+        if len(self._wire_queue) >= self._wire_queue_limit:
+            self._wire_dropped += 1
+            now = loop.time()
+            if now >= self._wire_drop_report_at:
+                logger.warning(
+                    "ACP wire-log pressure dropped %s diagnostic record(s); "
+                    "further reports are suppressed for 30 seconds",
+                    self._wire_dropped,
+                )
+                self._wire_dropped = 0
+                self._wire_drop_report_at = now + 30.0
             return
 
-        async def write() -> None:
-            async with self._wire_lock:
-                assert self._wire is not None
-                await self._offload(
-                    "acp.wire_append",
-                    self._wire.log,
-                    direction,
-                    message,
-                    timeout=10.0,
-                )
+        self._wire_queue.append((direction, message))
+        if self._wire_task and not self._wire_task.done():
+            return
+        self._wire_task = loop.create_task(
+            self._flush_wire_logs(), name="pa-acp-wire-log"
+        )
 
-        task = loop.create_task(write(), name="pa-acp-wire-log")
-        self._wire_tasks.add(task)
-        task.add_done_callback(self._wire_tasks.discard)
+    async def _flush_wire_logs(self) -> None:
+        try:
+            while self._wire_queue:
+                direction, message = self._wire_queue.popleft()
+                wire = self._wire
+                if wire is None:
+                    continue
+                try:
+                    await self._offload(
+                        "acp.wire_append",
+                        wire.log,
+                        direction,
+                        message,
+                        timeout=10.0,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001
+                    self._wire_dropped += 1
+                    loop = asyncio.get_running_loop()
+                    now = loop.time()
+                    if now >= self._wire_drop_report_at:
+                        logger.warning(
+                            "ACP wire-log pressure dropped %s diagnostic record(s); "
+                            "further reports are suppressed for 30 seconds",
+                            self._wire_dropped,
+                        )
+                        self._wire_dropped = 0
+                        self._wire_drop_report_at = now + 30.0
+        finally:
+            self._wire_task = None
 
     async def _drain_wire_logs(self) -> None:
-        pending = set(self._wire_tasks)
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+        task = self._wire_task
+        if task:
+            await asyncio.gather(task, return_exceptions=True)
+        if self._wire_queue:
+            # A cancelled writer may leave buffered diagnostics behind. Give
+            # disconnect one final bounded attempt to flush them in order.
+            self._wire_task = asyncio.create_task(
+                self._flush_wire_logs(), name="pa-acp-wire-log-drain"
+            )
+            await asyncio.gather(self._wire_task, return_exceptions=True)
 
     async def _abort_connect_if_shutting_down(self, *, stage: str) -> None:
         from pa.server.shutdown import is_shutting_down

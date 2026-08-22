@@ -767,6 +767,63 @@ class AgentConfigurationAdmissionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentSessionRestoreTests(unittest.TestCase):
+    def test_wire_logging_uses_one_bounded_writer_under_pressure(self) -> None:
+        async def run() -> None:
+            release = asyncio.Event()
+            active = 0
+            max_active = 0
+
+            async def run_blocking(
+                operation, call, *args, timeout=None, **kwargs
+            ):
+                nonlocal active, max_active
+                self.assertEqual(operation, "acp.wire_append")
+                self.assertEqual(timeout, 10.0)
+                active += 1
+                max_active = max(max_active, active)
+                try:
+                    await release.wait()
+                    return call(*args, **kwargs)
+                finally:
+                    active -= 1
+
+            runtime = SimpleNamespace(run_blocking=run_blocking)
+            connection = AgentConnection(
+                Settings(data_dir=Path("/tmp")),
+                MagicMock(),
+                async_runtime=runtime,
+            )
+            connection._wire = MagicMock()
+            connection._wire_queue_limit = 3
+
+            with self.assertLogs("pa.acp.client", level="WARNING") as logs:
+                for index in range(10):
+                    connection._wire_log("in", {"index": index})
+                await asyncio.sleep(0)
+
+            self.assertIsNotNone(connection._wire_task)
+            self.assertEqual(len(connection._wire_queue), 2)
+            self.assertEqual(active, 1)
+            self.assertEqual(max_active, 1)
+            self.assertEqual(len(logs.output), 1)
+            self.assertIn("further reports are suppressed", logs.output[0])
+
+            release.set()
+            await connection._drain_wire_logs()
+
+            self.assertEqual(max_active, 1)
+            self.assertFalse(connection._wire_queue)
+            self.assertEqual(
+                connection._wire.log.call_args_list,
+                [
+                    unittest.mock.call("in", {"index": 0}),
+                    unittest.mock.call("in", {"index": 1}),
+                    unittest.mock.call("in", {"index": 2}),
+                ],
+            )
+
+        asyncio.run(run())
+
     def test_connect_records_launch_initialize_and_session_creation_phases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()
