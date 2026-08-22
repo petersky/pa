@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
-from pa.domain.models import FleetInstance
+from pa.domain.models import CardEvent, EventType, FleetInstance
 from pa.domain.store import get_store, reset_store
 from pa.fleet.placement import (
     PlacementCandidate,
@@ -28,6 +28,7 @@ from pa.fleet.policy import (
     PlacementDefault,
     compatibility_policy,
 )
+from pa.workloads import LEGACY_CODE_PROFILE_REASON
 
 
 def _fresh(value):
@@ -133,9 +134,7 @@ def test_every_automatic_policy_uses_the_same_policy_filtered_set(
     )
 
     assert decision.chosen_instance_id == "worker"
-    assert [item["instance_id"] for item in decision.eligible_candidates] == [
-        "worker"
-    ]
+    assert [item["instance_id"] for item in decision.eligible_candidates] == ["worker"]
     rejected = decision.rejected_candidates[0]
     assert rejected["instance_id"] == MACBOOK_INSTANCE_ID
     assert "workload_profile_denied" in rejected["rejection_codes"]
@@ -161,9 +160,10 @@ def test_macbook_research_allowed_while_repository_denied(tmp_path: Path) -> Non
             _request(PlacementPolicy.BEST_MATCH),
             [_candidate(MACBOOK_INSTANCE_ID, policy)],
         )
-    assert "workload_profile_denied" in denied.value.rejected_candidates[0][
-        "rejection_codes"
-    ]
+    assert (
+        "workload_profile_denied"
+        in denied.value.rejected_candidates[0]["rejection_codes"]
+    )
 
 
 def test_manual_only_named_dispatch_cannot_bypass_workload_deny(
@@ -184,9 +184,10 @@ def test_manual_only_named_dispatch_cannot_bypass_workload_deny(
             _request(PlacementPolicy.BEST_MATCH, workload="research"),
             [candidate],
         )
-    assert "automatic_participation_disabled" in automatic.value.rejected_candidates[
-        0
-    ]["rejection_codes"]
+    assert (
+        "automatic_participation_disabled"
+        in automatic.value.rejected_candidates[0]["rejection_codes"]
+    )
 
     manual_research = _request(
         PlacementPolicy.BEST_MATCH,
@@ -205,9 +206,10 @@ def test_manual_only_named_dispatch_cannot_bypass_workload_deny(
     manual_code.instance_id = "manual"
     with pytest.raises(PlacementError) as code_denied:
         service.resolve(manual_code, [candidate])
-    assert "workload_profile_denied" in code_denied.value.rejected_candidates[0][
-        "rejection_codes"
-    ]
+    assert (
+        "workload_profile_denied"
+        in code_denied.value.rejected_candidates[0]["rejection_codes"]
+    )
 
 
 def test_privileged_override_is_audited_but_hard_limits_still_win(
@@ -241,9 +243,10 @@ def test_privileged_override_is_audited_but_hard_limits_still_win(
     policy.hard_denied_profiles = ["repository"]
     with pytest.raises(PlacementError) as hard_denied:
         service.resolve(request, [_candidate("restricted", policy)])
-    assert "self_protective_workload_denied" in hard_denied.value.rejected_candidates[
-        0
-    ]["rejection_codes"]
+    assert (
+        "self_protective_workload_denied"
+        in hard_denied.value.rejected_candidates[0]["rejection_codes"]
+    )
 
 
 def test_project_repository_group_and_unknown_policy_denials_are_explainable(
@@ -319,6 +322,29 @@ def test_remote_compatibility_derived_peer_stays_unknown_under_enforcement(
     ]["rejection_codes"]
 
 
+def test_mixed_version_policy_and_request_normalize_legacy_code(tmp_path: Path) -> None:
+    policy = InstanceParticipationPolicy.model_validate(
+        {
+            "instance_id": "legacy-peer",
+            "denied_profiles": ["code"],
+            "source": "mixed_version_peer",
+        }
+    )
+    request = _request(PlacementPolicy.BEST_MATCH, workload="code")
+    assert request.workload_profile == "repository"
+    assert request.profile_normalization_reason == LEGACY_CODE_PROFILE_REASON
+    assert policy.denied_profiles == ["repository"]
+
+    with pytest.raises(PlacementError) as denied:
+        PlacementService(RoundRobinCursorStore(tmp_path)).resolve(
+            request, [_candidate("legacy-peer", policy)]
+        )
+    assert (
+        "workload_profile_denied"
+        in denied.value.rejected_candidates[0]["rejection_codes"]
+    )
+
+
 def test_durable_groups_policies_defaults_audit_and_rebuild(
     tmp_path: Path,
 ) -> None:
@@ -350,15 +376,22 @@ def test_durable_groups_policies_defaults_audit_and_rebuild(
             principal_id="user:admin",
             instance_id="authority",
         )
-        default = store.set_placement_default(
-            PlacementDefault(
+        store.commit_event(
+            CardEvent(
+                type=EventType.PLACEMENT_DEFAULT_UPDATED,
+                realm_id="default",
                 project_id="project-1",
-                workload_profile="repository",
-                group_id=group.id,
-            ),
-            principal_id="user:admin",
-            instance_id="authority",
+                author_principal="instance:mixed-version-peer",
+                author_instance="mixed-version-peer",
+                payload={
+                    "project_id": "project-1",
+                    "workload_profile": "code",
+                    "group_id": group.id,
+                    "version": 1,
+                },
+            )
         )
+        default = store.list_placement_defaults("default")[0]
 
         assert policy.version == 1
         assert default.scope_key == "project:project-1:profile:repository"
@@ -367,13 +400,13 @@ def test_durable_groups_policies_defaults_audit_and_rebuild(
         store.rebuild_from_log("default")
         rebuilt = store.get_instance_group(group.id, "default")
         assert rebuilt and rebuilt.excluded_instance_ids == [MACBOOK_INSTANCE_ID]
-        assert (
-            store.get_instance_participation_policy(
-                MACBOOK_INSTANCE_ID, "default"
-            ).denied_profiles
-            == ["repository"]
-        )
+        assert store.get_instance_participation_policy(
+            MACBOOK_INSTANCE_ID, "default"
+        ).denied_profiles == ["repository"]
         assert store.list_placement_defaults("default")[0].group_id == group.id
+        assert (
+            store.list_placement_defaults("default")[0].workload_profile == "repository"
+        )
     finally:
         reset_store()
         reset_settings()
@@ -433,12 +466,8 @@ def test_default_precedence_group_expansion_and_migration(tmp_path: Path) -> Non
             requested_group_id=None,
         ) == (realm_group.id, "realm_default")
 
-        one = _candidate(
-            "one", InstanceParticipationPolicy(instance_id="one")
-        )
-        two = _candidate(
-            "two", InstanceParticipationPolicy(instance_id="two")
-        )
+        one = _candidate("one", InstanceParticipationPolicy(instance_id="one"))
+        two = _candidate("two", InstanceParticipationPolicy(instance_id="two"))
         resolution = service.resolve_group(
             realm_id="default",
             project_id="project-1",
@@ -448,10 +477,7 @@ def test_default_precedence_group_expansion_and_migration(tmp_path: Path) -> Non
             local_instance_id="one",
         )
         assert resolution.included_instance_ids == ["two"]
-        assert (
-            resolution.membership["one"]
-            == "explicitly_excluded_from_group"
-        )
+        assert resolution.membership["one"] == "explicitly_excluded_from_group"
 
         migration = service.migrate(
             realm_id="default",
@@ -599,15 +625,18 @@ def test_authenticated_api_and_accessible_ui_expose_configuration_and_audit(
             assert preview.status_code == 409, preview.text
             detail = preview.json()["detail"]
             assert detail["code"] == "no_eligible_instance"
-            assert "explicitly_excluded_from_group" in detail[
-                "rejected_candidates"
-            ][0]["rejection_codes"]
+            assert (
+                "explicitly_excluded_from_group"
+                in detail["rejected_candidates"][0]["rejection_codes"]
+            )
 
             audit = client.get("/api/fleet/policy-audit")
             assert audit.status_code == 200
-            assert {"instance_group", "instance_participation_policy", "placement_default"} <= {
-                entry["entity_type"] for entry in audit.json()
-            }
+            assert {
+                "instance_group",
+                "instance_participation_policy",
+                "placement_default",
+            } <= {entry["entity_type"] for entry in audit.json()}
 
             fleet_page = client.get("/fleet?section=participation")
             assert fleet_page.status_code == 200

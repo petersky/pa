@@ -9,6 +9,16 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from pa.workloads import (
+    PLACEMENT_WORKLOAD_PROFILES,
+    WorkloadProfile,
+    WorkloadProfileError,
+    canonical_default_scope_key,
+    normalize_profile_limits,
+    normalize_profile_list,
+    normalize_workload_profile,
+)
+
 if TYPE_CHECKING:
     from pa.domain.models import FleetInstance
     from pa.domain.store import Store
@@ -16,7 +26,8 @@ if TYPE_CHECKING:
 
 POLICY_SCHEMA_VERSION = 1
 MACBOOK_INSTANCE_ID = "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
-WORKLOAD_PROFILES = ("repository", "research", "operations")
+# Compatibility export for modules/extensions; values derive from the one enum.
+WORKLOAD_PROFILES = PLACEMENT_WORKLOAD_PROFILES
 
 
 class GroupLifecycle(StrEnum):
@@ -148,7 +159,9 @@ class InstanceParticipationPolicy(BaseModel):
     max_concurrent_by_profile: dict[str, int] = Field(default_factory=dict)
     max_queued_by_profile: dict[str, int] = Field(default_factory=dict)
     hard_denied_profiles: list[str] = Field(default_factory=list)
-    hard_max_concurrent_by_profile: dict[str, int] = Field(default_factory=dict)
+    hard_max_concurrent_by_profile: dict[str, int] = Field(
+        default_factory=dict
+    )
     maintenance: bool = False
     quiescing: bool = False
     authority_enabled: bool = True
@@ -163,6 +176,18 @@ class InstanceParticipationPolicy(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_wire_profiles(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        for name in ("allowed_profiles", "denied_profiles", "hard_denied_profiles"):
+            payload[name] = normalize_profile_list(payload.get(name), allow_unknown=True)
+        for name in ("max_concurrent_by_profile", "max_queued_by_profile", "hard_max_concurrent_by_profile"):
+            payload[name] = normalize_profile_limits(payload.get(name), allow_unknown=True)
+        return payload
+
     @model_validator(mode="after")
     def normalize_policy(self) -> InstanceParticipationPolicy:
         if self.automatic_dispatch is None:
@@ -170,9 +195,7 @@ class InstanceParticipationPolicy(BaseModel):
                 self.participation_mode == ParticipationMode.AUTOMATIC
             )
         if self.manual_dispatch is None:
-            self.manual_dispatch = (
-                self.participation_mode != ParticipationMode.DISABLED
-            )
+            self.manual_dispatch = self.participation_mode != ParticipationMode.DISABLED
         if not self.automatic_dispatch and not self.manual_dispatch:
             self.participation_mode = ParticipationMode.DISABLED
         elif not self.automatic_dispatch and self.manual_dispatch:
@@ -221,8 +244,8 @@ class InstanceParticipationPolicyUpdate(BaseModel):
     participation_mode: ParticipationMode | None = None
     automatic_dispatch: bool | None = None
     manual_dispatch: bool | None = None
-    allowed_profiles: list[str] | None = None
-    denied_profiles: list[str] | None = None
+    allowed_profiles: list[WorkloadProfile] | None = None
+    denied_profiles: list[WorkloadProfile] | None = None
     allowed_project_ids: list[str] | None = None
     denied_project_ids: list[str] | None = None
     allowed_repository_ids: list[str] | None = None
@@ -231,10 +254,10 @@ class InstanceParticipationPolicyUpdate(BaseModel):
     denied_provider_ids: list[str] | None = None
     allowed_model_families: list[str] | None = None
     denied_model_families: list[str] | None = None
-    max_concurrent_by_profile: dict[str, int] | None = None
-    max_queued_by_profile: dict[str, int] | None = None
-    hard_denied_profiles: list[str] | None = None
-    hard_max_concurrent_by_profile: dict[str, int] | None = None
+    max_concurrent_by_profile: dict[WorkloadProfile, int] | None = None
+    max_queued_by_profile: dict[WorkloadProfile, int] | None = None
+    hard_denied_profiles: list[WorkloadProfile] | None = None
+    hard_max_concurrent_by_profile: dict[WorkloadProfile, int] | None = None
     maintenance: bool | None = None
     quiescing: bool | None = None
     authority_enabled: bool | None = None
@@ -245,6 +268,20 @@ class InstanceParticipationPolicyUpdate(BaseModel):
     expected_version: int | None = Field(default=None, ge=1)
     confirm_enable: bool = False
     confirmation_reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_concrete_profiles(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        for name in ("allowed_profiles", "denied_profiles", "hard_denied_profiles"):
+            if payload.get(name) is not None:
+                payload[name] = normalize_profile_list(payload[name])
+        for name in ("max_concurrent_by_profile", "max_queued_by_profile", "hard_max_concurrent_by_profile"):
+            if payload.get(name) is not None:
+                payload[name] = normalize_profile_limits(payload[name])
+        return payload
 
 
 class PlacementDefault(BaseModel):
@@ -260,6 +297,20 @@ class PlacementDefault(BaseModel):
     @property
     def scope_key(self) -> str:
         return default_scope_key(self.project_id, self.workload_profile)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_wire_profile(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        raw = payload.get("workload_profile")
+        if raw is not None:
+            try:
+                payload["workload_profile"] = normalize_workload_profile(raw, allow_automatic=False).profile.value
+            except WorkloadProfileError:
+                payload["workload_profile"] = str(raw)
+        return payload
 
 
 class FleetPolicyAuditEvent(BaseModel):
@@ -329,8 +380,10 @@ def builtin_group(group_id: str, realm_id: str = "default") -> InstanceGroup | N
     )
 
 
-def default_scope_key(project_id: str | None, workload_profile: str | None) -> str:
-    return f"project:{project_id or '*'}:profile:{workload_profile or '*'}"
+def default_scope_key(
+    project_id: str | None, workload_profile: WorkloadProfile | str | None
+) -> str:
+    return canonical_default_scope_key(project_id, workload_profile)
 
 
 def compatibility_policy(
@@ -371,9 +424,7 @@ class FleetPolicyService:
     def effective_policy(
         self, realm_id: str, instance_id: str
     ) -> tuple[InstanceParticipationPolicy, bool]:
-        explicit = self.store.get_instance_participation_policy(
-            instance_id, realm_id
-        )
+        explicit = self.store.get_instance_participation_policy(instance_id, realm_id)
         return (
             (explicit, True)
             if explicit
@@ -385,7 +436,7 @@ class FleetPolicyService:
         *,
         realm_id: str,
         project_id: str | None,
-        workload_profile: str,
+        workload_profile: WorkloadProfile,
         requested_group_id: str | None,
     ) -> tuple[str, str]:
         if requested_group_id:
@@ -436,7 +487,7 @@ class FleetPolicyService:
         *,
         realm_id: str,
         project_id: str | None,
-        workload_profile: str,
+        workload_profile: WorkloadProfile,
         requested_group_id: str | None,
         candidates: list[Any],
         local_instance_id: str,
@@ -501,9 +552,7 @@ class FleetPolicyService:
                 "explicitly_excluded_from_group"
                 if instance_id in excluded
                 else (
-                    "included"
-                    if instance_id in selected
-                    else "not_in_requested_group"
+                    "included" if instance_id in selected else "not_in_requested_group"
                 )
             )
             for instance_id in sorted(ids)
@@ -538,8 +587,11 @@ class FleetPolicyService:
             policy = compatibility_policy(instance.instance_id, realm_id)
             policy.source = "migration_derived"
             if instance.instance_id == MACBOOK_INSTANCE_ID:
-                policy.denied_profiles = ["repository"]
-                policy.allowed_profiles = ["research", "operations"]
+                policy.denied_profiles = [WorkloadProfile.REPOSITORY]
+                policy.allowed_profiles = [
+                    WorkloadProfile.RESEARCH,
+                    WorkloadProfile.OPERATIONS,
+                ]
                 policy.reason = (
                     "MacBook is an interactive authority/UI host, not an "
                     "automatic code worker"

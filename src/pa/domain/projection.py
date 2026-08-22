@@ -65,6 +65,7 @@ from pa.fleet.policy import (
     default_scope_key,
 )
 from pa.sync.event_log import EventHistoryError, EventLog
+from pa.workloads import WorkloadProfile, canonical_default_scope_key
 
 T = TypeVar("T")
 
@@ -1747,12 +1748,11 @@ class CardProjection:
         )
 
     def _apply_placement_default_event(self, event: CardEvent) -> None:
-        scope_key = str(
-            event.payload.get("scope_key")
-            or default_scope_key(
-                event.payload.get("project_id"),
-                event.payload.get("workload_profile"),
-            )
+        raw_scope_key = event.payload.get("scope_key")
+        scope_key = canonical_default_scope_key(
+            event.payload.get("project_id"),
+            event.payload.get("workload_profile"),
+            raw_scope_key,
         )
         if event.type == EventType.PLACEMENT_DEFAULT_DELETED:
             with self._conn() as conn:
@@ -1773,6 +1773,13 @@ class CardProjection:
             payload.update(event.payload)
             payload["realm_id"] = event.realm_id
             payload.pop("scope_key", None)
+            if raw_scope_key and not event.payload.get("workload_profile"):
+                parts = str(raw_scope_key).split(":", 3)
+                if len(parts) == 4 and parts[0] == "project" and parts[2] == "profile":
+                    payload["project_id"] = None if parts[1] == "*" else parts[1]
+                    payload["workload_profile"] = (
+                        None if parts[3] == "*" else parts[3]
+                    )
             default = PlacementDefault.model_validate(payload)
             conn.execute(
                 """
@@ -3766,7 +3773,7 @@ class CardProjection:
         *,
         realm_id: str = "default",
         project_id: str | None = None,
-        workload_profile: str | None = None,
+        workload_profile: WorkloadProfile | None = None,
         principal_id: str = "user:local",
         instance_id: str = "local",
     ) -> bool:
