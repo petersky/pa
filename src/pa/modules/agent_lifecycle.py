@@ -8,7 +8,11 @@ from fastapi import HTTPException
 def startup_state(manager: Any) -> dict[str, Any]:
     state = getattr(manager, "startup_state", None)
     if callable(state):
-        return dict(state())
+        result = dict(state())
+        diagnostics = getattr(manager, "startup_recovery_diagnostics", None)
+        if callable(diagnostics):
+            result["decisions"] = list(diagnostics())
+        return result
     return {"phase": "ready", "complete": True, "error": None}
 
 
