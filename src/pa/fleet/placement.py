@@ -34,6 +34,8 @@ from pa.fleet.policy import (
 from pa.workloads import (
     LEGACY_CODE_PROFILE_REASON,
     WorkloadProfile,
+    normalize_profile_limits,
+    normalize_profile_list,
     normalize_workload_profile,
 )
 
@@ -117,11 +119,9 @@ class PlacementRequest(BaseModel):
         )
         payload["workload_profile"] = resolution.profile
         supplied_reason = payload.get("profile_normalization_reason")
-        payload["profile_normalization_reason"] = resolution.migration_reason or (
-            LEGACY_CODE_PROFILE_REASON
-            if supplied_reason == LEGACY_CODE_PROFILE_REASON
-            else None
-        )
+        if supplied_reason is not None and supplied_reason != resolution.migration_reason:
+            raise ValueError("profile_normalization_reason must be derived from raw profile")
+        payload["profile_normalization_reason"] = resolution.migration_reason
         return payload
 
 
@@ -452,7 +452,9 @@ def _evaluate(
 
     workload_profile = request.workload_profile
     hard_denied = set(policy.hard_denied_profiles) | set(
-        candidate.self_protection.get("denied_profiles") or []
+        normalize_profile_list(
+            candidate.self_protection.get("denied_profiles"), allow_unknown=True
+        )
     )
     if workload_profile in hard_denied:
         reject(
@@ -689,8 +691,9 @@ def _evaluate(
             f"({profile_queue_limit}) is exhausted",
         )
     hard_limit = policy.hard_max_concurrent_by_profile.get(workload_profile)
-    advertised_hard_limit = (
-        candidate.self_protection.get("max_concurrent_by_profile") or {}
+    advertised_hard_limit = normalize_profile_limits(
+        candidate.self_protection.get("max_concurrent_by_profile"),
+        allow_unknown=True,
     ).get(workload_profile)
     hard_limits = [
         int(value) for value in (hard_limit, advertised_hard_limit) if value is not None

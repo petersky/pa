@@ -231,6 +231,7 @@ from pa.workloads import (
     WorkloadProfile,
     WorkloadProfileError,
     WorkloadProfileInput,
+    normalize_workload_profile,
 )
 
 logger = logging.getLogger(__name__)
@@ -477,6 +478,17 @@ class PlacementDefaultBody(BaseModel):
     project_id: str | None = None
     workload_profile: WorkloadProfile | None = None
     group_id: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_concrete_profile(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("workload_profile") is None:
+            return value
+        payload = dict(value)
+        payload["workload_profile"] = normalize_workload_profile(
+            payload["workload_profile"], allow_automatic=False
+        ).profile
+        return payload
 
 
 class PlacementMigrationBody(BaseModel):
@@ -1198,6 +1210,13 @@ def delete_placement_default(
 ) -> Response:
     _require_policy_admin(request, "fleet.placement_defaults.edit")
     ctx = request.app.state.ctx
+    if workload_profile is not None:
+        try:
+            workload_profile = normalize_workload_profile(
+                workload_profile, allow_automatic=False
+            ).profile
+        except WorkloadProfileError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail()) from exc
     ctx.store.delete_placement_default(
         realm_id=realm or ctx.settings.primary_realm,
         project_id=project_id,
@@ -1283,7 +1302,9 @@ def _target_goal_materialization_binding_valid(
             model_id=body.model_id,
             mode_id=body.mode_id,
             materialization_plan_digest=canonical_materialization_digest(
-                bound_plan.model_dump(mode="json")
+                bound_plan.model_dump(
+                    mode="json", exclude={"profile_normalization_reason"}
+                )
             ),
         )
         if envelope is not None and provider_id
@@ -7353,8 +7374,9 @@ async def _resolve_policy_placement(
             required_capabilities=required_capabilities,
             preferred_capabilities=preferred_capabilities,
             repository_ids=repository_ids,
-            workload_profile=plan.profile.value,
-            profile_normalization_reason=plan.profile_normalization_reason,
+            workload_profile=(
+                "code" if plan.profile_normalization_reason else plan.profile.value
+            ),
             project_id=project_id,
             dispatch_intent=(
                 DispatchIntent.PRIVILEGED_OVERRIDE
@@ -8520,7 +8542,7 @@ def _bind_goal_dispatch_materialization(
         model_id=body.model_id,
         mode_id=body.mode_id,
         materialization_plan_digest=canonical_materialization_digest(
-            plan.model_dump(mode="json")
+            plan.model_dump(mode="json", exclude={"profile_normalization_reason"})
         ),
     )
     goal, governance = _goal_dispatch_services(ctx, provenance.goal_id)
@@ -10287,12 +10309,26 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
             "required_capabilities",
         },
     )
+    # Migration provenance is carried by the signed placement decision/audit.
+    # Do not re-present it as caller input at the target contract boundary.
+    if isinstance(start_payload.get("execution_contract"), dict):
+        start_payload["execution_contract"].pop("profile_normalization_reason", None)
     start_payload["authority_instance_id"] = settings.instance_id
     start_payload["idempotency_key"] = idempotency_key
+    remote_body = RemoteAgentStartBody.model_validate(start_payload)
+    if (
+        remote_body.execution_contract is not None
+        and decision.profile_normalization_reason
+    ):
+        remote_body.execution_contract = remote_body.execution_contract.model_copy(
+            update={
+                "profile_normalization_reason": decision.profile_normalization_reason
+            }
+        )
     return await _admit_remote_agent_work(
         request,
         decision.chosen_instance_id,
-        RemoteAgentStartBody.model_validate(start_payload),
+        remote_body,
         placement_decision=decision.model_dump(mode="json"),
         placement_request_fingerprint=placement_fingerprint,
         idempotency_scope="authority",
@@ -10426,9 +10462,14 @@ async def start_remote_agent_work(
         error = _dispatch_lookup_error("project", project_id)
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error
+    placement_payload = body.model_dump(mode="python")
+    contract_payload = placement_payload.get("execution_contract")
+    if isinstance(contract_payload, dict) and contract_payload.pop(
+        "profile_normalization_reason", None
+    ):
+        contract_payload["profile"] = "code"
     placement_body = FleetDispatchBody(
-        **body.model_dump(mode="python"),
-        target_instance_id=instance_id,
+        **placement_payload, target_instance_id=instance_id
     )
     try:
         decision, _plan = await _resolve_policy_placement(

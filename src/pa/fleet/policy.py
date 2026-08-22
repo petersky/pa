@@ -13,6 +13,9 @@ from pa.workloads import (
     PLACEMENT_WORKLOAD_PROFILES,
     WorkloadProfile,
     WorkloadProfileError,
+    canonical_default_scope_key,
+    normalize_profile_limits,
+    normalize_profile_list,
     normalize_workload_profile,
 )
 
@@ -143,8 +146,8 @@ class InstanceParticipationPolicy(BaseModel):
     participation_mode: ParticipationMode = ParticipationMode.AUTOMATIC
     automatic_dispatch: bool | None = None
     manual_dispatch: bool | None = None
-    allowed_profiles: list[WorkloadProfile] = Field(default_factory=list)
-    denied_profiles: list[WorkloadProfile] = Field(default_factory=list)
+    allowed_profiles: list[str] = Field(default_factory=list)
+    denied_profiles: list[str] = Field(default_factory=list)
     allowed_project_ids: list[str] = Field(default_factory=list)
     denied_project_ids: list[str] = Field(default_factory=list)
     allowed_repository_ids: list[str] = Field(default_factory=list)
@@ -153,10 +156,10 @@ class InstanceParticipationPolicy(BaseModel):
     denied_provider_ids: list[str] = Field(default_factory=list)
     allowed_model_families: list[str] = Field(default_factory=list)
     denied_model_families: list[str] = Field(default_factory=list)
-    max_concurrent_by_profile: dict[WorkloadProfile, int] = Field(default_factory=dict)
-    max_queued_by_profile: dict[WorkloadProfile, int] = Field(default_factory=dict)
-    hard_denied_profiles: list[WorkloadProfile] = Field(default_factory=list)
-    hard_max_concurrent_by_profile: dict[WorkloadProfile, int] = Field(
+    max_concurrent_by_profile: dict[str, int] = Field(default_factory=dict)
+    max_queued_by_profile: dict[str, int] = Field(default_factory=dict)
+    hard_denied_profiles: list[str] = Field(default_factory=list)
+    hard_max_concurrent_by_profile: dict[str, int] = Field(
         default_factory=dict
     )
     maintenance: bool = False
@@ -172,6 +175,18 @@ class InstanceParticipationPolicy(BaseModel):
     actor: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_wire_profiles(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        for name in ("allowed_profiles", "denied_profiles", "hard_denied_profiles"):
+            payload[name] = normalize_profile_list(payload.get(name), allow_unknown=True)
+        for name in ("max_concurrent_by_profile", "max_queued_by_profile", "hard_max_concurrent_by_profile"):
+            payload[name] = normalize_profile_limits(payload.get(name), allow_unknown=True)
+        return payload
 
     @model_validator(mode="after")
     def normalize_policy(self) -> InstanceParticipationPolicy:
@@ -254,11 +269,25 @@ class InstanceParticipationPolicyUpdate(BaseModel):
     confirm_enable: bool = False
     confirmation_reason: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_concrete_profiles(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        for name in ("allowed_profiles", "denied_profiles", "hard_denied_profiles"):
+            if payload.get(name) is not None:
+                payload[name] = normalize_profile_list(payload[name])
+        for name in ("max_concurrent_by_profile", "max_queued_by_profile", "hard_max_concurrent_by_profile"):
+            if payload.get(name) is not None:
+                payload[name] = normalize_profile_limits(payload[name])
+        return payload
+
 
 class PlacementDefault(BaseModel):
     realm_id: str = "default"
     project_id: str | None = None
-    workload_profile: WorkloadProfile | None = None
+    workload_profile: str | None = None
     group_id: str
     version: int = Field(default=1, ge=1)
     actor: str = ""
@@ -268,6 +297,20 @@ class PlacementDefault(BaseModel):
     @property
     def scope_key(self) -> str:
         return default_scope_key(self.project_id, self.workload_profile)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_wire_profile(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        raw = payload.get("workload_profile")
+        if raw is not None:
+            try:
+                payload["workload_profile"] = normalize_workload_profile(raw, allow_automatic=False).profile.value
+            except WorkloadProfileError:
+                payload["workload_profile"] = str(raw)
+        return payload
 
 
 class FleetPolicyAuditEvent(BaseModel):
@@ -340,15 +383,7 @@ def builtin_group(group_id: str, realm_id: str = "default") -> InstanceGroup | N
 def default_scope_key(
     project_id: str | None, workload_profile: WorkloadProfile | str | None
 ) -> str:
-    profile: WorkloadProfile | str | None = workload_profile
-    if isinstance(workload_profile, str):
-        try:
-            profile = normalize_workload_profile(workload_profile).profile
-        except WorkloadProfileError:
-            # Projection replay must preserve unknown mixed-version scope keys;
-            # new writes are rejected by typed API boundaries.
-            profile = workload_profile
-    return f"project:{project_id or '*'}:profile:{profile or '*'}"
+    return canonical_default_scope_key(project_id, workload_profile)
 
 
 def compatibility_policy(

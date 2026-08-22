@@ -710,9 +710,11 @@ def test_preview_routes_return_identical_typed_422_for_unknown_profile() -> None
             placement_default,
         )
         assert {response.status_code for response in responses} == {422}
-        assert {json.dumps(response.json(), sort_keys=True) for response in responses} == {
-            json.dumps(placement.json(), sort_keys=True)
-        }
+        details = [response.json()["detail"] for response in responses]
+        assert {detail["code"] for detail in details} == {"invalid_workload_profile"}
+        assert all(detail["recoverable"] is True for detail in details)
+        assert "automatic" in placement.json()["detail"]["supported_profiles"]
+        assert "automatic" not in placement_default.json()["detail"]["supported_profiles"]
         detail = placement.json()["detail"]
         assert detail["code"] == "invalid_workload_profile"
         assert detail["supported_profiles"] == [

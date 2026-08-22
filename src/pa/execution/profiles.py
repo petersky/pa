@@ -65,11 +65,9 @@ class ExecutionContract(BaseModel):
         )
         payload["profile"] = resolution.profile
         supplied_reason = payload.get("profile_normalization_reason")
-        payload["profile_normalization_reason"] = resolution.migration_reason or (
-            LEGACY_CODE_PROFILE_REASON
-            if supplied_reason == LEGACY_CODE_PROFILE_REASON
-            else None
-        )
+        if supplied_reason is not None and supplied_reason != resolution.migration_reason:
+            raise ValueError("profile_normalization_reason must be derived from raw profile")
+        payload["profile_normalization_reason"] = resolution.migration_reason
         return payload
 
 

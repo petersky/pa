@@ -114,3 +114,58 @@ def normalize_workload_profile(
         requested_profile=requested,
         migration_reason=reason,
     )
+
+
+def normalize_profile_list(values: Any, *, allow_unknown: bool = False) -> list[str]:
+    """Canonicalize a profile set; projection decoding may preserve future values."""
+    result: set[str] = set()
+    for value in values or []:
+        try:
+            result.add(normalize_workload_profile(value, allow_automatic=False).profile.value)
+        except WorkloadProfileError:
+            if not allow_unknown:
+                raise
+            result.add(str(value))
+    return sorted(result)
+
+
+def normalize_profile_limits(
+    values: Any, *, allow_unknown: bool = False
+) -> dict[str, int]:
+    """Merge alias collisions deterministically using the strictest capacity."""
+    result: dict[str, int] = {}
+    for raw_key, raw_limit in dict(values or {}).items():
+        try:
+            key = normalize_workload_profile(
+                raw_key, allow_automatic=False
+            ).profile.value
+        except WorkloadProfileError:
+            if not allow_unknown:
+                raise
+            key = str(raw_key)
+        limit = int(raw_limit)
+        result[key] = min(result.get(key, limit), limit)
+    return dict(sorted(result.items()))
+
+
+def canonical_default_scope_key(
+    project_id: str | None, workload_profile: Any, raw_scope_key: str | None = None
+) -> str:
+    """Return one semantic placement-default identity, including old wire events."""
+    if raw_scope_key:
+        parts = str(raw_scope_key).split(":", 3)
+        if len(parts) == 4 and parts[0] == "project" and parts[2] == "profile":
+            if project_id is None and parts[1] != "*":
+                project_id = parts[1]
+            if workload_profile is None and parts[3] != "*":
+                workload_profile = parts[3]
+    profile = "*"
+    if workload_profile not in {None, "*"}:
+        try:
+            profile = normalize_workload_profile(
+                workload_profile, allow_automatic=False
+            ).profile.value
+        except WorkloadProfileError:
+            # Future wire values retain a stable identity but are not executable.
+            profile = str(workload_profile)
+    return f"project:{project_id or '*'}:profile:{profile}"

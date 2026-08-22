@@ -10,7 +10,8 @@ from pa.execution.profiles import (
     resolve_materialization_plan,
     validate_execution_contract,
 )
-from pa.workloads import LEGACY_CODE_PROFILE_REASON, WorkloadProfileError
+from pa.fleet.policy import InstanceParticipationPolicy, InstanceParticipationPolicyUpdate, PlacementDefault
+from pa.workloads import LEGACY_CODE_PROFILE_REASON, WorkloadProfileError, canonical_default_scope_key
 
 
 def repo(identifier: str = "repo-1"):
@@ -189,3 +190,39 @@ def test_unknown_persisted_contract_profile_has_actionable_typed_error():
         validate_execution_contract({"version": 1, "profile": "not-real"})
     assert raised.value.detail()["code"] == "invalid_workload_profile"
     assert raised.value.detail()["legacy_aliases"] == {"code": "repository"}
+
+
+def test_profile_provenance_cannot_be_spoofed():
+    with pytest.raises(ValueError, match="must be derived"):
+        ExecutionContract.model_validate({
+            "profile": "research",
+            "profile_normalization_reason": LEGACY_CODE_PROFILE_REASON,
+        })
+
+
+@pytest.mark.parametrize("limits", [
+    {"code": 9, "repository": 1},
+    {"repository": 1, "code": 9},
+])
+def test_alias_collisions_choose_strictest_limit_in_any_order(limits):
+    policy = InstanceParticipationPolicy(
+        instance_id="peer", max_concurrent_by_profile=limits
+    )
+    assert policy.max_concurrent_by_profile == {"repository": 1}
+
+
+def test_future_wire_profiles_survive_projection_models_but_not_admission():
+    policy = InstanceParticipationPolicy(
+        instance_id="future", denied_profiles=["future-build"]
+    )
+    default = PlacementDefault(workload_profile="future-build", group_id="all-active")
+    assert policy.denied_profiles == ["future-build"]
+    assert default.scope_key == "project:*:profile:future-build"
+    with pytest.raises(ValueError):
+        InstanceParticipationPolicyUpdate(denied_profiles=["future-build"])
+
+
+def test_legacy_scope_key_has_one_semantic_identity():
+    expected = "project:*:profile:repository"
+    assert canonical_default_scope_key(None, None, "project:*:profile:code") == expected
+    assert canonical_default_scope_key(None, "repository") == expected
