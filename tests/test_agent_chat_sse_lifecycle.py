@@ -692,6 +692,166 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_local_owner_uses_agent_api_even_when_current_instance_unknown(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }},
+              addEventListener: noop,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            const window = {{ addEventListener: noop }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              {{ window, document, console: {{ debug: noop }}, URL, setTimeout, clearTimeout }}
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            widget.currentInstanceId = "";
+            widget.defaultApiBase = "/api/agent";
+            widget.apiBase = "/api/agent";
+            const local = widget._apiBaseForOwner("local-instance-id");
+            const remote = Object.assign(Object.create(Widget.prototype), {{
+              currentInstanceId: "local-instance-id",
+              defaultApiBase: "/api/agent",
+            }})._apiBaseForOwner("remote-instance-id");
+            if (local !== "/api/agent") throw new Error("unknown current still fleet-proxied: " + local);
+            if (remote !== "/api/fleet/instances/remote-instance-id/agent") {{
+              throw new Error("remote owner did not use fleet proxy: " + remote);
+            }}
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness], check=False, capture_output=True, text=True
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_missing_route_does_not_autorestart_in_a_tight_loop(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }},
+              addEventListener: noop,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            const window = {{
+              addEventListener: noop,
+              location: {{ href: "http://127.0.0.1:8080/agent" }},
+              history: {{ replaceState: noop, pushState: noop }},
+            }};
+            let initCalls = 0;
+            const timeouts = [];
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              {{
+                window, document, console: {{ debug: noop }}, URL, AbortController,
+                setTimeout: (callback) => {{ timeouts.push(callback); return timeouts.length; }},
+                clearTimeout: noop,
+              }}
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            Object.assign(widget, {{
+              destroyed: false,
+              subscriptionGeneration: 0,
+              autoStart: true,
+              _missingRestartAttempted: false,
+              sessionId: "gone",
+              ownerInstanceId: "peer",
+              currentInstanceId: "local",
+              defaultApiBase: "/api/agent",
+              apiBase: "/api/fleet/instances/peer/agent",
+              root: {{
+                dataset: {{ apiBase: "/api/fleet/instances/peer/agent" }},
+                closest: () => ({{}})
+              }},
+              els: {{ promote: null }},
+              drafts: null,
+              liveStateRetryId: null,
+              startupRetryId: null,
+              routeAbortController: null,
+              _setRecoveryControl: noop,
+              showRecoveryActions: noop,
+              setPlaceholder: noop,
+              setComposerEnabled: noop,
+              setStatus: noop,
+              closeSSE: noop,
+              setTurnActive: noop,
+              resolveSessionRoute: () => Promise.resolve({{
+                state: "missing",
+                live: false,
+                message: "This agent session was deleted or has expired.",
+              }}),
+              init: () => {{ initCalls += 1; }},
+            }});
+            widget.clearSelectedSession = Widget.prototype.clearSelectedSession;
+            widget._apiBaseForOwner = Widget.prototype._apiBaseForOwner;
+            widget._writeSessionUrl = Widget.prototype._writeSessionUrl;
+            widget.openSession("gone", "peer", {{ replace: true }})
+              .then(() => {{
+                timeouts.splice(0).forEach((callback) => callback());
+                if (initCalls !== 1) throw new Error("expected one auto-restart, got " + initCalls);
+                if (widget.apiBase !== "/api/agent") {{
+                  throw new Error("missing route left poisoned apiBase: " + widget.apiBase);
+                }}
+                return widget.openSession("gone", "peer", {{ replace: true }});
+              }})
+              .then(() => {{
+                const before = initCalls;
+                const pending = timeouts.splice(0);
+                pending.forEach((callback) => callback());
+                if (initCalls !== before || pending.length !== 0) {{
+                  throw new Error(
+                    "missing route restarted again after the guard (inits=" +
+                    initCalls + " pending=" + pending.length + ")"
+                  );
+                }}
+              }})
+              .catch((error) => {{
+                console.error(error && error.stack || error);
+                process.exit(1);
+              }});
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness], check=False, capture_output=True, text=True
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_spa_and_modal_teardown_hooks_are_present(self) -> None:
         static = Path(__file__).parents[1] / "src" / "pa" / "server" / "static" / "js"
         agent_chat = (static / "agent-chat.js").read_text()

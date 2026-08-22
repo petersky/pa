@@ -43,6 +43,7 @@ from pa.acp.surfaces import (
 from pa.agent.context import compose_session_prompt
 from pa.browser.manager import BrowserManager
 from pa.config import Settings
+from pa.core.async_runtime import AsyncRuntimeClosed
 from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.domain.store import Store
@@ -386,6 +387,17 @@ class AgentSessionRuntime:
                     except asyncio.CancelledError:
                         self._transcript_buffer = batch + self._transcript_buffer
                         raise
+                    except AsyncRuntimeClosed:
+                        # Shutdown has closed the thread pool. Retrying would
+                        # spin forever, block queue.join(), and hang stop().
+                        try:
+                            self.store.append_transcript_events(batch)
+                        except Exception:
+                            logger.exception(
+                                "Failed to persist transcript events during shutdown"
+                            )
+                            self._transcript_buffer = batch + self._transcript_buffer
+                        break
                     except Exception:
                         logger.exception(
                             "Failed to persist transcript events; retrying"
