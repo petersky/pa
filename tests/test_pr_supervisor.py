@@ -823,6 +823,14 @@ class PRSupervisorStoreTests(unittest.TestCase):
 
 
 class GateAndSecurityTests(unittest.TestCase):
+    def test_draft_is_a_pending_publication_hold_not_actionable_repair(self) -> None:
+        gate = evaluate_gate(snapshot(draft=True), PRPolicy(), stable_head=True)
+
+        self.assertFalse(gate.green)
+        self.assertFalse(gate.actionable)
+        self.assertTrue(gate.pending)
+        self.assertIn("pull request is draft", gate.reasons)
+
     def test_green_gate_repairs_optional_failure_without_blocking_merge(self) -> None:
         gate = evaluate_gate(
             snapshot(optional_conclusion="failure"), PRPolicy(), stable_head=True
@@ -1191,6 +1199,30 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.run_once()
         self.assertEqual(len(self.dispatcher.calls), 1)
         self.assertIn("independently re-fetch", self.dispatcher.calls[0][1].lower())
+
+    async def test_policy_tightening_reauthorizes_existing_watch_before_effect(self) -> None:
+        self.domain.get_project.return_value = SimpleNamespace(
+            tool_config={
+                "pr_policy": {
+                    **self.policy().model_dump(),
+                    "ready_by_default": False,
+                    "agent_merge_on_green": False,
+                }
+            }
+        )
+        service = await self.make_service([snapshot()])
+
+        await service.run_once()
+
+        current = self.store.get_watch("watch-1")
+        self.assertFalse(current.policy.ready_by_default)
+        self.assertFalse(current.policy.agent_merge_on_green)
+        self.assertEqual(current.state["review_hold_version"], 1)
+        self.assertEqual(self.dispatcher.calls, [])
+        events = self.store.list_events("watch-1")
+        self.assertTrue(
+            any(event.event_type == "watch_policy_reauthorized" for event in events)
+        )
 
     async def test_successful_capability_probe_is_not_repeated_every_minute(
         self,
