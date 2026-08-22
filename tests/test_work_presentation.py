@@ -6,7 +6,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from pa.core.ui.work_presentation import present_work_item
+from pa.core.ui.work_presentation import (
+    absolute_time,
+    present_work_item,
+    presentation_state,
+    relative_time,
+)
 
 NOW = datetime(2026, 8, 6, 18, 0, tzinfo=UTC)
 CARD = {
@@ -56,6 +61,44 @@ def present(*, card=CARD, dispatch_value=None, session=None, watches=()):
         target_instance_name="Monica",
         now=NOW,
     )
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0, "Just now"), (9, "Just now"), (10, "10s ago"), (59, "59s ago"),
+        (60, "1m ago"), (3599, "59m ago"), (3600, "1h ago"),
+        (86399, "23h ago"), (86400, "1d ago"), (604799, "6d ago"),
+        (-5, "Just now"), (-6, "In 6s"), (-60, "In 1m"),
+    ],
+)
+def test_relative_time_boundaries_and_clock_skew(seconds: int, expected: str) -> None:
+    assert relative_time(NOW - timedelta(seconds=seconds), now=NOW) == expected
+
+
+def test_relative_and_absolute_time_are_timezone_and_process_locale_stable() -> None:
+    value = datetime.fromisoformat("2026-08-06T10:59:40-07:00")
+    assert relative_time(value, now=NOW) == "20s ago"
+    assert absolute_time(value) == "2026-08-06 17:59 UTC"
+    assert relative_time("not-a-time", now=NOW) == "Time unavailable"
+
+
+@pytest.mark.parametrize(
+    ("domain", "state", "label"),
+    [
+        ("lane", "done", "Done"),
+        ("dispatch", "acknowledged", "Completed"),
+        ("session", "completed", "Session ended"),
+        ("goal", "achieved", "Achieved"),
+        ("freshness", "stale", "Stale"),
+        ("dispatch", "failed", "Failed"),
+    ],
+)
+def test_domain_states_have_distinct_stable_presentation_language(domain, state, label) -> None:
+    result = presentation_state(domain, state)
+    assert result["state"] == state
+    assert result["label"] == label
+    assert result["explanation"]
 
 
 def test_active_turn_and_tool_override_idle_runtime_and_completed_checkpoint() -> None:

@@ -7,7 +7,8 @@
 #}
 {% set sid = session_id | default('') %}
 {% set owner_id = owner_instance_id | default('') %}
-{% set current_id = current_instance_id | default(settings.instance_id if settings is defined else '') %}
+{# Shell context exposes instance_id; settings is only on the settings page. #}
+{% set current_id = current_instance_id | default(instance_id if instance_id is defined else (settings.instance_id if settings is defined else '')) %}
 {% set label = create_label | default('default') %}
 {% set cid = card_id | default('') %}
 {% set show_model = show_model if show_model is defined else true %}
@@ -173,7 +174,8 @@
       </button>
       <p class="muted small acw-load-older-status" data-acw-load-older-status
          role="status" aria-live="polite" hidden></p>
-      <p class="muted chat-placeholder" data-acw-placeholder>Connecting to agent…</p>
+      <p class="muted chat-placeholder" data-acw-placeholder
+         role="status" aria-live="polite" aria-atomic="true">Connecting to agent…</p>
       <button type="button" class="ghost small acw-load-newer" data-acw-load-newer hidden>
         Load newer messages
       </button>

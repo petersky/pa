@@ -42,6 +42,21 @@ Optional spawn overrides: `PA_AGENT_COMMAND` / `PA_AGENT_ARGS` (when set) replac
 
 Secrets stay on the target host (`~/.pa/integrations/{provider}.json`); they are never sync’d across the fleet.
 
+## GitHub CLI authentication
+
+Interactive hosts may continue using `gh auth login` and the OS credential store.
+For headless agents, set instance configuration `agent_github_token_enabled=true`
+and place the credential in `PA_GITHUB_TOKEN` or
+`~/.pa/integrations/github.json`. PA strips ambient `GH_TOKEN`, `GITHUB_TOKEN`,
+and all `PA_*` GitHub secrets, then maps only the PA-managed credential into the
+ACP child as `GH_TOKEN`. No variable is set when the option is disabled or the
+credential is missing, so keyring OAuth remains available. When both exist,
+GitHub CLI gives `GH_TOKEN` precedence.
+
+The credential is local-only and is shared by all agents on that instance. Keep
+`allowed_repositories` aligned with dispatched repositories and grant only the
+API permissions needed for the intended `gh api`, `gh pr`, push, and merge flows.
+
 ## Session configuration compatibility and admission
 
 PA treats model, mode, reasoning/thought level, and provider configuration as a

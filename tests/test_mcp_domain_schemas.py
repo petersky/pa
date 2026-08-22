@@ -12,10 +12,12 @@ from pa.domain.models import (
     RepositoryCreate,
     RepositoryUpdate,
 )
+from pa.execution.profiles import ExecutionContract
 from pa.modules.fleet import FleetModule
 from pa.modules.items import ItemsModule
 from pa.modules.projects import ProjectsModule
 from pa.modules.sync import SyncModule
+from pa.workloads import CANONICAL_WORKLOAD_PROFILES
 
 
 def _property_enum(schema: dict, property_name: str) -> list[str]:
@@ -146,6 +148,24 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
             "idempotency_key",
             self.schemas["get_operation_outcome"]["required"],
         )
+
+    async def test_fleet_tools_publish_the_canonical_workload_profile_enum(
+        self,
+    ) -> None:
+        expected = list(CANONICAL_WORKLOAD_PROFILES)
+        self.assertEqual(
+            _property_enum(self.schemas["preview_fleet_placement"], "workload_profile"),
+            expected,
+        )
+        self.assertEqual(
+            _property_enum(self.schemas["preview_instance_group"], "workload_profile"),
+            expected,
+        )
+        self.assertEqual(
+            _property_enum(ExecutionContract.model_json_schema(), "profile"),
+            expected,
+        )
+
 
     async def test_invalid_enum_value_fails_before_tool_handler_runs(self) -> None:
         with self.assertRaises(ToolError) as raised:

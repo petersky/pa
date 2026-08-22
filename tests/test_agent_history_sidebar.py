@@ -33,6 +33,8 @@ def test_agent_sidebar_exposes_opt_in_history_controls() -> None:
     assert "data-acw-recover" in widget
     assert "data-acw-history" in widget
     assert 'data-current-instance-id="{{ current_id }}"' in widget
+    assert "instance_id if instance_id is defined" in widget
+    assert "current_instance_id=instance_id" in template
 
 
 def test_agent_sidebar_loads_and_selects_durable_history() -> None:
@@ -146,6 +148,9 @@ def test_agent_page_exposes_non_destructive_recovery_action() -> None:
     assert '"/recover"' in script
     assert 'route.state === "owner_unreachable"' in script
     assert 'route.state === "missing"' in script
+    assert "_missingRestartAttempted" in script
+    assert "_apiBaseForOwner" in script
+    assert "defaultApiBase" in script
 
 
 def test_blocked_session_surfaces_retry_and_close_guidance() -> None:

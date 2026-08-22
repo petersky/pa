@@ -39,7 +39,10 @@ from pa.acp.configuration import (
     state_current_value,
     validate_option_value,
 )
-from pa.acp.environment import sanitize_provider_environment
+from pa.acp.environment import (
+    inject_agent_github_environment,
+    sanitize_provider_environment,
+)
 from pa.acp.final_message import normalize_provider_phase
 from pa.acp.mcp_config import (
     McpHandshakeError,
@@ -986,6 +989,9 @@ class AgentConnection:
             os.environ,
             spec.env,
             self.extra_env,
+        )
+        child_env, _github_auth_source = inject_agent_github_environment(
+            child_env, self.settings
         )
         # LaunchAgents often inherit /usr/bin:/bin. Prepend Homebrew and
         # ~/.local/bin so npx/node/codex-acp resolve the same way as a login shell.

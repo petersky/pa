@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from pa.workloads import (
+    LEGACY_CODE_PROFILE_REASON,
+    WorkloadProfile,
+    WorkloadProfileError,
+    normalize_workload_profile,
+)
 
-class ExecutionProfile(StrEnum):
-    AUTOMATIC = "automatic"
-    REPOSITORY = "repository"
-    RESEARCH = "research"
-    OPERATIONS = "operations"
+# Compatibility import for extensions; WorkloadProfile is the canonical enum.
+ExecutionProfile = WorkloadProfile
 
 
 class RepositoryRequirement(BaseModel):
@@ -44,15 +47,83 @@ class ExecutionRequirements(BaseModel):
 
 class ExecutionContract(BaseModel):
     version: Literal[1] = 1
-    profile: ExecutionProfile = ExecutionProfile.AUTOMATIC
+    profile: WorkloadProfile = WorkloadProfile.AUTOMATIC
+    profile_normalization_reason: (
+        Literal["legacy_code_profile_normalized_to_repository"] | None
+    ) = None
     requirements: ExecutionRequirements = Field(default_factory=ExecutionRequirements)
     confirmed: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_profile(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        resolution = normalize_workload_profile(
+            payload.get("profile", WorkloadProfile.AUTOMATIC)
+        )
+        payload["profile"] = resolution.profile
+        supplied_reason = payload.get("profile_normalization_reason")
+        if supplied_reason is not None and supplied_reason != resolution.migration_reason:
+            raise ValueError("profile_normalization_reason must be derived from raw profile")
+        payload["profile_normalization_reason"] = resolution.migration_reason
+        return payload
+
+
+class ExecutionContractError(ValueError):
+    code = "invalid_execution_contract"
+
+    def __init__(self, message: str, *, errors: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.message = message
+        self.errors = errors
+
+    def detail(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "field": "execution_contract",
+            "field_errors": self.errors,
+            "recoverable": True,
+        }
+
+
+def validate_execution_contract(value: Any) -> ExecutionContract:
+    """Validate untrusted or persisted contracts without leaking ValidationError."""
+
+    raw_profile = (
+        value.get("profile", WorkloadProfile.AUTOMATIC)
+        if isinstance(value, Mapping)
+        else WorkloadProfile.AUTOMATIC
+    )
+    # Preserve the stable, actionable profile error rather than Pydantic's
+    # internal enum diagnostics at every API/CLI/MCP boundary.
+    normalize_workload_profile(raw_profile)
+    try:
+        return ExecutionContract.model_validate(value)
+    except WorkloadProfileError:
+        raise
+    except ValidationError as exc:
+        errors = [
+            {
+                "field": ".".join(str(part) for part in item.get("loc", ())),
+                "message": str(item.get("msg") or "Invalid value"),
+                "type": str(item.get("type") or "value_error"),
+            }
+            for item in exc.errors(include_url=False)
+        ]
+        raise ExecutionContractError(
+            "The execution contract is malformed. Correct the reported fields and retry.",
+            errors=errors,
+        ) from exc
 
 
 class MaterializationPlan(BaseModel):
     contract_version: Literal[1] = 1
     profile: ExecutionProfile
     profile_source: str
+    profile_normalization_reason: str | None = None
     requirements: ExecutionRequirements
     target_instance_id: str
     repositories: list[dict[str, Any]] = Field(default_factory=list)
@@ -86,7 +157,7 @@ def resolve_materialization_plan(
     if requested and requested.profile != ExecutionProfile.AUTOMATIC:
         contract, source = requested, "dispatch_override"
     elif project_default:
-        contract, source = ExecutionContract.model_validate(project_default), "project"
+        contract, source = validate_execution_contract(project_default), "project"
     else:
         contract, source = requested or ExecutionContract(), "automatic"
     req = contract.requirements.model_copy(deep=True)
@@ -170,6 +241,7 @@ def resolve_materialization_plan(
     return MaterializationPlan(
         profile=profile,
         profile_source=source,
+        profile_normalization_reason=contract.profile_normalization_reason,
         requirements=req,
         target_instance_id=target_instance_id,
         repositories=repos,

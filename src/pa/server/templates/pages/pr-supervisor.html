@@ -1,144 +1,27 @@
 {% from "macros/layout.html" import page_layout %}
 {% from "macros/instance_identity.html" import instance_identity %}
-
+{% macro watch_status(item) -%}
+{% if item.status.value == 'merged' %}Merged{% elif item.status.value == 'closed' %}Closed without merge{% elif item.status.value == 'retired' or item.retired_at %}Retired{% elif item.state.get('draft') %}Draft; waiting for author{% elif item.status.value == 'blocked' %}Blocked{% elif item.last_error %}Fetch failed; retry scheduled{% elif (item.state.get('gate') or {}).get('green') %}Ready; awaiting stable green evaluation{% elif (item.state.get('gate') or {}).get('reasons') %}{{ (item.state.get('gate') or {}).get('reasons') | join('; ') }}{% elif item.head_sha %}Observation incomplete; awaiting next evaluation{% else %}Awaiting first observation{% endif %}
+{%- endmacro %}
+{% set base_query %}realm={{ active_realm }}&amp;view={{ view }}&amp;q={{ search | urlencode }}&amp;page={{ page_number }}{% endset %}
 {% set main %}
-<div class="panel">
-  <div class="panel-header">
-    <div>
-      <h2>Pull request supervisor</h2>
-      <p class="muted">Durable lifecycle watches run independently of advisor sessions.</p>
-    </div>
-    <span class="badge">{{ capability.state }}</span>
-  </div>
+<div class="panel" id="pr-watch-list">
+  <div class="panel-header"><div><h2>Pull request supervisor</h2><p class="muted">Active and attention-needed watches, with durable history on demand.</p></div><span class="badge">{{ operations.severity }}</span></div>
+  {% if degradation %}<div class="panel-inset danger" role="status" aria-labelledby="degradation-title"><h3 id="degradation-title">Supervisor data is degraded</h3><p>{{ degradation }}</p><p class="small">Rows show the last durable observation; partial fetch errors are not mixed into history.</p></div>{% endif %}
+  <section class="panel-inset" aria-labelledby="operations-title"><div class="panel-header"><h3 id="operations-title">Operations</h3><a href="/pull-requests?realm={{ active_realm }}&amp;view=errors">Error drill-down</a></div><p><strong>{{ metrics.get('active_watches', 0) }}</strong> active · <strong>{{ operations.polls }}</strong> polls · <strong>{{ metrics.get('executor_prompts', 0) }}</strong> prompts · <strong>{{ operations.errors }}</strong> errors</p><p class="muted small">Window: {{ operations.window }} · error rate {{ '%.1f' | format(operations.error_rate) }}% ({{ operations.errors }} errors / {{ operations.denominator }} poll and prompt operations) · severity {{ operations.severity }}. Historical totals do not imply current degradation.</p></section>
+  <form method="get" action="/pull-requests" class="panel-inset" role="search"><input type="hidden" name="realm" value="{{ active_realm }}"><label for="watch-search">Search repository, PR, watch, card, or project ID</label><input id="watch-search" name="q" value="{{ search }}"><label for="watch-view">Show</label><select id="watch-view" name="view"><option value="attention"{% if view == 'attention' %} selected{% endif %}>Active and attention needed</option><option value="errors"{% if view == 'errors' %} selected{% endif %}>Errors</option><option value="history"{% if view == 'history' %} selected{% endif %}>Terminal history</option><option value="all"{% if view == 'all' %} selected{% endif %}>All watches</option></select><button type="submit">Apply</button></form>
 
-  <div class="panel-inset">
-    <h3>GitHub capability</h3>
-    <p>
-      Instance {{ instance_identity(capability.instance_id) }} ·
-      {% if capability.authenticated %}authenticated{% else %}not authenticated{% endif %} ·
-      webhook {% if capability.webhook_configured %}configured{% else %}not configured{% endif %}
-    </p>
-    {% if capability.detail %}<p class="muted">{{ capability.detail }}</p>{% endif %}
-    {% if capability.allowed_repositories %}
-    <p class="muted">Allowed: {{ capability.allowed_repositories | join(', ') }}</p>
-    {% endif %}
-  </div>
+  {% if watch %}{% set identity = watch_identities.get(watch.id, {}) %}{% set gate = watch.state.get('gate') or {} %}
+  <article class="panel" aria-labelledby="watch-title"><div class="panel-header"><div><a href="/pull-requests?{{ base_query }}#watch-{{ watch.id }}">← Back to filtered watches</a><h3 id="watch-title" tabindex="-1"><a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }} #{{ watch.pr_number }}</a></h3></div><span class="badge">{{ watch.status.value }}</span></div>
+    <p><strong>{{ watch_status(watch) }}</strong></p>
+    <dl class="metadata-grid"><div><dt>PR state</dt><dd>{% if watch.terminal %}{{ watch.status.value }}{% elif watch.state.get('draft') %}Draft{% else %}Ready for review{% endif %}</dd></div><div><dt>Exact-head checks</dt><dd>{% if not watch.head_sha %}Not observed{% elif watch.state.get('confirmed_head_sha') and watch.state.get('confirmed_head_sha') != watch.head_sha %}Stale observation{% elif gate.get('failing_checks') %}{{ gate.get('failing_checks') | length }} failing{% elif gate.get('pending_checks') %}{{ gate.get('pending_checks') | length }} pending{% else %}Passing for {{ watch.head_sha[:12] }}{% endif %}</dd></div><div><dt>Review</dt><dd>{{ watch.state.get('review_decision') or 'No decision' }} · {{ watch.state.get('approvals', 0) }}/{{ watch.state.get('required_approvals', 0) }} approvals</dd></div><div><dt>Mergeability</dt><dd>{{ watch.state.get('mergeable_state') or ('terminal' if watch.terminal else 'unknown') }}</dd></div><div><dt>Owner</dt><dd>{% if watch.owner_instance_id %}{{ instance_identity(watch.owner_instance_id) }}{% else %}Unassigned{% endif %}{% if watch.lease_expires_at and not watch.terminal %} · lease expires <time datetime="{{ watch.lease_expires_at.isoformat() }}" title="{{ watch.lease_expires_at.isoformat() }}">{{ relative_time(watch.lease_expires_at) }}</time>{% endif %}</dd></div><div><dt>Next action</dt><dd>{% if watch.terminal %}None; audit only{% elif watch.last_error %}Supervisor retries {{ relative_time(watch.next_poll_at) }}{% elif gate.get('actionable') %}Operator or author: resolve gate failures{% else %}Supervisor evaluates {{ relative_time(watch.next_poll_at) }}{% endif %}</dd></div></dl>
+    <p>{% if watch.card_id %}<a href="/?realm={{ active_realm }}&amp;card={{ watch.card_id }}">Card: {{ identity.card_title or watch.card_id[:8] }}</a>{% else %}Unlinked card{% endif %} · {% if watch.project_id %}<a href="/projects?realm={{ active_realm }}&amp;project={{ watch.project_id }}">Project: {{ identity.project_title or watch.project_id[:8] }}</a>{% else %}Unlinked project{% endif %}</p><p class="muted small">Watch <code title="{{ watch.id }}">{{ watch.id[:8] }}</code> · head <code title="{{ watch.head_sha or 'unknown' }}">{{ (watch.head_sha or 'unknown')[:12] }}</code> · updated <time datetime="{{ watch.updated_at.isoformat() }}" title="{{ watch.updated_at.isoformat() }}">{{ relative_time(watch.updated_at) }}</time></p>
+    <details{% if request.query_params.get('audit_page') %} open{% endif %}><summary>Durable audit ledger ({{ watch_event_total }} events)</summary>{% if watch_event_groups %}<ol class="item-list">{% for group in watch_event_groups %}{% set event = group.event %}<li class="item"><span class="badge">{{ event.event_type }}</span>{% if group.count > 1 %} × {{ group.count }}{% endif %} · <time datetime="{{ group.newest_at.isoformat() }}" title="{{ group.newest_at.isoformat() }}">{{ relative_time(group.newest_at) }}</time>{% if group.count > 1 %} to <time datetime="{{ group.oldest_at.isoformat() }}" title="{{ group.oldest_at.isoformat() }}">{{ relative_time(group.oldest_at) }}</time>{% endif %}{% if event.head_sha %} · <code title="{{ event.head_sha }}">{{ event.head_sha[:12] }}</code>{% endif %}{% if event.payload.get('reasons') %}<ul>{% for reason in event.payload.get('reasons') %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ol>{% else %}<p class="empty">No audit events yet.</p>{% endif %}{% if audit_pages > 1 %}<nav aria-label="Audit pages">{% if audit_page > 1 %}<a href="/pull-requests?{{ base_query }}&amp;watch={{ watch.id }}&amp;audit_page={{ audit_page - 1 }}#watch-title">Newer</a>{% endif %} Page {{ audit_page }} of {{ audit_pages }} {% if audit_page < audit_pages %}<a href="/pull-requests?{{ base_query }}&amp;watch={{ watch.id }}&amp;audit_page={{ audit_page + 1 }}#watch-title">Older</a>{% endif %}</nav>{% endif %}</details>
+  </article>{% endif %}
 
-  <div class="panel-inset">
-    <h3>Operations</h3>
-    <p class="muted">
-      Active watches {{ metrics.get('active_watches', 0) }} ·
-      polls {{ metrics.get('polls', 0) }} ·
-      prompts {{ metrics.get('executor_prompts', 0) }} ·
-      historical errors {{ metrics.get('poll_errors', 0) + metrics.get('dispatch_errors', 0) }} ·
-      active renewers {{ supervisor_health.get('active_renewers', 0) }} ·
-      retrying now {{ supervisor_health.get('retrying_renewers', []) | length }} ·
-      stopped now {{ supervisor_health.get('stopped_renewers', []) | length }}
-    </p>
-    <p class="muted small">
-      Effect protocol v{{ supervisor_health.get('effect_protocol_version', 1) }} ·
-      coordinated upgrade
-      {% if supervisor_health.get('coordinated_upgrade_ready') %}ready{% else %}blocked{% endif %}
-      {% if supervisor_health.get('incompatible_effect_instances') %} · incompatible {{ supervisor_health.get('incompatible_effect_instances') | join(', ') }}{% endif %}
-    </p>
-    {% if supervisor_health.get('retrying_renewers') %}
-    <ul class="item-list">
-      {% for renewer in supervisor_health.get('retrying_renewers', []) %}
-      <li class="item">
-        <strong>{{ renewer.watch_id }}</strong>
-        <span class="badge">retrying</span>
-        <p class="muted">
-          Next attempt in {{ '%.1f' | format(renewer.retry_in_seconds) }}s ·
-          last response {{ (renewer.last_response or {}).get('reason') or 'transport failure' }}
-        </p>
-      </li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-    {% if supervisor_health.get('stopped_renewers') %}
-    <ul class="item-list">
-      {% for renewer in supervisor_health.get('stopped_renewers', []) %}
-      <li class="item">
-        <strong>{{ renewer.watch_id }}</strong>
-        <span class="badge">stopped</span>
-        <p class="muted">{{ renewer.reason }}</p>
-      </li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-  </div>
-
-  {% if watch %}
-  <div class="panel">
-    <div class="panel-header">
-      <h3><a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }}#{{ watch.pr_number }}</a></h3>
-      <span class="badge">{{ watch.status.value }}</span>
-    </div>
-    <p class="muted">
-      Realm {{ watch.realm_id }} · card {{ watch.card_id or 'unlinked' }} ·
-      project {{ watch.project_id or 'unlinked' }}
-    </p>
-    <p>
-      Head {{ watch.head_sha or 'unknown' }} · base {{ watch.base_branch or 'unknown' }} ·
-      owner {% if watch.owner_instance_id %}{{ instance_identity(watch.owner_instance_id) }}{% else %}unassigned{% endif %} · fence {{ watch.fence_token }}
-    </p>
-    <p class="muted small">
-      Frozen policy {{ watch.policy_source }} · revision {{ watch.policy_revision }} ·
-      snapshot {{ watch.policy_snapshot_at }}. Later project changes apply only to new watches.
-      {% if watch_policy_differs %}<span class="badge">differs from current policy</span>{% endif %}
-    </p>
-    {% set failed_checks = (watch.state.get('gate') or {}).get('failing_checks', []) %}
-    {% if failed_checks %}
-    <h4>Failed checks requiring repair</h4>
-    <ul>{% for check in failed_checks %}<li>{% if not check.required %}<span class="badge">non-required</span> {% endif %}<a href="{{ check.details_url or watch.pr_url }}">{{ check.name }}</a>: {{ check.conclusion }}</li>{% endfor %}</ul>
-    {% endif %}
-    {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
-    {% if watch_deliveries %}
-    <h4>Executor delivery</h4>
-    <ul class="item-list">{% for delivery in watch_deliveries %}<li class="item"><span class="badge">{{ delivery.state }}</span> {{ delivery.updated_at }} · destination {{ delivery.target_instance_id or 'local' }}/{{ delivery.target_session_id or 'unlinked' }}{% if delivery.detail %}<p class="muted small">{{ delivery.detail }}</p>{% endif %}</li>{% endfor %}</ul>
-    {% endif %}
-    <h4>Audit history</h4>
-    {% if watch_events %}
-    <ul class="item-list">
-      {% for event in watch_events %}
-      <li class="item">
-        <span class="badge">{{ event.event_type }}</span>
-        <span>{{ event.created_at }}</span>
-        {% if event.head_sha %}<span class="muted">{{ event.head_sha[:12] }}</span>{% endif %}
-        {% if event.payload.get('reasons') %}
-        <ul>{% for reason in event.payload.get('reasons') %}<li>{{ reason }}</li>{% endfor %}</ul>
-        {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="empty">No audit events yet.</p>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <h3>Watches</h3>
-  {% if watches %}
-  <ul class="item-list">
-    {% for item in watches %}
-    <li class="item">
-      <a href="/pull-requests?realm={{ active_realm }}&watch={{ item.id }}">
-        <h3>{{ item.repository }}#{{ item.pr_number }}</h3>
-      </a>
-      <span class="badge">{{ item.status.value }}</span>
-      <p class="muted">
-        {{ item.state.get('supervisor_state', 'waiting for observation') }} ·
-        head {{ (item.head_sha or 'unknown')[:12] }} ·
-        updated {{ item.updated_at }}
-      </p>
-      {% if item.last_error %}<p class="danger">{{ item.last_error }}</p>{% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="empty">No pull requests are being supervised.</p>
-  {% endif %}
+  <div class="panel-header"><h3>Watches</h3><span class="muted">{{ watch_total }} result{% if watch_total != 1 %}s{% endif %}</span></div>
+  {% if watches %}<ul class="item-list">{% for item in watches %}{% set identity = watch_identities.get(item.id, {}) %}{% set gate = item.state.get('gate') or {} %}<li class="item" id="watch-{{ item.id }}"><a href="/pull-requests?{{ base_query }}&amp;watch={{ item.id }}#watch-title"><h3>{{ item.repository }} #{{ item.pr_number }}</h3></a><span class="badge">{{ item.status.value }}</span><p><strong>{{ watch_status(item) }}</strong></p>{% if item.actionable %}<p class="muted">{% if item.state.get('draft') %}Draft{% else %}Ready{% endif %} · checks {% if gate.get('failing_checks') %}failing{% elif gate.get('pending_checks') %}pending{% elif item.head_sha %}passing{% else %}unknown{% endif %} · review {{ item.state.get('review_decision') or 'pending' }} · merge {{ item.state.get('mergeable_state') or 'unknown' }} · owner {% if item.owner_instance_id %}current{% else %}unassigned{% endif %} · next {{ relative_time(item.next_poll_at) }}</p>{% endif %}<p class="muted small">{% if item.card_id %}<a href="/?realm={{ active_realm }}&amp;card={{ item.card_id }}">{{ identity.card_title or 'Card ' ~ item.card_id[:8] }}</a> · {% endif %}{% if item.project_id %}<a href="/projects?realm={{ active_realm }}&amp;project={{ item.project_id }}">{{ identity.project_title or 'Project ' ~ item.project_id[:8] }}</a> · {% endif %}<code title="{{ item.head_sha or 'unknown' }}">{{ (item.head_sha or 'unknown')[:12] }}</code> · <time datetime="{{ item.updated_at.isoformat() }}" title="{{ item.updated_at.isoformat() }}">{{ relative_time(item.updated_at) }}</time></p></li>{% endfor %}</ul>{% else %}<p class="empty">No watches match these filters.</p>{% endif %}
+  {% if page_count > 1 %}<nav aria-label="Watch pages">{% if page_number > 1 %}<a href="/pull-requests?realm={{ active_realm }}&amp;view={{ view }}&amp;q={{ search | urlencode }}&amp;page={{ page_number - 1 }}">Previous</a>{% endif %} Page {{ page_number }} of {{ page_count }} {% if page_number < page_count %}<a href="/pull-requests?realm={{ active_realm }}&amp;view={{ view }}&amp;q={{ search | urlencode }}&amp;page={{ page_number + 1 }}">Next</a>{% endif %}</nav>{% endif %}
 </div>
 {% endset %}
-
 {{ page_layout(main=main, class='page-pr-supervisor') }}

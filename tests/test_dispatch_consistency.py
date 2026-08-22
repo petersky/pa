@@ -250,6 +250,117 @@ def target_terminal_repair_context(data_dir: str, suffix: str) -> SimpleNamespac
 
 
 class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_closed_session_recovery_fails_stale_dispatch_preserving_evidence_and_wakes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-closed-recovery",
+                mutation_id="mutation-closed-recovery",
+                card_id="card-open",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-closed-recovery",
+                state="running",
+                recoverable=True,
+                completion_payload={"stop_reason": "error", "outcome": "failed turn"},
+                followup_operations={"followup-1": {"state": "accepted"}},
+                reconciliation_state="pending",
+                capacity_reserved_at=datetime.now(UTC),
+            )
+            ledger.put(record)
+            session = AgentSession(
+                id=record.session_id or "",
+                agent_name="codex",
+                origin_instance_id="target",
+                authority_instance_id="target",
+                dispatch_id=record.dispatch_id,
+                status="closed",
+                config_json={
+                    "durable_runtime": {
+                        "queued_prompts": [{"id": "stranded-followup"}],
+                        "in_flight": None,
+                    }
+                },
+            )
+            domain = MagicMock()
+            domain.get_session.return_value = session
+            domain.get_card.return_value = SimpleNamespace(lane=CardLane.ACTIVE)
+            manager = AgentSessionManager(settings, domain, dispatch_store=ledger)
+            worker = MagicMock()
+            request = request_for(
+                settings,
+                domain,
+                {
+                    "dispatch_store": ledger,
+                    "instance_agent": manager,
+                    "dispatch_worker": worker,
+                },
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="recover-closed-1",
+                mode="closed_session_recovery",
+                expected_state="running",
+                reason="Closed transport and fenced provider runtime verified.",
+                confirm_no_outcome_inference=True,
+            )
+
+            with patch("pa.modules.fleet.require_user"):
+                first = await repair_terminal_dispatch(request, record.dispatch_id, body)
+                second = await repair_terminal_dispatch(request, record.dispatch_id, body)
+
+            self.assertEqual(first["state"], "failed")
+            self.assertEqual(second["state"], "failed")
+            stored = ledger.get(record.dispatch_id)
+            assert stored is not None
+            self.assertEqual(stored.completion_payload, record.completion_payload)
+            self.assertEqual(stored.followup_operations, record.followup_operations)
+            self.assertEqual(stored.reconciliation_state, "pending")
+            self.assertEqual(stored.capacity_release_reason, "stale-closed-session-recovery")
+            audit = stored.lifecycle_inconsistencies[-1]
+            self.assertEqual(audit["previous_state"], "running")
+            self.assertEqual(audit["normalized_state"], "failed")
+            self.assertEqual(audit["idempotency_key"], "recover-closed-1")
+            self.assertTrue(audit["preserved_evidence"]["completion"])
+            self.assertTrue(audit["preserved_evidence"]["followups"])
+            worker.wake.assert_called_once()
+
+    async def test_closed_session_recovery_refuses_live_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id="target")
+            ledger = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-live-recovery",
+                mutation_id="mutation-live-recovery",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                session_id="session-live-recovery",
+                state="running",
+            )
+            ledger.put(record)
+            domain = MagicMock()
+            domain.get_session.return_value = AgentSession(
+                id=record.session_id or "", agent_name="codex", status="closed"
+            )
+            manager = MagicMock()
+            manager.get.return_value = SimpleNamespace(_closed=False)
+            request = request_for(
+                settings, domain, {"dispatch_store": ledger, "instance_agent": manager}
+            )
+            body = DispatchTerminalRepairBody(
+                idempotency_key="recover-live-1",
+                mode="closed_session_recovery",
+                expected_state="running",
+                reason="Must refuse live runtime.",
+                confirm_no_outcome_inference=True,
+            )
+            with patch("pa.modules.fleet.require_user"), self.assertRaises(HTTPException) as raised:
+                await repair_terminal_dispatch(request, record.dispatch_id, body)
+            self.assertEqual(raised.exception.detail["code"], "linked_session_not_terminal")
+            self.assertEqual(ledger.get(record.dispatch_id).state, "running")
+
     async def test_start_routes_to_explicit_peer_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
