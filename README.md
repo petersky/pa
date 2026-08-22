@@ -147,6 +147,7 @@ Environment variables (prefix `PA_`):
 | `PA_PORT` | `8080` | Server bind port |
 | `PA_PEERS` | — | Comma-separated peer URLs |
 | `PA_AGENT_ENABLED` | `true` | Connect to ACP agent on startup |
+| `PA_AGENT_GITHUB_TOKEN_ENABLED` | `false` | Opt in to mapping the instance GitHub credential into ACP children as `GH_TOKEN` |
 | `PA_AGENT_PROVIDER` | `cursor` | Default ACP provider (`cursor`, `codex`, or `openinterpreter`) |
 | `PA_AGENT_COMMAND` | _(provider default)_ | Optional spawn command override |
 | `PA_AGENT_ARGS` | _(provider default)_ | Optional spawn args override (JSON array or comma-separated) |
@@ -154,7 +155,7 @@ Environment variables (prefix `PA_`):
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |
 | `PA_DEV_TOOLS` | `false` | In-browser developer panel (auto-on with debug) |
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
-| `PA_GITHUB_TOKEN` | — | Instance-local GitHub token used by the PR supervisor |
+| `PA_GITHUB_TOKEN` | — | Instance-local GitHub token used by PA service code and, when explicitly enabled, mapped to agent `GH_TOKEN` |
 | `PA_GITHUB_WEBHOOK_SECRET` | — | Instance-local secret for HMAC-SHA256 webhook verification |
 | `PA_TELEMETRY_ENABLED` | `true` | Collect bounded instance resource telemetry |
 | `PA_TELEMETRY_PER_SESSION_ENABLED` | `true` | Attribute metrics to PA-owned agent process trees when supported |

@@ -5,6 +5,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pa.config import Settings
 
 ASSIGNED_SERVICE_CREDENTIAL_ENV = "PA_ASSIGNED_SERVICE_CREDENTIAL"
 ASSIGNED_SERVICE_AUTHORITY_URL_ENV = "PA_ASSIGNED_SERVICE_AUTHORITY_URL"
@@ -80,6 +84,8 @@ PRIVATE_PROVIDER_ENVIRONMENT = frozenset(
         "PA_FLEET_TOKEN",
         "PA_GITHUB_TOKEN",
         "PA_GITHUB_WEBHOOK_SECRET",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
         "PA_HOST",
         "PA_INSTANCE_ID",
         "PA_INSTANCE_NAME",
@@ -141,3 +147,19 @@ def private_provider_environment_names(
 ) -> list[str]:
     """Return private names present in an environment without exposing values."""
     return sorted(name for name in environment if _server_private_name(name))
+
+
+def inject_agent_github_environment(
+    environment: Mapping[str, str], settings: Settings
+) -> tuple[dict[str, str], str]:
+    """Apply the explicit PA-managed GitHub mapping without exposing its value."""
+    result = dict(environment)
+    if not settings.agent_github_token_enabled:
+        return result, "disabled"
+    from pa.pr_supervisor.github import GitHubCredentials
+
+    credentials = GitHubCredentials.load(settings.data_dir)
+    if not credentials.token:
+        return result, "missing"
+    result["GH_TOKEN"] = credentials.token
+    return result, credentials.token_source or "missing"

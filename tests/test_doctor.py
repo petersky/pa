@@ -10,6 +10,7 @@ from pa import __version__
 from pa.acp.mcp_config import McpHandshakeError, OwnerChannelError
 from pa.cli.doctor import (
     Finding,
+    _github_agent_auth,
     _canonical,
     _dedupe_plan,
     _provider_findings,
@@ -46,6 +47,30 @@ def _status(settings: Settings, socket_path: str | None = None) -> dict:
             "private_variables_present": [],
         },
     }
+
+
+def test_github_agent_auth_reports_modes_without_token_values(tmp_path: Path) -> None:
+    integration = tmp_path / "integrations"
+    integration.mkdir()
+    token = "github-token-that-must-not-leak"
+    (integration / "github.json").write_text(
+        '{"token":"' + token + '","allowed_repositories":["petersky/pa"]}'
+    )
+    settings = Settings(
+        data_dir=tmp_path, agent_github_token_enabled=True
+    )
+    completed = SimpleNamespace(returncode=0)
+    with patch("pa.cli.doctor.subprocess.run", return_value=completed):
+        evidence = _github_agent_auth(settings)
+    assert evidence == {
+        "mode": "both",
+        "oauth_keyring": True,
+        "injected_gh_token": True,
+        "injection_enabled": True,
+        "token_source": "instance_file",
+        "allowed_repository_count": 1,
+    }
+    assert token not in repr(evidence)
 
 
 def _run(

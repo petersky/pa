@@ -7,8 +7,12 @@ import logging
 import os
 from typing import Any
 
-from pa.acp.environment import sanitize_provider_environment
+from pa.acp.environment import (
+    inject_agent_github_environment,
+    sanitize_provider_environment,
+)
 from pa.acp.providers.base import AgentProviderSpec
+from pa.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,9 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
     if resolved:
         command = str(resolved)
     child_env = sanitize_provider_environment(os.environ, spec.env)
+    child_env, _github_auth_source = inject_agent_github_environment(
+        child_env, get_settings()
+    )
     client = PAClient(store=_ProbeStore())  # type: ignore[arg-type]
     ctx = spawn_agent(
         client,
