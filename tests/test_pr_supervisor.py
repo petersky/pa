@@ -3623,6 +3623,7 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
             target = PRWatch(
                 id="draft-watch", repository="owner/repo", pr_number=17,
                 pr_url="https://example.test/17", head_sha="b" * 40,
+                next_poll_at=utcnow() + timedelta(minutes=5),
                 state={"draft": True, "mergeable_state": "clean",
                        "gate": {"green": False, "actionable": True,
                                 "reasons": ["pull request is draft"],
@@ -3638,7 +3639,7 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
             page = client.get(
                 "/pull-requests?view=attention&q=owner%2Frepo&page=1&watch=draft-watch"
             )
-            self.assertIn("<p><strong>Blocked</strong></p>", page.text)
+            self.assertIn("Draft; waiting for author", page.text)
             self.assertIn("Durable audit ledger (3 events)", page.text)
             self.assertIn("× 3", page.text)
             self.assertIn("q=owner/repo", page.text)
