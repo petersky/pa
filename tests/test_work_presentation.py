@@ -147,6 +147,7 @@ def test_stale_progress_on_current_dispatch_needs_inspection() -> None:
         ("waiting_capacity", "Waiting for capacity"),
         ("queued", "Queued"),
         ("checking_sync", "Checking fleet state"),
+        ("completion_pending", "Finishing"),
     ],
 )
 def test_stale_starting_dispatch_remains_autonomous_motion(
@@ -337,10 +338,16 @@ def test_retired_or_terminal_watch_history_never_drives_current_attention(watch)
     assert result["attention"] is False
 
 
-def test_startup_dispatch_failure_on_done_card_shows_completed_outcome() -> None:
+@pytest.mark.parametrize(
+    "state",
+    ["blocked", "completion_pending", "failed", "cancelled"],
+)
+def test_historical_dispatch_state_on_done_card_shows_completed_outcome(
+    state: str,
+) -> None:
     done_card = {**CARD, "lane": "done"}
     value = dispatch(
-        "failed",
+        state,
         can_retry=True,
         last_error="blocking operation 'sqlite.card_write' exceeded 30.000s",
         completion_outbox={

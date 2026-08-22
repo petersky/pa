@@ -38,6 +38,7 @@ STARTING_DISPATCH_STATES = {
     "dispatching",
     "dispatched",
     "materialized",
+    "completion_pending",
 }
 TERMINAL_DISPATCH_STATES = {"completed", "acknowledged", "failed", "cancelled"}
 ACTIVE_SESSION_STATES = {"busy", "working", "prompting", "running", "starting"}
@@ -462,11 +463,7 @@ def present_work_item(
             external=bool(review_url),
         )
         action_explanation = None
-    elif (
-        lane == "done"
-        and state in {"failed", "cancelled"}
-        and not session_facts["active"]
-    ):
+    elif lane == "done" and not session_facts["active"]:
         group = "outcome"
         state_code = "completed"
         state_label = "Completed"
@@ -476,7 +473,7 @@ def present_work_item(
             or latest_summary
             or "Work completed."
         )
-        reason = "The card is Done; the linked dispatch did not finish autonomously."
+        reason = "The card is Done; linked execution state is historical."
         tone = "success"
         priority = 50
         action = _action("open_card", "Open card", href=card_href)
