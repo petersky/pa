@@ -1208,15 +1208,10 @@ async def probe_dimension(
     key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
     async with _probe_lock:
         active = _probe_tasks.get(key)
-        # Bootstrap is process-heavy and must stay single-flight even when a
-        # preview/admission caller requests a forced refresh.  Cheap dimensions
-        # retain the established force semantics where an explicit refresh may
-        # supersede an older background attempt.
-        if (
-            active is None
-            or active[1].done()
-            or (force and dimension != "mcp_bootstrap")
-        ):
+        # A forced refresh bypasses a warm cache, but never supersedes live
+        # work.  Superseding leaves the older subprocess/peer request running
+        # and turns concurrent viewers into a fleet-wide probe convoy.
+        if active is None or active[1].done():
             attempt_id = time.time_ns()
             task = asyncio.create_task(
                 _run_dimension_probe(
