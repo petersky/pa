@@ -534,6 +534,16 @@ def present_work_item(
         attention_code = "retry_decision"
         action = _action("retry", "Retry", dispatch_id=dispatch_id)
         action_explanation = None
+    elif state in STARTING_DISPATCH_STATES:
+        group = "motion"
+        state_code = state
+        state_label = DISPATCH_LABELS.get(state, "Starting")
+        summary = latest_summary or state_label
+        reason = "The dispatch is progressing autonomously."
+        tone = "active"
+        priority = 80
+        action = _action("open_card", "Open card", href=card_href)
+        action_explanation = "No operator action needed; startup is in progress."
     elif freshness_state in STALE_PROGRESS_STATES and state in ACTIVE_DISPATCH_STATES:
         group = "attention"
         state_code = "progress_stale"
@@ -545,16 +555,6 @@ def present_work_item(
         attention_code = "stale_progress"
         action = _action("inspect", "Inspect progress", href=card_href)
         action_explanation = None
-    elif state in STARTING_DISPATCH_STATES:
-        group = "motion"
-        state_code = state
-        state_label = DISPATCH_LABELS.get(state, "Starting")
-        summary = latest_summary or state_label
-        reason = "The dispatch is progressing autonomously."
-        tone = "active"
-        priority = 80
-        action = _action("open_card", "Open card", href=card_href)
-        action_explanation = "No operator action needed; startup is in progress."
     elif state in ACTIVE_DISPATCH_STATES:
         group = "motion"
         state_code = "awaiting_turn" if session_facts["quiet"] else state

@@ -141,6 +141,30 @@ def test_stale_progress_on_current_dispatch_needs_inspection() -> None:
     assert result["action"]["label"] == "Inspect progress"
 
 
+@pytest.mark.parametrize(
+    ("state", "label"),
+    [
+        ("waiting_capacity", "Waiting for capacity"),
+        ("queued", "Queued"),
+        ("checking_sync", "Checking fleet state"),
+    ],
+)
+def test_stale_starting_dispatch_remains_autonomous_motion(
+    state: str, label: str
+) -> None:
+    result = present(
+        dispatch_value=dispatch(state, freshness="disconnected", session_id=None)
+    )
+
+    assert result["group"] == "motion"
+    assert result["attention"] is False
+    assert result["state_label"] == label
+    assert result["action"]["kind"] == "open_card"
+    assert result["action_explanation"] == (
+        "No operator action needed; startup is in progress."
+    )
+
+
 def test_waiting_lane_without_action_is_not_attention() -> None:
     result = present()
 
