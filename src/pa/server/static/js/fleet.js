@@ -1752,6 +1752,7 @@
         total: (nodeIds || []).length * (dimensions || []).length,
         completed: 0,
         terminal: Object.create(null),
+        outcomes: Object.create(null),
         startedAt: startedAt,
         elapsedMs: 0
       }
@@ -1780,11 +1781,15 @@
     }
     var key = update.nodeId + "\n" + update.dimension;
     var terminal = Object.assign({}, refresh.terminal || {});
+    var outcomes = Object.assign({}, refresh.outcomes || {});
     var newlyCompleted = !terminal[key];
     terminal[key] = true;
+    outcomes[key] = String((update.value || {}).last_attempt_state ||
+      (update.value || {}).state || "unavailable");
     var nextRefresh = Object.assign({}, refresh, {
       completed: refresh.completed + (newlyCompleted ? 1 : 0),
       terminal: terminal,
+      outcomes: outcomes,
       elapsedMs: update.elapsedMs == null ? refresh.elapsedMs : update.elapsedMs
     });
     var previousNode = (overview.nodes || []).find(function (node) {
@@ -2771,9 +2776,25 @@
   function fleetRefreshLabel(refresh) {
     if (!refresh) return "";
     if (refresh.message) return refresh.message;
+    var pending = [];
+    var failed = [];
+    var terminal = refresh.terminal || {};
+    var outcomes = refresh.outcomes || {};
+    (fleetOverview && fleetOverview.nodes || []).forEach(function (node) {
+      (fleetOverview.dimensions || []).forEach(function (dimension) {
+        var key = node.id + "\n" + dimension;
+        var label = (node.name || node.id) + " / " + dimension.replace(/_/g, " ");
+        if ((fieldValue(node, dimension) || {}).refreshing && !terminal[key]) pending.push(label);
+        else if (["error", "timeout", "unavailable"].indexOf(outcomes[key]) >= 0) {
+          failed.push(label);
+        }
+      });
+    });
     var prefix = refresh.completed === 0 ? "Refreshing " : "Refreshed ";
     var label = prefix + refresh.completed + " of " + refresh.total + " fields" +
       (refresh.completed === 0 ? "…" : " · " + Math.round(refresh.elapsedMs || 0) + " ms");
+    if (pending.length) label += " · Pending: " + pending.join(", ");
+    if (failed.length) label += " · Failed: " + failed.join(", ");
     return refresh.warning ? label + " · " + refresh.warning : label;
   }
 

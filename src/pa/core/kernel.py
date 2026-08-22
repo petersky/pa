@@ -42,6 +42,7 @@ class _IdentityHeadersMiddleware:
             from uuid import uuid4
 
             correlation_id = str(uuid4())
+        scope.setdefault("state", {})["correlation_id"] = correlation_id
         instance_id = self.instance_id
 
         async def send_wrapper(message):
