@@ -59,6 +59,13 @@ def test_card_agent_template_defines_fresh_and_multi_session_controls() -> None:
     assert "fresh=true" in template
     assert "recoverSession(selectedId)" in script
     assert "body.fresh = true" in widget
+    assert "data-acw-restart" not in widget
+    assert 'data-acw-recover hidden>Restart session' in (
+        root / "templates" / "partials" / "agent" / "chat-widget.html"
+    ).read_text()
+    assert 'data-acw-end hidden' in (
+        root / "templates" / "partials" / "agent" / "chat-widget.html"
+    ).read_text()
 
 
 def test_session_list_order_supports_deterministic_default_selection() -> None:

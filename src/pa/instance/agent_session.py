@@ -906,6 +906,7 @@ class AgentSessionRuntime:
         self,
         *,
         resume_external_id: str | None = None,
+        require_restore: bool = False,
         queued_prompts: list[QueuedPrompt] | None = None,
         queue_paused: bool = False,
         provider_spec=None,
@@ -956,6 +957,7 @@ class AgentSessionRuntime:
         try:
             self.session = await self.connection.connect(
                 resume_external_id=resume_external_id,
+                require_restore=require_restore,
                 cwd=self.session.cwd,
                 existing_session=self.session,
                 title=self.session.title,
@@ -1013,6 +1015,12 @@ class AgentSessionRuntime:
         # Persist resolved provider id on the session.
         if self.connection and self.connection.agent_name:
             self.session.agent_name = self.connection.agent_name
+            config = dict(self.session.config_json or {})
+            config["provider_session_recovery"] = {
+                "resume": bool(self.connection._resume_supported),
+                "load": bool(self.connection._load_supported),
+            }
+            self.session.config_json = config
             await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
@@ -3512,6 +3520,7 @@ class AgentSessionManager:
         execution_context_seed: dict[str, Any] | None = None,
         startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
+        require_restore: bool = False,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
@@ -3723,11 +3732,14 @@ class AgentSessionManager:
             mcp_private_env=mcp_private_env,
             startup_trace=startup_trace,
         )
+        prior_status = session.status
         try:
             start_kwargs: dict[str, Any] = {
                 "resume_external_id": resume_external_id,
                 "provider_spec": resolved_spec,
             }
+            if require_restore:
+                start_kwargs["require_restore"] = True
             if initial_configuration is not None:
                 start_kwargs["initial_configuration"] = initial_configuration
             await runtime.start(**start_kwargs)
@@ -3752,12 +3764,20 @@ class AgentSessionManager:
             diagnostics = dict(config.get("diagnostics") or {})
             diagnostics["last_startup_failure"] = classified
             config["diagnostics"] = diagnostics
+            if require_restore:
+                durable = dict(config.get("durable_runtime") or {})
+                durable["recovery_error"] = classified.get("message") or str(exc)
+                durable["recovery_attempted_at"] = datetime.now(UTC).isoformat()
+                config["durable_runtime"] = durable
             session.config_json = config
-            session.status = (
-                "configuration_failed"
-                if configuration.get("state") == "failed"
-                else "disconnected"
-            )
+            if require_restore:
+                session.status = prior_status
+            else:
+                session.status = (
+                    "configuration_failed"
+                    if configuration.get("state") == "failed"
+                    else "disconnected"
+                )
             await self._offload(
                 "sqlite.agent_session_save", self.store.save_session, session
             )
@@ -3906,6 +3926,7 @@ class AgentSessionManager:
                 existing=session,
                 resume_external_id=session.external_session_id,
                 provider_override=provider_override,
+                require_restore=True,
             )
 
     def enqueue_prompt(

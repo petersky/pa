@@ -23,6 +23,7 @@ from pa.modules.agent_chat import (
     CreateSessionBody,
     _apply_initial_options,
     _configuration_request,
+    _durable_session_state,
     _requested_effort,
     _runtime_or_404,
     create_session,
@@ -85,6 +86,31 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_ended_session_restart_requires_provider_identity_and_capability(self) -> None:
+        manager = MagicMock()
+        manager.get.return_value = None
+        resumable = AgentSession(
+            id="same-pa-session",
+            agent_name="generic",
+            external_session_id="same-provider-session",
+            status="closed",
+            config_json={
+                "provider_session_recovery": {"resume": False, "load": True}
+            },
+        )
+        state = _durable_session_state(manager, resumable)
+        self.assertTrue(state["recoverable"])
+        self.assertEqual(state["reason"], "session_closed_recoverable")
+        self.assertIn("same-pa-session", state["actions"]["recover_url"])
+
+        resumable.config_json["provider_session_recovery"] = {
+            "resume": False,
+            "load": False,
+        }
+        self.assertFalse(_durable_session_state(manager, resumable)["recoverable"])
+        resumable.external_session_id = None
+        self.assertFalse(_durable_session_state(manager, resumable)["recoverable"])
+
     def test_multiplex_capability_declares_one_dynamic_transport(self) -> None:
         capability = multiplexed_session_event_capabilities()
         self.assertEqual(capability["scope"], "all_live_sessions")
@@ -1627,7 +1653,10 @@ class AgentChatSseTests(unittest.TestCase):
                 return await session_close(request, "sess-orphan")
 
         result = asyncio.run(run())
-        self.assertEqual(result, {"ok": True, "live": False, "orphan": True})
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["live"])
+        self.assertTrue(result["orphan"])
+        self.assertFalse(result["recovery"]["recoverable"])
         self.assertEqual(orphan.status, "closed")
         store.save_session.assert_called_once_with(orphan)
         store.append_transcript_events.assert_called_once()
