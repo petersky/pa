@@ -14,8 +14,10 @@ from pa.domain.models import (
     KnowledgeAuditEvent,
     KnowledgeEntry,
     KnowledgeKind,
+    KnowledgeSensitivity,
     KnowledgeProvenance,
     KnowledgeStatus,
+    KnowledgeTier,
     KnowledgeUpdate,
     TranscriptEvent,
 )
@@ -254,6 +256,8 @@ def promote_from_transcript(
     start_seq: int | None = None,
     end_seq: int | None = None,
     kind: KnowledgeKind = KnowledgeKind.MEMORY,
+    tier: KnowledgeTier = KnowledgeTier.SEMANTIC,
+    sensitivity: KnowledgeSensitivity = KnowledgeSensitivity.INTERNAL,
     scope: str = "realm",
     status: KnowledgeStatus = KnowledgeStatus.ACTIVE,
     source_url: str | None = None,
@@ -305,10 +309,13 @@ def promote_from_transcript(
         source=source,
         source_url=source_url,
         kind=kind,
+        tier=tier,
         status=status,
         scope=scope,
         owner=owner or actor,
         confidence=confidence,
+        sensitivity=sensitivity,
+        provenance_trust="verified",
         supersedes_id=supersedes_id,
         review_at=review_at,
         expires_at=expires_at,
@@ -384,7 +391,9 @@ def audit_knowledge_records(store: Store) -> list[dict[str, Any]]:
     """Report likely corrupt or unintended records without mutating storage."""
 
     report: list[dict[str, Any]] = []
-    for entry in store.list_knowledge(limit=10_000, status=None):
+    for entry in store.list_knowledge(
+        limit=10_000, status=None, curated_only=False
+    ):
         reasons: list[str] = []
         if entry.source == "acp_session" or "auto-capture" in entry.tags:
             reasons.append("unintended-auto-capture")

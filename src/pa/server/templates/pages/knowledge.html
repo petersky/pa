@@ -6,6 +6,7 @@
     <div>
       <h1>Memory &amp; decisions</h1>
       <p class="muted">Curated facts, decisions, constraints, runbooks, and learnings. Session transcripts stay in session audit history until explicitly promoted.</p>
+      <p><a class="text-btn" href="/memory-audit">Browse session &amp; dispatch audit</a></p>
     </div>
     <details class="panel-inset memory-capture">
       <summary>Add memory</summary>
@@ -23,6 +24,12 @@
         <div class="filter-grid">
           <label>Type
             <select name="kind">{% for value in knowledge_kinds %}<option value="{{ value.value }}">{{ value.value | title }}</option>{% endfor %}</select>
+          </label>
+          <label>Tier
+            <select name="tier">{% for value in knowledge_tiers %}<option value="{{ value.value }}">{{ value.value | title }}</option>{% endfor %}</select>
+          </label>
+          <label>Sensitivity
+            <select name="sensitivity">{% for value in knowledge_sensitivities %}<option value="{{ value.value }}">{{ value.value | title }}</option>{% endfor %}</select>
           </label>
           <label>Scope
             <select name="scope">
@@ -56,6 +63,21 @@
       <select name="status"><option value="">All states</option>{% for value in knowledge_statuses %}<option value="{{ value.value }}" {% if knowledge_filters.status == value.value %}selected{% endif %}>{{ 'Pending review' if value.value == 'review' else value.value | title }}</option>{% endfor %}</select>
     </label>
     <label>Scope <input name="scope" value="{{ knowledge_filters.scope }}" placeholder="realm, project:…, card:…"></label>
+    <label>Tier
+      <select name="tier"><option value="">All tiers</option>{% for value in knowledge_tiers %}<option value="{{ value.value }}" {% if knowledge_filters.tier == value.value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}</select>
+    </label>
+    <label>Sensitivity
+      <select name="sensitivity"><option value="">All sensitivities</option>{% for value in knowledge_sensitivities %}<option value="{{ value.value }}" {% if knowledge_filters.sensitivity == value.value %}selected{% endif %}>{{ value.value | title }}</option>{% endfor %}</select>
+    </label>
+    <label>Provenance
+      <select name="provenance"><option value="">All trust states</option>{% for value in knowledge_provenance_trust %}<option value="{{ value }}" {% if knowledge_filters.provenance == value %}selected{% endif %}>{{ value | title }}</option>{% endfor %}</select>
+    </label>
+    <label>Expiry
+      <select name="expiry"><option value="">Any expiry</option><option value="current" {% if knowledge_filters.expiry == 'current' %}selected{% endif %}>Current</option><option value="expired" {% if knowledge_filters.expiry == 'expired' %}selected{% endif %}>Expired</option></select>
+    </label>
+    <label>Supersession
+      <select name="supersession"><option value="">Any lineage</option><option value="original" {% if knowledge_filters.supersession == 'original' %}selected{% endif %}>Original</option><option value="supersedes" {% if knowledge_filters.supersession == 'supersedes' %}selected{% endif %}>Supersedes another</option></select>
+    </label>
     <label>Source
       <select name="source"><option value="">All sources</option>{% for value in knowledge_sources %}<option value="{{ value }}" {% if knowledge_filters.source == value %}selected{% endif %}>{{ value | title }}</option>{% endfor %}</select>
     </label>
@@ -75,6 +97,10 @@
   <div id="knowledge-main-list" class="scroll-region" aria-live="polite">
     {% include "partials/knowledge.html" %}
   </div>
+  <footer class="collection-pagination" aria-label="Memory pagination">
+    <span class="muted">Showing at most {{ memory_page_size }} curated records.</span>
+    {% if memory_next_url %}<a class="text-btn" href="{{ memory_next_url }}">Next page</a>{% else %}<span class="muted">End of results</span>{% endif %}
+  </footer>
 </div>
 {% endset %}
 
