@@ -54,7 +54,6 @@ from pa.domain.models import (
     CardLane,
     CardUpdate,
     FleetInstance,
-    KnowledgeEntry,
     RealmRole,
 )
 from pa.domain.notifications import (
@@ -7096,23 +7095,8 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 instance_id=settings.instance_id,
             )
     if not record.knowledge_recorded_at:
-        await _offload_ctx(
-            ctx,
-            "sqlite.knowledge_write",
-            store.add_knowledge,
-            KnowledgeEntry(
-                session_id=session_id,
-                item_id=record.card_id,
-                card_id=record.card_id,
-                summary=(
-                    f"Dispatched {card.title!r} to {record.target_instance_name or record.target_instance_id} in session {session_id}."
-                    if card
-                    else f"Started remote session {session_id} on {record.target_instance_name or record.target_instance_id}."
-                ),
-                source="remote_dispatch",
-                tags=["remote-operations", f"instance:{record.target_instance_id}"],
-            ),
-        )
+        # The dispatch ledger and session transcript are the authoritative audit
+        # history. Never mirror lifecycle notices into curated Memory.
         record.knowledge_recorded_at = datetime.now(UTC)
         await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if record.state != "completed":

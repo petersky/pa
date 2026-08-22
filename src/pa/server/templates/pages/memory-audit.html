@@ -1,0 +1,38 @@
+{% from "macros/layout.html" import page_layout %}
+
+{% set main %}
+<div class="panel panel-fill memory-workspace">
+  <header class="panel-header page-heading">
+    <div>
+      <h1>Session &amp; dispatch audit</h1>
+      <p class="muted">Operational history is kept separate from curated Memory. Opening a session never promotes its transcript.</p>
+      <p><a class="text-btn" href="/knowledge">Back to curated Memory</a></p>
+    </div>
+  </header>
+  {% if audit_sessions %}
+  <ul class="knowledge-list memory-list">
+    {% for session in audit_sessions %}
+    <li class="memory-entry">
+      <div class="memory-entry-header">
+        <div class="metadata-row"><span class="badge">{{ session.status }}</span><span>{{ session.agent_name }}</span></div>
+        <time class="muted" datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%Y-%m-%d %H:%M') }}</time>
+      </div>
+      <code>{{ session.id }}</code>
+      <div class="metadata-row muted">
+        {% if session.dispatch_id %}<span>Dispatch {{ session.dispatch_id }}</span>{% endif %}
+        {% if session.card_id %}<span>Card {{ session.card_id }}</span>{% endif %}
+        <span>Realm {{ session.realm_id }}</span>
+      </div>
+      <a class="text-btn small" href="/agent?session={{ session.id }}">Open audit transcript</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<div class="empty-state"><h2>No audit sessions</h2><p class="muted">No session or dispatch history is available in this realm.</p></div>{% endif %}
+  <footer class="collection-pagination" aria-label="Audit pagination">
+    <span class="muted">Showing at most {{ memory_page_size }} audit records.</span>
+    {% if memory_next_url %}<a class="text-btn" href="{{ memory_next_url }}">Next page</a>{% else %}<span class="muted">End of results</span>{% endif %}
+  </footer>
+</div>
+{% endset %}
+
+{{ page_layout(main=main, class='page-knowledge') }}

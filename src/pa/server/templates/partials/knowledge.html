@@ -9,6 +9,7 @@
           <span class="sr-only">Select this memory</span>
         </label>
         <span class="badge">{{ entry.kind.value }}</span>
+        <span class="badge">{{ entry.tier.value }}</span>
         <span class="badge status-{{ entry.status.value }}">{{ 'Pending review' if entry.status.value == 'review' else entry.status.value }}</span>
         <span class="badge source-{{ entry.source }}">{{ entry.source | replace('_', ' ') }}</span>
         <span class="muted">{{ entry.scope }}</span>
@@ -22,6 +23,8 @@
     <div class="metadata-row muted">
       {% if entry.owner %}<span>Owner: {{ entry.owner }}</span>{% endif %}
       {% if entry.confidence is not none %}<span>Confidence: {{ (entry.confidence * 100) | int }}%</span>{% endif %}
+      <span>Sensitivity: {{ entry.sensitivity.value }}</span>
+      <span>Provenance: {{ entry.provenance_trust }}</span>
       <span>Source: {{ entry.source }}</span>
       {% if entry.source_url %}<a href="{{ entry.source_url }}" target="_blank" rel="noopener noreferrer">Open source</a>{% endif %}
       {% if entry.session_id %}<a href="/agent?session={{ entry.session_id }}">Session audit</a>{% endif %}
