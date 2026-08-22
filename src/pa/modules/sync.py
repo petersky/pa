@@ -17,7 +17,7 @@ from pa.intake.models import IdentityBinding, IntakeEnvelope
 from pa.intake.projection import get_envelope_payload, get_identity_payload_by_id
 from pa.modules.items import _begin_operation, _replay_operation
 from pa.sync.compaction import SyncMetrics
-from pa.sync.engine import SyncEngine
+from pa.sync.engine import MAX_SYNC_OBJECTS, SyncEngine
 from pa.sync.event_log import EventLog, StaleSyncHeadError
 from pa.sync.infrastructure import get_event_log, get_object_store
 from pa.sync.object_store import ObjectStore
@@ -309,6 +309,23 @@ def sync_get(request: Request, body: dict) -> dict:
     return {"objects": objects}
 
 
+@router.post("/sync/need")
+def sync_need(request: Request, body: dict) -> dict:
+    """Negotiate the reachable objects absent from this peer (protocol v2)."""
+    realm_id = body.get("realm_id", "default")
+    _check_realm_access(request, realm_id)
+    hashes = body.get("hashes", [])
+    if not isinstance(hashes, list) or len(hashes) > MAX_SYNC_OBJECTS:
+        raise HTTPException(status_code=400, detail="invalid object inventory")
+    if any(not isinstance(item, str) for item in hashes):
+        raise HTTPException(status_code=400, detail="invalid object inventory")
+    store: ObjectStore = request.app.state.ctx.require_service("object_store")
+    return {
+        "protocol": 2,
+        "missing": [object_hash for object_hash in hashes if not store.has(object_hash)],
+    }
+
+
 @router.post("/sync/push")
 async def sync_push(request: Request, body: dict) -> dict:
     realm_id = body.get("realm_id", "default")
@@ -331,6 +348,7 @@ async def sync_push(request: Request, body: dict) -> dict:
 
     if head_changed:
         engine: SyncEngine = ctx.require_service("sync_engine")
+        engine.invalidate_prepared(realm_id)
         await engine.notify_commit(realm_id)
     return {"imported": imported, "head": head_hash}
 
@@ -915,6 +933,7 @@ class SyncModule(Module):
 
         def append_with_sync(event, on_commit=None):
             def combined(commit):
+                engine.invalidate_prepared(commit.realm_id)
                 if on_commit:
                     on_commit(commit)
                 live_updates.publish(
