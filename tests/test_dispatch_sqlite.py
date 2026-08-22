@@ -675,7 +675,9 @@ def test_exact_rejected_receipt_and_payload_conflict_survive_restart() -> None:
         result = store.ingest_progress(rejected)
         assert result.accepted is False
         assert result.status == "conflict"
-        assert store.ingest_progress(rejected) == result
+        duplicate = store.ingest_progress(rejected)
+        assert duplicate.status == "duplicate"
+        assert duplicate.replay_of_status == result.status
         changed = rejected.model_copy(deep=True)
         changed.summary = "changed rejected payload"
         with pytest.raises(DispatchReceiptConflict, match="different payload"):
@@ -683,7 +685,9 @@ def test_exact_rejected_receipt_and_payload_conflict_survive_restart() -> None:
         store.close()
 
         resumed = DispatchStore(root)
-        assert resumed.ingest_progress(rejected) == result
+        replay = resumed.ingest_progress(rejected)
+        assert replay.status == "duplicate"
+        assert replay.replay_of_status == result.status
         with pytest.raises(DispatchReceiptConflict, match="different payload"):
             resumed.ingest_progress(changed)
 
