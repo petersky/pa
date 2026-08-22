@@ -10,6 +10,124 @@ from pathlib import Path
 
 
 class AgentChatSseLifecycleTests(unittest.TestCase):
+    def test_empty_chat_status_follows_authoritative_lifecycle(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for the browser-side lifecycle harness")
+
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        harness = textwrap.dedent(
+            f"""
+            const fs = require("fs");
+            const vm = require("vm");
+            const noop = () => {{}};
+            const document = {{
+              body: {{ addEventListener: noop }}, addEventListener: noop,
+              querySelector: () => null, querySelectorAll: () => [],
+            }};
+            const window = {{ addEventListener: noop }};
+            vm.runInNewContext(
+              fs.readFileSync({str(script_path)!r}, "utf8"),
+              {{ window, document, console: {{ debug: noop }}, URL, setTimeout, clearTimeout }}
+            );
+            const Widget = window.PAAgentChat.AgentChatWidget;
+            const widget = Object.create(Widget.prototype);
+            let message = "";
+            let writes = 0;
+            Object.assign(widget, {{
+              ownerResolutionPending: false,
+              sessionRoute: {{ state: "live", live: true }},
+              transcriptEvents: [], composerEnabled: true, sessionClosed: false,
+              setPlaceholder: (value) => {{
+                if (message !== value) {{ message = value; writes += 1; }}
+              }},
+              clearPlaceholder: () => {{ message = ""; }},
+            }});
+            const expect = (name, snap, expected) => {{
+              widget.updateEmptyChatStatus(snap);
+              if (message !== expected) {{
+                throw new Error(name + " was '" + message + "', expected '" + expected + "'");
+              }}
+            }};
+            const base = {{
+              session: {{ status: "idle", config_json: {{}} }},
+              connected: true, prompting: false, queue: [],
+            }};
+            expect("ready", base, "Ready to chat — send your first prompt.");
+            const readyWrites = writes;
+            expect("deduplicated ready", base, "Ready to chat — send your first prompt.");
+            if (writes !== readyWrites) throw new Error("unchanged status was announced twice");
+
+            widget.ownerResolutionPending = true;
+            expect("unresolved owner", base, "Locating session owner…");
+            widget.ownerResolutionPending = false;
+            expect("remote reachable", base, "Ready to chat — send your first prompt.");
+
+            widget.sessionRoute = {{ state: "owner_unreachable", live: false }};
+            expect(
+              "remote unreachable",
+              {{ ...base, connected: false }},
+              "The provider connection is recovering…"
+            );
+            widget.sessionRoute = {{ state: "live", live: true }};
+            expect(
+              "provisioning",
+              {{ ...base, session: {{ status: "provisioning", config_json: {{}} }}, connected: false }},
+              "Preparing the session workspace…"
+            );
+            expect(
+              "configuration failed",
+              {{ ...base, session: {{ status: "configuration_failed", config_json: {{}} }}, connected: false }},
+              "Provider configuration failed. Retry or end the session."
+            );
+            expect("busy", {{ ...base, prompting: true }}, "The agent is working…");
+            expect("queued", {{ ...base, queue: [{{ id: "queued" }}] }}, "Prompt queued — waiting to start.");
+            widget.sessionClosed = true;
+            widget.composerEnabled = false;
+            expect(
+              "closed",
+              {{ ...base, session: {{ status: "closed", config_json: {{}} }}, connected: false }},
+              "Session ended. Its durable history is still available."
+            );
+            widget.sessionClosed = false;
+            widget.composerEnabled = true;
+            expect(
+              "recovery",
+              {{ ...base, session: {{ status: "recoverable_interrupted", config_json: {{}} }}, connected: false }},
+              "The provider connection is recovering…"
+            );
+            widget.transcriptEvents = [{{ type: "turn_completed" }}];
+            message = "stale";
+            expect("durable turn history", base, "");
+            """
+        )
+        completed = subprocess.run(
+            [node, "-e", harness], check=False, capture_output=True, text=True
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_chat_placeholder_is_atomic_polite_status(self) -> None:
+        template = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "templates"
+            / "partials"
+            / "agent"
+            / "chat-widget.html"
+        ).read_text()
+        self.assertIn('data-acw-placeholder\n         role="status"', template)
+        self.assertIn('aria-live="polite" aria-atomic="true"', template)
+
     def test_owner_lookup_deadline_does_not_depend_on_fetch_abort(self) -> None:
         node = shutil.which("node")
         if not node:
