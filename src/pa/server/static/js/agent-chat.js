@@ -159,7 +159,9 @@
     this.createLabel = root.dataset.createLabel || "default";
     this.cardId = root.dataset.cardId || "";
     this.apiBase = (root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
+    this.defaultApiBase = this.apiBase === "" ? "/api/agent" : this.apiBase;
     this.autoStart = root.dataset.autoStart !== "0";
+    this._missingRestartAttempted = false;
     this.showThinking = root.dataset.showThinking !== "0";
     this.showSystem = root.dataset.showSystemPrompts === "1";
     this.showQueue = root.dataset.showQueue !== "0";
@@ -536,14 +538,35 @@
     if (this.els.history) this.els.history.hidden = !detail.history_url;
   };
 
+  AgentChatWidget.prototype._apiBaseForOwner = function (ownerInstanceId) {
+    const owner = String(ownerInstanceId || "");
+    if (!owner) return this.defaultApiBase || "/api/agent";
+    // Local ownership must never go through the fleet self-proxy. An empty
+    // currentInstanceId used to treat every owner as remote, which after a
+    // network change left the chat stuck proxying via a stale instance URL.
+    if (!this.currentInstanceId || owner === this.currentInstanceId) {
+      return "/api/agent";
+    }
+    return "/api/fleet/instances/" + encodeURIComponent(owner) + "/agent";
+  };
+
   AgentChatWidget.prototype.clearSelectedSession = function () {
     this.closeSSE("session-cleared");
+    if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
+    this.liveStateRetryId = null;
+    if (this.startupRetryId) clearTimeout(this.startupRetryId);
+    this.startupRetryId = null;
+    if (this.routeAbortController) {
+      this.routeAbortController.abort();
+      this.routeAbortController = null;
+    }
     this.sessionId = "";
     this.ownerInstanceId = "";
     this.sessionRoute = null;
     this.root.dataset.sessionId = "";
     this.root.dataset.ownerInstanceId = "";
-    this.apiBase = String(this.root.dataset.apiBase || "/api/agent").replace(/\/$/, "");
+    this.apiBase = this.defaultApiBase || "/api/agent";
+    this.root.dataset.apiBase = this.apiBase;
     this.lastSeq = 0;
     this.sessionClosed = true;
     this.setTurnActive(false);
@@ -634,7 +657,8 @@
     }
     this.clearSelectedSession();
     refreshSessionList(null);
-    if (code === "session_deleted" && this.autoStart) {
+    if (code === "session_deleted" && this.autoStart && !this._missingRestartAttempted) {
+      this._missingRestartAttempted = true;
       setTimeout(function () { self.init(); }, 0);
     }
     return Promise.resolve(null);
@@ -813,6 +837,8 @@
     const self = this;
     options = options || {};
     const generation = ++this.subscriptionGeneration;
+    if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
+    this.liveStateRetryId = null;
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
@@ -829,10 +855,7 @@
     this.setPlaceholder("Locating session owner…");
     let durableHistory = null;
     if (this.ownerInstanceId) {
-      this.apiBase = this.ownerInstanceId === this.currentInstanceId
-        ? "/api/agent"
-        : "/api/fleet/instances/" +
-          encodeURIComponent(this.ownerInstanceId) + "/agent";
+      this.apiBase = this._apiBaseForOwner(this.ownerInstanceId);
       this.root.dataset.apiBase = this.apiBase;
     }
     const loadDurableHistory = function () {
@@ -879,9 +902,16 @@
           refreshSessionList(null);
           self.setStatus("error");
           self.setPlaceholder(route.message || "This agent session was deleted or has expired.");
-          if (self.autoStart) setTimeout(function () { self.init(); }, 0);
+          // Replace a missing auto-started session once. Without this guard,
+          // a poisoned fleet apiBase (or remote 404) creates sessions that
+          // immediately resolve as missing again and flicker forever.
+          if (self.autoStart && !self._missingRestartAttempted) {
+            self._missingRestartAttempted = true;
+            setTimeout(function () { self.init(); }, 0);
+          }
           return null;
         }
+        self._missingRestartAttempted = false;
         if (route.live) {
           if (self.startupRetryId) clearTimeout(self.startupRetryId);
           self.startupRetryId = null;
@@ -2462,9 +2492,14 @@
     this.closeSSE("api-base-changed");
     this.stopBrowserRefresh();
     this.apiBase = next;
+    this.root.dataset.apiBase = next;
+    // Remote operations call setApiBase before selecting a session. Preserve
+    // that base so clearSelectedSession does not bounce back to /api/agent.
+    if (instanceId && this.currentInstanceId && instanceId !== this.currentInstanceId) {
+      this.defaultApiBase = next;
+    }
     if (this.drafts) this.drafts.setInstance(instanceId);
     this.sessionId = "";
-    this.root.dataset.apiBase = next;
     this.root.dataset.sessionId = "";
     this.lastSeq = 0;
     this.transcriptEvents = [];
