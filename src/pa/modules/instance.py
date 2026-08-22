@@ -465,9 +465,9 @@ def agent_status(request: Request) -> dict:
     progress = agent.progress()
     result = progress.model_dump(mode="json")
     lifecycle = request.app.state.ctx.services.get("session_lifecycle")
-    result["session_lifecycle"] = {
-        "metrics": dict(lifecycle.metrics) if lifecycle else {},
-    }
+    result["session_lifecycle"] = (
+        lifecycle.snapshot() if lifecycle else {"metrics": {}, "attempts": []}
+    )
     return result
 
 
