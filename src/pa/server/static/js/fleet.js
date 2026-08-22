@@ -1142,10 +1142,14 @@
           "</p>";
       }
       var actions = '<span class="form-actions">';
+      var staleRecovery = dispatch.stale_session_recovery || {};
       if (dispatch.can_retry) actions += '<button type="button" class="ghost small" data-dispatch-retry="' +
         escapeHtml(dispatch.dispatch_id) + '">Retry</button>';
       if (dispatch.can_cancel) actions += '<button type="button" class="ghost small" data-dispatch-cancel="' +
         escapeHtml(dispatch.dispatch_id) + '">Cancel</button>';
+      if (staleRecovery.eligible_candidate) actions += '<button type="button" class="ghost small" data-dispatch-recover-stale="' +
+        escapeHtml(dispatch.dispatch_id) + '" data-dispatch-state="' +
+        escapeHtml(recordedState) + '">Recover closed session</button>';
       if (dispatch.session_id) actions += '<a class="ghost small" href="/agent?session=' +
         encodeURIComponent(dispatch.session_id) + '&instance=' + encodeURIComponent(remoteInstanceId) +
         '">Open session</a>';
@@ -1752,6 +1756,7 @@
         total: (nodeIds || []).length * (dimensions || []).length,
         completed: 0,
         terminal: Object.create(null),
+        outcomes: Object.create(null),
         startedAt: startedAt,
         elapsedMs: 0
       }
@@ -1780,11 +1785,15 @@
     }
     var key = update.nodeId + "\n" + update.dimension;
     var terminal = Object.assign({}, refresh.terminal || {});
+    var outcomes = Object.assign({}, refresh.outcomes || {});
     var newlyCompleted = !terminal[key];
     terminal[key] = true;
+    outcomes[key] = String((update.value || {}).last_attempt_state ||
+      (update.value || {}).state || "unavailable");
     var nextRefresh = Object.assign({}, refresh, {
       completed: refresh.completed + (newlyCompleted ? 1 : 0),
       terminal: terminal,
+      outcomes: outcomes,
       elapsedMs: update.elapsedMs == null ? refresh.elapsedMs : update.elapsedMs
     });
     var previousNode = (overview.nodes || []).find(function (node) {
@@ -2771,9 +2780,25 @@
   function fleetRefreshLabel(refresh) {
     if (!refresh) return "";
     if (refresh.message) return refresh.message;
+    var pending = [];
+    var failed = [];
+    var terminal = refresh.terminal || {};
+    var outcomes = refresh.outcomes || {};
+    (fleetOverview && fleetOverview.nodes || []).forEach(function (node) {
+      (fleetOverview.dimensions || []).forEach(function (dimension) {
+        var key = node.id + "\n" + dimension;
+        var label = (node.name || node.id) + " / " + dimension.replace(/_/g, " ");
+        if ((fieldValue(node, dimension) || {}).refreshing && !terminal[key]) pending.push(label);
+        else if (["error", "timeout", "unavailable"].indexOf(outcomes[key]) >= 0) {
+          failed.push(label);
+        }
+      });
+    });
     var prefix = refresh.completed === 0 ? "Refreshing " : "Refreshed ";
     var label = prefix + refresh.completed + " of " + refresh.total + " fields" +
       (refresh.completed === 0 ? "…" : " · " + Math.round(refresh.elapsedMs || 0) + " ms");
+    if (pending.length) label += " · Pending: " + pending.join(", ");
+    if (failed.length) label += " · Failed: " + failed.join(", ");
     return refresh.warning ? label + " · " + refresh.warning : label;
   }
 
@@ -3715,6 +3740,32 @@
         if (status) status.textContent = err.message;
       }).finally(function () {
         if (dispatchCancel.isConnected) dispatchCancel.disabled = false;
+      });
+      return;
+    }
+
+    var dispatchRecovery = e.target.closest("[data-dispatch-recover-stale]");
+    if (dispatchRecovery) {
+      e.preventDefault();
+      var recoveryId = dispatchRecovery.getAttribute("data-dispatch-recover-stale");
+      var expectedState = dispatchRecovery.getAttribute("data-dispatch-state");
+      if (!window.confirm("Fail this dispatch only if PA proves its linked session is closed and cannot execute any work?")) return;
+      dispatchRecovery.disabled = true;
+      api("/api/fleet/dispatch-jobs/" + encodeURIComponent(recoveryId) + "/repair-terminal", {
+        method: "POST",
+        body: {
+          mode: "closed_session_recovery",
+          expected_state: expectedState,
+          reason: "Operator requested fenced recovery of a stale closed-session dispatch.",
+          confirm_no_outcome_inference: true,
+        },
+      }).then(function () {
+        return loadRemoteDispatches(remoteInstanceId);
+      }).catch(function (err) {
+        var status = $("#pa-remote-status");
+        if (status) status.textContent = err.message;
+      }).finally(function () {
+        if (dispatchRecovery.isConnected) dispatchRecovery.disabled = false;
       });
       return;
     }

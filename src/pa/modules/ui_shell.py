@@ -114,7 +114,20 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
     )
     response = HTMLResponse(html)
     response.headers["Server-Timing"] = timings.header()
+    correlation_id = getattr(request.state, "correlation_id", None) or request.headers.get(
+        "X-Request-ID", ""
+    )
     response_bytes = len(html.encode("utf-8"))
+    diagnostics = {
+        "event": "page_shell",
+        "page": page.id,
+        "correlation_id": correlation_id,
+        "timings_ms": {name: round(value, 1) for name, value in timings.values},
+        "total_ms": round((perf_counter() - timings.started) * 1000, 1),
+        "response_bytes": response_bytes,
+        "htmx": bool(request.headers.get("HX-Request")),
+    }
+    logger.info("page_shell %s", json.dumps(diagnostics, sort_keys=True))
     if page.id in {"work", "home"}:
         diagnostics = {
             "event": f"{page.id}.render",
@@ -122,6 +135,7 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
             "total_ms": round((perf_counter() - timings.started) * 1000, 1),
             "response_bytes": response_bytes,
             "htmx": bool(request.headers.get("HX-Request")),
+            "correlation_id": correlation_id,
         }
         header = "X-PA-Work-Bytes" if page.id == "work" else "X-PA-Home-Bytes"
         response.headers[header] = str(response_bytes)
@@ -134,6 +148,7 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
             "timings_ms": {name: round(value, 1) for name, value in timings.values},
             "total_ms": round((perf_counter() - timings.started) * 1000, 1),
             "response_bytes": response_bytes,
+            "correlation_id": correlation_id,
         }
         response.headers["X-PA-Settings-Section"] = section
         response.headers["X-PA-Settings-Bytes"] = str(response_bytes)

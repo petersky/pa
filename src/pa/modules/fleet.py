@@ -9,6 +9,7 @@ import hmac
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -487,7 +488,9 @@ class DispatchTerminalRepairBody(BaseModel):
 
     idempotency_key: str | None = None
     mode: Literal[
-        "acknowledged_completion", "abandoned_without_acknowledgement"
+        "acknowledged_completion",
+        "abandoned_without_acknowledgement",
+        "closed_session_recovery",
     ] = "acknowledged_completion"
     expected_state: str | None = None
     reason: str | None = Field(default=None, min_length=1, max_length=1_000)
@@ -503,6 +506,9 @@ class DispatchTerminalRepairEvidenceRequest(BaseModel):
     session_id: str
     idempotency_key: str
     expected_state: str
+    recovery_mode: Literal[
+        "abandoned_without_acknowledgement", "closed_session_recovery"
+    ] = "abandoned_without_acknowledgement"
 
 
 class DispatchTerminalRepairEvidenceV1(BaseModel):
@@ -525,6 +531,10 @@ class DispatchTerminalRepairEvidenceV1(BaseModel):
     session_status: str
     session_updated_at: datetime
     runtime_live: bool
+    transport_connected: bool = False
+    provider_process_live: bool = False
+    live_turn: bool = False
+    stranded_queued_prompt_count: int = Field(default=0, ge=0, le=10_000)
     completion_acknowledged: bool
     completion_evidence_present: bool
     observed_at: datetime
@@ -542,6 +552,9 @@ class DispatchTerminalRepairCommitRequest(BaseModel):
     reservation_id: str
     evidence_digest: str = Field(min_length=64, max_length=64)
     expected_state: str
+    recovery_mode: Literal[
+        "abandoned_without_acknowledgement", "closed_session_recovery"
+    ] = "abandoned_without_acknowledgement"
 
 
 class DispatchTerminalRepairCommitV1(BaseModel):
@@ -558,7 +571,7 @@ class DispatchTerminalRepairCommitV1(BaseModel):
     idempotency_key: str
     reservation_id: str
     evidence_digest: str = Field(min_length=64, max_length=64)
-    target_state: Literal["cancelled"]
+    target_state: Literal["cancelled", "failed"]
     session_status: Literal["closed"]
     committed_at: datetime
     receipt_digest: str = Field(min_length=64, max_length=64)
@@ -3797,8 +3810,25 @@ async def fleet_overview_dimension(
         raise HTTPException(status_code=422, detail="Unknown fleet overview dimension")
     ctx = request.app.state.ctx
     inst = _overview_instance(request, instance_id)
+    queued_at = time.perf_counter()
     value = await probe_dimension(ctx, inst, dimension, force=retry)
+    request_ms = (time.perf_counter() - queued_at) * 1000
     duration = value.get("duration_ms") or 0
+    correlation_id = getattr(request.state, "correlation_id", None) or request.headers.get(
+        "X-Request-ID", ""
+    )
+    logger.info(
+        "fleet_partial_refresh correlation_id=%s instance=%s dimension=%s "
+        "generation=%s state=%s request_ms=%.1f probe_ms=%s cache_hit=%s",
+        correlation_id,
+        instance_id,
+        dimension,
+        generation,
+        value.get("last_attempt_state") or value.get("state"),
+        request_ms,
+        duration,
+        bool(value.get("cache_hit")),
+    )
     return JSONResponse(
         {
             "instance_id": instance_id,
@@ -3808,7 +3838,10 @@ async def fleet_overview_dimension(
             **value,
         },
         headers={
-            "Server-Timing": f'fleet-{dimension};dur={duration};desc="{inst.name}"',
+            "Server-Timing": (
+                f'fleet-{dimension};dur={duration};desc="{inst.name}", '
+                f"partial-refresh;dur={request_ms:.1f}"
+            ),
             "X-Fleet-Generation": str(generation),
         },
     )
@@ -11481,8 +11514,9 @@ def _raise_nonterminal_repair_evidence(
     *,
     session_status: str,
     runtime_live: bool,
+    allow_recoverable: bool = False,
 ) -> None:
-    if record.recoverable:
+    if record.recoverable and not allow_recoverable:
         raise HTTPException(
             status_code=409,
             detail={
@@ -11550,6 +11584,7 @@ def _local_terminal_repair_session_evidence(
     *,
     fence_id: str | None = None,
     fence_acquisition_id: str | None = None,
+    allow_recoverable: bool = False,
 ) -> tuple[AgentSession, bool]:
     session = (
         request.app.state.ctx.store.get_session(record.session_id)
@@ -11564,6 +11599,7 @@ def _local_terminal_repair_session_evidence(
         record,
         session_status=session_status,
         runtime_live=runtime_live,
+        allow_recoverable=allow_recoverable,
     )
     assert session is not None
     _validate_terminal_repair_session_binding(record, session)
@@ -11586,6 +11622,7 @@ def _local_terminal_repair_session_evidence(
             record,
             session_status=session_status,
             runtime_live=runtime_live,
+            allow_recoverable=allow_recoverable,
         )
     return session, runtime_live
 
@@ -11618,6 +11655,7 @@ def _validate_remote_terminal_repair_evidence(
     evidence: DispatchTerminalRepairEvidenceV1 | None,
     *,
     idempotency_key: str,
+    recovery_mode: str = "abandoned_without_acknowledgement",
 ) -> DispatchTerminalRepairEvidenceV1:
     if evidence is None:
         raise HTTPException(
@@ -11642,13 +11680,28 @@ def _validate_remote_terminal_repair_evidence(
         "reservation_id": _terminal_repair_reservation_id(current, idempotency_key),
         "dispatch_state": current.state,
         "dispatch_recoverable": current.recoverable,
-        "completion_acknowledged": False,
-        "completion_evidence_present": False,
     }
     observed = evidence.model_dump()
     mismatched = sorted(
         field for field, value in expected.items() if observed.get(field) != value
     )
+    if recovery_mode != "closed_session_recovery":
+        mismatched.extend(
+            field
+            for field in ("completion_acknowledged", "completion_evidence_present")
+            if observed.get(field) is not False
+        )
+    if recovery_mode == "closed_session_recovery":
+        mismatched.extend(
+            field
+            for field in (
+                "runtime_live",
+                "transport_connected",
+                "provider_process_live",
+                "live_turn",
+            )
+            if observed.get(field) is not False
+        )
     if mismatched:
         raise HTTPException(
             status_code=409,
@@ -11691,8 +11744,9 @@ def _validate_remote_terminal_repair_evidence(
         current,
         session_status=evidence.session_status,
         runtime_live=evidence.runtime_live,
+        allow_recoverable=recovery_mode == "closed_session_recovery",
     )
-    if evidence.dispatch_recoverable:
+    if evidence.dispatch_recoverable and recovery_mode != "closed_session_recovery":
         raise HTTPException(
             status_code=409,
             detail={"code": "dispatch_still_recoverable", "recoverable": True},
@@ -11706,6 +11760,7 @@ def _validate_remote_terminal_repair_commit(
     receipt: DispatchTerminalRepairCommitV1 | None,
     *,
     idempotency_key: str,
+    recovery_mode: str = "abandoned_without_acknowledgement",
 ) -> DispatchTerminalRepairCommitV1:
     if receipt is None:
         raise HTTPException(
@@ -11725,7 +11780,9 @@ def _validate_remote_terminal_repair_commit(
         "idempotency_key": idempotency_key,
         "reservation_id": evidence.reservation_id,
         "evidence_digest": evidence.evidence_digest,
-        "target_state": "cancelled",
+        "target_state": (
+            "failed" if recovery_mode == "closed_session_recovery" else "cancelled"
+        ),
         "session_status": "closed",
     }
     observed = receipt.model_dump()
@@ -11822,7 +11879,7 @@ def target_terminal_repair_evidence(
             or record.completion_envelope is not None
             or record.completion_received_at is not None
         )
-        if completion_present:
+        if completion_present and body.recovery_mode != "closed_session_recovery":
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -11831,7 +11888,12 @@ def target_terminal_repair_evidence(
                 },
             )
         if reservation.get("state") == "committed":
-            if record.state != "cancelled":
+            replay_state = (
+                "failed"
+                if body.recovery_mode == "closed_session_recovery"
+                else "cancelled"
+            )
+            if record.state != replay_state:
                 raise HTTPException(
                     status_code=409,
                     detail={
@@ -11883,7 +11945,9 @@ def target_terminal_repair_evidence(
             or current.completion_envelope is not None
             or current.completion_received_at is not None
         )
-        if completion_acknowledged or completion_evidence_present:
+        if (
+            completion_acknowledged or completion_evidence_present
+        ) and body.recovery_mode != "closed_session_recovery":
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -11898,6 +11962,7 @@ def target_terminal_repair_evidence(
             current,
             fence_id=fence_id,
             fence_acquisition_id=fence_acquisition_id,
+            allow_recoverable=body.recovery_mode == "closed_session_recovery",
         )
         observed_at = datetime.now(UTC)
         evidence = DispatchTerminalRepairEvidenceV1(
@@ -11915,8 +11980,19 @@ def target_terminal_repair_evidence(
             session_status=session.status,
             session_updated_at=session.updated_at,
             runtime_live=runtime_live,
-            completion_acknowledged=False,
-            completion_evidence_present=False,
+            transport_connected=False,
+            provider_process_live=False,
+            live_turn=False,
+            stranded_queued_prompt_count=len(
+                list(
+                    ((session.config_json or {}).get("durable_runtime") or {}).get(
+                        "queued_prompts"
+                    )
+                    or []
+                )
+            ),
+            completion_acknowledged=completion_acknowledged,
+            completion_evidence_present=completion_evidence_present,
             observed_at=observed_at,
             evidence_digest="0" * 64,
         )
@@ -11941,6 +12017,7 @@ def target_terminal_repair_evidence(
             "prepared_at": observed_at.isoformat(),
             "evidence_digest": evidence.evidence_digest,
             "evidence": evidence.model_dump(mode="json"),
+            "recovery_mode": body.recovery_mode,
         }
         captured.append(evidence)
         return True
@@ -12038,7 +12115,14 @@ def target_terminal_repair_commit(
             or record.completion_envelope is not None
             or record.completion_received_at is not None
         )
-        if record.state != "cancelled" or completion_present:
+        replay_state = (
+            "failed"
+            if body.recovery_mode == "closed_session_recovery"
+            else "cancelled"
+        )
+        if record.state != replay_state or (
+            completion_present and body.recovery_mode != "closed_session_recovery"
+        ):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -12101,6 +12185,7 @@ def target_terminal_repair_commit(
                 "idempotency_key": body.idempotency_key,
                 "evidence_digest": body.evidence_digest,
                 "state": "prepared",
+                "recovery_mode": body.recovery_mode,
             }.items()
             if reservation.get(field) != expected_value
         )
@@ -12123,7 +12208,9 @@ def target_terminal_repair_commit(
             or current.completion_envelope is not None
             or current.completion_received_at is not None
         )
-        if completion_acknowledged or completion_evidence_present:
+        if (
+            completion_acknowledged or completion_evidence_present
+        ) and body.recovery_mode != "closed_session_recovery":
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -12137,6 +12224,7 @@ def target_terminal_repair_commit(
             request,
             current,
             fence_id=body.reservation_id,
+            allow_recoverable=body.recovery_mode == "closed_session_recovery",
         )
         if runtime_live:
             raise HTTPException(
@@ -12145,23 +12233,37 @@ def target_terminal_repair_commit(
             )
         previous = current.state
         now = datetime.now(UTC)
-        operation = "repair_terminal:abandoned_without_acknowledgement"
+        closed_recovery = body.recovery_mode == "closed_session_recovery"
+        operation = (
+            "repair_terminal:closed_session_recovery"
+            if closed_recovery
+            else "repair_terminal:abandoned_without_acknowledgement"
+        )
         current.control_operations[body.idempotency_key] = operation
         current.recoverable = False
-        current.error_code = "legacy_abandoned_dispatch_retired"
+        current.error_code = (
+            "stale_closed_session_recovered"
+            if closed_recovery
+            else "legacy_abandoned_dispatch_retired"
+        )
         current.last_error = (
             "Target reservation committed without completion acknowledgement; "
             "no dispatch or card outcome was inferred."
         )
         current.completion_next_retry_at = None
         current.capacity_released_at = now
-        current.capacity_release_reason = "legacy-abandoned-retired"
-        current.state = "cancelled"
+        current.capacity_release_reason = (
+            "stale-closed-session-recovery"
+            if closed_recovery
+            else "legacy-abandoned-retired"
+        )
+        target_state = "failed" if closed_recovery else "cancelled"
+        current.state = target_state
         current.lifecycle_inconsistencies.append(
             {
                 "kind": "target_terminal_repair_reservation_committed",
                 "previous_state": previous,
-                "normalized_state": "cancelled",
+                "normalized_state": target_state,
                 "observed_at": now.isoformat(),
                 "reservation_id": body.reservation_id,
                 "idempotency_key": body.idempotency_key,
@@ -12172,7 +12274,7 @@ def target_terminal_repair_commit(
         current.events.append(
             DispatchEvent(
                 seq=(current.events[-1].seq + 1 if current.events else 1),
-                state="cancelled",
+                state=target_state,
                 message=(
                     "Target-side terminal repair reservation committed without "
                     "outcome inference."
@@ -12194,7 +12296,7 @@ def target_terminal_repair_commit(
             idempotency_key=body.idempotency_key,
             reservation_id=body.reservation_id,
             evidence_digest=body.evidence_digest,
-            target_state="cancelled",
+            target_state=target_state,
             session_status=session.status,
             committed_at=now,
             receipt_digest="0" * 64,
@@ -12223,6 +12325,9 @@ def target_terminal_repair_commit(
                 "recoverable": True,
             },
         ) from exc
+    worker = request.app.state.ctx.services.get("dispatch_worker")
+    if worker:
+        worker.wake()
     return committed[0]
 
 
@@ -12238,20 +12343,24 @@ async def _repair_terminal_dispatch(
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
     key = _dispatch_control_key(request, body)
+    actor_principal = str(get_principal_id(request) or "user:local")[:200]
     mode = str(getattr(body, "mode", "acknowledged_completion"))
     if mode not in {
         "acknowledged_completion",
         "abandoned_without_acknowledgement",
+        "closed_session_recovery",
     }:
         raise HTTPException(
             status_code=422,
             detail={"code": "unsupported_terminal_repair_mode", "mode": mode},
         )
-    operation = (
-        "repair_terminal"
-        if mode == "acknowledged_completion"
-        else "repair_terminal:abandoned_without_acknowledgement"
-    )
+    operation = {
+        "acknowledged_completion": "repair_terminal",
+        "abandoned_without_acknowledgement": (
+            "repair_terminal:abandoned_without_acknowledgement"
+        ),
+        "closed_session_recovery": "repair_terminal:closed_session_recovery",
+    }[mode]
 
     def require_recorded_authority(current: DispatchRecord) -> None:
         if current.goal_provenance is not None and not _goal_dispatch_lifecycle_owned(
@@ -12283,7 +12392,11 @@ async def _repair_terminal_dispatch(
                 ),
             },
         )
-    if mode == "abandoned_without_acknowledgement":
+    if mode in {
+        "abandoned_without_acknowledgement",
+        "closed_session_recovery",
+    }:
+        closed_recovery = mode == "closed_session_recovery"
         expected_state = str(getattr(body, "expected_state", "") or "")
         reason = str(getattr(body, "reason", "") or "").strip()
         if not bool(getattr(body, "confirm_no_outcome_inference", False)):
@@ -12326,7 +12439,7 @@ async def _repair_terminal_dispatch(
                 status_code=422,
                 detail={"code": "terminal_repair_reason_required"},
             )
-        if (
+        if not closed_recovery and (
             record.completion_payload is not None
             or record.completion_envelope is not None
             or record.completion_received_at is not None
@@ -12348,7 +12461,7 @@ async def _repair_terminal_dispatch(
             if record.card_id
             else None
         )
-        if card is None or card.lane != CardLane.DONE:
+        if not closed_recovery and (card is None or card.lane != CardLane.DONE):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -12363,8 +12476,8 @@ async def _repair_terminal_dispatch(
         # snapshot; target completion/runtime state must be sampled afterward.
         card = request.app.state.ctx.store.get_card(
             record.card_id, realm_id=record.realm_id
-        )
-        if card is None or card.lane != CardLane.DONE:
+        ) if record.card_id else None
+        if not closed_recovery and (card is None or card.lane != CardLane.DONE):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -12384,6 +12497,18 @@ async def _repair_terminal_dispatch(
                 record,
                 fence_id=local_fence_id,
                 fence_acquisition_id=local_fence_acquisition_id,
+                allow_recoverable=closed_recovery,
+            )
+            stranded_queued_prompt_count = len(
+                list(
+                    (
+                        (getattr(_session, "config_json", {}) or {}).get(
+                            "durable_runtime"
+                        )
+                        or {}
+                    ).get("queued_prompts")
+                    or []
+                )
             )
             evidence_source = "target_local_atomic_check"
             evidence_observed_at = datetime.now(UTC)
@@ -12415,10 +12540,14 @@ async def _repair_terminal_dispatch(
                     session_id=record.session_id,
                     idempotency_key=key,
                     expected_state=record.state,
+                    recovery_mode=mode,
                 ),
             )
             validated = _validate_remote_terminal_repair_evidence(
-                record, remote_evidence, idempotency_key=key
+                record,
+                remote_evidence,
+                idempotency_key=key,
+                recovery_mode=mode,
             )
             remote_commit = await _peer_terminal_repair_commit(
                 request,
@@ -12433,6 +12562,7 @@ async def _repair_terminal_dispatch(
                     reservation_id=validated.reservation_id,
                     evidence_digest=validated.evidence_digest,
                     expected_state=record.state,
+                    recovery_mode=mode,
                 ),
             )
             validated_commit = _validate_remote_terminal_repair_commit(
@@ -12440,11 +12570,13 @@ async def _repair_terminal_dispatch(
                 validated,
                 remote_commit,
                 idempotency_key=key,
+                recovery_mode=mode,
             )
             evidence_source = "authenticated_remote_target"
             evidence_observed_at = validated.observed_at
             evidence_digest = validated.evidence_digest
             commit_digest = validated_commit.receipt_digest
+            stranded_queued_prompt_count = validated.stranded_queued_prompt_count
 
         def abandon(current: DispatchRecord) -> bool:
             if _repeat_dispatch_control(current, operation, key):
@@ -12479,7 +12611,7 @@ async def _repair_terminal_dispatch(
                         "message": "Acknowledged completion must normalize to completed.",
                     },
                 )
-            if (
+            if not closed_recovery and (
                 current.completion_payload is not None
                 or current.completion_envelope is not None
                 or current.completion_received_at is not None
@@ -12501,18 +12633,23 @@ async def _repair_terminal_dispatch(
                         current,
                         fence_id=f"{current.dispatch_id}:{key}",
                         fence_acquisition_id=local_fence_acquisition_id,
+                        allow_recoverable=closed_recovery,
                     )
                 )
                 current_session_status = current_session.status
             else:
                 current_evidence = _validate_remote_terminal_repair_evidence(
-                    current, remote_evidence, idempotency_key=key
+                    current,
+                    remote_evidence,
+                    idempotency_key=key,
+                    recovery_mode=mode,
                 )
                 current_commit = _validate_remote_terminal_repair_commit(
                     current,
                     current_evidence,
                     remote_commit,
                     idempotency_key=key,
+                    recovery_mode=mode,
                 )
                 current_session_status = current_commit.session_status
             if (
@@ -12530,14 +12667,25 @@ async def _repair_terminal_dispatch(
             now = datetime.now(UTC)
             current.control_operations[key] = operation
             current.recoverable = False
-            current.error_code = "legacy_abandoned_dispatch_retired"
+            current.error_code = (
+                "stale_closed_session_recovered"
+                if closed_recovery
+                else "legacy_abandoned_dispatch_retired"
+            )
             current.last_error = (
-                "Legacy running dispatch retired without completion acknowledgement; "
+                "Stale running dispatch failed because its linked session is closed, "
+                "transport-disconnected, and has no executable provider runtime."
+                if closed_recovery
+                else "Legacy running dispatch retired without completion acknowledgement; "
                 "no dispatch or card outcome was inferred."
             )
             current.completion_next_retry_at = None
             current.capacity_released_at = now
-            current.capacity_release_reason = "legacy-abandoned-retired"
+            current.capacity_release_reason = (
+                "stale-closed-session-recovery"
+                if closed_recovery
+                else "legacy-abandoned-retired"
+            )
             if (
                 current.target_instance_id
                 == request.app.state.ctx.settings.instance_id
@@ -12553,18 +12701,43 @@ async def _repair_terminal_dispatch(
                 }
             current.lifecycle_inconsistencies.append(
                 {
-                    "kind": "legacy_abandoned_dispatch_retired",
+                    "kind": (
+                        "stale_closed_session_dispatch_recovered"
+                        if closed_recovery
+                        else "legacy_abandoned_dispatch_retired"
+                    ),
                     "previous_state": previous,
-                    "normalized_state": "cancelled",
+                    "normalized_state": "failed" if closed_recovery else "cancelled",
                     "observed_at": now.isoformat(),
                     "idempotency_key": key,
                     "reason": reason,
+                    "actor": actor_principal,
+                    "authority_provenance": {
+                        "authority_instance_id": current.authority_instance_id,
+                        "target_instance_id": current.target_instance_id,
+                        "mutation_id": current.mutation_id,
+                    },
+                    "preserved_evidence": {
+                        "completion": bool(
+                            current.completion_payload
+                            or current.completion_envelope
+                            or current.completion_received_at
+                        ),
+                        "followups": bool(
+                            current.followup_operations or current.followup_turns
+                        ),
+                        "card_reconciliation": current.reconciliation_state,
+                    },
                     "evidence": {
                         "card_id": current.card_id,
-                        "card_lane": card.lane.value,
+                        "card_lane": card.lane.value if card else None,
                         "session_id": current.session_id,
                         "session_status": current_session_status,
                         "runtime_live": False,
+                        "transport_connected": False,
+                        "provider_process_live": False,
+                        "live_turn": False,
+                        "stranded_queued_prompt_count": stranded_queued_prompt_count,
                         "completion_acknowledged": False,
                         "target_instance_id": current.target_instance_id,
                         "source": evidence_source,
@@ -12576,11 +12749,11 @@ async def _repair_terminal_dispatch(
                     "outcome_inferred": False,
                 },
             )
-            current.state = "cancelled"
+            current.state = "failed" if closed_recovery else "cancelled"
             current.events.append(
                 DispatchEvent(
                     seq=(current.events[-1].seq + 1 if current.events else 1),
-                    state="cancelled",
+                    state=current.state,
                     message=(
                         "Abandoned legacy running dispatch retired without outcome "
                         "inference."
@@ -12630,6 +12803,9 @@ async def _repair_terminal_dispatch(
                     fence_acquisition_id=local_fence_acquisition_id,
                 )
             raise
+        worker = request.app.state.ctx.services.get("dispatch_worker")
+        if worker:
+            worker.wake()
         return _dispatch_public(request, record)
 
     def normalize_acknowledged(current: DispatchRecord) -> bool:
@@ -15105,7 +15281,9 @@ class FleetModule(Module):
             idempotency_key: str,
             authority_instance_id: str | None = None,
             mode: Literal[
-                "acknowledged_completion", "abandoned_without_acknowledgement"
+                "acknowledged_completion",
+                "abandoned_without_acknowledgement",
+                "closed_session_recovery",
             ] = "acknowledged_completion",
             expected_state: str | None = None,
             reason: str | None = None,

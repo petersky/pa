@@ -42,6 +42,7 @@ class _IdentityHeadersMiddleware:
             from uuid import uuid4
 
             correlation_id = str(uuid4())
+        scope.setdefault("state", {})["correlation_id"] = correlation_id
         instance_id = self.instance_id
 
         async def send_wrapper(message):
@@ -463,6 +464,15 @@ class Kernel:
         assets = self.ctx.require_service("assets")
         app.state.templates.env.globals["static_url"] = assets.url
         app.state.templates.env.globals["asset_version"] = assets.version
+        from pa.core.ui.work_presentation import (
+            absolute_time,
+            presentation_state,
+            relative_time,
+        )
+
+        app.state.templates.env.globals["relative_time"] = relative_time
+        app.state.templates.env.globals["absolute_time"] = absolute_time
+        app.state.templates.env.globals["presentation_state"] = presentation_state
         from pa.core.ui.instance_identity import (
             canonical_instance_identities,
             resolve_instance_identity,

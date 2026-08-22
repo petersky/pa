@@ -309,7 +309,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         with TestClient(self.app) as client:
             card = self.app.state.ctx.store.create_card(
                 CardCreate(
-                    title="Compact orchestration",
+                    title="diagnose HTTP/2 naïve API 🧭",
                     body="FULL BODY MUST STAY OUT OF COLLECTIONS",
                     summary="Concise durable summary.",
                     summary_source=CardSummarySource.MANUAL,
@@ -329,8 +329,14 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             collection = client.get("/partials/cards?lane=inbox")
             self.assertEqual(collection.status_code, 200)
             self.assertIn("Concise durable summary.", collection.text)
+            self.assertIn("diagnose HTTP/2 naïve API 🧭", collection.text)
+            self.assertNotIn("Diagnose Http/2 Naïve Api", collection.text)
             self.assertIn("data-card-detail-link", collection.text)
             self.assertIn("data-card-move-to", collection.text)
+            self.assertIn(f'aria-label="Actions for {card.title}"', collection.text)
+            self.assertIn(
+                f'aria-label="Move {card.title} to Active"', collection.text
+            )
             self.assertNotIn("FULL BODY MUST STAY OUT OF COLLECTIONS", collection.text)
 
             detail = client.get(f"/partials/cards/{card.id}/detail")
@@ -340,6 +346,14 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn("data-card-markdown", detail.text)
             self.assertNotIn("card-edit-surface", detail.text)
             self.assertNotIn("data-card-edit-open", detail.text)
+
+    def test_board_menu_keyboard_and_live_refresh_contract_is_wired(self) -> None:
+        script = (Path(__file__).parents[1] / "src/pa/server/static/js/spa.js").read_text()
+        self.assertIn('event.key === "Escape"', script)
+        self.assertIn('["ArrowDown", "Enter", " "]', script)
+        self.assertIn('trigger.focus()', script)
+        self.assertIn('"htmx:beforeSwap"', script)
+        self.assertIn("boardRefreshFocus", script)
 
     def test_summary_diagnostics_and_disabled_ui_are_truthful_and_redacted(
         self,

@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from pa.acp.final_message import assemble_final_assistant_message
+from pa.domain.models import CardLane
 from pa.execution.dispatch import (
     CompletionOutbox,
     DispatchEvent,
@@ -34,11 +35,12 @@ RECONCILIATION_TERMINAL_STATES = {
     "skipped_non_resumable",
     "failed",
     "exhausted",
+    "already_satisfied",
 }
 
 
 class CompletionReconciler:
-    """Prompt one resumable session once, with durable retry and diagnostics."""
+    """Prompt one resumable session at most twice, with durable diagnostics."""
 
     def __init__(
         self,
@@ -149,6 +151,30 @@ class CompletionReconciler:
                 raise ValueError("dispatch is not linked to a card")
             if record.reconciliation_state in {"resolved", "not_required"}:
                 return record
+            if record.state in {"completed", "acknowledged"} and record.acknowledged_at:
+                card = await self._offload(
+                    "reconciliation.card_read",
+                    self.card_store.get_card,
+                    record.card_id,
+                    realm_id=record.realm_id,
+                )
+                if card and getattr(card, "lane", None) == CardLane.DONE:
+                    record.reconciliation_state = "already_satisfied"
+                    record.reconciliation_reason = (
+                        "The authoritative card is already durably Done; preserved "
+                        "the acknowledged completion without prompting the session."
+                    )
+                    record.reconciliation_condition = "authoritative_card_done"
+                    record.reconciliation_recoverable = False
+                    record.reconciliation_next_retry_at = None
+                    record.reconciliation_updated_at = datetime.now(UTC)
+                    await self._transition(
+                        record,
+                        record.state,
+                        "Normalized legacy reconciliation warning from authoritative Done evidence.",
+                        detail={"card_lane": "done", "prompted": False},
+                    )
+                    return record
             record.reconciliation_state = "pending"
             record.reconciliation_reason = "Operator requested durable reconciliation."
             record.reconciliation_condition = "operator_retry"
@@ -262,9 +288,25 @@ class CompletionReconciler:
                 return False
             record.completion_payload = payload
             record.card_disposition_error = error
+            record.reconciliation_parse_errors.append(error or "missing payload")
+            final_text = str(payload.get("final_outcome_text") or "")
+            record.reconciliation_final_excerpt = (
+                final_text[:500].replace("\x00", "�") or "<empty>"
+            )
+            if record.reconciliation_prompt_count < 2:
+                record.reconciliation_state = "pending"
+                record.reconciliation_reason = (
+                    "The first reconciliation prompt was malformed; one final "
+                    f"same-session JSON-only retry is pending: {error or 'missing payload'}"
+                )[:1000]
+                record.reconciliation_recoverable = True
+                record.reconciliation_updated_at = datetime.now(UTC)
+                saved = await self._save(record)
+                await self._advance(saved)
+                return True
             record.reconciliation_state = "failed"
             record.reconciliation_reason = (
-                "The single reconciliation prompt completed without a valid "
+                "Both reconciliation prompts completed without a valid "
                 f"pa.card-disposition/v1 payload: {error or 'missing payload'}"
             )[:1000]
             record.reconciliation_recoverable = False
@@ -516,14 +558,27 @@ class CompletionReconciler:
             )
             return
 
-        existing = self._existing_prompt(runtime, record.dispatch_id)
+        existing = self._existing_prompt(
+            runtime,
+            record.dispatch_id,
+            exclude_id=(
+                record.reconciliation_prompt_id
+                if record.reconciliation_prompt_count == 1
+                and record.reconciliation_parse_errors
+                else None
+            ),
+        )
         if existing:
             record.reconciliation_state = "prompted"
             record.reconciliation_reason = (
                 "The durable reconciliation prompt is queued or in flight."
             )
-            record.reconciliation_prompt_count = 1
+            record.reconciliation_prompt_count = max(
+                1, record.reconciliation_prompt_count + 1
+            )
             record.reconciliation_prompt_id = existing.id
+            if existing.id not in record.reconciliation_prompt_ids:
+                record.reconciliation_prompt_ids.append(existing.id)
             record.reconciliation_recoverable = False
             record.reconciliation_next_retry_at = None
             record.reconciliation_updated_at = datetime.now(UTC)
@@ -540,9 +595,18 @@ class CompletionReconciler:
             "card.reconciliation.disposition",
             provider=session.agent_name,
         )
+        prompt_text = rendered.text
+        if record.reconciliation_prompt_count:
+            prompt_text += (
+                "\n\nThis is the one final retry. The preceding extraction error was:\n"
+                f"{record.card_disposition_error or 'missing payload'}\n"
+                "The preceding final response began:\n"
+                f"{record.reconciliation_final_excerpt or '<empty>'}\n\n"
+                "Return exactly one JSON object, no progress prose, no Markdown."
+            )
         try:
             item = runtime.enqueue(
-                rendered.text,
+                prompt_text,
                 action="prepend",
                 card_id=record.card_id,
                 project_id=record.project_id,
@@ -556,11 +620,15 @@ class CompletionReconciler:
             return
         record.reconciliation_state = "prompted"
         record.reconciliation_reason = (
-            "Queued exactly one same-session disposition reconciliation prompt."
-        )
+            "Queued the one final same-session JSON-only retry after a malformed "
+            f"disposition: {record.card_disposition_error or 'missing payload'}"
+            if record.reconciliation_prompt_count
+            else "Queued the first same-session disposition reconciliation prompt."
+        )[:1000]
         record.reconciliation_recoverable = False
-        record.reconciliation_prompt_count = 1
+        record.reconciliation_prompt_count += 1
         record.reconciliation_prompt_id = item.id
+        record.reconciliation_prompt_ids.append(item.id)
         record.reconciliation_next_retry_at = None
         record.reconciliation_updated_at = datetime.now(UTC)
         await self._transition(
@@ -665,12 +733,23 @@ class CompletionReconciler:
         )
 
     @staticmethod
-    def _existing_prompt(runtime: AgentSessionRuntime, dispatch_id: str) -> Any | None:
+    def _existing_prompt(
+        runtime: AgentSessionRuntime,
+        dispatch_id: str,
+        exclude_id: str | None = None,
+    ) -> Any | None:
         source = f"{RECONCILIATION_SOURCE_PREFIX}{dispatch_id}"
         candidates = list(runtime._queue)
         if runtime._in_flight:
             candidates.append(runtime._in_flight)
-        return next((item for item in candidates if item.source == source), None)
+        return next(
+            (
+                item
+                for item in candidates
+                if item.source == source and (not exclude_id or item.id != exclude_id)
+            ),
+            None,
+        )
 
     @staticmethod
     def _merge_reconciliation_fields(
@@ -687,6 +766,9 @@ class CompletionReconciler:
             "reconciliation_attempts",
             "reconciliation_prompt_count",
             "reconciliation_prompt_id",
+            "reconciliation_prompt_ids",
+            "reconciliation_parse_errors",
+            "reconciliation_final_excerpt",
             "reconciliation_next_retry_at",
             "reconciliation_updated_at",
             "reconciliation_current_card",
