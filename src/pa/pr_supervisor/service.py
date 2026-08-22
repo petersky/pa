@@ -74,6 +74,95 @@ class ProvenanceValidationError(ValueError):
         return {"code": self.code, "message": self.message, **self.detail}
 
 
+class RemoteDispatchError(RuntimeError):
+    """Sanitized, policy-bearing rejection from an executor destination."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int | None,
+        code: str,
+        classification: str,
+        retryable: bool,
+        recovery: str,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        super().__init__(code)
+        self.status_code = status_code
+        self.code = code
+        self.classification = classification
+        self.retryable = retryable
+        self.recovery = recovery
+        self.retry_after_seconds = retry_after_seconds
+
+    def audit_detail(self) -> dict[str, Any]:
+        return {
+            "status_code": self.status_code,
+            "code": self.code,
+            "classification": self.classification,
+            "retryable": self.retryable,
+            "recovery": self.recovery,
+            "retry_after_seconds": self.retry_after_seconds,
+        }
+
+
+_SAFE_REJECTION_CODE = re.compile(r"^[a-z][a-z0-9_.-]{0,79}$")
+
+
+def _classify_remote_dispatch_failure(
+    status_code: int, code: str, *, retry_after_seconds: int | None = None
+) -> RemoteDispatchError:
+    normalized = code if _SAFE_REJECTION_CODE.fullmatch(code) else "remote_rejected"
+    if status_code in {401, 403} or any(
+        x in normalized for x in ("auth", "issuer", "forbidden", "permission")
+    ):
+        classification, retryable, recovery = (
+            "authentication_authorization",
+            False,
+            "repair_credentials_or_authority",
+        )
+    elif status_code in {409, 412} or any(
+        x in normalized for x in ("stale", "fence", "version", "provenance")
+    ):
+        classification, retryable, recovery = (
+            "stale_provenance",
+            False,
+            "reobserve_and_reauthorize",
+        )
+    elif status_code in {429, 503} or any(
+        x in normalized for x in ("capacity", "queue", "busy", "rate_limit")
+    ):
+        classification, retryable, recovery = (
+            "capacity_queue",
+            True,
+            "retry_same_destination",
+        )
+    elif status_code in {404, 410} or any(
+        x in normalized
+        for x in (
+            "closed", "cancelled", "canceled", "superseded", "terminal",
+            "session_missing",
+        )
+    ):
+        classification, retryable, recovery = (
+            "terminal_session",
+            True,
+            "resume_or_replace_canonical_executor",
+        )
+    elif 500 <= status_code:
+        classification, retryable, recovery = "transport_availability", True, "retry_same_destination"
+    else:
+        classification, retryable, recovery = "semantic_rejection", False, "operator_or_executor_correction"
+    return RemoteDispatchError(
+        status_code=status_code,
+        code=normalized,
+        classification=classification,
+        retryable=retryable,
+        recovery=recovery,
+        retry_after_seconds=retry_after_seconds,
+    )
+
+
 @dataclass(frozen=True)
 class _LocalLease:
     grant: LeaseGrant
@@ -173,15 +262,22 @@ class ExecutorDispatcher:
                         authorization=authorization,
                     )
                     return str(result.get("state") or "queued")
-                except (httpx.ConnectError, RuntimeError) as exc:
+                except RemoteDispatchError:
+                    raise
+                except httpx.ConnectError as exc:
                     logger.warning(
                         "PR supervisor remote executor unavailable watch=%s target=%s: %s",
                         watch.id,
                         target,
                         exc,
                     )
-                    if authorization:
-                        raise
+                    raise RemoteDispatchError(
+                        status_code=None,
+                        code="remote_transport_unavailable",
+                        classification="transport_availability",
+                        retryable=True,
+                        recovery="retry_same_destination",
+                    ) from exc
                 except httpx.HTTPError as exc:
                     # A read/protocol failure after the request left this instance is
                     # ambiguous: the destination may already have queued the prompt.
@@ -194,7 +290,13 @@ class ExecutorDispatcher:
                         target,
                         exc,
                     )
-                    raise
+                    raise RemoteDispatchError(
+                        status_code=None,
+                        code="remote_outcome_unknown",
+                        classification="transport_availability",
+                        retryable=True,
+                        recovery="retry_same_destination_with_event_key",
+                    ) from exc
         return await self.dispatch_local(
             watch,
             event_key,
@@ -237,8 +339,28 @@ class ExecutorDispatcher:
                 },
             )
             if response.status_code >= 400:
-                raise RuntimeError(
-                    f"executor dispatch returned HTTP {response.status_code}"
+                code = "remote_rejected"
+                try:
+                    payload = await self._offload(
+                        "pr_supervisor.rejection_json", response.json
+                    )
+                    detail = (
+                        payload.get("detail", payload)
+                        if isinstance(payload, dict)
+                        else {}
+                    )
+                    if isinstance(detail, dict):
+                        code = str(detail.get("code") or code)
+                except (ValueError, TypeError):
+                    pass
+                retry_after = response.headers.get("retry-after")
+                retry_seconds = (
+                    int(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else None
+                )
+                raise _classify_remote_dispatch_failure(
+                    response.status_code, code, retry_after_seconds=retry_seconds
                 )
             return await self._offload("pr_supervisor.response_json", response.json)
         finally:
@@ -312,6 +434,12 @@ class ExecutorDispatcher:
             watch.id,
             target_instance_id=self.settings.instance_id,
             target_session_id=watch.originating_session_id,
+            authorization_id=str(authorization.get("id") or "") or None,
+            owner_instance_id=(
+                str(authorization.get("owner_instance_id") or "") or None
+            ),
+            fence_token=authorization.get("fence_token"),
+            lease_version=authorization.get("lease_version"),
         ):
             return "deduplicated"
         if not self.agent:
@@ -321,6 +449,7 @@ class ExecutorDispatcher:
                 event_key,
                 state="failed",
                 detail="instance agent unavailable",
+                authorization_id=str(authorization.get("id") or "") or None,
             )
             return "failed"
         runtime = None
@@ -500,6 +629,7 @@ class ExecutorDispatcher:
                 event_key,
                 state=dispatch_state,
                 detail=detail,
+                authorization_id=str(authorization.get("id") or "") or None,
             )
             if new_admission:
                 await self._offload(
@@ -515,6 +645,7 @@ class ExecutorDispatcher:
                 event_key,
                 state="failed",
                 detail=str(exc),
+                authorization_id=str(authorization.get("id") or "") or None,
             )
             return "failed"
 
@@ -2162,13 +2293,26 @@ class PRSupervisor:
             != authorization["review_hold_version"]
         ):
             raise StaleFenceError(f"effect changed before dispatch for {watch_id}")
-        state = await self.dispatcher.dispatch(
-            prepared,
-            str(payload["event_key"]),
-            str(payload["prompt"]),
-            authorization=authorization,
-            prompt_audit=list(payload.get("prompt_audit") or []),
-        )
+        try:
+            state = await self.dispatcher.dispatch(
+                prepared,
+                str(payload["event_key"]),
+                str(payload["prompt"]),
+                authorization=authorization,
+                prompt_audit=list(payload.get("prompt_audit") or []),
+            )
+        except RemoteDispatchError as exc:
+            failed = await self._offload(
+                "sqlite.pr_supervisor_effect_finish",
+                self.store.finish_effect_authorization,
+                watch_id,
+                str(payload["event_key"]),
+                str(authorization["id"]),
+                accepted=False,
+                detail=json.dumps(exc.audit_detail(), sort_keys=True),
+            )
+            await self._replicate(failed)
+            raise
         accepted = state not in {"failed", "rejected"}
         finished = await self._offload(
             "sqlite.pr_supervisor_effect_finish",
