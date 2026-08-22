@@ -348,8 +348,6 @@ class Kernel:
     async def shutdown(self, app: FastAPI) -> None:
         import asyncio
 
-        await self.ctx.hooks.emit("app.shutdown", app=app, ctx=self.ctx)
-
         # Fence + cancel ACP startup before module teardown. Module on_shutdown
         # can take seconds; leaving resume running there lets connect() call
         # session/new while Uvicorn is already shutting down.
@@ -361,17 +359,45 @@ class Kernel:
         if agent_start_task and not agent_start_task.done():
             agent_start_task.cancel()
             try:
-                await asyncio.wait_for(agent_start_task, timeout=5.0)
+                await asyncio.wait_for(agent_start_task, timeout=0.5)
             except asyncio.CancelledError, asyncio.TimeoutError:
                 pass
 
-        for entry in reversed(self.registry.modules):
+        # The server grants ten seconds for the entire lifespan shutdown. Keep
+        # every component inside an independent deadline so one stuck teardown
+        # cannot consume the grace period needed by the remaining components.
+        async def bounded(label: str, awaitable, timeout: float) -> bool:
             try:
-                await asyncio.wait_for(
-                    entry.module.on_shutdown(app, self.ctx), timeout=10.0
-                )
+                await asyncio.wait_for(awaitable, timeout=timeout)
+                return True
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
-                logger.error("Timed out shutting down module %s", entry.module.name)
+                logger.error("Timed out %s", label)
+            except Exception:
+                logger.exception("Failed %s", label)
+            return False
+
+        await bounded(
+            "emitting app.shutdown hooks",
+            self.ctx.hooks.emit("app.shutdown", app=app, ctx=self.ctx),
+            0.25,
+        )
+
+        module_deadline = asyncio.get_running_loop().time() + 1.5
+        for entry in reversed(self.registry.modules):
+            remaining = module_deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                logger.error(
+                    "Skipped shutdown for module %s after module drain deadline",
+                    entry.module.name,
+                )
+                continue
+            await bounded(
+                f"shutting down module {entry.module.name}",
+                entry.module.on_shutdown(app, self.ctx),
+                min(0.4, remaining),
+            )
 
         if agent:
             import os
@@ -394,20 +420,20 @@ class Kernel:
             if quiesce and has_open_sessions:
                 try:
                     await asyncio.wait_for(
-                        agent.quiesce(reason="shutdown", timeout=20.0), timeout=25.0
+                        agent.quiesce(reason="shutdown", timeout=1.0), timeout=1.5
                     )
                 except Exception:
                     logger.exception("ACP quiesce during shutdown failed")
             try:
-                await asyncio.wait_for(agent.stop(fast=skip), timeout=10.0)
+                await asyncio.wait_for(agent.stop(fast=skip), timeout=1.5)
             except asyncio.TimeoutError:
                 logger.error("Timed out stopping ACP/browser runtimes")
         execution_router = self.ctx.services.get("execution_router")
         if execution_router:
-            await execution_router.close()
+            await bounded("closing execution router", execution_router.close(), 0.5)
         async_runtime = self.ctx.services.get("async_runtime")
         if async_runtime:
-            await async_runtime.close()
+            await bounded("closing async runtime", async_runtime.close(), 0.5)
 
     def build_app(self) -> FastAPI:
         from contextlib import asynccontextmanager
