@@ -239,6 +239,9 @@ class DispatchRecord(BaseModel):
     reconciliation_attempts: int = 0
     reconciliation_prompt_count: int = 0
     reconciliation_prompt_id: str | None = None
+    reconciliation_prompt_ids: list[str] = Field(default_factory=list)
+    reconciliation_parse_errors: list[str] = Field(default_factory=list)
+    reconciliation_final_excerpt: str | None = None
     reconciliation_next_retry_at: datetime | None = None
     reconciliation_updated_at: datetime | None = None
     reconciliation_current_card: dict[str, Any] | None = None
@@ -413,6 +416,9 @@ class DispatchRecord(BaseModel):
             "attempts": self.reconciliation_attempts,
             "prompt_count": self.reconciliation_prompt_count,
             "prompt_id": self.reconciliation_prompt_id,
+            "prompt_ids": list(self.reconciliation_prompt_ids),
+            "parse_errors": list(self.reconciliation_parse_errors),
+            "final_excerpt": self.reconciliation_final_excerpt,
             "next_retry_at": (
                 self.reconciliation_next_retry_at.isoformat()
                 if self.reconciliation_next_retry_at

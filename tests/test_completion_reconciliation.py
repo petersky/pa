@@ -4,6 +4,7 @@ import asyncio
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -562,7 +563,7 @@ class CompletionReconciliationTests(unittest.TestCase):
     ) -> None:
         async def run() -> None:
             with tempfile.TemporaryDirectory() as tmp:
-                ledger, _runtime, _supervisor, outbox, reconciler = self.make_fixture(
+                ledger, runtime, _supervisor, outbox, reconciler = self.make_fixture(
                     Path(tmp)
                 )
                 await reconciler.handle_completion("session-1", {})
@@ -583,18 +584,157 @@ class CompletionReconciliationTests(unittest.TestCase):
                     },
                 )
 
-                failed = ledger.get("dispatch-1")
-                self.assertEqual(failed.card_disposition_error, exact_error)
-                self.assertIn(exact_error, failed.reconciliation_reason)
+                retrying = ledger.get("dispatch-1")
+                self.assertEqual(retrying.card_disposition_error, exact_error)
+                self.assertIn(exact_error, retrying.reconciliation_reason)
+                self.assertEqual(retrying.reconciliation_state, "prompted")
+                self.assertEqual(retrying.reconciliation_prompt_count, 2)
+                self.assertEqual(retrying.reconciliation_parse_errors, [exact_error])
+                self.assertIn(exact_error, runtime._queue[0].message)
                 self.assertEqual(
-                    failed.public_dict()["card_reconciliation"][
+                    retrying.public_dict()["card_reconciliation"][
                         "disposition_error"
                     ],
                     exact_error,
                 )
-                self.assertEqual(
-                    outbox.payloads[-1][1]["card_disposition_error"], exact_error
+                self.assertEqual(len(outbox.payloads), 0)
+
+        asyncio.run(run())
+
+    def test_prose_plus_json_retries_once_then_valid_json_is_applied(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, _supervisor, outbox, reconciler = self.make_fixture(
+                    Path(tmp)
                 )
+                await reconciler.handle_completion("session-1", {})
+                first = ledger.get("dispatch-1")
+                exact_error = (
+                    "The final response was not exactly one JSON object: "
+                    "Expecting value: line 1 column 1 (char 0)"
+                )
+                mixed = f"I will revalidate first.{json.dumps(disposition())}"
+                await reconciler.handle_completion(
+                    "session-1",
+                    {
+                        "queued_prompt_id": first.reconciliation_prompt_id,
+                        "prompt_source": f"{RECONCILIATION_SOURCE_PREFIX}dispatch-1",
+                        "card_disposition_error": exact_error,
+                        "final_outcome_text": mixed,
+                    },
+                )
+                retry = ledger.get("dispatch-1")
+                self.assertEqual(retry.reconciliation_state, "prompted")
+                self.assertEqual(retry.reconciliation_prompt_count, 2)
+                self.assertEqual(len(retry.reconciliation_prompt_ids), 2)
+                self.assertIn(exact_error, runtime._queue[0].message)
+                self.assertIn("I will revalidate first.", runtime._queue[0].message)
+                self.assertIn(
+                    "no progress prose, no Markdown", runtime._queue[0].message
+                )
+
+                await reconciler.handle_completion(
+                    "session-1",
+                    {
+                        "queued_prompt_id": retry.reconciliation_prompt_id,
+                        "prompt_source": f"{RECONCILIATION_SOURCE_PREFIX}dispatch-1",
+                        "card_disposition": disposition("done"),
+                    },
+                )
+                applied = ledger.get("dispatch-1")
+                self.assertEqual(applied.reconciliation_state, "resolved")
+                self.assertEqual(applied.reconciliation_prompt_count, 2)
+                self.assertEqual(
+                    outbox.payloads[-1][1]["card_disposition"]["lane"], "done"
+                )
+
+        asyncio.run(run())
+
+    def test_empty_or_unparsable_twice_fails_without_third_prompt(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, _supervisor, outbox, reconciler = self.make_fixture(
+                    Path(tmp)
+                )
+                await reconciler.handle_completion("session-1", {})
+                first = ledger.get("dispatch-1")
+                await reconciler.handle_completion(
+                    "session-1",
+                    {
+                        "queued_prompt_id": first.reconciliation_prompt_id,
+                        "card_disposition_error": "empty final response",
+                        "final_outcome_text": "",
+                    },
+                )
+                second = ledger.get("dispatch-1")
+                await reconciler.handle_completion(
+                    "session-1",
+                    {
+                        "queued_prompt_id": second.reconciliation_prompt_id,
+                        "card_disposition_error": "still not JSON",
+                        "final_outcome_text": "not json",
+                    },
+                )
+                failed = ledger.get("dispatch-1")
+                self.assertEqual(failed.reconciliation_state, "failed")
+                self.assertEqual(failed.reconciliation_prompt_count, 2)
+                self.assertEqual(runtime.enqueued, 2)
+                self.assertEqual(
+                    failed.reconciliation_parse_errors,
+                    ["empty final response", "still not JSON"],
+                )
+                self.assertEqual(len(outbox.payloads), 1)
+
+        asyncio.run(run())
+
+    def test_first_parse_failure_does_not_retry_when_tooling_unavailable(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, supervisor, _outbox, reconciler = self.make_fixture(
+                    Path(tmp)
+                )
+                await reconciler.handle_completion("session-1", {})
+                first = ledger.get("dispatch-1")
+                supervisor.state = "unavailable"
+                await reconciler.handle_completion(
+                    "session-1",
+                    {
+                        "queued_prompt_id": first.reconciliation_prompt_id,
+                        "card_disposition_error": "not JSON",
+                    },
+                )
+                blocked = ledger.get("dispatch-1")
+                self.assertEqual(blocked.reconciliation_state, "blocked")
+                self.assertEqual(blocked.reconciliation_prompt_count, 1)
+                self.assertEqual(runtime.enqueued, 1)
+
+        asyncio.run(run())
+
+    def test_operator_retry_normalizes_acknowledged_done_without_prompt(self) -> None:
+        async def run() -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, _supervisor, _outbox, reconciler = self.make_fixture(
+                    Path(tmp), session_status="closed"
+                )
+                record = ledger.get("dispatch-1")
+                record.state = "completed"
+                record.acknowledged_at = datetime.now(UTC)
+                record.reconciliation_state = "failed"
+                record.completion_payload = {"outcome": "already acknowledged"}
+                ledger.put(record)
+                reconciler.card_store.get_card.return_value = SimpleNamespace(
+                    id="card-1", lane="done"
+                )
+
+                normalized = await reconciler.retry("dispatch-1")
+
+                self.assertEqual(normalized.reconciliation_state, "already_satisfied")
+                self.assertEqual(normalized.state, "completed")
+                self.assertEqual(
+                    normalized.completion_payload,
+                    {"outcome": "already acknowledged"},
+                )
+                self.assertEqual(runtime.enqueued, 0)
 
         asyncio.run(run())
 
