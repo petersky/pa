@@ -1142,10 +1142,14 @@
           "</p>";
       }
       var actions = '<span class="form-actions">';
+      var staleRecovery = dispatch.stale_session_recovery || {};
       if (dispatch.can_retry) actions += '<button type="button" class="ghost small" data-dispatch-retry="' +
         escapeHtml(dispatch.dispatch_id) + '">Retry</button>';
       if (dispatch.can_cancel) actions += '<button type="button" class="ghost small" data-dispatch-cancel="' +
         escapeHtml(dispatch.dispatch_id) + '">Cancel</button>';
+      if (staleRecovery.eligible_candidate) actions += '<button type="button" class="ghost small" data-dispatch-recover-stale="' +
+        escapeHtml(dispatch.dispatch_id) + '" data-dispatch-state="' +
+        escapeHtml(recordedState) + '">Recover closed session</button>';
       if (dispatch.session_id) actions += '<a class="ghost small" href="/agent?session=' +
         encodeURIComponent(dispatch.session_id) + '&instance=' + encodeURIComponent(remoteInstanceId) +
         '">Open session</a>';
@@ -3715,6 +3719,32 @@
         if (status) status.textContent = err.message;
       }).finally(function () {
         if (dispatchCancel.isConnected) dispatchCancel.disabled = false;
+      });
+      return;
+    }
+
+    var dispatchRecovery = e.target.closest("[data-dispatch-recover-stale]");
+    if (dispatchRecovery) {
+      e.preventDefault();
+      var recoveryId = dispatchRecovery.getAttribute("data-dispatch-recover-stale");
+      var expectedState = dispatchRecovery.getAttribute("data-dispatch-state");
+      if (!window.confirm("Fail this dispatch only if PA proves its linked session is closed and cannot execute any work?")) return;
+      dispatchRecovery.disabled = true;
+      api("/api/fleet/dispatch-jobs/" + encodeURIComponent(recoveryId) + "/repair-terminal", {
+        method: "POST",
+        body: {
+          mode: "closed_session_recovery",
+          expected_state: expectedState,
+          reason: "Operator requested fenced recovery of a stale closed-session dispatch.",
+          confirm_no_outcome_inference: true,
+        },
+      }).then(function () {
+        return loadRemoteDispatches(remoteInstanceId);
+      }).catch(function (err) {
+        var status = $("#pa-remote-status");
+        if (status) status.textContent = err.message;
+      }).finally(function () {
+        if (dispatchRecovery.isConnected) dispatchRecovery.disabled = false;
       });
       return;
     }
