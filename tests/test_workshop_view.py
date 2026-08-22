@@ -574,8 +574,8 @@ class WorkshopCompactViewBrowserTests(unittest.IsolatedAsyncioTestCase):
                 })()"""
             )
             self.assertTrue(lightweight_age["sameNode"])
-            self.assertIn("1 minutes ago", lightweight_age["first"])
-            self.assertIn("2 minutes ago", lightweight_age["second"])
+            self.assertIn("1m ago", lightweight_age["first"])
+            self.assertIn("2m ago", lightweight_age["second"])
 
             toggled = await page.evaluate(
                 """(async () => {

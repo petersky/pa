@@ -1,6 +1,7 @@
 (function () {
   var VERSION_POLL_MS = 45000;
   var homeRefreshFocusKey = null;
+  var boardRefreshFocus = null;
 
   function normalizePath(path) {
     if (!path) return "/";
@@ -294,6 +295,41 @@
         moveCard(card, button.dataset.cardMoveTo).catch(function () {}).finally(function () {
           button.disabled = false;
         });
+      });
+    });
+
+    scope.querySelectorAll("[data-card-action-menu]").forEach(function (menu) {
+      if (menu.dataset.keyboardBound) return;
+      menu.dataset.keyboardBound = "1";
+      var trigger = menu.querySelector("summary");
+      var items = function () {
+        return Array.from(menu.querySelectorAll('[role="menuitem"]:not([disabled])'));
+      };
+      trigger.setAttribute("aria-expanded", menu.open ? "true" : "false");
+      trigger.addEventListener("keydown", function (event) {
+        if (!["ArrowDown", "Enter", " "].includes(event.key)) return;
+        event.preventDefault();
+        menu.open = true;
+        var first = items()[0];
+        if (first) first.focus();
+      });
+      menu.addEventListener("keydown", function (event) {
+        var choices = items();
+        var index = choices.indexOf(document.activeElement);
+        if (event.key === "Escape") {
+          event.preventDefault();
+          menu.open = false;
+          trigger.focus();
+        } else if (event.key === "ArrowDown" && choices.length) {
+          event.preventDefault();
+          choices[(index + 1 + choices.length) % choices.length].focus();
+        } else if (event.key === "ArrowUp" && choices.length) {
+          event.preventDefault();
+          choices[(index - 1 + choices.length) % choices.length].focus();
+        }
+      });
+      menu.addEventListener("toggle", function () {
+        trigger.setAttribute("aria-expanded", menu.open ? "true" : "false");
       });
     });
 
@@ -1673,6 +1709,18 @@
     });
   });
 
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var target = swapTarget(event);
+    if (!target || !target.closest || !target.closest(".board-column-body")) return;
+    var active = document.activeElement;
+    var card = active && active.closest && active.closest(".compact-card[data-card-id]");
+    if (!card) return;
+    boardRefreshFocus = {
+      cardId: card.dataset.cardId,
+      moveTo: active.dataset && active.dataset.cardMoveTo || null
+    };
+  });
+
   function handleAfterSwap(event) {
     var target = swapTarget(event);
     // HTMX 4 variants disagree about whether the after-swap target is the
@@ -1700,6 +1748,17 @@
       : null;
     if (boardBody) {
       initBoardDragDrop(boardBody.closest(".board-grid") || document);
+      if (boardRefreshFocus) {
+        var refreshedCard = document.querySelector('.compact-card[data-card-id="' +
+          CSS.escape(boardRefreshFocus.cardId) + '"]');
+        var menu = refreshedCard && refreshedCard.querySelector("[data-card-action-menu]");
+        var focusTarget = boardRefreshFocus.moveTo && refreshedCard
+          ? refreshedCard.querySelector('[data-card-move-to="' + CSS.escape(boardRefreshFocus.moveTo) + '"]')
+          : menu && menu.querySelector("summary");
+        if (menu && boardRefreshFocus.moveTo) menu.open = true;
+        if (focusTarget) focusTarget.focus();
+        boardRefreshFocus = null;
+      }
     }
     if (target && target.id === "card-detail-dialog-content") {
       if (!target.querySelector("[data-card-detail]")) {

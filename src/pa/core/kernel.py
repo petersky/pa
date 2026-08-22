@@ -464,6 +464,15 @@ class Kernel:
         assets = self.ctx.require_service("assets")
         app.state.templates.env.globals["static_url"] = assets.url
         app.state.templates.env.globals["asset_version"] = assets.version
+        from pa.core.ui.work_presentation import (
+            absolute_time,
+            presentation_state,
+            relative_time,
+        )
+
+        app.state.templates.env.globals["relative_time"] = relative_time
+        app.state.templates.env.globals["absolute_time"] = absolute_time
+        app.state.templates.env.globals["presentation_state"] = presentation_state
         from pa.core.ui.instance_identity import (
             canonical_instance_identities,
             resolve_instance_identity,
