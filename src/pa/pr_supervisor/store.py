@@ -391,6 +391,52 @@ class PRSupervisorStore:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
 
+    def list_watch_page(
+        self,
+        *,
+        realm_id: str,
+        view: str = "attention",
+        query_text: str = "",
+        limit: int = 25,
+        offset: int = 0,
+    ) -> tuple[list[PRWatch], int]:
+        """Return one bounded triage page without hydrating the durable catalog."""
+        clauses = ["realm_id = ?"]
+        params: list[Any] = [realm_id]
+        if view == "history":
+            clauses.append(
+                "(retired_at IS NOT NULL OR status IN ('merged', 'closed', 'retired'))"
+            )
+        elif view == "all":
+            pass
+        elif view == "errors":
+            clauses.append("NULLIF(last_error, '') IS NOT NULL")
+        else:
+            clauses.append("retired_at IS NULL AND status IN ('active', 'blocked')")
+        search = query_text.strip()
+        if search:
+            clauses.append(
+                "(repository LIKE ? OR CAST(pr_number AS TEXT) LIKE ? OR id LIKE ? "
+                "OR COALESCE(card_id, '') LIKE ? OR COALESCE(project_id, '') LIKE ?)"
+            )
+            needle = f"%{search}%"
+            params.extend([needle] * 5)
+        where = " AND ".join(clauses)
+        bounded_limit = max(1, min(int(limit), 100))
+        bounded_offset = max(0, int(offset))
+        with self._conn() as conn:
+            total = int(
+                conn.execute(
+                    f"SELECT COUNT(*) AS total FROM pr_watches WHERE {where}", params
+                ).fetchone()["total"]
+            )
+            rows = conn.execute(
+                f"SELECT * FROM pr_watches WHERE {where} "
+                "ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+                (*params, bounded_limit, bounded_offset),
+            ).fetchall()
+        return [self._row_to_watch(row) for row in rows], total
+
     def list_actionable_card_ids(self, *, realm_id: str, limit: int = 80) -> list[str]:
         """Return bounded card ids with current PR supervision evidence."""
         with self._conn() as conn:
@@ -1119,6 +1165,39 @@ class PRSupervisorStore:
             )
             for row in rows
         ]
+
+    def list_event_page(
+        self, watch_id: str, *, limit: int = 50, offset: int = 0
+    ) -> tuple[list[PRWatchEvent], int]:
+        bounded_limit = max(1, min(int(limit), 100))
+        bounded_offset = max(0, int(offset))
+        with self._conn() as conn:
+            total = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS total FROM pr_watch_events WHERE watch_id = ?",
+                    (watch_id,),
+                ).fetchone()["total"]
+            )
+            rows = conn.execute(
+                "SELECT * FROM pr_watch_events WHERE watch_id = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (watch_id, bounded_limit, bounded_offset),
+            ).fetchall()
+        events = [
+            PRWatchEvent(
+                id=row["id"],
+                watch_id=row["watch_id"],
+                event_key=row["event_key"],
+                event_type=row["event_type"],
+                head_sha=row["head_sha"],
+                condition_fingerprint=row["condition_fingerprint"],
+                source=row["source"],
+                payload=json.loads(row["payload_json"] or "{}"),
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+            for row in rows
+        ]
+        return events, total
 
     def claim_dispatch(
         self,
