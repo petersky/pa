@@ -5738,11 +5738,22 @@ class CardProjection:
     @serialized_mutation
     def catch_up_projection(self, realm_id: str, target_head: str) -> dict[str, Any]:
         """Atomically fast-forward a projection without replaying its history."""
+        started = time.perf_counter()
         if not self.event_log:
-            return {"commits_applied": 0, "rebuilt": False, "reason": "no_event_log"}
+            return {
+                "commits_applied": 0,
+                "rebuilt": False,
+                "reason": "no_event_log",
+                "sqlite_ms": 0.0,
+            }
         current = self.get_projection_head(realm_id)
         if current == target_head:
-            return {"commits_applied": 0, "rebuilt": False, "reason": "identical"}
+            return {
+                "commits_applied": 0,
+                "rebuilt": False,
+                "reason": "identical",
+                "sqlite_ms": 0.0,
+            }
         if not self.event_log.get_commit(target_head):
             raise ValueError(f"missing projection target {target_head}")
         if current is None or not self.event_log.get_commit(current):
@@ -5751,10 +5762,16 @@ class CardProjection:
                 "commits_applied": 0,
                 "rebuilt": True,
                 "reason": "missing_projection_head",
+                "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
             }
         if not self.event_log.is_ancestor(current, target_head):
             self.rebuild_from_log(realm_id)
-            return {"commits_applied": 0, "rebuilt": True, "reason": "non_fast_forward"}
+            return {
+                "commits_applied": 0,
+                "rebuilt": True,
+                "reason": "non_fast_forward",
+                "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
+            }
 
         applied = 0
         with self._conn():
@@ -5771,7 +5788,12 @@ class CardProjection:
                     self.apply_event(event)
                 applied += 1
             self._record_projection_head(realm_id, target_head)
-        return {"commits_applied": applied, "rebuilt": False, "reason": "fast_forward"}
+        return {
+            "commits_applied": applied,
+            "rebuilt": False,
+            "reason": "fast_forward",
+            "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
+        }
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:
         with self._conn() as conn:

@@ -81,7 +81,7 @@ def test_concurrent_sync_push_transactions_remain_successful(tmp_path: Path) -> 
     }.__getitem__
     start_barrier = threading.Barrier(2)
 
-    def push() -> tuple[int, str, bool]:
+    def push() -> dict:
         start_barrier.wait(timeout=5)
         return _apply_sync_push_local(context, "default", "", {})
 
@@ -89,7 +89,17 @@ def test_concurrent_sync_push_transactions_remain_successful(tmp_path: Path) -> 
         futures = [executor.submit(push) for _ in range(2)]
         results = [future.result(timeout=5) for future in futures]
 
-    assert results == [(0, "", False), (0, "", False)]
+    assert results == [
+        {
+            "imported": 0,
+            "head": "",
+            "head_changed": False,
+            "commits_applied": 0,
+            "sqlite_ms": 0.0,
+            "rebuilt": False,
+            "rebuild_reason": None,
+        }
+    ] * 2
     assert metrics.snapshot()["pulls"] == 2
     assert json.loads((tmp_path / "sync_metrics.json").read_text())["pulls"] == 2
     assert _temporary_files(tmp_path, "sync_metrics.json") == []

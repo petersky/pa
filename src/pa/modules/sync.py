@@ -256,6 +256,7 @@ def _apply_sync_push_local(
         "head": head_hash,
         "head_changed": head_changed,
         "commits_applied": projection["commits_applied"],
+        "sqlite_ms": projection.get("sqlite_ms", 0.0),
         "rebuilt": projection["rebuilt"],
         "rebuild_reason": projection["reason"] if projection["rebuilt"] else None,
     }
@@ -371,17 +372,31 @@ async def sync_push(request: Request, body: dict) -> dict:
         raise HTTPException(status_code=400, detail="objects must be an object")
     ctx: AppContext = request.app.state.ctx
     engine: SyncEngine = ctx.require_service("sync_engine")
-    result = await engine.apply_realm_head(
-        realm_id,
-        head_hash,
-        "sync.push_transaction",
-        _apply_sync_push_local,
-        ctx,
-        realm_id,
-        head_hash,
-        objects_b64,
-        timeout=120.0,
-    )
+    try:
+        result = await engine.apply_realm_head(
+            realm_id,
+            head_hash,
+            "sync.push_transaction",
+            _apply_sync_push_local,
+            ctx,
+            realm_id,
+            head_hash,
+            objects_b64,
+            timeout=120.0,
+        )
+    except TimeoutError as exc:
+        work = engine.projection_work_status(realm_id)
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "code": "projection_deadline_exceeded",
+                "realm_id": realm_id,
+                "target_head": head_hash,
+                "active_residual_worker": work["active_residual_worker"],
+                "projection_head": ctx.store.get_projection_head(realm_id),
+                "durable_head": ctx.require_service("event_log").get_head(realm_id),
+            },
+        ) from exc
 
     if result["head_changed"]:
         engine.invalidate_prepared(realm_id)

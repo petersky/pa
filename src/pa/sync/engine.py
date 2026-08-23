@@ -219,6 +219,7 @@ class SyncEngine:
                         commits_applied=result.get("commits_applied", 0),
                         rebuild_reason=result.get("rebuild_reason")
                         or result.get("reason"),
+                        sqlite_ms=result.get("sqlite_ms", 0.0),
                     )
                 return result
             finally:

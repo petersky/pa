@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -49,6 +51,71 @@ def _event(title: str) -> CardEvent:
 
 
 class EventLogWriterSafetyTests(unittest.TestCase):
+    def test_one_commit_catch_up_does_not_replay_deep_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            log = EventLog(ObjectStore(data_dir / "objects"), data_dir, "instance")
+            projection = CardProjection(data_dir / "pa.db", log)
+            history = {
+                f"commit-{index}": SyncCommit(
+                    hash=f"commit-{index}",
+                    realm_id="default",
+                    instance_id="instance",
+                    parent_hashes=[f"commit-{index - 1}"] if index else [],
+                    event_hashes=[],
+                    author_principal="user:test",
+                )
+                for index in range(5_001)
+            }
+            tail_event = _event("incremental-tail")
+            history["commit-5000"].event_hashes = ["tail-event"]
+            with patch.object(log, "get_commit", side_effect=history.get), patch.object(
+                log, "get_event", side_effect=lambda value: tail_event if value == "tail-event" else None
+            ), patch.object(log, "is_ancestor", return_value=True), patch.object(
+                log,
+                "_iter_commits_parent_first",
+                return_value=iter([("commit-5000", history["commit-5000"])]),
+            ):
+                projection._record_projection_head("default", "commit-4999")
+                started = time.perf_counter()
+                result = projection.catch_up_projection("default", "commit-5000")
+                elapsed_ms = (time.perf_counter() - started) * 1000
+
+            self.assertLess(elapsed_ms, 500)
+            self.assertEqual(result["commits_applied"], 1)
+            self.assertFalse(result["rebuilt"])
+            self.assertEqual(projection.get_projection_head("default"), "commit-5000")
+            self.assertEqual(projection.get_card("incremental-tail").title, "incremental-tail")
+
+    def test_rebuild_keeps_last_good_projection_visible_to_readers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            log = EventLog(ObjectStore(data_dir / "objects"), data_dir, "instance")
+            projection = CardProjection(data_dir / "pa.db", log)
+            projection.commit_event(_event("visible-during-rebuild"))
+            entered = threading.Event()
+            release = threading.Event()
+            original = projection.apply_event
+
+            def paused_apply(event: CardEvent) -> None:
+                entered.set()
+                release.wait(2)
+                original(event)
+
+            with patch.object(projection, "apply_event", side_effect=paused_apply):
+                worker = threading.Thread(
+                    target=projection.rebuild_from_log, args=("default",)
+                )
+                worker.start()
+                self.assertTrue(entered.wait(1))
+                self.assertEqual(
+                    projection.get_card("visible-during-rebuild").title,
+                    "visible-during-rebuild",
+                )
+                release.set()
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+
     def test_commit_and_entity_history_handle_more_than_5000_commits(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
