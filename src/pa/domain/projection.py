@@ -613,6 +613,36 @@ class CardProjection:
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status_updated "
             "ON agent_sessions(status, updated_at DESC)"
         )
+        # A browser default is a durable identity, not merely the most recently
+        # touched row carrying a convenient label.  Older databases can contain
+        # duplicates from reconnect races.  Keep the explicitly selected row
+        # (or the oldest recoverable identity, which predates the replacement
+        # regression) and retire only the duplicate label before enforcing the
+        # invariant for future writers.
+        conn.execute(
+            """
+            WITH ranked AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY
+                               CASE WHEN json_extract(config_json,
+                                   '$.browser_default_selected') = 1 THEN 0 ELSE 1 END,
+                               CASE WHEN status = 'closed' THEN 2 ELSE 0 END,
+                               created_at ASC,
+                               id ASC
+                       ) AS label_rank
+                FROM agent_sessions
+                WHERE label = 'default' AND status != 'closed'
+            )
+            UPDATE agent_sessions
+            SET label = NULL
+            WHERE id IN (SELECT id FROM ranked WHERE label_rank > 1)
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_sessions_one_default "
+            "ON agent_sessions(label) WHERE label = 'default' AND status != 'closed'"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_session_cards (
@@ -4137,7 +4167,7 @@ class CardProjection:
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO agent_sessions
+                INSERT INTO agent_sessions
                 (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
                  authority_instance_id, dispatch_id, realm_id,
                  lifecycle_owner,
@@ -4145,6 +4175,29 @@ class CardProjection:
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
                  created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    agent_name=excluded.agent_name,
+                    external_session_id=excluded.external_session_id,
+                    origin_instance_id=excluded.origin_instance_id,
+                    origin_instance_name=excluded.origin_instance_name,
+                    authority_instance_id=excluded.authority_instance_id,
+                    dispatch_id=excluded.dispatch_id,
+                    realm_id=excluded.realm_id,
+                    lifecycle_owner=excluded.lifecycle_owner,
+                    item_id=excluded.item_id,
+                    card_id=excluded.card_id,
+                    project_id=excluded.project_id,
+                    principal_id=excluded.principal_id,
+                    status=excluded.status,
+                    cwd=excluded.cwd,
+                    title=excluded.title,
+                    label=excluded.label,
+                    model_id=excluded.model_id,
+                    mode_id=excluded.mode_id,
+                    config_json=excluded.config_json,
+                    metrics_json=excluded.metrics_json,
+                    created_at=excluded.created_at,
+                    updated_at=excluded.updated_at
                 """,
                 (
                     session.id,
@@ -4643,8 +4696,14 @@ class CardProjection:
             row = conn.execute(
                 """
                 SELECT * FROM agent_sessions
-                WHERE label = ? AND status != 'closed'
-                ORDER BY updated_at DESC LIMIT 1
+                WHERE label = ?
+                ORDER BY
+                    CASE WHEN status = 'closed' THEN 1 ELSE 0 END,
+                    CASE WHEN json_extract(config_json,
+                        '$.browser_default_selected') = 1 THEN 0 ELSE 1 END,
+                    created_at ASC,
+                    id ASC
+                LIMIT 1
                 """,
                 (label,),
             ).fetchone()
