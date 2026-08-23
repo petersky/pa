@@ -15,6 +15,7 @@ TURN_END_SNAPSHOT_V1 = "pa.turn-end-snapshot/v1"
 POST_TURN_CONTEXT_V1 = "pa.post-turn-context/v1"
 POST_TURN_EVALUATION_V1 = "pa.post-turn-evaluation/v1"
 FOLLOWUP_ACTION_V1 = "pa.followup-action/v1"
+ACTION_RECEIPT_V1 = "pa.followup-action-receipt/v1"
 ACTION_CATALOG_V1 = "pa.followup-action-catalog/v1"
 
 MAX_SNAPSHOT_TEXT = 8_000
@@ -70,11 +71,60 @@ class FollowupActionStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class ActionReceiptStatus(StrEnum):
+    PLANNED = "planned"
+    STARTED = "started"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
 class SafetyClassification(StrEnum):
     RECORD_ONLY = "record_only"
     REVERSIBLE = "reversible"
     EXTERNAL_WRITE = "external_write"
     HIGH_IMPACT = "high_impact"
+
+
+def canonical_digest(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+
+
+class ActionApprovalV1(BaseModel):
+    """Approval for one immutable effect, not a reusable boolean grant."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_version: str | None = None
+    expires_at: datetime
+    principal_id: str = Field(min_length=1, max_length=300)
+
+
+class ActionReceiptV1(BaseModel):
+    """Durable state and fencing evidence for one external effect."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract: Literal["pa.followup-action-receipt/v1"] = ACTION_RECEIPT_V1
+    action_id: str
+    action_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=500)
+    status: ActionReceiptStatus = ActionReceiptStatus.PLANNED
+    fencing_token: int = Field(default=0, ge=0)
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
+    approval: ActionApprovalV1 | None = None
+    planned_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    result: Any = None
+    error: str | None = Field(default=None, max_length=1_000)
+    reconciliation: dict[str, Any] | None = None
+    history: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
 
 
 class _ActionParameters(BaseModel):
@@ -359,6 +409,27 @@ class FollowupActionV1(BaseModel):
     executed_at: datetime | None = None
     audit: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
 
+    def binding(self) -> dict[str, Any]:
+        return {
+            "name": self.name.value,
+            "parameters": self.parameters,
+            "preconditions": self.preconditions,
+            "target_scope": self.target_scope,
+            "safety": self.safety.value,
+        }
+
+    @property
+    def binding_digest(self) -> str:
+        return canonical_digest(self.binding())
+
+    @property
+    def target_digest(self) -> str:
+        return canonical_digest(self.target_scope)
+
+    @property
+    def payload_digest(self) -> str:
+        return canonical_digest({"name": self.name.value, "parameters": self.parameters})
+
     @model_validator(mode="after")
     def validate_parameters_and_policy(self) -> FollowupActionV1:
         model = _ACTION_PARAMETERS[self.name]
@@ -420,6 +491,14 @@ class PostTurnEvaluationV1(BaseModel):
             )
         if len(names) != len(set(names)):
             raise ValueError("duplicate follow-up action names are not allowed")
+        for action in self.recommended_actions:
+            action.action_id = canonical_digest(
+                {
+                    "snapshot_id": self.snapshot_id,
+                    "authority_version": self.observed_authority_version,
+                    "binding": action.binding(),
+                }
+            )
         return self
 
 
@@ -471,7 +550,7 @@ def _action(
     safety: SafetyClassification = SafetyClassification.RECORD_ONLY,
     approval: bool | None = None,
 ) -> FollowupActionV1:
-    return FollowupActionV1(
+    action = FollowupActionV1(
         name=name,
         parameters=parameters,
         preconditions={
@@ -500,6 +579,10 @@ def _action(
             name in _APPROVAL_REQUIRED if approval is None else approval
         ),
     )
+    action.action_id = canonical_digest(
+        {"inputs": action.idempotency_key_inputs, "binding": action.binding()}
+    )
+    return action
 
 
 class PostTurnEvaluator:

@@ -29,7 +29,12 @@ from pa.core.async_runtime import (
     BlockingQueueFull,
 )
 from pa.core.io import atomic_write_json, atomic_write_text
-from pa.execution.post_turn import PostTurnEvaluationV1, TurnEndSnapshotV1
+from pa.execution.post_turn import (
+    ActionReceiptStatus,
+    ActionReceiptV1,
+    PostTurnEvaluationV1,
+    TurnEndSnapshotV1,
+)
 from pa.execution.progress import (
     MAX_PROGRESS_EVENTS,
     MAX_PROGRESS_SEEN_KEYS,
@@ -260,6 +265,7 @@ class DispatchRecord(BaseModel):
     turn_end_snapshots: list[TurnEndSnapshotV1] = Field(default_factory=list)
     post_turn_context_digests: dict[str, str] = Field(default_factory=dict)
     post_turn_evaluations: list[PostTurnEvaluationV1] = Field(default_factory=list)
+    post_turn_action_receipts: dict[str, ActionReceiptV1] = Field(default_factory=dict)
     followup_turns: list[dict[str, Any]] = Field(default_factory=list)
     lifecycle_inconsistencies: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -2828,6 +2834,72 @@ class DispatchStore:
             record.updated_at = datetime.now(UTC)
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
+
+    def claim_post_turn_action(
+        self,
+        dispatch_id: str,
+        receipt: ActionReceiptV1,
+    ) -> tuple[DispatchRecord, ActionReceiptV1, bool]:
+        """Atomically install a durable started receipt and fencing token."""
+        with self._lock:
+            self._require_writer()
+            now = datetime.now(UTC)
+            with self._transaction(durability="full") as conn:
+                row = conn.execute(
+                    "SELECT payload_json FROM dispatches WHERE dispatch_id=?",
+                    (dispatch_id,),
+                ).fetchone()
+                if not row:
+                    raise KeyError(dispatch_id)
+                record = DispatchRecord.model_validate_json(row["payload_json"])
+                existing = record.post_turn_action_receipts.get(receipt.action_id)
+                if existing:
+                    if existing.action_digest != receipt.action_digest:
+                        raise ValueError("post-turn action binding conflict")
+                    return record, existing, False
+                receipt.status = ActionReceiptStatus.STARTED
+                receipt.fencing_token = 1
+                receipt.started_at = now
+                receipt.history.extend(
+                    [
+                        {"status": "planned", "at": receipt.planned_at.isoformat()},
+                        {"status": "started", "at": now.isoformat(), "fencing_token": 1},
+                    ]
+                )
+                record.post_turn_action_receipts[receipt.action_id] = receipt
+                record.updated_at = now
+                self._persist_record_conn(conn, record)
+            self._publish_records_locked([record])
+            return self._snapshot(record), receipt.model_copy(deep=True), True
+
+    def finish_post_turn_action(
+        self,
+        dispatch_id: str,
+        receipt: ActionReceiptV1,
+    ) -> DispatchRecord:
+        """Finalize only the exact currently fenced action claim."""
+        with self._lock:
+            self._require_writer()
+            with self._transaction(durability="full") as conn:
+                row = conn.execute(
+                    "SELECT payload_json FROM dispatches WHERE dispatch_id=?",
+                    (dispatch_id,),
+                ).fetchone()
+                if not row:
+                    raise KeyError(dispatch_id)
+                record = DispatchRecord.model_validate_json(row["payload_json"])
+                current = record.post_turn_action_receipts.get(receipt.action_id)
+                if (
+                    not current
+                    or current.action_digest != receipt.action_digest
+                    or current.fencing_token != receipt.fencing_token
+                ):
+                    raise ValueError("stale post-turn action fence")
+                record.post_turn_action_receipts[receipt.action_id] = receipt
+                record.updated_at = datetime.now(UTC)
+                self._persist_record_conn(conn, record)
+            self._publish_records_locked([record])
+            return self._snapshot(record)
 
     def mutate_current(
         self,
