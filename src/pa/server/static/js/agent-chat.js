@@ -3450,10 +3450,16 @@
     const generation = this.subscriptionGeneration;
     this.closePending = true;
     this.renderSessionActions();
-    this.api("/sessions/" + targetSessionId + "/close", { method: "POST", body: "{}" }).then(function () {
+    this.api("/sessions/" + targetSessionId + "/close", { method: "POST", body: "{}" }).then(function (result) {
       if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
       if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
       self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
+      const recovery = result && result.recovery || {};
+      self.showRecoveryActions({
+        recoverable: recovery.recoverable,
+        history_url: "/api/agent/history/" + targetSessionId,
+      });
+      self.renderSessionActions({ terminal: true, recoverable: recovery.recoverable === true });
       refreshSessionList(null);
     }).catch(function (err) {
       if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
