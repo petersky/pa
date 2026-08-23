@@ -314,8 +314,9 @@ class SyncEngine:
         self._push_callbacks.append(callback)
 
     def on_head_advanced(
-        self, callback: Callable[[str], dict[str, Any] | None]
+        self, callback: Callable[..., dict[str, Any] | None]
     ) -> None:
+        # Callback may accept (realm_id) or (realm_id, target_head=None).
         self._rebuild_projection = callback
 
     def _headers(self) -> dict[str, str]:
@@ -800,18 +801,43 @@ class SyncEngine:
         ]
         return result
 
+    def _rebuild_to_head(
+        self, realm_id: str, target_head: str | None = None
+    ) -> dict[str, Any] | None:
+        if not self._rebuild_projection:
+            return None
+        try:
+            return self._rebuild_projection(realm_id, target_head)
+        except TypeError:
+            # Older one-arg callbacks remain supported.
+            return self._rebuild_projection(realm_id)
+
     def _reconcile_remote_head(self, realm_id: str, remote_head: str) -> dict:
         for attempt in range(1, 4):
             local_head = self.log.get_head(realm_id)
             if local_head == remote_head:
+                # Repair projection lag even when the durable tip already matches.
+                projection = self._rebuild_to_head(realm_id, remote_head) or {}
+                if projection.get("commits_applied") or projection.get("rebuilt"):
+                    return {
+                        "advanced": False,
+                        "repaired_projection": True,
+                        "head": local_head,
+                        "attempts": attempt,
+                        **projection,
+                    }
                 return {"advanced": False, "head": local_head, "attempts": attempt}
             try:
                 if not local_head:
                     if not self.log.get_commit(remote_head):
                         return {"advanced": False, "missing_head": remote_head}
+                    # Catch up projection before publishing the durable tip so a
+                    # failed rebuild cannot leave head ahead of projection.
+                    projection = self._rebuild_to_head(realm_id, remote_head)
                     self.log.advance_ref(realm_id, remote_head, expected_head=None)
                     advanced_head = remote_head
                 elif self.log.is_ancestor(local_head, remote_head):
+                    projection = self._rebuild_to_head(realm_id, remote_head)
                     self.log.advance_ref(
                         realm_id, remote_head, expected_head=local_head
                     )
@@ -856,11 +882,7 @@ class SyncEngine:
                         ),
                     )
                     advanced_head = merge.hash
-                projection = (
-                    self._rebuild_projection(realm_id)
-                    if self._rebuild_projection
-                    else None
-                )
+                    projection = self._rebuild_to_head(realm_id, advanced_head)
                 self.invalidate_prepared(realm_id)
                 return {
                     "advanced": True,
@@ -988,12 +1010,43 @@ class SyncEngine:
             }
 
     def _inventory_page(
-        self, pending: list[str], seen_commits: set[str]
+        self,
+        pending: list[str],
+        seen_commits: set[str],
+        pending_events: list[str] | None = None,
     ) -> tuple[dict[str, bytes], dict[str, list[str]]]:
-        """Read one bounded head-first page without walking known ancestry."""
+        """Read one bounded head-first page without walking known ancestry.
+
+        Oversized single-commit event fanouts spill into ``pending_events`` and
+        continue on later pages instead of aborting anti-entropy.
+        """
+        if pending_events is None:
+            pending_events = []
         raw: dict[str, bytes] = {}
         parents: dict[str, list[str]] = {}
         inventory_bytes = 0
+
+        def _can_add(estimated: int) -> bool:
+            if len(raw) >= SYNC_INVENTORY_MAX_OBJECTS:
+                return False
+            if raw and inventory_bytes + estimated > SYNC_INVENTORY_MAX_BYTES:
+                return False
+            return True
+
+        while pending_events:
+            event_hash = pending_events[-1]
+            if not event_hash or event_hash in raw:
+                pending_events.pop()
+                continue
+            estimated = len(event_hash) + 8
+            if not _can_add(estimated):
+                break
+            pending_events.pop()
+            event_data = self.store.get(event_hash)
+            if event_data is not None:
+                raw[event_hash] = event_data
+                inventory_bytes += estimated
+
         while pending and len(raw) < SYNC_INVENTORY_MAX_OBJECTS:
             commit_hash = pending.pop()
             if not commit_hash or commit_hash in seen_commits:
@@ -1014,17 +1067,18 @@ class SyncEngine:
             pending.extend(
                 item for item in reversed(commit.parent_hashes) if item
             )
+            spill_events = False
             for event_hash in commit.event_hashes:
                 if not event_hash or event_hash in raw:
                     continue
+                if spill_events:
+                    pending_events.append(event_hash)
+                    continue
                 estimated = len(event_hash) + 8
-                if (
-                    len(raw) >= SYNC_INVENTORY_MAX_OBJECTS
-                    or inventory_bytes + estimated > SYNC_INVENTORY_MAX_BYTES
-                ):
-                    # Event objects are sent with their commit page. A single
-                    # commit with an extreme event fanout is rejected safely.
-                    raise ValueError("sync commit exceeds bounded inventory limits")
+                if not _can_add(estimated):
+                    pending_events.append(event_hash)
+                    spill_events = True
+                    continue
                 event_data = self.store.get(event_hash)
                 if event_data is not None:
                     raw[event_hash] = event_data
@@ -1056,18 +1110,20 @@ class SyncEngine:
     ) -> dict:
         base = route.target_url.rstrip("/")
         pending = [head]
+        pending_events: list[str] = []
         seen_commits: set[str] = set()
         sent_count = 0
         sent_bytes = 0
         inventory_batches = 0
         object_batches = 0
         started = time.perf_counter()
-        while pending:
+        while pending or pending_events:
             raw, parents = await self._offload(
                 "sync.object_collect",
                 self._inventory_page,
                 pending,
                 seen_commits,
+                pending_events,
                 timeout=60.0,
             )
             if not raw:
@@ -1242,6 +1298,19 @@ class SyncEngine:
                 conflicts=[],
                 attempt=0,
             )
+            # Repair local projection lag before peer exchange so peers with a
+            # matching durable tip still catch up their SQLite projection.
+            local_tip = await self._offload(
+                "sync.ref_read", self.log.get_head, realm_id
+            )
+            if local_tip and self._rebuild_projection:
+                await self._offload(
+                    "sync.projection_repair",
+                    self._rebuild_to_head,
+                    realm_id,
+                    local_tip,
+                    timeout=60.0,
+                )
             if not routes:
                 head = await self._offload(
                     "sync.ref_read", self.log.get_head, realm_id

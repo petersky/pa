@@ -340,3 +340,162 @@ def test_merge_heavy_incremental_index_advance(tmp_path: Path) -> None:
         )
     )
     assert log.index.indexed_head("default") == newer.hash
+
+
+def test_oversized_commit_event_fanout_is_paginated(tmp_path: Path) -> None:
+    """Single-commit fanout must spill across inventory pages, never hard-fail."""
+    from pa.sync.engine import SYNC_INVENTORY_MAX_OBJECTS
+
+    store = ObjectStore(tmp_path / "objects")
+    log = EventLog(store, tmp_path, "local", cursor_secret="test")
+    base = _append_chain(log, 1)
+    event_hashes: list[str] = []
+    fanout = SYNC_INVENTORY_MAX_OBJECTS + 40
+    for index in range(fanout):
+        event = CardEvent(
+            type=EventType.CARD_UPDATED,
+            realm_id="default",
+            card_id="fanout-card",
+            author_principal="user:test",
+            author_instance="local",
+            payload={"title": f"e-{index}", "updated_at": f"v{index}"},
+        )
+        event_hashes.append(store.put_json(event.model_dump(mode="json")))
+    commit = SyncCommit(
+        hash="",
+        realm_id="default",
+        instance_id="local",
+        parent_hashes=[base],
+        event_hashes=event_hashes,
+        author_principal="user:test",
+    )
+    commit.hash = store.put_json(commit.model_dump(mode="json"))
+    log.advance_ref("default", commit.hash, expected_head=base)
+
+    engine = SyncEngine(
+        Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False),
+        store,
+        log,
+        PeerTable(tmp_path),
+        MembershipStore(tmp_path),
+    )
+    pending = [commit.hash]
+    pending_events: list[str] = []
+    seen: set[str] = set()
+    seen_objects: set[str] = set()
+    pages = 0
+    while pending or pending_events:
+        raw, _parents = engine._inventory_page(pending, seen, pending_events)
+        assert len(raw) <= SYNC_INVENTORY_MAX_OBJECTS
+        seen_objects.update(raw)
+        pages += 1
+        assert pages < 20
+    assert commit.hash in seen_objects
+    assert event_hashes[0] in seen_objects
+    assert event_hashes[-1] in seen_objects
+    assert pages >= 2
+
+
+def test_reconcile_catches_up_before_advancing_durable_head(tmp_path: Path) -> None:
+    store = ObjectStore(tmp_path / "objects")
+    log = EventLog(store, tmp_path, "local", cursor_secret="test")
+    _append_chain(log, 1)
+    mid_event = CardEvent(
+        type=EventType.CARD_UPDATED,
+        realm_id="default",
+        card_id="scale-card",
+        author_principal="user:test",
+        author_instance="local",
+        payload={"id": "scale-card", "title": "mid", "updated_at": "mid"},
+    )
+    _, mid_commit = log.append_event(mid_event)
+    tip_event = CardEvent(
+        type=EventType.CARD_UPDATED,
+        realm_id="default",
+        card_id="scale-card",
+        author_principal="user:test",
+        author_instance="local",
+        payload={"id": "scale-card", "title": "tip", "updated_at": "tip"},
+    )
+    _, tip_commit = log.append_event(tip_event)
+    # Roll durable tip back to mid while tip objects remain available.
+    log.advance_ref("default", mid_commit.hash, expected_head=tip_commit.hash)
+
+    engine = SyncEngine(
+        Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False),
+        store,
+        log,
+        PeerTable(tmp_path),
+        MembershipStore(tmp_path),
+    )
+    order: list[str] = []
+
+    def rebuild(realm_id: str, target_head: str | None = None) -> dict:
+        order.append(f"catch_up:{target_head}")
+        return {"commits_applied": 1, "rebuilt": False, "reason": "fast_forward"}
+
+    engine.on_head_advanced(rebuild)
+    original = log.advance_ref
+
+    def tracked_advance(realm_id, head_hash, *, expected_head=None):
+        order.append(f"advance:{head_hash}")
+        return original(realm_id, head_hash, expected_head=expected_head)
+
+    with patch.object(log, "advance_ref", side_effect=tracked_advance):
+        result = engine._reconcile_remote_head("default", tip_commit.hash)
+    assert result["advanced"] is True
+    assert order[0].startswith("catch_up:")
+    assert order[1].startswith("advance:")
+    assert log.get_head("default") == tip_commit.hash
+
+
+def test_reconcile_skips_advance_when_projection_catch_up_fails(
+    tmp_path: Path,
+) -> None:
+    store = ObjectStore(tmp_path / "objects")
+    log = EventLog(store, tmp_path, "local", cursor_secret="test")
+    _append_chain(log, 1)
+    mid_event = CardEvent(
+        type=EventType.CARD_UPDATED,
+        realm_id="default",
+        card_id="scale-card",
+        author_principal="user:test",
+        author_instance="local",
+        payload={"id": "scale-card", "title": "mid", "updated_at": "mid"},
+    )
+    _, mid_commit = log.append_event(mid_event)
+    tip_event = CardEvent(
+        type=EventType.CARD_UPDATED,
+        realm_id="default",
+        card_id="scale-card",
+        author_principal="user:test",
+        author_instance="local",
+        payload={"id": "scale-card", "title": "tip", "updated_at": "tip"},
+    )
+    _, tip_commit = log.append_event(tip_event)
+    log.advance_ref("default", mid_commit.hash, expected_head=tip_commit.hash)
+
+    engine = SyncEngine(
+        Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False),
+        store,
+        log,
+        PeerTable(tmp_path),
+        MembershipStore(tmp_path),
+    )
+
+    def boom(realm_id: str, target_head: str | None = None) -> dict:
+        raise RuntimeError("projection catch-up failed")
+
+    engine.on_head_advanced(boom)
+    advanced = {"called": False}
+    original = log.advance_ref
+
+    def guarded(realm_id, head_hash, *, expected_head=None):
+        advanced["called"] = True
+        return original(realm_id, head_hash, expected_head=expected_head)
+
+    with patch.object(log, "advance_ref", side_effect=guarded):
+        with pytest.raises(RuntimeError, match="projection catch-up failed"):
+            engine._reconcile_remote_head("default", tip_commit.hash)
+    assert advanced["called"] is False
+    assert log.get_head("default") == mid_commit.hash

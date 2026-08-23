@@ -99,6 +99,12 @@ Normal peer exchange is head-first and O(delta) for converged peers:
 3. Otherwise pull missing objects along the peer tip with bounded `/api/sync/get`
    pages; push with `/api/sync/need` + batched `/api/sync/push`.
 
+Inventory pages never abort when a single commit's event fanout exceeds the
+bounded inventory size: remaining event hashes spill into later pages. Push and
+reconcile catch up the SQLite projection **before** publishing a durable tip so
+a failed rebuild cannot leave `head` ahead of `projection_head`. Converge also
+repairs local projection lag before peer exchange.
+
 Legacy full-history preparation is **not** used on the normal path. Peers that
 only accept legacy bundles and whose reachable history exceeds the soft limit
 (`LEGACY_BUNDLE_SOFT_LIMIT`, 2000 objects) are quarantined as

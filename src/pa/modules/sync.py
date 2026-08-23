@@ -212,8 +212,10 @@ def _apply_sync_push_local(
             try:
                 if local_head and local_head != head_hash:
                     if log.is_ancestor(local_head, head_hash):
-                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                        # Catch up before publishing the durable tip so a failed
+                        # projection rebuild cannot leave head ahead of SQLite.
                         projection = store.catch_up_projection(realm_id, head_hash)
+                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
                         head_changed = True
                     elif log.is_ancestor(head_hash, local_head):
                         head_hash = local_head
@@ -247,8 +249,8 @@ def _apply_sync_push_local(
                         projection = store.catch_up_projection(realm_id, head_hash)
                         head_changed = True
                 elif local_head != head_hash:
-                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
                     projection = store.catch_up_projection(realm_id, head_hash)
+                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
                     head_changed = True
             except StaleSyncHeadError as exc:
                 raise HTTPException(
@@ -1257,9 +1259,11 @@ class SyncModule(Module):
         event_log.append_event = append_with_sync  # type: ignore[method-assign]
 
         store = ctx.store
-        def rebuild_projection(realm_id: str) -> dict[str, Any]:
+        def rebuild_projection(
+            realm_id: str, target_head: str | None = None
+        ) -> dict[str, Any]:
             with store.mutation():
-                head = event_log.get_head(realm_id)
+                head = target_head or event_log.get_head(realm_id)
                 result = (
                     store.catch_up_projection(realm_id, head)
                     if head
