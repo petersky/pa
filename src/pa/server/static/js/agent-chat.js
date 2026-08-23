@@ -10,6 +10,9 @@
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
   const TRANSCRIPT_PAGE_LIMIT = 250;
   const TRANSCRIPT_LATENCY_BUDGET_MS = 2000;
+  // Paint roughly 3–4 viewport pages of recent chat immediately; older pages
+  // load upward on demand. SSE must not replay a 1,000-event history.
+  const INITIAL_VISIBLE_EVENTS = 120;
   // Browser retention is deliberately smaller than durable history. These are
   // public through memoryDiagnostics() so layout/memory regressions can assert
   // the contract without sampling implementation-specific browser heaps.
@@ -21,7 +24,13 @@
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
+  const PROMPT_SUBMIT_TIMEOUT_MS = 2000;
+  const PROMPT_RECONCILE_TIMEOUT_MS = 2000;
+  const OWNER_ROUTE_MAX_RETRIES = 3;
+  const SESSION_DOM_CACHE_LIMIT = 6;
+  const SESSION_DOM_CACHE_TTL_MS = 30 * 60 * 1000;
 
+  const sessionDomCache = new Map();
   let libsPromise = null;
 
   function loadScript(src) {
@@ -284,6 +293,10 @@
     this.prompting = false;
     this.submissionPending = false;
     this.submissionState = "idle";
+    this.submissionRetryVisible = false;
+    this.submissionRetryReason = "";
+    this.submissionReconcileId = null;
+    this.providerId = root.dataset.provider || "";
     this.composerEnabled = true;
     this.turnActive = false;
     // Treat a preselected session as unavailable until its durable/live state
@@ -308,10 +321,12 @@
     this.commandSelectedIndex = 0;
     this.commandLoading = false;
     this.commandError = "";
+    this.activeExplanation = null;
 
     this.startupRetryId = null;
     this.startupRetryCount = 0;
     this.liveStateRetryId = null;
+    this.liveStateRetryCount = 0;
     this._bind();
     this.renderSessionActions();
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
@@ -527,13 +542,21 @@
     });
   };
 
-  AgentChatWidget.prototype.apiWithTimeout = function (path, timeoutMs) {
+  AgentChatWidget.prototype.apiWithTimeout = function (path, timeoutMs, opts) {
+    opts = opts || {};
     const controller = new AbortController();
     const timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
-    return this.api(path, { signal: controller.signal })
+    if (timeoutId && typeof timeoutId.unref === "function") timeoutId.unref();
+    const requestOpts = Object.assign({}, opts, { signal: controller.signal });
+    return this.api(path, requestOpts)
       .catch(function (error) {
         if (error && error.name === "AbortError") {
-          throw new Error("Live state request exceeded its latency budget.");
+          const timeoutError = new Error(
+            "Request exceeded its " + timeoutMs + "ms latency budget."
+          );
+          timeoutError.code = "request_timeout";
+          timeoutError.timeout = true;
+          throw timeoutError;
         }
         throw error;
       })
@@ -865,6 +888,12 @@
   AgentChatWidget.prototype._scheduleLiveStateRetry = function (sessionId, generation, reroute) {
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     const self = this;
+    const attempt = this.liveStateRetryCount || 0;
+    const delay = Math.min(
+      30000,
+      LIVE_STATE_RETRY_MS * Math.pow(2, Math.min(4, attempt))
+    );
+    this.liveStateRetryCount = attempt + 1;
     this.liveStateRetryId = setTimeout(function () {
       self.liveStateRetryId = null;
       if (self.destroyed || generation !== self.subscriptionGeneration) return;
@@ -873,34 +902,205 @@
       } else {
         self._loadLiveSnapshot(sessionId, generation);
       }
-    }, LIVE_STATE_RETRY_MS);
+    }, delay);
+  };
+
+  AgentChatWidget.prototype._cacheKey = function (sessionId) {
+    return String(sessionId || "") + "::" + String(this.apiBase || "");
+  };
+
+  AgentChatWidget.prototype._stashSessionDomCache = function () {
+    if (!this.sessionId || !this.els.messages) return;
+    const key = this._cacheKey(this.sessionId);
+    const messages = [];
+    Array.from(this.els.messages.children).forEach(function (child) {
+      if (
+        child.hasAttribute("data-acw-placeholder") ||
+        child.hasAttribute("data-acw-load-older") ||
+        child.hasAttribute("data-acw-load-older-status") ||
+        child.hasAttribute("data-acw-load-newer") ||
+        child.hasAttribute("data-acw-load-newer-status")
+      ) return;
+      messages.push(child.cloneNode(true));
+    });
+    if (!messages.length && !this.transcriptEvents.length) return;
+    const tools = [];
+    if (this.els.toolActivity) {
+      Array.from(this.els.toolActivity.children).forEach(function (child) {
+        if (child.hasAttribute("data-acw-tool-empty")) return;
+        tools.push(child.cloneNode(true));
+      });
+    }
+    sessionDomCache.set(key, {
+      capturedAt: Date.now(),
+      lastSeq: this.lastSeq,
+      transcriptEvents: this.transcriptEvents.slice(),
+      hasOlder: this.hasOlder,
+      olderCursor: this.olderCursor,
+      hasNewer: this.hasNewer,
+      newerCursor: this.newerCursor,
+      providerId: this.providerId,
+      messagesHtml: messages.map(function (node) { return node.outerHTML; }).join(""),
+      toolsHtml: tools.map(function (node) { return node.outerHTML; }).join(""),
+      scrollTop: this.els.messages.scrollTop,
+      nearBottom: this.isNearBottom(),
+    });
+    while (sessionDomCache.size > SESSION_DOM_CACHE_LIMIT) {
+      const oldest = sessionDomCache.keys().next().value;
+      sessionDomCache.delete(oldest);
+    }
+  };
+
+  AgentChatWidget.prototype._restoreSessionDomCache = function (sessionId) {
+    const entry = sessionDomCache.get(this._cacheKey(sessionId));
+    if (!entry) return false;
+    if (Date.now() - entry.capturedAt > SESSION_DOM_CACHE_TTL_MS) {
+      sessionDomCache.delete(this._cacheKey(sessionId));
+      return false;
+    }
+    this.transcriptEvents = (entry.transcriptEvents || []).slice();
+    this.lastSeq = entry.lastSeq || 0;
+    this.hasOlder = !!entry.hasOlder;
+    this.olderCursor = entry.olderCursor || null;
+    this.hasNewer = !!entry.hasNewer;
+    this.newerCursor = entry.newerCursor || null;
+    this.providerId = entry.providerId || this.providerId;
+    this._rebuildSeenEvents();
+    if (this.els.messages) {
+      Array.from(this.els.messages.children).forEach(function (child) {
+        if (
+          !child.hasAttribute("data-acw-placeholder") &&
+          !child.hasAttribute("data-acw-load-older") &&
+          !child.hasAttribute("data-acw-load-older-status") &&
+          !child.hasAttribute("data-acw-load-newer") &&
+          !child.hasAttribute("data-acw-load-newer-status")
+        ) child.remove();
+      });
+      if (entry.messagesHtml) {
+        const holder = document.createElement("div");
+        holder.innerHTML = entry.messagesHtml;
+        while (holder.firstChild) this.els.messages.appendChild(holder.firstChild);
+        this.clearPlaceholder();
+      }
+      this.messageRowCount = this.els.messages.querySelectorAll(".acw-msg").length;
+      if (entry.nearBottom) this.scrollToBottom();
+      else this.els.messages.scrollTop = entry.scrollTop || 0;
+    }
+    if (this.els.toolActivity && entry.toolsHtml) {
+      Array.from(this.els.toolActivity.children).forEach(function (child) {
+        if (!child.hasAttribute("data-acw-tool-empty")) child.remove();
+      });
+      const holder = document.createElement("div");
+      holder.innerHTML = entry.toolsHtml;
+      while (holder.firstChild) this.els.toolActivity.appendChild(holder.firstChild);
+      if (this.els.toolEmpty) this.els.toolEmpty.hidden = true;
+      this.activityCount = this.els.toolActivity.querySelectorAll(
+        ".acw-tool,.acw-progress-update,.acw-explanation"
+      ).length;
+    }
+    this.updateOlderControl();
+    this.updateNewerControl();
+    return true;
+  };
+
+  AgentChatWidget.prototype._paintRecentHistory = function (history, generation) {
+    if (this.destroyed) return null;
+    if (
+      generation != null &&
+      this.subscriptionGeneration != null &&
+      generation !== this.subscriptionGeneration
+    ) {
+      return null;
+    }
+    const events = history && history.events || [];
+    const page = history && history.page || {};
+    let paint = events.slice();
+    let truncated = false;
+    if (paint.length > INITIAL_VISIBLE_EVENTS) {
+      paint = paint.slice(paint.length - INITIAL_VISIBLE_EVENTS);
+      truncated = true;
+    }
+    this.hasOlder = !!(page.has_older || truncated);
+    this.olderCursor = page.next_before_seq || page.oldest_seq ||
+      (paint.length ? paint[0].seq : null);
+    this.hasNewer = !!page.has_newer;
+    this.newerCursor = page.newest_seq ||
+      (paint.length ? paint[paint.length - 1].seq : null);
+    this.renderTranscript(paint, { scrollBottom: true, recentFirst: true });
+    if (paint.length) {
+      this.lastSeq = paint.reduce(function (max, event) {
+        return event.seq && event.seq > max ? event.seq : max;
+      }, this.lastSeq || 0);
+    }
+    if (history && history.session) {
+      this.providerId = history.session.agent_name || this.providerId;
+    }
+    return history;
+  };
+
+  AgentChatWidget.prototype._loadRecentHistory = function (sessionId, generation) {
+    const self = this;
+    return this.apiWithTimeout(
+      "/history/" + encodeURIComponent(sessionId) +
+        "?limit=" + Math.min(TRANSCRIPT_PAGE_LIMIT, INITIAL_VISIBLE_EVENTS),
+      LIVE_SNAPSHOT_TIMEOUT_MS
+    ).then(function (history) {
+      return self._paintRecentHistory(history, generation);
+    });
   };
 
   AgentChatWidget.prototype._loadLiveSnapshot = function (sessionId, generation) {
     const self = this;
-    return this.apiWithTimeout(
-      "/sessions/" + encodeURIComponent(sessionId),
-      LIVE_SNAPSHOT_TIMEOUT_MS
-    ).then(function (snap) {
+    const restored = this._restoreSessionDomCache(sessionId);
+    const historyPromise = restored
+      ? Promise.resolve(null)
+      : this._loadRecentHistory(sessionId, generation).catch(function () { return null; });
+    return Promise.all([
+      historyPromise,
+      this.apiWithTimeout(
+        "/sessions/" + encodeURIComponent(sessionId),
+        LIVE_SNAPSHOT_TIMEOUT_MS
+      ),
+    ]).then(function (results) {
       if (self.destroyed || generation !== self.subscriptionGeneration) return null;
+      const history = results[0];
+      const snap = results[1];
       if (self.liveStateRetryId) clearTimeout(self.liveStateRetryId);
       self.liveStateRetryId = null;
+      self.liveStateRetryCount = 0;
       self.showRecoveryActions({});
+      if (history) self._paintRecentHistory(history, generation);
       self.applySnapshot(snap);
       self.connectSSE();
       self.refreshBrowserState();
+      self.reconcilePendingSubmission();
       return snap;
     }).catch(function () {
       if (self.destroyed || generation !== self.subscriptionGeneration) return null;
       self.sessionRoute = Object.assign({}, self.sessionRoute || {}, { state: "live_degraded" });
       self.setStatus("offline");
       self.setComposerEnabled(false);
-      self.setPlaceholder(
-        "Live controls are temporarily unavailable. Durable history is shown; PA will retry automatically."
-      );
-      self._setRecoveryControl(true, "Retry live state");
-      self._scheduleLiveStateRetry(sessionId, generation, false);
-      return null;
+      const historyFallback = restored
+        ? Promise.resolve(null)
+        : self._loadRecentHistory(sessionId, generation).catch(function () { return null; });
+      return historyFallback.then(function () {
+        self.setPlaceholder(
+          "Live controls are temporarily unavailable. Durable history is shown when available; PA will retry automatically."
+        );
+        self._setRecoveryControl(true, "Retry live state");
+        self.reconcilePendingSubmission({
+          unreachable: true,
+          reason: "Live state timed out before prompt acceptance could be confirmed.",
+        });
+        if ((self.liveStateRetryCount || 0) >= OWNER_ROUTE_MAX_RETRIES) {
+          self.setPlaceholder(
+            "Live controls remain unavailable after automatic retries. Use Retry live state when ready."
+          );
+          return null;
+        }
+        self._scheduleLiveStateRetry(sessionId, generation, false);
+        return null;
+      });
     });
   };
 
@@ -926,6 +1126,7 @@
     const generation = ++this.subscriptionGeneration;
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     this.liveStateRetryId = null;
+    this.liveStateRetryCount = 0;
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
@@ -1438,6 +1639,7 @@
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
     const session = snap.session || {};
+    if (session.agent_name) this.providerId = session.agent_name;
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
@@ -1995,6 +2197,7 @@
 
   AgentChatWidget.prototype.destroy = function (reason) {
     if (this.destroyed) return;
+    this._stashSessionDomCache();
     this.destroyed = true;
     if (this.routeAbortController) this.routeAbortController.abort();
     this.routeAbortController = null;
@@ -2007,6 +2210,8 @@
     this.startupRetryId = null;
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     this.liveStateRetryId = null;
+    if (this.submissionReconcileId) clearTimeout(this.submissionReconcileId);
+    this.submissionReconcileId = null;
     Object.keys(this.toolTimers).forEach(function (key) {
       const timer = this.toolTimers[key];
       if (timer && timer.interval) clearInterval(timer.interval);
@@ -2073,7 +2278,10 @@
         if (!replay) this.setTurnActive(true, created, true);
         break;
       case "agent_message_chunk":
-        if (payload.phase === "commentary") {
+        if (this._isCodexProvider()) {
+          // Codex commentary/narrative belongs in the main chat transcript.
+          this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
+        } else if (payload.phase === "commentary") {
           this.appendActivityProgress(payload.message_id || "progress", payload.text || "", created);
         } else {
           this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
@@ -2083,7 +2291,11 @@
         this.renderCardDisposition(payload, created);
         break;
       case "agent_thought_chunk":
-        if (this.showThinking) {
+        if (this._isCodexProvider()) {
+          // Codex thought/explanation headings belong in Tool activity and
+          // become the nesting parent for subsequent tool rows.
+          this.appendExplanationHeading(payload.message_id || "thought", payload.text || "", created);
+        } else if (this.showThinking) {
           this.appendStream("thought", payload.message_id || "thought", payload.text || "", created);
         }
         break;
@@ -2388,10 +2600,58 @@
     this.streaming = {};
   };
 
+  AgentChatWidget.prototype._isCodexProvider = function () {
+    const provider = String(this.providerId || this.preferredProvider || "").toLowerCase();
+    return provider === "codex";
+  };
+
+  AgentChatWidget.prototype.appendExplanationHeading = function (key, chunk, ts) {
+    this.clearPlaceholder();
+    const shouldFollow = this.toolActivityIsNearBottom();
+    const activity = this.ensureActivity();
+    const id = "explanation:" + key;
+    let stream = this.activityStreams[id];
+    if (!stream) {
+      const group = document.createElement("div");
+      group.className = "acw-explanation";
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", "Agent explanation");
+      const heading = document.createElement("div");
+      heading.className = "acw-progress-update acw-explanation-heading";
+      group.appendChild(heading);
+      const tools = document.createElement("div");
+      tools.className = "acw-explanation-tools";
+      group.appendChild(tools);
+      activity.appendChild(group);
+      stream = { text: "", el: heading, group: group, tools: tools };
+      this.activityStreams[id] = stream;
+      this.activeExplanation = stream;
+      this.bumpActivityCount(activity);
+    } else {
+      this.activeExplanation = stream;
+    }
+    const next = chunk || "";
+    stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (stream.text.length > MAX_STREAM_CHARS) {
+      stream.text = "[… earlier explanation is available in durable history …]\n" +
+        stream.text.slice(-MAX_STREAM_CHARS);
+    }
+    stream.el.textContent = stream.text;
+    this._pruneActivityRows();
+    this.followToolActivity(shouldFollow);
+  };
+
   AgentChatWidget.prototype.ensureActivity = function () {
     this.currentActivity = this.els.toolActivity;
     if (this.els.toolEmpty) this.els.toolEmpty.hidden = true;
     return this.currentActivity;
+  };
+
+  AgentChatWidget.prototype._toolParent = function () {
+    if (this._isCodexProvider() && this.activeExplanation && this.activeExplanation.tools) {
+      return this.activeExplanation.tools;
+    }
+    return this.ensureActivity();
   };
 
   AgentChatWidget.prototype.bumpActivityCount = function (activity) {
@@ -2436,7 +2696,9 @@
 
   AgentChatWidget.prototype._pruneActivityRows = function () {
     if (!this.els.toolActivity || this.activityCount == null || this.activityCount <= MAX_ACTIVITY_ROWS) return;
-    let rows = Array.from(this.els.toolActivity.querySelectorAll(".acw-tool,.acw-progress-update"));
+    let rows = Array.from(this.els.toolActivity.querySelectorAll(
+      ".acw-tool,.acw-progress-update,.acw-explanation"
+    ));
     while (rows.length > MAX_ACTIVITY_ROWS) {
       const stale = rows.find(function (row) {
         return !row.dataset.toolId || !this.activeToolIds[row.dataset.toolId];
@@ -2448,13 +2710,14 @@
         delete this.toolTimers[staleId];
       }
       stale.remove();
-      rows = rows.filter(function (row) { return row !== stale; });
+      rows = rows.filter(function (candidate) { return candidate !== stale; });
     }
     this.activityCount = rows.length;
   };
 
   AgentChatWidget.prototype.finalizeActivity = function () {
     this.currentActivity = null;
+    this.activeExplanation = null;
     this.activityStreams = {};
     this.activeToolIds = {};
     this.updateToolAnimation();
@@ -2480,9 +2743,9 @@
         '<span class="acw-tool-timer muted"></span>' +
         '<span class="acw-tool-status muted"></span>' +
         "</div>";
-      const activity = this.ensureActivity();
-      activity.appendChild(el);
-      this.bumpActivityCount(activity);
+      const parent = this._toolParent();
+      parent.appendChild(el);
+      this.bumpActivityCount(this.ensureActivity());
       const eventTime = ts ? new Date(ts).getTime() : Date.now();
       this.toolTimers[id] = { started: eventTime, interval: null };
       const timerEl = el.querySelector(".acw-tool-timer");
@@ -2522,6 +2785,7 @@
 
   AgentChatWidget.prototype.resetArtifacts = function () {
     this.currentActivity = null;
+    this.activeExplanation = null;
     this.activityStreams = {};
     this.activityCount = 0;
     this.activeToolIds = {};
@@ -3096,12 +3360,22 @@
   };
 
   AgentChatWidget.prototype._syncSubmissionControls = function () {
+    const checking = this.submissionPending && (
+      this.submissionState === "reconnecting" ||
+      this.submissionState === "checking" ||
+      this.submissionState === "acknowledgement_uncertain"
+    );
+    const sending = this.submissionPending && this.submissionState === "sending";
     const disabled = !this.composerEnabled || this.submissionPending || this.sessionClosed;
     if (this.els.send) {
       this.els.send.disabled = disabled;
-      this.els.send.textContent = this.submissionPending
-        ? (this.submissionState === "reconnecting" ? "Checking…" : "Sending…")
-        : "Send";
+      this.els.send.textContent = checking
+        ? "Checking…"
+        : sending
+          ? "Sending…"
+          : this.submissionState === "retryable"
+            ? "Retry"
+            : "Send";
     }
     this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
       control.disabled = disabled;
@@ -3112,12 +3386,148 @@
     if (this.root && this.root.dataset) {
       this.root.dataset.submissionState = this.submissionState;
     }
+    let retry = this.root.querySelector("[data-acw-submission-retry]");
+    if (!retry && this.root && this.submissionRetryVisible) {
+      const status = this.root.querySelector("[data-acw-draft-status]");
+      const parent = (status && status.parentNode) ||
+        (this.els.form && typeof this.els.form.appendChild === "function" ? this.els.form : null);
+      if (parent && typeof document !== "undefined" && typeof document.createElement === "function") {
+        retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "button ghost acw-submission-retry";
+        retry.setAttribute("data-acw-submission-retry", "1");
+        retry.textContent = "Retry same prompt";
+        if (status && status.parentNode) parent.insertBefore(retry, status.nextSibling);
+        else parent.appendChild(retry);
+        const self = this;
+        retry.addEventListener("click", function () {
+          self.send("append");
+        });
+      }
+    }
+    if (retry) {
+      retry.hidden = !this.submissionRetryVisible;
+      retry.disabled = this.submissionPending || this.sessionClosed || !this.composerEnabled;
+      if (this.submissionRetryReason) retry.title = this.submissionRetryReason;
+    }
   };
 
-  AgentChatWidget.prototype.setSubmissionState = function (state, pending) {
+  AgentChatWidget.prototype.setSubmissionState = function (state, pending, options) {
+    options = options || {};
     this.submissionState = state || "idle";
     this.submissionPending = !!pending;
+    if (Object.prototype.hasOwnProperty.call(options, "retryVisible")) {
+      this.submissionRetryVisible = !!options.retryVisible;
+    } else if (state === "retryable" || state === "failed") {
+      this.submissionRetryVisible = true;
+    } else if (state === "idle" || state === "accepted" || state === "queued") {
+      this.submissionRetryVisible = false;
+      this.submissionRetryReason = "";
+    }
+    if (options.reason) this.submissionRetryReason = options.reason;
     this._syncSubmissionControls();
+  };
+
+  AgentChatWidget.prototype.markSubmissionAccepted = function (result, displayText, submittedImages, draftRawText) {
+    result = result || {};
+    const rawText = draftRawText == null ? displayText : draftRawText;
+    if (!this._isDuplicateUserBubble(displayText)) {
+      this.addBubble("user", displayText, new Date().toISOString(), {
+        images: (submittedImages || []).map(function (image) {
+          return {
+            name: image.name,
+            mime_type: image.mime_type,
+            data: image.data,
+            preview: image.preview || ("data:" + image.mime_type + ";base64," + image.data),
+          };
+        }),
+      });
+    }
+    this.setTurnActive(true);
+    this.scrollToBottom();
+    if (this.drafts) {
+      this.drafts.submissionAccepted({
+        rawText: rawText,
+        images: submittedImages || [],
+        message: result.queued ? "Prompt queued." : "Prompt accepted.",
+      });
+    } else if (this.els.input && this.els.input.value === rawText) {
+      this.els.input.value = "";
+      this.clearPendingImages();
+    }
+    this.setSubmissionState(result.queued ? "queued" : "accepted", false);
+    if (result.queued) this.refreshQueue();
+  };
+
+  AgentChatWidget.prototype.reconcilePendingSubmission = function (options) {
+    options = options || {};
+    const self = this;
+    const promptId = this.drafts && this.drafts.submissionId;
+    if (!promptId || !this.sessionId) {
+      if (options.unreachable && this.drafts && this.drafts.restoringSubmission) {
+        this.setSubmissionState("retryable", false, {
+          retryVisible: true,
+          reason: options.reason || "Prompt acceptance status is unavailable.",
+        });
+        this.drafts.restoringSubmission = false;
+        this.drafts.setStatus(
+          (options.reason || "Status unavailable.") +
+          " Retry reuses the same submission ID; duplicate execution is prevented."
+        );
+      }
+      return Promise.resolve(null);
+    }
+    if (this.submissionReconcileId) clearTimeout(this.submissionReconcileId);
+    this.setSubmissionState("checking", true);
+    if (this.drafts) {
+      this.drafts.setStatus("Checking durable acceptance for the previous prompt…");
+    }
+    const targetSessionId = this.sessionId;
+    const generation = this.subscriptionGeneration;
+    const started = performance.now();
+    return this.apiWithTimeout(
+      "/sessions/" + encodeURIComponent(targetSessionId) +
+        "/prompts/" + encodeURIComponent(promptId),
+      PROMPT_RECONCILE_TIMEOUT_MS
+    ).then(function (status) {
+      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return null;
+      const elapsed = performance.now() - started;
+      if (status && status.accepted) {
+        if (self.drafts) {
+          self.drafts.observeAcceptance(promptId, !!status.queued);
+          self.setSubmissionState(status.queued ? "queued" : "accepted", false);
+        } else {
+          const rawText = self.els.input && self.els.input.value || "";
+          self.markSubmissionAccepted(status, rawText, []);
+        }
+        self.addBubble(
+          "system",
+          (status.message || "Prompt accepted.") + " (reconciled in " + Math.round(elapsed) + "ms)",
+          new Date().toISOString(),
+          { system: true, forceVisible: true }
+        );
+        return status;
+      }
+      const reason = (status && status.message) ||
+        "No durable acceptance yet. Retry reuses the same ID and remains exactly once.";
+      self.setSubmissionState("retryable", false, { retryVisible: true, reason: reason });
+      if (self.drafts) {
+        self.drafts.restoringSubmission = false;
+        self.drafts.setStatus(reason);
+      }
+      return status;
+    }).catch(function (err) {
+      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return null;
+      const reason = options.reason ||
+        ("Prompt acceptance lookup failed: " + (err && err.message || "unreachable") +
+          ". Retry reuses the same submission ID; duplicate execution is prevented.");
+      self.setSubmissionState("retryable", false, { retryVisible: true, reason: reason });
+      if (self.drafts) {
+        self.drafts.restoringSubmission = false;
+        self.drafts.setStatus(reason);
+      }
+      return null;
+    });
   };
 
   AgentChatWidget.prototype.markSessionEnded = function (message) {
@@ -3386,20 +3796,25 @@
     const promptId = this.drafts
       ? this.drafts.beginSubmission()
       : (window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : String(Date.now()));
-    this.setSubmissionState("sending", true);
+    this.setSubmissionState("sending", true, { retryVisible: false });
     if (this.drafts) this.drafts.setStatus("Sending — waiting for durable acknowledgement…");
-    this.api("/sessions/" + targetSessionId + "/prompt", {
-      method: "POST",
-      headers: { "Idempotency-Key": promptId },
-      body: JSON.stringify({
-        message: text,
-        images: displayImages.map(function (image) {
-          return { name: image.name, mime_type: image.mime_type, data: image.data };
-        }),
-        action: act,
-        client_prompt_id: promptId,
+    const body = {
+      message: text,
+      images: displayImages.map(function (image) {
+        return { name: image.name, mime_type: image.mime_type, data: image.data };
       }),
-    })
+      action: act,
+      client_prompt_id: promptId,
+    };
+    this.apiWithTimeout(
+      "/sessions/" + targetSessionId + "/prompt",
+      PROMPT_SUBMIT_TIMEOUT_MS,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": promptId },
+        body: JSON.stringify(body),
+      }
+    )
       .then(function (res) {
         if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
         if (!res || !res.accepted) {
@@ -3407,26 +3822,29 @@
           error.acceptanceUnconfirmed = true;
           throw error;
         }
-        if (!self._isDuplicateUserBubble(text)) {
-          self.addBubble("user", text, new Date().toISOString(), { images: displayImages });
-        }
-        self.setTurnActive(true);
-        self.scrollToBottom();
-        if (self.drafts) {
-          self.drafts.submissionAccepted({
-            rawText: draftRawText,
-            images: submittedImages,
-            message: res.queued ? "Prompt queued." : "Prompt accepted.",
-          });
-        } else {
-          if (self.els.input && self.els.input.value === draftRawText) self.els.input.value = "";
-          self.clearPendingImages();
-        }
-        if (res.queued) self.refreshQueue();
+        self.markSubmissionAccepted(res, text, submittedImages, draftRawText);
       })
       .catch(function (err) {
         if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
         const code = apiErrorCode(err);
+        const timedOut = !!(err && (err.timeout || err.code === "request_timeout"));
+        const networkish = timedOut || err.acceptanceUnconfirmed ||
+          !err.status || err.status >= 500;
+        if (networkish) {
+          self.setSubmissionState("acknowledgement_uncertain", true, {
+            reason: "Acknowledgement is uncertain; checking durable acceptance…",
+          });
+          if (self.drafts) {
+            self.drafts.setStatus(
+              "Acknowledgement uncertain — checking durable acceptance without clearing the draft."
+            );
+          }
+          return self.reconcilePendingSubmission({
+            reason: timedOut
+              ? "Prompt submission exceeded its deadline before acknowledgement."
+              : (err.message || "Prompt acknowledgement was interrupted."),
+          });
+        }
         if (self.drafts) {
           self.drafts.submissionFailed({
             rawText: draftRawText,
@@ -3439,6 +3857,10 @@
             self.drafts.setStatus("Reconnecting — retry will reuse the same submission ID.");
           }
           self.addBubble("system", "Prompt not sent: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+          self.setSubmissionState("retryable", false, {
+            retryVisible: true,
+            reason: err.message,
+          });
           self.resolveSessionNotLive(err, targetSessionId, generation);
           return;
         }
@@ -3446,9 +3868,10 @@
           ? "Security token changed and automatic recovery failed. Your draft is preserved; retry once or reload PA."
           : "Prompt not sent: " + err.message;
         self.addBubble("system", message, new Date().toISOString(), { system: true, forceVisible: true });
-      })
-      .finally(function () {
-        self.setSubmissionState("idle", false);
+        self.setSubmissionState("failed", false, {
+          retryVisible: true,
+          reason: message,
+        });
       });
   };
 
@@ -4613,6 +5036,9 @@
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
     renderMarkdownAsync: renderMarkdownAsync,
+    INITIAL_VISIBLE_EVENTS: INITIAL_VISIBLE_EVENTS,
+    PROMPT_SUBMIT_TIMEOUT_MS: PROMPT_SUBMIT_TIMEOUT_MS,
+    sessionDomCache: sessionDomCache,
   };
 
   document.addEventListener("DOMContentLoaded", function () {

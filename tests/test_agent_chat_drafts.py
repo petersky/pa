@@ -830,6 +830,7 @@ Object.assign(widget, {
   els: { input: { value: "hello" }, send, form, messages: null },
   root: {
     dataset: {},
+    querySelector: function () { return null; },
     querySelectorAll: function () { return [action]; },
   },
   commandInvocation: function () { return null; },
@@ -846,6 +847,9 @@ Object.assign(widget, {
   scrollToBottom: noop,
   refreshQueue: noop,
   resolveSessionNotLive: noop,
+  clearPendingImages: noop,
+  submissionRetryVisible: false,
+  submissionRetryReason: "",
 });
 
 (async function () {

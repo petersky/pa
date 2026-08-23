@@ -2465,6 +2465,32 @@ code {
   white-space: pre-wrap;
 }
 
+.acw-explanation {
+  border-left: 2px solid var(--pa-border, var(--pa-accent));
+  padding-left: 0.55rem;
+  margin: 0.45rem 0;
+}
+
+.acw-explanation-heading {
+  font-weight: 600;
+  color: var(--pa-text, inherit);
+}
+
+.acw-explanation-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.acw-explanation-tools .acw-tool {
+  margin-left: 0.15rem;
+}
+
+.acw-submission-retry {
+  margin: 0.35rem 0 0;
+}
+
 .acw-composer,
 .acw-working,
 .acw-queue,

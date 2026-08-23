@@ -261,9 +261,17 @@
     this.dirty = false;
     if (this.restoringSubmission) {
       if (typeof this.widget.setSubmissionState === "function") {
-        this.widget.setSubmissionState("reconnecting", true);
+        this.widget.setSubmissionState("checking", true);
       }
       this.setStatus("Reconnecting — checking whether the previous prompt was accepted…");
+      if (typeof this.widget.reconcilePendingSubmission === "function") {
+        const self = this;
+        // Defer so openSession/live snapshot can establish apiBase first.
+        setTimeout(function () {
+          if (!self.restoringSubmission || !self.widget.root.isConnected) return;
+          self.widget.reconcilePendingSubmission();
+        }, 0);
+      }
     } else if (message) this.setStatus(message);
     else if (record && !record.cleared) this.setStatus("Draft restored from this browser.");
     else this.setStatus("No local draft.");
@@ -349,9 +357,20 @@
       }));
       return;
     }
+    // Live snapshots intentionally omit transcript pages. Keep checking until
+    // the bounded prompt-status reconcile settles; do not flip to retryable yet.
+    if (!Object.prototype.hasOwnProperty.call(snapshot, "transcript")) {
+      if (typeof this.widget.reconcilePendingSubmission === "function") {
+        this.widget.reconcilePendingSubmission();
+      }
+      return;
+    }
     this.restoringSubmission = false;
     if (typeof this.widget.setSubmissionState === "function") {
-      this.widget.setSubmissionState("retryable", false);
+      this.widget.setSubmissionState("retryable", false, {
+        retryVisible: true,
+        reason: "Previous send was not confirmed; retry will reuse the same submission ID.",
+      });
     }
     this.setStatus("Previous send was not confirmed; retry will reuse the same submission ID.");
   };
