@@ -1316,6 +1316,48 @@ body.is-resizing-sidebar iframe {
     display: none;
   }
 
+  /* Fleet has enough sections for its desktop sidebar to consume most of a
+     phone viewport.  Keep the selector bounded and expose every section in a
+     native horizontal scroll strip; the main scroller then starts below it,
+     so fitted topology content can never slide underneath the navigation. */
+  .page-fleet > .page-sidebar-left {
+    width: 100% !important;
+    max-height: none;
+    padding: 0.35rem 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--pa-border);
+    scrollbar-gutter: stable;
+    overscroll-behavior-x: contain;
+  }
+
+  .page-fleet > .page-sidebar-left > .panel {
+    width: max-content;
+    min-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .page-fleet > .page-sidebar-left .panel-header {
+    display: none;
+  }
+
+  .page-fleet .section-nav {
+    width: max-content;
+    min-width: 100%;
+    flex-direction: row;
+    gap: 0.35rem;
+  }
+
+  .page-fleet .section-nav-link {
+    flex: 0 0 auto;
+    min-height: 2.5rem;
+    white-space: nowrap;
+  }
+
   .page-agent-main,
   .page-agent-main .agent-chat-widget,
   .page-agent-main .acw-chat-stage,
