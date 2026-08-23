@@ -1501,7 +1501,7 @@ class RealmSyncWebUiTests(unittest.TestCase):
 
 
 class SyncObjectListTests(unittest.IsolatedAsyncioTestCase):
-    async def test_converge_lists_local_hashes_once_per_pass(self) -> None:
+    async def test_converge_avoids_full_object_list_on_hot_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
                 data_dir=Path(tmp),
@@ -1513,6 +1513,7 @@ class SyncObjectListTests(unittest.IsolatedAsyncioTestCase):
             )
             store = MagicMock()
             store.list_hashes.return_value = ["abc"]
+            store.catalog = None
             log = MagicMock()
             log.get_head.return_value = None
             peer_table = MagicMock()
@@ -1542,10 +1543,10 @@ class SyncObjectListTests(unittest.IsolatedAsyncioTestCase):
                 }
 
             engine._client = object()
-            engine._fetch_peer = fetch
+            engine._fetch_peer = fetch  # type: ignore[method-assign]
             await engine.converge_realm("default")
-            store.list_hashes.assert_called_once()
-            self.assertEqual(fetches, [["abc"], ["abc"], ["abc"]])
+            store.list_hashes.assert_not_called()
+            self.assertEqual(fetches, [None, None, None])
 
 
 if __name__ == "__main__":

@@ -36,6 +36,14 @@ queries do not reopen thousands of tiny files. It does not move refs or canonica
 objects into SQLite. Parent edges are linear in commit count; ancestry is computed
 inside SQLite rather than materializing a quadratic transitive-closure table.
 
+Rebuilds are checkpointed, cancellable (`action=cancel`), and resumable. When the
+published indexed head is an ancestor of the durable head, `ensure_indexed`
+prefers an incremental advance before a full rebuild.
+
+See [SYNC_HISTORY_SCALE.md](SYNC_HISTORY_SCALE.md) for object-store retention,
+snapshot epochs, GC planning, and protocol-v3 anti-entropy at large history
+sizes.
+
 Do not add packfiles merely for commit-count latency. Reconsider an append-only
 pack only when measurements show at least one million objects or object filesystem
 metadata exceeds 25% of retained object bytes, and only with dual-read migration,

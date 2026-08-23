@@ -1,4 +1,4 @@
-"""Log compaction and observability."""
+"""Log compaction, snapshot epochs, and observability."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import Card
+from pa.sync.epochs import EpochRegistry, create_snapshot_epoch
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
 
@@ -53,12 +54,48 @@ def compact_realm(
     log: EventLog,
     realm_id: str,
     cards: list[Card],
+    *,
+    registry: EpochRegistry | None = None,
+    authority_instance_id: str | None = None,
+    advance_epoch: bool = True,
 ) -> str | None:
-    """Create a snapshot object for old card state (compaction)."""
-    snapshot = {
-        "type": "snapshot",
-        "realm_id": realm_id,
-        "cards": [c.model_dump(mode="json") for c in cards],
-        "timestamp": datetime.now(UTC).isoformat(),
-    }
-    return store.put_json(snapshot)
+    """Create a content-addressed snapshot epoch for bounded retention.
+
+    Legacy callers still receive an object hash. When ``advance_epoch`` is true
+    (default) the snapshot is a versioned epoch root with parent provenance and
+    fencing metadata. The epoch does not delete ancestry; GC requires fleet
+    acknowledgements separately.
+    """
+    head = log.get_head(realm_id)
+    card_payloads = [c.model_dump(mode="json") for c in cards]
+    if not advance_epoch or registry is None or authority_instance_id is None or not head:
+        # Compatibility path: unreferenced snapshot object only.
+        snapshot = {
+            "type": "snapshot",
+            "realm_id": realm_id,
+            "cards": card_payloads,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "head_hash": head,
+        }
+        return store.put_json(snapshot)
+
+    current = registry.current(realm_id)
+    fencing_token = int((current or {}).get("fencing_token") or 0) + 1
+    epoch = create_snapshot_epoch(
+        store,
+        realm_id=realm_id,
+        head_hash=head,
+        authority_instance_id=authority_instance_id,
+        fencing_token=fencing_token,
+        cards=card_payloads,
+        parent_epoch_hash=(current or {}).get("epoch_hash"),
+        registry=registry,
+    )
+    logger.info(
+        "Created snapshot epoch %s for realm %s at head %s (fence=%s)",
+        epoch.epoch_id,
+        realm_id,
+        head[:12],
+        fencing_token,
+    )
+    return epoch.object_hash
