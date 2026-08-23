@@ -547,7 +547,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                     "title": "Card with attachments",
                     "body": "Visual proof:\n\n![photo.png](attachment:drop-photo)",
                     "summary": "A manually curated summary.",
-                    "kind": "goal",
+                    "kind": "task",
                     "lane": "active",
                     "project_id": project.id,
                     "parent_id": parent.id,
@@ -567,7 +567,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertEqual(created.status_code, 201, created.text)
             card = self.app.state.ctx.store.get_card(created.json()["id"])
             assert card is not None
-            self.assertEqual(card.kind.value, "goal")
+            self.assertEqual(card.kind.value, "task")
             self.assertEqual(card.lane, CardLane.ACTIVE)
             self.assertEqual(card.project_id, project.id)
             self.assertEqual(card.parent_id, parent.id)
