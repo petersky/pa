@@ -167,6 +167,9 @@ Environment variables (prefix `PA_`):
 | `PA_TELEMETRY_PER_SESSION_ENABLED` | `true` | Attribute metrics to PA-owned agent process trees when supported |
 | `PA_TELEMETRY_DATABASE_PATH` | `<PA_DATA_DIR>/telemetry.db` | Independent, local-only telemetry database |
 | `PA_RELEASE_TRACK` | `release` | Update track: `release`, `beta`, `alpha`, `dev`, or `pypi` |
+| `PA_CLOUD_ENDPOINT` | _(disabled)_ | Optional HTTPS PA coordination service for leases, dispatch, and shared-state updates |
+| `PA_CLOUD_TOKEN` | _(empty)_ | Bearer credential for the cloud coordination service |
+| `PA_CLOUD_LEASE_FAIL_OPEN` | `true` | Continue with local lease checks when the cloud service is unavailable |
 | `PA_UPDATE_CHANNEL` | *(alias)* | Legacy alias for `PA_RELEASE_TRACK` |
 | `PA_UPDATE_REPO` | `petersky/pa` | GitHub repo for release checks |
 | `PA_UV_BIN` | *(auto-detected)* | Absolute `uv` path override for install/update in sparse service or SSH environments |

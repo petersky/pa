@@ -8,14 +8,27 @@ from pa.domain.models import CardEvent, EventType
 from pa.domain.store import Store
 from pa.sync.event_log import EventLog
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pa.cloud import CloudCoordinator
+
 
 class LeaseManager:
     DEFAULT_TTL_SECONDS = 300
 
-    def __init__(self, store: Store, event_log: EventLog, instance_id: str) -> None:
+    def __init__(
+        self,
+        store: Store,
+        event_log: EventLog,
+        instance_id: str,
+        *,
+        cloud: CloudCoordinator | None = None,
+    ) -> None:
         self.store = store
         self.log = event_log
         self.instance_id = instance_id
+        self.cloud = cloud
 
     def grant(
         self,
@@ -35,6 +48,22 @@ class LeaseManager:
                     return False
         ttl = ttl_seconds or self.DEFAULT_TTL_SECONDS
         expires = datetime.now(UTC) + timedelta(seconds=ttl)
+        if self.cloud is not None:
+            from pa.cloud import CloudLeaseResult
+
+            result = self.cloud.acquire_lease(
+                {
+                    "card_id": card_id,
+                    "realm_id": realm_id,
+                    "holder_instance": holder_instance,
+                    "holder_principal": holder_principal,
+                    "expires_at": expires.isoformat(),
+                }
+            )
+            if result == CloudLeaseResult.DENIED:
+                return False
+            if result == CloudLeaseResult.UNAVAILABLE and not self.cloud.fail_open:
+                return False
         event = CardEvent(
             type=EventType.LEASE_GRANTED,
             realm_id=realm_id,
@@ -67,6 +96,21 @@ class LeaseManager:
             return False
         if card.lease_expires_at and card.lease_expires_at < datetime.now(UTC):
             return False
+        if self.cloud is not None:
+            from pa.cloud import CloudLeaseResult
+
+            result = self.cloud.release_lease(
+                {
+                    "card_id": card_id,
+                    "realm_id": realm_id,
+                    "holder_instance": expected,
+                    "principal_id": principal_id,
+                }
+            )
+            if result == CloudLeaseResult.DENIED:
+                return False
+            if result == CloudLeaseResult.UNAVAILABLE and not self.cloud.fail_open:
+                return False
         event = CardEvent(
             type=EventType.LEASE_RELEASED,
             realm_id=realm_id,
