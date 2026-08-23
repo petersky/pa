@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -69,7 +70,9 @@ from pa.domain.models import (
     KnowledgeAuditEvent,
     KnowledgeEntry,
     KnowledgeKind,
+    KnowledgeSensitivity,
     KnowledgeStatus,
+    KnowledgeTier,
     KnowledgeUpdate,
 )
 from pa.domain.projection import (
@@ -111,6 +114,7 @@ HOME_FLEET_LIMIT = 50
 HOME_ROUTE_LIMIT = 200
 WORK_PRESENTATION_PAGE_LIMIT = 100
 WORK_FACET_LIMIT = 20
+MEMORY_PAGE_SIZE = 25
 
 
 class WorkSavedViewRequest(BaseModel):
@@ -148,6 +152,8 @@ class KnowledgePromotionRequest(BaseModel):
     start_seq: int | None = Field(default=None, ge=1)
     end_seq: int | None = Field(default=None, ge=1)
     kind: KnowledgeKind = KnowledgeKind.MEMORY
+    tier: KnowledgeTier = KnowledgeTier.SEMANTIC
+    sensitivity: KnowledgeSensitivity = KnowledgeSensitivity.INTERNAL
     scope: str = "realm"
     source_url: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
@@ -181,6 +187,40 @@ def _require_memory_editor(request: Request) -> str:
             detail="Memory promotion and lifecycle changes require editor access",
         )
     return get_principal_id(request)
+
+
+def _decode_memory_cursor(value: str) -> tuple[str | None, str | None]:
+    if not value:
+        return None, None
+    try:
+        raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)).decode()
+        updated_at, entry_id = raw.split("|", 1)
+        datetime.fromisoformat(updated_at)
+        return updated_at, entry_id
+    except (ValueError, UnicodeError):
+        raise HTTPException(status_code=422, detail="Invalid Memory cursor") from None
+
+
+def _memory_cursor(updated_at: datetime, entry_id: str) -> str:
+    raw = f"{updated_at.isoformat()}|{entry_id}".encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _redact_memory(entry: KnowledgeEntry, principal_id: str) -> KnowledgeEntry:
+    if (
+        entry.sensitivity
+        in {KnowledgeSensitivity.CONFIDENTIAL, KnowledgeSensitivity.RESTRICTED}
+        and entry.owner != principal_id
+    ):
+        return entry.model_copy(
+            update={
+                "summary": "[redacted: restricted Memory]",
+                "source_url": None,
+                "tags": [],
+                "provenance": None,
+            }
+        )
+    return entry
 
 
 @router.get("/cards/events")
@@ -1648,15 +1688,45 @@ def _knowledge_context(request: Request) -> dict:
     status = request.query_params.get("status", "active").strip() or None
     scope = request.query_params.get("scope", "").strip() or None
     source = request.query_params.get("source", "").strip() or None
+    tier = request.query_params.get("tier", "").strip() or None
+    sensitivity = request.query_params.get("sensitivity", "").strip() or None
+    provenance_trust = (
+        request.query_params.get("provenance", "").strip() or None
+    )
+    expiry = request.query_params.get("expiry", "").strip() or None
+    supersession = request.query_params.get("supersession", "").strip() or None
+    before_updated_at, before_id = _decode_memory_cursor(
+        request.query_params.get("cursor", "")
+    )
+    page = store.list_knowledge(
+        limit=MEMORY_PAGE_SIZE + 1,
+        search=query or None,
+        kind=kind,
+        status=status,
+        scope=scope,
+        source=source,
+        tier=tier,
+        sensitivity=sensitivity,
+        provenance_trust=provenance_trust,
+        expiry=expiry,
+        supersession=supersession,
+        before_updated_at=before_updated_at,
+        before_id=before_id,
+        curated_only=True,
+    )
+    has_more = len(page) > MEMORY_PAGE_SIZE
+    page = page[:MEMORY_PAGE_SIZE]
+    principal_id = get_principal_id(request)
+    next_url = None
+    if has_more and page:
+        params = dict(request.query_params)
+        params["cursor"] = _memory_cursor(page[-1].updated_at, page[-1].id)
+        next_url = f"/knowledge?{urlencode(params)}"
     return {
-        "knowledge": store.list_knowledge(
-            limit=100,
-            search=query or None,
-            kind=kind,
-            status=status,
-            scope=scope,
-            source=source,
-        ),
+        "knowledge": [_redact_memory(entry, principal_id) for entry in page],
+        "memory_page_size": MEMORY_PAGE_SIZE,
+        "memory_has_more": has_more,
+        "memory_next_url": next_url,
         "cards": store.list_cards(realm_id=realm, limit=500),
         "items": store.list_cards(realm_id=realm, limit=500),
         "projects": store.list_projects(realm_id=realm),
@@ -1668,9 +1738,48 @@ def _knowledge_context(request: Request) -> dict:
             "status": status or "",
             "scope": scope or "",
             "source": source or "",
+            "tier": tier or "",
+            "sensitivity": sensitivity or "",
+            "provenance": provenance_trust or "",
+            "expiry": expiry or "",
+            "supersession": supersession or "",
         },
+        "knowledge_tiers": list(KnowledgeTier),
+        "knowledge_sensitivities": list(KnowledgeSensitivity),
+        "knowledge_provenance_trust": ["verified", "unverified", "legacy"],
         "knowledge_sources": ["promoted", "manual", "generated", "imported"],
         "promote_session_id": request.query_params.get("session", ""),
+        "realms": get_settings().subscribed_realms,
+        "active_realm": realm,
+    }
+
+
+def _memory_audit_context(request: Request) -> dict:
+    realm = _active_realm(request)
+    before_updated_at, before_id = _decode_memory_cursor(
+        request.query_params.get("cursor", "")
+    )
+    page = get_store().list_session_audit_page(
+        realm_id=realm,
+        limit=MEMORY_PAGE_SIZE + 1,
+        before_updated_at=before_updated_at,
+        before_id=before_id,
+    )
+    has_more = len(page) > MEMORY_PAGE_SIZE
+    page = page[:MEMORY_PAGE_SIZE]
+    next_url = None
+    if has_more and page:
+        next_url = "/memory-audit?" + urlencode(
+            {
+                "realm": realm,
+                "cursor": _memory_cursor(page[-1].updated_at, page[-1].id),
+            }
+        )
+    return {
+        "audit_sessions": page,
+        "memory_page_size": MEMORY_PAGE_SIZE,
+        "memory_has_more": has_more,
+        "memory_next_url": next_url,
         "realms": get_settings().subscribed_realms,
         "active_realm": realm,
     }
@@ -2292,35 +2401,69 @@ def delete_item(request: Request, response: Response, item_id: str) -> None:
 
 @router.get("/knowledge")
 def list_knowledge(
+    request: Request,
     item_id: str | None = None,
-    limit: int = 50,
+    limit: int = Query(default=MEMORY_PAGE_SIZE, ge=1, le=100),
+    cursor: str = "",
     q: str | None = None,
     kind: KnowledgeKind | None = None,
     status: KnowledgeStatus | None = KnowledgeStatus.ACTIVE,
     scope: str | None = None,
     source: str | None = None,
-) -> list[dict]:
+    tier: KnowledgeTier | None = None,
+    sensitivity: KnowledgeSensitivity | None = None,
+    provenance: str | None = None,
+    expiry: Literal["current", "expired"] | None = None,
+    supersession: Literal["original", "supersedes"] | None = None,
+) -> dict:
+    before_updated_at, before_id = _decode_memory_cursor(cursor)
     entries = get_store().list_knowledge(
         item_id=item_id,
-        limit=limit,
+        limit=limit + 1,
         search=q,
         kind=kind.value if kind else None,
         status=status.value if status else None,
         scope=scope,
         source=source,
+        tier=tier.value if tier else None,
+        sensitivity=sensitivity.value if sensitivity else None,
+        provenance_trust=provenance,
+        expiry=expiry,
+        supersession=supersession,
+        before_updated_at=before_updated_at,
+        before_id=before_id,
+        curated_only=True,
     )
-    return [entry.model_dump(mode="json") for entry in entries]
+    has_more = len(entries) > limit
+    entries = entries[:limit]
+    principal_id = get_principal_id(request)
+    next_cursor = (
+        _memory_cursor(entries[-1].updated_at, entries[-1].id)
+        if has_more and entries
+        else None
+    )
+    return {
+        "records": [
+            _redact_memory(entry, principal_id).model_dump(mode="json")
+            for entry in entries
+        ],
+        "page_size": limit,
+        "has_more": has_more,
+        "next_cursor": next_cursor,
+    }
 
 
 @router.post("/knowledge", status_code=201)
 def create_knowledge(request: Request, data: KnowledgeEntry) -> dict:
     actor = _require_memory_editor(request)
+    # Trust is derived at the server promotion boundary, never from body claims.
+    data.provenance_trust = "unverified"
     if not data.owner:
         data.owner = actor
-    if data.source in {"acp_session", "promoted"} and not data.provenance:
+    if data.source in {"acp_session", "promoted", "session", "transcript"}:
         raise HTTPException(
             status_code=422,
-            detail="Transcript-derived Memory must use the promotion API with provenance",
+            detail="Transcript-derived Memory must use the promotion API",
         )
     entry = get_store().add_knowledge(data)
     get_store().add_knowledge_audit(
@@ -2346,6 +2489,8 @@ def promote_knowledge(request: Request, data: KnowledgePromotionRequest) -> dict
             start_seq=data.start_seq,
             end_seq=data.end_seq,
             kind=data.kind,
+            tier=data.tier,
+            sensitivity=data.sensitivity,
             scope=data.scope,
             source_url=data.source_url,
             confidence=data.confidence,
@@ -3176,6 +3321,8 @@ def create_knowledge_ui(
     request: Request,
     summary: str = Form(...),
     kind: KnowledgeKind = Form(KnowledgeKind.MEMORY),
+    tier: KnowledgeTier = Form(KnowledgeTier.SEMANTIC),
+    sensitivity: KnowledgeSensitivity = Form(KnowledgeSensitivity.INTERNAL),
     scope: str = Form("realm"),
     source_url: str = Form(""),
     owner: str = Form(""),
@@ -3201,6 +3348,8 @@ def create_knowledge_ui(
                 start_seq=start_seq,
                 end_seq=end_seq,
                 kind=kind,
+                tier=tier,
+                sensitivity=sensitivity,
                 scope=scope.strip() or "realm",
                 source_url=source_url.strip() or None,
                 owner=owner.strip() or actor,
@@ -3218,6 +3367,8 @@ def create_knowledge_ui(
             KnowledgeEntry(
                 summary=summary,
                 kind=kind,
+                tier=tier,
+                sensitivity=sensitivity,
                 scope=scope.strip() or "realm",
                 source="manual",
                 source_url=source_url.strip() or None,
@@ -3347,6 +3498,18 @@ class ItemsModule(Module):
                 template="pages/knowledge.html",
                 nav_order=20,
                 context_builder=_knowledge_context,
+            )
+        )
+        pages.register(
+            PageDefinition(
+                id="memory-audit",
+                path="/memory-audit",
+                label="Session audit",
+                icon="knowledge",
+                template="pages/memory-audit.html",
+                nav_order=21,
+                context_builder=_memory_audit_context,
+                nav=False,
             )
         )
 
@@ -3625,7 +3788,7 @@ class ItemsModule(Module):
             )
 
         @mcp.tool()
-        def list_knowledge(item_id: str | None = None, limit: int = 20) -> list[dict]:
+        def list_knowledge(item_id: str | None = None, limit: int = 20) -> dict:
             """List curated durable memories and decisions."""
             return request_local_pa(
                 ctx.settings,

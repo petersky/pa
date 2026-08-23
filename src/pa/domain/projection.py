@@ -316,13 +316,16 @@ class CardProjection:
                     item_id TEXT,
                     card_id TEXT,
                     summary TEXT NOT NULL,
-                    source TEXT NOT NULL DEFAULT 'session',
+                    source TEXT NOT NULL DEFAULT 'manual',
                     source_url TEXT,
                     kind TEXT NOT NULL DEFAULT 'memory',
+                    tier TEXT NOT NULL DEFAULT 'semantic',
                     status TEXT NOT NULL DEFAULT 'active',
                     scope TEXT NOT NULL DEFAULT 'realm',
                     owner TEXT,
                     confidence REAL,
+                    sensitivity TEXT NOT NULL DEFAULT 'internal',
+                    provenance_trust TEXT NOT NULL DEFAULT 'unverified',
                     supersedes_id TEXT,
                     review_at TEXT,
                     expires_at TEXT,
@@ -667,10 +670,13 @@ class CardProjection:
         for col, decl in (
             ("source_url", "TEXT"),
             ("kind", "TEXT NOT NULL DEFAULT 'memory'"),
+            ("tier", "TEXT NOT NULL DEFAULT 'semantic'"),
             ("status", "TEXT NOT NULL DEFAULT 'active'"),
             ("scope", "TEXT NOT NULL DEFAULT 'realm'"),
             ("owner", "TEXT"),
             ("confidence", "REAL"),
+            ("sensitivity", "TEXT NOT NULL DEFAULT 'internal'"),
+            ("provenance_trust", "TEXT NOT NULL DEFAULT 'unverified'"),
             ("supersedes_id", "TEXT"),
             ("review_at", "TEXT"),
             ("expires_at", "TEXT"),
@@ -680,11 +686,17 @@ class CardProjection:
         ):
             if knowledge_cols and col not in knowledge_cols:
                 conn.execute(f"ALTER TABLE knowledge ADD COLUMN {col} {decl}")
+        if knowledge_cols and "provenance_trust" not in knowledge_cols:
+            conn.execute("UPDATE knowledge SET provenance_trust = 'legacy'")
         if knowledge_cols and "updated_at" not in knowledge_cols:
             conn.execute("UPDATE knowledge SET updated_at = created_at")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_knowledge_card "
             "ON knowledge(card_id, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_cursor "
+            "ON knowledge(status, updated_at DESC, id DESC)"
         )
         conn.execute(
             """
@@ -4389,6 +4401,26 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_session(row) for row in rows]
 
+    def list_session_audit_page(
+        self,
+        *,
+        realm_id: str,
+        limit: int = 25,
+        before_updated_at: str | None = None,
+        before_id: str | None = None,
+    ) -> list[AgentSession]:
+        """Return bounded operational history without loading transcript payloads."""
+        sql = "SELECT * FROM agent_sessions WHERE realm_id = ?"
+        params: list[str | int] = [realm_id]
+        if before_updated_at and before_id:
+            sql += " AND (updated_at < ? OR (updated_at = ? AND id < ?))"
+            params.extend([before_updated_at, before_updated_at, before_id])
+        sql += " ORDER BY updated_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_session(row) for row in rows]
+
     def list_session_statuses(self) -> dict[str, str]:
         """Return id → status without materializing session transcripts."""
         with self._conn() as conn:
@@ -4852,10 +4884,11 @@ class CardProjection:
                 """
                 INSERT INTO knowledge (
                     id, session_id, item_id, card_id, summary, source, source_url,
-                    kind, status, scope, owner, confidence, supersedes_id,
+                    kind, tier, status, scope, owner, confidence, sensitivity,
+                    provenance_trust, supersedes_id,
                     review_at, expires_at, tags, content_hash, provenance,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.id,
@@ -4866,10 +4899,13 @@ class CardProjection:
                     entry.source,
                     entry.source_url,
                     entry.kind.value,
+                    entry.tier.value,
                     entry.status.value,
                     entry.scope,
                     entry.owner,
                     entry.confidence,
+                    entry.sensitivity.value,
+                    entry.provenance_trust,
                     entry.supersedes_id,
                     entry.review_at.isoformat() if entry.review_at else None,
                     entry.expires_at.isoformat() if entry.expires_at else None,
@@ -4894,6 +4930,14 @@ class CardProjection:
         status: str | None = "active",
         scope: str | None = None,
         source: str | None = None,
+        tier: str | None = None,
+        sensitivity: str | None = None,
+        provenance_trust: str | None = None,
+        expiry: str | None = None,
+        supersession: str | None = None,
+        before_updated_at: str | None = None,
+        before_id: str | None = None,
+        curated_only: bool = False,
     ) -> list[KnowledgeEntry]:
         sql = "SELECT * FROM knowledge WHERE 1=1"
         params: list[str | int] = []
@@ -4916,7 +4960,32 @@ class CardProjection:
         if source:
             sql += " AND source = ?"
             params.append(source)
-        sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
+        if tier:
+            sql += " AND tier = ?"
+            params.append(tier)
+        if sensitivity:
+            sql += " AND sensitivity = ?"
+            params.append(sensitivity)
+        if provenance_trust:
+            sql += " AND provenance_trust = ?"
+            params.append(provenance_trust)
+        if curated_only:
+            sql += " AND source NOT IN ('session', 'acp_session', 'remote_dispatch', 'dispatch', 'transcript')"
+        now = datetime.now(UTC).isoformat()
+        if expiry == "expired":
+            sql += " AND expires_at IS NOT NULL AND expires_at <= ?"
+            params.append(now)
+        elif expiry == "current":
+            sql += " AND (expires_at IS NULL OR expires_at > ?)"
+            params.append(now)
+        if supersession == "supersedes":
+            sql += " AND supersedes_id IS NOT NULL"
+        elif supersession == "original":
+            sql += " AND supersedes_id IS NULL"
+        if before_updated_at and before_id:
+            sql += " AND (updated_at < ? OR (updated_at = ? AND id < ?))"
+            params.extend([before_updated_at, before_updated_at, before_id])
+        sql += " ORDER BY updated_at DESC, id DESC LIMIT ?"
         params.append(limit)
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -4946,8 +5015,8 @@ class CardProjection:
         with self._conn() as conn:
             conn.execute(
                 """
-                UPDATE knowledge SET summary=?, source=?, source_url=?, kind=?, status=?,
-                    scope=?, owner=?, confidence=?, supersedes_id=?, review_at=?, expires_at=?,
+                UPDATE knowledge SET summary=?, source=?, source_url=?, kind=?, tier=?, status=?,
+                    scope=?, owner=?, confidence=?, sensitivity=?, supersedes_id=?, review_at=?, expires_at=?,
                     tags=?, content_hash=?, updated_at=? WHERE id=?
                 """,
                 (
@@ -4955,10 +5024,12 @@ class CardProjection:
                     current.source,
                     current.source_url,
                     current.kind.value,
+                    current.tier.value,
                     current.status.value,
                     current.scope,
                     current.owner,
                     current.confidence,
+                    current.sensitivity.value,
                     current.supersedes_id,
                     current.review_at.isoformat() if current.review_at else None,
                     current.expires_at.isoformat() if current.expires_at else None,
@@ -5377,10 +5448,15 @@ class CardProjection:
             source=row["source"],
             source_url=row["source_url"] if "source_url" in keys else None,
             kind=row["kind"] if "kind" in keys else "memory",
+            tier=row["tier"] if "tier" in keys else "semantic",
             status=row["status"] if "status" in keys else "active",
             scope=row["scope"] if "scope" in keys else "realm",
             owner=row["owner"] if "owner" in keys else None,
             confidence=row["confidence"] if "confidence" in keys else None,
+            sensitivity=row["sensitivity"] if "sensitivity" in keys else "internal",
+            provenance_trust=row["provenance_trust"]
+            if "provenance_trust" in keys
+            else "unverified",
             supersedes_id=row["supersedes_id"] if "supersedes_id" in keys else None,
             review_at=datetime.fromisoformat(row["review_at"])
             if "review_at" in keys and row["review_at"]

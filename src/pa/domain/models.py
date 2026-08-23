@@ -723,6 +723,22 @@ class KnowledgeStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class KnowledgeTier(StrEnum):
+    """Retrieval tier shared with the governed Memory model."""
+
+    WORKING = "working"
+    EPISODIC = "episodic"
+    SEMANTIC = "semantic"
+    PROCEDURAL = "procedural"
+
+
+class KnowledgeSensitivity(StrEnum):
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    RESTRICTED = "restricted"
+
+
 class KnowledgeProvenance(BaseModel):
     """Exact, structured lineage for a curated Memory record."""
 
@@ -745,13 +761,16 @@ class KnowledgeEntry(BaseModel):
     item_id: str | None = None
     card_id: str | None = None
     summary: str
-    source: str = "session"
+    source: str = "manual"
     source_url: str | None = None
     kind: KnowledgeKind = KnowledgeKind.MEMORY
+    tier: KnowledgeTier = KnowledgeTier.SEMANTIC
     status: KnowledgeStatus = KnowledgeStatus.ACTIVE
     scope: str = "realm"
     owner: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+    sensitivity: KnowledgeSensitivity = KnowledgeSensitivity.INTERNAL
+    provenance_trust: str = "unverified"
     supersedes_id: str | None = None
     review_at: datetime | None = None
     expires_at: datetime | None = None
@@ -767,10 +786,12 @@ class KnowledgeUpdate(BaseModel):
     source: str | None = None
     source_url: str | None = None
     kind: KnowledgeKind | None = None
+    tier: KnowledgeTier | None = None
     status: KnowledgeStatus | None = None
     scope: str | None = None
     owner: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+    sensitivity: KnowledgeSensitivity | None = None
     supersedes_id: str | None = None
     review_at: datetime | None = None
     expires_at: datetime | None = None

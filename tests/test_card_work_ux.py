@@ -6,6 +6,7 @@ import re
 import sqlite3
 import tempfile
 import unittest
+from time import perf_counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -217,6 +218,40 @@ class CardSummaryTests(unittest.TestCase):
 
 
 class CuratedKnowledgeTests(unittest.TestCase):
+    def test_ten_thousand_records_use_a_bounded_stable_cursor_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            now = datetime.now(UTC).isoformat()
+            with store._conn() as conn:
+                conn.executemany(
+                    """INSERT INTO knowledge
+                       (id, summary, source, kind, tier, status, scope,
+                        sensitivity, provenance_trust, tags, content_hash,
+                        created_at, updated_at)
+                       VALUES (?, ?, ?, 'memory', 'semantic', 'active', 'realm',
+                               'internal', 'unverified', '[]', ?, ?, ?)""",
+                    [
+                        (f"memory-{index:05d}", f"Curated {index}", "manual", f"hash-{index}", now, now)
+                        for index in range(10_000)
+                    ],
+                )
+
+            started = perf_counter()
+            first = store.list_knowledge(limit=26)
+            self.assertEqual(len(first), 26)
+            second = store.list_knowledge(
+                limit=26,
+                before_updated_at=first[24].updated_at.isoformat(),
+                before_id=first[24].id,
+            )
+            self.assertEqual(len(second), 26)
+            self.assertTrue(
+                {item.id for item in first[:25]}.isdisjoint(
+                    {item.id for item in second}
+                )
+            )
+            self.assertLess(perf_counter() - started, 1.0)
+
     def test_memory_metadata_filters_and_lifecycle_are_durable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = CardProjection(Path(tmp) / "pa.db")
@@ -649,6 +684,50 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         )
         self.assertNotIn("All sessions", response.text)
         self.assertNotIn("page-sidebar-right", response.text)
+
+    def test_large_dispatch_history_never_floods_default_curated_memory(self) -> None:
+        now = datetime.now(UTC)
+        with TestClient(self.app) as client:
+            with self.app.state.ctx.store._conn() as conn:
+                conn.executemany(
+                    """INSERT INTO knowledge
+                       (id, summary, source, kind, tier, status, scope, sensitivity,
+                        provenance_trust, tags, content_hash, created_at, updated_at)
+                       VALUES (?, ?, 'remote_dispatch', 'memory', 'episodic', 'active',
+                               'realm', 'internal', 'verified', '[]', ?, ?, ?)""",
+                    [
+                        (f"dispatch-{index:05d}", f"Lifecycle notice {index}", f"dispatch-hash-{index}", now.isoformat(), now.isoformat())
+                        for index in range(10_000)
+                    ],
+                )
+            self.app.state.ctx.store.add_knowledge(
+                KnowledgeEntry(summary="A deliberately curated fact", source="manual")
+            )
+            self.app.state.ctx.store.add_knowledge(
+                KnowledgeEntry(
+                    summary="Do not disclose this payload",
+                    source="manual",
+                    sensitivity="confidential",
+                    owner="user:someone-else",
+                )
+            )
+            response = client.get("/knowledge")
+            api = client.get("/api/knowledge?sensitivity=confidential&limit=1")
+            audit = client.get("/memory-audit")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("A deliberately curated fact", response.text)
+        self.assertNotIn("Lifecycle notice", response.text)
+        self.assertIn("Showing at most 25 curated records", response.text)
+        self.assertIn("Browse session &amp; dispatch audit", response.text)
+        self.assertEqual(api.status_code, 200)
+        self.assertEqual(audit.status_code, 200)
+        self.assertIn("Session &amp; dispatch audit", audit.text)
+        self.assertEqual(api.json()["page_size"], 1)
+        self.assertEqual(
+            api.json()["records"][0]["summary"],
+            "[redacted: restricted Memory]",
+        )
 
     def test_project_overview_has_progress_work_agents_and_explicit_settings(
         self,
