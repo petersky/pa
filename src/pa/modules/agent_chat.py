@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -1972,6 +1973,98 @@ async def get_session_snapshot(request: Request, session_id: str) -> dict:
     )
     snapshot["cards"] = _session_cards_payload(request, runtime.session)
     return snapshot
+
+
+@router.get("/sessions/{session_id}/prompts/{client_prompt_id}")
+async def get_prompt_acceptance_status(
+    request: Request,
+    session_id: str,
+    client_prompt_id: str,
+) -> dict:
+    """Bounded durable receipt for an exactly-once browser prompt id.
+
+    Browser retries reuse the same ``client_prompt_id`` and content; this lookup
+    lets the UI settle acknowledgement-uncertain submissions without replaying
+    a full transcript window.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", client_prompt_id or ""):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_client_prompt_id",
+                "message": "client_prompt_id must be 8-128 URL-safe characters.",
+                "recoverable": False,
+            },
+        )
+    mgr = _manager(request)
+    session = await _offload(
+        mgr,
+        "sqlite.agent_session_read",
+        mgr.store.get_session,
+        session_id,
+        timeout=2.0,
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    instance_authenticated = (
+        getattr(request.state, "instance_authenticated", False) is True
+    )
+    settings = request.app.state.ctx.settings
+    if (
+        settings.auth_required is True
+        and not instance_authenticated
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "insufficient_authorization",
+                "message": "This principal does not own the linked agent session.",
+            },
+        )
+    runtime = mgr.get(session_id)
+    if runtime and not getattr(runtime, "_closed", False):
+        runtime._flush_transcript()
+        await _drain_runtime_transcripts(runtime)
+    accepted = await _offload(
+        mgr,
+        "sqlite.prompt_acceptance_read",
+        mgr.store.get_prompt_acceptance,
+        session_id,
+        client_prompt_id,
+        timeout=2.0,
+    )
+    if not accepted:
+        return {
+            "session_id": session_id,
+            "prompt_id": client_prompt_id,
+            "accepted": False,
+            "queued": False,
+            "status": "not_accepted",
+            "duplicate_safe": True,
+            "message": (
+                "No durable acceptance for this prompt id yet. Retrying the same "
+                "content and id remains exactly once."
+            ),
+        }
+    queued = (
+        accepted.event_type == "queue_enqueued"
+        and (accepted.payload or {}).get("action") != "run"
+    )
+    return {
+        "session_id": session_id,
+        "prompt_id": client_prompt_id,
+        "accepted": True,
+        "queued": queued,
+        "status": "queued" if queued else "accepted",
+        "accepted_event": accepted.event_type,
+        "seq": accepted.seq,
+        "duplicate_safe": True,
+        "message": "Prompt queued." if queued else "Prompt accepted.",
+    }
 
 
 def _session_cards_payload(request: Request, session: AgentSession) -> list[dict]:

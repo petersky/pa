@@ -4605,6 +4605,14 @@ class AgentSessionManager:
         timeout: float = 300.0,
         on_progress: Callable[[QuiesceProgress], Awaitable[None] | None] | None = None,
     ) -> QuiesceSnapshot:
+        from pa.server.shutdown import is_shutting_down
+
+        # Admission is transactional until a quiesce snapshot is committed (or a
+        # real process shutdown fence is active). A timed-out handoff must not
+        # leave Start Session returning agent_draining forever.
+        prior_accepting = self._accepting
+        prior_quiescing = self._quiescing
+        committed = False
         self._quiescing = True
         self._accepting = False
 
@@ -4625,75 +4633,89 @@ class AgentSessionManager:
                 if asyncio.iscoroutine(result):
                     await result
 
-        await _emit("quiescing")
-        deadline = asyncio.get_running_loop().time() + timeout
-        while any(rt.prompting for rt in self._runtimes.values()):
-            if asyncio.get_running_loop().time() >= deadline:
-                await _emit(
-                    "timeout", done=True, error="Timed out waiting for ACP turn"
-                )
-                raise TimeoutError("Timed out waiting for active ACP session to finish")
-            await _emit("waiting")
-            await asyncio.sleep(_QUIESCE_POLL_SECONDS)
+        def _restore_admission_if_needed() -> None:
+            nonlocal committed
+            if committed or is_shutting_down():
+                return
+            self._accepting = prior_accepting
+            self._quiescing = prior_quiescing
 
-        await _emit("capturing")
-        sessions: list[SessionSnapshot] = []
-        disconnects = []
-        for runtime in list(self._runtimes.values()):
-            snap = runtime.to_session_snapshot()
-            sessions.append(snap)
-            runtime.session.status = "quiesced"
-            runtime.session.updated_at = datetime.now(UTC)
-            await self._offload(
-                "sqlite.agent_session_save",
-                self.store.save_session,
-                runtime.session,
+        try:
+            await _emit("quiescing")
+            deadline = asyncio.get_running_loop().time() + timeout
+            while any(rt.prompting for rt in self._runtimes.values()):
+                if asyncio.get_running_loop().time() >= deadline:
+                    await _emit(
+                        "timeout", done=True, error="Timed out waiting for ACP turn"
+                    )
+                    raise TimeoutError(
+                        "Timed out waiting for active ACP session to finish"
+                    )
+                await _emit("waiting")
+                await asyncio.sleep(_QUIESCE_POLL_SECONDS)
+
+            await _emit("capturing")
+            sessions: list[SessionSnapshot] = []
+            disconnects = []
+            for runtime in list(self._runtimes.values()):
+                snap = runtime.to_session_snapshot()
+                sessions.append(snap)
+                runtime.session.status = "quiesced"
+                runtime.session.updated_at = datetime.now(UTC)
+                await self._offload(
+                    "sqlite.agent_session_save",
+                    self.store.save_session,
+                    runtime.session,
+                )
+                runtime._flush_transcript()
+                await runtime._drain_transcripts()
+                if runtime.connection:
+                    remaining = max(0.1, deadline - asyncio.get_running_loop().time())
+                    disconnects.append(
+                        runtime.connection.disconnect(timeout=min(5.0, remaining))
+                    )
+                    runtime.connection = None
+            await asyncio.gather(*disconnects)
+
+            snapshot = QuiesceSnapshot(
+                reason=reason,
+                resume=True,
+                sessions=sessions,
+                queued_prompts=[],
             )
-            runtime._flush_transcript()
-            await runtime._drain_transcripts()
-            if runtime.connection:
-                remaining = max(0.1, deadline - asyncio.get_running_loop().time())
-                disconnects.append(
-                    runtime.connection.disconnect(timeout=min(5.0, remaining))
-                )
-                runtime.connection = None
-        await asyncio.gather(*disconnects)
+            await self._offload(
+                "agent.quiesce_snapshot_write",
+                save_quiesce_snapshot,
+                self.settings.data_dir,
+                snapshot,
+                timeout=30.0,
+            )
+            self._runtimes.clear()
+            committed = True
 
-        snapshot = QuiesceSnapshot(
-            reason=reason,
-            resume=True,
-            sessions=sessions,
-            queued_prompts=[],
-        )
-        await self._offload(
-            "agent.quiesce_snapshot_write",
-            save_quiesce_snapshot,
-            self.settings.data_dir,
-            snapshot,
-            timeout=30.0,
-        )
-        self._runtimes.clear()
-
-        progress = QuiesceProgress(
-            phase="done",
-            connected=False,
-            prompting=False,
-            active_sessions=snapshot.active_count,
-            queued_prompts=snapshot.queued_count,
-            message=(
-                f"Quiesced {snapshot.active_count} ACP session"
-                f"{'' if snapshot.active_count == 1 else 's'}"
-                f", {snapshot.queued_count} queued prompt"
-                f"{'' if snapshot.queued_count == 1 else 's'}"
-            ),
-            done=True,
-            snapshot=snapshot.model_dump(mode="json"),
-        )
-        if on_progress:
-            result = on_progress(progress)
-            if asyncio.iscoroutine(result):
-                await result
-        return snapshot
+            progress = QuiesceProgress(
+                phase="done",
+                connected=False,
+                prompting=False,
+                active_sessions=snapshot.active_count,
+                queued_prompts=snapshot.queued_count,
+                message=(
+                    f"Quiesced {snapshot.active_count} ACP session"
+                    f"{'' if snapshot.active_count == 1 else 's'}"
+                    f", {snapshot.queued_count} queued prompt"
+                    f"{'' if snapshot.queued_count == 1 else 's'}"
+                ),
+                done=True,
+                snapshot=snapshot.model_dump(mode="json"),
+            )
+            if on_progress:
+                result = on_progress(progress)
+                if asyncio.iscoroutine(result):
+                    await result
+            return snapshot
+        except Exception:
+            _restore_admission_if_needed()
+            raise
 
 
 # Back-compat alias
