@@ -42,7 +42,10 @@ def evaluate_gate(
     allowed = _SUCCESS | {value.lower() for value in policy.allowed_neutral_conclusions}
 
     if snapshot.draft:
-        actionable_reasons.append("pull request is draft")
+        # Draft is an authoritative review/publication hold, not a defect for an
+        # executor to "repair".  Treating it as actionable caused reconciliation
+        # prompts to override operator and dispatch draft-only contracts.
+        pending_reasons.append("pull request is draft")
     if snapshot.state.lower() != "open":
         pending_reasons.append(f"pull request state is {snapshot.state}")
     if not snapshot.branch_protection_known:

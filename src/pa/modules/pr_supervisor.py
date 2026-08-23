@@ -30,7 +30,11 @@ from pa.pr_supervisor.models import (
     PRWatchEvent,
     PRWatchStatus,
 )
-from pa.pr_supervisor.service import ProvenanceValidationError, PRSupervisor
+from pa.pr_supervisor.service import (
+    ProvenanceValidationError,
+    PRSupervisor,
+    RemoteDispatchError,
+)
 from pa.pr_supervisor.store import PRSupervisorStore, StaleFenceError
 
 router = APIRouter()
@@ -760,6 +764,15 @@ async def dispatch_authorized_effect(
         state = await _service(request).authorize_and_dispatch_effect(
             body, caller_instance_id=caller
         )
+    except RemoteDispatchError as exc:
+        headers = {}
+        if exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+        raise HTTPException(
+            status_code=exc.status_code or 503,
+            detail=exc.audit_detail(),
+            headers=headers,
+        ) from exc
     except StaleFenceError as exc:
         raise HTTPException(
             status_code=409,

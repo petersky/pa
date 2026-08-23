@@ -257,6 +257,17 @@ instance. If that instance is unavailable, the supervising eligible worker
 starts the replacement. Prompts include exact failing checks and inline review
 context.
 
+Remote executor delivery preserves a sanitized structured rejection code and
+classifies it as semantic rejection, stale provenance/fence, capacity/queue,
+authentication/authorization, terminal session, or transport availability.
+Semantic, authentication, and stale-provenance responses never fall back to a
+different local executor. Availability failures retry the canonical destination
+with the same event key; terminal-session recovery may resume or replace the
+canonical executor only through fenced supervisor policy. Dispatch claims store
+the authorization ID, owner, fence, lease generation, destination, and event
+key. A claim becomes terminally deduplicated only after the destination durably
+accepts the prompt, and an older attempt cannot complete a newer fenced claim.
+
 GitHub text is untrusted. PA bounds and redacts it, escapes delimiter-breaking
 text, and places it inside an explicit `github_external_content` data boundary.
 External comments/check logs are never used as privileged instructions.

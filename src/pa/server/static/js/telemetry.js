@@ -5,6 +5,8 @@
   const ACCESSIBLE_PAGE_SIZE = 100;
   const MAX_CHART_PATH_POINTS = 720;
   const MAX_CHART_MARKERS = 160;
+  const DEFAULT_VISIBLE_SERIES = 8;
+  const DASH_PATTERNS = ["", "8 4", "2 3", "10 3 2 3", "1 3", "6 2 1 2"];
   const GAP_LABELS = {
     no_sample: "No sample",
     unsupported: "Unsupported",
@@ -293,7 +295,53 @@
   }
 
   function seriesName(series) {
-    return (series.instance_name || series.scope_id) + " · " + series.metric;
+    const identity = series.instance_name || "Unknown instance";
+    const scope = series.scope_type === "session" ? " · " + (series.scope_id || "session").slice(0, 8) : "";
+    return identity + scope + " · " + series.metric;
+  }
+
+  function seriesKey(series) {
+    return [series.instance_id, series.scope_type, series.scope_id, series.metric, series.unit].join("|");
+  }
+
+  function syncUrl(form, visibleKeys) {
+    const url = new URL(window.location.href);
+    ["view", "provider_id", "card_id", "scope_id", "range", "start", "end"].forEach(function (name) {
+      const value = form.elements[name] && form.elements[name].value;
+      if (value) url.searchParams.set(name, value); else url.searchParams.delete(name);
+    });
+    url.searchParams.delete("instance_id");
+    Array.from(form.instance_id.selectedOptions).map(function (option) { return option.value; })
+      .filter(Boolean).forEach(function (value) { url.searchParams.append("instance_id", value); });
+    url.searchParams.delete("series");
+    (visibleKeys || []).forEach(function (value) { url.searchParams.append("series", value); });
+    window.history.replaceState(null, "", url);
+    const exportLink = document.querySelector("[data-telemetry-export]");
+    if (exportLink) {
+      const output = new URL("/api/telemetry/export", window.location.origin);
+      ["range", "provider_id", "card_id", "scope_id"].forEach(function (name) {
+        const value = form.elements[name] && form.elements[name].value;
+        if (value) output.searchParams.append(name === "scope_id" ? "scope_id" : name, value);
+      });
+      Array.from(form.instance_id.selectedOptions).forEach(function (option) {
+        if (option.value) output.searchParams.append("instance_id", option.value);
+      });
+      const metrics = new Set((visibleKeys || []).map(function (key) { return key.split("|")[3]; }).filter(Boolean));
+      metrics.forEach(function (metricName) { output.searchParams.append("metric", metricName); });
+      exportLink.href = output.pathname + output.search;
+    }
+  }
+
+  function restoreUrl(form) {
+    const values = new URL(window.location.href).searchParams;
+    ["view", "provider_id", "card_id", "scope_id", "range", "start", "end"].forEach(function (name) {
+      if (values.has(name) && form.elements[name]) form.elements[name].value = values.get(name);
+    });
+    const instances = new Set(values.getAll("instance_id"));
+    if (instances.size) Array.from(form.instance_id.options).forEach(function (option) {
+      option.selected = instances.has(option.value);
+    });
+    return values.getAll("series");
   }
 
   function matchingGap(series, timestamp) {
@@ -434,6 +482,11 @@
 
   function drawReport(report, data) {
     const allSeries = data.series || [];
+    if (!report._visibleKeys) {
+      const requested = report._requestedSeries || [];
+      report._visibleKeys = new Set(requested.length ? requested : allSeries.slice(0, DEFAULT_VISIBLE_SERIES).map(seriesKey));
+    }
+    const visibleSeries = allSeries.filter(function (series) { return report._visibleKeys.has(seriesKey(series)); });
     const domainStart = data.start, domainEnd = data.end;
     const diagnostics = report.querySelector("[data-report-diagnostics]");
     const domainPoints = allSeries.flatMap(function (series) { return series.points || []; }).filter(function (point) {
@@ -444,21 +497,41 @@
     const newest = domainPoints.slice().sort(function (a, b) {
       return Date.parse(b.timestamp) - Date.parse(a.timestamp);
     })[0];
-    if (diagnostics) diagnostics.textContent = "Range " + new Date(domainStart).toLocaleString() + " – " + new Date(domainEnd).toLocaleString() + " · " + bucketCount + " buckets · " + allSeries.length + " series · " + pointCount + " points" + (newest ? " · newest " + new Date(newest.timestamp).toLocaleString() : " · no collected samples");
+    const newestAge = newest ? Date.now() - Date.parse(newest.timestamp) : Infinity;
+    const freshness = !newest ? "unavailable" : newestAge <= Number(data.bucket_seconds || 60) * 2000 ? "sampled (current)" : "stale";
+    if (diagnostics) diagnostics.textContent = "Range " + new Date(domainStart).toLocaleString() + " – " + new Date(domainEnd).toLocaleString() + " · " + bucketCount + " buckets · " + allSeries.length + " series · " + pointCount + " points · " + freshness + (newest ? " · newest " + new Date(newest.timestamp).toLocaleString() : " · no collected samples");
     const legend = report.querySelector("[data-telemetry-legend]");
     legend.replaceChildren();
-    allSeries.slice(0, 16).forEach(function (series, index) {
-      const item = document.createElement("span");
+    allSeries.forEach(function (series, index) {
+      const item = document.createElement("span"); item.className = "telemetry-legend-item";
       const swatch = document.createElement("i");
       swatch.style.background = COLORS[index % COLORS.length];
-      item.append(swatch, document.createTextNode(seriesName(series)));
+      swatch.dataset.pattern = String(index % DASH_PATTERNS.length);
+      const toggle = document.createElement("button"); toggle.type = "button";
+      toggle.textContent = seriesName(series);
+      toggle.setAttribute("aria-pressed", report._visibleKeys.has(seriesKey(series)) ? "true" : "false");
+      toggle.addEventListener("click", function () {
+        const key = seriesKey(series);
+        if (report._visibleKeys.has(key)) report._visibleKeys.delete(key); else report._visibleKeys.add(key);
+        drawReport(report, data); drawAccessibleTable(report, data, 0);
+        syncUrl(document.querySelector("[data-telemetry-filters]"), Array.from(report._visibleKeys));
+      });
+      const solo = document.createElement("button"); solo.type = "button";
+      solo.className = "text-btn telemetry-series-solo"; solo.textContent = "Solo";
+      solo.setAttribute("aria-label", "Show only " + seriesName(series));
+      solo.addEventListener("click", function () {
+        report._visibleKeys = new Set([seriesKey(series)]);
+        drawReport(report, data); drawAccessibleTable(report, data, 0);
+        syncUrl(document.querySelector("[data-telemetry-filters]"), Array.from(report._visibleKeys));
+      });
+      item.append(swatch, toggle, solo);
       legend.appendChild(item);
     });
     let hasGaps = (data.failures || []).length > 0;
     report.querySelectorAll("[data-chart-group]").forEach(function (chart) {
       const names = chart.dataset.metrics.split(",");
       const unit = chart.dataset.unit;
-      const selected = allSeries.filter(function (series) {
+      const selected = visibleSeries.filter(function (series) {
         return names.indexOf(series.metric) >= 0 && series.unit === unit;
       });
       const lines = chart.querySelector("[data-chart-lines]");
@@ -480,7 +553,9 @@
       addAxisText(axes, "784", "216", new Date(domainEnd).toLocaleString(), "end");
       if (!selected.length) {
         empty.hidden = false;
-        empty.textContent = "No sample for this metric and unit in the requested interval.";
+        empty.textContent = names.some(function (name) { return name === "session.processes" || name === "session.tasks"; })
+          ? "Unavailable—not zero. Enable per-session telemetry and verify provider process ownership, then retry."
+          : "No sample for this metric and unit in the requested interval.";
         hasGaps = true; return;
       }
       const values = selected.flatMap(function (series) {
@@ -520,6 +595,7 @@
           segments.flat().map(function (item) { return item.observation.timestamp; }));
         const seriesGaps = series.gaps || [];
         const color = COLORS[allSeries.indexOf(series) % COLORS.length];
+        const dash = DASH_PATTERNS[allSeries.indexOf(series) % DASH_PATTERNS.length];
         if (seriesGaps.length || rawSegments.length > 1) hasGaps = true;
         segments.forEach(function (segment) {
           const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -527,6 +603,7 @@
             return (i ? "L" : "M") + point.x.toFixed(1) + "," + point.y.toFixed(1);
           }).join(" "));
           path.setAttribute("stroke", color);
+          if (dash) path.setAttribute("stroke-dasharray", dash);
           path.dataset.seriesIndex = String(allSeries.indexOf(series));
           lines.appendChild(path);
         });
@@ -534,7 +611,8 @@
           const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
           point.setAttribute("cx", item.x.toFixed(1)); point.setAttribute("cy", item.y.toFixed(1));
           point.setAttribute("r", rawSegments.length === 1 && rawSegments[0].length === 1 ? "4" : "2.5");
-          point.setAttribute("fill", color);
+          point.setAttribute("fill", allSeries.indexOf(series) % 2 ? "none" : color);
+          point.setAttribute("stroke", color);
           point.dataset.seriesIndex = String(allSeries.indexOf(series));
           point.dataset.timestamp = item.point.timestamp;
           pointsLayer.appendChild(point);
@@ -616,8 +694,40 @@
     const form = document.querySelector("[data-telemetry-filters]");
     if (!report || !form || report.dataset.bound === "1") return;
     report.dataset.bound = "1";
+    report._requestedSeries = restoreUrl(form);
     const custom = form.querySelector("[data-custom-range]");
+    custom.hidden = form.range.value !== "custom";
     form.range.addEventListener("change", function () { custom.hidden = form.range.value !== "custom"; });
+    form.querySelectorAll("[data-filter-search]").forEach(function (search) {
+      const select = form.elements[search.dataset.filterSearch];
+      search.addEventListener("input", function () {
+        const query = search.value.trim().toLocaleLowerCase(); let shown = 0;
+        if (search.dataset.filterSearch === "card_id" || search.dataset.filterSearch === "scope_id") {
+          window.clearTimeout(search._timer);
+          search._timer = window.setTimeout(function () {
+            if (search._request) search._request.abort();
+            search._request = new AbortController();
+            const selected = select.value;
+            fetch("/api/telemetry/dimensions/search?kind=" + encodeURIComponent(search.dataset.filterSearch) + "&q=" + encodeURIComponent(query), {
+              credentials: "same-origin", signal: search._request.signal
+            }).then(function (response) { return response.ok ? response.json() : {results: []}; })
+              .then(function (data) {
+                select.replaceChildren(new Option(search.dataset.filterSearch === "card_id" ? "All cards" : "All sessions", ""));
+                (data.results || []).forEach(function (item) {
+                  const option = new Option(item.label + " · " + item.short_id, item.id);
+                  option.selected = item.id === selected; select.appendChild(option);
+                });
+              }).catch(function (error) { if (error.name !== "AbortError") search.setAttribute("aria-invalid", "true"); });
+          }, 150);
+          return;
+        }
+        Array.from(select.options).forEach(function (option, index) {
+          const match = !query || option.textContent.toLocaleLowerCase().includes(query) || option.value.toLocaleLowerCase().includes(query);
+          option.hidden = index > 0 && (!match || shown >= 50);
+          if (index > 0 && match && shown < 50) shown += 1;
+        });
+      });
+    });
     report.querySelectorAll(".telemetry-chart-stage").forEach(function (stage) {
       stage.addEventListener("keydown", function (event) {
         if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -640,12 +750,20 @@
     if (nextPage) nextPage.addEventListener("click", function () {
       changeAccessiblePage(1);
     });
+    const resetSeries = report.querySelector("[data-series-reset]");
+    if (resetSeries) resetSeries.addEventListener("click", function () {
+      if (!report._lastData) return;
+      report._visibleKeys = new Set((report._lastData.series || []).slice(0, DEFAULT_VISIBLE_SERIES).map(seriesKey));
+      drawReport(report, report._lastData); drawAccessibleTable(report, report._lastData, 0);
+      syncUrl(form, Array.from(report._visibleKeys));
+    });
     report._cleanup = function () {
       if (report._request) report._request.abort();
       report._lastData = null;
     };
     function load() {
       const body = reportBody(report, form);
+      syncUrl(form, report._visibleKeys ? Array.from(report._visibleKeys) : report._requestedSeries);
       if (report._request) report._request.abort();
       report._request = new AbortController();
       const fleet = form.view.value === "fleet";

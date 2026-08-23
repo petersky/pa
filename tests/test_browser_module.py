@@ -48,6 +48,7 @@ class BrowserMcpSchemaTests(unittest.IsolatedAsyncioTestCase):
             "browser_actions",
             "browser_share",
             "browser_capabilities",
+            "browser_operation_outcome",
         }
         self.assertEqual(set(mcp.functions), expected)
 

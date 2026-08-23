@@ -278,6 +278,7 @@ async def browser_capabilities() -> dict[str, Any]:
             "back",
             "screenshot",
             "detach",
+            "operation_outcome",
         ],
         "advanced_actions": [
             "pointer_move",
@@ -306,6 +307,13 @@ async def browser_capabilities() -> dict[str, Any]:
             "operations": "POST /api/browser/{operation}",
             "authentication": "PA bearer token required",
         },
+        "operation_contracts": {
+            "attach": {"idempotent_with_operation_id": True, "automatic_retry": "same_operation_id_only"},
+            "open": {"idempotent_with_operation_id": True, "automatic_retry": "same_operation_id_only"},
+            "snapshot": {"idempotent": True, "automatic_retry": "bounded"},
+            "click": {"idempotent_with_operation_id": True, "automatic_retry": "never_without_safe_contract"},
+            "operation_outcome": {"states": ["completed", "running", "not_started"]},
+        },
     }
 
 
@@ -324,9 +332,20 @@ async def browser_automation(
                 height=body.height,
                 device_scale_factor=body.device_scale_factor,
                 share_handle=body.share_handle,
+                operation_id=body.operation_id,
             )
         if operation == "state":
             return await manager.state(scope, handle=body.browser_handle)
+        if operation == "operation_outcome":
+            if not body.operation_id:
+                raise BrowserSessionError(
+                    "invalid_operation_id", "operation_id is required."
+                )
+            return await manager.operation_outcome(
+                scope,
+                handle=body.browser_handle,
+                operation_id=body.operation_id,
+            )
         if operation == "share":
             if not body.authorized_session_id:
                 raise BrowserSessionError(
@@ -382,7 +401,11 @@ async def browser_automation(
                 raise BrowserSessionError("invalid_url", "url is required.")
             return await manager.open(scope, url=body.url, **common)
         if operation == "snapshot":
-            return await manager.snapshot(scope, handle=body.browser_handle)
+            return await manager.snapshot(
+                scope,
+                handle=body.browser_handle,
+                operation_id=body.operation_id,
+            )
         if operation == "click":
             return await manager.click(
                 scope,
@@ -571,6 +594,7 @@ class BrowserModule(Module):
             height: int = 900,
             device_scale_factor: float = 1,
             share_handle: str | None = None,
+            operation_id: str | None = None,
         ) -> str:
             """Attach this PA agent session to its isolated browser, or redeem an authorized share handle."""
             return json.dumps(
@@ -581,6 +605,7 @@ class BrowserModule(Module):
                     height=height,
                     device_scale_factor=device_scale_factor,
                     share_handle=share_handle,
+                    operation_id=operation_id,
                 )
             )
 
@@ -645,10 +670,31 @@ class BrowserModule(Module):
             )
 
         @mcp.tool()
-        def browser_snapshot(browser_handle: str | None = None) -> str:
+        def browser_snapshot(
+            browser_handle: str | None = None,
+            operation_id: str | None = None,
+        ) -> str:
             """Return visible content with target- and document-revision-bound element refs."""
             return json.dumps(
-                call("snapshot", browser_handle=browser_handle), ensure_ascii=False
+                call(
+                    "snapshot",
+                    browser_handle=browser_handle,
+                    operation_id=operation_id,
+                ),
+                ensure_ascii=False,
+            )
+
+        @mcp.tool()
+        def browser_operation_outcome(
+            operation_id: str, browser_handle: str | None = None
+        ) -> str:
+            """Return completed, running, or not_started for a retry-safe browser operation."""
+            return json.dumps(
+                call(
+                    "operation_outcome",
+                    operation_id=operation_id,
+                    browser_handle=browser_handle,
+                )
             )
 
         @mcp.tool()
