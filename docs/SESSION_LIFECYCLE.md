@@ -14,6 +14,13 @@ The default idle follow-up window is 24 hours. Configure these with
 `PA_AGENT_SESSION_SWEEP_SECONDS` and
 `PA_AGENT_SESSION_IDLE_RETENTION_HOURS`.
 
+Lifecycle filesystem and SQLite work uses a reserved single-worker lane rather
+than the shared control-plane blocking pool. Concurrent sweeps coalesce. Durable
+close attempts fence on a monotonically increasing attempt number and bound both
+the projection mutation-lock wait and SQLite busy wait to one second. A
+contended attempt finishes as deferred before another attempt begins; it cannot
+continue invisibly after the sweep has reported its terminal result.
+
 ## Lifecycle matrix
 
 | Session/workflow | Policy | Close reason or retention condition |
@@ -56,6 +63,12 @@ The lifecycle service records counters keyed by outcome and reason, including
 closed by policy from sessions retained for follow-up, deferred for durable
 obligations, or skipped. The durable transcript event is the per-session audit
 record and remains visible in session history after closure.
+
+`GET /agent/status` includes the most recent 100 redacted lifecycle attempts.
+Each entry exposes only session ID, close reason, queue and lease state, mutation
+lock wait, lifecycle worker owner, attempt fence, and terminal result. Transcript
+content is never included. `coalesced:sweep_active` counts redundant sweep
+wakeups, and `deferred:close_contention` counts bounded lock/SQLite failures.
 
 Explicit operator closure remains available. It uses the same durable audit and
 workspace reconciliation primitives but is intentionally not a substitute for

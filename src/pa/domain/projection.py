@@ -6,6 +6,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -137,9 +138,9 @@ class CardProjection:
                 self.rebuild_from_log(realm)
 
     @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("PRAGMA busy_timeout = 30000")
+    def _conn(self, *, busy_timeout_ms: int = 30000) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
+        conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.row_factory = sqlite3.Row
@@ -4490,6 +4491,9 @@ class CardProjection:
         *,
         reason: str,
         closed_at: datetime | None = None,
+        lock_timeout_seconds: float | None = None,
+        busy_timeout_ms: int = 30000,
+        diagnostics: dict[str, Any] | None = None,
     ) -> tuple[AgentSession | None, str | None]:
         """Atomically close a durable session and append its audit event.
 
@@ -4497,55 +4501,82 @@ class CardProjection:
         makes singleton and bulk closure idempotent.
         """
         closed_at = closed_at or datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM agent_sessions WHERE id = ?",
-                (session_id,),
-            ).fetchone()
-            if row is None:
-                return None, None
-            session = self._row_to_session(row)
-            if session.status == "closed":
-                return session, None
-            prior_status = session.status
-            conn.execute(
-                "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",
-                (closed_at.isoformat(), session_id),
+        lock_started = time.monotonic()
+        if lock_timeout_seconds is None:
+            acquired = self._mutation_lock.acquire()
+        else:
+            acquired = self._mutation_lock.acquire(timeout=lock_timeout_seconds)
+        lock_wait_ms = (time.monotonic() - lock_started) * 1000
+        if diagnostics is not None:
+            diagnostics["lock_wait_ms"] = round(lock_wait_ms, 3)
+        if not acquired:
+            if diagnostics is not None:
+                diagnostics["terminal_result"] = "lock_timeout"
+            raise TimeoutError(
+                f"session close mutation lock exceeded {lock_timeout_seconds:.3f}s"
             )
-            seq_row = conn.execute(
-                """
-                SELECT COALESCE(MAX(seq), 0) AS max_seq
-                FROM agent_transcript_events
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchone()
-            next_seq = int(seq_row["max_seq"] if seq_row else 0) + 1
-            event = TranscriptEvent(
-                session_id=session_id,
-                seq=next_seq,
-                event_type="session_closed",
-                payload={"reason": reason, "prior_status": prior_status},
-                created_at=closed_at,
-            )
-            conn.execute(
-                """
-                INSERT INTO agent_transcript_events
-                (id, session_id, seq, event_type, payload, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event.id,
-                    event.session_id,
-                    event.seq,
-                    event.event_type,
-                    json.dumps(event.payload),
-                    event.created_at.isoformat(),
-                ),
-            )
-            session.status = "closed"
-            session.updated_at = closed_at
-            return session, prior_status
+        try:
+            with self._conn(busy_timeout_ms=busy_timeout_ms) as conn:
+                row = conn.execute(
+                    "SELECT * FROM agent_sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+                if row is None:
+                    if diagnostics is not None:
+                        diagnostics["terminal_result"] = "missing"
+                    return None, None
+                session = self._row_to_session(row)
+                if session.status == "closed":
+                    if diagnostics is not None:
+                        diagnostics["terminal_result"] = "already_closed"
+                    return session, None
+                prior_status = session.status
+                conn.execute(
+                    "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",
+                    (closed_at.isoformat(), session_id),
+                )
+                seq_row = conn.execute(
+                    """
+                    SELECT COALESCE(MAX(seq), 0) AS max_seq
+                    FROM agent_transcript_events
+                    WHERE session_id = ?
+                    """,
+                    (session_id,),
+                ).fetchone()
+                next_seq = int(seq_row["max_seq"] if seq_row else 0) + 1
+                event = TranscriptEvent(
+                    session_id=session_id,
+                    seq=next_seq,
+                    event_type="session_closed",
+                    payload={"reason": reason, "prior_status": prior_status},
+                    created_at=closed_at,
+                )
+                conn.execute(
+                    """
+                    INSERT INTO agent_transcript_events
+                    (id, session_id, seq, event_type, payload, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event.id,
+                        event.session_id,
+                        event.seq,
+                        event.event_type,
+                        json.dumps(event.payload),
+                        event.created_at.isoformat(),
+                    ),
+                )
+                session.status = "closed"
+                session.updated_at = closed_at
+                if diagnostics is not None:
+                    diagnostics["terminal_result"] = "closed"
+                return session, prior_status
+        except sqlite3.OperationalError:
+            if diagnostics is not None:
+                diagnostics["terminal_result"] = "sqlite_timeout"
+            raise
+        finally:
+            self._mutation_lock.release()
 
     def next_transcript_seq(self, session_id: str) -> int:
         with self._conn() as conn:
