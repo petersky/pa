@@ -28,6 +28,7 @@ from pa.workloads import canonical_default_scope_key
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 MAX_HISTORY_COMMITS = 100_000
+MAX_ORPHAN_DIAGNOSTIC_OBJECTS = 250_000
 HISTORY_PAGE_LIMIT = 500
 _SUPPORTED_OBJECT_SCHEMA_VERSION = 1
 _ObjectModel = TypeVar("_ObjectModel", bound=BaseModel)
@@ -1490,6 +1491,79 @@ class EventLog:
                 page["scanned_commits"], MAX_HISTORY_COMMITS
             )
         return page["events"]
+
+    def orphaned_card_bases(
+        self,
+        realm_id: str,
+        card_ids: list[str],
+        *,
+        max_objects: int = MAX_ORPHAN_DIAGNOSTIC_OBJECTS,
+    ) -> dict[str, list[dict[str, str]]]:
+        """Find canonical card bases stored outside the current reachable DAG.
+
+        The object store is deliberately not authoritative.  This bounded scan is
+        diagnostic evidence only; callers must append recovery events through the
+        normal compare-and-swap mutation path.
+        """
+        wanted = set(card_ids)
+        if not wanted:
+            return {}
+        hashes = self.store.list_hashes()
+        if len(hashes) > max_objects:
+            raise EventHistoryLimitError(len(hashes), max_objects)
+        head = self.get_head(realm_id)
+        reachable = self._ancestors(head) if head else set()
+        base_events: dict[str, tuple[str, CardEvent]] = {}
+        commits: list[tuple[str, SyncCommit]] = []
+        for object_hash_value in hashes:
+            raw = self.store.get(object_hash_value)
+            if raw is None:
+                continue
+            if object_hash(raw) != object_hash_value:
+                continue
+            try:
+                value = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(value, dict) or value.get("realm_id") != realm_id:
+                continue
+            if "event_hashes" in value and "parent_hashes" in value:
+                try:
+                    commits.append((object_hash_value, SyncCommit.model_validate(value)))
+                except ValidationError:
+                    continue
+                continue
+            if value.get("card_id") not in wanted or value.get("type") not in {
+                EventType.CARD_CREATED.value,
+                EventType.CARD_UPSERTED.value,
+            }:
+                continue
+            try:
+                event = CardEvent.model_validate(value)
+            except ValidationError:
+                continue
+            base_events[object_hash_value] = (str(event.card_id), event)
+
+        result: dict[str, list[dict[str, str]]] = {}
+        for commit_hash, commit in commits:
+            if commit_hash in reachable:
+                continue
+            for event_hash in commit.event_hashes:
+                found = base_events.get(event_hash)
+                if not found:
+                    continue
+                card_id, event = found
+                result.setdefault(card_id, []).append(
+                    {
+                        "commit_hash": commit_hash,
+                        "event_hash": event_hash,
+                        "event_type": event.type.value,
+                        "source_operation": event.source_operation or "",
+                    }
+                )
+        for evidence in result.values():
+            evidence.sort(key=lambda item: (item["commit_hash"], item["event_hash"]))
+        return result
 
     def merge_audit(self, realm_id: str, *, limit: int = 50) -> list[dict]:
         """Return merge decisions embedded in the immutable realm history."""

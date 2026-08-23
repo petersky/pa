@@ -178,6 +178,7 @@ class CardProjectChangeRequest(BaseModel):
 class CardRepairRequest(BaseModel):
     card_ids: list[str] = Field(min_length=1, max_length=100)
     realm_id: str = "default"
+    diagnose_only: bool = False
 
 
 def _require_memory_editor(request: Request) -> str:
@@ -2121,12 +2122,16 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
         if getattr(request.state, "instance_authenticated", False)
         else get_principal_id(request)
     )
-    results = get_store().repair_legacy_card_history(
-        body.card_ids,
-        realm_id=body.realm_id,
-        principal_id=principal_id,
-        instance_id=request.app.state.ctx.settings.instance_id,
-    )
+    try:
+        results = get_store().repair_legacy_card_history(
+            body.card_ids,
+            realm_id=body.realm_id,
+            principal_id=principal_id,
+            instance_id=request.app.state.ctx.settings.instance_id,
+            diagnose_only=body.diagnose_only,
+        )
+    except EventHistoryError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
     return {
         "realm_id": body.realm_id,
         "results": results,
@@ -3667,14 +3672,18 @@ class ItemsModule(Module):
 
         @mcp.tool()
         def repair_legacy_card_history(
-            card_ids: list[str], realm: str = "default"
+            card_ids: list[str], realm: str = "default", diagnose_only: bool = False
         ) -> dict:
-            """Idempotently append canonical bases for projection-only legacy cards."""
+            """Diagnose reachability and re-anchor orphaned/projection-only cards."""
             return request_local_pa(
                 ctx.settings,
                 "POST",
                 "/api/cards/repair-legacy-history",
-                json={"card_ids": card_ids, "realm_id": realm},
+                json={
+                    "card_ids": card_ids,
+                    "realm_id": realm,
+                    "diagnose_only": diagnose_only,
+                },
             )
 
         @mcp.tool()
