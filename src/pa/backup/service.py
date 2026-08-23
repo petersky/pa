@@ -14,6 +14,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -218,6 +219,23 @@ def _verify_event_graph(objects_root: Path, refs: dict[str, str]) -> None:
         )
 
 
+def _verify_transcript_store(database: Path, objects_root: Path) -> None:
+    if not database.exists():
+        return
+    with contextlib.closing(sqlite3.connect(f"file:{database}?mode=ro", uri=True)) as conn:
+        refs = conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL").fetchall()
+    for (digest,) in refs:
+        path = objects_root / str(digest)[:2] / f"{str(digest)[2:]}.zlib"
+        if not path.is_file():
+            raise BackupError("transcript_object_missing", f"cold transcript object {str(digest)[:12]} is missing")
+        try:
+            raw = zlib.decompress(path.read_bytes())
+        except (OSError, zlib.error) as exc:
+            raise BackupError("transcript_object_corrupt", f"cold transcript object {str(digest)[:12]} is unreadable") from exc
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise BackupError("transcript_object_corrupt", f"cold transcript object {str(digest)[:12]} failed content hash")
+
+
 class BackupService:
     def __init__(self, settings: Settings, store: Store | None) -> None:
         self.settings = settings
@@ -363,12 +381,12 @@ class BackupService:
             os.fsync(out.fileno())
         os.chmod(target, 0o600)
 
-    def _online_sqlite_backup(self, target: Path) -> None:
+    def _online_sqlite_backup(self, target: Path, *, source_path: Path | None = None) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             with (
                 contextlib.closing(
-                    sqlite3.connect(self.settings.db_path, timeout=30)
+                    sqlite3.connect(source_path or self.settings.db_path, timeout=30)
                 ) as source,
                 contextlib.closing(sqlite3.connect(target)) as destination,
             ):
@@ -390,10 +408,28 @@ class BackupService:
             if self.store is not None
             else contextlib.nullcontext()
         )
-        with lock:
+        transcript_lock = (
+            self.store.transcripts._lock
+            if self.store is not None and hasattr(self.store, "transcripts")
+            else contextlib.nullcontext()
+        )
+        with lock, transcript_lock:
             projection = staging / "projection.sqlite3"
             self._online_sqlite_backup(projection)
             _integrity(projection, self.config.verification_level)
+            transcript_source = self.settings.db_path.with_name(
+                f"{self.settings.db_path.stem}.transcripts.db"
+            )
+            if transcript_source.exists():
+                transcript_target = staging / "transcripts.sqlite3"
+                self._online_sqlite_backup(transcript_target, source_path=transcript_source)
+                _integrity(transcript_target, self.config.verification_level)
+                cold_target = staging / "transcript_objects"
+                cold_target.mkdir(mode=0o700)
+                cold_source = self.settings.data_dir / "transcript_objects"
+                if cold_source.exists():
+                    for source in sorted(cold_source.glob("*/*.zlib")):
+                        self._copy_file(source, cold_target / source.relative_to(cold_source))
 
             refs: dict[str, str] = {}
             if self.store is not None and self.store.event_log is not None:
@@ -776,8 +812,20 @@ class BackupService:
                                 "event_object_corrupt",
                                 f"event-log object path {relative} does not match its hash",
                             )
+                    if parts and parts[0] == "transcript_objects":
+                        object_id = parts[1] + Path(parts[2]).stem if len(parts) == 3 else ""
+                        try:
+                            raw = zlib.decompress(candidate.read_bytes())
+                        except (OSError, zlib.error) as exc:
+                            raise BackupError("transcript_object_corrupt", f"cold transcript object {relative} is unreadable") from exc
+                        if hashlib.sha256(raw).hexdigest() != object_id:
+                            raise BackupError("transcript_object_corrupt", f"cold transcript object {relative} failed content hash")
                 projection = root / "projection.sqlite3"
                 _integrity(projection, manifest.verification_level)
+                transcript_projection = root / "transcripts.sqlite3"
+                if transcript_projection.exists():
+                    _integrity(transcript_projection, manifest.verification_level)
+                    _verify_transcript_store(transcript_projection, root / "transcript_objects")
                 version, fingerprint = _schema_info(projection)
                 if (
                     version != manifest.projection_schema_version
@@ -1280,6 +1328,8 @@ class BackupService:
 
             for live in (
                 self.settings.db_path,
+                self.settings.db_path.with_name(f"{self.settings.db_path.stem}.transcripts.db"),
+                self.settings.data_dir / "transcript_objects",
                 self.settings.data_dir / "sync_refs.json",
                 self.settings.objects_dir,
             ):
@@ -1296,6 +1346,16 @@ class BackupService:
                 mode=0o600,
             )
             os.replace(extract_root / "objects", self.settings.objects_dir)
+            transcript_snapshot = extract_root / "transcripts.sqlite3"
+            if transcript_snapshot.exists():
+                transcript_live = self.settings.db_path.with_name(f"{self.settings.db_path.stem}.transcripts.db")
+                os.replace(transcript_snapshot, transcript_live)
+                os.chmod(transcript_live, 0o600)
+                cold_snapshot = extract_root / "transcript_objects"
+                if cold_snapshot.exists():
+                    os.replace(cold_snapshot, self.settings.data_dir / "transcript_objects")
+                _integrity(transcript_live, record.manifest.verification_level)
+                _verify_transcript_store(transcript_live, self.settings.data_dir / "transcript_objects")
             _integrity(self.settings.db_path, record.manifest.verification_level)
             try:
                 restored_refs = json.loads(

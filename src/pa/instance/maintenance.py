@@ -39,13 +39,18 @@ def run_maintenance(
         ),
         "dispatch_compact": {"events": 0, "receipts": 0},
         "sqlite": {},
+        "transcript_storage": {},
     }
+    if hasattr(store, "migrate_legacy_transcripts"):
+        result["transcript_migration"] = store.migrate_legacy_transcripts()
     if dispatch_store is not None:
         try:
             result["dispatch_compact"] = dispatch_store.compact(now=now)
         except DispatchStoreReadOnlyError:
             result["dispatch_compact"] = {"skipped": "read_only"}
     result["sqlite"] = store.optimize()
+    if hasattr(store, "transcript_storage_metrics"):
+        result["transcript_storage"] = store.transcript_storage_metrics()
     return result
 
 
@@ -107,6 +112,11 @@ class InstanceMaintenanceService:
             ),
             "last_error": self.last_error,
             "last_result": self.last_result,
+            "transcript_storage": (
+                self.store.transcript_storage_metrics()
+                if hasattr(self.store, "transcript_storage_metrics")
+                else None
+            ),
         }
 
     async def _run(self) -> None:

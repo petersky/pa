@@ -22,7 +22,7 @@ from pa.backup.service import (
     validate_destination,
 )
 from pa.config import Settings, get_settings, reset_settings
-from pa.domain.models import CardCreate
+from pa.domain.models import CardCreate, TranscriptEvent
 from pa.domain.store import Store
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -140,6 +140,22 @@ class BackupTestCase(unittest.TestCase):
             thread.join(timeout=5)
         self.assertFalse(failures)
         self.assertTrue(self.service.verify_backup(result.backup_id).verified)
+
+    def test_backup_verifies_transcript_index_and_cold_objects(self) -> None:
+        self.store.append_transcript_events([
+            TranscriptEvent(
+                session_id="backup-session",
+                seq=1,
+                event_type="turn_completed",
+                payload={"text": "result " * 2000},
+            )
+        ])
+        result = self._run("transcript-cold")
+        record = self.service.list_backups(verify=True)[0]
+        names = {item.path for item in record.manifest.files}
+        self.assertIn("transcripts.sqlite3", names)
+        self.assertTrue(any(name.startswith("transcript_objects/") for name in names))
+        self.assertTrue(record.verified, record.verification_error)
 
     def test_reachable_event_graph_is_verified_and_missing_object_rejected(
         self,
