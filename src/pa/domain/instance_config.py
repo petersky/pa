@@ -96,6 +96,7 @@ class InstanceConfig(BaseModel):
     transcript_retention_days: int = Field(default=14, ge=1, le=3650)
     mutation_operation_retention_days: int = Field(default=14, ge=1, le=3650)
     memory_auto_capture_enabled: bool = False
+    autonomy_context_by_realm: dict[str, dict] = Field(default_factory=dict)
     card_summary_provider: str = "openai"
     card_summary_model: str = "gpt-5-mini"
     card_summary_base_url: str = "https://api.openai.com/v1"

@@ -853,6 +853,17 @@ _DEFINITIONS = (
         apply="live",
     ),
     _s(
+        "autonomy_context_by_realm",
+        "dict_json",
+        {},
+        "Fail-closed limbic and Memory rollout policy keyed by realm.",
+        "Agent",
+        70,
+        "Shadow mode records redacted observations; prompt effects require explicit promotion gates.",
+        apply="live",
+        scope="realm",
+    ),
+    _s(
         "card_summary_provider",
         "str",
         "openai",
