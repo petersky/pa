@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -1641,6 +1642,7 @@ async def get_agent_session_history(
             detail="Use either after_seq or before_seq, not both",
         )
     mgr = _manager(request)
+    query_started = perf_counter()
     session = await _offload(
         mgr,
         "sqlite.agent_session_read",
@@ -1651,7 +1653,9 @@ async def get_agent_session_history(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     runtime = mgr.get(session_id)
-    page_limit = max(1, min(limit, 5000))
+    # Keep this route bounded even for direct callers. The browser deliberately
+    # asks for smaller 250-event pages to leave headroom for markdown/tool work.
+    page_limit = max(1, min(limit, TRANSCRIPT_WINDOW_LIMIT))
     if after_seq is not None:
         events = await _offload(
             mgr,
@@ -1693,8 +1697,9 @@ async def get_agent_session_history(
             "has_newer": before_seq is not None,
             "limit": page_limit,
         }
+    query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
-    return {
+    payload = {
         "session": session.model_dump(mode="json"),
         "instance": {
             "id": settings.instance_id,
@@ -1707,6 +1712,16 @@ async def get_agent_session_history(
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }
+    serialization_started = perf_counter()
+    serialized = json.dumps(payload, separators=(",", ":"), default=str).encode()
+    serialization_ms = (perf_counter() - serialization_started) * 1000
+    payload["diagnostics"] = {
+        "query_ms": round(query_ms, 2),
+        "serialization_ms": round(serialization_ms, 2),
+        "payload_bytes": len(serialized),
+        "event_count": len(events),
+    }
+    return payload
 
 
 @router.post("/sessions/{session_id}/recover")

@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from time import perf_counter
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1252,6 +1253,42 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertEqual([event["seq"] for event in page["events"]], [1, 2])
         self.assertFalse(page["page"]["has_older"])
         self.assertIsNone(page["page"]["next_before_seq"])
+
+    def test_history_page_is_bounded_instrumented_and_within_budget(self) -> None:
+        session = AgentSession(id="sess-budget", agent_name="codex")
+        store = _FakeStore(
+            [
+                TranscriptEvent(
+                    session_id=session.id,
+                    seq=seq,
+                    event_type="tool_call_update",
+                    payload={"tool_call_id": f"tool-{seq}", "text": "x" * 200},
+                )
+                for seq in range(1, 10_001)
+            ]
+        )
+        manager = MagicMock()
+        manager.store = store
+        manager.store.get_session = MagicMock(return_value=session)
+        manager.get.return_value = None
+        request = MagicMock()
+        request.app.state.ctx.settings.instance_id = "mini-1"
+        request.app.state.ctx.settings.instance_name = "macmini"
+
+        started = perf_counter()
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            page = asyncio.run(
+                get_agent_session_history(request, session.id, limit=5000)
+            )
+        elapsed = perf_counter() - started
+
+        self.assertEqual(len(page["events"]), 1000)
+        self.assertEqual(page["page"]["limit"], 1000)
+        self.assertEqual(page["diagnostics"]["event_count"], 1000)
+        self.assertGreater(page["diagnostics"]["payload_bytes"], 0)
+        self.assertIn("query_ms", page["diagnostics"])
+        self.assertIn("serialization_ms", page["diagnostics"])
+        self.assertLess(elapsed, 2.0)
 
     def test_codex_message_phase_is_preserved(self) -> None:
         update = {

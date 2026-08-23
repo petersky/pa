@@ -579,11 +579,12 @@ widget.els = {
 };
 widget.setTurnActive = function () {};
 widget.setStatus = function () {};
-let renderCalls = 0;
-widget.renderTranscript = function (events) {
-  renderCalls += 1;
-  this.transcriptEvents = events;
+let prependCalls = 0;
+widget.prependTranscript = function (events) {
+  prependCalls += 1;
+  this.transcriptEvents = events.concat(this.transcriptEvents);
   this.els.messages.scrollHeight = 140;
+  return events.length;
 };
 let rejectRequest;
 widget.api = function (path) {
@@ -605,11 +606,125 @@ setImmediate(function () {
   widget.transcriptEvents.push({ seq: 32 }); // concurrent SSE arrival
   widget.loadOlderTranscript();
   setImmediate(function () {
-    assert.strictEqual(renderCalls, 1);
+    assert.strictEqual(prependCalls, 1);
     assert.deepStrictEqual(widget.transcriptEvents.map(function (e) { return e.seq; }), [10, 20, 30, 31, 32]);
     assert.strictEqual(widget.hasOlder, false);
     assert.strictEqual(widget.els.loadOlder.hidden, true);
     assert.strictEqual(widget.els.messages.scrollTop, 65);
+  });
+});
+"""
+        subprocess.run(
+            [shutil.which("node"), "-e", program, str(script_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    @unittest.skipUnless(
+        shutil.which("node"), "node is required for chat UI behavior tests"
+    )
+    def test_older_paging_is_incremental_busy_deduplicated_and_stale_safe(
+        self,
+    ) -> None:
+        script_path = (
+            Path(__file__).parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "static"
+            / "js"
+            / "agent-chat.js"
+        )
+        program = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+function node(name, attrs) {
+  return { name, attrs: attrs || {}, hasAttribute: function (key) { return !!this.attrs[key]; } };
+}
+global.window = {};
+global.document = {
+  addEventListener: function () {}, querySelector: function () { return null; },
+  querySelectorAll: function () { return []; }, body: null,
+  createDocumentFragment: function () { return { children: [], appendChild: function (child) { this.children.push(child); } }; }
+};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+const Widget = window.PAAgentChat.AgentChatWidget;
+const widget = Object.create(Widget.prototype);
+const control = node("control", { "data-acw-load-older": true });
+const status = node("status", { "data-acw-load-older-status": true });
+const placeholder = node("placeholder", { "data-acw-placeholder": true });
+const existing = node("existing");
+const children = [control, status, placeholder, existing];
+const messages = {
+  children, scrollHeight: 100, scrollTop: 20,
+  appendChild: function (value) {
+    if (value.children) this.children.push.apply(this.children, value.children);
+    else this.children.push(value);
+  },
+  insertBefore: function (value, anchor) {
+    const at = this.children.indexOf(anchor);
+    this.children.splice.apply(this.children, [at, 0].concat(value.children));
+  }
+};
+widget.els = {
+  messages,
+  loadOlder: { hidden: false, disabled: false, textContent: "", setAttribute: function () {} },
+  loadOlderLabel: { textContent: "" }, historySpinner: { hidden: true },
+  loadOlderStatus: { hidden: true, textContent: "" },
+  status: { dataset: { state: "online" } }
+};
+widget.sessionId = "session-1"; widget.apiBase = "/api/agent";
+widget.hasOlder = true; widget.olderCursor = 10001; widget.olderError = "";
+widget.loadingOlder = false; widget.prompting = false; widget.turnStartedAt = null;
+widget.seenEvents = {}; widget.lastSeq = 10001;
+widget.transcriptEvents = Array.from({ length: 10000 }, function (_, index) { return { seq: index + 251 }; });
+const activeTimer = { interval: 123 };
+widget.toolTimers = { active: activeTimer };
+widget.clearPlaceholder = function () {};
+widget.setTurnActive = function () {}; widget.setStatus = function () {};
+widget.handleEvent = function (event) {
+  this.seenEvents["seq:" + event.seq] = true;
+  this.els.messages.appendChild(node("event-" + event.seq));
+  this.els.messages.scrollHeight += 1;
+};
+let resolveRequest; let requests = 0;
+widget.api = function (path, options) {
+  requests += 1;
+  assert.ok(path.includes("limit=250"));
+  assert.ok(options.signal);
+  return new Promise(function (resolve) { resolveRequest = resolve; });
+};
+widget.loadOlderTranscript();
+widget.loadOlderTranscript();
+assert.strictEqual(requests, 1, "rapid double clicks share the in-flight request");
+assert.strictEqual(widget.els.historySpinner.hidden, false);
+assert.strictEqual(widget.els.loadOlderStatus.hidden, false);
+assert.strictEqual(widget.els.loadOlderLabel.textContent, "Loading older messages…");
+const page = Array.from({ length: 250 }, function (_, index) { return { seq: index + 1, type: "tool_call" }; });
+page.push({ seq: 251, type: "tool_call" }); // duplicate with retained transcript
+resolveRequest({ events: page, page: { has_older: false, oldest_seq: 1 }, diagnostics: { payload_bytes: 1234 } });
+setImmediate(function () {
+  assert.strictEqual(widget.transcriptEvents.length, 10250);
+  assert.strictEqual(widget.transcriptEvents[0].seq, 1);
+  assert.strictEqual(widget.transcriptEvents[249].seq, 250);
+  assert.strictEqual(widget.els.messages.children[252].name, "event-250");
+  assert.strictEqual(widget.els.messages.children[253], existing, "existing DOM node is preserved");
+  assert.strictEqual(widget.toolTimers.active, activeTimer, "active tool timer is preserved");
+  assert.strictEqual(widget.els.historySpinner.hidden, true);
+
+  widget.hasOlder = true; widget.olderCursor = 1; widget.loadingOlder = false;
+  let staleResolve;
+  widget.api = function () { return new Promise(function (resolve) { staleResolve = resolve; }); };
+  widget.loadOlderTranscript();
+  const staleController = widget.olderAbortController;
+  widget.sessionId = "session-2";
+  staleController.abort();
+  staleResolve({ events: [{ seq: 0 }], page: { has_older: false } });
+  setImmediate(function () {
+    assert.strictEqual(widget.sessionId, "session-2");
+    assert.strictEqual(widget.transcriptEvents[0].seq, 1, "stale session response is ignored");
   });
 });
 """
