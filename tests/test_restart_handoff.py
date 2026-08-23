@@ -14,7 +14,11 @@ from pa.cli.main import app
 from pa.config import Settings
 from pa.domain.models import AgentSession, CardCreate, RestartHandoff
 from pa.domain.projection import CardProjection
-from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
+from pa.instance.agent_session import (
+    AgentSessionManager,
+    AgentSessionRuntime,
+    AgentStartupNotReady,
+)
 from pa.instance.quiesce import QueuedPrompt
 from pa.modules.agent_chat import (
     RestartHandoffBody,
@@ -27,6 +31,7 @@ from pa.modules.fleet import (
     AssignedRestartHandoffBody,
     request_assigned_restart_handoff,
 )
+from pa.modules.items import operation_outcome_api
 
 
 def test_execution_binding_survives_primary_card_change(tmp_path: Path) -> None:
@@ -230,7 +235,9 @@ def test_restart_handoff_idempotency_is_content_fenced(tmp_path: Path) -> None:
                 session_id="s", continuation_prompt="Also continue", idempotency_key="other"
             )
         )
-    assert len(manager._restart_handoff_tasks) == 1
+    # Each asyncio.run closes its loop; a same-key receipt may safely re-arm
+    # after the prior task has completed without creating a second receipt.
+    assert manager._execute_restart_handoff.await_count == 2
     with pytest.raises(ValueError, match="different content"):
         asyncio.run(
             manager.request_restart_handoff(
@@ -461,8 +468,154 @@ def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) ->
         source=f"restart-handoff:{receipt.id}",
         card_id=None,
         project_id=None,
+        _defer_drain=True,
     )
     assert store.get_restart_handoff(receipt.id).status == "continuation_queued"
+
+
+def test_long_turn_handoff_waits_for_turn_and_startup_fence_before_restart(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        store = CardProjection(tmp_path / "pa.db")
+        session = store.save_session(AgentSession(id="long", agent_name="codex"))
+        manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+        manager.begin_startup()
+        runtime = MagicMock(session=session)
+        runtime.prompting = True
+        runtime._drain_transcripts = AsyncMock()
+        manager.get = MagicMock(return_value=runtime)
+        manager.quiesce = AsyncMock()
+
+        with patch("pa.cli.service.request_restart") as restart:
+            receipt = await manager.request_restart_handoff(
+                session_id=session.id,
+                continuation_prompt="continue after compacted long turn",
+                idempotency_key="long-compacted",
+            )
+            task = manager._restart_handoff_tasks[receipt.id]
+            await asyncio.sleep(0.15)
+            restart.assert_not_called()
+
+            runtime.prompting = False
+            await asyncio.sleep(0.15)
+            restart.assert_not_called()
+
+            manager.complete_startup()
+            await task
+
+        runtime._flush_transcript.assert_called_once()
+        runtime._drain_transcripts.assert_awaited_once()
+        manager.quiesce.assert_awaited_once_with(
+            reason=f"restart-handoff:{receipt.id}"
+        )
+        restart.assert_called_once()
+        persisted = store.get_restart_handoff(receipt.id)
+        assert persisted.status == "restarting"
+        assert persisted.attempts == 1
+
+    asyncio.run(scenario())
+
+
+def test_startup_replay_runs_only_after_traffic_admission_is_ready(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(
+        AgentSession(id="startup-fence", agent_name="codex", status="quiesced")
+    )
+    receipt = store.create_restart_handoff(
+        RestartHandoff(
+            session_id=session.id,
+            idempotency_key="startup-fence",
+            continuation_prompt="resume after ready",
+            continuation_prompt_id="startup-fence-prompt",
+            status="restarting",
+        )
+    )
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager.begin_startup()
+    runtime = MagicMock(session=session)
+    manager.recover_session = AsyncMock(return_value=runtime)
+
+    with pytest.raises(AgentStartupNotReady, match="recovery is still in progress"):
+        asyncio.run(manager.resume_restart_handoffs_after_startup())
+    runtime.enqueue.assert_not_called()
+
+    manager.complete_startup()
+    asyncio.run(manager.resume_restart_handoffs_after_startup())
+    runtime.enqueue.assert_called_once()
+    assert store.get_restart_handoff(receipt.id).status == "continuation_queued"
+
+
+def test_same_key_retry_rearms_failed_restart_stage(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="retry-restart", agent_name="codex"))
+    receipt = store.create_restart_handoff(
+        RestartHandoff(
+            session_id=session.id,
+            idempotency_key="same-restart-key",
+            continuation_prompt="same continuation",
+            continuation_prompt_id="same-restart-prompt",
+            status="failed",
+            error="host scheduler unavailable",
+            failure_stage="restarting",
+            attempts=1,
+        )
+    )
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager._execute_restart_handoff = AsyncMock()
+
+    retried = asyncio.run(
+        manager.request_restart_handoff(
+            session_id=session.id,
+            continuation_prompt=receipt.continuation_prompt,
+            idempotency_key=receipt.idempotency_key,
+        )
+    )
+
+    assert retried.id == receipt.id
+    assert retried.status == "requested"
+    assert retried.error is None
+    assert retried.failure_stage is None
+    manager._execute_restart_handoff.assert_awaited_once_with(receipt.id)
+
+
+def test_operation_outcome_reports_failed_restart_receipt_truthfully(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(
+        AgentSession(id="status-session", agent_name="codex", realm_id="default")
+    )
+    receipt = store.create_restart_handoff(
+        RestartHandoff(
+            session_id=session.id,
+            idempotency_key="restart-status-key",
+            continuation_prompt="private continuation",
+            continuation_prompt_id="restart-status-prompt",
+            status="failed",
+            error="recovery unavailable",
+            failure_stage="resuming",
+            attempts=1,
+        )
+    )
+    request = MagicMock()
+    request.app.state.ctx.settings.primary_realm = "default"
+    request.app.state.ctx.services.get.return_value = None
+
+    with patch("pa.modules.items.get_store", return_value=store):
+        outcome = operation_outcome_api(request, receipt.idempotency_key)
+
+    assert outcome["operation"] == "agent_restart_handoff"
+    assert outcome["status"] == "failed"
+    assert outcome["recovery_state"] == "retryable_existing_receipt"
+    assert outcome["recovery_action"] == (
+        "request_agent_restart_handoff_with_same_key"
+    )
+    assert outcome["result"]["handoff_id"] == receipt.id
+    assert outcome["result"]["failure_stage"] == "resuming"
+    assert "continuation_prompt" not in outcome["result"]
 
 
 def test_restart_replay_appends_continuation_after_durable_queue(tmp_path: Path) -> None:
@@ -496,6 +649,49 @@ def test_restart_replay_appends_continuation_after_durable_queue(tmp_path: Path)
         "second",
         receipt.continuation_prompt_id,
     ]
+
+
+def test_recovered_continuation_is_queued_then_delivered_exactly_once(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        store = CardProjection(tmp_path / "pa.db")
+        session = store.save_session(
+            AgentSession(id="delivery-once", agent_name="codex", status="quiesced")
+        )
+        receipt = store.create_restart_handoff(
+            RestartHandoff(
+                session_id=session.id,
+                idempotency_key="delivery-once",
+                continuation_prompt="deliver this once",
+                continuation_prompt_id="delivery-once-prompt",
+                status="restarting",
+            )
+        )
+        manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+        runtime = AgentSessionRuntime(manager, session)
+        runtime.connection = MagicMock()
+        runtime._checkpoint_runtime = MagicMock()
+        runtime._append_transcript = MagicMock()
+        runtime._flush_transcript = MagicMock()
+        runtime._run_prompt = AsyncMock()
+        manager.get = MagicMock(return_value=runtime)
+
+        await manager._resume_restart_handoffs()
+        assert store.get_restart_handoff(receipt.id).status in {
+            "continuation_queued", "continuation_delivered"
+        }
+        if runtime._drain_task:
+            await runtime._drain_task
+        assert store.get_restart_handoff(receipt.id).status == "continuation_delivered"
+
+        await manager._resume_restart_handoffs()
+        runtime._run_prompt.assert_awaited_once()
+        delivered = store.get_restart_handoff(receipt.id)
+        assert delivered.delivered_at is not None
+        assert delivered.continuation_prompt_id == receipt.continuation_prompt_id
+
+    asyncio.run(scenario())
 
 
 def test_legacy_mismatch_recovers_using_existing_workspace_fence(tmp_path: Path) -> None:
@@ -608,6 +804,7 @@ def test_failed_handoff_retry_recovers_exact_session_and_queues_once(
         source=f"restart-handoff:{receipt.id}",
         card_id=None,
         project_id=None,
+        _defer_drain=True,
     )
     assert store.get_restart_handoff(receipt.id).error is None
 

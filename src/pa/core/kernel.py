@@ -339,6 +339,11 @@ class Kernel:
                 complete_startup = getattr(agent, "complete_startup", None)
                 if callable(complete_startup):
                     complete_startup()
+                resume_handoffs = getattr(
+                    agent, "resume_restart_handoffs_after_startup", None
+                )
+                if callable(resume_handoffs):
+                    await resume_handoffs()
                 lifecycle["phase"] = "ready" if agent.connected else "idle"
             except asyncio.CancelledError:
                 lifecycle["phase"] = "cancelled"
