@@ -117,9 +117,10 @@ class ManagedBrowserInteractionTests(unittest.IsolatedAsyncioTestCase):
             "document.body.setAttribute('data-revision', String(Date.now()))"
         )
         await asyncio.sleep(0)
-        with self.assertRaises(BrowserSessionError) as raised:
-            await self.manager.click(self.scope, ref=ref)
-        self.assertEqual(raised.exception.code, "stale_snapshot_reference")
+        # Live-region and telemetry mutations must not invalidate a semantic ref
+        # when its target and document identity are unchanged.
+        clicked = await self.manager.click(self.scope, ref=ref)
+        self.assertTrue(clicked["ok"])
 
     async def test_telemetry_report_bounds_dom_and_pages_accessible_values(self):
         session = self.manager.resolve(self.scope)
