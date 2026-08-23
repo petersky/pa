@@ -247,6 +247,16 @@ def _headers(settings: Settings) -> dict[str, str]:
     }
 
 
+def _transient_error_message(exc: BaseException) -> str:
+    """Return a useful, redacted diagnostic even for empty TimeoutError values."""
+    message = redact_log_text(exc).strip()
+    if message:
+        return message
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return "Peer request timed out while the service was restarting"
+    return f"Transient peer request failed ({type(exc).__name__})"
+
+
 async def _peer_json(
     client: httpx.AsyncClient,
     method: str,
@@ -357,7 +367,14 @@ async def run_update_job(
                 job.initial_process_id = (
                     int(process_id) if isinstance(process_id, int | str) else None
                 )
-                job.current_identity = str(status.get("install_revision") or "") or None
+                job.current_identity = (
+                    str(
+                        status.get("runtime_revision")
+                        or status.get("install_revision")
+                        or ""
+                    ).lower()
+                    or None
+                )
                 if not job.current_version:
                     raise RuntimeError("Peer did not report its current version")
 
@@ -515,7 +532,7 @@ async def run_update_job(
                             f"expected {job.expected_identity}, got "
                             f"{accepted_identity or 'none'}"
                         )
-                except httpx.TransportError:
+                except (httpx.TransportError, TimeoutError, asyncio.TimeoutError):
                     # The service may close the response after accepting and restarting.
                     # A recovery retry uses the same operation id and target.
                     pass
@@ -616,8 +633,8 @@ async def run_update_job(
                             UpdatePhase.WAITING_INSTALL,
                             f"Still waiting for installation ({last_install_error})",
                         )
-                except httpx.HTTPError as exc:
-                    last_install_error = str(exc)
+                except (httpx.HTTPError, TimeoutError, asyncio.TimeoutError) as exc:
+                    last_install_error = _transient_error_message(exc)
                     if install_attempt % 5 == 0:
                         await event(
                             UpdatePhase.WAITING_INSTALL,
@@ -669,7 +686,7 @@ async def run_update_job(
                 else:
                     job.verified_version = str(status.get("version") or "") or None
                     job.verified_identity = (
-                        str(status.get("install_revision") or "").lower() or None
+                        str(status.get("runtime_revision") or "").lower() or None
                     )
                     await event(
                         UpdatePhase.VERIFYING,
@@ -743,16 +760,15 @@ async def run_update_job(
                                 f"{installed_version or 'none'}, channel "
                                 f"{installed_channel or 'none'}"
                             )
-                    if not verified:
-                        raise RuntimeError(f"Version verification failed: {last_error}")
-                    job.completed_at = datetime.now(UTC)
-                    await event(
-                        UpdatePhase.SUCCEEDED,
-                        f"Verified PA {job.verified_version}",
-                    )
-                    return job
-            except httpx.HTTPError as exc:
-                last_error = str(exc)
+                    if verified:
+                        job.completed_at = datetime.now(UTC)
+                        await event(
+                            UpdatePhase.SUCCEEDED,
+                            f"Verified PA {job.verified_version}",
+                        )
+                        return job
+            except (httpx.HTTPError, TimeoutError, asyncio.TimeoutError) as exc:
+                last_error = _transient_error_message(exc)
             if health_attempt % 5 == 0:
                 remaining = max(
                     0,
@@ -771,9 +787,14 @@ async def run_update_job(
             f"{last_error}"
         )
     except Exception as exc:
-        job.error = str(exc)
+        job.error = redact_log_text(exc).strip() or (
+            "Operation timed out while waiting for the peer; retry with the same "
+            "operation id to adopt the durable outcome"
+            if isinstance(exc, (TimeoutError, asyncio.TimeoutError))
+            else f"Update failed ({type(exc).__name__})"
+        )
         job.completed_at = datetime.now(UTC)
-        await event(UpdatePhase.FAILED, f"Update failed: {exc}")
+        await event(UpdatePhase.FAILED, f"Update failed: {job.error}")
         return job
 
 

@@ -18,6 +18,11 @@ from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.core.logging import configure_logging
 from pa.domain.instance_config import InstanceConfig, save_instance_config
+from pa.install.metadata import (
+    InstallMetadata,
+    load_install_metadata,
+    save_install_metadata,
+)
 
 
 class InstallPlistTests(unittest.TestCase):
@@ -502,6 +507,16 @@ class AutonomousHostControlsTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp))
+            revision = "a49cb4723de2bb56832746ea7a99ce4c6d87b3d5"
+            save_install_metadata(
+                settings.data_dir,
+                InstallMetadata(
+                    version="1.1.0",
+                    channel="dev",
+                    pa_bin="/bin/pa",
+                    source_revision=revision,
+                ),
+            )
             with (
                 patch("pa.cli.main.get_settings", return_value=settings),
                 patch("pa.cli.service.service_supported", return_value=True),
@@ -518,13 +533,17 @@ class AutonomousHostControlsTests(unittest.TestCase):
                     return_value=MagicMock(backend="launchd"),
                 ),
                 patch("pa.cli.service.bootstrap") as bootstrap,
-                patch("pa.install.runner.record_install"),
+                patch("pa.install.runner.record_install") as record_install,
             ):
                 result = CliRunner().invoke(
                     app, ["install", "--service-only", "--no-start"]
                 )
+            metadata = load_install_metadata(settings.data_dir)
+            self.assertEqual(metadata.channel, "dev")
+            self.assertEqual(metadata.source_revision, revision)
         self.assertEqual(result.exit_code, 0, result.output)
         bootstrap.assert_not_called()
+        record_install.assert_not_called()
         self.assertIn("Service left stopped", result.output)
 
     def test_update_restart_invokes_installed_binary(self) -> None:
