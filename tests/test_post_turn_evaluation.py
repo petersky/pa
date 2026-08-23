@@ -10,6 +10,8 @@ from pydantic import ValidationError
 
 from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchStore
 from pa.execution.post_turn import (
+    ActionReceiptStatus,
+    ActionReceiptV1,
     ACTION_CATALOG_V1,
     EvidenceReferenceV1,
     FollowupActionName,
@@ -239,6 +241,108 @@ class PostTurnEvaluatorTests(unittest.TestCase):
 
 
 class TerminalDispatchTests(unittest.TestCase):
+    def test_twenty_five_replays_claim_at_most_one_external_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            record = DispatchRecord(
+                dispatch_id="dispatch-replay",
+                mutation_id="mutation-replay",
+                authority_instance_id="authority",
+                authority_url="https://authority.example",
+                target_instance_id="target",
+            )
+            store.put(record)
+            claims = 0
+            for _ in range(25):
+                _, receipt, claimed = store.claim_post_turn_action(
+                    record.dispatch_id,
+                    ActionReceiptV1(
+                        action_id="stable-action",
+                        action_digest="a" * 64,
+                        idempotency_key="replay-key",
+                        lease_owner="node-1",
+                    ),
+                )
+                claims += int(claimed)
+                self.assertEqual(receipt.status, ActionReceiptStatus.STARTED)
+            self.assertEqual(claims, 1)
+
+    def test_three_nodes_share_one_fenced_claim_across_partition_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            authority = DispatchStore(path)
+            authority.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-partition",
+                    mutation_id="mutation-partition",
+                    authority_instance_id="authority",
+                    authority_url="https://authority.example",
+                    target_instance_id="target",
+                )
+            )
+            nodes = [authority, DispatchStore(path), DispatchStore(path)]
+            outcomes = [
+                node.claim_post_turn_action(
+                    "dispatch-partition",
+                    ActionReceiptV1(
+                        action_id="partition-action",
+                        action_digest="b" * 64,
+                        idempotency_key="partition-key",
+                        lease_owner=f"node-{index}",
+                    ),
+                )[2]
+                for index, node in enumerate(nodes)
+            ]
+            self.assertEqual(outcomes.count(True), 1)
+
+    def test_crash_windows_leave_started_receipt_and_duplicate_cannot_send(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            store.put(
+                DispatchRecord(
+                    dispatch_id="dispatch-crash",
+                    mutation_id="mutation-crash",
+                    authority_instance_id="authority",
+                    authority_url="https://authority.example",
+                    target_instance_id="target",
+                )
+            )
+            planned = ActionReceiptV1(
+                action_id="crash-action",
+                action_digest="c" * 64,
+                idempotency_key="crash-key",
+                lease_owner="node-before-send",
+            )
+            _, started, claimed = store.claim_post_turn_action(
+                "dispatch-crash", planned
+            )
+            self.assertTrue(claimed)
+            self.assertEqual(
+                [event["status"] for event in started.history],
+                ["planned", "started"],
+            )
+
+            # This is identical durable evidence for both crash-before-send and
+            # crash-after-send-before-receipt. Failover must reconcile, not send.
+            _, observed, failover_claimed = store.claim_post_turn_action(
+                "dispatch-crash", planned.model_copy(deep=True)
+            )
+            self.assertFalse(failover_claimed)
+            self.assertEqual(observed.fencing_token, started.fencing_token)
+
+            started.status = ActionReceiptStatus.SUCCEEDED
+            started.finished_at = datetime.now(UTC)
+            started.result = {"external_id": "one-effect"}
+            started.history.append(
+                {"status": "succeeded", "at": started.finished_at.isoformat()}
+            )
+            store.finish_post_turn_action("dispatch-crash", started)
+            _, replayed, replay_claimed = store.claim_post_turn_action(
+                "dispatch-crash", planned.model_copy(deep=True)
+            )
+            self.assertFalse(replay_claimed)
+            self.assertEqual(replayed.result, {"external_id": "one-effect"})
+
     def test_acknowledged_completion_cannot_regress_to_running(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = DispatchStore(Path(tmp))

@@ -91,11 +91,15 @@ from pa.execution.dispatch import (
 )
 from pa.execution.disposition import decide_card_disposition
 from pa.execution.post_turn import (
+    ActionApprovalV1,
+    ActionReceiptStatus,
+    ActionReceiptV1,
     EvidenceReferenceV1,
     FollowupActionName,
     FollowupActionStatus,
     PostTurnEvaluationV1,
     PostTurnEvaluator,
+    SafetyClassification,
     TurnEndSnapshotV1,
     action_catalog,
     is_authorized_same_session_continuation,
@@ -614,6 +618,7 @@ class FollowupActionExecutionBody(BaseModel):
     action_id: str
     expected_authority_version: str | None = None
     approve: bool = False
+    approval: ActionApprovalV1 | None = None
     idempotency_key: str
 
 
@@ -11357,26 +11362,15 @@ async def execute_post_turn_action(
     )
     if not action:
         raise HTTPException(status_code=404, detail="Follow-up action not found")
+    if body.action_id != action_id:
+        raise HTTPException(
+            status_code=409, detail={"code": "action_id_binding_mismatch"}
+        )
     if body.expected_authority_version != evaluation.observed_authority_version:
         raise HTTPException(
             status_code=409,
             detail={"code": "stale_authority_version", "recoverable": True},
         )
-    prior = next(
-        (
-            item
-            for item in action.audit
-            if item.get("idempotency_key") == body.idempotency_key
-        ),
-        None,
-    )
-    if prior:
-        return {
-            "accepted": True,
-            "duplicate": True,
-            "status": action.status.value,
-            "result": prior.get("result"),
-        }
     if action.status in {
         FollowupActionStatus.REJECTED,
         FollowupActionStatus.SUPERSEDED,
@@ -11384,6 +11378,22 @@ async def execute_post_turn_action(
         raise HTTPException(
             status_code=409,
             detail={"code": "action_not_executable", "status": action.status.value},
+        )
+    if (
+        action.status == FollowupActionStatus.EXECUTED
+        and action.action_id not in record.post_turn_action_receipts
+        and action.safety in {
+            SafetyClassification.EXTERNAL_WRITE,
+            SafetyClassification.HIGH_IMPACT,
+        }
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "legacy_unreceipted_high_impact_action",
+                "recoverable": False,
+                "required_action": "read_only_reconciliation",
+            },
         )
     if (
         action.name == FollowupActionName.PROMPT_SAME_SESSION
@@ -11419,18 +11429,73 @@ async def execute_post_turn_action(
                     "budget_maximum": budget,
                 }
             )
-    if action.human_approval_required and not body.approve:
+    if action.human_approval_required and body.approval is None:
         raise HTTPException(
             status_code=403,
             detail={
-                "code": "operator_approval_required",
+                "code": "bound_operator_approval_required",
                 "action": action.name.value,
+                "target_digest": action.target_digest,
+                "payload_digest": action.payload_digest,
+                "authority_version": evaluation.observed_authority_version,
             },
+        )
+    if body.approval is not None and (
+        body.approval.target_digest != action.target_digest
+        or body.approval.payload_digest != action.payload_digest
+        or body.approval.authority_version != evaluation.observed_authority_version
+        or body.approval.expires_at <= datetime.now(UTC)
+        or body.approval.principal_id != get_principal_id(request)
+    ):
+        raise HTTPException(
+            status_code=403, detail={"code": "approval_binding_invalid_or_expired"}
         )
     action.status = (
         FollowupActionStatus.APPROVED
         if action.human_approval_required
         else action.status
+    )
+    receipt = ActionReceiptV1(
+        action_id=action.action_id,
+        action_digest=action.binding_digest,
+        idempotency_key=body.idempotency_key,
+        lease_owner=request.app.state.ctx.settings.instance_id,
+        lease_expires_at=datetime.now(UTC) + timedelta(seconds=60),
+        approval=body.approval,
+    )
+    try:
+        record, receipt, claimed = ledger.claim_post_turn_action(dispatch_id, receipt)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "action_binding_conflict", "message": str(exc)},
+        ) from exc
+    if not claimed:
+        if receipt.status == ActionReceiptStatus.SUCCEEDED:
+            return {
+                "accepted": True,
+                "duplicate": True,
+                "status": FollowupActionStatus.EXECUTED.value,
+                "result": receipt.result,
+                "receipt": receipt.model_dump(mode="json"),
+            }
+        code = (
+            "action_execution_in_progress"
+            if receipt.status == ActionReceiptStatus.STARTED
+            and receipt.lease_expires_at
+            and receipt.lease_expires_at > datetime.now(UTC)
+            else "action_outcome_unknown_reconciliation_required"
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"code": code, "receipt": receipt.model_dump(mode="json"), "recoverable": False},
+        )
+    evaluation = next(
+        item for item in record.post_turn_evaluations
+        if item.evaluation_id == body.evaluation_id
+    )
+    action = next(
+        item for item in evaluation.recommended_actions if item.action_id == action_id
     )
     result: Any = None
     try:
@@ -11552,6 +11617,17 @@ async def execute_post_turn_action(
         action.executed_at = datetime.now(UTC)
         action.status_reason = "Validated and deterministically executed by PA."
     except Exception as exc:
+        ambiguous = action.safety in {
+            SafetyClassification.EXTERNAL_WRITE,
+            SafetyClassification.HIGH_IMPACT,
+        }
+        receipt.status = ActionReceiptStatus.UNKNOWN if ambiguous else ActionReceiptStatus.FAILED
+        receipt.finished_at = datetime.now(UTC)
+        receipt.error = sanitize_text(exc, limit=1_000)
+        receipt.history.append(
+            {"status": receipt.status.value, "at": receipt.finished_at.isoformat()}
+        )
+        ledger.finish_post_turn_action(dispatch_id, receipt)
         action.status = FollowupActionStatus.FAILED
         action.status_reason = sanitize_text(exc, limit=1_000)
         action.audit.append(
@@ -11562,7 +11638,6 @@ async def execute_post_turn_action(
                 "error": action.status_reason,
             }
         )
-        ledger.put(record)
         raise HTTPException(
             status_code=409,
             detail={
@@ -11579,12 +11654,31 @@ async def execute_post_turn_action(
             "result": result,
         }
     )
+    receipt.status = ActionReceiptStatus.SUCCEEDED
+    receipt.finished_at = action.executed_at
+    receipt.result = result
+    receipt.history.append(
+        {"status": "succeeded", "at": receipt.finished_at.isoformat()}
+    )
+    record = ledger.finish_post_turn_action(dispatch_id, receipt)
+    evaluation = next(
+        item for item in record.post_turn_evaluations
+        if item.evaluation_id == body.evaluation_id
+    )
+    persisted_action = next(
+        item for item in evaluation.recommended_actions if item.action_id == action_id
+    )
+    persisted_action.status = action.status
+    persisted_action.executed_at = action.executed_at
+    persisted_action.status_reason = action.status_reason
+    persisted_action.audit = action.audit
     ledger.put(record)
     return {
         "accepted": True,
         "duplicate": False,
         "status": action.status.value,
         "result": result,
+        "receipt": receipt.model_dump(mode="json"),
     }
 
 
