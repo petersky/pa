@@ -153,6 +153,9 @@ class Settings(BaseSettings):
     # Optional ACP final-fact candidates. Disabled by default; when enabled,
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
+    # Fail-closed limbic/Memory rollout defaults keyed by realm. Projects may
+    # override these through tool_config.autonomy_context.
+    autonomy_context_by_realm: dict[str, dict] = Field(default_factory=dict)
 
     # Card summaries use the selected provider's native HTTP contract.
     # OpenAI and MiniMax are Chat Completions; Anthropic/Claude is Messages.

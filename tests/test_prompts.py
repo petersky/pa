@@ -29,6 +29,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.data_safety",
     "agent.context.execution",
     "agent.context.interactions",
+    "agent.context.memory",
     "agent.context.project",
     "agent.context.workspace_catalog",
     "agent.message.wrapper",
@@ -249,6 +250,95 @@ class PromptRegistryTests(unittest.TestCase):
 
 
 class PromptCompositionTests(unittest.TestCase):
+    @patch("pa.agent.context.MemoryService")
+    @patch("pa.agent.context.LimbicService")
+    def test_shadow_rollout_observes_without_prompt_effects(
+        self, limbic_service: MagicMock, memory_service: MagicMock
+    ) -> None:
+        store = MagicMock()
+        project = Project(
+            id="project-shadow",
+            title="Shadow",
+            tool_config={"autonomy_context": {"mode": "shadow"}},
+        )
+        store.get_project.return_value = project
+        store.get_card.return_value = None
+        session = AgentSession(
+            id="session-shadow",
+            agent_name="codex",
+            project_id=project.id,
+            principal_id="agent:one",
+        )
+        settings = Settings(data_dir=Path(tempfile.mkdtemp()), instance_id="executor")
+        limbic_service.return_value.appraise.return_value = MagicMock()
+        memory_service.return_value.working_packet.return_value.memories = []
+
+        result = compose_session_prompt(store, settings, session, "secret-token=bad")
+
+        self.assertNotIn("Authorized Memory", result.text)
+        limbic_service.return_value.appraise.assert_called_once()
+        self.assertTrue(limbic_service.return_value.appraise.call_args.kwargs["shadow_mode"])
+        query = memory_service.return_value.working_packet.call_args.args[0]
+        self.assertEqual(query.requester_principal, "agent:one")
+
+    @patch("pa.agent.context.MemoryService")
+    @patch("pa.agent.context.LimbicService")
+    def test_memory_promotion_requires_all_gates_and_keeps_citations(
+        self, limbic_service: MagicMock, memory_service: MagicMock
+    ) -> None:
+        from pa.limbic.models import (
+            MemoryProvenance,
+            MemoryRecord,
+            MemoryTier,
+            RetrievedMemory,
+        )
+
+        store = MagicMock()
+        project = Project(
+            id="project-live",
+            title="Live",
+            tool_config={
+                "autonomy_context": {
+                    "mode": "promoted",
+                    "policy_gate": True,
+                    "max_characters": 1000,
+                }
+            },
+        )
+        store.get_project.return_value = project
+        store.get_card.return_value = None
+        session = AgentSession(
+            id="session-live", agent_name="codex", project_id=project.id,
+            principal_id="agent:one",
+        )
+        settings = Settings(data_dir=Path(tempfile.mkdtemp()), instance_id="executor")
+        signal = MagicMock()
+        appraisal = MagicMock(deterministic_bypass=None)
+        route = MagicMock(preliminary=False)
+        limbic_service.return_value.appraise.return_value = MagicMock(
+            signal=signal, appraisal=appraisal, route=route
+        )
+        record = MemoryRecord(
+            id="memory-safe", tier=MemoryTier.PROCEDURAL, subject="repo",
+            predicate="workflow", value="run tests", summary="Run scoped tests.",
+            owner_principal="agent:one",
+            provenance=MemoryProvenance(
+                source_type="operator", source_id="decision-1",
+                actor_principal="user:one", verified=True,
+            ),
+        )
+        memory_service.return_value.working_packet.return_value.memories = [
+            RetrievedMemory(
+                record=record, relevance=1, instruction_trusted=True,
+                retrieval_reason="authorized",
+            )
+        ]
+
+        result = compose_session_prompt(store, settings, session, "Do the work")
+
+        self.assertIn("[memory:memory-safe]", result.text)
+        self.assertIn("operator:decision-1; trusted", result.text)
+
     def test_composition_uses_selected_instance_and_materialized_workspace(
         self,
     ) -> None:

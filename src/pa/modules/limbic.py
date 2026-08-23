@@ -23,6 +23,7 @@ from pa.limbic.models import (
     VerifiedControlProvenance,
     WorkingMemoryPacket,
 )
+from pa.limbic.projection import limbic_operations
 
 router = APIRouter()
 
@@ -65,6 +66,13 @@ def appraise_signal(request: Request, body: AppraiseRequest) -> AppraisalResult:
 @router.post("/limbic/replay", response_model=ReplayReport)
 def evaluate_replay(request: Request, body: ReplayRequest) -> ReplayReport:
     return _limbic(request).evaluate(body.cases)
+
+
+@router.get("/limbic/operations")
+def inspect_limbic_operations(
+    request: Request, realm_id: str = "default", limit: int = 500
+) -> dict:
+    return limbic_operations(request.app.state.ctx.store, realm_id, limit)
 
 
 @router.post("/memory", response_model=MemoryRecord, status_code=201)
@@ -152,6 +160,16 @@ class LimbicModule(Module):
                 "POST",
                 "/api/limbic/replay",
                 json={"cases": [case.model_dump(mode="json") for case in cases]},
+            )
+
+        @mcp.tool()
+        def inspect_limbic_operations(realm_id: str = "default", limit: int = 500) -> dict:
+            """Inspect redacted rollout quality, latency, fallback, and promotion metrics."""
+            return request_local_pa(
+                ctx.settings,
+                "GET",
+                "/api/limbic/operations",
+                params={"realm_id": realm_id, "limit": limit},
             )
 
         @mcp.tool()

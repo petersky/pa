@@ -69,6 +69,18 @@ class LimbicApiSecurityTests(unittest.TestCase):
                 )
                 self.assertEqual(rejected.status_code, 422, rejected.text)
 
+                metrics = client.get(
+                    "/api/limbic/operations", headers=headers,
+                    params={"realm_id": "default"},
+                )
+                self.assertEqual(metrics.status_code, 200, metrics.text)
+                report = metrics.json()
+                self.assertEqual(report["sample_count"], 1)
+                self.assertEqual(report["spoof_attempts"], 1)
+                self.assertEqual(report["privileged_bypasses"], 0)
+                self.assertIsNotNone(report["latency_ms"]["average"])
+                self.assertEqual(report["usefulness"]["sample_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
