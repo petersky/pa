@@ -7266,6 +7266,9 @@ async def _resolve_policy_placement(
     project_id: str | None,
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
+    requested_provider = (body.provider or "").strip().lower() or None
+    requested_model_id = body.model_id
+    requested_mode_id = body.mode_id
     # An omitted provider means automatic target-compatible selection.  Do not
     # inject the authority host's default before placement (for example Cursor
     # when the selected worker is Codex-only).
@@ -7464,6 +7467,18 @@ async def _resolve_policy_placement(
                 "for automatic selection.",
                 rejected_candidates=decision.rejected_candidates,
             )
+    _apply_dispatch_mode_default(body)
+    decision.requested_provider = requested_provider
+    decision.requested_model_id = requested_model_id
+    decision.requested_mode_id = requested_mode_id
+    decision.resolved_provider = body.provider
+    decision.resolved_model_id = body.model_id
+    decision.resolved_mode_id = body.mode_id
+    decision.execution_selector_provenance = {
+        "provider": "explicit_dispatch" if requested_provider else "selected_target",
+        "model": "explicit_dispatch" if requested_model_id else "provider_default",
+        "mode": "explicit_dispatch" if requested_mode_id else "provider_default",
+    }
     return decision, plan
 
 
@@ -10207,7 +10222,6 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                 "dispatch": _dispatch_public(request, existing),
             }
 
-    _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
     _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
@@ -10298,6 +10312,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         error = _placement_http_error(exc)
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
+    _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
     _apply_dispatch_mode_default(body)
 
     start_payload = body.model_dump(
@@ -10411,7 +10426,6 @@ async def start_remote_agent_work(
                 "job_id": existing_record.dispatch_id,
                 "dispatch": _dispatch_public(request, existing_record),
             }
-    _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
     _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
@@ -10490,6 +10504,7 @@ async def start_remote_agent_work(
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
     body.provider = placement_body.provider
+    _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
     _apply_dispatch_mode_default(body)
     return await _admit_remote_agent_work(
         request,
