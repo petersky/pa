@@ -2180,6 +2180,26 @@ code {
   flex: 0 0 auto;
 }
 
+.acw-history-spinner {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.35rem;
+  vertical-align: -0.1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: acw-history-spin 0.65s linear infinite;
+}
+
+.acw-history-spinner[hidden] { display: none; }
+
+@keyframes acw-history-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .acw-history-spinner { animation-duration: 1.5s; }
+}
+
 .acw-load-older-status {
   align-self: center;
   margin: -0.3rem 0 0;

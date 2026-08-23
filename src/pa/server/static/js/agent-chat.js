@@ -8,7 +8,8 @@
   const MAX_IMAGES = 4;
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
-  const TRANSCRIPT_PAGE_LIMIT = 1000;
+  const TRANSCRIPT_PAGE_LIMIT = 250;
+  const TRANSCRIPT_LATENCY_BUDGET_MS = 2000;
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
@@ -173,6 +174,8 @@
     this.els = {
       messages: root.querySelector("[data-acw-messages]"),
       loadOlder: root.querySelector("[data-acw-load-older]"),
+      loadOlderLabel: root.querySelector("[data-acw-load-older-label]"),
+      historySpinner: root.querySelector("[data-acw-history-spinner]"),
       loadOlderStatus: root.querySelector("[data-acw-load-older-status]"),
       placeholder: root.querySelector("[data-acw-placeholder]"),
       form: root.querySelector("[data-acw-form]"),
@@ -250,6 +253,7 @@
     this.hasOlder = false;
     this.olderCursor = null;
     this.loadingOlder = false;
+    this.olderAbortController = null;
     this.olderError = "";
     this.streaming = {};
     this.toolTimers = {};
@@ -1491,14 +1495,57 @@
     if (!this.els.loadOlder) return;
     this.els.loadOlder.hidden = !this.hasOlder && !this.olderError;
     this.els.loadOlder.disabled = this.loadingOlder;
-    this.els.loadOlder.textContent = this.loadingOlder
-      ? "Loading…"
+    const label = this.loadingOlder ? "Loading older messages…"
       : this.olderError ? "Retry loading older messages" : "Load older messages";
+    if (this.els.loadOlderLabel) this.els.loadOlderLabel.textContent = label;
+    else this.els.loadOlder.textContent = label;
+    if (this.els.historySpinner) this.els.historySpinner.hidden = !this.loadingOlder;
     this.els.loadOlder.setAttribute("aria-busy", this.loadingOlder ? "true" : "false");
     if (this.els.loadOlderStatus) {
-      this.els.loadOlderStatus.hidden = !this.olderError;
-      this.els.loadOlderStatus.textContent = this.olderError;
+      const status = this.loadingOlder ? "Loading older messages." : this.olderError;
+      this.els.loadOlderStatus.hidden = !status;
+      this.els.loadOlderStatus.textContent = status;
     }
+  };
+
+  AgentChatWidget.prototype.prependTranscript = function (events) {
+    const self = this;
+    const page = [];
+    const known = {};
+    this.transcriptEvents.forEach(function (event) {
+      const key = self._eventKey(event);
+      if (key) known[key] = true;
+    });
+    (events || []).forEach(function (event) {
+      const normalized = self._normalizeEvent(event);
+      const key = self._eventKey(normalized);
+      if (key && known[key]) return;
+      if (key) known[key] = true;
+      page.push(normalized);
+    });
+    page.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
+    if (!page.length) return 0;
+
+    const existingChildren = Array.from(this.els.messages.children);
+    const existingSet = new Set(existingChildren);
+    const anchor = existingChildren.find(function (child) {
+      return !child.hasAttribute("data-acw-placeholder") &&
+        !child.hasAttribute("data-acw-load-older") &&
+        !child.hasAttribute("data-acw-load-older-status");
+    }) || null;
+    page.forEach(function (event) { self.handleEvent(event, true, false); });
+    const inserted = Array.from(this.els.messages.children).filter(function (child) {
+      return !existingSet.has(child);
+    });
+    const fragment = document.createDocumentFragment();
+    inserted.forEach(function (child) { fragment.appendChild(child); });
+    if (anchor) this.els.messages.insertBefore(fragment, anchor);
+    else this.els.messages.appendChild(fragment);
+    this.transcriptEvents = page.concat(this.transcriptEvents).sort(function (a, b) {
+      return (a.seq || 0) - (b.seq || 0);
+    });
+    this.clearPlaceholder();
+    return page.length;
   };
 
   AgentChatWidget.prototype.renderTranscript = function (events, options) {
@@ -1551,6 +1598,11 @@
     }, 0);
     if (!oldest) return;
     const self = this;
+    const requestedSession = this.sessionId;
+    const requestedApiBase = this.apiBase;
+    const controller = new AbortController();
+    this.olderAbortController = controller;
+    const requestStarted = performance.now();
     const status = this.els.status && this.els.status.dataset.state;
     const wasPrompting = this.prompting;
     const startedAt = this.turnStartedAt && this.turnStartedAt.toISOString();
@@ -1559,8 +1611,10 @@
     this.updateOlderControl();
     this.api(
       "/history/" + encodeURIComponent(this.sessionId) +
-      "?before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT
+      "?before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
+      { signal: controller.signal }
     ).then(function (data) {
+      if (controller.signal.aborted || self.sessionId !== requestedSession || self.apiBase !== requestedApiBase) return;
       const pageEvents = data && data.events || [];
       self.hasOlder = !!(data && data.page && data.page.has_older);
       self.olderCursor = data && data.page && (
@@ -1570,7 +1624,9 @@
       const oldTop = self.els.messages.scrollTop;
       // Read transcriptEvents only after the request resolves. It may now include
       // SSE events that arrived while the durable page was in flight.
-      self.renderTranscript(pageEvents.concat(self.transcriptEvents), { scrollBottom: false });
+      const renderStarted = performance.now();
+      const insertedCount = self.prependTranscript(pageEvents);
+      const renderMs = performance.now() - renderStarted;
       self.setTurnActive(wasPrompting, startedAt);
       if (status) self.setStatus(status);
       self.els.messages.scrollTop = anchoredScrollTop(
@@ -1578,9 +1634,25 @@
         oldHeight,
         self.els.messages.scrollHeight
       );
+      const totalMs = performance.now() - requestStarted;
+      self.lastHistoryTiming = {
+        total_ms: totalMs,
+        network_and_parse_ms: renderStarted - requestStarted,
+        render_ms: renderMs,
+        events: insertedCount,
+        server: data && data.diagnostics || null
+      };
+      console.debug("[PA agent history] page loaded", self.lastHistoryTiming);
+      if (totalMs > TRANSCRIPT_LATENCY_BUDGET_MS) {
+        console.warn("[PA agent history] interactive latency budget exceeded", self.lastHistoryTiming);
+      }
     }).catch(function (err) {
+      if (err && err.name === "AbortError") return;
+      if (self.sessionId !== requestedSession || self.apiBase !== requestedApiBase) return;
       self.olderError = "Could not load older messages: " + err.message;
     }).finally(function () {
+      if (self.olderAbortController !== controller) return;
+      self.olderAbortController = null;
       self.loadingOlder = false;
       self.updateOlderControl();
     });
@@ -1732,6 +1804,8 @@
     this.destroyed = true;
     if (this.routeAbortController) this.routeAbortController.abort();
     this.routeAbortController = null;
+    if (this.olderAbortController) this.olderAbortController.abort();
+    this.olderAbortController = null;
     this.closeSSE(reason || "widget-destroyed");
     this.stopBrowserRefresh();
     this.setTurnActive(false);
@@ -2620,6 +2694,8 @@
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
     this.closeSSE("session-switched");
+    if (this.olderAbortController) this.olderAbortController.abort();
+    this.olderAbortController = null;
     this.lastSeq = 0;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -2639,6 +2715,8 @@
     const next = String(apiBase || "/api/agent").replace(/\/$/, "");
     if (next === this.apiBase) return;
     this.closeSSE("api-base-changed");
+    if (this.olderAbortController) this.olderAbortController.abort();
+    this.olderAbortController = null;
     this.stopBrowserRefresh();
     this.apiBase = next;
     this.root.dataset.apiBase = next;
