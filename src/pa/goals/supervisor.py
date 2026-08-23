@@ -184,8 +184,9 @@ class GoalSupervisor:
                 logger.info(
                     "Goal supervision lost a concurrent race for %s", candidate.id
                 )
-            except Exception:
+            except Exception as exc:
                 logger.exception("Goal supervision failed for %s", candidate.id)
+                self._reschedule_failed_wakeup(candidate.id, exc)
         return processed
 
     def _needs_cycle(self, goal: Goal) -> bool:
@@ -194,7 +195,12 @@ class GoalSupervisor:
         if any(item.status not in _TERMINAL_PROPOSALS for item in goal.proposals):
             return True
         if any(
-            item.state in _CYCLE_WORK
+            (
+                item.state in _CYCLE_WORK
+                and (
+                    item.state != WorkPackageState.READY or item.dispatch_when_ready
+                )
+            )
             or (
                 item.state == WorkPackageState.FAILED
                 and item.attempts < item.max_attempts
@@ -207,7 +213,79 @@ class GoalSupervisor:
             for item in goal.operator_interactions
         ):
             return True
+        if goal.state == GoalState.ACTIVE and self._unplanned_criterion_ids(goal):
+            return True
         return bool(goal.wakeup and goal.wakeup.wake_at <= self.now())
+
+    @staticmethod
+    def _unplanned_criterion_ids(goal: Goal) -> list[str]:
+        covered = {
+            criterion_id
+            for package in goal.work_packages
+            if package.state != WorkPackageState.CANCELLED
+            for criterion_id in package.criterion_ids
+        }
+        for proposal in goal.proposals:
+            if (
+                isinstance(proposal.action, CreateWorkPackageAction)
+                and proposal.status not in {ProposalStatus.REJECTED, ProposalStatus.FAILED}
+            ):
+                covered.update(proposal.action.criterion_ids)
+        return [
+            criterion.id
+            for criterion in goal.criteria
+            if criterion.verdict != CriterionVerdict.SATISFIED
+            and criterion.id not in covered
+        ]
+
+    def _reschedule_failed_wakeup(self, goal_id: str, exc: Exception) -> None:
+        """Durably bound wakeup retries after a failed claimed cycle."""
+
+        current = self.service.get(goal_id)
+        if current is None or current.control_authority_instance_id != self.instance_id:
+            return
+        prior = current.wakeup
+        if prior is None:
+            return
+        attempt = prior.attempt + 1
+        reason = f"supervision attempt {attempt} failed: {exc}"[:2000]
+        if attempt >= prior.max_attempts:
+            wakeup = prior.model_copy(
+                update={
+                    "wake_at": self.now() + timedelta(days=36500),
+                    "reason": (
+                        f"retry budget exhausted after {attempt} attempts; "
+                        "next action: inspect and explicitly reschedule"
+                    ),
+                    "attempt": attempt,
+                    "last_outcome_reason": reason,
+                    "claimed_by_instance_id": None,
+                    "claimed_at": None,
+                }
+            )
+        else:
+            wakeup = prior.model_copy(
+                update={
+                    "wake_at": self.now()
+                    + timedelta(seconds=min(300, 30 * 2 ** (attempt - 1))),
+                    "reason": "bounded retry after failed goal supervision",
+                    "attempt": attempt,
+                    "last_outcome_reason": reason,
+                    "claimed_by_instance_id": None,
+                    "claimed_at": None,
+                }
+            )
+        try:
+            self.service.schedule_wakeup(
+                goal_id,
+                wakeup,
+                self._context(
+                    current,
+                    f"goal-supervisor:wakeup-failed:{goal_id}:{attempt}",
+                ),
+            )
+        except GoalConflict:
+            logger.info("Goal wakeup retry lost a concurrent race for %s", goal_id)
 
     def _context(self, goal: Goal, key: str) -> GoalMutationContext:
         return GoalMutationContext(
@@ -423,7 +501,7 @@ class GoalSupervisor:
         current = self.service.get(goal.id)
         if current is None:
             raise GoalConflict("goal disappeared before its side effect")
-        if not current.lease.active():
+        if not current.lease.active(self.now()):
             raise GoalConflict("goal controller lease expired before its side effect")
         if (
             current.control_authority_instance_id != self.instance_id
@@ -472,7 +550,9 @@ class GoalSupervisor:
             if package.dispatch_attempt is not None
             and package.dispatch_attempt.state == GoalDispatchAttemptState.ADMITTED
         }
+        consumed_wakeup = bool(goal.wakeup and goal.wakeup.wake_at <= now)
         meaningful = self._reconcile_dispatch_attempts(goal, now)
+        meaningful = self._ensure_plan_proposal(goal, now) or meaningful
         meaningful = self._ingest_interactions(goal, now) or meaningful
         meaningful = self._authorize_pending(goal, now) or meaningful
         meaningful = self._apply_authorized(goal, now) or meaningful
@@ -525,7 +605,56 @@ class GoalSupervisor:
             ),
         )
         self._release_rejected_dispatch_attempts(checkpointed)
+        if consumed_wakeup:
+            checkpointed = self.service.schedule_wakeup(
+                checkpointed.id,
+                None,
+                self._context(
+                    checkpointed,
+                    f"goal-supervisor:wakeup-consumed:{goal.id}:"
+                    f"{source.wakeup.wake_at.isoformat() if source.wakeup else source.version}",
+                ),
+                outcome_reason="due wakeup consumed after durable supervision checkpoint",
+            )
         return checkpointed
+
+    def _ensure_plan_proposal(self, goal: Goal, now: datetime) -> bool:
+        """Create one deterministic bounded proposal for uncovered ACTIVE criteria."""
+
+        criterion_ids = self._unplanned_criterion_ids(goal)
+        if goal.state != GoalState.ACTIVE or not criterion_ids:
+            return False
+        proposal_id = str(
+            uuid5(
+                NAMESPACE_URL,
+                "pa-goal-plan:" + goal.id + ":" + ",".join(sorted(criterion_ids)),
+            )
+        )
+        if any(item.id == proposal_id for item in goal.proposals):
+            return False
+        goal.proposals.append(
+            GoalProposal(
+                id=proposal_id,
+                proposer_principal=self.service_principal,
+                proposer_role=GoalActorRole.COORDINATOR,
+                action=CreateWorkPackageAction(
+                    title=f"Advance goal: {goal.objective}"[:500],
+                    objective=(
+                        "Produce implementation evidence for the uncovered goal "
+                        f"criteria: {', '.join(criterion_ids)}"
+                    ),
+                    criterion_ids=criterion_ids,
+                    dispatch_when_ready=True,
+                    max_attempts=min(20, goal.budget.retry_limit + 1),
+                ),
+                rationale="ACTIVE unmet criteria require one bounded governed work package.",
+                expected_goal_version=goal.version,
+                policy_revision=goal.policy.revision,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return True
 
     def _authorize_pending(self, goal: Goal, now: datetime) -> bool:
         changed = False
