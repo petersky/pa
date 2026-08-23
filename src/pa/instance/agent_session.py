@@ -2507,6 +2507,7 @@ class AgentSessionManager:
         prior_config = dict(session.config_json or {})
         prior_context = dict(prior_config.get("execution_context") or {})
         binding = dict(session.execution_binding or {})
+        persisted_binding = dict(binding)
         if not binding:
             # Legacy repair deliberately prefers the durable lease over mutable
             # card associations.  This preserves both records and recovers the
@@ -2562,7 +2563,17 @@ class AgentSessionManager:
                     "execution_project_id": session.project_id,
                     "origin_instance_id": session.origin_instance_id,
                 }
-            session.execution_binding = binding
+            if leases or legacy_context_repos:
+                await self._offload(
+                    "sqlite.execution_binding_legacy_repair",
+                    self.store.set_session_execution_binding,
+                    session.id,
+                    binding,
+                    reason="legacy_workspace_recovered",
+                    expected_binding=persisted_binding,
+                )
+                session.execution_binding = dict(binding)
+                persisted_binding = dict(session.execution_binding or {})
         execution_card_id = binding.get("execution_card_id")
         execution_project_id = binding.get("execution_project_id")
         prior_authority = dict(prior_context.get("authority_instance") or {})
@@ -2595,7 +2606,16 @@ class AgentSessionManager:
                 requested_cwd = None
                 if binding.get("cwd"):
                     binding.pop("cwd", None)
-                    session.execution_binding = binding
+                    await self._offload(
+                        "sqlite.execution_binding_stale_cwd_remove",
+                        self.store.set_session_execution_binding,
+                        session.id,
+                        binding,
+                        reason="stale_data_dir_cwd_removed",
+                        expected_binding=persisted_binding,
+                    )
+                    session.execution_binding = dict(binding)
+                    persisted_binding = dict(session.execution_binding or {})
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {
@@ -2693,10 +2713,11 @@ class AgentSessionManager:
                     timeout=120.0,
                 )
             context = workspace.execution_context(self.settings, provider_id)
-            if not binding.get("cwd"):
+            final_binding = dict(binding)
+            if not final_binding.get("cwd"):
                 repos = list(context.get("repositories") or [])
-                session.execution_binding = {
-                    **binding,
+                final_binding = {
+                    **final_binding,
                     "repository_ids": [r.get("repository_id") for r in repos],
                     "execution_card_id": execution_card_id,
                     "execution_project_id": execution_project_id,
@@ -2707,6 +2728,21 @@ class AgentSessionManager:
                     "cwd": workspace.cwd,
                     "origin_instance_id": session.origin_instance_id,
                 }
+            if final_binding != persisted_binding:
+                await self._offload(
+                    "sqlite.execution_binding_materialize",
+                    self.store.set_session_execution_binding,
+                    session.id,
+                    final_binding,
+                    reason=(
+                        "workspace_materialized"
+                        if persisted_binding
+                        else "workspace_binding_initialized"
+                    ),
+                    expected_binding=persisted_binding,
+                )
+                session.execution_binding = dict(final_binding)
+                persisted_binding = dict(session.execution_binding or {})
             execution_policy = provider_execution_policy(provider_id, mode_id)
             if execution_policy:
                 context["approval_policy"] = execution_policy["approval_policy"]
@@ -3563,6 +3599,30 @@ class AgentSessionManager:
                     self.store.update_restart_handoff, handoff.id,
                     status="failed", error=str(exc)[:1000]
                 )
+
+    async def retry_restart_handoff(
+        self, *, session_id: str, handoff_id: str
+    ) -> RestartHandoff:
+        """Retry exact-session continuation delivery from the same durable receipt."""
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session or session.status == "closed":
+            raise AgentSessionRecoveryError("Exact durable session is not recoverable")
+        handoff = await self._offload(
+            "sqlite.restart_handoff_retry",
+            self.store.retry_restart_handoff,
+            handoff_id,
+            session_id=session_id,
+        )
+        if handoff.status == "resuming":
+            await self._resume_restart_handoffs()
+            handoff = await self._offload(
+                "sqlite.restart_handoff_read",
+                self.store.get_restart_handoff,
+                handoff_id,
+            )
+        return handoff
 
     @staticmethod
     def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:

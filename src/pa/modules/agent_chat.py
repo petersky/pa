@@ -1129,14 +1129,49 @@ async def request_restart_handoff(
 @router.get("/sessions/{session_id}/restart-handoffs")
 def list_restart_handoffs(request: Request, session_id: str) -> dict:
     mgr = _require_session_traffic_ready(request)
-    if not mgr.store.get_session(session_id):
+    session = mgr.store.get_session(session_id)
+    if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
     return {
         "handoffs": [
             item.model_dump(mode="json")
             for item in mgr.store.list_restart_handoffs(session_id=session_id)
         ]
     }
+
+
+@router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/retry")
+async def retry_restart_handoff(
+    request: Request, session_id: str, handoff_id: str
+) -> dict:
+    """Retry one repaired exact-session handoff without creating a new receipt."""
+    mgr = _require_session_traffic_ready(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        handoff = await mgr.retry_restart_handoff(
+            session_id=session_id, handoff_id=handoff_id
+        )
+    except (ValueError, AgentSessionRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return handoff.model_dump(mode="json")
 
 
 @router.get("/observability/v1/capabilities")
@@ -1839,6 +1874,17 @@ async def recover_session(
     body: RecoverSessionBody | None = None,
 ) -> dict:
     mgr = _require_session_traffic_ready(request)
+    durable_session = mgr.store.get_session(session_id)
+    if not durable_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and durable_session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
     try:
         runtime = await mgr.recover_session(
             session_id, provider_override=body.provider if body else None
@@ -1903,7 +1949,15 @@ async def recover_session(
                 ),
             },
         ) from exc
-    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    snapshot = await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    handoffs = list(snapshot.get("restart_handoffs") or [])
+    latest = handoffs[-1] if handoffs else None
+    if latest and latest.get("status") == "failed":
+        await mgr.retry_restart_handoff(
+            session_id=session_id, handoff_id=str(latest["id"])
+        )
+        snapshot = await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    return snapshot
 
 
 @router.get("/sessions/{session_id}")
