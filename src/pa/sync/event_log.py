@@ -23,6 +23,7 @@ from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
 from pa.sync.dag_index import DagIndex
 from pa.sync.object_store import ObjectStore, object_hash
+from pa.workloads import canonical_default_scope_key
 
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -85,13 +86,11 @@ def _event_entity(event: CardEvent) -> tuple[str | None, str | None]:
     if entity == "instance_policy":
         return entity, str(event.payload.get("instance_id") or "") or None
     if entity == "placement_default":
-        scope_key = event.payload.get("scope_key")
-        if not scope_key:
-            scope_key = (
-                f"project:{event.payload.get('project_id') or '*'}:"
-                f"profile:{event.payload.get('workload_profile') or '*'}"
-            )
-        return entity, str(scope_key)
+        return entity, canonical_default_scope_key(
+            event.payload.get("project_id"),
+            event.payload.get("workload_profile"),
+            event.payload.get("scope_key"),
+        )
     if entity == "notification":
         return entity, str(event.payload.get("id") or "") or None
     if entity in {"intake", "channel_identity"}:

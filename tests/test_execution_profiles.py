@@ -1,12 +1,17 @@
 from types import SimpleNamespace
 
+import pytest
+
 from pa.execution.profiles import (
     ExecutionContract,
     ExecutionProfile,
     ExecutionRequirements,
     RepositoryRequirement,
     resolve_materialization_plan,
+    validate_execution_contract,
 )
+from pa.fleet.policy import InstanceParticipationPolicy, InstanceParticipationPolicyUpdate, PlacementDefault
+from pa.workloads import LEGACY_CODE_PROFILE_REASON, WorkloadProfileError, canonical_default_scope_key
 
 
 def repo(identifier: str = "repo-1"):
@@ -125,3 +130,99 @@ def test_multiple_repositories_and_missing_identity_are_reported():
     assert not plan.admissible
     assert len(plan.repositories) == 1
     assert plan.missing_dependencies[0]["resource"] == "repository:missing"
+
+
+def test_legacy_code_contract_normalizes_without_rewriting_persisted_input():
+    persisted = {
+        "version": 1,
+        "profile": "code",
+        "confirmed": True,
+        "requirements": {},
+    }
+    project = SimpleNamespace(tool_config={"execution_contract": persisted})
+
+    plan = resolve_materialization_plan(
+        requested=None,
+        card=SimpleNamespace(id="legacy-card"),
+        project=project,
+        project_repositories=[(repo(), SimpleNamespace(branch="main"))],
+        explicit_repositories=[],
+        target_instance_id="worker",
+    )
+
+    assert plan.profile == ExecutionProfile.REPOSITORY
+    assert plan.profile_normalization_reason == LEGACY_CODE_PROFILE_REASON
+    assert persisted["profile"] == "code"
+
+
+@pytest.mark.parametrize(
+    ("requested", "resolved"),
+    [
+        ("automatic", ExecutionProfile.RESEARCH),
+        ("repository", ExecutionProfile.REPOSITORY),
+        ("research", ExecutionProfile.RESEARCH),
+        ("operations", ExecutionProfile.OPERATIONS),
+        ("code", ExecutionProfile.REPOSITORY),
+    ],
+)
+def test_every_supported_and_legacy_contract_profile_resolves(requested, resolved):
+    repositories = (
+        [(repo(), SimpleNamespace(branch="main"))]
+        if requested in {"repository", "code"}
+        else []
+    )
+    plan = resolve_materialization_plan(
+        requested=ExecutionContract(
+            profile=requested,
+            confirmed=True,
+        ),
+        card=None,
+        project=SimpleNamespace(tool_config={}),
+        project_repositories=repositories,
+        explicit_repositories=[],
+        target_instance_id="worker",
+    )
+    assert plan.profile == resolved
+
+
+def test_unknown_persisted_contract_profile_has_actionable_typed_error():
+    with pytest.raises(WorkloadProfileError) as raised:
+        validate_execution_contract({"version": 1, "profile": "not-real"})
+    assert raised.value.detail()["code"] == "invalid_workload_profile"
+    assert raised.value.detail()["legacy_aliases"] == {"code": "repository"}
+
+
+def test_profile_provenance_cannot_be_spoofed():
+    with pytest.raises(ValueError, match="must be derived"):
+        ExecutionContract.model_validate({
+            "profile": "research",
+            "profile_normalization_reason": LEGACY_CODE_PROFILE_REASON,
+        })
+
+
+@pytest.mark.parametrize("limits", [
+    {"code": 9, "repository": 1},
+    {"repository": 1, "code": 9},
+])
+def test_alias_collisions_choose_strictest_limit_in_any_order(limits):
+    policy = InstanceParticipationPolicy(
+        instance_id="peer", max_concurrent_by_profile=limits
+    )
+    assert policy.max_concurrent_by_profile == {"repository": 1}
+
+
+def test_future_wire_profiles_survive_projection_models_but_not_admission():
+    policy = InstanceParticipationPolicy(
+        instance_id="future", denied_profiles=["future-build"]
+    )
+    default = PlacementDefault(workload_profile="future-build", group_id="all-active")
+    assert policy.denied_profiles == ["future-build"]
+    assert default.scope_key == "project:*:profile:future-build"
+    with pytest.raises(ValueError):
+        InstanceParticipationPolicyUpdate(denied_profiles=["future-build"])
+
+
+def test_legacy_scope_key_has_one_semantic_identity():
+    expected = "project:*:profile:repository"
+    assert canonical_default_scope_key(None, None, "project:*:profile:code") == expected
+    assert canonical_default_scope_key(None, "repository") == expected

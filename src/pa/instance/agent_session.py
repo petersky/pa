@@ -85,6 +85,26 @@ _TURN_STREAM_EVENT_TYPES = {
     "plan",
 }
 PromptAction = Literal["append", "prepend", "interrupt"]
+
+_AUTOMATIC_PROMPT_PREFIXES = (
+    "card-reconciliation:",
+    "pr-supervisor",
+    "post-turn",
+    "evaluation",
+    "reconciliation",
+)
+
+
+def _prompt_authority(source: str, action: PromptAction) -> tuple[int, str]:
+    """Return deterministic durable ordering; lower values run first."""
+    normalized = (source or "api").strip().casefold()
+    if action == "interrupt":
+        return 0, "operator_interrupt"
+    if normalized in {"api", "ui", "operator", "in_flight"}:
+        return 10, "operator_input"
+    if normalized.startswith(_AUTOMATIC_PROMPT_PREFIXES):
+        return 200, "automatic_reconciliation"
+    return 100, f"source:{normalized or 'unknown'}"
 _DURABLE_RUNTIME_KEY = "durable_runtime"
 RECOVERY_BLOCKED_STATUS = "recovery_blocked"
 AUTO_RECOVERY_SESSION_STATUSES = frozenset(
@@ -1026,7 +1046,11 @@ class AgentSessionRuntime:
         if queued_prompts:
             for item in queued_prompts:
                 item.session_id = self.session_id
-            self._queue = list(queued_prompts)
+                if "priority" not in item.model_fields_set:
+                    item.priority, item.turn_reason = _prompt_authority(
+                        item.source, "append"
+                    )
+            self._queue = sorted(queued_prompts, key=lambda item: item.priority)
         self._append_transcript(
             "session_started",
             {
@@ -1160,10 +1184,29 @@ class AgentSessionRuntime:
                 break
             item = self._queue.pop(0)
             self._append_transcript(
-                "queue_dequeued", {"id": item.id, "message": item.message}
+                "queue_dequeued",
+                {
+                    "id": item.id,
+                    "message": item.message,
+                    "source": item.source,
+                    "priority": item.priority,
+                    "turn_reason": item.turn_reason,
+                    "supersedes": item.supersedes,
+                },
             )
             try:
                 await self._run_prompt(item)
+                if item.publication_fence:
+                    self._queue_paused = True
+                    self._append_transcript(
+                        "publication_fence_established",
+                        {
+                            "prompt_id": item.id,
+                            "reason": item.turn_reason,
+                            "queued_prompts_blocked": len(self._queue),
+                        },
+                    )
+                    await self._checkpoint_runtime_async(lifecycle="paused_for_review")
             except Exception as exc:
                 logger.exception("Queued prompt failed for session %s", self.session_id)
                 self._append_transcript(
@@ -1221,6 +1264,10 @@ class AgentSessionRuntime:
                     )
                     self._flush_transcript()
                 return queued
+        priority, turn_reason = _prompt_authority(source, action)
+        supersedes = [
+            queued.id for queued in self._queue if queued.priority > priority
+        ]
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1232,13 +1279,18 @@ class AgentSessionRuntime:
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
             source=source,
+            priority=priority,
+            turn_reason=turn_reason,
+            supersedes=supersedes,
+            publication_fence=action == "interrupt",
             prompt_audit=list(prompt_audit or []),
             acceptance_result=acceptance_result,
         )
-        if action == "prepend":
+        if action in {"prepend", "interrupt"}:
             self._queue.insert(0, item)
         else:
             self._queue.append(item)
+        self._queue.sort(key=lambda queued: queued.priority)
         self._append_transcript(
             "queue_enqueued",
             {
@@ -1246,8 +1298,11 @@ class AgentSessionRuntime:
                 "message": message,
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
-                "position": 0 if action == "prepend" else len(self._queue) - 1,
+                "position": self._queue.index(item),
                 "source": source,
+                "priority": item.priority,
+                "turn_reason": item.turn_reason,
+                "supersedes": item.supersedes,
                 "acceptance_result": item.acceptance_result,
             },
         )
@@ -1310,6 +1365,7 @@ class AgentSessionRuntime:
                 )
                 return "queued"
 
+        priority, turn_reason = _prompt_authority("in_flight", action)
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1321,6 +1377,9 @@ class AgentSessionRuntime:
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
             source="in_flight",
+            priority=priority,
+            turn_reason=turn_reason,
+            publication_fence=action == "interrupt",
         )
         if not wait and not _from_queue:
             # Chat UI / SSE path: accept immediately and run the turn in the background.
@@ -1351,7 +1410,19 @@ class AgentSessionRuntime:
             self._flush_transcript()
             self._start_drain()
             return "started"
-        return await self._run_prompt(item)
+        result = await self._run_prompt(item)
+        if item.publication_fence:
+            self._queue_paused = True
+            self._append_transcript(
+                "publication_fence_established",
+                {
+                    "prompt_id": item.id,
+                    "reason": item.turn_reason,
+                    "queued_prompts_blocked": len(self._queue),
+                },
+            )
+            await self._checkpoint_runtime_async(lifecycle="paused_for_review")
+        return result
 
     def _validated_cwd(self, requested: str | None) -> str | None:
         """Keep every turn inside the workspace fenced to this session."""
