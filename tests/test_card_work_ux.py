@@ -810,6 +810,31 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn('aria-label="Work board"', response.text)
             self.assertNotIn("page-sidebar-right", response.text)
 
+    def test_shell_exposes_labeled_responsive_navigation_and_bounded_card_modal(self) -> None:
+        with TestClient(self.app) as client:
+            response = client.get("/work")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('class="responsive-nav" data-responsive-nav', response.text)
+        self.assertIn('aria-label="Open main navigation"', response.text)
+        self.assertIn('aria-label="Main navigation menu"', response.text)
+        self.assertIn('<span>Sessions</span>', response.text)
+        self.assertIn('<span>Settings</span>', response.text)
+
+        root = Path(__file__).parents[1] / "src" / "pa" / "server"
+        card_form = (root / "templates/partials/card-new.html").read_text()
+        css = (root / "static/style.css").read_text()
+        script = (root / "static/js/spa.js").read_text()
+        self.assertIn("data-new-card-scroll-body", card_form)
+        self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto", css)
+        self.assertIn("overflow-y: auto", css)
+        self.assertIn("scrollbar-gutter: stable", css)
+        self.assertIn("max(0.8rem, env(safe-area-inset-bottom))", css)
+        self.assertIn('dialog.addEventListener("cancel"', script)
+        self.assertIn("newCardDialogOpener.focus()", script)
+        self.assertIn('error.scrollIntoView({ block: "nearest" })', script)
+        self.assertIn("error.focus()", script)
+
     def test_done_lane_is_title_only_and_expands_filtered_results(self) -> None:
         with TestClient(self.app) as client:
             store = self.app.state.ctx.store

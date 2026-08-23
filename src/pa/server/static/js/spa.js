@@ -23,6 +23,9 @@
         btn.classList.toggle("active", href === current);
       }
     });
+    document.querySelectorAll("[data-responsive-nav]").forEach(function (menu) {
+      menu.removeAttribute("open");
+    });
   }
 
   function swapTarget(event) {
@@ -1336,6 +1339,19 @@
     newCardDialogOpener = null;
   }
 
+  function initNewCardDialog() {
+    var dialog = newCardDialog();
+    if (!dialog || dialog.dataset.newCardDialogReady) return;
+    dialog.dataset.newCardDialogReady = "true";
+    dialog.addEventListener("cancel", function (event) {
+      event.preventDefault();
+      closeNewCardDialog();
+    });
+    dialog.addEventListener("click", function (event) {
+      if (event.target === dialog) closeNewCardDialog();
+    });
+  }
+
   function newCardErrorMessage(data, fallback) {
     var detail = data && data.detail;
     if (typeof detail === "string") return detail;
@@ -1599,6 +1615,9 @@
           if (error) {
             error.textContent = failure.message || "The card could not be created.";
             error.hidden = false;
+            error.tabIndex = -1;
+            error.scrollIntoView({ block: "nearest" });
+            error.focus();
           }
         })
         .finally(function () {
@@ -2114,13 +2133,7 @@
         closeCardDialog(true);
       });
     }
-    var createDialog = newCardDialog();
-    if (createDialog) {
-      createDialog.addEventListener("cancel", function (event) {
-        event.preventDefault();
-        closeNewCardDialog();
-      });
-    }
+    initNewCardDialog();
     openCardFromLocation();
     window.setInterval(checkServerBuild, VERSION_POLL_MS);
   });
