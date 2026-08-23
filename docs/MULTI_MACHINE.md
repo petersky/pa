@@ -312,6 +312,7 @@ pa sync status --realm personal
 | SSH install auth failed | Use agent/keys, `--identity`, or `--ask-password` (one-shot, not stored) |
 | Peers unreachable | Confirm Tailscale; use `http://hostname:port` not localhost; `pa config set host 0.0.0.0` then `pa restart` |
 | Sync not working | Same sync token (join sets this), same realm, check Fleet readiness warnings |
+| Sync history growing large | See [SYNC_HISTORY_SCALE.md](SYNC_HISTORY_SCALE.md); use indexed `/api/sync/status`, snapshot epochs, and audited GC — do not delete objects by hand |
 | Head and projection differ | Run MCP `sync_reconcile` or `POST /api/sync/reconcile`; inspect missing-object errors instead of restarting |
 | “data directory already has a running writer” | Stop the duplicate service or give it a distinct `PA_DATA_DIR`; never share one directory between instances |
 | Sync returns 409 conflict | Supply explicit per-field resolutions through MCP `resolve_sync_conflicts` / the resolution API; do not force a ref |

@@ -18,14 +18,24 @@ from pa.intake.projection import get_envelope_payload, get_identity_payload_by_i
 from pa.modules.items import _begin_operation, _replay_operation
 from pa.sync.compaction import SyncMetrics
 from pa.sync.engine import (
+    LEGACY_BUNDLE_SOFT_LIMIT,
     MAX_SYNC_OBJECTS,
+    SYNC_HAVE_MAX_HASHES,
     SYNC_INVENTORY_MAX_BYTES,
     SYNC_INVENTORY_MAX_OBJECTS,
     SYNC_PROTOCOL,
     SyncEngine,
 )
-from pa.sync.event_log import EventHistoryObjectError, EventLog, StaleSyncHeadError
-from pa.sync.infrastructure import get_event_log, get_object_store
+from pa.sync.epochs import acknowledge_epoch_object
+from pa.sync.event_log import EventHistoryObjectError, EventLog, StaleSyncHeadError, _event_entity
+from pa.sync.gc import GcPin
+from pa.sync.infrastructure import (
+    get_epoch_registry,
+    get_event_log,
+    get_gc_planner,
+    get_object_catalog,
+    get_object_store,
+)
 from pa.sync.object_store import ObjectStore
 
 router = APIRouter()
@@ -202,8 +212,10 @@ def _apply_sync_push_local(
             try:
                 if local_head and local_head != head_hash:
                     if log.is_ancestor(local_head, head_hash):
-                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                        # Catch up before publishing the durable tip so a failed
+                        # projection rebuild cannot leave head ahead of SQLite.
                         projection = store.catch_up_projection(realm_id, head_hash)
+                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
                         head_changed = True
                     elif log.is_ancestor(head_hash, local_head):
                         head_hash = local_head
@@ -237,8 +249,8 @@ def _apply_sync_push_local(
                         projection = store.catch_up_projection(realm_id, head_hash)
                         head_changed = True
                 elif local_head != head_hash:
-                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
                     projection = store.catch_up_projection(realm_id, head_hash)
+                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
                     head_changed = True
             except StaleSyncHeadError as exc:
                 raise HTTPException(
@@ -269,6 +281,7 @@ def _sync_status_local(ctx: AppContext, realm_id: str) -> dict:
     log: EventLog = ctx.require_service("event_log")
     durable_head = log.get_head(realm_id)
     projection_head = ctx.store.get_projection_head(realm_id)
+    epochs = ctx.services.get("epoch_registry")
     status.update(
         head=durable_head,
         projection_head=projection_head,
@@ -280,11 +293,25 @@ def _sync_status_local(ctx: AppContext, realm_id: str) -> dict:
             if hasattr(log, "index_status")
             else {"state": "unavailable", "ready": False}
         ),
+        snapshot_epoch=epochs.public(realm_id) if epochs else {"epoch": None},
         recovery=(
             ctx.services["sync_recovery"].public()
             if ctx.services.get("sync_recovery")
             else {"state": "healthy"}
         ),
+        retention={
+            "legacy_bundle_soft_limit": LEGACY_BUNDLE_SOFT_LIMIT,
+            "max_sync_objects_per_transfer": MAX_SYNC_OBJECTS,
+            "protocol": SYNC_PROTOCOL,
+            "notes": [
+                "Reachable commit/event objects are retained for hash verification, "
+                "projection rebuild, conflict merge, and audit.",
+                "Unreachable objects may remain as diagnostic or conflict ancestry "
+                "until an acknowledged snapshot epoch permits reclaim.",
+                "Status counts are served from maintained indexes; they do not "
+                "scandir the object store on the hot path.",
+            ],
+        },
     )
     return status
 
@@ -308,13 +335,40 @@ def sync_refs(request: Request, realm: str | None = None) -> list[dict]:
 
 @router.post("/sync/have")
 def sync_have(request: Request, body: dict) -> dict:
+    """Bounded missing-object probe (compatibility). Prefer protocol-v3 /need."""
     realm_id = body.get("realm_id", "default")
     _check_realm_access(request, realm_id)
     store: ObjectStore = request.app.state.ctx.require_service("object_store")
-    remote_hashes = set(body.get("hashes", []))
-    local = set(store.list_hashes())
-    missing = list(local - remote_hashes)
-    return {"missing": missing}
+    remote_hashes = body.get("hashes", [])
+    if not isinstance(remote_hashes, list):
+        raise HTTPException(status_code=400, detail="invalid hash inventory")
+    if len(remote_hashes) > SYNC_HAVE_MAX_HASHES:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "inventory_too_large",
+                "message": (
+                    "Full-store hash inventories are no longer accepted; "
+                    "use protocol v3 /api/sync/need for head-first deltas."
+                ),
+                "limit": SYNC_HAVE_MAX_HASHES,
+            },
+        )
+    catalog = getattr(store, "catalog", None)
+    if catalog is not None and catalog.count() > 0:
+        missing = catalog.hashes_missing_from(
+            [item for item in remote_hashes if isinstance(item, str)],
+            limit=SYNC_HAVE_MAX_HASHES,
+        )
+    else:
+        # Compatibility for empty catalogs: never scan unbounded on the request path.
+        missing = []
+    return {
+        "missing": missing,
+        "protocol": SYNC_PROTOCOL,
+        "bounded": True,
+        "truncated": len(missing) >= SYNC_HAVE_MAX_HASHES,
+    }
 
 
 @router.post("/sync/get")
@@ -928,19 +982,50 @@ async def dag_index_maintenance(
         Header(alias="Idempotency-Key", min_length=1, max_length=300),
     ],
 ) -> dict:
-    """Verify or safely rebuild the disposable DAG index through the server."""
+    """Verify, rebuild, or cancel the disposable DAG index through the server."""
     realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
     action = str(body.get("action") or "verify")
-    if action not in {"verify", "rebuild"}:
-        raise HTTPException(status_code=400, detail="action must be verify or rebuild")
+    if action not in {"verify", "rebuild", "cancel", "catalog_rebuild"}:
+        raise HTTPException(
+            status_code=400,
+            detail="action must be verify, rebuild, cancel, or catalog_rebuild",
+        )
     _check_realm_access(request, realm_id)
     ctx: AppContext = request.app.state.ctx
     log: EventLog = ctx.require_service("event_log")
     head = log.get_head(realm_id)
 
     def maintain() -> dict:
+        if action == "cancel":
+            log.index.request_cancel(realm_id)
+            return {
+                "realm_id": realm_id,
+                "action": action,
+                "cancelled": True,
+                "dag_index": log.index_status(realm_id),
+            }
+        if action == "catalog_rebuild":
+            catalog = ctx.require_service("object_catalog")
+            store = ctx.require_service("object_store")
+            stats = catalog.rebuild_from_store(store)
+            return {
+                "realm_id": realm_id,
+                "action": action,
+                "catalog": stats,
+                "dag_index": log.index_status(realm_id),
+            }
         if head:
-            log.verify_index(realm_id, head)
+            if action == "rebuild":
+                log.index.rebuild(
+                    realm_id,
+                    head,
+                    log._authoritative_index_records(head),
+                    _event_entity,
+                    force=True,
+                    resume=False,
+                )
+            else:
+                log.verify_index(realm_id, head)
         status = log.index_status(realm_id)
         return {
             "realm_id": realm_id,
@@ -950,6 +1035,153 @@ async def dag_index_maintenance(
         }
 
     return await _offload(ctx, f"sync.index_{action}", maintain, timeout=120.0)
+
+
+@router.post("/sync/epoch")
+async def sync_create_epoch(
+    request: Request,
+    body: dict,
+    _idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=300),
+    ],
+) -> dict:
+    """Create a versioned snapshot epoch root (does not reclaim objects)."""
+    ctx: AppContext = request.app.state.ctx
+    realm_id = body.get("realm_id") or ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
+    from pa.sync.compaction import compact_realm
+
+    def create() -> dict:
+        store = get_store()
+        cards = store.list_cards(realm_id)
+        log: EventLog = ctx.require_service("event_log")
+        registry = ctx.require_service("epoch_registry")
+        objects = ctx.require_service("object_store")
+        epoch_hash = compact_realm(
+            objects,
+            log,
+            realm_id,
+            cards,
+            registry=registry,
+            authority_instance_id=ctx.settings.instance_id,
+            advance_epoch=True,
+        )
+        return {
+            "realm_id": realm_id,
+            "epoch_hash": epoch_hash,
+            "snapshot_epoch": registry.public(realm_id),
+        }
+
+    return await _offload(ctx, "sync.epoch_create", create, timeout=60.0)
+
+
+@router.post("/sync/epoch/ack")
+async def sync_ack_epoch(request: Request, body: dict) -> dict:
+    """Acknowledge a replicated snapshot epoch for this instance."""
+    ctx: AppContext = request.app.state.ctx
+    realm_id = body.get("realm_id") or ctx.settings.primary_realm
+    epoch_hash = body.get("epoch_hash")
+    if not isinstance(epoch_hash, str) or not epoch_hash:
+        raise HTTPException(status_code=400, detail="epoch_hash required")
+    _check_realm_access(request, realm_id)
+    registry = ctx.require_service("epoch_registry")
+    objects = ctx.require_service("object_store")
+    record = acknowledge_epoch_object(
+        objects,
+        registry,
+        realm_id=realm_id,
+        epoch_hash=epoch_hash,
+        instance_id=ctx.settings.instance_id,
+    )
+    required = body.get("required_instance_ids") or [ctx.settings.instance_id]
+    quorum = registry.mark_reclaimable_if_quorum(
+        realm_id, required_instance_ids=list(required)
+    )
+    return {"realm_id": realm_id, "acknowledgement": record, "quorum": quorum}
+
+
+@router.post("/sync/gc/plan")
+async def sync_gc_plan(request: Request, body: dict) -> dict:
+    """Dry-run (default) reachability-indexed GC plan with pins and safety window."""
+    ctx: AppContext = request.app.state.ctx
+    realm_id = body.get("realm_id") or ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
+    dry_run = body.get("dry_run", True)
+    if dry_run is not True and body.get("confirm_execute") is not True:
+        # Creating a non-dry plan still does not delete; execute is separate.
+        dry_run = False
+    planner = ctx.require_service("gc_planner")
+    log: EventLog = ctx.require_service("event_log")
+    head = log.get_head(realm_id)
+
+    def build() -> dict:
+        reachable: set[str] = set()
+        if head:
+            log.ensure_indexed(realm_id, head)
+            for commit_hash, commit in log._iter_commits_parent_first(head):
+                reachable.add(commit_hash)
+                reachable.update(commit.event_hashes)
+        pins = [
+            GcPin(
+                kind=str(item.get("kind") or "operator"),
+                object_hash=str(item["object_hash"]),
+                reason=str(item.get("reason") or "operator_pin"),
+                source=str(item.get("source") or "api"),
+            )
+            for item in body.get("pins") or []
+            if isinstance(item, dict) and item.get("object_hash")
+        ]
+        # Active peer heads observed in convergence are automatic pins.
+        engine: SyncEngine = ctx.require_service("sync_engine")
+        convergence = engine.convergence_status(realm_id)
+        for instance in convergence.get("instances") or []:
+            peer_head = instance.get("head")
+            if peer_head:
+                pins.append(
+                    GcPin(
+                        kind="peer_head",
+                        object_hash=str(peer_head),
+                        reason="active_peer_tip",
+                        source=str(instance.get("instance_id") or "peer"),
+                    )
+                )
+        required = list(
+            body.get("required_instance_ids")
+            or [ctx.settings.instance_id]
+        )
+        plan = planner.plan(
+            realm_id,
+            reachable_hashes=reachable,
+            pins=pins,
+            required_ack_instances=required,
+            dry_run=bool(dry_run),
+        )
+        return plan.to_dict()
+
+    return await _offload(ctx, "sync.gc_plan", build, timeout=120.0)
+
+
+@router.post("/sync/gc/execute")
+async def sync_gc_execute(request: Request, body: dict) -> dict:
+    """Execute a previously audited GC plan after explicit confirmation."""
+    ctx: AppContext = request.app.state.ctx
+    realm_id = body.get("realm_id") or ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
+    plan_id = body.get("plan_id")
+    if not isinstance(plan_id, str) or not plan_id:
+        raise HTTPException(status_code=400, detail="plan_id required")
+    if body.get("confirm") is not True:
+        raise HTTPException(status_code=400, detail="confirm=true required")
+    planner = ctx.require_service("gc_planner")
+    return await _offload(
+        ctx,
+        "sync.gc_execute",
+        planner.execute,
+        plan_id,
+        confirm=True,
+        timeout=120.0,
+    )
 
 
 class SyncModule(Module):
@@ -972,6 +1204,9 @@ class SyncModule(Module):
         obj_store = get_object_store(settings)
         event_log = get_event_log(settings)
         ctx.register_service("object_store", obj_store)
+        ctx.register_service("object_catalog", get_object_catalog(settings))
+        ctx.register_service("epoch_registry", get_epoch_registry(settings))
+        ctx.register_service("gc_planner", get_gc_planner(settings))
         ctx.register_service("event_log", event_log)
         ctx.register_service("sync_metrics", SyncMetrics(settings.data_dir))
         ctx.register_service("live_updates", LiveUpdateBroker())
@@ -1024,9 +1259,11 @@ class SyncModule(Module):
         event_log.append_event = append_with_sync  # type: ignore[method-assign]
 
         store = ctx.store
-        def rebuild_projection(realm_id: str) -> dict[str, Any]:
+        def rebuild_projection(
+            realm_id: str, target_head: str | None = None
+        ) -> dict[str, Any]:
             with store.mutation():
-                head = event_log.get_head(realm_id)
+                head = target_head or event_log.get_head(realm_id)
                 result = (
                     store.catch_up_projection(realm_id, head)
                     if head

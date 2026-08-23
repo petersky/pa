@@ -236,6 +236,8 @@ class EventLog:
         Production startup/reconcile code calls this off the event loop. Query
         methods only invoke it for real object-store heads; synthetic test and
         explicit verifier traversals retain the bounded authoritative fallback.
+        Prefer incremental advance from a ready indexed head before a full
+        checkpointable rebuild.
         """
         requested = head or self.get_head(realm_id)
         if requested is None:
@@ -244,7 +246,18 @@ class EventLog:
             return True
         if not self.store.has(requested):
             return False
+        indexed = self.index.indexed_head(realm_id)
         try:
+            if indexed and self.is_ancestor(indexed, requested):
+                advanced = self.index.try_incremental_advance(
+                    realm_id,
+                    indexed,
+                    requested,
+                    self._authoritative_index_records(requested),
+                    _event_entity,
+                )
+                if advanced:
+                    return True
             self.index.rebuild(
                 realm_id,
                 requested,
@@ -1635,7 +1648,7 @@ class EventLog:
         """Return True if ancestor is on the bounded parent DAG of descendant."""
         if ancestor == descendant:
             return True
-        with self.index._conn() as conn:
+        with self.index._db() as conn:
             row = conn.execute(
                 "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1",
                 (descendant,),

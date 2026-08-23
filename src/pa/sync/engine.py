@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import logging
 import time
@@ -34,6 +35,10 @@ SYNC_INVENTORY_MAX_OBJECTS = 512
 SYNC_INVENTORY_MAX_BYTES = 128 * 1024
 SYNC_BATCH_MAX_OBJECTS = 256
 SYNC_BATCH_MAX_ENCODED_BYTES = 2 * 1024 * 1024
+# Legacy full-history bundles are never prepared above this for normal
+# anti-entropy; incompatible peers are quarantined instead.
+LEGACY_BUNDLE_SOFT_LIMIT = 2_000
+SYNC_HAVE_MAX_HASHES = 512
 
 
 @dataclass(frozen=True)
@@ -99,7 +104,10 @@ class SyncEngine:
             "inventory_batches": 0,
             "object_batches": 0,
             "retry_count": 0,
+            "legacy_fallbacks": 0,
+            "quarantined_peers": 0,
         }
+        self._quarantined_peers: dict[str, dict[str, Any]] = {}
         self._prepare_diagnostics_path = (
             self.settings.data_dir / "sync_preparation.json"
         )
@@ -307,8 +315,9 @@ class SyncEngine:
         self._push_callbacks.append(callback)
 
     def on_head_advanced(
-        self, callback: Callable[[str], dict[str, Any] | None]
+        self, callback: Callable[..., dict[str, Any] | None]
     ) -> None:
+        # Callback may accept (realm_id) or (realm_id, target_head=None).
         self._rebuild_projection = callback
 
     def _headers(self) -> dict[str, str]:
@@ -569,39 +578,17 @@ class SyncEngine:
     ) -> dict:
         base = route.target_url.rstrip("/")
         descriptor = self._instance(route.target_instance_id, base)
+        quarantined = self._quarantined_peers.get(base)
+        if quarantined:
+            return {
+                **descriptor,
+                "status": "protocol_incompatible",
+                "head": None,
+                "imported": 0,
+                "error": quarantined,
+            }
         try:
-            hashes = (
-                local_hashes
-                if local_hashes is not None
-                else await self._offload("sync.object_list", self.store.list_hashes)
-            )
-            have = await self._request(
-                "POST",
-                f"{base}/api/sync/have",
-                payload={"realm_id": realm_id, "hashes": hashes},
-            )
-            have.raise_for_status()
-            have_data = await self._response_json(have)
-            missing = have_data.get("missing", []) if isinstance(have_data, dict) else []
-            imported = 0
-            if missing:
-                objects = await self._request(
-                    "POST",
-                    f"{base}/api/sync/get",
-                    payload={"hashes": missing},
-                )
-                objects.raise_for_status()
-                objects_data = await self._response_json(objects)
-                encoded = (
-                    objects_data.get("objects", {})
-                    if isinstance(objects_data, dict)
-                    else {}
-                )
-                imported = len(
-                    await self._offload(
-                        "sync.object_ingest", self.ingest_objects, encoded
-                    )
-                )
+            # Head-first: learn the peer tip before any object inventory.
             refs = await self._request(
                 "GET",
                 f"{base}/api/sync/refs",
@@ -620,16 +607,85 @@ class SyncEngine:
             peer_head = peer_ref.get("head_hash") if peer_ref else None
             if peer_ref:
                 descriptor = self._instance(peer_ref.get("instance_id"), base)
-            if peer_head and not await self._offload(
+
+            imported = 0
+            if peer_head and await self._offload(
                 "sync.commit_read", self.log.get_commit, peer_head
             ):
+                # Converged or peer is behind our store: nothing to pull.
                 return {
                     **descriptor,
-                    "status": "invalid_response",
+                    "status": "reachable",
+                    "head": peer_head,
+                    "imported": 0,
+                }
+
+            if peer_head:
+                # O(delta) pull: ask the peer only for objects we lack along the
+                # peer head frontier instead of exchanging the full store.
+                imported = await self._pull_peer_v3(
+                    realm_id, route, peer_head, descriptor
+                )
+                if not await self._offload(
+                    "sync.commit_read", self.log.get_commit, peer_head
+                ):
+                    return {
+                        **descriptor,
+                        "status": "invalid_response",
+                        "head": peer_head,
+                        "imported": imported,
+                        "error": "peer head object was not transferred",
+                    }
+                return {
+                    **descriptor,
+                    "status": "reachable",
                     "head": peer_head,
                     "imported": imported,
-                    "error": "peer head object was not transferred",
                 }
+
+            # Peer has no tip. Bounded compatibility probe only — never send the
+            # entire object catalog on the hot anti-entropy path.
+            catalog = getattr(self.store, "catalog", None)
+            if local_hashes is None:
+                if catalog is not None:
+                    local_hashes = catalog.iter_hashes(limit=SYNC_HAVE_MAX_HASHES)
+                else:
+                    local_hashes = []
+            if local_hashes:
+                have = await self._request(
+                    "POST",
+                    f"{base}/api/sync/have",
+                    payload={
+                        "realm_id": realm_id,
+                        "hashes": local_hashes[:SYNC_HAVE_MAX_HASHES],
+                        "protocol": SYNC_PROTOCOL,
+                        "bounded": True,
+                    },
+                )
+                have.raise_for_status()
+                have_data = await self._response_json(have)
+                missing = (
+                    have_data.get("missing", []) if isinstance(have_data, dict) else []
+                )
+                missing = missing[:SYNC_HAVE_MAX_HASHES]
+                if missing:
+                    objects = await self._request(
+                        "POST",
+                        f"{base}/api/sync/get",
+                        payload={"hashes": missing},
+                    )
+                    objects.raise_for_status()
+                    objects_data = await self._response_json(objects)
+                    encoded = (
+                        objects_data.get("objects", {})
+                        if isinstance(objects_data, dict)
+                        else {}
+                    )
+                    imported = len(
+                        await self._offload(
+                            "sync.object_ingest", self.ingest_objects, encoded
+                        )
+                    )
             return {
                 **descriptor,
                 "status": "reachable",
@@ -656,6 +712,86 @@ class SyncEngine:
                 "error": str(exc),
             }
 
+    async def _pull_peer_v3(
+        self,
+        realm_id: str,
+        route: PeerRoute,
+        peer_head: str,
+        descriptor: dict[str, str],
+    ) -> int:
+        """Fetch missing objects for a peer tip using bounded head-first pages."""
+        base = route.target_url.rstrip("/")
+        pending_commits = [peer_head]
+        pending_events: list[str] = []
+        seen_commits: set[str] = set()
+        seen_events: set[str] = set()
+        imported_total = 0
+        while pending_commits or pending_events:
+            page: list[str] = []
+            page_commits: list[str] = []
+            while pending_events and len(page) < SYNC_INVENTORY_MAX_OBJECTS:
+                event_hash = pending_events.pop()
+                if not event_hash or event_hash in seen_events:
+                    continue
+                seen_events.add(event_hash)
+                if await self._offload("sync.object_has", self.store.has, event_hash):
+                    continue
+                page.append(event_hash)
+            while pending_commits and len(page) < SYNC_INVENTORY_MAX_OBJECTS:
+                candidate = pending_commits.pop()
+                if not candidate or candidate in seen_commits:
+                    continue
+                seen_commits.add(candidate)
+                if await self._offload("sync.object_has", self.store.has, candidate):
+                    commit = await self._offload(
+                        "sync.commit_read", self.log.get_commit, candidate
+                    )
+                    if commit:
+                        pending_commits.extend(
+                            parent
+                            for parent in commit.parent_hashes
+                            if parent and parent not in seen_commits
+                        )
+                        pending_events.extend(
+                            event_hash
+                            for event_hash in commit.event_hashes
+                            if event_hash and event_hash not in seen_events
+                        )
+                    continue
+                page.append(candidate)
+                page_commits.append(candidate)
+            if not page:
+                continue
+            response = await self._request(
+                "POST",
+                f"{base}/api/sync/get",
+                payload={"hashes": page, "protocol": SYNC_PROTOCOL},
+            )
+            response.raise_for_status()
+            data = await self._response_json(response)
+            encoded = data.get("objects", {}) if isinstance(data, dict) else {}
+            imported = await self._offload(
+                "sync.object_ingest", self.ingest_objects, encoded
+            )
+            imported_total += len(imported)
+            for commit_hash in page_commits:
+                commit = await self._offload(
+                    "sync.commit_read", self.log.get_commit, commit_hash
+                )
+                if not commit:
+                    continue
+                pending_commits.extend(
+                    parent
+                    for parent in commit.parent_hashes
+                    if parent and parent not in seen_commits
+                )
+                pending_events.extend(
+                    event_hash
+                    for event_hash in commit.event_hashes
+                    if event_hash and event_hash not in seen_events
+                )
+        return imported_total
+
     def _source_name(self, source: dict | None) -> dict | None:
         if not source:
             return source
@@ -666,19 +802,87 @@ class SyncEngine:
         ]
         return result
 
+    def _projection_callback_accepts_target(self) -> bool:
+        callback = self._rebuild_projection
+        if callback is None:
+            return False
+        try:
+            signature = inspect.signature(callback)
+        except (TypeError, ValueError):
+            return False
+        parameters = list(signature.parameters.values())
+        if any(
+            parameter.kind == inspect.Parameter.VAR_POSITIONAL
+            for parameter in parameters
+        ):
+            return True
+        # Bound methods omit self; accept an optional/required second parameter.
+        return len(parameters) >= 2
+
+    def _rebuild_to_head(
+        self, realm_id: str, target_head: str | None = None
+    ) -> dict[str, Any] | None:
+        if not self._rebuild_projection:
+            return None
+        if target_head is not None and self._projection_callback_accepts_target():
+            return self._rebuild_projection(realm_id, target_head)
+        if (
+            target_head is not None
+            and self.log.get_head(realm_id) != target_head
+        ):
+            # Legacy one-arg callbacks read get_head(); callers must publish the
+            # durable tip first, then invoke without a target.
+            return {
+                "commits_applied": 0,
+                "rebuilt": False,
+                "reason": "deferred_legacy_callback",
+            }
+        return self._rebuild_projection(realm_id)
+
+    def _publish_head_with_projection(
+        self,
+        realm_id: str,
+        new_head: str,
+        *,
+        expected_head: str | None,
+    ) -> dict[str, Any] | None:
+        """Catch up target-aware projections before CAS; legacy after."""
+        if self._projection_callback_accepts_target():
+            projection = self._rebuild_to_head(realm_id, new_head)
+            self.log.advance_ref(
+                realm_id, new_head, expected_head=expected_head
+            )
+            return projection
+        self.log.advance_ref(realm_id, new_head, expected_head=expected_head)
+        return self._rebuild_to_head(realm_id)
+
     def _reconcile_remote_head(self, realm_id: str, remote_head: str) -> dict:
         for attempt in range(1, 4):
             local_head = self.log.get_head(realm_id)
             if local_head == remote_head:
+                # Repair projection lag even when the durable tip already matches.
+                projection = self._rebuild_to_head(realm_id, remote_head) or {}
+                if projection.get("reason") == "deferred_legacy_callback":
+                    projection = self._rebuild_to_head(realm_id) or {}
+                if projection.get("commits_applied") or projection.get("rebuilt"):
+                    return {
+                        "advanced": False,
+                        "repaired_projection": True,
+                        "head": local_head,
+                        "attempts": attempt,
+                        **projection,
+                    }
                 return {"advanced": False, "head": local_head, "attempts": attempt}
             try:
                 if not local_head:
                     if not self.log.get_commit(remote_head):
                         return {"advanced": False, "missing_head": remote_head}
-                    self.log.advance_ref(realm_id, remote_head, expected_head=None)
+                    projection = self._publish_head_with_projection(
+                        realm_id, remote_head, expected_head=None
+                    )
                     advanced_head = remote_head
                 elif self.log.is_ancestor(local_head, remote_head):
-                    self.log.advance_ref(
+                    projection = self._publish_head_with_projection(
                         realm_id, remote_head, expected_head=local_head
                     )
                     advanced_head = remote_head
@@ -722,11 +926,10 @@ class SyncEngine:
                         ),
                     )
                     advanced_head = merge.hash
-                projection = (
-                    self._rebuild_projection(realm_id)
-                    if self._rebuild_projection
-                    else None
-                )
+                    # merge_heads already published the tip; rebuild after.
+                    projection = self._rebuild_to_head(realm_id, advanced_head)
+                    if projection and projection.get("reason") == "deferred_legacy_callback":
+                        projection = self._rebuild_to_head(realm_id)
                 self.invalidate_prepared(realm_id)
                 return {
                     "advanced": True,
@@ -854,12 +1057,43 @@ class SyncEngine:
             }
 
     def _inventory_page(
-        self, pending: list[str], seen_commits: set[str]
+        self,
+        pending: list[str],
+        seen_commits: set[str],
+        pending_events: list[str] | None = None,
     ) -> tuple[dict[str, bytes], dict[str, list[str]]]:
-        """Read one bounded head-first page without walking known ancestry."""
+        """Read one bounded head-first page without walking known ancestry.
+
+        Oversized single-commit event fanouts spill into ``pending_events`` and
+        continue on later pages instead of aborting anti-entropy.
+        """
+        if pending_events is None:
+            pending_events = []
         raw: dict[str, bytes] = {}
         parents: dict[str, list[str]] = {}
         inventory_bytes = 0
+
+        def _can_add(estimated: int) -> bool:
+            if len(raw) >= SYNC_INVENTORY_MAX_OBJECTS:
+                return False
+            if raw and inventory_bytes + estimated > SYNC_INVENTORY_MAX_BYTES:
+                return False
+            return True
+
+        while pending_events:
+            event_hash = pending_events[-1]
+            if not event_hash or event_hash in raw:
+                pending_events.pop()
+                continue
+            estimated = len(event_hash) + 8
+            if not _can_add(estimated):
+                break
+            pending_events.pop()
+            event_data = self.store.get(event_hash)
+            if event_data is not None:
+                raw[event_hash] = event_data
+                inventory_bytes += estimated
+
         while pending and len(raw) < SYNC_INVENTORY_MAX_OBJECTS:
             commit_hash = pending.pop()
             if not commit_hash or commit_hash in seen_commits:
@@ -880,17 +1114,18 @@ class SyncEngine:
             pending.extend(
                 item for item in reversed(commit.parent_hashes) if item
             )
+            spill_events = False
             for event_hash in commit.event_hashes:
                 if not event_hash or event_hash in raw:
                     continue
+                if spill_events:
+                    pending_events.append(event_hash)
+                    continue
                 estimated = len(event_hash) + 8
-                if (
-                    len(raw) >= SYNC_INVENTORY_MAX_OBJECTS
-                    or inventory_bytes + estimated > SYNC_INVENTORY_MAX_BYTES
-                ):
-                    # Event objects are sent with their commit page. A single
-                    # commit with an extreme event fanout is rejected safely.
-                    raise ValueError("sync commit exceeds bounded inventory limits")
+                if not _can_add(estimated):
+                    pending_events.append(event_hash)
+                    spill_events = True
+                    continue
                 event_data = self.store.get(event_hash)
                 if event_data is not None:
                     raw[event_hash] = event_data
@@ -922,18 +1157,20 @@ class SyncEngine:
     ) -> dict:
         base = route.target_url.rstrip("/")
         pending = [head]
+        pending_events: list[str] = []
         seen_commits: set[str] = set()
         sent_count = 0
         sent_bytes = 0
         inventory_batches = 0
         object_batches = 0
         started = time.perf_counter()
-        while pending:
+        while pending or pending_events:
             raw, parents = await self._offload(
                 "sync.object_collect",
                 self._inventory_page,
                 pending,
                 seen_commits,
+                pending_events,
                 timeout=60.0,
             )
             if not raw:
@@ -950,7 +1187,45 @@ class SyncEngine:
                 },
             )
             if inventory.status_code == 404:
+                # Legacy peers lack /need. Only prepare a full bundle when the
+                # indexed history is small enough; otherwise quarantine without
+                # walking/encoding the entire DAG on every anti-entropy pass.
+                index_status = self.log.index_status(realm_id)
+                reachable = int(index_status.get("commit_count") or 0) + int(
+                    index_status.get("event_count") or 0
+                )
+                if reachable > LEGACY_BUNDLE_SOFT_LIMIT or (
+                    index_status.get("ready")
+                    and reachable == 0
+                    and self.store.indexed_count() > LEGACY_BUNDLE_SOFT_LIMIT
+                ):
+                    detail = {
+                        "code": "legacy_bundle_too_large",
+                        "message": (
+                            "Peer requires a legacy full-history bundle that exceeds "
+                            "safe transfer limits; upgrade the peer to sync protocol v3."
+                        ),
+                        "reachable_objects": reachable,
+                        "soft_limit": LEGACY_BUNDLE_SOFT_LIMIT,
+                    }
+                    self._quarantined_peers[base] = detail
+                    self._prepare_metrics["quarantined_peers"] = len(
+                        self._quarantined_peers
+                    )
+                    self._prepare_metrics["legacy_fallbacks"] = int(
+                        self._prepare_metrics["legacy_fallbacks"]
+                    ) + 1
+                    self._persist_prepare_diagnostics()
+                    return {
+                        **descriptor,
+                        "status": "protocol_incompatible",
+                        "head": None,
+                        "error": detail,
+                    }
                 prepared = await self._prepare_objects(realm_id, head)
+                self._prepare_metrics["legacy_fallbacks"] = int(
+                    self._prepare_metrics["legacy_fallbacks"]
+                ) + 1
                 legacy = await self._request(
                     "POST",
                     f"{base}/api/sync/push",
@@ -1097,9 +1372,7 @@ class SyncEngine:
                 self._set_state(realm_id, phase="exchanging", attempt=pass_number)
                 instances = []
                 all_conflicts = []
-                local_hashes = await self._offload(
-                    "sync.object_list", self.store.list_hashes
-                )
+                local_hashes = None
                 fetched = await asyncio.gather(
                     *(
                         self._fetch_peer(
@@ -1307,13 +1580,42 @@ class SyncEngine:
     def status(self, realm_id: str) -> dict:
         head = self.log.get_head(realm_id)
         routes = self.peer_table.routes_for_realm(realm_id)
+        catalog = getattr(self.store, "catalog", None)
+        if catalog is not None:
+            # Refresh realm reachability stats from the DAG index when ready.
+            index_status = self.log.index_status(realm_id)
+            if index_status.get("ready"):
+                commit_count = int(index_status.get("commit_count") or 0)
+                event_count = int(index_status.get("event_count") or 0)
+                store_total = catalog.count()
+                unreachable = max(0, store_total - commit_count - event_count)
+                oldest, newest = catalog.age_bounds_ns()
+                catalog.publish_realm_stats(
+                    realm_id,
+                    commit_count=commit_count,
+                    event_count=event_count,
+                    auxiliary_count=0,
+                    unreachable_count=unreachable,
+                    reachable_bytes=0,
+                    head_hash=head,
+                    oldest_reachable_ns=oldest,
+                    newest_reachable_ns=newest,
+                )
+            history = catalog.status_payload(realm_id)
+            object_count = history["object_count"]
+        else:
+            history = None
+            object_count = self.store.indexed_count()
         return {
             "realm_id": realm_id,
             "head": head,
-            "object_count": len(self.store.list_hashes()),
+            "object_count": object_count,
+            "history": history,
             "peer_count": len(routes),
             "zone": self.settings.zone,
             "convergence": self.convergence_status(realm_id),
             "object_preparation": dict(self._prepare_metrics),
             "projection_work": self.projection_work_status(realm_id),
+            "quarantined_peers": dict(self._quarantined_peers),
+            "protocol": SYNC_PROTOCOL,
         }
