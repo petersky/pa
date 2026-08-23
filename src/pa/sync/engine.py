@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -52,9 +53,12 @@ class SyncEngine:
         self._debounce_tasks: dict[str, asyncio.Task] = {}
         self._convergence_tasks: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._projection_locks: dict[str, asyncio.Lock] = {}
+        self._projection_tasks: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._projection_stats: dict[str, dict[str, Any]] = {}
         self._states: dict[str, dict] = {}
         self._periodic_task: asyncio.Task | None = None
-        self._rebuild_projection: Callable[[str], None] | None = None
+        self._rebuild_projection: Callable[[str], dict[str, Any] | None] | None = None
         self._client: httpx.AsyncClient | None = None
         self._peer_slots = asyncio.Semaphore(8)
 
@@ -72,6 +76,92 @@ class SyncEngine:
                 operation, call, *args, timeout=timeout, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
+
+    async def apply_realm_head(
+        self,
+        realm_id: str,
+        target_head: str,
+        operation: str,
+        call: Callable[..., Any],
+        /,
+        *args: Any,
+        timeout: float = 60.0,
+    ) -> Any:
+        """Coalesce a realm/head mutation before it occupies a worker.
+
+        The owner task is deliberately independent of every request. A timed
+        out or cancelled waiter leaves it running and later callers join the
+        same protected work instead of admitting a lock convoy.
+        """
+        key = (realm_id, target_head)
+        task = self._projection_tasks.get(key)
+        coalesced = task is not None and not task.done()
+        if not coalesced:
+            task = asyncio.create_task(
+                self._run_realm_head(
+                    realm_id, target_head, operation, call, *args
+                ),
+                name=f"pa-projection:{realm_id}:{target_head[:12]}",
+            )
+            self._projection_tasks[key] = task
+            task.add_done_callback(
+                lambda done, owned=task, task_key=key: (
+                    self._projection_tasks.pop(task_key, None)
+                    if self._projection_tasks.get(task_key) is owned
+                    else None
+                )
+            )
+        stats = self._projection_stats.setdefault(realm_id, {})
+        stats["coalesced"] = int(stats.get("coalesced", 0)) + int(coalesced)
+        try:
+            async with asyncio.timeout(timeout):
+                return await asyncio.shield(task)
+        except TimeoutError:
+            stats["deadline_overruns"] = int(stats.get("deadline_overruns", 0)) + 1
+            stats["active_residual_worker"] = not task.done()
+            raise
+
+    async def _run_realm_head(
+        self,
+        realm_id: str,
+        target_head: str,
+        operation: str,
+        call: Callable[..., Any],
+        /,
+        *args: Any,
+    ) -> Any:
+        lock = self._projection_locks.setdefault(realm_id, asyncio.Lock())
+        queued = time.perf_counter()
+        async with lock:
+            started = time.perf_counter()
+            stats = self._projection_stats.setdefault(realm_id, {})
+            stats.update(
+                target_head=target_head,
+                lock_wait_ms=round((started - queued) * 1000, 3),
+                active_residual_worker=True,
+            )
+            try:
+                # No inner timeout: caller deadlines must not detach ownership
+                # from the shielded worker that still owns this realm.
+                result = await self._offload(operation, call, *args, timeout=None)
+                if isinstance(result, dict):
+                    stats.update(
+                        commits_applied=result.get("commits_applied", 0),
+                        rebuild_reason=result.get("rebuild_reason")
+                        or result.get("reason"),
+                    )
+                return result
+            finally:
+                stats["active_residual_worker"] = False
+                stats["runtime_ms"] = round((time.perf_counter() - started) * 1000, 3)
+
+    def projection_work_status(self, realm_id: str) -> dict[str, Any]:
+        status = dict(self._projection_stats.get(realm_id, {}))
+        status["active_residual_worker"] = any(
+            key_realm == realm_id and not task.done()
+            for (key_realm, _), task in self._projection_tasks.items()
+        )
+        return status
 
     async def _observe_http(self, awaitable):
         if self.async_runtime:
@@ -145,7 +235,9 @@ class SyncEngine:
     def on_commit(self, callback: Callable) -> None:
         self._push_callbacks.append(callback)
 
-    def on_head_advanced(self, callback: Callable[[str], None]) -> None:
+    def on_head_advanced(
+        self, callback: Callable[[str], dict[str, Any] | None]
+    ) -> None:
         self._rebuild_projection = callback
 
     def _headers(self) -> dict[str, str]:
@@ -437,12 +529,16 @@ class SyncEngine:
                         ),
                     )
                     advanced_head = merge.hash
-                if self._rebuild_projection:
+                projection = (
                     self._rebuild_projection(realm_id)
+                    if self._rebuild_projection
+                    else None
+                )
                 return {
                     "advanced": True,
                     "head": advanced_head,
                     "attempts": attempt,
+                    **(projection or {}),
                 }
             except StaleSyncHeadError:
                 if attempt == 3:
@@ -583,7 +679,9 @@ class SyncEngine:
                 )
                 for peer in fetched:
                     if peer["head"] and peer["status"] == "reachable":
-                        result = await self._offload(
+                        result = await self.apply_realm_head(
+                            realm_id,
+                            peer["head"],
                             "sync.reconcile_head",
                             self._reconcile_remote_head,
                             realm_id,
@@ -698,8 +796,13 @@ class SyncEngine:
         assert self._client is not None
         peer = await self._fetch_peer(self._client, realm_id, route)
         if peer.get("head"):
-            await self._offload(
-                "sync.reconcile_head", self._reconcile_remote_head, realm_id, peer["head"]
+            await self.apply_realm_head(
+                realm_id,
+                peer["head"],
+                "sync.reconcile_head",
+                self._reconcile_remote_head,
+                realm_id,
+                peer["head"],
             )
         after = await self._offload("sync.ref_read", self.log.get_head, realm_id)
         return after if after != before else None

@@ -170,7 +170,7 @@ def _apply_sync_push_local(
     realm_id: str,
     head_hash: str,
     objects_b64: dict[str, str],
-) -> tuple[int, str, bool]:
+) -> dict[str, Any]:
     """Apply a full object/ref/projection transaction in one worker."""
     engine: SyncEngine = ctx.require_service("sync_engine")
     log: EventLog = ctx.require_service("event_log")
@@ -180,6 +180,7 @@ def _apply_sync_push_local(
     metrics.record_pull(len(imported))
 
     head_changed = False
+    projection = {"commits_applied": 0, "rebuilt": False, "reason": "identical"}
     if head_hash:
         if not log.get_commit(head_hash):
             raise HTTPException(
@@ -196,7 +197,7 @@ def _apply_sync_push_local(
                 if local_head and local_head != head_hash:
                     if log.is_ancestor(local_head, head_hash):
                         log.advance_ref(realm_id, head_hash, expected_head=local_head)
-                        store.rebuild_from_log(realm_id)
+                        projection = store.catch_up_projection(realm_id, head_hash)
                         head_changed = True
                     elif log.is_ancestor(head_hash, local_head):
                         head_hash = local_head
@@ -227,11 +228,11 @@ def _apply_sync_push_local(
                             ),
                         )
                         head_hash = merge.hash
-                        store.rebuild_from_log(realm_id)
+                        projection = store.catch_up_projection(realm_id, head_hash)
                         head_changed = True
                 elif local_head != head_hash:
                     log.advance_ref(realm_id, head_hash, expected_head=local_head)
-                    store.rebuild_from_log(realm_id)
+                    projection = store.catch_up_projection(realm_id, head_hash)
                     head_changed = True
             except StaleSyncHeadError as exc:
                 raise HTTPException(
@@ -244,7 +245,14 @@ def _apply_sync_push_local(
                         "actual_head": exc.actual,
                     },
                 ) from exc
-    return len(imported), head_hash, head_changed
+    return {
+        "imported": len(imported),
+        "head": head_hash,
+        "head_changed": head_changed,
+        "commits_applied": projection["commits_applied"],
+        "rebuilt": projection["rebuilt"],
+        "rebuild_reason": projection["reason"] if projection["rebuilt"] else None,
+    }
 
 
 def _sync_status_local(ctx: AppContext, realm_id: str) -> dict:
@@ -318,8 +326,10 @@ async def sync_push(request: Request, body: dict) -> dict:
     if not isinstance(objects_b64, dict):
         raise HTTPException(status_code=400, detail="objects must be an object")
     ctx: AppContext = request.app.state.ctx
-    imported, head_hash, head_changed = await _offload(
-        ctx,
+    engine: SyncEngine = ctx.require_service("sync_engine")
+    result = await engine.apply_realm_head(
+        realm_id,
+        head_hash,
         "sync.push_transaction",
         _apply_sync_push_local,
         ctx,
@@ -329,10 +339,9 @@ async def sync_push(request: Request, body: dict) -> dict:
         timeout=120.0,
     )
 
-    if head_changed:
-        engine: SyncEngine = ctx.require_service("sync_engine")
+    if result["head_changed"]:
         await engine.notify_commit(realm_id)
-    return {"imported": imported, "head": head_hash}
+    return {key: value for key, value in result.items() if key != "head_changed"}
 
 
 @router.post("/sync/relay")
@@ -939,9 +948,14 @@ class SyncModule(Module):
         event_log.append_event = append_with_sync  # type: ignore[method-assign]
 
         store = ctx.store
-        def rebuild_projection(realm_id: str) -> None:
+        def rebuild_projection(realm_id: str) -> dict[str, Any]:
             with store.mutation():
-                store.rebuild_from_log(realm_id)
+                head = event_log.get_head(realm_id)
+                result = (
+                    store.catch_up_projection(realm_id, head)
+                    if head
+                    else {"commits_applied": 0, "rebuilt": False, "reason": "empty"}
+                )
             live_updates.publish(
                 realm_id,
                 {
@@ -951,6 +965,7 @@ class SyncModule(Module):
                     "source": "sync",
                 },
             )
+            return result
 
         engine.on_head_advanced(rebuild_projection)
         runtime = ctx.require_service("async_runtime")
@@ -962,7 +977,7 @@ class SyncModule(Module):
                     event_log.ensure_indexed(realm, durable_head)
                 if durable_head and store.get_projection_head(realm) != durable_head:
                     if event_log.get_commit(durable_head):
-                        store.rebuild_from_log(realm)
+                        store.catch_up_projection(realm, durable_head)
 
         # Local durability is restored before admission. Peer/DNS/network work is
         # explicitly backgrounded so health and status endpoints become live.
