@@ -156,18 +156,23 @@
         <h1>{{ project.title }}</h1>
         {% if project.description %}<p>{{ project.description }}</p>{% else %}<p class="muted">Add a goal and success context so people and agents can make aligned decisions.</p>{% endif %}
       </div>
-      <details class="panel-inset">
-        <summary>Edit project settings</summary>
-        <form class="stack" hx-post="/projects/{{ project.id }}?realm={{ active_realm }}&project={{ project.id }}" hx-target="#app-view" hx-swap="innerHTML">
-          <input type="hidden" name="csrf" value="{{ csrf_token }}">
-          <label>Project title <input name="title" value="{{ project.title }}" required></label>
-          <label>Goal and description <textarea name="description" rows="4">{{ project.description }}</textarea></label>
-          <label>Project instructions <textarea name="agent_prompt" rows="5">{{ project.agent_prompt }}</textarea></label>
-          <label>Tags <input name="tags" value="{{ project.tags | join(', ') }}"></label>
-          <label>Lifecycle <select name="status"><option value="active" {% if project.status.value == 'active' %}selected{% endif %}>Active</option><option value="archived" {% if project.status.value == 'archived' %}selected{% endif %}>Archived</option></select></label>
-          <button type="submit">Save project</button>
-        </form>
-      </details>
+      <div class="project-heading-actions">
+        <button type="button"
+                data-new-card-open
+                data-new-card-project="{{ project.id }}">Create Card</button>
+        <details class="panel-inset">
+          <summary>Edit project settings</summary>
+          <form class="stack" hx-post="/projects/{{ project.id }}?realm={{ active_realm }}&project={{ project.id }}" hx-target="#app-view" hx-swap="innerHTML">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label>Project title <input name="title" value="{{ project.title }}" required></label>
+            <label>Goal and description <textarea name="description" rows="4">{{ project.description }}</textarea></label>
+            <label>Project instructions <textarea name="agent_prompt" rows="5">{{ project.agent_prompt }}</textarea></label>
+            <label>Tags <input name="tags" value="{{ project.tags | join(', ') }}"></label>
+            <label>Lifecycle <select name="status"><option value="active" {% if project.status.value == 'active' %}selected{% endif %}>Active</option><option value="archived" {% if project.status.value == 'archived' %}selected{% endif %}>Archived</option></select></label>
+            <button type="submit">Save project</button>
+          </form>
+        </details>
+      </div>
     </header>
 
     <section class="project-health-summary" aria-labelledby="project-health-title" aria-describedby="project-health-semantics">
