@@ -1481,6 +1481,50 @@ class AgentSessionRestoreTests(unittest.TestCase):
             acp.new_session.assert_not_awaited()
             self.assertEqual(existing.external_session_id, "stale-session")
 
+    def test_connect_cancels_session_new_when_shutdown_wins_race(self) -> None:
+        from pa.server.shutdown import reset_shutdown_event, signal_shutdown
+
+        with tempfile.TemporaryDirectory() as tmp:
+            acp = MagicMock()
+            acp.initialize = AsyncMock(return_value={"agentCapabilities": {}})
+            entered = asyncio.Event()
+
+            async def new_session(**_kwargs):
+                entered.set()
+                await asyncio.Event().wait()
+
+            acp.new_session = AsyncMock(side_effect=new_session)
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
+            context.__aexit__ = AsyncMock()
+            connection = AgentConnection(
+                Settings(data_dir=Path(tmp)),
+                MagicMock(),
+                provider_spec=AgentProviderSpec(
+                    id="cursor", display_name="Cursor", command="agent"
+                ),
+            )
+
+            async def run() -> None:
+                reset_shutdown_event()
+                try:
+                    with (
+                        patch("pa.acp.client.spawn_agent", return_value=context),
+                        patch("pa.acp.client.pa_mcp_servers", return_value=[]),
+                    ):
+                        task = asyncio.create_task(connection.connect())
+                        await entered.wait()
+                        signal_shutdown()
+                        with self.assertRaisesRegex(RuntimeError, "shutting down"):
+                            await asyncio.wait_for(task, timeout=1.0)
+                finally:
+                    reset_shutdown_event()
+
+            asyncio.run(run())
+
+            acp.new_session.assert_awaited_once()
+            self.assertIsNone(connection._proc)
+
 
 if __name__ == "__main__":
     unittest.main()

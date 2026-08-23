@@ -86,6 +86,19 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_shutdown_fence_returns_explicit_draining_response(self) -> None:
+        manager = MagicMock()
+        manager.quiescing = True
+        manager._accepting = False
+        request = MagicMock()
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with self.assertRaises(HTTPException) as raised:
+                _runtime_or_404(request, "session-draining")
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(raised.exception.detail["code"], "agent_draining")
+
     def test_multiplex_capability_declares_one_dynamic_transport(self) -> None:
         capability = multiplexed_session_event_capabilities()
         self.assertEqual(capability["scope"], "all_live_sessions")
