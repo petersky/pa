@@ -395,6 +395,42 @@ class LaunchdDomainFallbackTests(unittest.TestCase):
 
 
 class AutonomousHostControlsTests(unittest.TestCase):
+    def test_shutdown_fences_before_hooks_and_bounds_stuck_components(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = MagicMock()
+            agent._accepting = True
+            agent._quiescing = False
+            agent.list_runtimes.return_value = []
+            agent.stop = AsyncMock()
+            observed_fence: list[tuple[bool, bool]] = []
+
+            async def hook(*_args, **_kwargs):
+                observed_fence.append((agent._accepting, agent._quiescing))
+
+            async def stuck(*_args, **_kwargs):
+                await asyncio.Event().wait()
+
+            ctx = MagicMock()
+            ctx.settings = Settings(data_dir=Path(tmp))
+            ctx.hooks.emit = AsyncMock(side_effect=hook)
+            ctx.services = {"instance_agent": agent}
+            module = MagicMock(name="stuck")
+            module.name = "stuck"
+            module.on_shutdown = AsyncMock(side_effect=stuck)
+            kernel = Kernel(ctx, MagicMock(modules=[MagicMock(module=module)]))
+
+            loop = asyncio.new_event_loop()
+            try:
+                started = loop.time()
+                loop.run_until_complete(kernel.shutdown(MagicMock()))
+                elapsed = loop.time() - started
+            finally:
+                loop.close()
+
+            self.assertEqual(observed_fence, [(False, True)])
+            self.assertLess(elapsed, 2.0)
+            agent.stop.assert_awaited_once()
+
     def test_shutdown_snapshots_open_sessions_after_transport_loss(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             runtime = MagicMock(_closed=False)
