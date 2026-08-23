@@ -926,6 +926,7 @@ class AgentSessionRuntime:
         self,
         *,
         resume_external_id: str | None = None,
+        require_restore: bool = False,
         queued_prompts: list[QueuedPrompt] | None = None,
         queue_paused: bool = False,
         provider_spec=None,
@@ -976,6 +977,7 @@ class AgentSessionRuntime:
         try:
             self.session = await self.connection.connect(
                 resume_external_id=resume_external_id,
+                require_restore=require_restore,
                 cwd=self.session.cwd,
                 existing_session=self.session,
                 title=self.session.title,
@@ -1033,6 +1035,12 @@ class AgentSessionRuntime:
         # Persist resolved provider id on the session.
         if self.connection and self.connection.agent_name:
             self.session.agent_name = self.connection.agent_name
+            config = dict(self.session.config_json or {})
+            config["provider_session_recovery"] = {
+                "resume": bool(self.connection._resume_supported),
+                "load": bool(self.connection._load_supported),
+            }
+            self.session.config_json = config
             await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
@@ -2276,6 +2284,7 @@ class AgentSessionManager:
         self._startup_recovered = 0
         self._startup_failed = 0
         self._startup_session_id: str | None = None
+        self._startup_decisions: list[dict[str, str]] = []
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
@@ -2430,6 +2439,7 @@ class AgentSessionManager:
         self._startup_recovered = 0
         self._startup_failed = 0
         self._startup_session_id = None
+        self._startup_decisions = []
 
     def complete_startup(self, error: BaseException | None = None) -> None:
         self._startup_error = str(error)[:1000] if error else None
@@ -2454,6 +2464,10 @@ class AgentSessionManager:
             "failed": self._startup_failed,
             "session_id": self._startup_session_id,
         }
+
+    def startup_recovery_diagnostics(self) -> list[dict[str, str]]:
+        """Explain per-session startup decisions after the snapshot is cleared."""
+        return list(self._startup_decisions)
 
     def require_startup_complete(self) -> None:
         if not self._startup_complete:
@@ -3142,6 +3156,13 @@ class AgentSessionManager:
                 eligibility = await self._automatic_recovery_eligibility(session)
                 if eligibility:
                     recovery_eligibility[session.id] = eligibility
+                    self._startup_decisions.append(
+                        {
+                            "session_id": session.id,
+                            "decision": "eager",
+                            "reason": eligibility,
+                        }
+                    )
                     if eligibility == "project_available":
                         logger.info(
                             "Project availability changed; retrying blocked ACP "
@@ -3150,6 +3171,13 @@ class AgentSessionManager:
                         )
                 elif session.status == RECOVERY_BLOCKED_STATUS:
                     self._startup_blocked += 1
+                    self._startup_decisions.append(
+                        {
+                            "session_id": session.id,
+                            "decision": "blocked",
+                            "reason": self._recovery_action(session),
+                        }
+                    )
                     logger.info(
                         "ACP recovery remains blocked for session %s: %s",
                         session.id,
@@ -3158,6 +3186,13 @@ class AgentSessionManager:
                 elif session.status != "closed":
                     if session.status in RECOVERY_RETAINED_SESSION_STATUSES:
                         self._startup_deferred += 1
+                        self._startup_decisions.append(
+                            {
+                                "session_id": session.id,
+                                "decision": "deferred",
+                                "reason": session.status,
+                            }
+                        )
                     logger.info(
                         "Deferring ACP recovery for session %s with passive "
                         "status %s",
@@ -3211,12 +3246,26 @@ class AgentSessionManager:
                         sess, snapshot or QuiesceSnapshot(reason="recovery")
                     )
                     self._startup_recovered += 1
+                    self._startup_decisions.append(
+                        {
+                            "session_id": sess.session_id or "",
+                            "decision": "recovered",
+                            "reason": "startup",
+                        }
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     if self._should_abort_recovery():
                         return
                     self._startup_failed += 1
+                    self._startup_decisions.append(
+                        {
+                            "session_id": sess.session_id or "",
+                            "decision": "failed",
+                            "reason": str(exc)[:1000],
+                        }
+                    )
                     self._last_error = str(exc)
                     recovery_state = await self._mark_recovery_interrupted(sess, exc)
                     if recovery_state == RECOVERY_BLOCKED_STATUS:
@@ -3480,9 +3529,14 @@ class AgentSessionManager:
             provider_id=session.agent_name,
             mode_id=session.mode_id,
         )
+        if self._should_abort_recovery():
+            raise RuntimeError("Agent is quiescing")
         if provider_spec is not None:
             provider_spec.env.update(workspace_env)
         runtime = await self._new_runtime(session, agent_env=workspace_env)
+        if self._should_abort_recovery():
+            await runtime.close()
+            raise RuntimeError("Agent is quiescing")
         queued = list(snap.queued_prompts)
         interrupted = snap.in_flight
         # Version-1 snapshots briefly encoded an interrupted turn as the first
@@ -3514,6 +3568,9 @@ class AgentSessionManager:
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
         )
+        if self._should_abort_recovery():
+            await runtime.close()
+            raise RuntimeError("Agent is quiescing")
         await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
@@ -3546,14 +3603,11 @@ class AgentSessionManager:
             if runtime.connected:
                 self._last_error = None
                 return True
-            # Force recreate
-            await runtime.close()
-            self._runtimes.pop(runtime.session_id, None)
-            runtime = await self.create_session(
-                label=self._default_label, title="Instance agent"
+            self._last_error = (
+                f"Retained default session {runtime.session_id} is disconnected; "
+                "retry recovery or explicitly close it before starting a replacement."
             )
-            self._last_error = None
-            return runtime.connected
+            return False
         except Exception as exc:
             self._last_error = str(exc)
             logger.exception("Agent reconnect failed")
@@ -3583,6 +3637,7 @@ class AgentSessionManager:
         execution_context_seed: dict[str, Any] | None = None,
         startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
+        require_restore: bool = False,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
@@ -3794,11 +3849,14 @@ class AgentSessionManager:
             mcp_private_env=mcp_private_env,
             startup_trace=startup_trace,
         )
+        prior_status = session.status
         try:
             start_kwargs: dict[str, Any] = {
                 "resume_external_id": resume_external_id,
                 "provider_spec": resolved_spec,
             }
+            if require_restore:
+                start_kwargs["require_restore"] = True
             if initial_configuration is not None:
                 start_kwargs["initial_configuration"] = initial_configuration
             await runtime.start(**start_kwargs)
@@ -3823,12 +3881,20 @@ class AgentSessionManager:
             diagnostics = dict(config.get("diagnostics") or {})
             diagnostics["last_startup_failure"] = classified
             config["diagnostics"] = diagnostics
+            if require_restore:
+                durable = dict(config.get("durable_runtime") or {})
+                durable["recovery_error"] = classified.get("message") or str(exc)
+                durable["recovery_attempted_at"] = datetime.now(UTC).isoformat()
+                config["durable_runtime"] = durable
             session.config_json = config
-            session.status = (
-                "configuration_failed"
-                if configuration.get("state") == "failed"
-                else "disconnected"
-            )
+            if require_restore:
+                session.status = prior_status
+            else:
+                session.status = (
+                    "configuration_failed"
+                    if configuration.get("state") == "failed"
+                    else "disconnected"
+                )
             await self._offload(
                 "sqlite.agent_session_save", self.store.save_session, session
             )
@@ -3890,24 +3956,62 @@ class AgentSessionManager:
                 rt = self._runtimes[existing.id]
                 if rt.connected and not rt._closed:
                     return rt
-            return await self.create_session(
-                label=self._default_label,
-                title="Instance agent",
-                cwd=cwd,
-                principal_id=principal_id,
-                agent_env=agent_env,
-                existing=existing if existing and existing.status != "closed" else None,
-                resume_external_id=(
-                    existing.external_session_id
-                    if existing and existing.status != "closed"
-                    else None
-                ),
-                surface=SURFACE_CHAT_DEFAULT,
-                provider_override=provider_override,
-                initial_configuration=initial_configuration,
-                startup_trace=startup_trace,
-                _startup_recovery=_startup_recovery,
+            if (
+                existing
+                and existing.status != "closed"
+                and existing.origin_instance_id
+                and existing.origin_instance_id != self.settings.instance_id
+            ):
+                raise AgentSessionRecoveryError(
+                    "The retained default session belongs to another instance; "
+                    "recover it on its owning instance or explicitly close it before "
+                    "starting a replacement."
             )
+            try:
+                runtime = await self.create_session(
+                    label=self._default_label,
+                    title=existing.title if existing else "Instance agent",
+                    cwd=existing.cwd if existing and existing.cwd else cwd,
+                    principal_id=(
+                        existing.principal_id
+                        if existing and existing.principal_id
+                        else principal_id
+                    ),
+                    agent_env=agent_env,
+                    existing=(
+                        existing
+                        if existing and existing.status != "closed"
+                        else None
+                    ),
+                    resume_external_id=(
+                        existing.external_session_id
+                        if existing and existing.status != "closed"
+                        else None
+                    ),
+                    surface=SURFACE_CHAT_DEFAULT,
+                    provider_override=provider_override,
+                    initial_configuration=initial_configuration,
+                    startup_trace=startup_trace,
+                    _startup_recovery=_startup_recovery,
+                )
+            except Exception as exc:
+                if existing and existing.status != "closed":
+                    await self._mark_recovery_interrupted(
+                        self._snapshot_from_persisted(existing), exc
+                    )
+                    raise AgentSessionRecoveryError(
+                        f"Retained default session {existing.id} could not be "
+                        f"recovered: {exc}. Retry recovery or explicitly close it "
+                        "before starting a replacement."
+                    ) from exc
+                raise
+            config = dict(runtime.session.config_json or {})
+            config["browser_default_selected"] = True
+            runtime.session.config_json = config
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, runtime.session
+            )
+            return runtime
 
     async def recover_session(
         self,
@@ -3977,6 +4081,7 @@ class AgentSessionManager:
                 existing=session,
                 resume_external_id=session.external_session_id,
                 provider_override=provider_override,
+                require_restore=True,
             )
 
     def enqueue_prompt(

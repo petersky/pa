@@ -3762,6 +3762,7 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
             target = PRWatch(
                 id="draft-watch", repository="owner/repo", pr_number=17,
                 pr_url="https://example.test/17", head_sha="b" * 40,
+                next_poll_at=utcnow() + timedelta(minutes=5),
                 state={"draft": True, "mergeable_state": "clean",
                        "gate": {"green": False, "actionable": True,
                                 "reasons": ["pull request is draft"],

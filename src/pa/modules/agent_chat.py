@@ -179,12 +179,16 @@ def _session_actions(session_id: str, *, recoverable: bool) -> dict[str, Any]:
 def _durable_session_state(manager, session) -> dict[str, Any]:
     runtime = manager.get(session.id)
     live = bool(runtime and not getattr(runtime, "_closed", False))
+    recovery_capabilities = dict(
+        (session.config_json or {}).get("provider_session_recovery") or {}
+    )
+    provider_recoverable = bool(session.external_session_id) and (
+        not recovery_capabilities
+        or bool(recovery_capabilities.get("resume") or recovery_capabilities.get("load"))
+    )
     recoverable = (
-        session.status
-        not in {
-            "closed",
-            RECOVERY_BLOCKED_STATUS,
-        }
+        provider_recoverable
+        and session.status != RECOVERY_BLOCKED_STATUS
         and not live
     )
     durable = dict((session.config_json or {}).get("durable_runtime") or {})
@@ -195,6 +199,8 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
         "reason": (
             "live"
             if live
+            else "session_closed_recoverable"
+            if session.status == "closed" and recoverable
             else "session_closed"
             if session.status == "closed"
             else "recovery_blocked"
@@ -2836,7 +2842,11 @@ async def session_close(request: Request, session_id: str) -> dict:
     if runtime and not getattr(runtime, "_closed", False):
         await runtime.close(reason="user_close")
         mgr._runtimes.pop(session_id, None)
-        return {"ok": True, "live": False}
+        return {
+            "ok": True,
+            "live": False,
+            "recovery": _durable_session_state(mgr, runtime.session),
+        }
 
     session = await _offload(
         mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
@@ -2850,7 +2860,12 @@ async def session_close(request: Request, session_id: str) -> dict:
     )
     if prior_status is not None:
         await _reconcile_closed_session_workspaces(mgr, [session_id])
-    return {"ok": True, "live": False, "orphan": True}
+    return {
+        "ok": True,
+        "live": False,
+        "orphan": True,
+        "recovery": _durable_session_state(mgr, session),
+    }
 
 
 @router.post("/sessions/{session_id}/permissions/{request_id}")

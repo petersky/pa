@@ -36,6 +36,172 @@ CHROME = next(
 
 @unittest.skipUnless(CHROME, "Chrome or Chromium is required for browser layout coverage")
 class FleetTopologyBrowserLayoutTests(unittest.TestCase):
+    def test_phone_fitted_topology_stays_below_compact_nav_after_scroll(self) -> None:
+        fleet_script = (ROOT / "src/pa/server/static/js/fleet.js").as_uri()
+        stylesheet = (ROOT / "src/pa/server/static/style.css").as_uri()
+        overview = json.dumps(
+            {
+                "nodes": [
+                    {"id": "mac-mini", "name": "Mac mini", "dimensions": {}},
+                    {"id": "local", "name": "Local", "local": True, "dimensions": {}},
+                    {"id": "monica", "name": "Monica", "dimensions": {}},
+                ],
+                "edges": [
+                    {
+                        "id": "sync-local-monica",
+                        "kind": "sync",
+                        "source": "local",
+                        "target": "monica",
+                        "status": "healthy",
+                        "label": "default",
+                    }
+                ],
+            }
+        ).replace("</", "<\\/")
+        sections = "".join(
+            f'<button class="section-nav-link{" active" if index == 0 else ""}" '
+            f'data-section-link="section-{index}">{label}</button>'
+            for index, label in enumerate(
+                (
+                    "Overview",
+                    "Groups & participation",
+                    "Operations",
+                    "Credentials",
+                    "Realm sync",
+                    "Readiness",
+                    "Add machine",
+                    "Realms",
+                    "Peer routes",
+                )
+            )
+        )
+        fixture = f"""<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="{stylesheet}">
+<style>
+:root {{--pa-surface:#fff;--pa-bg:#f4f6fa;--pa-text:#172033;--pa-text-muted:#536079;
+--pa-border:#73809a;--pa-accent:#315fc7;--pa-ok:#167447;--pa-danger:#b42318;
+--pa-focus:#7047eb;--pa-shadow:none}}
+html,body {{height:100%;margin:0}}
+.app-view {{width:390px;height:844px}}
+</style></head><body>
+<div class="app-view"><div class="page-boundary">
+  <div class="page-layout page-fleet">
+    <aside class="page-sidebar page-sidebar-left">
+      <div class="panel"><div class="panel-header"><h2>Fleet</h2></div>
+        <nav class="section-nav" aria-label="Page sections">{sections}</nav>
+      </div>
+    </aside>
+    <main class="page-main">
+      <div class="panel" id="pa-fleet-root">
+        <script type="application/json" id="pa-fleet-overview-data">{overview}</script>
+        <div style="height:72px">Fleet activity</div>
+        <div class="fleet-topology-panel">
+          <div class="fleet-topology-heading"><h3>Topology</h3>
+            <div class="fleet-topology-controls">
+              <button type="button" data-fleet-topology-action="zoom-out">−</button>
+              <button type="button" data-fleet-topology-action="zoom-in">+</button>
+              <button type="button" data-fleet-topology-action="reset">Reset <span data-fleet-topology-scale>100%</span></button>
+              <button type="button" data-fleet-topology-action="fit">Fit topology</button>
+            </div>
+          </div>
+          <div id="pa-fleet-topology" class="fleet-topology"><svg viewBox="0 0 960 420"></svg></div>
+          <details class="fleet-route-equivalent"><summary>Route and placement list</summary>
+            <ul id="pa-fleet-edge-list"></ul></details>
+        </div>
+        <aside class="fleet-detail-panel" id="pa-fleet-detail" tabindex="-1"><h3>Inspect activity</h3></aside>
+      </div>
+    </main>
+  </div>
+</div></div>
+<script>window.PA_TEST = true;</script><script src="{fleet_script}"></script>
+<script>
+window.addEventListener("DOMContentLoaded", function () {{
+  var main = document.querySelector(".page-main");
+  var nav = document.querySelector(".page-sidebar-left");
+  var panel = document.querySelector(".fleet-topology-panel");
+  var host = document.querySelector("#pa-fleet-topology");
+  var svg = host.querySelector("svg");
+  var api = window.__paFleetTopology;
+  document.querySelector('[data-fleet-topology-action="fit"]').click();
+  var fitted = Object.assign({{}}, api.controller().viewport);
+  main.scrollTop = panel.offsetTop - 8;
+  var mainRect = main.getBoundingClientRect();
+  var navRect = nav.getBoundingClientRect();
+  var hostRect = host.getBoundingClientRect();
+  var nodes = Array.from(svg.querySelectorAll("[data-fleet-node]"));
+  var monica = svg.querySelector('[data-fleet-node="monica"]');
+  monica.dispatchEvent(new MouseEvent("click", {{bubbles:true}}));
+  var pointerDetail = document.querySelector("#pa-fleet-detail h3").textContent;
+  var local = svg.querySelector('[data-fleet-node="local"]');
+  local.focus();
+  local.dispatchEvent(new KeyboardEvent("keydown", {{key:"Enter",bubbles:true}}));
+  var result = {{
+    width: document.querySelector(".app-view").getBoundingClientRect().width,
+    height: document.querySelector(".app-view").getBoundingClientRect().height,
+    navHeight: navRect.height,
+    navScrollable: nav.scrollWidth > nav.clientWidth,
+    allSectionsReachable: nav.scrollWidth > 0 && nav.querySelectorAll("button").length === 9,
+    mainStartsBelowNav: mainRect.top >= navRect.bottom - 1,
+    topologyStartsBelowNav: hostRect.top >= navRect.bottom - 1,
+    fittedNodesUnobscured: nodes.every(function (node) {{
+      var rect = node.querySelector("rect").getBoundingClientRect();
+      return rect.top >= mainRect.top - 1 && rect.left >= mainRect.left - 1 &&
+        rect.right <= mainRect.right + 1;
+    }}),
+    pointerDetail: pointerDetail,
+    keyboardDetail: document.querySelector("#pa-fleet-detail h3").textContent,
+    viewportPreserved: api.controller().viewport.scale === fitted.scale &&
+      api.controller().viewport.x === fitted.x && api.controller().viewport.y === fitted.y,
+    routeReachable: document.querySelector(".fleet-route-equivalent") !== null,
+    detailReachable: document.querySelector("#pa-fleet-detail") !== null
+  }};
+  var output = document.createElement("pre");
+  output.id = "result";
+  output.textContent = JSON.stringify(result);
+  document.body.append(output);
+}});
+</script></body></html>"""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fleet-mobile-chrome.html"
+            fixture_path.write_text(fixture)
+            completed = subprocess.run(
+                [
+                    CHROME,
+                    "--headless=new",
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--allow-file-access-from-files",
+                    "--window-size=390,844",
+                    "--dump-dom",
+                    fixture_path.as_uri(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+        match = re.search(r'<pre id="result">(.*?)</pre>', completed.stdout, re.S)
+        self.assertIsNotNone(match, completed.stderr or completed.stdout)
+        result = json.loads(html.unescape(match.group(1)))
+        self.assertEqual(result["width"], 390)
+        self.assertEqual(result["height"], 844)
+        self.assertLessEqual(result["navHeight"], 64)
+        self.assertTrue(result["navScrollable"])
+        self.assertTrue(result["allSectionsReachable"])
+        self.assertTrue(result["mainStartsBelowNav"])
+        self.assertTrue(result["topologyStartsBelowNav"])
+        self.assertTrue(result["fittedNodesUnobscured"])
+        self.assertEqual(result["pointerDetail"], "Monica")
+        self.assertEqual(result["keyboardDetail"], "Local")
+        self.assertTrue(result["viewportPreserved"])
+        self.assertTrue(result["routeReachable"])
+        self.assertTrue(result["detailReachable"])
+
     def test_live_capacity_refresh_preserves_exact_accessible_summary(self) -> None:
         fleet_script = (ROOT / "src/pa/server/static/js/fleet.js").as_uri()
         fixture = f"""<!doctype html>

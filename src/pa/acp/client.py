@@ -855,6 +855,7 @@ class AgentConnection:
         self,
         *,
         resume_external_id: str | None = None,
+        require_restore: bool = False,
         cwd: str | None = None,
         existing_session: AgentSession | None = None,
         title: str | None = None,
@@ -1183,6 +1184,12 @@ class AgentConnection:
                         external_session_id=resume_external_id,
                         status="idle",
                     )
+            elif require_restore:
+                supported = ", ".join(restore_methods) or "none"
+                raise RuntimeError(
+                    "Existing provider conversation could not be restored "
+                    f"(supported restore methods: {supported})"
+                )
             else:
                 # Missing session/list entries fall back to session/new. Never do that
                 # while the host is dying — Cursor often omits brand-new unprompted
@@ -1197,7 +1204,16 @@ class AgentConnection:
                     new_session_kwargs["additional_directories"] = (
                         mcp_additional_directories
                     )
-                acp_session = await self._conn.new_session(**new_session_kwargs)
+                from pa.server.shutdown import wait_for_shutdown_or
+
+                stopping, acp_session = await wait_for_shutdown_or(
+                    self._conn.new_session(**new_session_kwargs)
+                )
+                if stopping:
+                    await self._abort_connect_if_shutting_down(
+                        stage="session/new"
+                    )
+                assert acp_session is not None
                 session_meta = extract_models_modes_config(acp_session)
                 self._wire_log(
                     "out",
