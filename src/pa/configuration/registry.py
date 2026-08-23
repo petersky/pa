@@ -1288,6 +1288,17 @@ _DEFINITIONS = (
         validator="range:0:3600",
     ),
     _s(
+        "backup_scrub_interval_seconds",
+        "int",
+        7 * 24 * 60 * 60,
+        "Seconds between full retained-archive integrity scrubs.",
+        "Backups",
+        150,
+        "Scrubs are isolated from normal backups and freshly verify every recovery point.",
+        apply="live",
+        validator="range:3600:31536000",
+    ),
+    _s(
         "debug",
         "bool",
         False,

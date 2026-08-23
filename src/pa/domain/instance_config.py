@@ -184,6 +184,9 @@ class InstanceConfig(BaseModel):
     backup_concurrency: Literal[1] = 1
     backup_alert_after_failures: int = Field(default=3, ge=1, le=1000)
     backup_jitter_seconds: int = Field(default=300, ge=0, le=60 * 60)
+    backup_scrub_interval_seconds: int = Field(
+        default=7 * 24 * 60 * 60, ge=60 * 60, le=365 * 24 * 60 * 60
+    )
 
 
 def config_path(data_dir: Path) -> Path:
