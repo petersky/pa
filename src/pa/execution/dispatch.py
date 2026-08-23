@@ -4944,7 +4944,7 @@ class CompletionOutbox:
         self, record: DispatchRecord, turn: dict[str, Any]
     ) -> None:
         turn["delivery_attempts"] = int(turn.get("delivery_attempts") or 0) + 1
-        self.store.put(record)
+        await self._offload("dispatch.followup_record_write", self.store.put, record)
         key = (
             f"{record.mutation_id}:turn:"
             f"{turn.get('prompt_id') or turn.get('idempotency_key')}"
@@ -4992,7 +4992,7 @@ class CompletionOutbox:
                 turn["next_retry_at"] = (
                     datetime.now(UTC) + timedelta(seconds=delay)
                 ).isoformat()
-        self.store.put(record)
+        await self._offload("dispatch.followup_record_write", self.store.put, record)
 
     def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
         record.last_error = sanitize_text(error, limit=500)

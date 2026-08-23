@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from pa.core.async_runtime import BlockingOperationTimeout
 from pa.core.background import BackgroundTaskSupervisor
 from pa.fleet.control_plane import build_control_plane_status
 
@@ -65,6 +66,38 @@ async def test_stalled_worker_is_cancelled_and_restarted(tmp_path: Path) -> None
     await asyncio.wait_for(recovered.wait(), 1)
     assert attempts == 2
     assert supervisor.health()["state"] == "ready"
+    await supervisor.close()
+
+
+@pytest.mark.asyncio
+async def test_executor_capacity_timeout_restarts_worker(tmp_path: Path) -> None:
+    attempts = 0
+    recovered = asyncio.Event()
+
+    async def runner(heartbeat) -> None:
+        nonlocal attempts
+        attempts += 1
+        heartbeat()
+        if attempts == 1:
+            raise BlockingOperationTimeout("bounded capacity timeout")
+        recovered.set()
+        while True:
+            heartbeat()
+            await asyncio.sleep(0.01)
+
+    supervisor = BackgroundTaskSupervisor(
+        "capacity-worker",
+        runner,
+        tmp_path / "worker.json",
+        backoff_seconds=0.01,
+        stale_seconds=1,
+    )
+    supervisor.start()
+    await asyncio.wait_for(recovered.wait(), 1)
+    assert attempts == 2
+    assert json.loads((tmp_path / "worker.json").read_text())[
+        "last_failure_kind"
+    ] == "BlockingOperationTimeout"
     await supervisor.close()
 
 
