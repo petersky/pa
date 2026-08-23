@@ -67,7 +67,7 @@ from pa.fleet.policy import (
     PlacementDefault,
     default_scope_key,
 )
-from pa.sync.event_log import EventHistoryError, EventLog
+from pa.sync.event_log import DagIndexStaleError, EventHistoryError, EventLog
 from pa.workloads import WorkloadProfile, canonical_default_scope_key
 
 T = TypeVar("T")
@@ -3293,13 +3293,20 @@ class CardProjection:
         realm_id: str = "default",
         principal_id: str = "user:local",
         instance_id: str = "local",
+        diagnose_only: bool = False,
     ) -> list[dict]:
-        """Append explicit canonical bases for projection-only legacy cards."""
+        """Re-anchor projection cards whose canonical base is not reachable."""
         if not self.event_log:
             return []
+        unique_ids = list(dict.fromkeys(card_ids))
+        orphaned = self.event_log.orphaned_card_bases(realm_id, unique_ids)
         results: list[dict] = []
-        for card_id in dict.fromkeys(card_ids):
-            history = self.event_log.entity_history(realm_id, "card", card_id)
+        for card_id in unique_ids:
+            history_page = self.event_log.entity_history_page(
+                realm_id, "card", card_id, limit=100_000
+            )
+            history = history_page["events"]
+            diagnosed_head = history_page["head"]
             prior_repair = next(
                 (
                     item
@@ -3315,6 +3322,7 @@ class CardProjection:
                     {
                         "card_id": card_id,
                         "status": "already_repaired",
+                        "history_state": "reachable_canonical_history",
                         "commit_hash": prior_repair["commit_hash"],
                     }
                 )
@@ -3337,76 +3345,180 @@ class CardProjection:
                     {
                         "card_id": card_id,
                         "status": "canonical_history_present",
+                        "history_state": "reachable_canonical_history",
                         "commit_hash": canonical_base["commit_hash"],
                     }
                 )
                 continue
-            with self._conn() as conn:
-                row = conn.execute(
-                    "SELECT * FROM items WHERE id=?", (card_id,)
-                ).fetchone()
-            if not row:
-                results.append({"card_id": card_id, "status": "no_legacy_source"})
-                continue
-            lane = lane_from_legacy_status(row["status"])
-            candidate = Card(
-                id=card_id,
-                realm_id=realm_id,
-                kind=CardKind(row["kind"]),
-                title=row["title"],
-                body=row["body"],
-                summary="",
-                summary_source=CardSummarySource.FALLBACK,
-                summary_status="pending",
-                summary_updated_at=None,
-                lane=lane,
-                parent_id=row["parent_id"],
-                tags=json.loads(row["tags"] or "[]"),
-                created_at=_coerce_datetime(row["created_at"]) or datetime.now(UTC),
-                updated_at=_coerce_datetime(row["updated_at"]) or datetime.now(UTC),
+
+            reachable_snapshot = (
+                self.event_log.entity_snapshot(
+                    diagnosed_head, "card", card_id
+                )
+                if diagnosed_head
+                else None
             )
+            card = self.get_card(card_id, realm_id=realm_id)
+            candidate = card
+            if candidate is None:
+                with self._conn() as conn:
+                    row = conn.execute(
+                        "SELECT * FROM items WHERE id=?", (card_id,)
+                    ).fetchone()
+                if row:
+                    candidate = Card(
+                        id=card_id,
+                        realm_id=realm_id,
+                        kind=CardKind(row["kind"]),
+                        title=row["title"],
+                        body=row["body"],
+                        lane=lane_from_legacy_status(row["status"]),
+                        parent_id=row["parent_id"],
+                        tags=json.loads(row["tags"] or "[]"),
+                        created_at=_coerce_datetime(row["created_at"])
+                        or datetime.now(UTC),
+                        updated_at=_coerce_datetime(row["updated_at"])
+                        or datetime.now(UTC),
+                    )
+            reachable_card = None
+            if reachable_snapshot is not None:
+                try:
+                    reachable_card = Card.model_validate(reachable_snapshot)
+                except ValidationError:
+                    pass
+            if reachable_card is not None:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "conflict",
+                        "history_state": "reachable_card_without_canonical_base",
+                        "reachable_snapshot": reachable_snapshot,
+                        "projection_snapshot": (
+                            candidate.model_dump(mode="json") if candidate else None
+                        ),
+                    }
+                )
+                continue
+            if not candidate:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "no_projection_source",
+                        "history_state": (
+                            "orphaned_canonical_history"
+                            if orphaned.get(card_id)
+                            else "absent"
+                        ),
+                        "orphaned_bases": orphaned.get(card_id, []),
+                    }
+                )
+                continue
+            # Preserve reachable post-base legacy mutations in the full repair
+            # snapshot.  A partial update cannot stand alone after a rebuild.
             for item in history:
                 event = item["event"]
-                if item["projection_effect"] == "ignored_duplicate_create":
-                    continue
                 if event["type"] not in {
                     EventType.CARD_UPDATED.value,
                     EventType.LEASE_GRANTED.value,
                     EventType.LEASE_RELEASED.value,
                 }:
                     continue
-                payload = dict(event["payload"])
-                if "lane" not in payload and "status" in payload:
-                    payload["lane"] = lane_from_legacy_status(payload["status"]).value
-                for key, value in payload.items():
-                    if key == "lane":
-                        candidate.lane = CardLane(value)
-                    elif key == "kind":
-                        candidate.kind = CardKind(value)
-                    elif key == "updated_at":
-                        candidate.updated_at = (
-                            _coerce_datetime(value) or candidate.updated_at
-                        )
-                    elif value is not None and hasattr(candidate, key):
-                        setattr(candidate, key, value)
+                changes = dict(event["payload"])
+                if "lane" not in changes and "status" in changes:
+                    changes["lane"] = lane_from_legacy_status(
+                        changes["status"]
+                    ).value
+                merged = candidate.model_dump(mode="json")
+                merged.update(changes)
+                candidate = Card.model_validate(merged)
+            history_state = (
+                "orphaned_canonical_history"
+                if orphaned.get(card_id)
+                else "projection_only_legacy_state"
+            )
+            if diagnose_only:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "repair_available",
+                        "history_state": history_state,
+                        "repair_origin": "authoritative_projection",
+                        "orphaned_bases": orphaned.get(card_id, []),
+                    }
+                )
+                continue
+            payload = candidate.model_dump(mode="json")
+            fingerprint = hashlib.sha256(
+                json.dumps(payload, sort_keys=True).encode()
+            ).hexdigest()
             repair = CardEvent(
                 type=EventType.CARD_UPSERTED,
                 realm_id=realm_id,
                 card_id=card_id,
                 author_principal=principal_id,
                 author_instance=instance_id,
-                payload=candidate.model_dump(mode="json"),
+                payload=payload,
                 source_operation="repair.legacy_card_history",
-                causal_card_version=(
-                    history[-1]["event"].get("causal_card_version") if history else None
-                ),
-                field_intent=sorted(candidate.model_dump(mode="json")),
+                causal_card_version=candidate.updated_at.isoformat(),
+                field_intent=sorted(payload),
+                idempotency_key=f"repair-card-history:{realm_id}:{card_id}:{fingerprint}",
+                request_fingerprint=fingerprint,
+                operation_result={
+                    "card_id": card_id,
+                    "history_state": history_state,
+                    "repair_origin": "authoritative_projection",
+                    "orphaned_bases": orphaned.get(card_id, []),
+                },
             )
-            commit = self.commit_event(repair)
+            current_head = self.event_log.get_head(realm_id)
+            if current_head != diagnosed_head:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "concurrent_head_conflict",
+                        "history_state": "head_advanced",
+                        "diagnosed_head": diagnosed_head,
+                        "current_head": current_head,
+                    }
+                )
+                continue
+            try:
+                commit = self.commit_event(repair)
+            except DagIndexStaleError:
+                # Another server advanced the head after diagnosis.  Never
+                # overwrite it: the retry is a fresh, explicit classification.
+                refreshed = self.event_log.entity_history(
+                    realm_id, "card", card_id
+                )
+                base = next(
+                    (
+                        item for item in refreshed
+                        if item["event"]["type"] in {
+                            EventType.CARD_CREATED.value,
+                            EventType.CARD_UPSERTED.value,
+                        }
+                    ),
+                    None,
+                )
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "concurrent_head_conflict",
+                        "history_state": (
+                            "reachable_canonical_history" if base
+                            else "head_advanced"
+                        ),
+                        "commit_hash": base["commit_hash"] if base else None,
+                    }
+                )
+                continue
             results.append(
                 {
                     "card_id": card_id,
                     "status": "repaired",
+                    "history_state": history_state,
+                    "repair_origin": "authoritative_projection",
+                    "orphaned_bases": orphaned.get(card_id, []),
                     "lane": candidate.lane.value,
                     "commit_hash": commit.hash,
                 }
