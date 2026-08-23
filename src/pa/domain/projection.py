@@ -51,6 +51,7 @@ from pa.domain.models import (
     RepositoryStatus,
     RepositoryUpdate,
     RepositoryVisibility,
+    RestartHandoff,
     TranscriptEvent,
     lane_from_legacy_status,
 )
@@ -292,6 +293,25 @@ class CardProjection:
                     status TEXT NOT NULL DEFAULT 'idle',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS agent_restart_handoffs (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    continuation_prompt TEXT NOT NULL,
+                    continuation_prompt_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    card_id TEXT,
+                    project_id TEXT,
+                    instance_id TEXT,
+                    execution_binding_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    delivered_at TEXT,
+                    UNIQUE(session_id, idempotency_key),
+                    UNIQUE(continuation_prompt_id)
                 );
                 CREATE TABLE IF NOT EXISTS agent_session_cards (
                     session_id TEXT NOT NULL,
@@ -582,6 +602,7 @@ class CardProjection:
             ("mode_id", "TEXT"),
             ("config_json", "TEXT NOT NULL DEFAULT '{}'"),
             ("metrics_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("execution_binding_json", "TEXT NOT NULL DEFAULT '{}'"),
         ):
             if col not in session_cols:
                 conn.execute(f"ALTER TABLE agent_sessions ADD COLUMN {col} {decl}")
@@ -617,6 +638,22 @@ class CardProjection:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status_updated "
             "ON agent_sessions(status, updated_at DESC)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS agent_restart_handoffs (
+                   id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                   idempotency_key TEXT NOT NULL, continuation_prompt TEXT NOT NULL,
+                   continuation_prompt_id TEXT NOT NULL, status TEXT NOT NULL,
+                   card_id TEXT, project_id TEXT, instance_id TEXT,
+                   execution_binding_json TEXT NOT NULL DEFAULT '{}', error TEXT,
+                   attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+                   updated_at TEXT NOT NULL, delivered_at TEXT,
+                   UNIQUE(session_id, idempotency_key), UNIQUE(continuation_prompt_id)
+               )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_restart_handoffs_status_updated "
+            "ON agent_restart_handoffs(status, updated_at)"
         )
         # A browser default is a durable identity, not merely the most recently
         # touched row carrying a convenient label.  Older databases can contain
@@ -4178,8 +4215,8 @@ class CardProjection:
                  lifecycle_owner,
                  item_id, card_id, project_id, principal_id,
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
-                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 execution_binding_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_name=excluded.agent_name,
                     external_session_id=excluded.external_session_id,
@@ -4201,6 +4238,9 @@ class CardProjection:
                     mode_id=excluded.mode_id,
                     config_json=excluded.config_json,
                     metrics_json=excluded.metrics_json,
+                    execution_binding_json=CASE
+                      WHEN agent_sessions.execution_binding_json != '{}' THEN agent_sessions.execution_binding_json
+                      ELSE excluded.execution_binding_json END,
                     created_at=excluded.created_at,
                     updated_at=excluded.updated_at
                 """,
@@ -4226,6 +4266,7 @@ class CardProjection:
                     session.mode_id,
                     json.dumps(session.config_json or {}),
                     json.dumps(session.metrics_json or {}),
+                    json.dumps(session.execution_binding or {}),
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                 ),
@@ -4458,6 +4499,99 @@ class CardProjection:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_session(row) for row in rows]
+
+    def create_restart_handoff(self, handoff: RestartHandoff) -> RestartHandoff:
+        """Insert once; an idempotent retry returns the original receipt."""
+        with self._mutation_lock, self._conn() as conn:
+            existing = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE session_id=? AND idempotency_key=?",
+                (handoff.session_id, handoff.idempotency_key),
+            ).fetchone()
+            if existing:
+                prior = self._row_to_restart_handoff(existing)
+                if prior.continuation_prompt != handoff.continuation_prompt:
+                    raise ValueError(
+                        "Restart handoff idempotency key was reused with different content"
+                    )
+                return prior
+            conn.execute(
+                """INSERT INTO agent_restart_handoffs
+                   (id, session_id, idempotency_key, continuation_prompt,
+                    continuation_prompt_id, status, card_id, project_id, instance_id,
+                    execution_binding_json, error, attempts, created_at, updated_at, delivered_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    handoff.id,
+                    handoff.session_id,
+                    handoff.idempotency_key,
+                    handoff.continuation_prompt,
+                    handoff.continuation_prompt_id,
+                    handoff.status,
+                    handoff.card_id,
+                    handoff.project_id,
+                    handoff.instance_id,
+                    json.dumps(handoff.execution_binding or {}),
+                    handoff.error,
+                    handoff.attempts,
+                    handoff.created_at.isoformat(),
+                    handoff.updated_at.isoformat(),
+                    handoff.delivered_at.isoformat() if handoff.delivered_at else None,
+                ),
+            )
+        return handoff
+
+    def get_restart_handoff(self, handoff_id: str) -> RestartHandoff | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(row) if row else None
+
+    def list_restart_handoffs(
+        self, *, session_id: str | None = None, statuses: tuple[str, ...] | None = None
+    ) -> list[RestartHandoff]:
+        query = "SELECT * FROM agent_restart_handoffs WHERE 1=1"
+        params: list[str] = []
+        if session_id:
+            query += " AND session_id=?"
+            params.append(session_id)
+        if statuses:
+            query += " AND status IN (" + ",".join("?" for _ in statuses) + ")"
+            params.extend(statuses)
+        query += " ORDER BY created_at ASC, id ASC"
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_restart_handoff(row) for row in rows]
+
+    def update_restart_handoff(
+        self,
+        handoff_id: str,
+        *,
+        status: str,
+        error: str | None = None,
+        delivered: bool = False,
+        increment_attempts: bool = False,
+    ) -> RestartHandoff | None:
+        now = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            conn.execute(
+                """UPDATE agent_restart_handoffs SET status=?, error=?, updated_at=?,
+                   attempts=attempts+?, delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
+                   WHERE id=?""",
+                (
+                    status,
+                    error,
+                    now.isoformat(),
+                    int(increment_attempts),
+                    int(delivered),
+                    now.isoformat(),
+                    handoff_id,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(row) if row else None
 
     def list_session_audit_page(
         self,
@@ -5469,6 +5603,7 @@ class CardProjection:
             mode_id=row["mode_id"] if "mode_id" in keys else None,
             config_json=_json_col("config_json"),
             metrics_json=_json_col("metrics_json"),
+            execution_binding=_json_col("execution_binding_json"),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -5488,6 +5623,27 @@ class CardProjection:
             event_type=row["event_type"],
             payload=payload or {},
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    @staticmethod
+    def _row_to_restart_handoff(row: sqlite3.Row) -> RestartHandoff:
+        return RestartHandoff(
+            id=row["id"],
+            session_id=row["session_id"],
+            idempotency_key=row["idempotency_key"],
+            continuation_prompt=row["continuation_prompt"],
+            continuation_prompt_id=row["continuation_prompt_id"],
+            status=row["status"],
+            card_id=row["card_id"],
+            project_id=row["project_id"],
+            instance_id=row["instance_id"],
+            execution_binding=json.loads(row["execution_binding_json"] or "{}"),
+            error=row["error"],
+            attempts=int(row["attempts"] or 0),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            delivered_at=datetime.fromisoformat(row["delivered_at"])
+            if row["delivered_at"] else None,
         )
 
     @staticmethod

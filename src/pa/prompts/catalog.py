@@ -274,7 +274,16 @@ or private response values in progress summaries, logs, or diagnostics.
 
 These rules are provider-neutral. Codex, Cursor, OpenInterpreter, and future ACP
 providers should translate their native permission and elicitation contracts into
-the same durable PA interaction lifecycle.""",
+the same durable PA interaction lifecycle.
+
+## Restarting PA from a managed turn
+Never run synchronous `pa restart` from inside a PA-managed active turn: it waits
+for that same turn to quiesce. Never use `--no-acp-quiesce` as a continuation
+workflow. Call the PA MCP `request_agent_restart_handoff` tool with a stable
+idempotency key and a self-contained continuation prompt; PA derives the exact
+session from the authenticated MCP binding. End the turn after PA returns the
+durable receipt; PA will flush the transcript, restart, resume this exact provider
+session and workspace, then deliver the prompt once.""",
 )
 
 _register(

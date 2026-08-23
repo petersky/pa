@@ -432,6 +432,11 @@ class RecoverSessionBody(BaseModel):
     provider: str | None = None
 
 
+class RestartHandoffBody(BaseModel):
+    continuation_prompt: str
+    idempotency_key: str
+
+
 class SessionCardLinkBody(BaseModel):
     make_primary: bool = True
 
@@ -499,6 +504,31 @@ async def _bind_live_dispatch_session(
 ) -> None:
     """Attach dispatch provenance and, when required, a worktree to a live session."""
     session = runtime.session
+    binding = dict(session.execution_binding or {})
+    bound_card = binding.get("execution_card_id")
+    bound_project = binding.get("execution_project_id")
+    if _dispatch_requires_repository(dispatch_record) and binding and (
+        (body.card_id and body.card_id != bound_card)
+        or (body.project_id and body.project_id != bound_project)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "execution_binding_rebind_required",
+                "message": (
+                    "This live session keeps its original provider/workspace fence. "
+                    "Dispatch the newly associated card into a separately materialized "
+                    "session, or perform an explicit audited safe rebind after the "
+                    "provider and workspace lease are released."
+                ),
+                "session_id": session.id,
+                "execution_card_id": bound_card,
+                "execution_project_id": bound_project,
+                "requested_card_id": body.card_id,
+                "requested_project_id": body.project_id,
+                "recoverable": True,
+            },
+        )
     if body.card_id:
         session.card_id = body.card_id
         session.item_id = body.card_id
@@ -1066,6 +1096,47 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             runtime.session,
         )
     return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+
+
+@router.post("/sessions/{session_id}/restart-handoffs")
+async def request_restart_handoff(
+    request: Request, session_id: str, body: RestartHandoffBody
+) -> dict:
+    """Restart after this turn and resume only the exact durable session."""
+    mgr = _require_session_traffic_ready(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        handoff = await mgr.request_restart_handoff(
+            session_id=session_id,
+            continuation_prompt=body.continuation_prompt,
+            idempotency_key=body.idempotency_key,
+        )
+    except (ValueError, AgentSessionRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return handoff.model_dump(mode="json")
+
+
+@router.get("/sessions/{session_id}/restart-handoffs")
+def list_restart_handoffs(request: Request, session_id: str) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    if not mgr.store.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "handoffs": [
+            item.model_dump(mode="json")
+            for item in mgr.store.list_restart_handoffs(session_id=session_id)
+        ]
+    }
 
 
 @router.get("/observability/v1/capabilities")

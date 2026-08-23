@@ -20,6 +20,7 @@ ASSIGNED_SERVICE_TOOL_ALLOWLIST = frozenset(
         "record_assigned_goal_evidence",
         "audit_assigned_goal",
         "report_assigned_dispatch_progress",
+        "request_agent_restart_handoff",
     }
 )
 

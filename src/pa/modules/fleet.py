@@ -2724,6 +2724,26 @@ async def proxy_assigned_session_progress(
     )
 
 
+class AssignedRestartHandoffBody(BaseModel):
+    continuation_prompt: str
+    idempotency_key: str
+
+
+@router.post("/goal-assigned-session/restart-handoff")
+async def request_assigned_restart_handoff(
+    request: Request, body: AssignedRestartHandoffBody
+) -> dict[str, Any]:
+    """Use the restricted session capability for a local deferred restart."""
+    record = _assigned_local_dispatch(request)
+    manager = request.app.state.ctx.require_service("instance_agent")
+    handoff = await manager.request_restart_handoff(
+        session_id=str(record.session_id),
+        continuation_prompt=body.continuation_prompt,
+        idempotency_key=body.idempotency_key,
+    )
+    return handoff.model_dump(mode="json")
+
+
 def _assigned_authority_dispatch(
     request: Request,
     dispatch_id: str,
@@ -15414,6 +15434,40 @@ class FleetModule(Module):
                     "operator_input": operator_input,
                     "idempotency_key": key,
                 },
+            )
+
+        @mcp.tool()
+        def request_agent_restart_handoff(
+            continuation_prompt: str,
+            idempotency_key: str,
+        ) -> dict | None:
+            """Safely restart after this turn and continue the exact session once."""
+            import os
+            from pa.acp.environment import (
+                ASSIGNED_SERVICE_MODE_ENV,
+                ASSIGNED_SERVICE_SESSION_ENV,
+            )
+
+            assigned = os.environ.get(ASSIGNED_SERVICE_MODE_ENV) == "1"
+            bound_session = os.environ.get(ASSIGNED_SERVICE_SESSION_ENV, "")
+            session_id = bound_session or os.environ.get("PA_BROWSER_SESSION_ID", "")
+            if not session_id:
+                raise ValueError("Restart handoff requires a managed PA session binding")
+            path = (
+                "/api/goal-assigned-session/restart-handoff"
+                if assigned
+                else f"/api/agent/sessions/{session_id}/restart-handoffs"
+            )
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                path,
+                json={
+                    "continuation_prompt": continuation_prompt,
+                    "idempotency_key": idempotency_key,
+                },
+                allow_not_found=True,
+                timeout_seconds=15.0,
             )
 
         @mcp.tool()

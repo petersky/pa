@@ -1445,6 +1445,21 @@
     if (this.drafts) this.drafts.onSnapshot(snap);
     this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
     this.renderSessionActions();
+    const handoffs = snap.restart_handoffs || [];
+    const handoff = handoffs.length ? handoffs[handoffs.length - 1] : null;
+    if (handoff && this.els.sessionActionStatus) {
+      const labels = {
+        requested: "Restart requested.",
+        waiting_for_turn_end: "Restart requested; waiting for this turn to end and flush.",
+        quiescing: "Turn ended; PA is quiescing sessions.",
+        restarting: "PA is restarting.",
+        resuming: "PA restarted; resuming the exact session.",
+        continuation_queued: "Session resumed; continuation is queued in order.",
+        continuation_delivered: "Post-restart continuation delivered.",
+        failed: "Restart handoff failed: " + (handoff.error || "operator repair and retry required.")
+      };
+      this.els.sessionActionStatus.textContent = labels[handoff.status] || handoff.status;
+    }
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
     }

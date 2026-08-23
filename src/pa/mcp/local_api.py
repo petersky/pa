@@ -82,6 +82,7 @@ _ASSIGNED_MCP_ENDPOINTS = frozenset(
         ("POST", "/api/goal-assigned-session/evidence"),
         ("POST", "/api/goal-assigned-session/audit"),
         ("POST", "/api/goal-assigned-session/progress"),
+        ("POST", "/api/goal-assigned-session/restart-handoff"),
     }
 )
 
