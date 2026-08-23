@@ -2053,6 +2053,11 @@
     }
     var agentButton = event.target.closest("[data-card-agent-start-new], [data-card-agent-select]");
     if (agentButton) {
+      if (agentButton.dataset.requiresConfirmation === "true") {
+        var reasonInput = detail.querySelector("[data-card-agent-parallel-reason]");
+        var reason = reasonInput ? reasonInput.value.trim() : "";
+        if (!reason || !window.confirm("Start parallel work? Another non-concurrent execution is active. Reason: " + reason)) return;
+      }
       var startingNew = agentButton.hasAttribute("data-card-agent-start-new");
       var pane = detail.querySelector('[data-card-agent-pane="' + (startingNew ? "new" : "existing") + '"]');
       if (!pane) return;
@@ -2078,6 +2083,13 @@
         widget._acw.init();
       }
     }
+  });
+
+  document.body.addEventListener("input", function (event) {
+    if (!event.target.matches("[data-card-agent-parallel-reason]")) return;
+    var details = event.target.closest(".parallel-execution-control");
+    var button = details && details.querySelector("[data-card-agent-start-new]");
+    if (button) button.disabled = !event.target.value.trim();
   });
 
   document.body.addEventListener("keydown", function (event) {
