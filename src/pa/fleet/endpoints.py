@@ -15,11 +15,53 @@ import httpx
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
+from pa.http_transport import is_http2_cancel, stable_idempotency_key
 from pa.status.serving import loopback_base_url
 
 BASE_BACKOFF = 5.0
 MAX_BACKOFF = 300.0
 SUCCESS_FRESHNESS = 60.0
+HTTP2_CANCEL_RETRIES = 2
+
+
+class FleetTransportError(httpx.TransportError):
+    """Typed peer failure with an operator-safe recovery contract."""
+
+    def __init__(
+        self,
+        *,
+        operation: str,
+        endpoint: str,
+        correlation_id: str,
+        idempotency_key: str | None,
+        cause: BaseException,
+    ) -> None:
+        self.operation = operation
+        self.endpoint = endpoint
+        self.correlation_id = correlation_id
+        self.idempotency_key = idempotency_key
+        self.code = "http2_stream_cancelled"
+        self.safe_to_retry = operation in {"GET", "HEAD", "OPTIONS"} or bool(
+            idempotency_key
+        )
+        self.outcome_lookup_required = operation not in {"GET", "HEAD", "OPTIONS"}
+        guidance = (
+            "retry automatically"
+            if operation in {"GET", "HEAD", "OPTIONS"}
+            else (
+                f"look up the outcome, then retry with the same idempotency key "
+                f"{idempotency_key!r}"
+                if idempotency_key
+                else "do not retry; the side-effect outcome may be unknown"
+            )
+        )
+        super().__init__(
+            "HTTP/2 stream closed with CANCEL (0x8) "
+            f"(operation={operation} endpoint={endpoint} "
+            f"correlation_id={correlation_id} safe_to_retry={self.safe_to_retry}); "
+            f"{guidance}"
+        )
+        self.__cause__ = cause
 
 
 class EndpointUnavailable(TimeoutError):
@@ -165,6 +207,15 @@ async def request_peer(
     **kwargs: Any,
 ) -> tuple[httpx.Response, str]:
     """Request a peer through the best canonical endpoint with failover."""
+    method = method.upper()
+    headers = dict(kwargs.pop("headers", {}) or {})
+    correlation_id = next(
+        (str(value) for key, value in headers.items() if key.lower() == "x-request-id"),
+        f"fleet-{inst.instance_id}-{time.time_ns()}",
+    )
+    headers.setdefault("X-Request-ID", correlation_id)
+    idempotency_key = stable_idempotency_key(headers)
+    safe_retry = method in {"GET", "HEAD", "OPTIONS"} or bool(idempotency_key)
     registry = ctx.services.get("endpoint_health_registry")
     if not isinstance(registry, EndpointHealthRegistry):
         registry = EndpointHealthRegistry(ctx.settings.data_dir)
@@ -177,25 +228,49 @@ async def request_peer(
     failures: list[tuple[str, BaseException]] = []
     for choice in available:
         started = time.perf_counter()
-        try:
-            response = await client.request(
-                method,
-                f"{choice.url.rstrip('/')}/{path.lstrip('/')}",
-                timeout=timeout,
-                **kwargs,
-            )
-        except (httpx.TransportError, TimeoutError) as exc:
-            registry.failure(choice.url, exc)
-            failures.append((choice.url, exc))
+        for attempt in range(HTTP2_CANCEL_RETRIES + 1):
+            try:
+                response = await client.request(
+                    method,
+                    f"{choice.url.rstrip('/')}/{path.lstrip('/')}",
+                    timeout=timeout,
+                    headers=headers,
+                    **kwargs,
+                )
+                break
+            except (httpx.TransportError, TimeoutError) as exc:
+                if is_http2_cancel(exc):
+                    typed = FleetTransportError(
+                        operation=method,
+                        endpoint=f"{choice.url.rstrip('/')}/{path.lstrip('/')}",
+                        correlation_id=correlation_id,
+                        idempotency_key=idempotency_key,
+                        cause=exc,
+                    )
+                    if safe_retry and attempt < HTTP2_CANCEL_RETRIES:
+                        continue
+                    if not safe_retry:
+                        raise typed from exc
+                    exc = typed
+                registry.failure(choice.url, exc)
+                failures.append((choice.url, exc))
+                break
+        else:  # pragma: no cover - loop always breaks or raises
+            continue
+        if failures and failures[-1][0] == choice.url:
             continue
         registry.success(choice.url, (time.perf_counter() - started) * 1000)
         response.extensions["pa_selected_endpoint"] = choice.url
         return response, choice.url
     last_endpoint, last_exc = failures[-1]
+    if isinstance(last_exc, FleetTransportError):
+        raise last_exc
     choices = registry.choices(ctx.settings, inst)
     retry = min((choice.next_probe_at for choice in choices), default=time.time())
     unavailable = EndpointUnavailable(
-        inst.instance_id, [last_endpoint, *[c.url for c in choices if c.url != last_endpoint]], retry - time.time()
+        inst.instance_id,
+        [last_endpoint, *[c.url for c in choices if c.url != last_endpoint]],
+        retry - time.time(),
     )
     unavailable.__cause__ = last_exc
     raise unavailable
