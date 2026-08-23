@@ -52,6 +52,12 @@ class InstanceConfig(BaseModel):
         default_factory=dict
     )
     relay_enabled: bool = False
+    cloud_endpoint: str = ""
+    cloud_token: str = ""
+    cloud_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    cloud_lease_fail_open: bool = True
+    cloud_publish_queue_capacity: int = Field(default=1000, ge=1, le=100_000)
+    cloud_allow_insecure_http: bool = False
     peers: list[str] = Field(default_factory=list)
     release_track: str = "release"
     sync_token: str = ""
@@ -96,6 +102,7 @@ class InstanceConfig(BaseModel):
     transcript_retention_days: int = Field(default=14, ge=1, le=3650)
     mutation_operation_retention_days: int = Field(default=14, ge=1, le=3650)
     memory_auto_capture_enabled: bool = False
+    autonomy_context_by_realm: dict[str, dict] = Field(default_factory=dict)
     card_summary_provider: str = "openai"
     card_summary_model: str = "gpt-5-mini"
     card_summary_base_url: str = "https://api.openai.com/v1"
@@ -119,6 +126,22 @@ class InstanceConfig(BaseModel):
     debug: bool = False
     dev_tools: bool = False
     log_level: str = "INFO"
+    log_rotation_max_bytes: int = Field(
+        default=25 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024 * 1024
+    )
+    log_rotation_interval_seconds: float = Field(
+        default=24 * 60 * 60, ge=1, le=31 * 24 * 60 * 60
+    )
+    log_retention_count: int = Field(default=7, ge=1, le=10_000)
+    log_retention_max_age_seconds: float = Field(
+        default=14 * 24 * 60 * 60, ge=1, le=10 * 365 * 24 * 60 * 60
+    )
+    log_retention_max_total_bytes: int = Field(
+        default=256 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024 * 1024
+    )
+    log_disk_pressure_free_bytes: int = Field(
+        default=512 * 1024 * 1024, ge=0, le=64 * 1024 * 1024 * 1024
+    )
     blocking_workers: int = Field(default=8, ge=1, le=64)
     blocking_queue_limit: int = Field(default=64, ge=0, le=4096)
     blocking_default_timeout: float = Field(default=30.0, gt=0, le=3600)
@@ -161,6 +184,9 @@ class InstanceConfig(BaseModel):
     backup_concurrency: Literal[1] = 1
     backup_alert_after_failures: int = Field(default=3, ge=1, le=1000)
     backup_jitter_seconds: int = Field(default=300, ge=0, le=60 * 60)
+    backup_scrub_interval_seconds: int = Field(
+        default=7 * 24 * 60 * 60, ge=60 * 60, le=365 * 24 * 60 * 60
+    )
 
 
 def config_path(data_dir: Path) -> Path:

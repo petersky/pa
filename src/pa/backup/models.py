@@ -44,6 +44,9 @@ class BackupConfig(BaseModel):
     concurrency: Literal[1] = 1
     alert_after_failures: int = Field(default=3, ge=1, le=1000)
     jitter_seconds: int = Field(default=300, ge=0, le=60 * 60)
+    scrub_interval_seconds: int = Field(
+        default=7 * 24 * 60 * 60, ge=60 * 60, le=365 * 24 * 60 * 60
+    )
 
     @field_validator("destination_dir")
     @classmethod
@@ -76,6 +79,8 @@ class BackupManifest(BaseModel):
     included: list[str] = Field(
         default_factory=lambda: [
             "projection_database_online_snapshot",
+            "transcript_database_online_snapshot",
+            "transcript_cold_objects",
             "sync_refs",
             "event_log_objects",
         ]
@@ -115,6 +120,8 @@ class BackupRun(BaseModel):
     idempotency_key: str | None = None
     verification: Literal["pending", "verified", "failed"] = "pending"
     pruned_backup_ids: list[str] = Field(default_factory=list)
+    queue_wait_seconds: float = 0
+    phase_seconds: dict[str, float] = Field(default_factory=dict)
 
 
 class RestoreRequest(BaseModel):
@@ -148,6 +155,9 @@ class BackupState(BaseModel):
     restores: list[RestoreRequest] = Field(default_factory=list)
     verifications: dict[str, dict[str, Any]] = Field(default_factory=dict)
     metrics: dict[str, int | float] = Field(default_factory=dict)
+    last_scrub: datetime | None = None
+    next_scrub_run: datetime | None = None
+    last_scrub_results: dict[str, bool] = Field(default_factory=dict)
 
 
 class BackupRecord(BaseModel):

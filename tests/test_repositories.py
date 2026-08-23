@@ -975,6 +975,9 @@ class RepositoryRouteTests(unittest.TestCase):
                     'data-projects-filter="repositories"', repositories_page.text
                 )
                 self.assertIn("+ New Repo", repositories_page.text)
+                self.assertIn('aria-haspopup="dialog"', repositories_page.text)
+                self.assertIn('id="new-repository-dialog"', repositories_page.text)
+                self.assertNotIn('<details class="projects-create">', repositories_page.text)
                 self.assertIn("Save repository", repositories_page.text)
                 self.assertIn("Provider metadata", repositories_page.text)
                 self.assertIn(

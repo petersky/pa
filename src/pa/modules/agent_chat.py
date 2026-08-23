@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -136,7 +137,7 @@ def _observability(
     if runtime and getattr(runtime, "_closed", False):
         runtime = None
     if events is None:
-        events = mgr.store.list_transcript_events_before(session.id, limit=5000)
+        events = mgr.store.list_transcript_events_before(session.id, limit=1001)
     settings = request.app.state.ctx.settings
     result = build_session_observability(
         session,
@@ -178,12 +179,16 @@ def _session_actions(session_id: str, *, recoverable: bool) -> dict[str, Any]:
 def _durable_session_state(manager, session) -> dict[str, Any]:
     runtime = manager.get(session.id)
     live = bool(runtime and not getattr(runtime, "_closed", False))
+    recovery_capabilities = dict(
+        (session.config_json or {}).get("provider_session_recovery") or {}
+    )
+    provider_recoverable = bool(session.external_session_id) and (
+        not recovery_capabilities
+        or bool(recovery_capabilities.get("resume") or recovery_capabilities.get("load"))
+    )
     recoverable = (
-        session.status
-        not in {
-            "closed",
-            RECOVERY_BLOCKED_STATUS,
-        }
+        provider_recoverable
+        and session.status != RECOVERY_BLOCKED_STATUS
         and not live
     )
     durable = dict((session.config_json or {}).get("durable_runtime") or {})
@@ -194,6 +199,8 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
         "reason": (
             "live"
             if live
+            else "session_closed_recoverable"
+            if session.status == "closed" and recoverable
             else "session_closed"
             if session.status == "closed"
             else "recovery_blocked"
@@ -425,6 +432,11 @@ class RecoverSessionBody(BaseModel):
     provider: str | None = None
 
 
+class RestartHandoffBody(BaseModel):
+    continuation_prompt: str
+    idempotency_key: str
+
+
 class SessionCardLinkBody(BaseModel):
     make_primary: bool = True
 
@@ -492,6 +504,31 @@ async def _bind_live_dispatch_session(
 ) -> None:
     """Attach dispatch provenance and, when required, a worktree to a live session."""
     session = runtime.session
+    binding = dict(session.execution_binding or {})
+    bound_card = binding.get("execution_card_id")
+    bound_project = binding.get("execution_project_id")
+    if _dispatch_requires_repository(dispatch_record) and binding and (
+        (body.card_id and body.card_id != bound_card)
+        or (body.project_id and body.project_id != bound_project)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "execution_binding_rebind_required",
+                "message": (
+                    "This live session keeps its original provider/workspace fence. "
+                    "Dispatch the newly associated card into a separately materialized "
+                    "session, or perform an explicit audited safe rebind after the "
+                    "provider and workspace lease are released."
+                ),
+                "session_id": session.id,
+                "execution_card_id": bound_card,
+                "execution_project_id": bound_project,
+                "requested_card_id": body.card_id,
+                "requested_project_id": body.project_id,
+                "recoverable": True,
+            },
+        )
     if body.card_id:
         session.card_id = body.card_id
         session.item_id = body.card_id
@@ -1061,6 +1098,82 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
+@router.post("/sessions/{session_id}/restart-handoffs")
+async def request_restart_handoff(
+    request: Request, session_id: str, body: RestartHandoffBody
+) -> dict:
+    """Restart after this turn and resume only the exact durable session."""
+    mgr = _require_session_traffic_ready(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        handoff = await mgr.request_restart_handoff(
+            session_id=session_id,
+            continuation_prompt=body.continuation_prompt,
+            idempotency_key=body.idempotency_key,
+        )
+    except (ValueError, AgentSessionRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return handoff.model_dump(mode="json")
+
+
+@router.get("/sessions/{session_id}/restart-handoffs")
+def list_restart_handoffs(request: Request, session_id: str) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    return {
+        "handoffs": [
+            item.model_dump(mode="json")
+            for item in mgr.store.list_restart_handoffs(session_id=session_id)
+        ]
+    }
+
+
+@router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/retry")
+async def retry_restart_handoff(
+    request: Request, session_id: str, handoff_id: str
+) -> dict:
+    """Retry one repaired exact-session handoff without creating a new receipt."""
+    mgr = _require_session_traffic_ready(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        handoff = await mgr.retry_restart_handoff(
+            session_id=session_id, handoff_id=handoff_id
+        )
+    except (ValueError, AgentSessionRecoveryError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return handoff.model_dump(mode="json")
+
+
 @router.get("/observability/v1/capabilities")
 def session_observability_capabilities() -> dict[str, Any]:
     return {
@@ -1086,16 +1199,53 @@ def list_session_observability(request: Request, limit: int = 100) -> dict[str, 
 
 
 @router.get("/observability/v1/sessions/{session_id}")
-def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
+async def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
     session = _manager(request).store.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return _observability(request, session)
+    if session:
+        return _observability(request, session)
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatch = dispatch_store.by_session(session_id) if dispatch_store else None
+    if not dispatch:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "canonical_session_unknown", "message": "No local session or durable dispatch owns this session ID."},
+        )
+    if dispatch.target_instance_id == request.app.state.ctx.settings.instance_id:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "target_session_projection_missing", "message": "The durable dispatch targets this instance, but its local runtime projection is missing.", "dispatch_id": dispatch.dispatch_id, "recoverable": True},
+        )
+    try:
+        # Imported lazily to keep module registration acyclic.
+        from pa.modules.fleet import _peer_agent_json
+
+        result = await _peer_agent_json(
+            request,
+            dispatch.target_instance_id,
+            "GET",
+            f"observability/v1/sessions/{session_id}",
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "target_session_unavailable",
+                "message": "The durable remote session is known, but target liveness could not be read.",
+                "dispatch_id": dispatch.dispatch_id,
+                "target_instance_id": dispatch.target_instance_id,
+                "upstream": exc.detail,
+                "recoverable": True,
+            },
+        ) from exc
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=502, detail={"code": "invalid_target_liveness", "dispatch_id": dispatch.dispatch_id})
+    result["routing"] = {"source": "durable_dispatch", "dispatch_id": dispatch.dispatch_id, "target_instance_id": dispatch.target_instance_id}
+    return result
 
 
 @router.get("/observability/v1/sessions/{session_id}/turns")
-def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
-    projection = get_session_observability(request, session_id)
+async def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
+    projection = await get_session_observability(request, session_id)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,
         "session_id": session_id,
@@ -1111,7 +1261,7 @@ def request_session_diagnostics(
     session = mgr.store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    events = mgr.store.list_transcript_events_before(session_id, limit=5000)
+    events = mgr.store.list_transcript_events_before(session_id, limit=1001)
     observed = _observability(request, session)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,
@@ -1635,6 +1785,7 @@ async def get_agent_session_history(
             detail="Use either after_seq or before_seq, not both",
         )
     mgr = _manager(request)
+    query_started = perf_counter()
     session = await _offload(
         mgr,
         "sqlite.agent_session_read",
@@ -1645,7 +1796,9 @@ async def get_agent_session_history(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     runtime = mgr.get(session_id)
-    page_limit = max(1, min(limit, 5000))
+    # Keep this route bounded even for direct callers. The browser deliberately
+    # asks for smaller 250-event pages to leave headroom for markdown/tool work.
+    page_limit = max(1, min(limit, TRANSCRIPT_WINDOW_LIMIT))
     if after_seq is not None:
         events = await _offload(
             mgr,
@@ -1687,8 +1840,9 @@ async def get_agent_session_history(
             "has_newer": before_seq is not None,
             "limit": page_limit,
         }
+    query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
-    return {
+    payload = {
         "session": session.model_dump(mode="json"),
         "instance": {
             "id": settings.instance_id,
@@ -1701,6 +1855,16 @@ async def get_agent_session_history(
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }
+    serialization_started = perf_counter()
+    serialized = json.dumps(payload, separators=(",", ":"), default=str).encode()
+    serialization_ms = (perf_counter() - serialization_started) * 1000
+    payload["diagnostics"] = {
+        "query_ms": round(query_ms, 2),
+        "serialization_ms": round(serialization_ms, 2),
+        "payload_bytes": len(serialized),
+        "event_count": len(events),
+    }
+    return payload
 
 
 @router.post("/sessions/{session_id}/recover")
@@ -1710,6 +1874,17 @@ async def recover_session(
     body: RecoverSessionBody | None = None,
 ) -> dict:
     mgr = _require_session_traffic_ready(request)
+    durable_session = mgr.store.get_session(session_id)
+    if not durable_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and durable_session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
     try:
         runtime = await mgr.recover_session(
             session_id, provider_override=body.provider if body else None
@@ -1774,7 +1949,15 @@ async def recover_session(
                 ),
             },
         ) from exc
-    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    snapshot = await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    handoffs = list(snapshot.get("restart_handoffs") or [])
+    latest = handoffs[-1] if handoffs else None
+    if latest and latest.get("status") == "failed":
+        await mgr.retry_restart_handoff(
+            session_id=session_id, handoff_id=str(latest["id"])
+        )
+        snapshot = await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
+    return snapshot
 
 
 @router.get("/sessions/{session_id}")
@@ -2784,7 +2967,11 @@ async def session_close(request: Request, session_id: str) -> dict:
     if runtime and not getattr(runtime, "_closed", False):
         await runtime.close(reason="user_close")
         mgr._runtimes.pop(session_id, None)
-        return {"ok": True, "live": False}
+        return {
+            "ok": True,
+            "live": False,
+            "recovery": _durable_session_state(mgr, runtime.session),
+        }
 
     session = await _offload(
         mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
@@ -2798,7 +2985,12 @@ async def session_close(request: Request, session_id: str) -> dict:
     )
     if prior_status is not None:
         await _reconcile_closed_session_workspaces(mgr, [session_id])
-    return {"ok": True, "live": False, "orphan": True}
+    return {
+        "ok": True,
+        "live": False,
+        "orphan": True,
+        "recovery": _durable_session_state(mgr, session),
+    }
 
 
 @router.post("/sessions/{session_id}/permissions/{request_id}")
@@ -3012,6 +3204,8 @@ class AgentChatModule(Module):
                 ctx.settings,
                 "GET",
                 f"/api/agent/observability/v1/sessions/{session_id}",
+                # Unknown IDs retain the compatibility null. Dispatch-known IDs
+                # are routed above and therefore return data or an explicit 5xx.
                 allow_not_found=True,
                 timeout_seconds=15.0,
             )

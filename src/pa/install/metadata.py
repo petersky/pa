@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -40,3 +41,17 @@ def save_install_metadata(data_dir: Path, metadata: InstallMetadata) -> InstallM
     path = install_metadata_path(data_dir)
     atomic_write_json(path, metadata.model_dump(mode="json"))
     return metadata
+
+
+def running_source_revision() -> str | None:
+    """Return the immutable VCS revision backing the running PA distribution."""
+    try:
+        direct_url = distribution("pa").read_text("direct_url.json")
+        payload = json.loads(direct_url) if direct_url else {}
+    except (PackageNotFoundError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    vcs_info = payload.get("vcs_info") if isinstance(payload, dict) else None
+    if not isinstance(vcs_info, dict):
+        return None
+    revision = vcs_info.get("commit_id")
+    return str(revision).lower() if revision else None

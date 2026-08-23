@@ -13,3 +13,28 @@
   </a>
   {% endfor %}
 </nav>
+
+<details class="responsive-nav" data-responsive-nav>
+  <summary class="nav-menu-button" aria-label="Open main navigation">Menu</summary>
+  <nav class="responsive-nav-menu" aria-label="Main navigation menu">
+    {% for nav_page in nav_pages %}
+    <a href="{{ nav_page.path }}"
+       class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
+       hx-get="{{ nav_page.path }}"
+       hx-target="#app-view"
+       hx-push-url="true"
+       hx-swap="innerHTML">
+      {{ icon(nav_page.icon) }}
+      <span>{{ nav_page.label }}</span>
+    </a>
+    {% endfor %}
+    <a href="/agent" class="nav-btn{% if active_path == '/agent' %} active{% endif %}"
+       hx-get="/agent" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
+      {{ icon('agent') }}<span>Sessions</span>
+    </a>
+    <a href="/settings" class="nav-btn{% if active_path == '/settings' %} active{% endif %}"
+       hx-get="/settings" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
+      {{ icon('gear') }}<span>Settings</span>
+    </a>
+  </nav>
+</details>

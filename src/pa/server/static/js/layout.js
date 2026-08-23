@@ -115,7 +115,10 @@
       el.classList.toggle("hidden", !show);
     });
     root.querySelectorAll("[data-section-link]").forEach(function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("data-section-link") === sectionId);
+      var active = btn.getAttribute("data-section-link") === sectionId;
+      btn.classList.toggle("active", active);
+      if (active) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
     });
     try {
       var url = new URL(window.location.href);
@@ -197,6 +200,41 @@
         });
         var empty = list.querySelector(".projects-filter-empty");
         if (empty) empty.hidden = visible !== 0;
+      });
+    });
+  }
+
+  function initProjectCreateDialogs(root) {
+    var scope = root || document;
+    scope.querySelectorAll("[data-project-create-open]").forEach(function (button) {
+      if (button.dataset.projectCreateReady) return;
+      button.dataset.projectCreateReady = "1";
+      var dialog = document.getElementById(button.dataset.projectCreateOpen);
+      if (!dialog) return;
+
+      function closeDialog() {
+        var form = dialog.querySelector("form");
+        if (form) form.reset();
+        if (dialog.open && typeof dialog.close === "function") dialog.close();
+        else dialog.removeAttribute("open");
+        button.focus({ preventScroll: true });
+      }
+
+      button.addEventListener("click", function () {
+        if (typeof dialog.showModal === "function") dialog.showModal();
+        else dialog.setAttribute("open", "");
+        var first = dialog.querySelector("input:not([type=hidden]), textarea, select");
+        if (first) first.focus();
+      });
+      dialog.querySelectorAll("[data-project-create-close]").forEach(function (close) {
+        close.addEventListener("click", closeDialog);
+      });
+      dialog.addEventListener("cancel", function (event) {
+        event.preventDefault();
+        closeDialog();
+      });
+      dialog.addEventListener("click", function (event) {
+        if (event.target === dialog) closeDialog();
       });
     });
   }
@@ -430,6 +468,7 @@
     initResize(root);
     initSections(root);
     initProjectFilters(root);
+    initProjectCreateDialogs(root);
     transformProjectDisclosures(root);
     initProjectDisclosureJumps(root);
     restoreProjectDisclosureFocus(root);

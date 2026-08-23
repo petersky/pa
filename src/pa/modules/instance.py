@@ -214,7 +214,12 @@ def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
+async def health(request: Request = None) -> dict:
+    recovery = (
+        request.app.state.ctx.services.get("sync_recovery") if request else None
+    )
+    if recovery and recovery.degraded():
+        return {"status": "degraded", "recovery": recovery.public()}
     return {"status": "ok"}
 
 
@@ -277,6 +282,8 @@ def _runtime_status_snapshot(ctx) -> dict:
     dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store and hasattr(dispatch_store, "storage_metrics"):
         snapshot["dispatch_storage"] = dispatch_store.storage_metrics()
+    if hasattr(ctx.store, "transcript_storage_metrics"):
+        snapshot["transcript_storage"] = ctx.store.transcript_storage_metrics()
     provider_gate = ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
@@ -465,9 +472,9 @@ def agent_status(request: Request) -> dict:
     progress = agent.progress()
     result = progress.model_dump(mode="json")
     lifecycle = request.app.state.ctx.services.get("session_lifecycle")
-    result["session_lifecycle"] = {
-        "metrics": dict(lifecycle.metrics) if lifecycle else {},
-    }
+    result["session_lifecycle"] = (
+        lifecycle.snapshot() if lifecycle else {"metrics": {}, "attempts": []}
+    )
     return result
 
 

@@ -186,6 +186,69 @@ class CardLaneIntegrityTests(unittest.TestCase):
             assert after_restart is not None
             self.assertEqual(after_restart.lane, CardLane.DONE)
 
+    def test_orphaned_canonical_card_is_reanchored_and_rebuilds_converge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            projection, log = self.pair(root)
+            anchor = projection.create_card(CardCreate(title="Reachable anchor"))
+            anchor_head = log.get_head("default")
+            assert anchor_head is not None
+            orphan = projection.create_card(
+                CardCreate(
+                    title="Retained authority card",
+                    body="full body",
+                    lane=CardLane.INBOX,
+                    project_id="project-7",
+                    tags=["fleet", "repair"],
+                    preferred_instance="authority",
+                    preferred_capabilities=["sync"],
+                )
+            )
+            orphan_head = log.get_head("default")
+            assert orphan_head is not None
+
+            # Model a projection rebuild branch that excludes the older card
+            # commit while the authority SQLite projection still retains it.
+            log.advance_ref("default", anchor_head, expected_head=orphan_head)
+            diagnosis = projection.repair_legacy_card_history(
+                [orphan.id], diagnose_only=True
+            )
+            self.assertEqual(diagnosis[0]["status"], "repair_available")
+            self.assertEqual(
+                diagnosis[0]["history_state"], "orphaned_canonical_history"
+            )
+            self.assertEqual(log.get_head("default"), anchor_head)
+            before = projection.repair_legacy_card_history([orphan.id])
+            repaired_head = log.get_head("default")
+            again = projection.repair_legacy_card_history([orphan.id])
+
+            self.assertEqual(before[0]["status"], "repaired")
+            self.assertEqual(
+                before[0]["history_state"], "orphaned_canonical_history"
+            )
+            self.assertEqual(
+                before[0]["orphaned_bases"][0]["commit_hash"], orphan_head
+            )
+            self.assertNotEqual(repaired_head, anchor_head)
+            self.assertEqual(again[0]["status"], "already_repaired")
+            self.assertEqual(log.get_head("default"), repaired_head)
+
+            replicas = []
+            for name in ("authority-rebuild", "peer-rebuild"):
+                replica = CardProjection(root / f"{name}.db", log)
+                replica.rebuild_from_log("default")
+                replicas.append(replica)
+            expected_ids = {anchor.id, orphan.id}
+            for replica in replicas:
+                cards = replica.list_cards(realm_id="default", limit=100)
+                self.assertEqual({card.id for card in cards}, expected_ids)
+                self.assertEqual(
+                    sum(card.lane == CardLane.INBOX for card in cards), 2
+                )
+                recovered = replica.get_card(orphan.id, realm_id="default")
+                assert recovered is not None
+                self.assertEqual(recovered.model_dump(), orphan.model_dump())
+
     def test_stale_full_payload_is_rejected_but_field_intent_preserves_lane(
         self,
     ) -> None:

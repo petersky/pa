@@ -8,7 +8,16 @@
   const MAX_IMAGES = 4;
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
-  const TRANSCRIPT_PAGE_LIMIT = 1000;
+  const TRANSCRIPT_PAGE_LIMIT = 250;
+  const TRANSCRIPT_LATENCY_BUDGET_MS = 2000;
+  // Browser retention is deliberately smaller than durable history. These are
+  // public through memoryDiagnostics() so layout/memory regressions can assert
+  // the contract without sampling implementation-specific browser heaps.
+  const MAX_RETAINED_EVENTS = 2000;
+  const MAX_MESSAGE_ROWS = 600;
+  const MAX_ACTIVITY_ROWS = 300;
+  const MAX_PLANS = 50;
+  const MAX_STREAM_CHARS = 250000;
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
@@ -173,7 +182,11 @@
     this.els = {
       messages: root.querySelector("[data-acw-messages]"),
       loadOlder: root.querySelector("[data-acw-load-older]"),
+      loadOlderLabel: root.querySelector("[data-acw-load-older-label]"),
+      historySpinner: root.querySelector("[data-acw-history-spinner]"),
       loadOlderStatus: root.querySelector("[data-acw-load-older-status]"),
+      loadNewer: root.querySelector("[data-acw-load-newer]"),
+      loadNewerStatus: root.querySelector("[data-acw-load-newer-status]"),
       placeholder: root.querySelector("[data-acw-placeholder]"),
       form: root.querySelector("[data-acw-form]"),
       input: root.querySelector("[data-acw-input]"),
@@ -188,6 +201,9 @@
       systemToggle: root.querySelector("[data-acw-toggle-system]"),
       rawToggle: root.querySelector("[data-acw-toggle-raw]"),
       recover: root.querySelector("[data-acw-recover]"),
+      restart: root.querySelector("[data-acw-restart]"),
+      end: root.querySelector("[data-acw-end]"),
+      sessionActionStatus: root.querySelector("[data-acw-session-action-status]"),
       history: root.querySelector("[data-acw-history]"),
       promote: root.querySelector("[data-acw-promote]"),
       working: root.querySelector("[data-acw-working]"),
@@ -247,8 +263,14 @@
     this.hasOlder = false;
     this.olderCursor = null;
     this.loadingOlder = false;
+    this.olderAbortController = null;
     this.olderError = "";
+    this.hasNewer = false;
+    this.newerCursor = null;
+    this.newerError = "";
+    this.loadingNewer = false;
     this.streaming = {};
+    this.messageRowCount = 0;
     this.toolTimers = {};
     this.currentActivity = null;
     this.activityStreams = {};
@@ -264,8 +286,15 @@
     this.submissionState = "idle";
     this.composerEnabled = true;
     this.turnActive = false;
-    this.sessionClosed = false;
+    // Treat a preselected session as unavailable until its durable/live state
+    // is known; this prevents server-rendered controls from briefly going stale.
+    this.sessionClosed = !!this.sessionId;
     this.ownerResolutionPending = false;
+    this.sessionRecoverable = false;
+    this.durableHistoryAvailable = false;
+    this.recoveryControlVisible = false;
+    this.recoveryControlLabel = "Recover session";
+    this.closePending = false;
     this.connectionNoticeShown = false;
     this.rawText = false;
     this.pendingImages = [];
@@ -284,6 +313,7 @@
     this.startupRetryCount = 0;
     this.liveStateRetryId = null;
     this._bind();
+    this.renderSessionActions();
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
       ? window.PAAgentDrafts.installWidget(this) : null;
     const self = this;
@@ -302,6 +332,11 @@
         self.loadOlderTranscript();
       });
     }
+    if (this.els.loadNewer) {
+      this.els.loadNewer.addEventListener("click", function () {
+        self.loadNewerTranscript();
+      });
+    }
     if (this.els.form) {
       this.els.form.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -316,9 +351,9 @@
       });
     });
     if (this.els.stop) this.els.stop.addEventListener("click", function () { self.cancel(); });
-    const end = this.root.querySelector("[data-acw-end]");
+    const end = this.els.end;
     if (end) end.addEventListener("click", function () { self.closeSession(); });
-    const restart = this.root.querySelector("[data-acw-restart]");
+    const restart = this.els.restart;
     if (restart) restart.addEventListener("click", function () { self.restartSession(); });
     const cardLink = this.root.querySelector("[data-acw-card-link]");
     if (cardLink) cardLink.addEventListener("click", function () {
@@ -534,9 +569,56 @@
 
   AgentChatWidget.prototype.showRecoveryActions = function (detail) {
     detail = detail || {};
-    const recoverable = detail.recoverable === true;
-    if (this.els.recover) this.els.recover.hidden = !recoverable;
-    if (this.els.history) this.els.history.hidden = !detail.history_url;
+    this.sessionRecoverable = detail.recoverable === true;
+    this.durableHistoryAvailable = !!detail.history_url;
+    this.recoveryControlVisible = false;
+    this.renderSessionActions();
+  };
+
+  AgentChatWidget.prototype.renderSessionActions = function (state) {
+    state = state || {};
+    const terminal = Object.prototype.hasOwnProperty.call(state, "terminal")
+      ? !!state.terminal : !!this.sessionClosed;
+    const recoverable = Object.prototype.hasOwnProperty.call(state, "recoverable")
+      ? !!state.recoverable : !!this.sessionRecoverable;
+    const ownerUnreachable = !!(this.sessionRoute &&
+      (this.sessionRoute.state === "owner_unreachable" || this.sessionRoute.state === "live_degraded"));
+    const hasSession = !!this.sessionId;
+    const canEnd = hasSession && !terminal && !ownerUnreachable;
+    const canRestart = hasSession && terminal && recoverable;
+    if (this.els.end) {
+      this.els.end.hidden = !canEnd;
+      this.els.end.disabled = !canEnd || this.closePending;
+      this.els.end.setAttribute("aria-disabled", this.els.end.disabled ? "true" : "false");
+      this.els.end.title = this.closePending ? "End session request is in progress." : "End this live session.";
+    }
+    if (this.els.restart) {
+      this.els.restart.hidden = !canRestart;
+      this.els.restart.disabled = !canRestart;
+      this.els.restart.setAttribute("aria-disabled", canRestart ? "false" : "true");
+      this.els.restart.title = canRestart
+        ? "Resume this session using its existing durable provider identity."
+        : "Restart is unavailable for this session.";
+    }
+    if (this.els.recover) {
+      const showRecover = hasSession && this.recoveryControlVisible && !canRestart;
+      this.els.recover.hidden = !showRecover;
+      this.els.recover.disabled = !showRecover;
+      this.els.recover.setAttribute("aria-disabled", showRecover ? "false" : "true");
+      this.els.recover.textContent = this.recoveryControlLabel;
+    }
+    if (this.els.history) this.els.history.hidden = !this.durableHistoryAvailable;
+    if (this.els.sessionActionStatus) {
+      this.els.sessionActionStatus.textContent = this.closePending
+        ? "Ending this session…"
+        : canRestart
+          ? "This session has ended and can be resumed from durable state."
+          : terminal
+            ? "This session has ended. End session is unavailable."
+            : ownerUnreachable
+              ? "Live session controls are unavailable while the owner cannot be reached."
+              : canEnd ? "This session is live." : "No session is selected.";
+    }
   };
 
   AgentChatWidget.prototype._apiBaseForOwner = function (ownerInstanceId) {
@@ -570,10 +652,14 @@
     this.root.dataset.apiBase = this.apiBase;
     this.lastSeq = 0;
     this.sessionClosed = true;
+    this.sessionRecoverable = false;
+    this.durableHistoryAvailable = false;
+    this.recoveryControlVisible = false;
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setComposerEnabled(false);
     this.showRecoveryActions({});
+    this.renderSessionActions({ terminal: true, recoverable: false });
     if (this.root.closest(".page-agent")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("session");
@@ -617,6 +703,7 @@
       self.setStatus("offline");
       const recovery = history.recovery || {};
       self.showRecoveryActions({ recoverable: recovery.recoverable, history_url: "/api/agent/history/" + sessionId });
+      self.renderSessionActions({ terminal: true, recoverable: recovery.recoverable === true });
       return history;
     });
   };
@@ -818,10 +905,9 @@
   };
 
   AgentChatWidget.prototype._setRecoveryControl = function (visible, label) {
-    const button = this.root.querySelector("[data-acw-recover]");
-    if (!button) return;
-    button.hidden = !visible;
-    if (label) button.textContent = label;
+    this.recoveryControlVisible = !!visible;
+    if (label) this.recoveryControlLabel = label;
+    this.renderSessionActions();
   };
 
   AgentChatWidget.prototype._writeSessionUrl = function (replace) {
@@ -843,6 +929,7 @@
     if (this.drafts && ownerInstanceId) this.drafts.setInstance(ownerInstanceId);
     if (this.drafts) this.drafts.switchSession(sessionId);
     this.sessionId = sessionId;
+    this.closePending = false;
     this.ownerInstanceId = ownerInstanceId || "";
     this.root.dataset.sessionId = sessionId;
     this.root.dataset.ownerInstanceId = this.ownerInstanceId;
@@ -853,6 +940,7 @@
     this.showRecoveryActions({});
     this.sessionClosed = true;
     this.ownerResolutionPending = true;
+    this.renderSessionActions({ terminal: true, recoverable: false });
     this.setComposerEnabled(false);
     this.setPlaceholder("Locating session owner…");
     let durableHistory = null;
@@ -922,11 +1010,13 @@
           return self._loadLiveSnapshot(sessionId, generation);
         }
         return loadDurableHistory().then(function (history) {
+          self.sessionClosed = true;
           self.setComposerEnabled(false);
           self.showRecoveryActions({
             recoverable: route.recoverable,
             history_url: "/api/agent/history/" + sessionId,
           });
+          self.renderSessionActions({ terminal: true, recoverable: route.recoverable === true });
           if (route.recoverable) {
             self._setRecoveryControl(true, "Recover session");
             self.addBubble("system", "PA restored this session's durable history. Reconnect it to continue.", new Date().toISOString(), { system: true, forceVisible: true });
@@ -1004,6 +1094,7 @@
         self.showRecoveryActions({});
         self.applySnapshot(snap);
         self.sessionClosed = false;
+        self.renderSessionActions({ terminal: false, recoverable: false });
         self.setComposerEnabled(true);
         self.connectSSE();
         refreshSessionList(targetSessionId);
@@ -1350,8 +1441,25 @@
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
     this.sessionClosed = session.status === "closed";
+    if (!this.sessionClosed) this.sessionRecoverable = false;
     if (this.drafts) this.drafts.onSnapshot(snap);
     this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
+    this.renderSessionActions();
+    const handoffs = snap.restart_handoffs || [];
+    const handoff = handoffs.length ? handoffs[handoffs.length - 1] : null;
+    if (handoff && this.els.sessionActionStatus) {
+      const labels = {
+        requested: "Restart requested.",
+        waiting_for_turn_end: "Restart requested; waiting for this turn to end and flush.",
+        quiescing: "Turn ended; PA is quiescing sessions.",
+        restarting: "PA is restarting.",
+        resuming: "PA restarted; resuming the exact session.",
+        continuation_queued: "Session resumed; continuation is queued in order.",
+        continuation_delivered: "Post-restart continuation delivered.",
+        failed: "Restart handoff failed: " + (handoff.error || "operator repair and retry required.")
+      };
+      this.els.sessionActionStatus.textContent = labels[handoff.status] || handoff.status;
+    }
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
     }
@@ -1372,6 +1480,9 @@
       this.olderCursor = snap.transcript_page && (
         snap.transcript_page.next_before_seq || snap.transcript_page.oldest_seq
       );
+      this.hasNewer = !!(snap.transcript_page && snap.transcript_page.has_newer);
+      this.newerCursor = snap.transcript_page && snap.transcript_page.newest_seq;
+      this.newerError = "";
       this.olderError = "";
       this.renderTranscript(snap.transcript || [], { scrollBottom: true });
     }
@@ -1422,14 +1533,150 @@
     if (!this.els.loadOlder) return;
     this.els.loadOlder.hidden = !this.hasOlder && !this.olderError;
     this.els.loadOlder.disabled = this.loadingOlder;
-    this.els.loadOlder.textContent = this.loadingOlder
-      ? "Loading…"
+    const label = this.loadingOlder ? "Loading older messages…"
       : this.olderError ? "Retry loading older messages" : "Load older messages";
+    if (this.els.loadOlderLabel) this.els.loadOlderLabel.textContent = label;
+    else this.els.loadOlder.textContent = label;
+    if (this.els.historySpinner) this.els.historySpinner.hidden = !this.loadingOlder;
     this.els.loadOlder.setAttribute("aria-busy", this.loadingOlder ? "true" : "false");
     if (this.els.loadOlderStatus) {
-      this.els.loadOlderStatus.hidden = !this.olderError;
-      this.els.loadOlderStatus.textContent = this.olderError;
+      const status = this.loadingOlder ? "Loading older messages." : this.olderError;
+      this.els.loadOlderStatus.hidden = !status;
+      this.els.loadOlderStatus.textContent = status;
     }
+  };
+
+  AgentChatWidget.prototype.updateNewerControl = function () {
+    if (!this.els || !this.els.loadNewer) return;
+    this.els.loadNewer.hidden = !this.hasNewer && !this.newerError;
+    this.els.loadNewer.disabled = this.loadingNewer;
+    this.els.loadNewer.textContent = this.loadingNewer
+      ? "Loading…"
+      : this.newerError ? "Retry loading newer messages" : "Load newer messages";
+    this.els.loadNewer.setAttribute("aria-busy", this.loadingNewer ? "true" : "false");
+    if (this.els.loadNewerStatus) {
+      this.els.loadNewerStatus.hidden = !this.newerError;
+      this.els.loadNewerStatus.textContent = this.newerError;
+    }
+  };
+
+  AgentChatWidget.prototype._boundedEvents = function (events, keepOldest) {
+    if (events.length <= MAX_RETAINED_EVENTS) return events;
+    if (keepOldest) {
+      this.hasNewer = true;
+      return events.slice(0, MAX_RETAINED_EVENTS);
+    }
+    this.hasOlder = true;
+    return events.slice(events.length - MAX_RETAINED_EVENTS);
+  };
+
+  AgentChatWidget.prototype._rebuildSeenEvents = function () {
+    const self = this;
+    this.seenEvents = {};
+    this.transcriptEvents.forEach(function (event) {
+      const key = self._eventKey(event);
+      if (key) self.seenEvents[key] = true;
+    });
+  };
+
+  AgentChatWidget.prototype._pruneMessageRows = function (keepOldest) {
+    if (
+      !this.els || !this.els.messages ||
+      typeof this.els.messages.querySelectorAll !== "function"
+    ) return;
+    if (this.messageRowCount != null && this.messageRowCount <= MAX_MESSAGE_ROWS) return;
+    let rows = Array.from(this.els.messages.querySelectorAll(".acw-msg"));
+    const oldHeight = this.els.messages.scrollHeight;
+    const oldTop = this.els.messages.scrollTop;
+    const activeRows = {};
+    Object.keys(this.streaming).forEach(function (key) {
+      const row = this.streaming[key] && this.streaming[key].row;
+      if (row) activeRows[key] = row;
+    }, this);
+    while (rows.length > MAX_MESSAGE_ROWS) {
+      const candidates = keepOldest ? rows.slice().reverse() : rows;
+      const row = candidates.find(function (candidate) {
+        return Object.keys(activeRows).every(function (key) { return activeRows[key] !== candidate; });
+      });
+      if (!row) break;
+      row.remove();
+      rows = rows.filter(function (candidate) { return candidate !== row; });
+    }
+    this.messageRowCount = rows.length;
+    if (!keepOldest) {
+      this.els.messages.scrollTop = Math.max(
+        0,
+        oldTop - Math.max(0, oldHeight - this.els.messages.scrollHeight)
+      );
+    }
+  };
+
+  AgentChatWidget.prototype.memoryDiagnostics = function () {
+    const messageRows = this.els && this.els.messages
+      ? this.els.messages.querySelectorAll(".acw-msg").length : 0;
+    const activityRows = this.els && this.els.toolActivity
+      ? this.els.toolActivity.querySelectorAll(".acw-tool,.acw-progress-update").length : 0;
+    return {
+      retainedEvents: this.transcriptEvents.length,
+      dedupeKeys: Object.keys(this.seenEvents).length,
+      messageRows: messageRows,
+      activityRows: activityRows,
+      streams: Object.keys(this.streaming).length,
+      activityStreams: Object.keys(this.activityStreams).length,
+      toolTimers: Object.keys(this.toolTimers).length,
+      plans: this.plans.length,
+      bounds: {
+        retainedEvents: MAX_RETAINED_EVENTS,
+        messageRows: MAX_MESSAGE_ROWS,
+        activityRows: MAX_ACTIVITY_ROWS,
+        plans: MAX_PLANS,
+        streamChars: MAX_STREAM_CHARS,
+      },
+    };
+  };
+
+  AgentChatWidget.prototype.prependTranscript = function (events) {
+    const self = this;
+    const page = [];
+    const known = {};
+    this.transcriptEvents.forEach(function (event) {
+      const key = self._eventKey(event);
+      if (key) known[key] = true;
+    });
+    (events || []).forEach(function (event) {
+      const normalized = self._normalizeEvent(event);
+      const key = self._eventKey(normalized);
+      if (key && known[key]) return;
+      if (key) known[key] = true;
+      page.push(normalized);
+    });
+    page.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
+    if (!page.length) return 0;
+
+    const existingChildren = Array.from(this.els.messages.children);
+    const existingSet = new Set(existingChildren);
+    const anchor = existingChildren.find(function (child) {
+      return !child.hasAttribute("data-acw-placeholder") &&
+        !child.hasAttribute("data-acw-load-older") &&
+        !child.hasAttribute("data-acw-load-older-status") &&
+        !child.hasAttribute("data-acw-load-newer") &&
+        !child.hasAttribute("data-acw-load-newer-status");
+    }) || null;
+    page.forEach(function (event) { self.handleEvent(event, true, false); });
+    const inserted = Array.from(this.els.messages.children).filter(function (child) {
+      return !existingSet.has(child);
+    });
+    const fragment = document.createDocumentFragment();
+    inserted.forEach(function (child) { fragment.appendChild(child); });
+    if (anchor) this.els.messages.insertBefore(fragment, anchor);
+    else this.els.messages.appendChild(fragment);
+    this.transcriptEvents = this._boundedEvents(page.concat(this.transcriptEvents).sort(function (a, b) {
+      return (a.seq || 0) - (b.seq || 0);
+    }), true);
+    this._rebuildSeenEvents();
+    this._pruneMessageRows(true);
+    this.clearPlaceholder();
+    return page.length;
   };
 
   AgentChatWidget.prototype.renderTranscript = function (events, options) {
@@ -1446,7 +1693,8 @@
       unique.push(normalized);
     });
     unique.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
-    this.transcriptEvents = unique;
+    this.transcriptEvents = this._boundedEvents(unique, !!options.keepOldest);
+    const retained = this.transcriptEvents;
     this.seenEvents = {};
     Object.keys(this.toolTimers).forEach(function (id) {
       const timer = self.toolTimers[id];
@@ -1459,19 +1707,25 @@
       if (
         !child.hasAttribute("data-acw-placeholder") &&
         !child.hasAttribute("data-acw-load-older") &&
-        !child.hasAttribute("data-acw-load-older-status")
+        !child.hasAttribute("data-acw-load-older-status") &&
+        !child.hasAttribute("data-acw-load-newer") &&
+        !child.hasAttribute("data-acw-load-newer-status")
       ) child.remove();
     });
+    this.messageRowCount = 0;
     this.streaming = {};
     this.updateOlderControl();
-    if (!unique.length) {
+    this.updateNewerControl();
+    if (!retained.length) {
       this.setPlaceholder("Send a message to the agent.");
       return;
     }
     this.clearPlaceholder();
-    unique.forEach(function (event) {
+    retained.forEach(function (event) {
       self.handleEvent(event, true, false);
     });
+    this._rebuildSeenEvents();
+    this._pruneMessageRows(!!options.keepOldest);
     if (options.scrollBottom) this.scrollToBottom();
   };
 
@@ -1482,16 +1736,29 @@
     }, 0);
     if (!oldest) return;
     const self = this;
+    const requestSessionId = this.sessionId;
+    const requestGeneration = this.subscriptionGeneration;
+    const requestedSession = this.sessionId;
+    const requestedApiBase = this.apiBase;
+    const controller = new AbortController();
+    this.olderAbortController = controller;
+    const requestStarted = performance.now();
     const status = this.els.status && this.els.status.dataset.state;
     const wasPrompting = this.prompting;
-    const startedAt = this.turnStartedAt && this.turnStartedAt.toISOString();
+    const startedAt = this.turnStartedAt && new Date(this.turnStartedAt).toISOString();
     this.loadingOlder = true;
     this.olderError = "";
     this.updateOlderControl();
     this.api(
       "/history/" + encodeURIComponent(this.sessionId) +
-      "?before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT
+      "?before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
+      { signal: controller.signal }
     ).then(function (data) {
+      if (
+        self.destroyed || controller.signal.aborted ||
+        self.sessionId !== requestSessionId || self.sessionId !== requestedSession ||
+        self.subscriptionGeneration !== requestGeneration || self.apiBase !== requestedApiBase
+      ) return;
       const pageEvents = data && data.events || [];
       self.hasOlder = !!(data && data.page && data.page.has_older);
       self.olderCursor = data && data.page && (
@@ -1501,7 +1768,12 @@
       const oldTop = self.els.messages.scrollTop;
       // Read transcriptEvents only after the request resolves. It may now include
       // SSE events that arrived while the durable page was in flight.
-      self.renderTranscript(pageEvents.concat(self.transcriptEvents), { scrollBottom: false });
+      const renderStarted = performance.now();
+      const insertedCount = self.prependTranscript(pageEvents);
+      const renderMs = performance.now() - renderStarted;
+      self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
+        return event.seq && event.seq > result ? event.seq : result;
+      }, 0) || null;
       self.setTurnActive(wasPrompting, startedAt);
       if (status) self.setStatus(status);
       self.els.messages.scrollTop = anchoredScrollTop(
@@ -1509,11 +1781,74 @@
         oldHeight,
         self.els.messages.scrollHeight
       );
+      const totalMs = performance.now() - requestStarted;
+      self.lastHistoryTiming = {
+        total_ms: totalMs,
+        network_and_parse_ms: renderStarted - requestStarted,
+        render_ms: renderMs,
+        events: insertedCount,
+        server: data && data.diagnostics || null
+      };
+      console.debug("[PA agent history] page loaded", self.lastHistoryTiming);
+      if (totalMs > TRANSCRIPT_LATENCY_BUDGET_MS) {
+        console.warn("[PA agent history] interactive latency budget exceeded", self.lastHistoryTiming);
+      }
     }).catch(function (err) {
+      if (err && err.name === "AbortError") return;
+      if (
+        self.destroyed || self.sessionId !== requestSessionId ||
+        self.sessionId !== requestedSession || self.subscriptionGeneration !== requestGeneration ||
+        self.apiBase !== requestedApiBase
+      ) return;
       self.olderError = "Could not load older messages: " + err.message;
     }).finally(function () {
+      if (self.olderAbortController !== controller) return;
+      self.olderAbortController = null;
+      if (
+        self.destroyed || self.sessionId !== requestSessionId ||
+        self.subscriptionGeneration !== requestGeneration
+      ) return;
       self.loadingOlder = false;
       self.updateOlderControl();
+    });
+  };
+
+  AgentChatWidget.prototype.loadNewerTranscript = function () {
+    if (this.loadingNewer || (!this.hasNewer && !this.newerError) || !this.sessionId || !this.els.messages) return;
+    const newest = this.newerCursor || this.transcriptEvents.reduce(function (result, event) {
+      return event.seq && event.seq > result ? event.seq : result;
+    }, 0);
+    if (!newest) return;
+    const self = this;
+    const requestSessionId = this.sessionId;
+    const requestGeneration = this.subscriptionGeneration;
+    const oldHeight = this.els.messages.scrollHeight;
+    const oldTop = this.els.messages.scrollTop;
+    this.loadingNewer = true;
+    this.newerError = "";
+    this.updateNewerControl();
+    this.api(
+      "/history/" + encodeURIComponent(this.sessionId) +
+      "?after_seq=" + newest + "&limit=" + TRANSCRIPT_PAGE_LIMIT
+    ).then(function (data) {
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      const pageEvents = data && data.events || [];
+      self.hasNewer = !!(data && data.page && data.page.has_newer);
+      self.renderTranscript(self.transcriptEvents.concat(pageEvents), { scrollBottom: false });
+      self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
+        return event.seq && event.seq > result ? event.seq : result;
+      }, 0) || null;
+      self.olderCursor = self.transcriptEvents.reduce(function (result, event) {
+        return event.seq && (!result || event.seq < result) ? event.seq : result;
+      }, 0) || null;
+      self.els.messages.scrollTop = Math.max(0, oldTop - Math.max(0, oldHeight - self.els.messages.scrollHeight));
+    }).catch(function (err) {
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      self.newerError = "Could not load newer messages: " + err.message;
+    }).finally(function () {
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      self.loadingNewer = false;
+      self.updateNewerControl();
     });
   };
 
@@ -1663,6 +1998,8 @@
     this.destroyed = true;
     if (this.routeAbortController) this.routeAbortController.abort();
     this.routeAbortController = null;
+    if (this.olderAbortController) this.olderAbortController.abort();
+    this.olderAbortController = null;
     this.closeSSE(reason || "widget-destroyed");
     this.stopBrowserRefresh();
     this.setTurnActive(false);
@@ -1671,22 +2008,47 @@
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     this.liveStateRetryId = null;
     Object.keys(this.toolTimers).forEach(function (key) {
-      clearTimeout(this.toolTimers[key]);
+      const timer = this.toolTimers[key];
+      if (timer && timer.interval) clearInterval(timer.interval);
     }, this);
     this.toolTimers = {};
+    this.clearPendingImages();
+    this.transcriptEvents = [];
+    this.seenEvents = {};
+    this.streaming = {};
+    this.resetArtifacts();
+    if (this.els.messages) {
+      Array.from(this.els.messages.querySelectorAll(".acw-msg")).forEach(function (row) { row.remove(); });
+    }
     if (this.root && this.root._acw === this) this.root._acw = null;
   };
 
   AgentChatWidget.prototype.handleEvent = function (event, replay, record) {
     if (!event) return;
     event = this._normalizeEvent(event);
+    const seq = event.seq || 0;
+    // Retired dedupe keys are safe to discard because a live transport must
+    // never apply a sequence at or behind the high-water mark again.
+    if (!replay && seq && seq <= this.lastSeq) return;
     const eventKey = this._eventKey(event);
     if (eventKey && this.seenEvents[eventKey]) return;
     if (eventKey) this.seenEvents[eventKey] = true;
-    if (record !== false) this.transcriptEvents.push(event);
+    if (record !== false) {
+      this.transcriptEvents.push(event);
+      if (this.transcriptEvents.length > MAX_RETAINED_EVENTS) {
+        // When the user is browsing an older durable page, retain that window
+        // and let forward paging retrieve live arrivals from durable storage.
+        // Active stream/tool UI state is maintained independently below.
+        const evicted = this.hasNewer
+          ? this.transcriptEvents.pop()
+          : this.transcriptEvents.shift();
+        const evictedKey = this._eventKey(evicted);
+        if (evictedKey) delete this.seenEvents[evictedKey];
+        this.hasOlder = true;
+      }
+    }
     const shouldFollow = !replay && this.isNearBottom();
     const self = this;
-    const seq = event.seq || 0;
     if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
     const type = event.type || event.event_type;
     const payload = event.payload || {};
@@ -1823,6 +2185,7 @@
       default:
         break;
     }
+    this._pruneMessageRows(!!this.hasNewer);
     if (!replay && shouldFollow) this.scrollToBottom();
   };
 
@@ -1869,6 +2232,7 @@
       row.appendChild(time);
     }
     this.els.messages.appendChild(row);
+    this.messageRowCount = (this.messageRowCount || 0) + 1;
     return { row: row, bubble: bubble };
   };
 
@@ -2001,6 +2365,10 @@
     }
     const next = chunk || "";
     stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (stream.text.length > MAX_STREAM_CHARS) {
+      stream.text = "[… earlier streamed text is available in durable history …]\n" +
+        stream.text.slice(-MAX_STREAM_CHARS);
+    }
     stream.bubble.dataset.markdown = stream.text;
     this.renderMarkdownBubble(stream.bubble);
   };
@@ -2057,8 +2425,32 @@
     }
     const next = chunk || "";
     stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (stream.text.length > MAX_STREAM_CHARS) {
+      stream.text = "[… earlier progress is available in durable history …]\n" +
+        stream.text.slice(-MAX_STREAM_CHARS);
+    }
     stream.el.textContent = stream.text;
+    this._pruneActivityRows();
     this.followToolActivity(shouldFollow);
+  };
+
+  AgentChatWidget.prototype._pruneActivityRows = function () {
+    if (!this.els.toolActivity || this.activityCount == null || this.activityCount <= MAX_ACTIVITY_ROWS) return;
+    let rows = Array.from(this.els.toolActivity.querySelectorAll(".acw-tool,.acw-progress-update"));
+    while (rows.length > MAX_ACTIVITY_ROWS) {
+      const stale = rows.find(function (row) {
+        return !row.dataset.toolId || !this.activeToolIds[row.dataset.toolId];
+      }, this);
+      if (!stale) break;
+      const staleId = stale.dataset.toolId;
+      if (staleId && this.toolTimers[staleId]) {
+        if (this.toolTimers[staleId].interval) clearInterval(this.toolTimers[staleId].interval);
+        delete this.toolTimers[staleId];
+      }
+      stale.remove();
+      rows = rows.filter(function (row) { return row !== stale; });
+    }
+    this.activityCount = rows.length;
   };
 
   AgentChatWidget.prototype.finalizeActivity = function () {
@@ -2101,6 +2493,7 @@
       tick();
       this.toolTimers[id].interval = setInterval(tick, 500);
     }
+    this._pruneActivityRows();
     const title = el.querySelector(".acw-tool-title");
     const status = el.querySelector(".acw-tool-status");
     if (title) title.textContent = payload.title || payload.kind || "Tool";
@@ -2177,6 +2570,13 @@
     if (isNew) {
       index = this.plans.length;
       this.plans.push({ key: planKey });
+      if (this.plans.length > MAX_PLANS) {
+        this.plans.shift();
+        index -= 1;
+        if (this.els.planList && this.els.planList.firstElementChild) {
+          this.els.planList.firstElementChild.remove();
+        }
+      }
     }
     this.plans[index] = {
       key: planKey,
@@ -2191,7 +2591,9 @@
       button.type = "button";
       button.className = "ghost";
       button.dataset.planKey = planKey;
-      button.addEventListener("click", function () { self.selectPlan(index); });
+      button.addEventListener("click", function () {
+        self.selectPlan(self.plans.findIndex(function (plan) { return plan.key === planKey; }));
+      });
       item.appendChild(button);
       this.els.planList.appendChild(item);
     }
@@ -2551,6 +2953,8 @@
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
     this.closeSSE("session-switched");
+    if (this.olderAbortController) this.olderAbortController.abort();
+    this.olderAbortController = null;
     this.lastSeq = 0;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -2558,7 +2962,12 @@
     this.olderCursor = null;
     this.loadingOlder = false;
     this.olderError = "";
+    this.hasNewer = false;
+    this.newerCursor = null;
+    this.loadingNewer = false;
+    this.newerError = "";
     this.updateOlderControl();
+    this.updateNewerControl();
     this.streaming = {};
     this.lastSnapshot = null;
     this.renderTranscript([], { scrollBottom: false });
@@ -2570,6 +2979,8 @@
     const next = String(apiBase || "/api/agent").replace(/\/$/, "");
     if (next === this.apiBase) return;
     this.closeSSE("api-base-changed");
+    if (this.olderAbortController) this.olderAbortController.abort();
+    this.olderAbortController = null;
     this.stopBrowserRefresh();
     this.apiBase = next;
     this.root.dataset.apiBase = next;
@@ -2588,9 +2999,15 @@
     this.olderCursor = null;
     this.loadingOlder = false;
     this.olderError = "";
+    this.hasNewer = false;
+    this.newerCursor = null;
+    this.loadingNewer = false;
+    this.newerError = "";
     this.updateOlderControl();
+    this.updateNewerControl();
     this.streaming = {};
     this.lastSnapshot = null;
+    this.renderTranscript([], { scrollBottom: false });
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setPlaceholder("Select or start a remote session.");
@@ -2706,10 +3123,12 @@
   AgentChatWidget.prototype.markSessionEnded = function (message) {
     const endedMessage = message || "Session ended.";
     this.sessionClosed = true;
+    this.closePending = false;
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setComposerEnabled(false);
     this.closeSSE("session-ended");
+    this.renderSessionActions();
     this.addBubble("system", endedMessage, new Date().toISOString(), {
       system: true,
       forceVisible: true,
@@ -3041,12 +3460,26 @@
 
   AgentChatWidget.prototype.closeSession = function () {
     const self = this;
-    if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" }).then(function () {
+    if (!this.sessionId || this.sessionClosed || this.closePending) return;
+    const targetSessionId = this.sessionId;
+    const generation = this.subscriptionGeneration;
+    this.closePending = true;
+    this.renderSessionActions();
+    this.api("/sessions/" + targetSessionId + "/close", { method: "POST", body: "{}" }).then(function (result) {
+      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
       if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
       self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
+      const recovery = result && result.recovery || {};
+      self.showRecoveryActions({
+        recoverable: recovery.recoverable,
+        history_url: "/api/agent/history/" + targetSessionId,
+      });
+      self.renderSessionActions({ terminal: true, recoverable: recovery.recoverable === true });
       refreshSessionList(null);
     }).catch(function (err) {
+      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
+      self.closePending = false;
+      self.renderSessionActions();
       self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
     });
   };
@@ -3072,29 +3505,8 @@
   };
 
   AgentChatWidget.prototype.restartSession = function () {
-    const self = this;
-    if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId + "/close", { method: "POST", body: "{}" })
-      .then(function () {
-        self.closeSSE("session-restarted");
-        if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
-        if (self.drafts) self.drafts.switchSession("");
-        self.sessionId = "";
-        self.root.dataset.sessionId = "";
-        self.lastSeq = 0;
-        self.streaming = {};
-        Object.keys(self.toolTimers).forEach(function (id) {
-          const timer = self.toolTimers[id];
-          if (timer && timer.interval) clearInterval(timer.interval);
-        });
-        self.toolTimers = {};
-        self.setTurnActive(false);
-        self.setPlaceholder("Restarting session…");
-        self.init();
-      })
-      .catch(function (err) {
-        self.addBubble("system", err.message, new Date().toISOString(), { system: true, forceVisible: true });
-      });
+    if (!this.sessionId || !this.sessionClosed || !this.sessionRecoverable) return;
+    return this.recoverSession(this.sessionId);
   };
 
   AgentChatWidget.prototype.queueControl = function (action) {

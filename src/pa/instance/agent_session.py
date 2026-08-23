@@ -45,7 +45,7 @@ from pa.browser.manager import BrowserManager
 from pa.config import Settings
 from pa.core.async_runtime import AsyncRuntimeClosed
 from pa.core.preferences import get_preferences_store
-from pa.domain.models import AgentSession, TranscriptEvent
+from pa.domain.models import AgentSession, RestartHandoff, TranscriptEvent
 from pa.domain.store import Store
 from pa.execution.progress import sanitize_text
 from pa.instance.quiesce import (
@@ -85,6 +85,26 @@ _TURN_STREAM_EVENT_TYPES = {
     "plan",
 }
 PromptAction = Literal["append", "prepend", "interrupt"]
+
+_AUTOMATIC_PROMPT_PREFIXES = (
+    "card-reconciliation:",
+    "pr-supervisor",
+    "post-turn",
+    "evaluation",
+    "reconciliation",
+)
+
+
+def _prompt_authority(source: str, action: PromptAction) -> tuple[int, str]:
+    """Return deterministic durable ordering; lower values run first."""
+    normalized = (source or "api").strip().casefold()
+    if action == "interrupt":
+        return 0, "operator_interrupt"
+    if normalized in {"api", "ui", "operator", "in_flight"}:
+        return 10, "operator_input"
+    if normalized.startswith(_AUTOMATIC_PROMPT_PREFIXES):
+        return 200, "automatic_reconciliation"
+    return 100, f"source:{normalized or 'unknown'}"
 _DURABLE_RUNTIME_KEY = "durable_runtime"
 RECOVERY_BLOCKED_STATUS = "recovery_blocked"
 AUTO_RECOVERY_SESSION_STATUSES = frozenset(
@@ -906,6 +926,7 @@ class AgentSessionRuntime:
         self,
         *,
         resume_external_id: str | None = None,
+        require_restore: bool = False,
         queued_prompts: list[QueuedPrompt] | None = None,
         queue_paused: bool = False,
         provider_spec=None,
@@ -956,6 +977,7 @@ class AgentSessionRuntime:
         try:
             self.session = await self.connection.connect(
                 resume_external_id=resume_external_id,
+                require_restore=require_restore,
                 cwd=self.session.cwd,
                 existing_session=self.session,
                 title=self.session.title,
@@ -1013,12 +1035,22 @@ class AgentSessionRuntime:
         # Persist resolved provider id on the session.
         if self.connection and self.connection.agent_name:
             self.session.agent_name = self.connection.agent_name
+            config = dict(self.session.config_json or {})
+            config["provider_session_recovery"] = {
+                "resume": bool(self.connection._resume_supported),
+                "load": bool(self.connection._load_supported),
+            }
+            self.session.config_json = config
             await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
             for item in queued_prompts:
                 item.session_id = self.session_id
-            self._queue = list(queued_prompts)
+                if "priority" not in item.model_fields_set:
+                    item.priority, item.turn_reason = _prompt_authority(
+                        item.source, "append"
+                    )
+            self._queue = sorted(queued_prompts, key=lambda item: item.priority)
         self._append_transcript(
             "session_started",
             {
@@ -1151,11 +1183,39 @@ class AgentSessionRuntime:
             if self.manager.quiescing:
                 break
             item = self._queue.pop(0)
+            if item.source.startswith("restart-handoff:"):
+                handoff_id = item.source.split(":", 1)[1]
+                await self._offload(
+                    "sqlite.restart_handoff_delivering",
+                    self.store.update_restart_handoff,
+                    handoff_id,
+                    status="continuation_delivered",
+                    delivered=True,
+                )
             self._append_transcript(
-                "queue_dequeued", {"id": item.id, "message": item.message}
+                "queue_dequeued",
+                {
+                    "id": item.id,
+                    "message": item.message,
+                    "source": item.source,
+                    "priority": item.priority,
+                    "turn_reason": item.turn_reason,
+                    "supersedes": item.supersedes,
+                },
             )
             try:
                 await self._run_prompt(item)
+                if item.publication_fence:
+                    self._queue_paused = True
+                    self._append_transcript(
+                        "publication_fence_established",
+                        {
+                            "prompt_id": item.id,
+                            "reason": item.turn_reason,
+                            "queued_prompts_blocked": len(self._queue),
+                        },
+                    )
+                    await self._checkpoint_runtime_async(lifecycle="paused_for_review")
             except Exception as exc:
                 logger.exception("Queued prompt failed for session %s", self.session_id)
                 self._append_transcript(
@@ -1213,6 +1273,10 @@ class AgentSessionRuntime:
                     )
                     self._flush_transcript()
                 return queued
+        priority, turn_reason = _prompt_authority(source, action)
+        supersedes = [
+            queued.id for queued in self._queue if queued.priority > priority
+        ]
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1224,13 +1288,18 @@ class AgentSessionRuntime:
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
             source=source,
+            priority=priority,
+            turn_reason=turn_reason,
+            supersedes=supersedes,
+            publication_fence=action == "interrupt",
             prompt_audit=list(prompt_audit or []),
             acceptance_result=acceptance_result,
         )
-        if action == "prepend":
+        if action in {"prepend", "interrupt"}:
             self._queue.insert(0, item)
         else:
             self._queue.append(item)
+        self._queue.sort(key=lambda queued: queued.priority)
         self._append_transcript(
             "queue_enqueued",
             {
@@ -1238,8 +1307,11 @@ class AgentSessionRuntime:
                 "message": message,
                 "images": [image.public_dict() for image in item.images],
                 "action": action,
-                "position": 0 if action == "prepend" else len(self._queue) - 1,
+                "position": self._queue.index(item),
                 "source": source,
+                "priority": item.priority,
+                "turn_reason": item.turn_reason,
+                "supersedes": item.supersedes,
                 "acceptance_result": item.acceptance_result,
             },
         )
@@ -1302,6 +1374,7 @@ class AgentSessionRuntime:
                 )
                 return "queued"
 
+        priority, turn_reason = _prompt_authority("in_flight", action)
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1313,6 +1386,9 @@ class AgentSessionRuntime:
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
             source="in_flight",
+            priority=priority,
+            turn_reason=turn_reason,
+            publication_fence=action == "interrupt",
         )
         if not wait and not _from_queue:
             # Chat UI / SSE path: accept immediately and run the turn in the background.
@@ -1343,7 +1419,19 @@ class AgentSessionRuntime:
             self._flush_transcript()
             self._start_drain()
             return "started"
-        return await self._run_prompt(item)
+        result = await self._run_prompt(item)
+        if item.publication_fence:
+            self._queue_paused = True
+            self._append_transcript(
+                "publication_fence_established",
+                {
+                    "prompt_id": item.id,
+                    "reason": item.turn_reason,
+                    "queued_prompts_blocked": len(self._queue),
+                },
+            )
+            await self._checkpoint_runtime_async(lifecycle="paused_for_review")
+        return result
 
     def _validated_cwd(self, requested: str | None) -> str | None:
         """Keep every turn inside the workspace fenced to this session."""
@@ -2033,6 +2121,14 @@ class AgentSessionRuntime:
                 for rid in getattr(self, "_pending_elicitations", {})
                 if rid in getattr(self, "_elicitation_requests", {})
             ],
+            "restart_handoffs": [
+                item.model_dump(mode="json")
+                for item in (
+                    self.store.list_restart_handoffs(session_id=self.session_id)
+                    if callable(getattr(self.store, "list_restart_handoffs", None))
+                    else []
+                )
+            ],
         }
         if include_transcript:
             snapshot["transcript"] = [e.model_dump(mode="json") for e in events]
@@ -2205,6 +2301,8 @@ class AgentSessionManager:
         self._startup_recovered = 0
         self._startup_failed = 0
         self._startup_session_id: str | None = None
+        self._startup_decisions: list[dict[str, str]] = []
+        self._restart_handoff_tasks: dict[str, asyncio.Task[None]] = {}
         self._default_label = "default"
         self._lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
@@ -2359,6 +2457,7 @@ class AgentSessionManager:
         self._startup_recovered = 0
         self._startup_failed = 0
         self._startup_session_id = None
+        self._startup_decisions = []
 
     def complete_startup(self, error: BaseException | None = None) -> None:
         self._startup_error = str(error)[:1000] if error else None
@@ -2384,6 +2483,10 @@ class AgentSessionManager:
             "session_id": self._startup_session_id,
         }
 
+    def startup_recovery_diagnostics(self) -> list[dict[str, str]]:
+        """Explain per-session startup decisions after the snapshot is cleared."""
+        return list(self._startup_decisions)
+
     def require_startup_complete(self) -> None:
         if not self._startup_complete:
             raise AgentStartupNotReady(
@@ -2403,6 +2506,76 @@ class AgentSessionManager:
         """Provision or recover the durable workspace before spawning a provider."""
         prior_config = dict(session.config_json or {})
         prior_context = dict(prior_config.get("execution_context") or {})
+        binding = dict(session.execution_binding or {})
+        persisted_binding = dict(binding)
+        if not binding:
+            # Legacy repair deliberately prefers the durable lease over mutable
+            # card associations.  This preserves both records and recovers the
+            # provider against the fence that actually owns its worktree.
+            leases = await self._offload(
+                "workspace.session_leases",
+                lambda: [
+                    lease for lease in self.workspace_manager.list()
+                    if lease.session_id == session.id and lease.state != "cleaned"
+                ],
+                timeout=30.0,
+            )
+            legacy_context_repos = list(prior_context.get("repositories") or [])
+            if leases:
+                first = leases[0]
+                binding = {
+                    "version": 1,
+                    "repository_ids": [lease.repository_id for lease in leases],
+                    "execution_card_id": first.card_id,
+                    "execution_project_id": first.project_id,
+                    "worktree_paths": [lease.worktree_path for lease in leases],
+                    "lease_ids": [lease.id for lease in leases],
+                    "branch": first.branch,
+                    "base_sha": first.base_sha,
+                    "cwd": first.worktree_path,
+                    "origin_instance_id": session.origin_instance_id,
+                    "legacy_mismatch": bool(
+                        first.card_id != session.card_id
+                        or first.project_id != session.project_id
+                    ),
+                }
+            elif legacy_context_repos:
+                binding = {
+                    "version": 1,
+                    "repository_ids": [
+                        str(repo.get("repository_id")) for repo in legacy_context_repos
+                        if repo.get("repository_id")
+                    ],
+                    "execution_card_id": prior_context.get("card_id", session.card_id),
+                    "execution_project_id": prior_context.get("project_id", session.project_id),
+                    "worktree_paths": [
+                        str(repo.get("worktree_path")) for repo in legacy_context_repos
+                        if repo.get("worktree_path")
+                    ],
+                    "lease_ids": [str(repo.get("lease_id")) for repo in legacy_context_repos if repo.get("lease_id")],
+                    "cwd": prior_context.get("cwd") or session.cwd,
+                    "origin_instance_id": session.origin_instance_id,
+                }
+            else:
+                binding = {
+                    "version": 1,
+                    "execution_card_id": session.card_id,
+                    "execution_project_id": session.project_id,
+                    "origin_instance_id": session.origin_instance_id,
+                }
+            if leases or legacy_context_repos:
+                await self._offload(
+                    "sqlite.execution_binding_legacy_repair",
+                    self.store.set_session_execution_binding,
+                    session.id,
+                    binding,
+                    reason="legacy_workspace_recovered",
+                    expected_binding=persisted_binding,
+                )
+                session.execution_binding = dict(binding)
+                persisted_binding = dict(session.execution_binding or {})
+        execution_card_id = binding.get("execution_card_id")
+        execution_project_id = binding.get("execution_project_id")
         prior_authority = dict(prior_context.get("authority_instance") or {})
         prior_attachments = dict(prior_context.get("attachments") or {})
         materialization_plan = dict(prior_context.get("materialization_plan") or {})
@@ -2431,6 +2604,18 @@ class AgentSessionManager:
                     session.id,
                 )
                 requested_cwd = None
+                if binding.get("cwd"):
+                    binding.pop("cwd", None)
+                    await self._offload(
+                        "sqlite.execution_binding_stale_cwd_remove",
+                        self.store.set_session_execution_binding,
+                        session.id,
+                        binding,
+                        reason="stale_data_dir_cwd_removed",
+                        expected_binding=persisted_binding,
+                    )
+                    session.execution_binding = dict(binding)
+                    persisted_binding = dict(session.execution_binding or {})
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {
@@ -2445,22 +2630,22 @@ class AgentSessionManager:
         try:
             workspace = None
             if execution_profile == "repository":
-                if session.project_id:
+                if execution_project_id:
                     project = await self._offload(
                         "sqlite.project_read",
                         self.store.get_project,
-                        session.project_id,
+                        execution_project_id,
                     )
                     if project is None:
                         raise WorkspaceProvisioningError(
-                            f"Project {session.project_id} is not available on this instance; sync or link the project checkout, then retry workspace provisioning"
+                            f"Execution project {execution_project_id} is not available on this instance; sync or link the original project checkout, then retry exact-session recovery"
                         )
                     workspace = await self._offload(
                         "workspace.project_provision",
                         self.workspace_manager.provision_project,
-                        project_id=session.project_id,
+                        project_id=execution_project_id,
                         session_id=session.id,
-                        card_id=session.card_id,
+                        card_id=execution_card_id,
                         realm_id=getattr(
                             project, "realm_id", self.settings.primary_realm
                         ),
@@ -2475,7 +2660,7 @@ class AgentSessionManager:
                             materialization_plan.get("repositories") or []
                         ),
                         session_id=session.id,
-                        card_id=session.card_id,
+                        card_id=execution_card_id,
                         project_id=None,
                         realm_id=session.realm_id,
                         provider_id=provider_id,
@@ -2485,26 +2670,26 @@ class AgentSessionManager:
                     raise WorkspaceProvisioningError(
                         "Repository materialization did not produce a verified leased worktree"
                     )
-            elif not execution_profile and session.project_id:
+            elif not execution_profile and execution_project_id:
                 project = await self._offload(
-                    "sqlite.project_read", self.store.get_project, session.project_id
+                    "sqlite.project_read", self.store.get_project, execution_project_id
                 )
                 if project is None:
                     raise WorkspaceProvisioningError(
-                        f"Project {session.project_id} is not available on this instance; sync or link the project checkout, then retry workspace provisioning"
+                        f"Execution project {execution_project_id} is not available on this instance; sync or link the original project checkout, then retry exact-session recovery"
                     )
                 workspace = await self._offload(
                     "workspace.project_provision",
                     self.workspace_manager.provision_project,
-                    project_id=session.project_id,
+                    project_id=execution_project_id,
                     session_id=session.id,
-                    card_id=session.card_id,
+                    card_id=execution_card_id,
                     realm_id=getattr(project, "realm_id", self.settings.primary_realm),
                     provider_id=provider_id,
                     timeout=900.0,
                 )
             if workspace is None and (
-                execution_profile == "repository" or session.project_id
+                execution_profile == "repository" or execution_project_id
             ):
                 raise WorkspaceProvisioningError(
                     "Project has no linked repositories to provision"
@@ -2514,9 +2699,9 @@ class AgentSessionManager:
                     "workspace.scratch_provision",
                     self.workspace_manager.scratch_workspace,
                     session_id=session.id,
-                    card_id=session.card_id,
-                    project_id=session.project_id,
-                    requested_cwd=requested_cwd,
+                    card_id=execution_card_id,
+                    project_id=execution_project_id,
+                    requested_cwd=binding.get("cwd") or requested_cwd,
                     provider_id=provider_id,
                     workspace_kind=(
                         "operational"
@@ -2528,6 +2713,36 @@ class AgentSessionManager:
                     timeout=120.0,
                 )
             context = workspace.execution_context(self.settings, provider_id)
+            final_binding = dict(binding)
+            if not final_binding.get("cwd"):
+                repos = list(context.get("repositories") or [])
+                final_binding = {
+                    **final_binding,
+                    "repository_ids": [r.get("repository_id") for r in repos],
+                    "execution_card_id": execution_card_id,
+                    "execution_project_id": execution_project_id,
+                    "worktree_paths": [r.get("worktree_path") for r in repos],
+                    "lease_ids": [r.get("lease_id") for r in repos],
+                    "branch": repos[0].get("branch") if repos else None,
+                    "base_sha": repos[0].get("base_sha") if repos else None,
+                    "cwd": workspace.cwd,
+                    "origin_instance_id": session.origin_instance_id,
+                }
+            if final_binding != persisted_binding:
+                await self._offload(
+                    "sqlite.execution_binding_materialize",
+                    self.store.set_session_execution_binding,
+                    session.id,
+                    final_binding,
+                    reason=(
+                        "workspace_materialized"
+                        if persisted_binding
+                        else "workspace_binding_initialized"
+                    ),
+                    expected_binding=persisted_binding,
+                )
+                session.execution_binding = dict(final_binding)
+                persisted_binding = dict(session.execution_binding or {})
             execution_policy = provider_execution_policy(provider_id, mode_id)
             if execution_policy:
                 context["approval_policy"] = execution_policy["approval_policy"]
@@ -2557,7 +2772,7 @@ class AgentSessionManager:
             )
             return context_environment(context)
         except Exception as exc:
-            project_blocked = bool(session.project_id and _project_recovery_block(exc))
+            project_blocked = bool(execution_project_id and _project_recovery_block(exc))
             session.status = (
                 RECOVERY_BLOCKED_STATUS if project_blocked else "provisioning_failed"
             )
@@ -2592,7 +2807,7 @@ class AgentSessionManager:
             if project_blocked:
                 config["provisioning"]["retry_on"] = "project_availability_change"
             session.config_json = config
-            session.cwd = None
+            session.cwd = binding.get("cwd")
             await self._offload(
                 "sqlite.agent_session_save", self.store.save_session, session
             )
@@ -3071,6 +3286,13 @@ class AgentSessionManager:
                 eligibility = await self._automatic_recovery_eligibility(session)
                 if eligibility:
                     recovery_eligibility[session.id] = eligibility
+                    self._startup_decisions.append(
+                        {
+                            "session_id": session.id,
+                            "decision": "eager",
+                            "reason": eligibility,
+                        }
+                    )
                     if eligibility == "project_available":
                         logger.info(
                             "Project availability changed; retrying blocked ACP "
@@ -3079,6 +3301,13 @@ class AgentSessionManager:
                         )
                 elif session.status == RECOVERY_BLOCKED_STATUS:
                     self._startup_blocked += 1
+                    self._startup_decisions.append(
+                        {
+                            "session_id": session.id,
+                            "decision": "blocked",
+                            "reason": self._recovery_action(session),
+                        }
+                    )
                     logger.info(
                         "ACP recovery remains blocked for session %s: %s",
                         session.id,
@@ -3087,6 +3316,13 @@ class AgentSessionManager:
                 elif session.status != "closed":
                     if session.status in RECOVERY_RETAINED_SESSION_STATUSES:
                         self._startup_deferred += 1
+                        self._startup_decisions.append(
+                            {
+                                "session_id": session.id,
+                                "decision": "deferred",
+                                "reason": session.status,
+                            }
+                        )
                     logger.info(
                         "Deferring ACP recovery for session %s with passive "
                         "status %s",
@@ -3140,12 +3376,26 @@ class AgentSessionManager:
                         sess, snapshot or QuiesceSnapshot(reason="recovery")
                     )
                     self._startup_recovered += 1
+                    self._startup_decisions.append(
+                        {
+                            "session_id": sess.session_id or "",
+                            "decision": "recovered",
+                            "reason": "startup",
+                        }
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     if self._should_abort_recovery():
                         return
                     self._startup_failed += 1
+                    self._startup_decisions.append(
+                        {
+                            "session_id": sess.session_id or "",
+                            "decision": "failed",
+                            "reason": str(exc)[:1000],
+                        }
+                    )
                     self._last_error = str(exc)
                     recovery_state = await self._mark_recovery_interrupted(sess, exc)
                     if recovery_state == RECOVERY_BLOCKED_STATUS:
@@ -3210,11 +3460,169 @@ class AgentSessionManager:
                 self.settings.data_dir,
             )
 
+        if self._resume_on_start:
+            await self._resume_restart_handoffs()
+
         # A no-resume boot is intentionally inert until an explicit admission.
         # Durable nonterminal sessions remain recoverable on a later normal boot.
         # The default provider is admitted lazily by attach_default() when an
         # operator actually opens or prompts it. Startup must remain runtime-free
         # when every retained session is passive.
+
+    async def request_restart_handoff(
+        self, *, session_id: str, continuation_prompt: str,
+        idempotency_key: str,
+    ) -> RestartHandoff:
+        """Persist a self-restart receipt before waiting for the caller's turn."""
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session or session.status == "closed":
+            raise AgentSessionRecoveryError("Exact durable session is not recoverable")
+        prompt = continuation_prompt.strip()
+        if not prompt:
+            raise ValueError("continuation_prompt is required")
+        if not idempotency_key.strip():
+            raise ValueError("idempotency_key is required")
+        from uuid import NAMESPACE_URL, uuid5
+
+        handoff_id = str(uuid5(NAMESPACE_URL, f"pa-restart:{session_id}:{idempotency_key}"))
+        handoff = RestartHandoff(
+            id=handoff_id,
+            session_id=session_id,
+            idempotency_key=idempotency_key,
+            continuation_prompt=prompt,
+            continuation_prompt_id=f"restart-handoff:{handoff_id}",
+            card_id=session.card_id,
+            project_id=session.project_id,
+            instance_id=self.settings.instance_id,
+            execution_binding=dict(session.execution_binding or {}),
+        )
+        handoff = await self._offload(
+            "sqlite.restart_handoff_create", self.store.create_restart_handoff, handoff
+        )
+        if handoff.status == "requested" and handoff.id not in self._restart_handoff_tasks:
+            self._restart_handoff_tasks[handoff.id] = asyncio.create_task(
+                self._execute_restart_handoff(handoff.id),
+                name=f"pa-restart-handoff-{handoff.id}",
+            )
+        return handoff
+
+    async def _execute_restart_handoff(self, handoff_id: str) -> None:
+        """Wait outside the initiating turn, flush, quiesce, then ask the host to restart."""
+        try:
+            handoff = await self._offload(
+                "sqlite.restart_handoff_read", self.store.get_restart_handoff, handoff_id
+            )
+            if not handoff or handoff.status not in {
+                "requested", "waiting_for_turn_end", "quiescing"
+            }:
+                return
+            await self._offload(
+                "sqlite.restart_handoff_waiting", self.store.update_restart_handoff,
+                handoff_id, status="waiting_for_turn_end"
+            )
+            runtime = self.get(handoff.session_id)
+            while runtime and runtime.prompting:
+                await asyncio.sleep(_QUIESCE_POLL_SECONDS)
+                runtime = self.get(handoff.session_id)
+            if runtime:
+                runtime._flush_transcript()
+                await runtime._drain_transcripts()
+            await self._offload(
+                "sqlite.restart_handoff_quiescing", self.store.update_restart_handoff,
+                handoff_id, status="quiescing"
+            )
+            await self.quiesce(reason=f"restart-handoff:{handoff_id}")
+            await self._offload(
+                "sqlite.restart_handoff_restarting", self.store.update_restart_handoff,
+                handoff_id, status="restarting", increment_attempts=True
+            )
+            from pa.cli.service import request_restart
+            await self._offload(
+                "service.restart_handoff", request_restart, self.settings,
+                operation_id=handoff_id, timeout=30.0,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("Deferred restart handoff %s failed", handoff_id)
+            await self._offload(
+                "sqlite.restart_handoff_failed", self.store.update_restart_handoff,
+                handoff_id, status="failed", error=str(exc)[:1000]
+            )
+
+    async def _resume_restart_handoffs(self) -> None:
+        pending = await self._offload(
+            "sqlite.restart_handoffs_pending", self.store.list_restart_handoffs,
+            statuses=(
+                "requested", "waiting_for_turn_end", "quiescing",
+                "restarting", "resuming", "continuation_queued",
+            )
+        )
+        for handoff in pending:
+            if handoff.status in {"requested", "waiting_for_turn_end", "quiescing"}:
+                if handoff.id not in self._restart_handoff_tasks:
+                    self._restart_handoff_tasks[handoff.id] = asyncio.create_task(
+                        self._execute_restart_handoff(handoff.id),
+                        name=f"pa-restart-handoff-{handoff.id}",
+                    )
+                continue
+            if handoff.status == "continuation_queued":
+                # enqueue() checkpoints the durable queue before this receipt is
+                # advanced. Recovery restores that queue; never append it again.
+                continue
+            try:
+                await self._offload(
+                    "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
+                    handoff.id, status="resuming"
+                )
+                runtime = self.get(handoff.session_id)
+                if runtime is None:
+                    runtime = await self.recover_session(
+                        handoff.session_id, _startup_recovery=True
+                    )
+                runtime.enqueue(
+                    handoff.continuation_prompt,
+                    prompt_id=handoff.continuation_prompt_id,
+                    source=f"restart-handoff:{handoff.id}",
+                    card_id=handoff.card_id,
+                    project_id=handoff.project_id,
+                )
+                await self._offload(
+                    "sqlite.restart_handoff_queued", self.store.update_restart_handoff,
+                    handoff.id, status="continuation_queued"
+                )
+            except Exception as exc:
+                await self._offload(
+                    "sqlite.restart_handoff_resume_failed",
+                    self.store.update_restart_handoff, handoff.id,
+                    status="failed", error=str(exc)[:1000]
+                )
+
+    async def retry_restart_handoff(
+        self, *, session_id: str, handoff_id: str
+    ) -> RestartHandoff:
+        """Retry exact-session continuation delivery from the same durable receipt."""
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session or session.status == "closed":
+            raise AgentSessionRecoveryError("Exact durable session is not recoverable")
+        handoff = await self._offload(
+            "sqlite.restart_handoff_retry",
+            self.store.retry_restart_handoff,
+            handoff_id,
+            session_id=session_id,
+        )
+        if handoff.status == "resuming":
+            await self._resume_restart_handoffs()
+            handoff = await self._offload(
+                "sqlite.restart_handoff_read",
+                self.store.get_restart_handoff,
+                handoff_id,
+            )
+        return handoff
 
     @staticmethod
     def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:
@@ -3409,9 +3817,14 @@ class AgentSessionManager:
             provider_id=session.agent_name,
             mode_id=session.mode_id,
         )
+        if self._should_abort_recovery():
+            raise RuntimeError("Agent is quiescing")
         if provider_spec is not None:
             provider_spec.env.update(workspace_env)
         runtime = await self._new_runtime(session, agent_env=workspace_env)
+        if self._should_abort_recovery():
+            await runtime.close()
+            raise RuntimeError("Agent is quiescing")
         queued = list(snap.queued_prompts)
         interrupted = snap.in_flight
         # Version-1 snapshots briefly encoded an interrupted turn as the first
@@ -3443,6 +3856,9 @@ class AgentSessionManager:
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
         )
+        if self._should_abort_recovery():
+            await runtime.close()
+            raise RuntimeError("Agent is quiescing")
         await self._publish_runtime(runtime)
         self._invalidate_provider_overview()
         return runtime
@@ -3475,14 +3891,11 @@ class AgentSessionManager:
             if runtime.connected:
                 self._last_error = None
                 return True
-            # Force recreate
-            await runtime.close()
-            self._runtimes.pop(runtime.session_id, None)
-            runtime = await self.create_session(
-                label=self._default_label, title="Instance agent"
+            self._last_error = (
+                f"Retained default session {runtime.session_id} is disconnected; "
+                "retry recovery or explicitly close it before starting a replacement."
             )
-            self._last_error = None
-            return runtime.connected
+            return False
         except Exception as exc:
             self._last_error = str(exc)
             logger.exception("Agent reconnect failed")
@@ -3512,6 +3925,7 @@ class AgentSessionManager:
         execution_context_seed: dict[str, Any] | None = None,
         startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
+        require_restore: bool = False,
     ) -> AgentSessionRuntime:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
@@ -3723,11 +4137,14 @@ class AgentSessionManager:
             mcp_private_env=mcp_private_env,
             startup_trace=startup_trace,
         )
+        prior_status = session.status
         try:
             start_kwargs: dict[str, Any] = {
                 "resume_external_id": resume_external_id,
                 "provider_spec": resolved_spec,
             }
+            if require_restore:
+                start_kwargs["require_restore"] = True
             if initial_configuration is not None:
                 start_kwargs["initial_configuration"] = initial_configuration
             await runtime.start(**start_kwargs)
@@ -3752,12 +4169,20 @@ class AgentSessionManager:
             diagnostics = dict(config.get("diagnostics") or {})
             diagnostics["last_startup_failure"] = classified
             config["diagnostics"] = diagnostics
+            if require_restore:
+                durable = dict(config.get("durable_runtime") or {})
+                durable["recovery_error"] = classified.get("message") or str(exc)
+                durable["recovery_attempted_at"] = datetime.now(UTC).isoformat()
+                config["durable_runtime"] = durable
             session.config_json = config
-            session.status = (
-                "configuration_failed"
-                if configuration.get("state") == "failed"
-                else "disconnected"
-            )
+            if require_restore:
+                session.status = prior_status
+            else:
+                session.status = (
+                    "configuration_failed"
+                    if configuration.get("state") == "failed"
+                    else "disconnected"
+                )
             await self._offload(
                 "sqlite.agent_session_save", self.store.save_session, session
             )
@@ -3819,33 +4244,73 @@ class AgentSessionManager:
                 rt = self._runtimes[existing.id]
                 if rt.connected and not rt._closed:
                     return rt
-            return await self.create_session(
-                label=self._default_label,
-                title="Instance agent",
-                cwd=cwd,
-                principal_id=principal_id,
-                agent_env=agent_env,
-                existing=existing if existing and existing.status != "closed" else None,
-                resume_external_id=(
-                    existing.external_session_id
-                    if existing and existing.status != "closed"
-                    else None
-                ),
-                surface=SURFACE_CHAT_DEFAULT,
-                provider_override=provider_override,
-                initial_configuration=initial_configuration,
-                startup_trace=startup_trace,
-                _startup_recovery=_startup_recovery,
+            if (
+                existing
+                and existing.status != "closed"
+                and existing.origin_instance_id
+                and existing.origin_instance_id != self.settings.instance_id
+            ):
+                raise AgentSessionRecoveryError(
+                    "The retained default session belongs to another instance; "
+                    "recover it on its owning instance or explicitly close it before "
+                    "starting a replacement."
             )
+            try:
+                runtime = await self.create_session(
+                    label=self._default_label,
+                    title=existing.title if existing else "Instance agent",
+                    cwd=existing.cwd if existing and existing.cwd else cwd,
+                    principal_id=(
+                        existing.principal_id
+                        if existing and existing.principal_id
+                        else principal_id
+                    ),
+                    agent_env=agent_env,
+                    existing=(
+                        existing
+                        if existing and existing.status != "closed"
+                        else None
+                    ),
+                    resume_external_id=(
+                        existing.external_session_id
+                        if existing and existing.status != "closed"
+                        else None
+                    ),
+                    surface=SURFACE_CHAT_DEFAULT,
+                    provider_override=provider_override,
+                    initial_configuration=initial_configuration,
+                    startup_trace=startup_trace,
+                    _startup_recovery=_startup_recovery,
+                )
+            except Exception as exc:
+                if existing and existing.status != "closed":
+                    await self._mark_recovery_interrupted(
+                        self._snapshot_from_persisted(existing), exc
+                    )
+                    raise AgentSessionRecoveryError(
+                        f"Retained default session {existing.id} could not be "
+                        f"recovered: {exc}. Retry recovery or explicitly close it "
+                        "before starting a replacement."
+                    ) from exc
+                raise
+            config = dict(runtime.session.config_json or {})
+            config["browser_default_selected"] = True
+            runtime.session.config_json = config
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, runtime.session
+            )
+            return runtime
 
     async def recover_session(
         self,
         session_id: str,
         *,
         provider_override: str | None = None,
+        _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
         """Reconnect one durable PA session without creating a second PA identity."""
-        self.require_startup_complete()
+        if not _startup_recovery:
+            self.require_startup_complete()
         async with self.label_lock(f"recover:{session_id}"):
             self._require_not_terminal_repair_fenced(session_id)
             runtime = self.get(session_id)
@@ -3906,6 +4371,7 @@ class AgentSessionManager:
                 existing=session,
                 resume_external_id=session.external_session_id,
                 provider_override=provider_override,
+                require_restore=True,
             )
 
     def enqueue_prompt(

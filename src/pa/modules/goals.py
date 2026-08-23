@@ -15,6 +15,7 @@ from pa.auth.middleware import get_principal_id
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition
+from pa.domain.models import CardKind, CardLane, CardUpdate
 from pa.goals.advanced_models import (
     AssignedServiceProviderProgress,
     GoalActionApply,
@@ -49,6 +50,7 @@ from pa.goals.models import (
     GoalCreate,
     GoalEvidence,
     GoalEvidenceCreate,
+    GoalCriterion,
     GoalMutationContext,
     GoalProposalCreate,
     GoalRevision,
@@ -873,6 +875,143 @@ def list_goals(
     ]
 
 
+def _legacy_goal_inventory(request: Request, realm: str) -> dict:
+    store = request.app.state.ctx.store
+    cards = store.list_cards(realm_id=realm, kind=CardKind.GOAL)
+    plans = request.app.state.ctx.require_service("orchestration_store").list(
+        realm_id=realm
+    )
+    durable_sources = {
+        item.creation_source: item.id for item in _service(request).list(realm_id=realm)
+    }
+    return {
+        "realm_id": realm,
+        "cards": [
+            {
+                "id": card.id,
+                "title": card.title,
+                "lane": card.lane.value,
+                "plan_ids": [plan.id for plan in plans if plan.goal_card_id == card.id],
+                "durable_goal_id": durable_sources.get(f"legacy-card:{card.id}"),
+            }
+            for card in cards
+        ],
+        "orphan_plan_ids": [
+            plan.id
+            for plan in plans
+            if not any(card.id == plan.goal_card_id for card in cards)
+        ],
+    }
+
+
+@router.get("/goals-migration")
+def inventory_legacy_goals(request: Request, realm: str = "default"):
+    """Dry-run inventory for the legacy CardKind.GOAL/GoalPlan stores."""
+    return _legacy_goal_inventory(request, realm)
+
+
+@router.post("/goals-migration")
+def migrate_legacy_goals(
+    request: Request,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    realm: str = "default",
+    dry_run: bool = True,
+):
+    inventory = _legacy_goal_inventory(request, realm)
+    if dry_run:
+        return {"dry_run": True, "migration_id": idempotency_key, **inventory}
+    migrated: list[dict] = []
+    plan_store = request.app.state.ctx.require_service("orchestration_store")
+    principal = get_principal_id(request) or "user:local"
+    for item in inventory["cards"]:
+        goal_id = item["durable_goal_id"]
+        if not goal_id:
+            card = request.app.state.ctx.store.get_card(item["id"], realm_id=realm)
+            plans = [
+                plan
+                for plan in plan_store.list(realm_id=realm)
+                if plan.id in item["plan_ids"]
+            ]
+            provenance = ", ".join(
+                f"GoalPlan {plan.id} ({len(plan.tasks)} tasks)" for plan in plans
+            )
+            created = _service(request).create(
+                GoalCreate(
+                    realm_id=realm,
+                    project_id=card.project_id,
+                    owner_principal=card.owner_principal or principal,
+                    creation_source=f"legacy-card:{card.id}",
+                    objective=card.title,
+                    motivation="\n\n".join(
+                        filter(
+                            None,
+                            [
+                                card.body,
+                                f"Migrated provenance: legacy card {card.id}; "
+                                f"{provenance}".strip(),
+                            ],
+                        )
+                    ),
+                    criteria=[
+                        GoalCriterion(
+                            description=(
+                                "Legacy success criteria require operator review"
+                            ),
+                            verification_method="Operator review",
+                            evidence_requirement="Recorded independent review",
+                        )
+                    ],
+                ),
+                GoalMutationContext(
+                    actor_principal=principal,
+                    authority_instance_id=_authoritative_instance_id(request),
+                    idempotency_key=f"{idempotency_key}:card:{card.id}",
+                    expected_version=0,
+                    policy_revision=1,
+                ),
+            )
+            goal_id = created.id
+            request.app.state.ctx.store.update_card(
+                card.id,
+                CardUpdate(
+                    kind=CardKind.CONCERN,
+                    lane=CardLane.DONE,
+                    tags=sorted(
+                        set(
+                            card.tags
+                            + [
+                                "legacy-goal-archived",
+                                f"durable-goal:{goal_id}",
+                            ]
+                        )
+                    ),
+                ),
+                realm_id=realm,
+                principal_id=principal,
+                instance_id=_authoritative_instance_id(request),
+                idempotency_key=f"{idempotency_key}:archive-card:{card.id}",
+            )
+        archived = plan_store.archive(
+            set(item["plan_ids"]), migration_id=idempotency_key
+        )
+        migrated.append(
+            {
+                "legacy_card_id": item["id"],
+                "durable_goal_id": goal_id,
+                "archived_plan_ids": archived,
+            }
+        )
+    orphaned = plan_store.archive(
+        set(inventory["orphan_plan_ids"]), migration_id=idempotency_key
+    )
+    return {
+        "dry_run": False,
+        "migration_id": idempotency_key,
+        "migrated": migrated,
+        "archived_orphan_plan_ids": orphaned,
+    }
+
+
 @router.post("/goals", status_code=201)
 def create_goal_explicit(
     request: Request,
@@ -1495,6 +1634,7 @@ def _goals_context(request: Request) -> dict:
             item.disposition.value == "pending_review"
             for item in governance.list_proposals(realm_id)
         ),
+        "goal_events": {item.id: _service(request).events(item.id) for item in goals},
     }
 
 

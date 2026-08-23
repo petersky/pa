@@ -13,6 +13,7 @@ from pa.instance.agent_session import (
     AgentSessionManager,
     AgentSessionRecoveryError,
     AgentSessionRuntime,
+    _prompt_authority,
 )
 from pa.instance.quiesce import QueuedPrompt, QuiesceSnapshot, SessionSnapshot
 
@@ -38,6 +39,31 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_operator_prompt_precedes_automatic_reconciliation_deterministically(self) -> None:
+        automatic = QueuedPrompt(
+            id="automatic",
+            message="reconcile",
+            source="card-reconciliation:dispatch-1",
+            priority=_prompt_authority("card-reconciliation:dispatch-1", "prepend")[0],
+            turn_reason="automatic_reconciliation",
+        )
+        operator = QueuedPrompt(
+            id="operator",
+            message="stop and review",
+            source="api",
+            priority=_prompt_authority("api", "append")[0],
+            turn_reason="operator_input",
+            supersedes=[automatic.id],
+        )
+
+        restored = sorted([automatic, operator], key=lambda item: item.priority)
+
+        self.assertEqual([item.id for item in restored], ["operator", "automatic"])
+        self.assertEqual(operator.public_dict()["supersedes"], ["automatic"])
+        self.assertEqual(
+            _prompt_authority("api", "interrupt"), (0, "operator_interrupt")
+        )
+
     def test_manager_records_resolution_workspace_and_publication_phases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = MagicMock()

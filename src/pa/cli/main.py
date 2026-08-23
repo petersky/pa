@@ -303,7 +303,8 @@ def install(
         path = svc.install_service(settings, pa_bin)
         if not no_start:
             svc.bootstrap()
-        record_install(channel=channel, pa_bin=pa_bin)
+        # A unit-only rewrite does not install code and must not replace the
+        # provenance already recorded by the updater (notably a dev revision).
         ui.echo(
             f"Registered {svc.get_status(settings).backend} service: {path}",
             style="success",
@@ -315,7 +316,10 @@ def install(
 
     try:
         install_from_path(
-            from_source, name=name, channel=channel, start_service=not no_start
+            from_source,
+            name=name,
+            channel=channel,
+            start_service=not no_start,
         )
     except RuntimeError as exc:
         ui.echo(str(exc), style="failure", err=True)
@@ -397,14 +401,32 @@ def restart_cmd(
             "--no-acp-resume", help="Do not resume quiesced ACP sessions after restart"
         ),
     ] = False,
+    operator_emergency: Annotated[
+        bool,
+        typer.Option(
+            "--operator-emergency",
+            help="Operator-only override for a managed-session restart",
+            hidden=True,
+        ),
+    ] = False,
 ) -> None:
-    """Restart the PA host service."""
+    """Restart PA (agents use the durable restart-handoff MCP tool instead)."""
+    import os
     from pa.cli import service as svc
     from pa.cli.acp_lifecycle import mark_no_resume, quiesce_running_agent
     from pa.cli.startup import print_service_ready
     from pa.instance.quiesce import request_skip_quiesce
 
     settings = get_settings()
+    managed_session = os.environ.get("PA_BROWSER_SESSION_ID", "").strip()
+    if managed_session and not operator_emergency:
+        typer.echo(
+            "Refusing synchronous restart inside a PA-managed agent turn. "
+            "Use PA MCP request_agent_restart_handoff with a continuation prompt "
+            "and stable idempotency key. --no-acp-quiesce is operator emergency only.",
+            err=True,
+        )
+        raise typer.Exit(2)
     if no_acp_quiesce:
         request_skip_quiesce(settings.data_dir)
     else:
@@ -431,9 +453,7 @@ def logs(
     follow: Annotated[
         bool, typer.Option("-f", "--follow", help="Follow log output")
     ] = False,
-    lines: Annotated[
-        int, typer.Option("-n", "--lines", help="Number of lines")
-    ] = 50,
+    lines: Annotated[int, typer.Option("-n", "--lines", help="Number of lines")] = 50,
     stdout: Annotated[
         bool, typer.Option("--stdout", help="Show the access/stdout log only")
     ] = False,
@@ -447,7 +467,7 @@ def logs(
         list[str] | None,
         typer.Option(
             "--source",
-            help="Source: stdout, stderr, structured, or journal (repeatable)",
+            help="Source: stdout, stderr, structured, supervisor, or journal (repeatable)",
         ),
     ] = None,
     since: Annotated[
@@ -479,11 +499,17 @@ def logs(
             if stdout
             else ["stderr"]
             if stderr
-            else ["stdout", "stderr", "structured"]
+            else ["stdout", "stderr", "structured", "supervisor"]
         )
         if all_sources:
-            sources = ["stdout", "stderr", "structured"]
-        invalid = set(sources) - {"stdout", "stderr", "structured", "journal"}
+            sources = ["stdout", "stderr", "structured", "supervisor"]
+        invalid = set(sources) - {
+            "stdout",
+            "stderr",
+            "structured",
+            "supervisor",
+            "journal",
+        }
         if invalid:
             raise ValueError(f"unknown log source: {', '.join(sorted(invalid))}")
         svc.tail_logs(
@@ -847,6 +873,14 @@ def serve(
         ShutdownAwareServer(config).run(sockets=all_sockets)
     finally:
         close_sockets(all_sockets, owner_path)
+
+
+@app.command("_service-run", hidden=True)
+def service_run() -> None:
+    """Run the server behind PA's bounded service-log supervisor."""
+    from pa.core.log_rotation import service_entrypoint
+
+    raise typer.Exit(service_entrypoint())
 
 
 @app.command()

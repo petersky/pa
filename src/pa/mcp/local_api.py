@@ -21,6 +21,9 @@ from pa.acp.environment import (
 )
 from pa.auth.users import UserDirectory
 from pa.config import Settings
+from pa.http_transport import is_http2_cancel
+
+HTTP2_CANCEL_RETRIES = 2
 
 
 class LocalPAServerUnavailable(RuntimeError):
@@ -79,6 +82,7 @@ _ASSIGNED_MCP_ENDPOINTS = frozenset(
         ("POST", "/api/goal-assigned-session/evidence"),
         ("POST", "/api/goal-assigned-session/audit"),
         ("POST", "/api/goal-assigned-session/progress"),
+        ("POST", "/api/goal-assigned-session/restart-handoff"),
     }
 )
 
@@ -384,6 +388,7 @@ def request_local_pa(
         )
     timeout_seconds = max(0.1, min(float(timeout_seconds), 120.0))
     deadline = now + timeout_seconds
+    cancel_attempts = 0
     while True:
         try:
             socket_path = os.environ.get("PA_LOCAL_API_SOCKET", "").strip()
@@ -514,9 +519,21 @@ def request_local_pa(
                         detail=error.detail,
                     ) from exc
                 raise error from exc
+            if is_http2_cancel(exc) and (
+                operation_id or method in {"GET", "HEAD", "OPTIONS"}
+            ):
+                cancel_attempts += 1
+                if (
+                    cancel_attempts <= HTTP2_CANCEL_RETRIES
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(min(0.05 * cancel_attempts, 0.1))
+                    continue
             if operation_id:
                 raise LocalPAUnknownOutcome(
-                    f"The PA API request failed (operation={method.upper()} "
+                    f"The PA API request failed"
+                    f"{' because HTTP/2 stream CANCEL (0x8)' if is_http2_cancel(exc) else ''} "
+                    f"(operation={method.upper()} "
                     f"endpoint={path} correlation_id={correlation_id} "
                     f"operation_id={operation_id}). The mutation outcome is "
                     "unknown. Call get_operation_outcome with the same "
@@ -527,6 +544,9 @@ def request_local_pa(
                     endpoint=path,
                 ) from exc
             raise LocalPAServerUnavailable(
-                f"The PA API request failed (operation={method.upper()} "
-                f"endpoint={path} correlation_id={correlation_id})."
+                f"The PA API request failed"
+                f"{' because HTTP/2 stream CANCEL (0x8)' if is_http2_cancel(exc) else ''} "
+                f"(operation={method.upper()} endpoint={path} "
+                f"correlation_id={correlation_id} "
+                f"safe_to_retry={method in {'GET', 'HEAD', 'OPTIONS'}})."
             ) from exc

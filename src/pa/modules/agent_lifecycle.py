@@ -8,7 +8,11 @@ from fastapi import HTTPException
 def startup_state(manager: Any) -> dict[str, Any]:
     state = getattr(manager, "startup_state", None)
     if callable(state):
-        return dict(state())
+        result = dict(state())
+        diagnostics = getattr(manager, "startup_recovery_diagnostics", None)
+        if callable(diagnostics):
+            result["decisions"] = list(diagnostics())
+        return result
     return {"phase": "ready", "complete": True, "error": None}
 
 
@@ -39,6 +43,19 @@ def startup_recovery_error(manager: Any) -> HTTPException | None:
 
 
 def require_startup_ready(manager: Any) -> None:
+    if getattr(manager, "quiescing", False) is True or getattr(
+        manager, "_accepting", True
+    ) is False:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "agent_draining",
+                "message": "PA is draining agent sessions for shutdown.",
+                "recoverable": True,
+                "retry_after_ms": 1000,
+            },
+            headers={"Retry-After": "1"},
+        )
     error = startup_recovery_error(manager)
     if error:
         raise error

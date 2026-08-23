@@ -314,6 +314,25 @@ def _agent_context(request: Request) -> dict:
                     watches_by_session[session.id].append(watch)
     from pa.acp.providers.registry import provider_catalog
 
+    selected_dispatch = None
+    dispatch_store = ctx.services.get("dispatch_store")
+    if selected_id and dispatch_store:
+        selected_dispatch = dispatch_store.by_session(selected_id)
+    attribution = None
+    if selected_dispatch:
+        attribution = {
+            "source": "durable dispatch envelope",
+            "dispatch_id": selected_dispatch.dispatch_id,
+            "session_id": selected_dispatch.session_id,
+            "initiator": getattr(selected_dispatch, "initiating_principal", None)
+            or getattr(selected_dispatch, "principal_id", None)
+            or (selected_dispatch.request_payload or {}).get("principal_id")
+            or "Initiator not recorded by this peer version",
+            "authority_instance_id": selected_dispatch.authority_instance_id,
+            "target_instance_id": selected_dispatch.target_instance_id,
+            "provider": (selected_dispatch.request_payload or {}).get("provider") or "Target default",
+            "stale": selected_dispatch.state not in {"running", "delivering_prompt", "starting_session"},
+        }
     return {
         "agent_connected": agent.connected,
         "agent_startup": startup_state(agent),
@@ -335,6 +354,7 @@ def _agent_context(request: Request) -> dict:
         ),
         "pr_watches_by_session": watches_by_session,
         "agent_providers": provider_catalog(),
+        "session_attribution": attribution,
     }
 
 

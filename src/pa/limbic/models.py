@@ -283,7 +283,12 @@ class SignalEnvelope(BaseModel):
         safe_metadata = {
             key: value
             for key, value in self.metadata.items()
-            if key in {"deep_review", "failure_count"}
+            if key in {
+                "deep_review",
+                "failure_count",
+                "retrieval_hits",
+                "promotion_candidate",
+            }
             and isinstance(value, (bool, int, float))
         }
         return {
@@ -408,6 +413,10 @@ class AppraisalResult(BaseModel):
     appraisal: Appraisal
     route: RouteDecision
     deduplicated: bool = False
+    duration_ms: float = Field(default=0, ge=0)
+    shadow_mode: bool = False
+    retrieval_hits: int = Field(default=0, ge=0)
+    usefulness_score: float | None = Field(default=None, ge=0, le=1)
 
 
 class ReplayCase(BaseModel):

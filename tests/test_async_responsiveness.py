@@ -22,7 +22,7 @@ from pa.acp.providers.base import ProviderStatus
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.models import AgentSession
-from pa.execution.dispatch import DispatchWorker
+from pa.execution.dispatch import CompletionOutbox, DispatchRecord, DispatchWorker
 from pa.fleet.overview import probe_dimension
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.modules.agent_providers import list_local_providers
@@ -473,6 +473,47 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(unrelated_ms, 25)
         release.set()
         await worker.close()
+
+    async def test_completion_followup_sqlite_lock_keeps_loop_responsive(self) -> None:
+        release = threading.Event()
+        entered = threading.Event()
+        store = MagicMock()
+        store.db_path = Path("dispatch.db")
+
+        def blocked_put(record):
+            entered.set()
+            release.wait(1)
+            return record
+
+        store.put.side_effect = blocked_put
+        response = MagicMock(status_code=200)
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+        client.aclose = AsyncMock()
+        outbox = CompletionOutbox(store, "", async_runtime=self.runtime)
+        outbox._client = client
+        record = DispatchRecord(
+            dispatch_id="dispatch-1",
+            mutation_id="mutation-1",
+            authority_instance_id="authority",
+            authority_url="http://authority",
+            target_instance_id="target",
+            session_id="session-1",
+            state="completed",
+        )
+        turn = {"prompt_id": "prompt-1", "result": {}}
+        task = asyncio.create_task(outbox._send_followup(record, turn))
+        await asyncio.to_thread(entered.wait, 1)
+
+        started = time.perf_counter()
+        await asyncio.sleep(0)
+        unrelated_ms = (time.perf_counter() - started) * 1000
+
+        self.assertLess(unrelated_ms, 25)
+        release.set()
+        await task
+        self.assertEqual(turn["delivery_state"], "acknowledged")
+        await outbox.close(timeout=0)
 
     async def test_pr_supervisor_store_stall_keeps_health_work_responsive(self) -> None:
         release = threading.Event()

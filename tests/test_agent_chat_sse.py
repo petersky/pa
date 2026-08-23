@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from time import perf_counter
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,6 +24,7 @@ from pa.modules.agent_chat import (
     CreateSessionBody,
     _apply_initial_options,
     _configuration_request,
+    _durable_session_state,
     _requested_effort,
     _runtime_or_404,
     create_session,
@@ -85,6 +87,44 @@ class _FakeRuntime:
 
 
 class AgentChatSseTests(unittest.TestCase):
+    def test_ended_session_restart_requires_provider_identity_and_capability(self) -> None:
+        manager = MagicMock()
+        manager.get.return_value = None
+        resumable = AgentSession(
+            id="same-pa-session",
+            agent_name="generic",
+            external_session_id="same-provider-session",
+            status="closed",
+            config_json={
+                "provider_session_recovery": {"resume": False, "load": True}
+            },
+        )
+        state = _durable_session_state(manager, resumable)
+        self.assertTrue(state["recoverable"])
+        self.assertEqual(state["reason"], "session_closed_recoverable")
+        self.assertIn("same-pa-session", state["actions"]["recover_url"])
+
+        resumable.config_json["provider_session_recovery"] = {
+            "resume": False,
+            "load": False,
+        }
+        self.assertFalse(_durable_session_state(manager, resumable)["recoverable"])
+        resumable.external_session_id = None
+        self.assertFalse(_durable_session_state(manager, resumable)["recoverable"])
+
+    def test_shutdown_fence_returns_explicit_draining_response(self) -> None:
+        manager = MagicMock()
+        manager.quiescing = True
+        manager._accepting = False
+        request = MagicMock()
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            with self.assertRaises(HTTPException) as raised:
+                _runtime_or_404(request, "session-draining")
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(raised.exception.detail["code"], "agent_draining")
+
     def test_multiplex_capability_declares_one_dynamic_transport(self) -> None:
         capability = multiplexed_session_event_capabilities()
         self.assertEqual(capability["scope"], "all_live_sessions")
@@ -1227,6 +1267,42 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertFalse(page["page"]["has_older"])
         self.assertIsNone(page["page"]["next_before_seq"])
 
+    def test_history_page_is_bounded_instrumented_and_within_budget(self) -> None:
+        session = AgentSession(id="sess-budget", agent_name="codex")
+        store = _FakeStore(
+            [
+                TranscriptEvent(
+                    session_id=session.id,
+                    seq=seq,
+                    event_type="tool_call_update",
+                    payload={"tool_call_id": f"tool-{seq}", "text": "x" * 200},
+                )
+                for seq in range(1, 10_001)
+            ]
+        )
+        manager = MagicMock()
+        manager.store = store
+        manager.store.get_session = MagicMock(return_value=session)
+        manager.get.return_value = None
+        request = MagicMock()
+        request.app.state.ctx.settings.instance_id = "mini-1"
+        request.app.state.ctx.settings.instance_name = "macmini"
+
+        started = perf_counter()
+        with patch("pa.modules.agent_chat._manager", return_value=manager):
+            page = asyncio.run(
+                get_agent_session_history(request, session.id, limit=5000)
+            )
+        elapsed = perf_counter() - started
+
+        self.assertEqual(len(page["events"]), 1000)
+        self.assertEqual(page["page"]["limit"], 1000)
+        self.assertEqual(page["diagnostics"]["event_count"], 1000)
+        self.assertGreater(page["diagnostics"]["payload_bytes"], 0)
+        self.assertIn("query_ms", page["diagnostics"])
+        self.assertIn("serialization_ms", page["diagnostics"])
+        self.assertLess(elapsed, 2.0)
+
     def test_codex_message_phase_is_preserved(self) -> None:
         update = {
             "sessionUpdate": "agent_message_chunk",
@@ -1627,7 +1703,10 @@ class AgentChatSseTests(unittest.TestCase):
                 return await session_close(request, "sess-orphan")
 
         result = asyncio.run(run())
-        self.assertEqual(result, {"ok": True, "live": False, "orphan": True})
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["live"])
+        self.assertTrue(result["orphan"])
+        self.assertFalse(result["recovery"]["recoverable"])
         self.assertEqual(orphan.status, "closed")
         store.save_session.assert_called_once_with(orphan)
         store.append_transcript_events.assert_called_once()

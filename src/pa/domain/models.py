@@ -688,6 +688,9 @@ class AgentSession(BaseModel):
     mode_id: str | None = None
     config_json: dict = Field(default_factory=dict)
     metrics_json: dict = Field(default_factory=dict)
+    # Immutable workspace provenance.  card_id/project_id remain conversational
+    # associations and may change without moving a provider or its worktree.
+    execution_binding: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -697,6 +700,26 @@ class AgentSession(BaseModel):
         if "lifecycle_owner" not in self.model_fields_set and self.dispatch_id:
             self.lifecycle_owner = "dispatch"
         return self
+
+
+class RestartHandoff(BaseModel):
+    """Durable, exactly-once request to continue one exact session after restart."""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    session_id: str
+    idempotency_key: str
+    continuation_prompt: str
+    status: str = "requested"
+    card_id: str | None = None
+    project_id: str | None = None
+    instance_id: str | None = None
+    execution_binding: dict = Field(default_factory=dict)
+    continuation_prompt_id: str
+    error: str | None = None
+    attempts: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    delivered_at: datetime | None = None
 
 
 class TranscriptEvent(BaseModel):
@@ -723,6 +746,22 @@ class KnowledgeStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class KnowledgeTier(StrEnum):
+    """Retrieval tier shared with the governed Memory model."""
+
+    WORKING = "working"
+    EPISODIC = "episodic"
+    SEMANTIC = "semantic"
+    PROCEDURAL = "procedural"
+
+
+class KnowledgeSensitivity(StrEnum):
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    RESTRICTED = "restricted"
+
+
 class KnowledgeProvenance(BaseModel):
     """Exact, structured lineage for a curated Memory record."""
 
@@ -745,13 +784,16 @@ class KnowledgeEntry(BaseModel):
     item_id: str | None = None
     card_id: str | None = None
     summary: str
-    source: str = "session"
+    source: str = "manual"
     source_url: str | None = None
     kind: KnowledgeKind = KnowledgeKind.MEMORY
+    tier: KnowledgeTier = KnowledgeTier.SEMANTIC
     status: KnowledgeStatus = KnowledgeStatus.ACTIVE
     scope: str = "realm"
     owner: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+    sensitivity: KnowledgeSensitivity = KnowledgeSensitivity.INTERNAL
+    provenance_trust: str = "unverified"
     supersedes_id: str | None = None
     review_at: datetime | None = None
     expires_at: datetime | None = None
@@ -767,10 +809,12 @@ class KnowledgeUpdate(BaseModel):
     source: str | None = None
     source_url: str | None = None
     kind: KnowledgeKind | None = None
+    tier: KnowledgeTier | None = None
     status: KnowledgeStatus | None = None
     scope: str | None = None
     owner: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+    sensitivity: KnowledgeSensitivity | None = None
     supersedes_id: str | None = None
     review_at: datetime | None = None
     expires_at: datetime | None = None

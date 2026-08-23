@@ -54,7 +54,6 @@ from pa.domain.models import (
     CardLane,
     CardUpdate,
     FleetInstance,
-    KnowledgeEntry,
     RealmRole,
 )
 from pa.domain.notifications import (
@@ -81,6 +80,7 @@ from pa.execution.dispatch import (
     DispatchStore,
     DispatchWorker,
     GoalDispatchProvenance,
+    TERMINAL_DISPATCH_STATES,
     goal_admission_validation_proof,
     goal_dispatch_execution_identity_valid,
     goal_dispatch_materialization_binding_valid,
@@ -91,11 +91,15 @@ from pa.execution.dispatch import (
 )
 from pa.execution.disposition import decide_card_disposition
 from pa.execution.post_turn import (
+    ActionApprovalV1,
+    ActionReceiptStatus,
+    ActionReceiptV1,
     EvidenceReferenceV1,
     FollowupActionName,
     FollowupActionStatus,
     PostTurnEvaluationV1,
     PostTurnEvaluator,
+    SafetyClassification,
     TurnEndSnapshotV1,
     action_catalog,
     is_authorized_same_session_continuation,
@@ -266,9 +270,15 @@ def control_plane_status(request: Request) -> dict[str, Any]:
     """Expose honest compatibility state without treating static URLs as election."""
     service = request.app.state.ctx.services.get("pr_supervisor")
     health = service.authority_health() if service is not None else None
+    workers = {}
+    for name in ("completion_outbox", "completion_reconciler"):
+        worker = request.app.state.ctx.services.get(name)
+        if worker is not None:
+            workers[name] = worker.worker_health()
     return build_control_plane_status(
         request.app.state.ctx.settings,
         pr_supervisor_health=health,
+        worker_health=workers,
     )
 
 
@@ -401,6 +411,7 @@ class RemoteAgentStartBody(BaseModel):
     idempotency_key: str | None = None
     resume_session_id: str | None = None
     allow_concurrent: bool = False
+    concurrent_reason: str | None = Field(default=None, max_length=500)
     capacity_override: bool = False
     capacity_override_reason: str | None = Field(default=None, max_length=500)
     participation_override: bool = False
@@ -418,6 +429,12 @@ class RemoteAgentStartBody(BaseModel):
         # Legacy form serialization emitted the Python display value. It is
         # never a stable provider/model ID, so preserve automatic selection.
         return None if not normalized or normalized.casefold() == "none" else normalized
+
+    @model_validator(mode="after")
+    def require_concurrent_reason(self) -> RemoteAgentStartBody:
+        if self.allow_concurrent and not str(self.concurrent_reason or "").strip():
+            raise ValueError("concurrent_reason is required when allow_concurrent is true")
+        return self
 
 
 class FleetDispatchBody(RemoteAgentStartBody):
@@ -614,6 +631,7 @@ class FollowupActionExecutionBody(BaseModel):
     action_id: str
     expected_authority_version: str | None = None
     approve: bool = False
+    approval: ActionApprovalV1 | None = None
     idempotency_key: str
 
 
@@ -2706,6 +2724,26 @@ async def proxy_assigned_session_progress(
     )
 
 
+class AssignedRestartHandoffBody(BaseModel):
+    continuation_prompt: str
+    idempotency_key: str
+
+
+@router.post("/goal-assigned-session/restart-handoff")
+async def request_assigned_restart_handoff(
+    request: Request, body: AssignedRestartHandoffBody
+) -> dict[str, Any]:
+    """Use the restricted session capability for a local deferred restart."""
+    record = _assigned_local_dispatch(request)
+    manager = request.app.state.ctx.require_service("instance_agent")
+    handoff = await manager.request_restart_handoff(
+        session_id=str(record.session_id),
+        continuation_prompt=body.continuation_prompt,
+        idempotency_key=body.idempotency_key,
+    )
+    return handoff.model_dump(mode="json")
+
+
 def _assigned_authority_dispatch(
     request: Request,
     dispatch_id: str,
@@ -3252,6 +3290,16 @@ def _fleet_context(request: Request) -> dict:
             or route.target_url.rstrip("/") in canonical_urls
         )
     ]
+    cards = ctx.store.list_cards(realm_id=primary_realm)
+    dispatch_store = ctx.services.get("dispatch_store")
+    active_card_dispatches = {}
+    if dispatch_store:
+        latest_dispatches = dispatch_store.latest_by_card({card.id for card in cards})
+        for card_id, record in latest_dispatches.items():
+            if record.state not in TERMINAL_DISPATCH_STATES:
+                active_card_dispatches[card_id] = canonicalize_dispatch_public(
+                    ctx, record
+                )
     return {
         "fleet_instances": instances,
         "fleet_overview": build_overview(ctx, instances, routes),
@@ -3272,7 +3320,8 @@ def _fleet_context(request: Request) -> dict:
         or {"status": "idle", "peers": {}},
         "membership_convergence": _membership_convergence_snapshot(ctx),
         "primary_realm": primary_realm,
-        "cards": ctx.store.list_cards(realm_id=primary_realm),
+        "cards": cards,
+        "active_card_dispatches": active_card_dispatches,
         "projects": ctx.store.list_projects(realm_id=primary_realm),
         "instance_groups": policy_service.list_groups(
             primary_realm, include_archived=True
@@ -4255,6 +4304,16 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                         f"{base}/api/health", timeout=FLEET_HEALTH_TIMEOUT
                     )
                     health_state = "up" if resp.status_code == 200 else "down"
+                    if resp.status_code == 200:
+                        try:
+                            health_payload = resp.json()
+                            if (
+                                isinstance(health_payload, dict)
+                                and health_payload.get("status") == "degraded"
+                            ):
+                                health_state = "degraded"
+                        except ValueError:
+                            pass
                 except TimeoutError:
                     health_state = "timeout"
                 except httpx.HTTPError:
@@ -6221,7 +6280,13 @@ async def _assert_dispatch_sync_health(
             item.get("name") or item.get("instance_id")
             for item in instances
             if item.get("status")
-            in {"unavailable", "invalid_response", "error", "missing_head"}
+                in {
+                    "unavailable",
+                    "invalid_response",
+                    "protocol_incompatible",
+                    "error",
+                    "missing_head",
+                }
         ]
         code = "sync_unavailable" if unavailable else "sync_conflict"
         raise HTTPException(
@@ -7096,23 +7161,8 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                 instance_id=settings.instance_id,
             )
     if not record.knowledge_recorded_at:
-        await _offload_ctx(
-            ctx,
-            "sqlite.knowledge_write",
-            store.add_knowledge,
-            KnowledgeEntry(
-                session_id=session_id,
-                item_id=record.card_id,
-                card_id=record.card_id,
-                summary=(
-                    f"Dispatched {card.title!r} to {record.target_instance_name or record.target_instance_id} in session {session_id}."
-                    if card
-                    else f"Started remote session {session_id} on {record.target_instance_name or record.target_instance_id}."
-                ),
-                source="remote_dispatch",
-                tags=["remote-operations", f"instance:{record.target_instance_id}"],
-            ),
-        )
+        # The dispatch ledger and session transcript are the authoritative audit
+        # history. Never mirror lifecycle notices into curated Memory.
         record.knowledge_recorded_at = datetime.now(UTC)
         await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
     if record.state != "completed":
@@ -7266,6 +7316,9 @@ async def _resolve_policy_placement(
     project_id: str | None,
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
+    requested_provider = (body.provider or "").strip().lower() or None
+    requested_model_id = body.model_id
+    requested_mode_id = body.mode_id
     # An omitted provider means automatic target-compatible selection.  Do not
     # inject the authority host's default before placement (for example Cursor
     # when the selected worker is Codex-only).
@@ -7464,6 +7517,18 @@ async def _resolve_policy_placement(
                 "for automatic selection.",
                 rejected_candidates=decision.rejected_candidates,
             )
+    _apply_dispatch_mode_default(body)
+    decision.requested_provider = requested_provider
+    decision.requested_model_id = requested_model_id
+    decision.requested_mode_id = requested_mode_id
+    decision.resolved_provider = body.provider
+    decision.resolved_model_id = body.model_id
+    decision.resolved_mode_id = body.mode_id
+    decision.execution_selector_provenance = {
+        "provider": "explicit_dispatch" if requested_provider else "selected_target",
+        "model": "explicit_dispatch" if requested_model_id else "provider_default",
+        "mode": "explicit_dispatch" if requested_mode_id else "provider_default",
+    }
     return decision, plan
 
 
@@ -10207,7 +10272,6 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                 "dispatch": _dispatch_public(request, existing),
             }
 
-    _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
     _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
@@ -10298,6 +10362,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
         error = _placement_http_error(exc)
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
+    _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
     _apply_dispatch_mode_default(body)
 
     start_payload = body.model_dump(
@@ -10411,7 +10476,6 @@ async def start_remote_agent_work(
                 "job_id": existing_record.dispatch_id,
                 "dispatch": _dispatch_public(request, existing_record),
             }
-    _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
     _apply_dispatch_mode_default(body)
     if preadmission_record is None:
         preadmission_record, created = await _offload_request(
@@ -10490,6 +10554,7 @@ async def start_remote_agent_work(
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
     body.provider = placement_body.provider
+    _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
     _apply_dispatch_mode_default(body)
     return await _admit_remote_agent_work(
         request,
@@ -11342,26 +11407,15 @@ async def execute_post_turn_action(
     )
     if not action:
         raise HTTPException(status_code=404, detail="Follow-up action not found")
+    if body.action_id != action_id:
+        raise HTTPException(
+            status_code=409, detail={"code": "action_id_binding_mismatch"}
+        )
     if body.expected_authority_version != evaluation.observed_authority_version:
         raise HTTPException(
             status_code=409,
             detail={"code": "stale_authority_version", "recoverable": True},
         )
-    prior = next(
-        (
-            item
-            for item in action.audit
-            if item.get("idempotency_key") == body.idempotency_key
-        ),
-        None,
-    )
-    if prior:
-        return {
-            "accepted": True,
-            "duplicate": True,
-            "status": action.status.value,
-            "result": prior.get("result"),
-        }
     if action.status in {
         FollowupActionStatus.REJECTED,
         FollowupActionStatus.SUPERSEDED,
@@ -11369,6 +11423,22 @@ async def execute_post_turn_action(
         raise HTTPException(
             status_code=409,
             detail={"code": "action_not_executable", "status": action.status.value},
+        )
+    if (
+        action.status == FollowupActionStatus.EXECUTED
+        and action.action_id not in record.post_turn_action_receipts
+        and action.safety in {
+            SafetyClassification.EXTERNAL_WRITE,
+            SafetyClassification.HIGH_IMPACT,
+        }
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "legacy_unreceipted_high_impact_action",
+                "recoverable": False,
+                "required_action": "read_only_reconciliation",
+            },
         )
     if (
         action.name == FollowupActionName.PROMPT_SAME_SESSION
@@ -11404,18 +11474,73 @@ async def execute_post_turn_action(
                     "budget_maximum": budget,
                 }
             )
-    if action.human_approval_required and not body.approve:
+    if action.human_approval_required and body.approval is None:
         raise HTTPException(
             status_code=403,
             detail={
-                "code": "operator_approval_required",
+                "code": "bound_operator_approval_required",
                 "action": action.name.value,
+                "target_digest": action.target_digest,
+                "payload_digest": action.payload_digest,
+                "authority_version": evaluation.observed_authority_version,
             },
+        )
+    if body.approval is not None and (
+        body.approval.target_digest != action.target_digest
+        or body.approval.payload_digest != action.payload_digest
+        or body.approval.authority_version != evaluation.observed_authority_version
+        or body.approval.expires_at <= datetime.now(UTC)
+        or body.approval.principal_id != get_principal_id(request)
+    ):
+        raise HTTPException(
+            status_code=403, detail={"code": "approval_binding_invalid_or_expired"}
         )
     action.status = (
         FollowupActionStatus.APPROVED
         if action.human_approval_required
         else action.status
+    )
+    receipt = ActionReceiptV1(
+        action_id=action.action_id,
+        action_digest=action.binding_digest,
+        idempotency_key=body.idempotency_key,
+        lease_owner=request.app.state.ctx.settings.instance_id,
+        lease_expires_at=datetime.now(UTC) + timedelta(seconds=60),
+        approval=body.approval,
+    )
+    try:
+        record, receipt, claimed = ledger.claim_post_turn_action(dispatch_id, receipt)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "action_binding_conflict", "message": str(exc)},
+        ) from exc
+    if not claimed:
+        if receipt.status == ActionReceiptStatus.SUCCEEDED:
+            return {
+                "accepted": True,
+                "duplicate": True,
+                "status": FollowupActionStatus.EXECUTED.value,
+                "result": receipt.result,
+                "receipt": receipt.model_dump(mode="json"),
+            }
+        code = (
+            "action_execution_in_progress"
+            if receipt.status == ActionReceiptStatus.STARTED
+            and receipt.lease_expires_at
+            and receipt.lease_expires_at > datetime.now(UTC)
+            else "action_outcome_unknown_reconciliation_required"
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"code": code, "receipt": receipt.model_dump(mode="json"), "recoverable": False},
+        )
+    evaluation = next(
+        item for item in record.post_turn_evaluations
+        if item.evaluation_id == body.evaluation_id
+    )
+    action = next(
+        item for item in evaluation.recommended_actions if item.action_id == action_id
     )
     result: Any = None
     try:
@@ -11537,6 +11662,17 @@ async def execute_post_turn_action(
         action.executed_at = datetime.now(UTC)
         action.status_reason = "Validated and deterministically executed by PA."
     except Exception as exc:
+        ambiguous = action.safety in {
+            SafetyClassification.EXTERNAL_WRITE,
+            SafetyClassification.HIGH_IMPACT,
+        }
+        receipt.status = ActionReceiptStatus.UNKNOWN if ambiguous else ActionReceiptStatus.FAILED
+        receipt.finished_at = datetime.now(UTC)
+        receipt.error = sanitize_text(exc, limit=1_000)
+        receipt.history.append(
+            {"status": receipt.status.value, "at": receipt.finished_at.isoformat()}
+        )
+        ledger.finish_post_turn_action(dispatch_id, receipt)
         action.status = FollowupActionStatus.FAILED
         action.status_reason = sanitize_text(exc, limit=1_000)
         action.audit.append(
@@ -11547,7 +11683,6 @@ async def execute_post_turn_action(
                 "error": action.status_reason,
             }
         )
-        ledger.put(record)
         raise HTTPException(
             status_code=409,
             detail={
@@ -11564,12 +11699,31 @@ async def execute_post_turn_action(
             "result": result,
         }
     )
+    receipt.status = ActionReceiptStatus.SUCCEEDED
+    receipt.finished_at = action.executed_at
+    receipt.result = result
+    receipt.history.append(
+        {"status": "succeeded", "at": receipt.finished_at.isoformat()}
+    )
+    record = ledger.finish_post_turn_action(dispatch_id, receipt)
+    evaluation = next(
+        item for item in record.post_turn_evaluations
+        if item.evaluation_id == body.evaluation_id
+    )
+    persisted_action = next(
+        item for item in evaluation.recommended_actions if item.action_id == action_id
+    )
+    persisted_action.status = action.status
+    persisted_action.executed_at = action.executed_at
+    persisted_action.status_reason = action.status_reason
+    persisted_action.audit = action.audit
     ledger.put(record)
     return {
         "accepted": True,
         "duplicate": False,
         "status": action.status.value,
         "result": result,
+        "receipt": receipt.model_dump(mode="json"),
     }
 
 
@@ -15296,6 +15450,40 @@ class FleetModule(Module):
                     "operator_input": operator_input,
                     "idempotency_key": key,
                 },
+            )
+
+        @mcp.tool()
+        def request_agent_restart_handoff(
+            continuation_prompt: str,
+            idempotency_key: str,
+        ) -> dict | None:
+            """Safely restart after this turn and continue the exact session once."""
+            import os
+            from pa.acp.environment import (
+                ASSIGNED_SERVICE_MODE_ENV,
+                ASSIGNED_SERVICE_SESSION_ENV,
+            )
+
+            assigned = os.environ.get(ASSIGNED_SERVICE_MODE_ENV) == "1"
+            bound_session = os.environ.get(ASSIGNED_SERVICE_SESSION_ENV, "")
+            session_id = bound_session or os.environ.get("PA_BROWSER_SESSION_ID", "")
+            if not session_id:
+                raise ValueError("Restart handoff requires a managed PA session binding")
+            path = (
+                "/api/goal-assigned-session/restart-handoff"
+                if assigned
+                else f"/api/agent/sessions/{session_id}/restart-handoffs"
+            )
+            return request_local_pa(
+                ctx.settings,
+                "POST",
+                path,
+                json={
+                    "continuation_prompt": continuation_prompt,
+                    "idempotency_key": idempotency_key,
+                },
+                allow_not_found=True,
+                timeout_seconds=15.0,
             )
 
         @mcp.tool()

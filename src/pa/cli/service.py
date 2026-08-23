@@ -256,9 +256,11 @@ def _format_systemd_env(env: dict[str, str]) -> str:
 
 
 def render_plist(settings: Settings, pa_bin: Path) -> bytes:
+    from pa.core.log_rotation import prepare_bootstrap_log
+
     template = _launchd_template_path().read_text()
     log_dir = settings.data_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    prepare_bootstrap_log(settings.data_dir)
     env = service_environment(settings)
     if settings.sync_token:
         env["PA_SYNC_TOKEN_FILE"] = str(sync_credential_path(settings))
@@ -271,9 +273,11 @@ def render_plist(settings: Settings, pa_bin: Path) -> bytes:
 
 
 def render_systemd_unit(settings: Settings, pa_bin: Path) -> str:
+    from pa.core.log_rotation import prepare_bootstrap_log
+
     template = _systemd_template_path().read_text()
     log_dir = settings.data_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    prepare_bootstrap_log(settings.data_dir)
     env = service_environment(settings)
     credential = ""
     if settings.sync_token:
@@ -1105,7 +1109,7 @@ def tail_logs(
 
     show_logs(
         settings=Settings(),
-        sources=sources or ["stdout", "stderr", "structured"],
+        sources=sources or ["stdout", "stderr", "structured", "supervisor"],
         lines=lines,
         follow=follow,
         since=since,

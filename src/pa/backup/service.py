@@ -14,6 +14,8 @@ import tarfile
 import tempfile
 import threading
 import time
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -76,6 +78,7 @@ def config_from_settings(settings: Settings) -> BackupConfig:
         concurrency=settings.backup_concurrency,
         alert_after_failures=settings.backup_alert_after_failures,
         jitter_seconds=settings.backup_jitter_seconds,
+        scrub_interval_seconds=settings.backup_scrub_interval_seconds,
     )
 
 
@@ -216,6 +219,23 @@ def _verify_event_graph(objects_root: Path, refs: dict[str, str]) -> None:
         )
 
 
+def _verify_transcript_store(database: Path, objects_root: Path) -> None:
+    if not database.exists():
+        return
+    with contextlib.closing(sqlite3.connect(f"file:{database}?mode=ro", uri=True)) as conn:
+        refs = conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL").fetchall()
+    for (digest,) in refs:
+        path = objects_root / str(digest)[:2] / f"{str(digest)[2:]}.zlib"
+        if not path.is_file():
+            raise BackupError("transcript_object_missing", f"cold transcript object {str(digest)[:12]} is missing")
+        try:
+            raw = zlib.decompress(path.read_bytes())
+        except (OSError, zlib.error) as exc:
+            raise BackupError("transcript_object_corrupt", f"cold transcript object {str(digest)[:12]} is unreadable") from exc
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise BackupError("transcript_object_corrupt", f"cold transcript object {str(digest)[:12]} failed content hash")
+
+
 class BackupService:
     def __init__(self, settings: Settings, store: Store | None) -> None:
         self.settings = settings
@@ -231,6 +251,11 @@ class BackupService:
         self._config_event: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._scheduler_task: asyncio.Task | None = None
+        # Backup I/O must never occupy the shared request/sync worker pool.
+        self._maintenance_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="pa-backup-io"
+        )
+        self._maintenance_pending = False
         self._state = self._load_state()
 
     def _load_state(self) -> BackupState:
@@ -356,12 +381,12 @@ class BackupService:
             os.fsync(out.fileno())
         os.chmod(target, 0o600)
 
-    def _online_sqlite_backup(self, target: Path) -> None:
+    def _online_sqlite_backup(self, target: Path, *, source_path: Path | None = None) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             with (
                 contextlib.closing(
-                    sqlite3.connect(self.settings.db_path, timeout=30)
+                    sqlite3.connect(source_path or self.settings.db_path, timeout=30)
                 ) as source,
                 contextlib.closing(sqlite3.connect(target)) as destination,
             ):
@@ -383,10 +408,28 @@ class BackupService:
             if self.store is not None
             else contextlib.nullcontext()
         )
-        with lock:
+        transcript_lock = (
+            self.store.transcripts._lock
+            if self.store is not None and hasattr(self.store, "transcripts")
+            else contextlib.nullcontext()
+        )
+        with lock, transcript_lock:
             projection = staging / "projection.sqlite3"
             self._online_sqlite_backup(projection)
             _integrity(projection, self.config.verification_level)
+            transcript_source = self.settings.db_path.with_name(
+                f"{self.settings.db_path.stem}.transcripts.db"
+            )
+            if transcript_source.exists():
+                transcript_target = staging / "transcripts.sqlite3"
+                self._online_sqlite_backup(transcript_target, source_path=transcript_source)
+                _integrity(transcript_target, self.config.verification_level)
+                cold_target = staging / "transcript_objects"
+                cold_target.mkdir(mode=0o700)
+                cold_source = self.settings.data_dir / "transcript_objects"
+                if cold_source.exists():
+                    for source in sorted(cold_source.glob("*/*.zlib")):
+                        self._copy_file(source, cold_target / source.relative_to(cold_source))
 
             refs: dict[str, str] = {}
             if self.store is not None and self.store.event_log is not None:
@@ -469,7 +512,12 @@ class BackupService:
         )
         return manifest
 
-    def _archive(self, staging: Path, manifest: BackupManifest) -> Path:
+    def _archive(
+        self,
+        staging: Path,
+        manifest: BackupManifest,
+        phase_seconds: dict[str, float] | None = None,
+    ) -> Path:
         suffix = ".pa-backup.tgz" if self.config.compression else ".pa-backup.tar"
         stamp = manifest.created_at.astimezone(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
         instance = _SAFE_NAME.sub("-", self.settings.instance_id).strip("-")[:64]
@@ -483,6 +531,7 @@ class BackupService:
         os.close(fd)
         temporary = Path(temporary_name)
         try:
+            archive_started = time.monotonic()
             mode = "w:gz" if self.config.compression else "w"
             with tarfile.open(temporary, mode, format=tarfile.PAX_FORMAT) as archive:
                 for path in sorted(staging.rglob("*")):
@@ -492,14 +541,29 @@ class BackupService:
                         recursive=False,
                     )
             os.chmod(temporary, 0o600)
+            if phase_seconds is not None:
+                phase_seconds["archive"] = round(
+                    time.monotonic() - archive_started, 6
+                )
+            verify_started = time.monotonic()
             verification = self.verify_backup(manifest.backup_id, path=temporary)
+            if phase_seconds is not None:
+                phase_seconds["verify"] = round(
+                    time.monotonic() - verify_started, 6
+                )
             if not verification.verified:
                 raise BackupError(
                     "temporary_verification_failed",
                     verification.verification_error
                     or "temporary backup archive did not verify",
                 )
-            return self.backend.publish(temporary, name)
+            publish_started = time.monotonic()
+            published = self.backend.publish(temporary, name)
+            if phase_seconds is not None:
+                phase_seconds["publish"] = round(
+                    time.monotonic() - publish_started, 6
+                )
+            return published
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise
@@ -510,6 +574,7 @@ class BackupService:
         trigger: str = "manual",
         idempotency_key: str | None = None,
         protected_backup_ids: set[str] | None = None,
+        queue_wait_seconds: float = 0,
     ) -> BackupRun:
         if idempotency_key:
             with self._state_lock:
@@ -533,6 +598,7 @@ class BackupService:
             return run
         started = time.monotonic()
         run = BackupRun(trigger=trigger, idempotency_key=idempotency_key)
+        run.queue_wait_seconds = round(queue_wait_seconds, 6)
         with self._state_lock:
             self._state.runs.append(run)
             self._state.last_attempt = run.started_at
@@ -553,22 +619,21 @@ class BackupService:
                 )
             )
             os.chmod(staging_path, 0o700)
+            phase_started = time.monotonic()
             manifest = self._snapshot(staging_path)
-            archive = self._archive(staging_path, manifest)
-            record = self.verify_backup(manifest.backup_id, path=archive)
-            if not record.verified:
-                archive.unlink(missing_ok=True)
-                raise BackupError(
-                    "published_verification_failed",
-                    record.verification_error or "published backup did not verify",
-                )
+            run.phase_seconds["snapshot"] = round(time.monotonic() - phase_started, 6)
+            archive = self._archive(staging_path, manifest, run.phase_seconds)
+            # _archive fully verifies the temporary artifact before backend.publish
+            # atomically renames those exact immutable bytes into visibility.
             run.status = "success"
             run.backup_id = manifest.backup_id
             run.verification = "verified"
             run.size_bytes = archive.stat().st_size
+            phase_started = time.monotonic()
             run.pruned_backup_ids = self.prune(
                 protected_backup_ids=protected_backup_ids
             )
+            run.phase_seconds["prune"] = round(time.monotonic() - phase_started, 6)
             with self._state_lock:
                 self._state.last_success = datetime.now(UTC)
                 self._state.consecutive_failures = 0
@@ -580,6 +645,8 @@ class BackupService:
                 backup_id=run.backup_id,
                 size_bytes=run.size_bytes,
                 pruned_backup_ids=run.pruned_backup_ids,
+                queue_wait_seconds=run.queue_wait_seconds,
+                phase_seconds=run.phase_seconds,
             )
         except BackupError as exc:
             if exc.code == "backup_overlap_process":
@@ -745,8 +812,20 @@ class BackupService:
                                 "event_object_corrupt",
                                 f"event-log object path {relative} does not match its hash",
                             )
+                    if parts and parts[0] == "transcript_objects":
+                        object_id = parts[1] + Path(parts[2]).stem if len(parts) == 3 else ""
+                        try:
+                            raw = zlib.decompress(candidate.read_bytes())
+                        except (OSError, zlib.error) as exc:
+                            raise BackupError("transcript_object_corrupt", f"cold transcript object {relative} is unreadable") from exc
+                        if hashlib.sha256(raw).hexdigest() != object_id:
+                            raise BackupError("transcript_object_corrupt", f"cold transcript object {relative} failed content hash")
                 projection = root / "projection.sqlite3"
                 _integrity(projection, manifest.verification_level)
+                transcript_projection = root / "transcripts.sqlite3"
+                if transcript_projection.exists():
+                    _integrity(transcript_projection, manifest.verification_level)
+                    _verify_transcript_store(transcript_projection, root / "transcript_objects")
                 version, fingerprint = _schema_info(projection)
                 if (
                     version != manifest.projection_schema_version
@@ -924,6 +1003,55 @@ class BackupService:
         if deleted:
             self._save_state()
         return deleted
+
+    def deep_scrub(self) -> dict[str, bool]:
+        """Freshly verify every retained archive outside the normal backup path."""
+        started = time.monotonic()
+        results: dict[str, bool] = {}
+        self._audit("backup_scrub_started")
+        for record in self.list_backups():
+            results[record.backup_id] = self.verify_backup(
+                record.backup_id, path=record.path
+            ).verified
+        elapsed = round(time.monotonic() - started, 6)
+        with self._state_lock:
+            self._state.last_scrub = datetime.now(UTC)
+            self._state.next_scrub_run = self._state.last_scrub + timedelta(
+                seconds=self.config.scrub_interval_seconds
+            )
+            self._state.last_scrub_results = results
+            self._save_state()
+        self._metric("backup_scrub_total")
+        self._metric("backup_scrub_seconds_total", elapsed)
+        self._audit(
+            "backup_scrub_finished",
+            duration_seconds=elapsed,
+            checked=len(results),
+            corrupt=sum(not verified for verified in results.values()),
+        )
+        return results
+
+    async def _run_maintenance(self, operation: str, call: Any, **kwargs: Any) -> Any:
+        """Submit at most one maintenance job to PA's isolated I/O lane."""
+        if self._maintenance_pending:
+            self._metric("backup_maintenance_coalesced_total")
+            self._audit("backup_maintenance_coalesced", operation=operation)
+            return None
+        self._maintenance_pending = True
+        queued_at = time.monotonic()
+
+        def invoke() -> Any:
+            wait = time.monotonic() - queued_at
+            if call == self.run_backup:
+                kwargs["queue_wait_seconds"] = wait
+            self._metric(f"{operation}_queue_wait_seconds_total", wait)
+            return call(**kwargs)
+
+        try:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self._maintenance_executor, invoke)
+        finally:
+            self._maintenance_pending = False
 
     def delete_backup(self, backup_id: str) -> None:
         target_path = self._path_for_backup(backup_id)
@@ -1200,6 +1328,8 @@ class BackupService:
 
             for live in (
                 self.settings.db_path,
+                self.settings.db_path.with_name(f"{self.settings.db_path.stem}.transcripts.db"),
+                self.settings.data_dir / "transcript_objects",
                 self.settings.data_dir / "sync_refs.json",
                 self.settings.objects_dir,
             ):
@@ -1216,6 +1346,16 @@ class BackupService:
                 mode=0o600,
             )
             os.replace(extract_root / "objects", self.settings.objects_dir)
+            transcript_snapshot = extract_root / "transcripts.sqlite3"
+            if transcript_snapshot.exists():
+                transcript_live = self.settings.db_path.with_name(f"{self.settings.db_path.stem}.transcripts.db")
+                os.replace(transcript_snapshot, transcript_live)
+                os.chmod(transcript_live, 0o600)
+                cold_snapshot = extract_root / "transcript_objects"
+                if cold_snapshot.exists():
+                    os.replace(cold_snapshot, self.settings.data_dir / "transcript_objects")
+                _integrity(transcript_live, record.manifest.verification_level)
+                _verify_transcript_store(transcript_live, self.settings.data_dir / "transcript_objects")
             _integrity(self.settings.db_path, record.manifest.verification_level)
             try:
                 restored_refs = json.loads(
@@ -1341,6 +1481,12 @@ class BackupService:
         self._loop = asyncio.get_running_loop()
         self._stop_event = asyncio.Event()
         self._config_event = asyncio.Event()
+        if self._state.next_scrub_run is None:
+            with self._state_lock:
+                self._state.next_scrub_run = datetime.now(UTC) + timedelta(
+                    seconds=self.config.scrub_interval_seconds
+                )
+                self._save_state()
 
         async def scheduler() -> None:
             now = datetime.now(UTC)
@@ -1355,45 +1501,48 @@ class BackupService:
                 )
             )
             if startup_due:
-                await async_runtime.run_blocking(
+                await self._run_maintenance(
                     "backup.startup",
                     self.run_backup,
                     trigger="startup",
                     idempotency_key=f"startup:{self.settings.instance_id}:{now.date()}",
-                    timeout=max(300.0, self.config.interval_seconds),
                 )
             while self._stop_event and not self._stop_event.is_set():
-                if not self.config.enabled:
+                if self.config.enabled:
+                    next_run = self._state.next_scheduled_run or self._schedule_next()
+                else:
                     with self._state_lock:
                         self._state.next_scheduled_run = None
                         self._save_state()
-                    outcome = await self._wait_for_schedule_change(None)
-                    if outcome == "stop":
-                        break
-                    continue
-                next_run = self._state.next_scheduled_run or self._schedule_next()
-                timeout = max(0.0, (next_run - datetime.now(UTC)).total_seconds())
+                    next_run = None
+                scrub_run = self._state.next_scrub_run
+                due_times = [item for item in (next_run, scrub_run) if item is not None]
+                timeout = max(
+                    0.0, (min(due_times) - datetime.now(UTC)).total_seconds()
+                )
                 outcome = await self._wait_for_schedule_change(timeout)
                 if outcome == "stop":
                     break
                 if outcome == "config":
                     continue
                 now = datetime.now(UTC)
-                if now > next_run + timedelta(seconds=self.config.interval_seconds):
-                    self._metric("backup_missed_schedule_total")
-                    self._audit(
-                        "backup_schedule_missed", scheduled_for=next_run.isoformat()
+                if scrub_run is not None and now >= scrub_run:
+                    await self._run_maintenance("backup.scrub", self.deep_scrub)
+                if next_run is not None and now >= next_run:
+                    if now > next_run + timedelta(seconds=self.config.interval_seconds):
+                        self._metric("backup_missed_schedule_total")
+                        self._audit(
+                            "backup_schedule_missed", scheduled_for=next_run.isoformat()
+                        )
+                    await self._run_maintenance(
+                        "backup.scheduled",
+                        self.run_backup,
+                        trigger="scheduled",
+                        idempotency_key=f"scheduled:{int(next_run.timestamp())}",
                     )
-                await async_runtime.run_blocking(
-                    "backup.scheduled",
-                    self.run_backup,
-                    trigger="scheduled",
-                    idempotency_key=f"scheduled:{int(next_run.timestamp())}",
-                    timeout=max(300.0, self.config.interval_seconds),
-                )
-                # Coalesce downtime or a slow job into one attempt instead of
-                # replaying every elapsed interval in a restart storm.
-                self._schedule_next(base=max(next_run, datetime.now(UTC)))
+                    # Coalesce downtime or a slow job into one attempt instead of
+                    # replaying every elapsed interval in a restart storm.
+                    self._schedule_next(base=max(next_run, datetime.now(UTC)))
 
         self._scheduler_task = asyncio.create_task(
             scheduler(), name="pa-metadata-backup-scheduler"
@@ -1449,3 +1598,4 @@ class BackupService:
             self._scheduler_task = None
         self._loop = None
         self._config_event = None
+        self._maintenance_executor.shutdown(wait=False, cancel_futures=True)

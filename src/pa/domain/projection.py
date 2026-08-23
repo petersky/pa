@@ -6,6 +6,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -50,9 +51,11 @@ from pa.domain.models import (
     RepositoryStatus,
     RepositoryUpdate,
     RepositoryVisibility,
+    RestartHandoff,
     TranscriptEvent,
     lane_from_legacy_status,
 )
+from pa.domain.transcript_storage import TranscriptStorage
 from pa.domain.notifications import Notification
 from pa.fleet.policy import (
     FleetPolicyAuditEvent,
@@ -64,7 +67,7 @@ from pa.fleet.policy import (
     PlacementDefault,
     default_scope_key,
 )
-from pa.sync.event_log import EventHistoryError, EventLog
+from pa.sync.event_log import DagIndexStaleError, EventHistoryError, EventLog
 from pa.workloads import WorkloadProfile, canonical_default_scope_key
 
 T = TypeVar("T")
@@ -132,20 +135,26 @@ class CardProjection:
         self._legacy_integrity_upgrade_required = False
         self._operation_owner = str(uuid4())
         self._replaying_from_log = False
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
         self._init_db()
+        self.transcripts = TranscriptStorage(db_path)
+        self._migrate_legacy_transcripts()
         if self._legacy_integrity_upgrade_required and self.event_log:
             for realm in {ref.realm_id for ref in self.event_log.list_refs()}:
                 self.rebuild_from_log(realm)
 
     @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
+    def _conn(
+        self, *, busy_timeout_ms: int = 30000
+    ) -> Iterator[sqlite3.Connection]:
         current = getattr(self._connection_local, "connection", None)
         if current is not None:
             yield current
             return
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("PRAGMA busy_timeout = 30000")
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
+        conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.row_factory = sqlite3.Row
         self._connection_local.connection = conn
@@ -210,6 +219,28 @@ class CardProjection:
                 CREATE INDEX IF NOT EXISTS idx_cards_lane ON cards(lane);
                 CREATE INDEX IF NOT EXISTS idx_cards_realm_lane_updated
                     ON cards(realm_id, lane, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS work_saved_views (
+                    id TEXT PRIMARY KEY,
+                    realm_id TEXT NOT NULL,
+                    principal_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(realm_id, principal_id, name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_work_saved_views_scope
+                    ON work_saved_views(realm_id, principal_id, name);
+                CREATE TABLE IF NOT EXISTS work_saved_view_audit (
+                    id TEXT PRIMARY KEY,
+                    view_id TEXT NOT NULL,
+                    principal_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    query TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY,
                     realm_id TEXT NOT NULL DEFAULT 'default',
@@ -275,6 +306,33 @@ class CardProjection:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS agent_restart_handoffs (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    continuation_prompt TEXT NOT NULL,
+                    continuation_prompt_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    card_id TEXT,
+                    project_id TEXT,
+                    instance_id TEXT,
+                    execution_binding_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    delivered_at TEXT,
+                    UNIQUE(session_id, idempotency_key),
+                    UNIQUE(continuation_prompt_id)
+                );
+                CREATE TABLE IF NOT EXISTS agent_execution_binding_history (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    prior_binding_json TEXT NOT NULL,
+                    binding_json TEXT NOT NULL,
+                    changed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS agent_session_cards (
                     session_id TEXT NOT NULL,
                     card_id TEXT NOT NULL,
@@ -303,13 +361,16 @@ class CardProjection:
                     item_id TEXT,
                     card_id TEXT,
                     summary TEXT NOT NULL,
-                    source TEXT NOT NULL DEFAULT 'session',
+                    source TEXT NOT NULL DEFAULT 'manual',
                     source_url TEXT,
                     kind TEXT NOT NULL DEFAULT 'memory',
+                    tier TEXT NOT NULL DEFAULT 'semantic',
                     status TEXT NOT NULL DEFAULT 'active',
                     scope TEXT NOT NULL DEFAULT 'realm',
                     owner TEXT,
                     confidence REAL,
+                    sensitivity TEXT NOT NULL DEFAULT 'internal',
+                    provenance_trust TEXT NOT NULL DEFAULT 'unverified',
                     supersedes_id TEXT,
                     review_at TEXT,
                     expires_at TEXT,
@@ -561,6 +622,7 @@ class CardProjection:
             ("mode_id", "TEXT"),
             ("config_json", "TEXT NOT NULL DEFAULT '{}'"),
             ("metrics_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("execution_binding_json", "TEXT NOT NULL DEFAULT '{}'"),
         ):
             if col not in session_cols:
                 conn.execute(f"ALTER TABLE agent_sessions ADD COLUMN {col} {decl}")
@@ -596,6 +658,63 @@ class CardProjection:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status_updated "
             "ON agent_sessions(status, updated_at DESC)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS agent_restart_handoffs (
+                   id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                   idempotency_key TEXT NOT NULL, continuation_prompt TEXT NOT NULL,
+                   continuation_prompt_id TEXT NOT NULL, status TEXT NOT NULL,
+                   card_id TEXT, project_id TEXT, instance_id TEXT,
+                   execution_binding_json TEXT NOT NULL DEFAULT '{}', error TEXT,
+                   attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+                   updated_at TEXT NOT NULL, delivered_at TEXT,
+                   UNIQUE(session_id, idempotency_key), UNIQUE(continuation_prompt_id)
+               )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_restart_handoffs_status_updated "
+            "ON agent_restart_handoffs(status, updated_at)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS agent_execution_binding_history (
+                   id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                   reason TEXT NOT NULL, prior_binding_json TEXT NOT NULL,
+                   binding_json TEXT NOT NULL, changed_at TEXT NOT NULL
+               )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_binding_history_session "
+            "ON agent_execution_binding_history(session_id, changed_at)"
+        )
+        # A browser default is a durable identity, not merely the most recently
+        # touched row carrying a convenient label.  Older databases can contain
+        # duplicates from reconnect races.  Keep the explicitly selected row
+        # (or the oldest recoverable identity, which predates the replacement
+        # regression) and retire only the duplicate label before enforcing the
+        # invariant for future writers.
+        conn.execute(
+            """
+            WITH ranked AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY
+                               CASE WHEN json_extract(config_json,
+                                   '$.browser_default_selected') = 1 THEN 0 ELSE 1 END,
+                               CASE WHEN status = 'closed' THEN 2 ELSE 0 END,
+                               created_at ASC,
+                               id ASC
+                       ) AS label_rank
+                FROM agent_sessions
+                WHERE label = 'default' AND status != 'closed'
+            )
+            UPDATE agent_sessions
+            SET label = NULL
+            WHERE id IN (SELECT id FROM ranked WHERE label_rank > 1)
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_sessions_one_default "
+            "ON agent_sessions(label) WHERE label = 'default' AND status != 'closed'"
         )
         conn.execute(
             """
@@ -654,10 +773,13 @@ class CardProjection:
         for col, decl in (
             ("source_url", "TEXT"),
             ("kind", "TEXT NOT NULL DEFAULT 'memory'"),
+            ("tier", "TEXT NOT NULL DEFAULT 'semantic'"),
             ("status", "TEXT NOT NULL DEFAULT 'active'"),
             ("scope", "TEXT NOT NULL DEFAULT 'realm'"),
             ("owner", "TEXT"),
             ("confidence", "REAL"),
+            ("sensitivity", "TEXT NOT NULL DEFAULT 'internal'"),
+            ("provenance_trust", "TEXT NOT NULL DEFAULT 'unverified'"),
             ("supersedes_id", "TEXT"),
             ("review_at", "TEXT"),
             ("expires_at", "TEXT"),
@@ -667,11 +789,17 @@ class CardProjection:
         ):
             if knowledge_cols and col not in knowledge_cols:
                 conn.execute(f"ALTER TABLE knowledge ADD COLUMN {col} {decl}")
+        if knowledge_cols and "provenance_trust" not in knowledge_cols:
+            conn.execute("UPDATE knowledge SET provenance_trust = 'legacy'")
         if knowledge_cols and "updated_at" not in knowledge_cols:
             conn.execute("UPDATE knowledge SET updated_at = created_at")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_knowledge_card "
             "ON knowledge(card_id, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_cursor "
+            "ON knowledge(status, updated_at DESC, id DESC)"
         )
         conn.execute(
             """
@@ -2508,7 +2636,8 @@ class CardProjection:
         owner: str = "",
         instance: str = "",
         blocked: str = "",
-        tag: str = "",
+        tags: list[str] | None = None,
+        tag_mode: str = "and",
         updated_days: int | None = None,
     ) -> tuple[str, list[object]]:
         clauses = ["realm_id = ?"]
@@ -2535,11 +2664,21 @@ class CardProjection:
             clauses.append("lane = 'waiting'")
         elif blocked == "unblocked":
             clauses.append("lane != 'waiting'")
-        if tag:
-            clauses.append(
-                "EXISTS (SELECT 1 FROM json_each(cards.tags) WHERE value = ?)"
-            )
-            params.append(tag)
+        selected_tags = list(dict.fromkeys(tags or []))
+        if selected_tags:
+            if tag_mode == "or":
+                placeholders = ",".join("?" for _ in selected_tags)
+                clauses.append(
+                    "EXISTS (SELECT 1 FROM json_each(cards.tags) "
+                    f"WHERE value IN ({placeholders}))"
+                )
+                params.extend(selected_tags)
+            else:
+                for selected_tag in selected_tags:
+                    clauses.append(
+                        "EXISTS (SELECT 1 FROM json_each(cards.tags) WHERE value = ?)"
+                    )
+                    params.append(selected_tag)
         if updated_days is not None:
             cutoff = datetime.now(UTC) - timedelta(days=updated_days)
             clauses.append("updated_at >= ?")
@@ -2558,6 +2697,8 @@ class CardProjection:
         instance: str = "",
         blocked: str = "",
         tag: str = "",
+        tags: list[str] | None = None,
+        tag_mode: str = "and",
         updated_days: int | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -2572,7 +2713,8 @@ class CardProjection:
             owner=owner,
             instance=instance,
             blocked=blocked,
-            tag=tag,
+            tags=tags if tags is not None else ([tag] if tag else []),
+            tag_mode=tag_mode,
             updated_days=updated_days,
         )
         bounded_limit = max(1, min(int(limit), 100))
@@ -2607,6 +2749,8 @@ class CardProjection:
         instance: str = "",
         blocked: str = "",
         tag: str = "",
+        tags: list[str] | None = None,
+        tag_mode: str = "and",
         updated_days: int | None = None,
     ) -> int:
         where, params = self._card_work_clauses(
@@ -2618,7 +2762,8 @@ class CardProjection:
             owner=owner,
             instance=instance,
             blocked=blocked,
-            tag=tag,
+            tags=tags if tags is not None else ([tag] if tag else []),
+            tag_mode=tag_mode,
             updated_days=updated_days,
         )
         with self._conn() as conn:
@@ -2666,6 +2811,100 @@ class CardProjection:
                 )
             ]
         return {"owners": owners, "instances": instances, "tags": tags}
+
+    def search_card_filter_facet(
+        self, *, realm_id: str, facet: str, query: str = "", limit: int = 20
+    ) -> list[dict[str, object]]:
+        """Return a bounded, count-bearing facet page ranked for typeahead use."""
+        bounded_limit = max(1, min(int(limit), 50))
+        needle = query.strip().casefold()
+        with self._conn() as conn:
+            if facet == "tag":
+                rows = conn.execute(
+                    """
+                    SELECT CAST(j.value AS TEXT) AS value, COUNT(*) AS count
+                    FROM cards c, json_each(c.tags) j
+                    WHERE c.realm_id = ? AND j.value IS NOT NULL AND j.value != ''
+                      AND (? = '' OR LOWER(CAST(j.value AS TEXT)) LIKE ?)
+                    GROUP BY j.value
+                    ORDER BY CASE
+                      WHEN LOWER(CAST(j.value AS TEXT)) = ? THEN 0
+                      WHEN LOWER(CAST(j.value AS TEXT)) LIKE ? THEN 1 ELSE 2 END,
+                      count DESC, LOWER(CAST(j.value AS TEXT)), CAST(j.value AS TEXT)
+                    LIMIT ?
+                    """,
+                    (realm_id, needle, f"%{needle}%", needle, f"{needle}%", bounded_limit),
+                ).fetchall()
+            else:
+                column = {"owner": "owner_principal", "instance": "preferred_instance"}.get(facet)
+                if column is None:
+                    raise ValueError("unsupported facet")
+                rows = conn.execute(
+                    f"""SELECT {column} AS value, COUNT(*) AS count FROM cards
+                    WHERE realm_id = ? AND {column} IS NOT NULL AND {column} != ''
+                      AND (? = '' OR LOWER({column}) LIKE ?)
+                    GROUP BY {column}
+                    ORDER BY CASE WHEN LOWER({column}) = ? THEN 0
+                      WHEN LOWER({column}) LIKE ? THEN 1 ELSE 2 END,
+                      count DESC, LOWER({column}), {column} LIMIT ?""",
+                    (realm_id, needle, f"%{needle}%", needle, f"{needle}%", bounded_limit),
+                ).fetchall()
+        return [{"value": str(row["value"]), "count": int(row["count"])} for row in rows]
+
+    def list_work_saved_views(self, *, realm_id: str, principal_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM work_saved_views WHERE realm_id = ? AND principal_id = ? ORDER BY LOWER(name), id",
+                (realm_id, principal_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_work_view(
+        self, *, view_id: str, realm_id: str, principal_id: str, name: str, query: str
+    ) -> dict:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            existing = conn.execute(
+                "SELECT * FROM work_saved_views WHERE realm_id=? AND principal_id=? AND name=?",
+                (realm_id, principal_id, name),
+            ).fetchone()
+            if existing:
+                view_id = str(existing["id"])
+                version = int(existing["version"]) + 1
+                conn.execute(
+                    "UPDATE work_saved_views SET query=?, version=?, updated_at=? WHERE id=?",
+                    (query, version, now, view_id),
+                )
+                action = "updated"
+            else:
+                version = 1
+                conn.execute(
+                    "INSERT INTO work_saved_views VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (view_id, realm_id, principal_id, name, query, version, now, now),
+                )
+                action = "created"
+            conn.execute(
+                "INSERT INTO work_saved_view_audit VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uuid4().hex, view_id, principal_id, action, version, query, now),
+            )
+            row = conn.execute("SELECT * FROM work_saved_views WHERE id=?", (view_id,)).fetchone()
+        return dict(row)
+
+    def delete_work_view(self, *, view_id: str, realm_id: str, principal_id: str) -> bool:
+        now = datetime.now(UTC).isoformat()
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM work_saved_views WHERE id=? AND realm_id=? AND principal_id=?",
+                (view_id, realm_id, principal_id),
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute("DELETE FROM work_saved_views WHERE id=?", (view_id,))
+            conn.execute(
+                "INSERT INTO work_saved_view_audit VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uuid4().hex, view_id, principal_id, "deleted", int(row["version"]), str(row["query"]), now),
+            )
+        return True
 
     def list_cards_by_ids(
         self, card_ids: list[str], *, realm_id: str
@@ -3066,13 +3305,20 @@ class CardProjection:
         realm_id: str = "default",
         principal_id: str = "user:local",
         instance_id: str = "local",
+        diagnose_only: bool = False,
     ) -> list[dict]:
-        """Append explicit canonical bases for projection-only legacy cards."""
+        """Re-anchor projection cards whose canonical base is not reachable."""
         if not self.event_log:
             return []
+        unique_ids = list(dict.fromkeys(card_ids))
+        orphaned = self.event_log.orphaned_card_bases(realm_id, unique_ids)
         results: list[dict] = []
-        for card_id in dict.fromkeys(card_ids):
-            history = self.event_log.entity_history(realm_id, "card", card_id)
+        for card_id in unique_ids:
+            history_page = self.event_log.entity_history_page(
+                realm_id, "card", card_id, limit=100_000
+            )
+            history = history_page["events"]
+            diagnosed_head = history_page["head"]
             prior_repair = next(
                 (
                     item
@@ -3088,6 +3334,7 @@ class CardProjection:
                     {
                         "card_id": card_id,
                         "status": "already_repaired",
+                        "history_state": "reachable_canonical_history",
                         "commit_hash": prior_repair["commit_hash"],
                     }
                 )
@@ -3110,76 +3357,180 @@ class CardProjection:
                     {
                         "card_id": card_id,
                         "status": "canonical_history_present",
+                        "history_state": "reachable_canonical_history",
                         "commit_hash": canonical_base["commit_hash"],
                     }
                 )
                 continue
-            with self._conn() as conn:
-                row = conn.execute(
-                    "SELECT * FROM items WHERE id=?", (card_id,)
-                ).fetchone()
-            if not row:
-                results.append({"card_id": card_id, "status": "no_legacy_source"})
-                continue
-            lane = lane_from_legacy_status(row["status"])
-            candidate = Card(
-                id=card_id,
-                realm_id=realm_id,
-                kind=CardKind(row["kind"]),
-                title=row["title"],
-                body=row["body"],
-                summary="",
-                summary_source=CardSummarySource.FALLBACK,
-                summary_status="pending",
-                summary_updated_at=None,
-                lane=lane,
-                parent_id=row["parent_id"],
-                tags=json.loads(row["tags"] or "[]"),
-                created_at=_coerce_datetime(row["created_at"]) or datetime.now(UTC),
-                updated_at=_coerce_datetime(row["updated_at"]) or datetime.now(UTC),
+
+            reachable_snapshot = (
+                self.event_log.entity_snapshot(
+                    diagnosed_head, "card", card_id
+                )
+                if diagnosed_head
+                else None
             )
+            card = self.get_card(card_id, realm_id=realm_id)
+            candidate = card
+            if candidate is None:
+                with self._conn() as conn:
+                    row = conn.execute(
+                        "SELECT * FROM items WHERE id=?", (card_id,)
+                    ).fetchone()
+                if row:
+                    candidate = Card(
+                        id=card_id,
+                        realm_id=realm_id,
+                        kind=CardKind(row["kind"]),
+                        title=row["title"],
+                        body=row["body"],
+                        lane=lane_from_legacy_status(row["status"]),
+                        parent_id=row["parent_id"],
+                        tags=json.loads(row["tags"] or "[]"),
+                        created_at=_coerce_datetime(row["created_at"])
+                        or datetime.now(UTC),
+                        updated_at=_coerce_datetime(row["updated_at"])
+                        or datetime.now(UTC),
+                    )
+            reachable_card = None
+            if reachable_snapshot is not None:
+                try:
+                    reachable_card = Card.model_validate(reachable_snapshot)
+                except ValidationError:
+                    pass
+            if reachable_card is not None:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "conflict",
+                        "history_state": "reachable_card_without_canonical_base",
+                        "reachable_snapshot": reachable_snapshot,
+                        "projection_snapshot": (
+                            candidate.model_dump(mode="json") if candidate else None
+                        ),
+                    }
+                )
+                continue
+            if not candidate:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "no_projection_source",
+                        "history_state": (
+                            "orphaned_canonical_history"
+                            if orphaned.get(card_id)
+                            else "absent"
+                        ),
+                        "orphaned_bases": orphaned.get(card_id, []),
+                    }
+                )
+                continue
+            # Preserve reachable post-base legacy mutations in the full repair
+            # snapshot.  A partial update cannot stand alone after a rebuild.
             for item in history:
                 event = item["event"]
-                if item["projection_effect"] == "ignored_duplicate_create":
-                    continue
                 if event["type"] not in {
                     EventType.CARD_UPDATED.value,
                     EventType.LEASE_GRANTED.value,
                     EventType.LEASE_RELEASED.value,
                 }:
                     continue
-                payload = dict(event["payload"])
-                if "lane" not in payload and "status" in payload:
-                    payload["lane"] = lane_from_legacy_status(payload["status"]).value
-                for key, value in payload.items():
-                    if key == "lane":
-                        candidate.lane = CardLane(value)
-                    elif key == "kind":
-                        candidate.kind = CardKind(value)
-                    elif key == "updated_at":
-                        candidate.updated_at = (
-                            _coerce_datetime(value) or candidate.updated_at
-                        )
-                    elif value is not None and hasattr(candidate, key):
-                        setattr(candidate, key, value)
+                changes = dict(event["payload"])
+                if "lane" not in changes and "status" in changes:
+                    changes["lane"] = lane_from_legacy_status(
+                        changes["status"]
+                    ).value
+                merged = candidate.model_dump(mode="json")
+                merged.update(changes)
+                candidate = Card.model_validate(merged)
+            history_state = (
+                "orphaned_canonical_history"
+                if orphaned.get(card_id)
+                else "projection_only_legacy_state"
+            )
+            if diagnose_only:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "repair_available",
+                        "history_state": history_state,
+                        "repair_origin": "authoritative_projection",
+                        "orphaned_bases": orphaned.get(card_id, []),
+                    }
+                )
+                continue
+            payload = candidate.model_dump(mode="json")
+            fingerprint = hashlib.sha256(
+                json.dumps(payload, sort_keys=True).encode()
+            ).hexdigest()
             repair = CardEvent(
                 type=EventType.CARD_UPSERTED,
                 realm_id=realm_id,
                 card_id=card_id,
                 author_principal=principal_id,
                 author_instance=instance_id,
-                payload=candidate.model_dump(mode="json"),
+                payload=payload,
                 source_operation="repair.legacy_card_history",
-                causal_card_version=(
-                    history[-1]["event"].get("causal_card_version") if history else None
-                ),
-                field_intent=sorted(candidate.model_dump(mode="json")),
+                causal_card_version=candidate.updated_at.isoformat(),
+                field_intent=sorted(payload),
+                idempotency_key=f"repair-card-history:{realm_id}:{card_id}:{fingerprint}",
+                request_fingerprint=fingerprint,
+                operation_result={
+                    "card_id": card_id,
+                    "history_state": history_state,
+                    "repair_origin": "authoritative_projection",
+                    "orphaned_bases": orphaned.get(card_id, []),
+                },
             )
-            commit = self.commit_event(repair)
+            current_head = self.event_log.get_head(realm_id)
+            if current_head != diagnosed_head:
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "concurrent_head_conflict",
+                        "history_state": "head_advanced",
+                        "diagnosed_head": diagnosed_head,
+                        "current_head": current_head,
+                    }
+                )
+                continue
+            try:
+                commit = self.commit_event(repair)
+            except DagIndexStaleError:
+                # Another server advanced the head after diagnosis.  Never
+                # overwrite it: the retry is a fresh, explicit classification.
+                refreshed = self.event_log.entity_history(
+                    realm_id, "card", card_id
+                )
+                base = next(
+                    (
+                        item for item in refreshed
+                        if item["event"]["type"] in {
+                            EventType.CARD_CREATED.value,
+                            EventType.CARD_UPSERTED.value,
+                        }
+                    ),
+                    None,
+                )
+                results.append(
+                    {
+                        "card_id": card_id,
+                        "status": "concurrent_head_conflict",
+                        "history_state": (
+                            "reachable_canonical_history" if base
+                            else "head_advanced"
+                        ),
+                        "commit_hash": base["commit_hash"] if base else None,
+                    }
+                )
+                continue
             results.append(
                 {
                     "card_id": card_id,
                     "status": "repaired",
+                    "history_state": history_state,
+                    "repair_origin": "authoritative_projection",
+                    "orphaned_bases": orphaned.get(card_id, []),
                     "lane": candidate.lane.value,
                     "commit_hash": commit.hash,
                 }
@@ -4001,14 +4352,40 @@ class CardProjection:
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO agent_sessions
+                INSERT INTO agent_sessions
                 (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
                  authority_instance_id, dispatch_id, realm_id,
                  lifecycle_owner,
                  item_id, card_id, project_id, principal_id,
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
-                 created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 execution_binding_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    agent_name=excluded.agent_name,
+                    external_session_id=excluded.external_session_id,
+                    origin_instance_id=excluded.origin_instance_id,
+                    origin_instance_name=excluded.origin_instance_name,
+                    authority_instance_id=excluded.authority_instance_id,
+                    dispatch_id=excluded.dispatch_id,
+                    realm_id=excluded.realm_id,
+                    lifecycle_owner=excluded.lifecycle_owner,
+                    item_id=excluded.item_id,
+                    card_id=excluded.card_id,
+                    project_id=excluded.project_id,
+                    principal_id=excluded.principal_id,
+                    status=excluded.status,
+                    cwd=excluded.cwd,
+                    title=excluded.title,
+                    label=excluded.label,
+                    model_id=excluded.model_id,
+                    mode_id=excluded.mode_id,
+                    config_json=excluded.config_json,
+                    metrics_json=excluded.metrics_json,
+                    execution_binding_json=CASE
+                      WHEN agent_sessions.execution_binding_json != '{}' THEN agent_sessions.execution_binding_json
+                      ELSE excluded.execution_binding_json END,
+                    created_at=excluded.created_at,
+                    updated_at=excluded.updated_at
                 """,
                 (
                     session.id,
@@ -4032,6 +4409,7 @@ class CardProjection:
                     session.mode_id,
                     json.dumps(session.config_json or {}),
                     json.dumps(session.metrics_json or {}),
+                    json.dumps(session.execution_binding or {}),
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
                 ),
@@ -4058,6 +4436,112 @@ class CardProjection:
                     ),
                 )
         return session
+
+    @staticmethod
+    def _binding_materialization_is_compatible(
+        prior: dict, binding: dict
+    ) -> bool:
+        immutable_keys = (
+            "version",
+            "execution_card_id",
+            "execution_project_id",
+            "origin_instance_id",
+        )
+        return all(prior.get(key) == binding.get(key) for key in immutable_keys) and all(
+            key in binding and binding.get(key) == value
+            for key, value in prior.items()
+        )
+
+    def set_session_execution_binding(
+        self,
+        session_id: str,
+        binding: dict,
+        *,
+        reason: str,
+        expected_binding: dict | None = None,
+    ) -> AgentSession:
+        """Apply one audited, compare-and-set execution provenance transition."""
+        allowed_reasons = {
+            "workspace_binding_initialized",
+            "workspace_materialized",
+            "legacy_workspace_recovered",
+            "stale_data_dir_cwd_removed",
+        }
+        if reason not in allowed_reasons:
+            raise ValueError("Unsupported execution binding transition reason")
+        normalized = dict(binding or {})
+        changed_at = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("Session not found")
+            session = self._row_to_session(row)
+            prior = dict(session.execution_binding or {})
+            if expected_binding is not None and prior != dict(expected_binding):
+                raise ValueError("Execution binding changed before audited transition")
+            if prior == normalized:
+                return session
+            if reason in {
+                "workspace_binding_initialized",
+                "legacy_workspace_recovered",
+            }:
+                permitted = not prior
+            elif reason == "workspace_materialized":
+                permitted = bool(prior) and self._binding_materialization_is_compatible(
+                    prior, normalized
+                )
+            else:
+                expected = dict(prior)
+                expected.pop("cwd", None)
+                permitted = normalized == expected and "cwd" in prior
+            if not permitted:
+                raise ValueError(
+                    "Execution binding transition would retarget immutable provenance"
+                )
+            conn.execute(
+                "UPDATE agent_sessions SET execution_binding_json=?, updated_at=? WHERE id=?",
+                (json.dumps(normalized), changed_at.isoformat(), session_id),
+            )
+            conn.execute(
+                """INSERT INTO agent_execution_binding_history
+                   (id, session_id, reason, prior_binding_json, binding_json, changed_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    str(uuid4()),
+                    session_id,
+                    reason,
+                    json.dumps(prior),
+                    json.dumps(normalized),
+                    changed_at.isoformat(),
+                ),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+        return self._row_to_session(refreshed)
+
+    def list_session_execution_binding_history(self, session_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT id, session_id, reason, prior_binding_json,
+                          binding_json, changed_at
+                   FROM agent_execution_binding_history
+                   WHERE session_id=? ORDER BY changed_at, id""",
+                (session_id,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "reason": row["reason"],
+                "prior_binding": json.loads(row["prior_binding_json"]),
+                "binding": json.loads(row["binding_json"]),
+                "changed_at": row["changed_at"],
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def _archive_retired_session_card(
@@ -4263,6 +4747,171 @@ class CardProjection:
         query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    def create_restart_handoff(self, handoff: RestartHandoff) -> RestartHandoff:
+        """Insert once and serialize each session's nonterminal restart lifecycle."""
+        with self._mutation_lock, self._conn() as conn:
+            existing = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE session_id=? AND idempotency_key=?",
+                (handoff.session_id, handoff.idempotency_key),
+            ).fetchone()
+            if existing:
+                prior = self._row_to_restart_handoff(existing)
+                if prior.continuation_prompt != handoff.continuation_prompt:
+                    raise ValueError(
+                        "Restart handoff idempotency key was reused with different content"
+                    )
+                return prior
+            active = conn.execute(
+                """SELECT * FROM agent_restart_handoffs
+                   WHERE session_id=? AND status NOT IN ('failed', 'continuation_delivered')
+                   ORDER BY created_at, id LIMIT 1""",
+                (handoff.session_id,),
+            ).fetchone()
+            if active:
+                raise ValueError(
+                    "Session already has a nonterminal restart handoff; retry with "
+                    "the original idempotency key or wait for it to finish"
+                )
+            conn.execute(
+                """INSERT INTO agent_restart_handoffs
+                   (id, session_id, idempotency_key, continuation_prompt,
+                    continuation_prompt_id, status, card_id, project_id, instance_id,
+                    execution_binding_json, error, attempts, created_at, updated_at, delivered_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    handoff.id,
+                    handoff.session_id,
+                    handoff.idempotency_key,
+                    handoff.continuation_prompt,
+                    handoff.continuation_prompt_id,
+                    handoff.status,
+                    handoff.card_id,
+                    handoff.project_id,
+                    handoff.instance_id,
+                    json.dumps(handoff.execution_binding or {}),
+                    handoff.error,
+                    handoff.attempts,
+                    handoff.created_at.isoformat(),
+                    handoff.updated_at.isoformat(),
+                    handoff.delivered_at.isoformat() if handoff.delivered_at else None,
+                ),
+            )
+        return handoff
+
+    def get_restart_handoff(self, handoff_id: str) -> RestartHandoff | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(row) if row else None
+
+    def list_restart_handoffs(
+        self, *, session_id: str | None = None, statuses: tuple[str, ...] | None = None
+    ) -> list[RestartHandoff]:
+        query = "SELECT * FROM agent_restart_handoffs WHERE 1=1"
+        params: list[str] = []
+        if session_id:
+            query += " AND session_id=?"
+            params.append(session_id)
+        if statuses:
+            query += " AND status IN (" + ",".join("?" for _ in statuses) + ")"
+            params.extend(statuses)
+        query += " ORDER BY created_at ASC, id ASC"
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_restart_handoff(row) for row in rows]
+
+    def update_restart_handoff(
+        self,
+        handoff_id: str,
+        *,
+        status: str,
+        error: str | None = None,
+        delivered: bool = False,
+        increment_attempts: bool = False,
+    ) -> RestartHandoff | None:
+        now = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            conn.execute(
+                """UPDATE agent_restart_handoffs SET status=?, error=?, updated_at=?,
+                   attempts=attempts+?, delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
+                   WHERE id=?""",
+                (
+                    status,
+                    error,
+                    now.isoformat(),
+                    int(increment_attempts),
+                    int(delivered),
+                    now.isoformat(),
+                    handoff_id,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(row) if row else None
+
+    def retry_restart_handoff(
+        self, handoff_id: str, *, session_id: str
+    ) -> RestartHandoff:
+        """Re-arm one failed receipt without changing its continuation identity."""
+        now = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
+                (handoff_id, session_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Restart handoff not found for this session")
+            handoff = self._row_to_restart_handoff(row)
+            if handoff.status in {
+                "resuming",
+                "continuation_queued",
+                "continuation_delivered",
+            }:
+                return handoff
+            if handoff.status != "failed":
+                raise ValueError("Restart handoff is not retryable in its current state")
+            competing = conn.execute(
+                """SELECT id FROM agent_restart_handoffs
+                   WHERE session_id=? AND id!=?
+                     AND status NOT IN ('failed', 'continuation_delivered')
+                   LIMIT 1""",
+                (session_id, handoff_id),
+            ).fetchone()
+            if competing:
+                raise ValueError("Session already has a nonterminal restart handoff")
+            conn.execute(
+                """UPDATE agent_restart_handoffs
+                   SET status='resuming', error=NULL, updated_at=?
+                   WHERE id=? AND status='failed'""",
+                (now.isoformat(), handoff_id),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(refreshed)
+
+    def list_session_audit_page(
+        self,
+        *,
+        realm_id: str,
+        limit: int = 25,
+        before_updated_at: str | None = None,
+        before_id: str | None = None,
+    ) -> list[AgentSession]:
+        """Return bounded operational history without loading transcript payloads."""
+        sql = "SELECT * FROM agent_sessions WHERE realm_id = ?"
+        params: list[str | int] = [realm_id]
+        if before_updated_at and before_id:
+            sql += " AND (updated_at < ? OR (updated_at = ? AND id < ?))"
+            params.extend([before_updated_at, before_updated_at, before_id])
+        sql += " ORDER BY updated_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
         return [self._row_to_session(row) for row in rows]
 
     def list_session_statuses(self) -> dict[str, str]:
@@ -4487,8 +5136,14 @@ class CardProjection:
             row = conn.execute(
                 """
                 SELECT * FROM agent_sessions
-                WHERE label = ? AND status != 'closed'
-                ORDER BY updated_at DESC LIMIT 1
+                WHERE label = ?
+                ORDER BY
+                    CASE WHEN status = 'closed' THEN 1 ELSE 0 END,
+                    CASE WHEN json_extract(config_json,
+                        '$.browser_default_selected') = 1 THEN 0 ELSE 1 END,
+                    created_at ASC,
+                    id ASC
+                LIMIT 1
                 """,
                 (label,),
             ).fetchone()
@@ -4500,76 +5155,82 @@ class CardProjection:
         *,
         reason: str,
         closed_at: datetime | None = None,
+        lock_timeout_seconds: float | None = None,
+        busy_timeout_ms: int = 30000,
+        diagnostics: dict[str, Any] | None = None,
     ) -> tuple[AgentSession | None, str | None]:
-        """Atomically close a durable session and append its audit event.
+        """Close a durable session and idempotently append its audit event.
 
         The prior status is ``None`` when the session was already closed, which
         makes singleton and bulk closure idempotent.
         """
         closed_at = closed_at or datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM agent_sessions WHERE id = ?",
-                (session_id,),
-            ).fetchone()
-            if row is None:
-                return None, None
-            session = self._row_to_session(row)
-            if session.status == "closed":
-                return session, None
-            prior_status = session.status
-            conn.execute(
-                "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",
-                (closed_at.isoformat(), session_id),
+        lock_started = time.monotonic()
+        if lock_timeout_seconds is None:
+            acquired = self._mutation_lock.acquire()
+        else:
+            acquired = self._mutation_lock.acquire(timeout=lock_timeout_seconds)
+        lock_wait_ms = (time.monotonic() - lock_started) * 1000
+        if diagnostics is not None:
+            diagnostics["lock_wait_ms"] = round(lock_wait_ms, 3)
+        if not acquired:
+            if diagnostics is not None:
+                diagnostics["terminal_result"] = "lock_timeout"
+            raise TimeoutError(
+                f"session close mutation lock exceeded {lock_timeout_seconds:.3f}s"
             )
-            seq_row = conn.execute(
-                """
-                SELECT COALESCE(MAX(seq), 0) AS max_seq
-                FROM agent_transcript_events
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchone()
-            next_seq = int(seq_row["max_seq"] if seq_row else 0) + 1
-            event = TranscriptEvent(
-                session_id=session_id,
-                seq=next_seq,
-                event_type="session_closed",
-                payload={"reason": reason, "prior_status": prior_status},
-                created_at=closed_at,
-            )
-            conn.execute(
-                """
-                INSERT INTO agent_transcript_events
-                (id, session_id, seq, event_type, payload, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event.id,
-                    event.session_id,
-                    event.seq,
-                    event.event_type,
-                    json.dumps(event.payload),
-                    event.created_at.isoformat(),
-                ),
-            )
-            session.status = "closed"
-            session.updated_at = closed_at
-            return session, prior_status
+        try:
+            with self._conn(busy_timeout_ms=busy_timeout_ms) as conn:
+                row = conn.execute(
+                    "SELECT * FROM agent_sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+                if row is None:
+                    if diagnostics is not None:
+                        diagnostics["terminal_result"] = "missing"
+                    return None, None
+                session = self._row_to_session(row)
+                if session.status == "closed":
+                    if diagnostics is not None:
+                        diagnostics["terminal_result"] = "already_closed"
+                    return session, None
+                prior_status = session.status
+                conn.execute(
+                    "UPDATE agent_sessions SET status='closed', updated_at=? WHERE id=?",
+                    (closed_at.isoformat(), session_id),
+                )
+                audit_event = TranscriptEvent(
+                    session_id=session_id,
+                    seq=self.transcripts.next_seq(session_id),
+                    event_type="session_closed",
+                    payload={"reason": reason, "prior_status": prior_status},
+                    created_at=closed_at,
+                )
+                session.status = "closed"
+                session.updated_at = closed_at
+                if diagnostics is not None:
+                    diagnostics["terminal_result"] = "closed"
+        except sqlite3.OperationalError:
+            if diagnostics is not None:
+                diagnostics["terminal_result"] = "sqlite_timeout"
+            raise
+        finally:
+            self._mutation_lock.release()
+        # Separate WALs cannot form one SQLite transaction. Metadata is
+        # authoritative; the deterministic audit sequence is idempotently
+        # mirrored after releasing the hot metadata lock.
+        self.append_transcript_events([audit_event])
+        return session, prior_status
 
     def next_transcript_seq(self, session_id: str) -> int:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM agent_transcript_events WHERE session_id = ?",
-                (session_id,),
-            ).fetchone()
-        return int(row["max_seq"] if row else 0) + 1
+        return self.transcripts.next_seq(session_id)
 
     def append_transcript_events(
         self, events: list[TranscriptEvent]
     ) -> list[TranscriptEvent]:
         if not events:
             return events
+        mirrors = self.transcripts.append(events)
         with self._conn() as conn:
             conn.executemany(
                 """
@@ -4583,10 +5244,10 @@ class CardProjection:
                         e.session_id,
                         e.seq,
                         e.event_type,
-                        json.dumps(e.payload),
+                        json.dumps(payload),
                         e.created_at.isoformat(),
                     )
-                    for e in events
+                    for e, payload in mirrors
                 ],
             )
         return events
@@ -4598,56 +5259,19 @@ class CardProjection:
         after_seq: int = 0,
         limit: int = 500,
     ) -> list[TranscriptEvent]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM agent_transcript_events
-                WHERE session_id = ? AND seq > ?
-                ORDER BY seq ASC LIMIT ?
-                """,
-                (session_id, after_seq, limit),
-            ).fetchall()
-        return [self._row_to_transcript(row) for row in rows]
+        return self.transcripts.list(session_id, after_seq=after_seq, limit=limit)
 
     def get_prompt_acceptance(
         self, session_id: str, prompt_id: str
     ) -> TranscriptEvent | None:
         """Find a durable browser prompt admission by its stable client id."""
-        with self._conn() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM agent_transcript_events
-                WHERE session_id = ?
-                  AND event_type IN ('queue_enqueued', 'user_message')
-                  AND json_valid(payload)
-                  AND json_extract(payload, '$.id') = ?
-                ORDER BY
-                  CASE event_type WHEN 'user_message' THEN 0 ELSE 1 END,
-                  seq DESC
-                LIMIT 1
-                """,
-                (session_id, prompt_id),
-            ).fetchone()
-        return self._row_to_transcript(row) if row else None
+        return self.transcripts.find_prompt(session_id, prompt_id)
 
     def get_queued_prompt_acceptance(
         self, session_id: str, prompt_id: str
     ) -> TranscriptEvent | None:
         """Find the durable queue admission that records its accepted outcome."""
-        with self._conn() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM agent_transcript_events
-                WHERE session_id = ?
-                  AND event_type = 'queue_enqueued'
-                  AND json_valid(payload)
-                  AND json_extract(payload, '$.id') = ?
-                ORDER BY seq DESC
-                LIMIT 1
-                """,
-                (session_id, prompt_id),
-            ).fetchone()
-        return self._row_to_transcript(row) if row else None
+        return self.transcripts.find_prompt(session_id, prompt_id, queued_only=True)
 
     def list_transcript_events_before(
         self,
@@ -4657,24 +5281,7 @@ class CardProjection:
         limit: int = 500,
     ) -> list[TranscriptEvent]:
         """Return the newest events before a cursor, ordered chronologically."""
-        params: list[str | int] = [session_id]
-        cursor_clause = ""
-        if before_seq is not None:
-            cursor_clause = "AND seq < ?"
-            params.append(before_seq)
-        params.append(limit)
-        with self._conn() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT * FROM (
-                    SELECT * FROM agent_transcript_events
-                    WHERE session_id = ? {cursor_clause}
-                    ORDER BY seq DESC LIMIT ?
-                ) ORDER BY seq ASC
-                """,
-                params,
-            ).fetchall()
-        return [self._row_to_transcript(row) for row in rows]
+        return self.transcripts.list_before(session_id, before_seq=before_seq, limit=limit)
 
     def add_knowledge(self, entry: KnowledgeEntry) -> KnowledgeEntry:
         if not entry.content_hash:
@@ -4698,10 +5305,11 @@ class CardProjection:
                 """
                 INSERT INTO knowledge (
                     id, session_id, item_id, card_id, summary, source, source_url,
-                    kind, status, scope, owner, confidence, supersedes_id,
+                    kind, tier, status, scope, owner, confidence, sensitivity,
+                    provenance_trust, supersedes_id,
                     review_at, expires_at, tags, content_hash, provenance,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.id,
@@ -4712,10 +5320,13 @@ class CardProjection:
                     entry.source,
                     entry.source_url,
                     entry.kind.value,
+                    entry.tier.value,
                     entry.status.value,
                     entry.scope,
                     entry.owner,
                     entry.confidence,
+                    entry.sensitivity.value,
+                    entry.provenance_trust,
                     entry.supersedes_id,
                     entry.review_at.isoformat() if entry.review_at else None,
                     entry.expires_at.isoformat() if entry.expires_at else None,
@@ -4740,6 +5351,14 @@ class CardProjection:
         status: str | None = "active",
         scope: str | None = None,
         source: str | None = None,
+        tier: str | None = None,
+        sensitivity: str | None = None,
+        provenance_trust: str | None = None,
+        expiry: str | None = None,
+        supersession: str | None = None,
+        before_updated_at: str | None = None,
+        before_id: str | None = None,
+        curated_only: bool = False,
     ) -> list[KnowledgeEntry]:
         sql = "SELECT * FROM knowledge WHERE 1=1"
         params: list[str | int] = []
@@ -4762,7 +5381,32 @@ class CardProjection:
         if source:
             sql += " AND source = ?"
             params.append(source)
-        sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
+        if tier:
+            sql += " AND tier = ?"
+            params.append(tier)
+        if sensitivity:
+            sql += " AND sensitivity = ?"
+            params.append(sensitivity)
+        if provenance_trust:
+            sql += " AND provenance_trust = ?"
+            params.append(provenance_trust)
+        if curated_only:
+            sql += " AND source NOT IN ('session', 'acp_session', 'remote_dispatch', 'dispatch', 'transcript')"
+        now = datetime.now(UTC).isoformat()
+        if expiry == "expired":
+            sql += " AND expires_at IS NOT NULL AND expires_at <= ?"
+            params.append(now)
+        elif expiry == "current":
+            sql += " AND (expires_at IS NULL OR expires_at > ?)"
+            params.append(now)
+        if supersession == "supersedes":
+            sql += " AND supersedes_id IS NOT NULL"
+        elif supersession == "original":
+            sql += " AND supersedes_id IS NULL"
+        if before_updated_at and before_id:
+            sql += " AND (updated_at < ? OR (updated_at = ? AND id < ?))"
+            params.extend([before_updated_at, before_updated_at, before_id])
+        sql += " ORDER BY updated_at DESC, id DESC LIMIT ?"
         params.append(limit)
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -4792,8 +5436,8 @@ class CardProjection:
         with self._conn() as conn:
             conn.execute(
                 """
-                UPDATE knowledge SET summary=?, source=?, source_url=?, kind=?, status=?,
-                    scope=?, owner=?, confidence=?, supersedes_id=?, review_at=?, expires_at=?,
+                UPDATE knowledge SET summary=?, source=?, source_url=?, kind=?, tier=?, status=?,
+                    scope=?, owner=?, confidence=?, sensitivity=?, supersedes_id=?, review_at=?, expires_at=?,
                     tags=?, content_hash=?, updated_at=? WHERE id=?
                 """,
                 (
@@ -4801,10 +5445,12 @@ class CardProjection:
                     current.source,
                     current.source_url,
                     current.kind.value,
+                    current.tier.value,
                     current.status.value,
                     current.scope,
                     current.owner,
                     current.confidence,
+                    current.sensitivity.value,
                     current.supersedes_id,
                     current.review_at.isoformat() if current.review_at else None,
                     current.expires_at.isoformat() if current.expires_at else None,
@@ -4866,18 +5512,9 @@ class CardProjection:
         start_seq: int | None = None,
         end_seq: int | None = None,
     ) -> list[TranscriptEvent]:
-        sql = "SELECT * FROM agent_transcript_events WHERE session_id = ?"
-        params: list[str | int] = [session_id]
-        if start_seq is not None:
-            sql += " AND seq >= ?"
-            params.append(start_seq)
-        if end_seq is not None:
-            sql += " AND seq <= ?"
-            params.append(end_seq)
-        sql += " ORDER BY seq ASC"
-        with self._conn() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [self._row_to_transcript(row) for row in rows]
+        return self.transcripts.list_range(
+            session_id, start_seq=start_seq, end_seq=end_seq
+        )
 
     def prune_closed_session_transcripts(self, *, before: datetime) -> int:
         """Delete transcript events for closed sessions older than ``before``.
@@ -4886,17 +5523,20 @@ class CardProjection:
         bulky per-turn payload is removed.
         """
         with self._conn() as conn:
-            cursor = conn.execute(
-                """
-                DELETE FROM agent_transcript_events
-                WHERE session_id IN (
-                    SELECT id FROM agent_sessions
-                    WHERE status = 'closed' AND updated_at < ?
-                )
-                """,
+            session_ids = [row[0] for row in conn.execute(
+                "SELECT id FROM agent_sessions WHERE status='closed' AND updated_at < ?",
                 (before.isoformat(),),
-            )
-            return max(0, cursor.rowcount)
+            )]
+        deleted = self.transcripts.prune(session_ids, keep_audit=True)
+        # Compatibility rows follow the same evidence-preserving policy.
+        for session_id in session_ids:
+            kept = {event.seq for event in self.transcripts.list_range(session_id)}
+            with self._conn() as conn:
+                rows = conn.execute("SELECT seq FROM agent_transcript_events WHERE session_id=?", (session_id,)).fetchall()
+                for row in rows:
+                    if int(row[0]) not in kept:
+                        conn.execute("DELETE FROM agent_transcript_events WHERE session_id=? AND seq=?", (session_id, row[0]))
+        return deleted
 
     def prune_mutation_operations(self, *, before: datetime) -> int:
         """Delete succeeded/failed mutation receipts older than ``before``."""
@@ -4926,6 +5566,81 @@ class CardProjection:
             "wal_log": int(checkpoint[1]) if checkpoint else 0,
             "wal_checkpointed": int(checkpoint[2]) if checkpoint else 0,
         }
+
+    def transcript_storage_metrics(self) -> dict[str, object]:
+        """Operator-visible storage, integrity, redaction and migration health."""
+        metrics = self.transcripts.metrics()
+        with self._conn() as conn:
+            legacy = conn.execute("SELECT COUNT(*) FROM agent_transcript_events").fetchone()[0]
+        metrics["compatibility_rows"] = int(legacy)
+        operation = self.transcripts.operation("legacy-v1") or {}
+        metrics["migration"] = operation.get("state", "pending")
+        metrics["migration_examined"] = int(operation.get("examined", 0))
+        metrics["migration_changed"] = int(operation.get("changed", 0))
+        metrics["migration_error"] = operation.get("error")
+        return metrics
+
+    def _migrate_legacy_transcripts(self, *, batch_size: int = 500) -> None:
+        """Resume an idempotent legacy canary and verify each canonical hash.
+
+        The compatibility table is rewritten with bounded payload references as
+        rows are successfully copied.  A crash leaves already-copied rows safe
+        and a restart continues from the first missing sequence.
+        """
+        operation = self.transcripts.operation("legacy-v1") or {}
+        if operation.get("state") == "complete":
+            return
+        cursor = json.loads(operation["cursor"]) if operation.get("cursor") else ["", -1]
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    """SELECT * FROM agent_transcript_events
+                       WHERE session_id > ? OR (session_id=? AND seq>?)
+                       ORDER BY session_id,seq LIMIT ?""",
+                    (cursor[0], cursor[0], cursor[1], batch_size),
+                ).fetchall()
+            # Avoid rescanning compatibility rows already represented in cold DB.
+            pending = []
+            for row in rows:
+                if self.transcripts.list_range(row["session_id"], start_seq=int(row["seq"]), end_seq=int(row["seq"]), limit=1):
+                    continue
+                pending.append(self._row_to_transcript(row))
+            if pending:
+                self.append_transcript_events(pending)
+            next_cursor = json.dumps([rows[-1]["session_id"], int(rows[-1]["seq"])]) if rows else operation.get("cursor")
+            self.transcripts.record_operation("legacy-v1", cursor=next_cursor,
+                state="complete" if len(rows) < batch_size else "running",
+                examined=len(rows), changed=len(pending))
+        except Exception as exc:
+            self.transcripts.record_operation("legacy-v1", cursor=operation.get("cursor"), state="failed", examined=0, changed=0, error=str(exc))
+            raise
+
+    def migrate_legacy_transcripts(self, *, batch_size: int = 500) -> dict[str, object]:
+        """Advance one crash-safe migration batch and return verified health."""
+        self._migrate_legacy_transcripts(batch_size=batch_size)
+        return self.transcript_storage_metrics()
+
+    def rebuild_legacy_transcript_mirror(self, *, batch_size: int = 1000) -> int:
+        """Independently rebuild the bounded downgrade mirror from v1 storage."""
+        changed = 0
+        with self.transcripts._conn() as source, self._conn() as target:
+            rows = source.execute(
+                "SELECT * FROM transcript_events ORDER BY session_id,seq LIMIT ?",
+                (batch_size,),
+            ).fetchall()
+            for row in rows:
+                payload = TranscriptStorage.compatibility_payload(
+                    {}, row["payload_hash"], row["cold_hash"]
+                )
+                target.execute(
+                    """INSERT OR REPLACE INTO agent_transcript_events
+                       (id,session_id,seq,event_type,payload,created_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (row["id"], row["session_id"], row["seq"], row["event_type"],
+                     json.dumps(payload), row["created_at"]),
+                )
+                changed += 1
+        return changed
 
     @serialized_mutation
     def rebuild_from_log(self, realm_id: str) -> None:
@@ -5032,7 +5747,11 @@ class CardProjection:
             raise ValueError(f"missing projection target {target_head}")
         if current is None or not self.event_log.get_commit(current):
             self.rebuild_from_log(realm_id)
-            return {"commits_applied": 0, "rebuilt": True, "reason": "missing_projection_head"}
+            return {
+                "commits_applied": 0,
+                "rebuilt": True,
+                "reason": "missing_projection_head",
+            }
         if not self.event_log.is_ancestor(current, target_head):
             self.rebuild_from_log(realm_id)
             return {"commits_applied": 0, "rebuilt": True, "reason": "non_fast_forward"}
@@ -5224,6 +5943,7 @@ class CardProjection:
             mode_id=row["mode_id"] if "mode_id" in keys else None,
             config_json=_json_col("config_json"),
             metrics_json=_json_col("metrics_json"),
+            execution_binding=_json_col("execution_binding_json"),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -5246,6 +5966,27 @@ class CardProjection:
         )
 
     @staticmethod
+    def _row_to_restart_handoff(row: sqlite3.Row) -> RestartHandoff:
+        return RestartHandoff(
+            id=row["id"],
+            session_id=row["session_id"],
+            idempotency_key=row["idempotency_key"],
+            continuation_prompt=row["continuation_prompt"],
+            continuation_prompt_id=row["continuation_prompt_id"],
+            status=row["status"],
+            card_id=row["card_id"],
+            project_id=row["project_id"],
+            instance_id=row["instance_id"],
+            execution_binding=json.loads(row["execution_binding_json"] or "{}"),
+            error=row["error"],
+            attempts=int(row["attempts"] or 0),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            delivered_at=datetime.fromisoformat(row["delivered_at"])
+            if row["delivered_at"] else None,
+        )
+
+    @staticmethod
     def _row_to_knowledge(row: sqlite3.Row) -> KnowledgeEntry:
         keys = row.keys()
         cid = row["card_id"] if "card_id" in keys else row["item_id"]
@@ -5258,10 +5999,15 @@ class CardProjection:
             source=row["source"],
             source_url=row["source_url"] if "source_url" in keys else None,
             kind=row["kind"] if "kind" in keys else "memory",
+            tier=row["tier"] if "tier" in keys else "semantic",
             status=row["status"] if "status" in keys else "active",
             scope=row["scope"] if "scope" in keys else "realm",
             owner=row["owner"] if "owner" in keys else None,
             confidence=row["confidence"] if "confidence" in keys else None,
+            sensitivity=row["sensitivity"] if "sensitivity" in keys else "internal",
+            provenance_trust=row["provenance_trust"]
+            if "provenance_trust" in keys
+            else "unverified",
             supersedes_id=row["supersedes_id"] if "supersedes_id" in keys else None,
             review_at=datetime.fromisoformat(row["review_at"])
             if "review_at" in keys and row["review_at"]

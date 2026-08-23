@@ -22,7 +22,7 @@ from pa.backup.service import (
     validate_destination,
 )
 from pa.config import Settings, get_settings, reset_settings
-from pa.domain.models import CardCreate
+from pa.domain.models import CardCreate, TranscriptEvent
 from pa.domain.store import Store
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
@@ -141,6 +141,22 @@ class BackupTestCase(unittest.TestCase):
         self.assertFalse(failures)
         self.assertTrue(self.service.verify_backup(result.backup_id).verified)
 
+    def test_backup_verifies_transcript_index_and_cold_objects(self) -> None:
+        self.store.append_transcript_events([
+            TranscriptEvent(
+                session_id="backup-session",
+                seq=1,
+                event_type="turn_completed",
+                payload={"text": "result " * 2000},
+            )
+        ])
+        result = self._run("transcript-cold")
+        record = self.service.list_backups(verify=True)[0]
+        names = {item.path for item in record.manifest.files}
+        self.assertIn("transcripts.sqlite3", names)
+        self.assertTrue(any(name.startswith("transcript_objects/") for name in names))
+        self.assertTrue(record.verified, record.verification_error)
+
     def test_reachable_event_graph_is_verified_and_missing_object_rejected(
         self,
     ) -> None:
@@ -250,6 +266,39 @@ class BackupTestCase(unittest.TestCase):
             self.assertEqual(self.service.prune(), [])
 
         verify.assert_not_called()
+
+    def test_normal_run_only_verifies_new_artifact(self) -> None:
+        self._run("retained-one")
+        self._run("retained-two")
+        real_verify = self.service.verify_backup
+        verified_paths: list[Path] = []
+
+        def observe(backup_id, *, path=None):
+            verified_paths.append(path)
+            return real_verify(backup_id, path=path)
+
+        with patch.object(self.service, "verify_backup", side_effect=observe):
+            run = self.service.run_backup(idempotency_key="constant-work")
+
+        self.assertEqual(run.status, "success")
+        self.assertEqual(len(verified_paths), 1)
+        self.assertIn(".pa-backup-", verified_paths[0].name)
+        self.assertTrue(verified_paths[0].name.endswith(".tmp"))
+        self.assertEqual(
+            set(run.phase_seconds),
+            {"snapshot", "archive", "verify", "publish", "prune"},
+        )
+
+    def test_deep_scrub_detects_corruption_without_normal_run_reread(self) -> None:
+        corrupt = self._run("scrub-corrupt")
+        self._run("scrub-good")
+        self.service.download_path(corrupt.backup_id).write_bytes(b"corrupt")
+
+        results = self.service.deep_scrub()
+
+        self.assertFalse(results[corrupt.backup_id])
+        self.assertTrue(any(results.values()))
+        self.assertIsNotNone(self.service.status()["last_scrub"])
 
     def test_age_retention_removes_oldest_verified_backup(self) -> None:
         first = self._run("age-one")
@@ -592,7 +641,15 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         class Runtime:
             async def run_blocking(self, operation, *_args, **_kwargs):
-                calls.append(operation)
+                self.fail("backup I/O must not use the shared runtime")
+
+        original = self.service._run_maintenance
+
+        async def record(operation, call, **kwargs):
+            calls.append(operation)
+            return await original(operation, call, **kwargs)
+
+        self.service._run_maintenance = record
 
         self.service.apply_config(
             self.service.config.model_copy(
@@ -612,7 +669,12 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         class Runtime:
             async def run_blocking(self, operation, *_args, **_kwargs):
-                calls.append(operation)
+                self.fail("backup I/O must not use the shared runtime")
+
+        async def record(operation, _call, **_kwargs):
+            calls.append(operation)
+
+        self.service._run_maintenance = record
 
         self.service.apply_config(
             self.service.config.model_copy(
@@ -624,7 +686,10 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.service._save_state()
         await self.service.start(Runtime())
-        await asyncio.sleep(0.02)
+        for _ in range(50):
+            if calls:
+                break
+            await asyncio.sleep(0.01)
         self.assertEqual(calls, ["backup.scheduled"])
         next_run = datetime.fromisoformat(self.service.status()["next_scheduled_run"])
         self.assertGreater(next_run, datetime.now(UTC))

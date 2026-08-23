@@ -174,6 +174,7 @@ class LimbicService:
         persist: bool = True,
         control_provenance: VerifiedControlProvenance | None = None,
     ) -> AppraisalResult:
+        started_at = self._monotonic()
         caller_claimed_trust = bool(
             signal.trusted_control or signal.control_provenance != "untrusted"
         )
@@ -201,6 +202,9 @@ class LimbicService:
                     appraisal=duplicate["appraisal"],
                     route=duplicate["route"],
                     deduplicated=True,
+                    duration_ms=(self._monotonic() - started_at) * 1000,
+                    shadow_mode=shadow_mode,
+                    retrieval_hits=int(signal.metadata.get("retrieval_hits", 0)),
                 )
 
         diagnostics: list[AppraisalDiagnostic] = []
@@ -225,7 +229,14 @@ class LimbicService:
         else:
             appraisal = baseline
         route = self._route(signal, appraisal, emergency_rule)
-        result = AppraisalResult(signal=signal, appraisal=appraisal, route=route)
+        result = AppraisalResult(
+            signal=signal,
+            appraisal=appraisal,
+            route=route,
+            duration_ms=(self._monotonic() - started_at) * 1000,
+            shadow_mode=shadow_mode,
+            retrieval_hits=int(signal.metadata.get("retrieval_hits", 0)),
+        )
         if persist:
             event_payload = result.model_dump(mode="json", exclude={"deduplicated"})
             event_payload["signal"]["content"] = "[redacted]"

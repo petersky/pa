@@ -62,6 +62,9 @@ class SummaryFailureCode(StrEnum):
     MODEL_NOT_FOUND = "model_not_found"
     INVALID_REQUEST = "invalid_request"
     INVALID_RESPONSE = "invalid_response"
+    EMPTY_OUTPUT = "empty_output"
+    MALFORMED_JSON = "malformed_json"
+    SCHEMA_VIOLATION = "schema_violation"
     UNKNOWN = "unknown_provider_failure"
 
 
@@ -185,30 +188,120 @@ def _message_text(content: object) -> str:
 
 
 def _parse_summary_object(value: object) -> str:
-    if isinstance(value, dict) and isinstance(value.get("summary"), str):
+    if isinstance(value, dict):
+        if set(value) != {"summary"} or not isinstance(value.get("summary"), str):
+            raise SummaryProviderError(
+                SummaryFailureCode.SCHEMA_VIOLATION,
+                "The provider summary did not match the required schema.",
+                retryable=False,
+            )
+        if not value["summary"].strip():
+            raise SummaryProviderError(
+                SummaryFailureCode.EMPTY_OUTPUT,
+                "The provider returned an empty summary.",
+                retryable=False,
+            )
         return value["summary"]
     if isinstance(value, str):
         text = value.strip()
+        if not text:
+            raise SummaryProviderError(
+                SummaryFailureCode.EMPTY_OUTPUT,
+                "The provider returned no summary content.",
+                retryable=False,
+            )
+        # MiniMax OpenAI-compatible responses can embed reasoning unless
+        # reasoning_split is honored. Discard it; reasoning is never summary data.
+        text = re.sub(r"^\s*<think>[\s\S]*?</think>\s*", "", text, count=1)
         if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
             text = re.sub(r"\s*```$", "", text)
-        return _parse_summary_object(json.loads(text))
-    raise TypeError("provider response did not contain a summary")
+        if not text:
+            raise SummaryProviderError(
+                SummaryFailureCode.EMPTY_OUTPUT,
+                "The provider returned reasoning but no summary content.",
+                retryable=False,
+            )
+        try:
+            decoded = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SummaryProviderError(
+                SummaryFailureCode.MALFORMED_JSON,
+                "The provider returned malformed summary JSON.",
+                retryable=False,
+            ) from exc
+        return _parse_summary_object(decoded)
+    raise SummaryProviderError(
+        SummaryFailureCode.SCHEMA_VIOLATION,
+        "The provider summary did not match the required schema.",
+        retryable=False,
+    )
+
+
+def _response_shape(payload: object) -> dict[str, object]:
+    """Return bounded, content-free provider diagnostics safe for logs."""
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    message = (
+        choices[0].get("message")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict)
+        else None
+    )
+    return {
+        "payload_object": isinstance(payload, dict),
+        "choice_count": len(choices) if isinstance(choices, list) else None,
+        "message_object": isinstance(message, dict),
+        "content_type": (
+            type(message.get("content")).__name__
+            if isinstance(message, dict)
+            else None
+        ),
+        "parsed_present": bool(isinstance(message, dict) and "parsed" in message),
+        "tool_call_count": (
+            len(message.get("tool_calls"))
+            if isinstance(message, dict)
+            and isinstance(message.get("tool_calls"), list)
+            else None
+        ),
+        "reasoning_separated": bool(
+            isinstance(message, dict)
+            and ("reasoning_details" in message or "reasoning_content" in message)
+        ),
+    }
 
 
 def parse_chat_completion_summary(payload: dict) -> str:
     try:
+        if not isinstance(payload.get("choices"), list) or len(payload["choices"]) != 1:
+            raise TypeError("provider response must contain exactly one choice")
         message = payload["choices"][0]["message"]
-        content = message.get("content")
-        if content in (None, "") and isinstance(message.get("parsed"), dict):
-            content = message["parsed"]
-        return _parse_summary_object(
-            content if isinstance(content, dict) else _message_text(content)
+        candidates: list[object] = []
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if isinstance(function, dict) and function.get("name") == SUBMIT_SUMMARY_TOOL:
+                candidates.append(function.get("arguments"))
+        if message.get("parsed") not in (None, ""):
+            candidates.append(message["parsed"])
+        content = _message_text(message.get("content"))
+        if content.strip():
+            candidates.append(content)
+        if len(candidates) != 1:
+            if not candidates:
+                raise SummaryProviderError(
+                    SummaryFailureCode.EMPTY_OUTPUT,
+                    "The provider returned no summary output.",
+                    retryable=False,
+                )
+            raise TypeError("provider returned ambiguous summary outputs")
+        return _parse_summary_object(candidates[0])
+    except SummaryProviderError:
+        raise
+    except (KeyError, IndexError, TypeError) as exc:
+        logger.warning(
+            "card-summary provider response rejected shape=%s", _response_shape(payload)
         )
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         raise SummaryProviderError(
-            SummaryFailureCode.INVALID_RESPONSE,
-            "The provider returned an invalid structured summary.",
+            SummaryFailureCode.SCHEMA_VIOLATION,
+            "The provider response did not match the required summary envelope.",
             retryable=False,
         ) from exc
 
@@ -953,15 +1046,43 @@ class CardSummaryService:
             },
         }
         if minimax:
+            # MiniMax M2 structured output is documented through function calling;
+            # response_format=json_schema is limited to MiniMax-Text-01.
+            payload.pop("response_format")
             payload["reasoning_split"] = True
+            payload["max_completion_tokens"] = 1024
+            minimax_messages = [dict(item) for item in payload["messages"]]
+            minimax_messages[0]["content"] += (
+                " Call submit_summary exactly once with the final summary."
+            )
+            payload["messages"] = minimax_messages
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": SUBMIT_SUMMARY_TOOL,
+                        "description": (
+                            "Return only the 1-3 sentence summary of the supplied "
+                            "untrusted card data."
+                        ),
+                        "parameters": _summary_json_schema(),
+                    },
+                }
+            ]
+            payload["tool_choice"] = "auto"
         url = chat_completions_url(configuration.base_url or self._resolved_base_url())
         headers = {"Authorization": f"Bearer {configuration.api_key}"}
         response = await client.post(url, headers=headers, json=payload)
-        if minimax and response.status_code in {400, 422}:
-            payload.pop("response_format", None)
-            response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
-        return parse_chat_completion_summary(response.json())
+        try:
+            response_payload = response.json()
+        except json.JSONDecodeError as exc:
+            raise SummaryProviderError(
+                SummaryFailureCode.MALFORMED_JSON,
+                "The provider returned a malformed JSON response envelope.",
+                retryable=False,
+            ) from exc
+        return parse_chat_completion_summary(response_payload)
 
     @staticmethod
     def _classify_failure(
@@ -1061,10 +1182,22 @@ class CardSummaryService:
                 "A connection to the provider could not be established. Check the base URL and network path.",
                 retryable=True,
             )
-        if isinstance(exc, (ValueError, KeyError, TypeError, json.JSONDecodeError)):
+        if isinstance(exc, json.JSONDecodeError):
+            return SummaryProviderError(
+                SummaryFailureCode.MALFORMED_JSON,
+                "The provider returned malformed summary JSON.",
+                retryable=False,
+            )
+        if isinstance(exc, (ValueError, TypeError)):
+            return SummaryProviderError(
+                SummaryFailureCode.SCHEMA_VIOLATION,
+                "The provider summary violated the required output schema.",
+                retryable=False,
+            )
+        if isinstance(exc, KeyError):
             return SummaryProviderError(
                 SummaryFailureCode.INVALID_RESPONSE,
-                "The provider returned a summary that violated the output contract.",
+                "The provider returned an invalid response envelope.",
                 retryable=False,
             )
         return SummaryProviderError(

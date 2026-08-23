@@ -23,6 +23,9 @@
         btn.classList.toggle("active", href === current);
       }
     });
+    document.querySelectorAll("[data-responsive-nav]").forEach(function (menu) {
+      menu.removeAttribute("open");
+    });
   }
 
   function swapTarget(event) {
@@ -1299,11 +1302,13 @@
     return document.getElementById("new-card-dialog-content");
   }
 
-  function newCardContextUrl() {
+  function newCardContextUrl(opener) {
     var current = new URL(window.location.href);
     var params = new URLSearchParams();
     params.set("realm", current.searchParams.get("realm") || "default");
-    var project = current.searchParams.get("project");
+    var project = opener && opener.dataset.newCardProject
+      ? opener.dataset.newCardProject
+      : current.searchParams.get("project");
     if (project) params.set("project", project);
     return "/partials/cards/new?" + params.toString();
   }
@@ -1334,6 +1339,19 @@
       newCardDialogOpener.focus();
     }
     newCardDialogOpener = null;
+  }
+
+  function initNewCardDialog() {
+    var dialog = newCardDialog();
+    if (!dialog || dialog.dataset.newCardDialogReady) return;
+    dialog.dataset.newCardDialogReady = "true";
+    dialog.addEventListener("cancel", function (event) {
+      event.preventDefault();
+      closeNewCardDialog();
+    });
+    dialog.addEventListener("click", function (event) {
+      if (event.target === dialog) closeNewCardDialog();
+    });
   }
 
   function newCardErrorMessage(data, fallback) {
@@ -1599,6 +1617,9 @@
           if (error) {
             error.textContent = failure.message || "The card could not be created.";
             error.hidden = false;
+            error.tabIndex = -1;
+            error.scrollIntoView({ block: "nearest" });
+            error.focus();
           }
         })
         .finally(function () {
@@ -1619,7 +1640,7 @@
     newCardRequest = new AbortController();
     content.innerHTML = '<div class="card-dialog-state" role="status"><p>Loading new card…</p></div>';
     showNewCardDialog();
-    fetch(newCardContextUrl(), {
+    fetch(newCardContextUrl(opener), {
       credentials: "same-origin",
       signal: newCardRequest.signal,
     })
@@ -2034,6 +2055,11 @@
     }
     var agentButton = event.target.closest("[data-card-agent-start-new], [data-card-agent-select]");
     if (agentButton) {
+      if (agentButton.dataset.requiresConfirmation === "true") {
+        var reasonInput = detail.querySelector("[data-card-agent-parallel-reason]");
+        var reason = reasonInput ? reasonInput.value.trim() : "";
+        if (!reason || !window.confirm("Start parallel work? Another non-concurrent execution is active. Reason: " + reason)) return;
+      }
       var startingNew = agentButton.hasAttribute("data-card-agent-start-new");
       var pane = detail.querySelector('[data-card-agent-pane="' + (startingNew ? "new" : "existing") + '"]');
       if (!pane) return;
@@ -2059,6 +2085,13 @@
         widget._acw.init();
       }
     }
+  });
+
+  document.body.addEventListener("input", function (event) {
+    if (!event.target.matches("[data-card-agent-parallel-reason]")) return;
+    var details = event.target.closest(".parallel-execution-control");
+    var button = details && details.querySelector("[data-card-agent-start-new]");
+    if (button) button.disabled = !event.target.value.trim();
   });
 
   document.body.addEventListener("keydown", function (event) {
@@ -2114,13 +2147,7 @@
         closeCardDialog(true);
       });
     }
-    var createDialog = newCardDialog();
-    if (createDialog) {
-      createDialog.addEventListener("cancel", function (event) {
-        event.preventDefault();
-        closeNewCardDialog();
-      });
-    }
+    initNewCardDialog();
     openCardFromLocation();
     window.setInterval(checkServerBuild, VERSION_POLL_MS);
   });
