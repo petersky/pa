@@ -1186,6 +1186,14 @@ class TelemetryUITests(unittest.TestCase):
         self.assertIn("ACCESSIBLE_PAGE_SIZE", script)
         self.assertIn("data-telemetry-table-prev", template)
         self.assertIn("data-telemetry-table-next", template)
+        self.assertIn("data-filter-search=", template)
+        self.assertIn("data-series-reset", template)
+        self.assertIn("Show only ", script)
+        self.assertIn("aria-pressed", script)
+        self.assertIn("stroke-dasharray", script)
+        self.assertIn("window.history.replaceState", script)
+        self.assertIn("DEFAULT_VISIBLE_SERIES = 8", script)
+        self.assertIn("/api/telemetry/dimensions/search", script)
         self.assertIn("js/telemetry.js", shell)
         self.assertIn("data-session-telemetry", chat)
 
@@ -1423,6 +1431,38 @@ assert.ok(markers <= model.MAX_CHART_MARKERS);
 
 
 class TelemetryAPITests(unittest.TestCase):
+    def test_fleet_query_does_not_silently_truncate_large_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            telemetry = SimpleNamespace(
+                storage=TelemetryStorage(Path(tmp) / "telemetry.db"),
+                _run=lambda func, *args: asyncio.to_thread(func, *args),
+            )
+            peers = [
+                SimpleNamespace(instance_id=f"peer-{index}", url=f"http://peer-{index}")
+                for index in range(36)
+            ]
+            services = {
+                "fleet_http_client": object(),
+                "fleet_registry": SimpleNamespace(list_instances=lambda: peers),
+            }
+            ctx = SimpleNamespace(
+                settings=SimpleNamespace(instance_id="local", sync_token=""),
+                services=services,
+                require_service=lambda name: (
+                    telemetry if name == "telemetry" else services[name]
+                ),
+            )
+            request = SimpleNamespace(
+                app=SimpleNamespace(state=SimpleNamespace(ctx=ctx)),
+                state=SimpleNamespace(
+                    instance_authenticated=False, user_authenticated=True
+                ),
+            )
+            empty = {"series": [], "bucket_seconds": 60}
+            with patch("pa.modules.telemetry._peer_json", return_value=empty) as peer_query:
+                asyncio.run(fleet_query(request, QueryBody(range="15m")))
+            self.assertEqual(peer_query.await_count, 36)
+
     def test_fleet_query_pins_peer_domain_and_types_peer_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             telemetry = SimpleNamespace(

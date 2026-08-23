@@ -3,12 +3,17 @@
 {% set left %}
 <div class="panel telemetry-filters">
   <div class="panel-header"><h2>Telemetry</h2></div>
+  <details class="telemetry-filter-disclosure" open>
+    <summary>Report filters</summary>
   <form data-telemetry-filters>
     <label><span>View</span><select name="view"><option value="fleet">Fleet instances</option><option value="local">Local instance and sessions</option></select></label>
-    <label><span>Instance</span><select name="instance_id" multiple size="3" aria-describedby="telemetry-filter-help"><option value="">All instances</option>{% for id, name in telemetry_dimensions.instances %}<option value="{{ id }}">{{ name }}</option>{% endfor %}</select></label>
+    <label><span>Find instances</span><input type="search" data-filter-search="instance_id" placeholder="Search name or ID" autocomplete="off"></label>
+    <label><span>Instance</span><select name="instance_id" multiple size="4" aria-describedby="telemetry-filter-help"><option value="">All instances</option>{% for item in telemetry_dimensions.instances %}<option value="{{ item.id }}">{{ item.display_name }} · {{ item.id[:8] }}</option>{% endfor %}</select></label>
     <label><span>Provider</span><select name="provider_id"><option value="">All providers</option>{% for value in telemetry_dimensions.providers %}<option>{{ value }}</option>{% endfor %}</select></label>
-    <label><span>Card</span><select name="card_id"><option value="">All cards</option>{% for value in telemetry_dimensions.cards %}<option>{{ value }}</option>{% endfor %}</select></label>
-    <label><span>Agent session</span><select name="scope_id"><option value="">All sessions</option>{% for value in telemetry_dimensions.sessions %}<option>{{ value }}</option>{% endfor %}</select></label>
+    <label><span>Find cards</span><input type="search" data-filter-search="card_id" placeholder="Search title or ID" autocomplete="off"></label>
+    <label><span>Card</span><select name="card_id"><option value="">All cards</option>{% for item in telemetry_dimensions.cards[:20] %}<option value="{{ item.id }}">{{ item.label }} · {{ item.short_id }}</option>{% endfor %}</select></label>
+    <label><span>Find sessions</span><input type="search" data-filter-search="scope_id" placeholder="Search title or ID" autocomplete="off"></label>
+    <label><span>Agent session</span><select name="scope_id"><option value="">All sessions</option>{% for item in telemetry_dimensions.sessions[:20] %}<option value="{{ item.id }}">{{ item.label }} · {{ item.short_id }}</option>{% endfor %}</select></label>
     <label><span>Range</span><select name="range" data-report-range>{% for value in ['15m','1h','6h','24h','7d','30d','custom'] %}<option value="{{ value }}" {% if telemetry_default_range == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
     <div class="telemetry-custom-range" data-custom-range hidden>
       <label><span>Start</span><input type="datetime-local" name="start"></label>
@@ -17,8 +22,9 @@
     <button type="submit" class="primary">Apply</button>
     <p id="telemetry-filter-help" class="muted small">Custom ranges are bounded to 31 days. Fleet view compares instance telemetry; local view can compare authorized sessions.</p>
   </form>
+  </details>
   <div class="telemetry-report-health" data-report-health role="status" aria-live="polite">Loading collection health…</div>
-  <a class="text-btn" href="/api/telemetry/export?range=15m">Export redacted 15m diagnostic slice</a>
+  <a class="text-btn" data-telemetry-export href="/api/telemetry/export?range=15m">Export current visible data</a>
 </div>
 {% endset %}
 
@@ -29,7 +35,10 @@
      data-default-range="{{ telemetry_default_range }}">
   <header class="panel telemetry-report-heading">
     <div><h1>Resource reports</h1><p class="muted">Synchronized, server-aggregated host and PA-owned session metrics.</p></div>
-    <div class="telemetry-legend" data-telemetry-legend aria-label="Series legend"></div>
+    <div class="telemetry-series-controls">
+      <button type="button" data-series-reset>Reset visible series</button>
+      <div class="telemetry-legend" data-telemetry-legend aria-label="Series visibility controls"></div>
+    </div>
   </header>
   <div class="telemetry-gap-banner" data-telemetry-gaps role="status" hidden></div>
   <div class="telemetry-report-diagnostics muted small" data-report-diagnostics aria-live="polite">Preparing report…</div>
@@ -55,7 +64,7 @@
              data-unit="{{ unit }}"
              data-metrics="{{ metrics }}">
       <header><h2>{{ title }}</h2><span class="muted small" data-chart-unit>{{ unit }}</span></header>
-      <div class="telemetry-chart-stage" tabindex="0" role="img"
+      <div class="telemetry-chart-stage" tabindex="0" role="group"
            aria-label="{{ title }} time series in {{ unit }}. Use left and right arrow keys to inspect synchronized points.">
         <svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-hidden="true">
           <g data-chart-grid></g><g data-chart-axes></g><g data-chart-lines></g><g data-chart-points></g><line data-chart-cursor x1="0" x2="0" y1="12" y2="196" hidden></line>
