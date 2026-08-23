@@ -42,6 +42,152 @@ def test_execution_binding_survives_primary_card_change(tmp_path: Path) -> None:
     assert changed.execution_binding["cwd"] == "/worktrees/a"
 
 
+def test_execution_binding_can_be_finalized_after_provisioning(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = AgentSession(
+        id="binding-finalize",
+        agent_name="codex",
+        card_id="card-a",
+        project_id="project-a",
+        execution_binding={
+            "version": 1,
+            "execution_card_id": "card-a",
+            "execution_project_id": "project-a",
+            "origin_instance_id": "instance-a",
+        },
+    )
+    store.save_session(session)
+    session.execution_binding.update(
+        repository_ids=["repo-a"],
+        worktree_paths=["/worktrees/a"],
+        lease_ids=["lease-a"],
+        branch="pa/card-a-session-a",
+        base_sha="abc123",
+        cwd="/worktrees/a",
+    )
+
+    store.save_session(session)
+    minimal = {
+        "version": 1,
+        "execution_card_id": "card-a",
+        "execution_project_id": "project-a",
+        "origin_instance_id": "instance-a",
+    }
+    assert store.get_session(session.id).execution_binding == minimal
+
+    finalized = store.set_session_execution_binding(
+        session.id,
+        session.execution_binding,
+        reason="workspace_materialized",
+        expected_binding=minimal,
+    )
+
+    assert finalized.execution_binding == session.execution_binding
+    history = store.list_session_execution_binding_history(session.id)
+    assert history == [
+        {
+            "id": history[0]["id"],
+            "session_id": session.id,
+            "reason": "workspace_materialized",
+            "prior_binding": minimal,
+            "binding": session.execution_binding,
+            "changed_at": history[0]["changed_at"],
+        }
+    ]
+
+
+def test_workspace_preparation_persists_complete_binding_not_minimal_seed(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(
+        AgentSession(
+            id="fresh-materialization",
+            agent_name="codex",
+            card_id="card-a",
+            project_id=None,
+            origin_instance_id="instance-a",
+        )
+    )
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager.workspace_manager.list = MagicMock(return_value=[])
+    workspace = MagicMock(cwd="/worktrees/a", repositories=[])
+    workspace.execution_context.return_value = {
+        "cwd": "/worktrees/a",
+        "writable_roots": ["/worktrees/a"],
+        "dependency_cache": "/deps",
+        "repositories": [
+            {
+                "repository_id": "repo-a",
+                "worktree_path": "/worktrees/a",
+                "lease_id": "lease-a",
+                "branch": "pa/card-a-session-a",
+                "base_sha": "abc123",
+            }
+        ],
+    }
+    manager.workspace_manager.scratch_workspace = MagicMock(return_value=workspace)
+
+    asyncio.run(
+        manager._prepare_workspace(
+            session, requested_cwd=None, provider_id="codex"
+        )
+    )
+
+    binding = store.get_session(session.id).execution_binding
+    assert binding["execution_card_id"] == "card-a"
+    assert binding["repository_ids"] == ["repo-a"]
+    assert binding["worktree_paths"] == ["/worktrees/a"]
+    assert binding["lease_ids"] == ["lease-a"]
+    assert binding["branch"] == "pa/card-a-session-a"
+    assert binding["base_sha"] == "abc123"
+    assert binding["cwd"] == "/worktrees/a"
+    assert [
+        item["reason"]
+        for item in store.list_session_execution_binding_history(session.id)
+    ] == ["workspace_binding_initialized"]
+
+
+def test_execution_binding_materialization_cannot_retarget_or_drop_fence(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    binding = {
+        "version": 1,
+        "execution_card_id": "card-a",
+        "execution_project_id": "project-a",
+        "origin_instance_id": "instance-a",
+        "cwd": "/worktrees/a",
+    }
+    store.save_session(
+        AgentSession(
+            id="binding-immutable",
+            agent_name="codex",
+            execution_binding=binding,
+        )
+    )
+
+    with pytest.raises(ValueError, match="immutable provenance"):
+        store.set_session_execution_binding(
+            "binding-immutable",
+            {**binding, "execution_card_id": "card-b"},
+            reason="workspace_materialized",
+            expected_binding=binding,
+        )
+    without_cwd = dict(binding)
+    without_cwd.pop("cwd")
+    with pytest.raises(ValueError, match="immutable provenance"):
+        store.set_session_execution_binding(
+            "binding-immutable",
+            without_cwd,
+            reason="workspace_materialized",
+            expected_binding=binding,
+        )
+
+    assert store.get_session("binding-immutable").execution_binding == binding
+    assert store.list_session_execution_binding_history("binding-immutable") == []
+
+
 def test_restart_handoff_idempotency_is_content_fenced(tmp_path: Path) -> None:
     store = CardProjection(tmp_path / "pa.db")
     store.save_session(AgentSession(id="s", agent_name="codex"))

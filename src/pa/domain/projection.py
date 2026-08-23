@@ -313,6 +313,14 @@ class CardProjection:
                     UNIQUE(session_id, idempotency_key),
                     UNIQUE(continuation_prompt_id)
                 );
+                CREATE TABLE IF NOT EXISTS agent_execution_binding_history (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    prior_binding_json TEXT NOT NULL,
+                    binding_json TEXT NOT NULL,
+                    changed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS agent_session_cards (
                     session_id TEXT NOT NULL,
                     card_id TEXT NOT NULL,
@@ -654,6 +662,17 @@ class CardProjection:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_restart_handoffs_status_updated "
             "ON agent_restart_handoffs(status, updated_at)"
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS agent_execution_binding_history (
+                   id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                   reason TEXT NOT NULL, prior_binding_json TEXT NOT NULL,
+                   binding_json TEXT NOT NULL, changed_at TEXT NOT NULL
+               )"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_binding_history_session "
+            "ON agent_execution_binding_history(session_id, changed_at)"
         )
         # A browser default is a durable identity, not merely the most recently
         # touched row carrying a convenient label.  Older databases can contain
@@ -4293,6 +4312,112 @@ class CardProjection:
                     ),
                 )
         return session
+
+    @staticmethod
+    def _binding_materialization_is_compatible(
+        prior: dict, binding: dict
+    ) -> bool:
+        immutable_keys = (
+            "version",
+            "execution_card_id",
+            "execution_project_id",
+            "origin_instance_id",
+        )
+        return all(prior.get(key) == binding.get(key) for key in immutable_keys) and all(
+            key in binding and binding.get(key) == value
+            for key, value in prior.items()
+        )
+
+    def set_session_execution_binding(
+        self,
+        session_id: str,
+        binding: dict,
+        *,
+        reason: str,
+        expected_binding: dict | None = None,
+    ) -> AgentSession:
+        """Apply one audited, compare-and-set execution provenance transition."""
+        allowed_reasons = {
+            "workspace_binding_initialized",
+            "workspace_materialized",
+            "legacy_workspace_recovered",
+            "stale_data_dir_cwd_removed",
+        }
+        if reason not in allowed_reasons:
+            raise ValueError("Unsupported execution binding transition reason")
+        normalized = dict(binding or {})
+        changed_at = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("Session not found")
+            session = self._row_to_session(row)
+            prior = dict(session.execution_binding or {})
+            if expected_binding is not None and prior != dict(expected_binding):
+                raise ValueError("Execution binding changed before audited transition")
+            if prior == normalized:
+                return session
+            if reason in {
+                "workspace_binding_initialized",
+                "legacy_workspace_recovered",
+            }:
+                permitted = not prior
+            elif reason == "workspace_materialized":
+                permitted = bool(prior) and self._binding_materialization_is_compatible(
+                    prior, normalized
+                )
+            else:
+                expected = dict(prior)
+                expected.pop("cwd", None)
+                permitted = normalized == expected and "cwd" in prior
+            if not permitted:
+                raise ValueError(
+                    "Execution binding transition would retarget immutable provenance"
+                )
+            conn.execute(
+                "UPDATE agent_sessions SET execution_binding_json=?, updated_at=? WHERE id=?",
+                (json.dumps(normalized), changed_at.isoformat(), session_id),
+            )
+            conn.execute(
+                """INSERT INTO agent_execution_binding_history
+                   (id, session_id, reason, prior_binding_json, binding_json, changed_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    str(uuid4()),
+                    session_id,
+                    reason,
+                    json.dumps(prior),
+                    json.dumps(normalized),
+                    changed_at.isoformat(),
+                ),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+        return self._row_to_session(refreshed)
+
+    def list_session_execution_binding_history(self, session_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT id, session_id, reason, prior_binding_json,
+                          binding_json, changed_at
+                   FROM agent_execution_binding_history
+                   WHERE session_id=? ORDER BY changed_at, id""",
+                (session_id,),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "reason": row["reason"],
+                "prior_binding": json.loads(row["prior_binding_json"]),
+                "binding": json.loads(row["binding_json"]),
+                "changed_at": row["changed_at"],
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def _archive_retired_session_card(
