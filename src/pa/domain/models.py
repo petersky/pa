@@ -716,6 +716,7 @@ class RestartHandoff(BaseModel):
     execution_binding: dict = Field(default_factory=dict)
     continuation_prompt_id: str
     error: str | None = None
+    failure_stage: str | None = None
     attempts: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

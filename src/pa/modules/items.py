@@ -2053,6 +2053,49 @@ def operation_outcome_api(
     )
     if outcome["status"] != "not_found":
         return outcome
+    handoff = get_store().find_restart_handoff_by_idempotency(
+        idempotency_key, realm_id=realm_id
+    )
+    if handoff is not None:
+        failed = handoff.status == "failed"
+        terminal = handoff.status == "continuation_delivered"
+        return {
+            "idempotency_key": idempotency_key,
+            "operation": "agent_restart_handoff",
+            "status": handoff.status,
+            "durable": True,
+            "recovery_state": (
+                "retryable_existing_receipt"
+                if failed
+                else "continuation_delivered_exactly_once"
+                if terminal
+                else "durable_restart_handoff_in_progress"
+            ),
+            "recovery_action": (
+                "request_agent_restart_handoff_with_same_key"
+                if failed
+                else None
+                if terminal
+                else "get_operation_outcome"
+            ),
+            "result": {
+                "handoff_id": handoff.id,
+                "session_id": handoff.session_id,
+                "card_id": handoff.card_id,
+                "project_id": handoff.project_id,
+                "instance_id": handoff.instance_id,
+                "status": handoff.status,
+                "failure_stage": handoff.failure_stage,
+                "error": handoff.error,
+                "attempts": handoff.attempts,
+                "created_at": handoff.created_at.isoformat(),
+                "updated_at": handoff.updated_at.isoformat(),
+                "delivered_at": (
+                    handoff.delivered_at.isoformat()
+                    if handoff.delivered_at else None
+                ),
+            },
+        }
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     if dispatch_store is None:
         return outcome
