@@ -12,7 +12,7 @@ from pa.acp.environment import (
 )
 from pa.cli import service as svc
 from pa.core.context import AppContext
-from pa.install.metadata import load_install_metadata
+from pa.install.metadata import load_install_metadata, running_source_revision
 from pa.status.serving import classify_bind, sync_from_context
 
 
@@ -21,6 +21,7 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
     store = ctx.store
     svc_status = svc.get_status(settings)
     install_meta = load_install_metadata(settings.data_dir)
+    runtime_revision = running_source_revision()
     pa_bin = svc.find_pa_binary()
     service_bin = svc.find_service_binary()
     items = store.list_items()
@@ -94,7 +95,9 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "installed_version": install_meta.version if install_meta else None,
         "install_method": install_meta.method if install_meta else None,
         "install_channel": install_meta.channel if install_meta else None,
-        "install_revision": install_meta.source_revision if install_meta else None,
+        "install_revision": runtime_revision
+        or (install_meta.source_revision if install_meta else None),
+        "runtime_revision": runtime_revision,
         "release_track": settings.release_track,
         "service": {
             "backend": svc_status.backend,

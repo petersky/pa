@@ -303,7 +303,8 @@ def install(
         path = svc.install_service(settings, pa_bin)
         if not no_start:
             svc.bootstrap()
-        record_install(channel=channel, pa_bin=pa_bin)
+        # A unit-only rewrite does not install code and must not replace the
+        # provenance already recorded by the updater (notably a dev revision).
         ui.echo(
             f"Registered {svc.get_status(settings).backend} service: {path}",
             style="success",
@@ -315,7 +316,10 @@ def install(
 
     try:
         install_from_path(
-            from_source, name=name, channel=channel, start_service=not no_start
+            from_source,
+            name=name,
+            channel=channel,
+            start_service=not no_start,
         )
     except RuntimeError as exc:
         ui.echo(str(exc), style="failure", err=True)

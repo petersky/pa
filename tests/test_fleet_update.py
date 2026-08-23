@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import threading
 import unittest
@@ -22,6 +23,7 @@ from pa.fleet.update import (
     FleetUpdateRequest,
     UpdatePhase,
     _peer_json,
+    _transient_error_message,
     recover_update_jobs,
     run_update_job,
 )
@@ -30,6 +32,7 @@ from pa.install.metadata import (
     load_install_metadata,
     save_install_metadata,
 )
+from pa.install.metadata import running_source_revision
 from pa.modules.fleet import (
     _require_instance,
     fleet_instance_update_events,
@@ -166,6 +169,28 @@ class FleetUpdateStoreTests(unittest.TestCase):
         self.assertEqual(reloaded.phase, UpdatePhase.PREFLIGHT)
         self.assertEqual(reloaded.events[-1]["message"], "Checking peer")
 
+    def test_empty_timeout_diagnostic_is_nonempty_and_actionable(self) -> None:
+        diagnostic = _transient_error_message(TimeoutError())
+        self.assertIn("timed out", diagnostic)
+        self.assertIn("restarting", diagnostic)
+
+    def test_running_revision_comes_from_distribution_direct_url(self) -> None:
+        package = MagicMock()
+        package.read_text.return_value = json.dumps(
+            {
+                "url": "https://github.com/petersky/pa.git",
+                "vcs_info": {
+                    "vcs": "git",
+                    "commit_id": "A49CB4723DE2BB56832746EA7A99CE4C6D87B3D5",
+                },
+            }
+        )
+        with patch("pa.install.metadata.distribution", return_value=package):
+            self.assertEqual(
+                running_source_revision(),
+                "a49cb4723de2bb56832746ea7a99ce4c6d87b3d5",
+            )
+
     def test_successful_job_durably_retains_restart_diagnostic(self) -> None:
         store = FleetUpdateJobStore(self.data_dir)
         job = store.create(self.instance, FleetUpdateRequest(), "release")
@@ -279,21 +304,33 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         remaining = iter(responses)
         operation_statuses = iter(install_statuses or [{"status": "installed"}])
+        last_response = None
+        responses_exhausted = False
 
         async def peer(_client, method, url, _settings, **_kwargs):
+            nonlocal last_response, responses_exhausted
             if method == "GET" and "/api/fleet/peer-update/" in url:
                 value = next(operation_statuses)
                 if isinstance(value, Exception):
                     raise value
                 return value
-            value = next(remaining)
+            try:
+                value = next(remaining)
+                last_response = value
+            except StopIteration:
+                responses_exhausted = True
+                value = last_response
             if isinstance(value, Exception):
                 raise value
             return value
 
+        async def sleep(_seconds):
+            if responses_exhausted and job.health_deadline:
+                job.health_deadline = datetime.now(UTC) - timedelta(seconds=1)
+
         with (
             patch("pa.fleet.update._peer_json", AsyncMock(side_effect=peer)),
-            patch("pa.fleet.update.asyncio.sleep", AsyncMock()),
+            patch("pa.fleet.update.asyncio.sleep", side_effect=sleep),
             patch("pa.fleet.update.time.monotonic", side_effect=[0, 1, 20]),
         ):
             return await run_update_job(settings, store, job)
@@ -387,6 +424,7 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     "installed_version": "0.2.6.0",
                     "install_channel": "dev",
                     "install_revision": expected_revision,
+                    "runtime_revision": expected_revision,
                 },
             ],
             target=None,
@@ -442,6 +480,7 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     "installed_version": "0.2.6",
                     "install_channel": "dev",
                     "install_revision": wrong_revision,
+                    "runtime_revision": wrong_revision,
                 },
             ],
             target=None,
@@ -618,18 +657,72 @@ class FleetUpdateWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.restart_diagnostic["exit_code"], 1)
         self.assertEqual(job.events[-1]["severity"], "error")
 
-    async def test_old_process_is_not_accepted_as_restart_success(self) -> None:
+    async def test_old_process_answer_is_retried_until_new_process_verifies(self) -> None:
         job = await self._run(
             [
                 {"instance_id": "peer-1", "version": "0.2.5", "process_id": 10},
                 {"done": True},
                 {"target_version": "0.2.6"},
                 {"instance_id": "peer-1", "version": "0.2.6", "process_id": 10},
-                {"instance_id": "peer-1", "version": "0.2.5", "process_id": 11},
+                {"instance_id": "peer-1", "version": "0.2.6", "process_id": 11},
             ],
         )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+
+    async def test_healthy_old_version_is_retried_until_new_version_verifies(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"instance_id": "peer-1", "version": "0.2.6"},
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+
+    async def test_transient_empty_timeout_during_health_is_retried(self) -> None:
+        job = await self._run(
+            [
+                {"instance_id": "peer-1", "version": "0.2.5"},
+                {"done": True},
+                {"target_version": "0.2.6"},
+                TimeoutError(),
+                {"instance_id": "peer-1", "version": "0.2.6"},
+            ],
+        )
+        self.assertEqual(job.phase, UpdatePhase.SUCCEEDED)
+
+    async def test_dev_requires_running_revision_not_only_install_metadata(self) -> None:
+        expected_revision = "d" * 40
+        job = await self._run(
+            [
+                {
+                    "instance_id": "peer-1",
+                    "version": "1.1.0",
+                    "install_revision": "a" * 40,
+                },
+                {
+                    "available_version": "dev",
+                    "upgrade_available": True,
+                    "target_identity": expected_revision,
+                },
+                {"done": True},
+                {"target_version": "dev", "target_identity": expected_revision},
+                {
+                    "instance_id": "peer-1",
+                    "version": "1.1.0",
+                    "installed_version": "1.1.0",
+                    "install_channel": "dev",
+                    "install_revision": expected_revision,
+                    "runtime_revision": "e" * 40,
+                },
+            ],
+            target=None,
+            channel="dev",
+        )
         self.assertEqual(job.phase, UpdatePhase.FAILED)
-        self.assertIn("expected 0.2.6", job.error)
+        self.assertIn("revision", job.error)
 
     async def test_post_restart_identity_mismatch_fails(self) -> None:
         job = await self._run(
