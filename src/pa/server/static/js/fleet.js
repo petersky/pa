@@ -357,17 +357,29 @@
       }
     }
     var instances = state.instances || [];
+    var incompatible = instances.find(function (item) {
+      return item.status === "protocol_incompatible";
+    });
+    if (progress && incompatible) {
+      progress.textContent = "Sync is paused for " +
+        (incompatible.name || incompatible.instance_id || "a peer") +
+        ": its legacy protocol cannot safely receive this realm history. " +
+        "Upgrade that peer to sync protocol v3; PA will retry automatically.";
+    }
     if (tbody) {
       tbody.innerHTML = instances.length ? instances.map(function (item) {
         var status = item.status || "unknown";
         var badge = status === "reachable" ? "active" :
           status === "conflict" ? "blocked" : "open";
+        var error = item.error && (item.error.message || item.error.detail || item.error);
         return "<tr><td>" + identityHtml(item.instance_id) +
           (item.url ? '<br><span class="muted small">' +
           escapeHtml(item.url) + "</span>" : "") + "</td><td><span class=\"status status-" +
-          badge + "\">" + escapeHtml(status) + "</span></td><td><code title=\"" +
-          escapeHtml(item.head || "") + "\">" + escapeHtml(shortHead(item.head)) +
-          "</code></td></tr>";
+          badge + "\"" + (error ? ' title="' + escapeHtml(error) + '"' : "") +
+          ">" + escapeHtml(status) + "</span>" +
+          (error ? '<br><span class="muted small">' + escapeHtml(error) + "</span>" : "") +
+          "</td><td><code title=\"" + escapeHtml(item.head || "") + "\">" +
+          escapeHtml(shortHead(item.head)) + "</code></td></tr>";
       }).join("") : '<tr><td colspan="3" class="muted">No convergence pass has reported yet.</td></tr>';
     }
     renderSyncConflicts(state.conflicts || []);
