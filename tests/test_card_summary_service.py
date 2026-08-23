@@ -26,6 +26,7 @@ from pa.domain.card_summary_service import (
     anthropic_messages_url,
     chat_completions_url,
     parse_anthropic_summary,
+    parse_chat_completion_summary,
     resolve_summary_base_url,
     resolve_summary_model,
     sanitize_summary,
@@ -169,7 +170,9 @@ def test_connection_transport_and_response_failure_classification() -> None:
         (wrapped(ssl.SSLError("private certificate")), "tls_failure"),
         (httpx.ConnectError("private endpoint"), "connection_failed"),
         (httpx.ReadTimeout("private timeout"), "timeout"),
-        (ValueError("secret malformed payload"), "invalid_response"),
+        (ValueError("secret schema detail"), "schema_violation"),
+        (json.JSONDecodeError("secret malformed payload", "private", 0), "malformed_json"),
+        (KeyError("private envelope"), "invalid_response"),
     ]
     for error, code in cases:
         failure = CardSummaryService._classify_failure(error)
@@ -687,6 +690,82 @@ def test_parse_anthropic_submit_summary_tool() -> None:
     assert summary == "Describe the problem and intended outcome clearly."
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            {
+                "content": "",
+                "reasoning_details": [{"type": "reasoning.text", "text": "omitted"}],
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": SUBMIT_SUMMARY_TOOL,
+                            "arguments": json.dumps(
+                                {"summary": "Accept the documented MiniMax tool result."}
+                            ),
+                        },
+                    }
+                ],
+            },
+            "Accept the documented MiniMax tool result.",
+        ),
+        (
+            {"content": '```json\n{"summary":"Accept fenced JSON."}\n```'},
+            "Accept fenced JSON.",
+        ),
+        (
+            {
+                "content": (
+                    "<think>private reasoning is discarded</think>\n"
+                    '{"summary":"Accept embedded-reasoning envelopes safely."}'
+                )
+            },
+            "Accept embedded-reasoning envelopes safely.",
+        ),
+        (
+            {"content": None, "parsed": {"summary": "Keep OpenAI parsed output."}},
+            "Keep OpenAI parsed output.",
+        ),
+    ],
+)
+def test_parse_chat_completion_documented_shapes(message: dict, expected: str) -> None:
+    assert parse_chat_completion_summary({"choices": [{"message": message}]}) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        ({"content": "", "reasoning_content": "omitted"}, "empty_output"),
+        ({"content": "<think>omitted</think>"}, "empty_output"),
+        ({"content": "```json\n{not-json}\n```"}, "malformed_json"),
+        ({"content": '{"summary":"ok","extra":true}'}, "schema_violation"),
+        ({"content": '{"not_summary":"wrong"}'}, "schema_violation"),
+        (
+            {
+                "content": '{"summary":"ambiguous"}',
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": SUBMIT_SUMMARY_TOOL,
+                            "arguments": '{"summary":"also ambiguous"}',
+                        }
+                    }
+                ],
+            },
+            "schema_violation",
+        ),
+    ],
+)
+def test_parse_chat_completion_rejects_bad_or_ambiguous_output(
+    message: dict, code: str
+) -> None:
+    with pytest.raises(SummaryProviderError) as raised:
+        parse_chat_completion_summary({"choices": [{"message": message}]})
+    assert raised.value.code.value == code
+
+
 class _RecordingAsyncClient:
     def __init__(self, responses: list[httpx.Response], calls: list[dict]) -> None:
         self._responses = list(responses)
@@ -764,10 +843,20 @@ def test_minimax_uses_openai_compatible_chat_completions_url() -> None:
         "choices": [
             {
                 "message": {
-                    "content": json.dumps(
-                        {"summary": "Use MiniMax through Chat Completions."}
-                    )
-                }
+                    "content": "",
+                    "reasoning_details": [{"type": "reasoning.text", "text": "omitted"}],
+                    "tool_calls": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": SUBMIT_SUMMARY_TOOL,
+                                "arguments": json.dumps(
+                                    {"summary": "Use MiniMax through Chat Completions."}
+                                ),
+                            },
+                        }
+                    ],
+                },
             }
         ]
     }
@@ -802,6 +891,10 @@ def test_minimax_uses_openai_compatible_chat_completions_url() -> None:
     assert calls[0]["url"] == "https://api.minimaxi.com/v1/chat/completions"
     assert calls[0]["headers"]["Authorization"] == "Bearer never-expose-this"
     assert "x-api-key" not in calls[0]["headers"]
+    assert "response_format" not in calls[0]["json"]
+    assert calls[0]["json"]["reasoning_split"] is True
+    assert calls[0]["json"]["tool_choice"] == "auto"
+    assert calls[0]["json"]["tools"][0]["function"]["name"] == SUBMIT_SUMMARY_TOOL
 
 
 async def _selected_provider_stays_unconfigured_without_its_own_key(
