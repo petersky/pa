@@ -19,7 +19,9 @@ from pa.instance.quiesce import QueuedPrompt
 from pa.modules.agent_chat import (
     RestartHandoffBody,
     list_restart_handoffs,
+    recover_session as recover_normal_session,
     request_restart_handoff as request_normal_restart_handoff,
+    retry_restart_handoff as retry_normal_restart_handoff,
 )
 from pa.modules.fleet import (
     AssignedRestartHandoffBody,
@@ -557,3 +559,114 @@ def test_handoff_never_falls_back_to_new_session(tmp_path: Path) -> None:
     failed = store.get_restart_handoff(receipt.id)
     assert failed.status == "failed"
     assert failed.error == "workspace blocker"
+
+
+def test_failed_handoff_retry_recovers_exact_session_and_queues_once(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(
+        AgentSession(id="repaired", agent_name="codex", status="quiesced")
+    )
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager._execute_restart_handoff = AsyncMock()
+    receipt = asyncio.run(
+        manager.request_restart_handoff(
+            session_id=session.id,
+            continuation_prompt="deterministic continuation",
+            idempotency_key="repair-once",
+        )
+    )
+    store.update_restart_handoff(receipt.id, status="restarting")
+    manager.recover_session = AsyncMock(side_effect=RuntimeError("exact workspace blocker"))
+    manager.create_session = AsyncMock()
+
+    asyncio.run(manager._resume_restart_handoffs())
+    failed = store.get_restart_handoff(receipt.id)
+    assert failed.status == "failed"
+    assert failed.error == "exact workspace blocker"
+    manager.create_session.assert_not_called()
+
+    runtime = MagicMock(session=session)
+    runtime.enqueue = MagicMock()
+    manager.recover_session = AsyncMock(return_value=runtime)
+    first = asyncio.run(
+        manager.retry_restart_handoff(session_id=session.id, handoff_id=receipt.id)
+    )
+    repeated = asyncio.run(
+        manager.retry_restart_handoff(session_id=session.id, handoff_id=receipt.id)
+    )
+
+    assert first.status == "continuation_queued"
+    assert repeated.status == "continuation_queued"
+    manager.recover_session.assert_awaited_once_with(
+        session.id, _startup_recovery=True
+    )
+    runtime.enqueue.assert_called_once_with(
+        "deterministic continuation",
+        prompt_id=receipt.continuation_prompt_id,
+        source=f"restart-handoff:{receipt.id}",
+        card_id=None,
+        project_id=None,
+    )
+    assert store.get_restart_handoff(receipt.id).error is None
+
+
+def test_handoff_retry_route_is_owned_and_restart_session_rearms_latest_failure(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(
+        AgentSession(id="ui-repair", agent_name="codex", principal_id="user:owner")
+    )
+    receipt = store.create_restart_handoff(
+        RestartHandoff(
+            session_id=session.id,
+            idempotency_key="ui-retry",
+            continuation_prompt="continue after UI repair",
+            continuation_prompt_id="ui-retry-prompt",
+            status="failed",
+            error="repository unavailable",
+        )
+    )
+    manager = SimpleNamespace(store=store, retry_restart_handoff=AsyncMock())
+    manager.retry_restart_handoff.return_value = receipt.model_copy(
+        update={"status": "continuation_queued", "error": None}
+    )
+    runtime = MagicMock()
+    runtime.snapshot.side_effect = [
+        {"restart_handoffs": [receipt.model_dump(mode="json")]},
+        {
+            "restart_handoffs": [
+                manager.retry_restart_handoff.return_value.model_dump(mode="json")
+            ]
+        },
+    ]
+    manager.recover_session = AsyncMock(return_value=runtime)
+    request = MagicMock()
+    request.app.state.ctx.settings.auth_required = True
+    request.state.user.role = "member"
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:other"),
+        pytest.raises(HTTPException) as denied,
+    ):
+        asyncio.run(
+            retry_normal_restart_handoff(request, session.id, receipt.id)
+        )
+    assert denied.value.status_code == 403
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:owner"),
+    ):
+        recovered = asyncio.run(recover_normal_session(request, session.id))
+
+    assert recovered["restart_handoffs"][0]["status"] == "continuation_queued"
+    manager.recover_session.assert_awaited_once_with(
+        session.id, provider_override=None
+    )
+    manager.retry_restart_handoff.assert_awaited_once_with(
+        session_id=session.id, handoff_id=receipt.id
+    )

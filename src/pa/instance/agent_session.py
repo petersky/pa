@@ -3600,6 +3600,30 @@ class AgentSessionManager:
                     status="failed", error=str(exc)[:1000]
                 )
 
+    async def retry_restart_handoff(
+        self, *, session_id: str, handoff_id: str
+    ) -> RestartHandoff:
+        """Retry exact-session continuation delivery from the same durable receipt."""
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session or session.status == "closed":
+            raise AgentSessionRecoveryError("Exact durable session is not recoverable")
+        handoff = await self._offload(
+            "sqlite.restart_handoff_retry",
+            self.store.retry_restart_handoff,
+            handoff_id,
+            session_id=session_id,
+        )
+        if handoff.status == "resuming":
+            await self._resume_restart_handoffs()
+            handoff = await self._offload(
+                "sqlite.restart_handoff_read",
+                self.store.get_restart_handoff,
+                handoff_id,
+            )
+        return handoff
+
     @staticmethod
     def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:
         durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})

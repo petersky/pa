@@ -4729,6 +4729,47 @@ class CardProjection:
             ).fetchone()
         return self._row_to_restart_handoff(row) if row else None
 
+    def retry_restart_handoff(
+        self, handoff_id: str, *, session_id: str
+    ) -> RestartHandoff:
+        """Re-arm one failed receipt without changing its continuation identity."""
+        now = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
+                (handoff_id, session_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Restart handoff not found for this session")
+            handoff = self._row_to_restart_handoff(row)
+            if handoff.status in {
+                "resuming",
+                "continuation_queued",
+                "continuation_delivered",
+            }:
+                return handoff
+            if handoff.status != "failed":
+                raise ValueError("Restart handoff is not retryable in its current state")
+            competing = conn.execute(
+                """SELECT id FROM agent_restart_handoffs
+                   WHERE session_id=? AND id!=?
+                     AND status NOT IN ('failed', 'continuation_delivered')
+                   LIMIT 1""",
+                (session_id, handoff_id),
+            ).fetchone()
+            if competing:
+                raise ValueError("Session already has a nonterminal restart handoff")
+            conn.execute(
+                """UPDATE agent_restart_handoffs
+                   SET status='resuming', error=NULL, updated_at=?
+                   WHERE id=? AND status='failed'""",
+                (now.isoformat(), handoff_id),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(refreshed)
+
     def list_session_audit_page(
         self,
         *,
