@@ -985,6 +985,7 @@ def migrate_legacy_goals(
                             ]
                         )
                     ),
+                ),
                 realm_id=realm,
                 principal_id=principal,
                 instance_id=_authoritative_instance_id(request),
