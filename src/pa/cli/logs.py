@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
+import gzip
+import hashlib
+import heapq
+import io
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
-from collections.abc import Iterable
+from collections import deque
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TextIO
+from typing import BinaryIO, TextIO
 
 from pa.config import Settings
+from pa.core.log_rotation import (
+    BOOTSTRAP_FILE,
+    UnsafeLogPathError,
+    read_log_status,
+)
 from pa.core.logging import redact_log_text
 
 _LEVELS = {
@@ -31,6 +42,8 @@ _STAMP = re.compile(
 _HUMAN = re.compile(
     r"^(?:\d{4}-\d\d-\d\d[^ ]*\s+)?(?P<level>DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\s+(?:\[(?P<logger>[^]]+)\]\s+)?(?P<message>.*)$"
 )
+_DEDUP_WINDOW_ENTRIES = 20_000
+_FOLLOW_ANCHOR_BYTES = 128
 
 
 @dataclass(frozen=True)
@@ -118,10 +131,72 @@ def parse_line(line: str, source: str, fallback: datetime) -> LogRecord:
     return LogRecord(stamp, source, body)
 
 
+def iter_file_records(path: Path, source: str) -> Iterator[LogRecord]:
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptor = os.open(path, flags)
+    try:
+        value = os.fstat(descriptor)
+        if not stat.S_ISREG(value.st_mode):
+            raise UnsafeLogPathError(f"Refusing to read unsafe log path: {path}")
+        raw = os.fdopen(descriptor, "rb")
+        descriptor = -1
+        with raw:
+            binary = (
+                gzip.GzipFile(fileobj=raw, mode="rb") if path.suffix == ".gz" else raw
+            )
+            with (
+                binary,
+                io.TextIOWrapper(binary, encoding="utf-8", errors="replace") as handle,
+            ):
+                fallback = datetime.fromtimestamp(value.st_mtime, UTC)
+                for line in handle:
+                    if line.strip():
+                        yield parse_line(line, source, fallback)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def file_records(path: Path, source: str) -> list[LogRecord]:
-    fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC)
-    with path.open("r", encoding="utf-8", errors="replace") as handle:
-        return [parse_line(line, source, fallback) for line in handle if line.strip()]
+    """Compatibility helper; streaming callers should use ``iter_file_records``."""
+    return list(iter_file_records(path, source))
+
+
+def source_log_paths(active: Path) -> list[Path]:
+    """Return completed archives oldest-first followed by the active file."""
+
+    def archive_order(path: Path) -> tuple[int, object]:
+        suffix = path.name.removeprefix(f"{active.name}.").removesuffix(".gz")
+        # logging.handlers.RotatingFileHandler numbers newest as .1, while
+        # PA's service supervisor uses naturally sortable UTC timestamps.
+        return (0, -int(suffix)) if suffix.isdigit() else (1, suffix)
+
+    archives = sorted(
+        (
+            path
+            for path in active.parent.glob(f"{active.name}.*")
+            if _regular_file(path)
+            and not path.name.endswith(".tmp")
+            and not (
+                path.suffix != ".gz"
+                and _regular_file(path.with_name(path.name + ".gz"))
+            )
+        ),
+        key=archive_order,
+    )
+    return [*archives, active]
+
+
+def _regular_file(path: Path) -> bool:
+    try:
+        return stat.S_ISREG(path.lstat().st_mode)
+    except OSError:
+        return False
 
 
 def journal_records(lines: int) -> list[LogRecord]:
@@ -177,13 +252,18 @@ def _severity(value: str) -> int:
     return _LEVELS.get(value.upper(), 20)
 
 
-def _deduplicate(records: Iterable[LogRecord]) -> list[LogRecord]:
-    result: list[LogRecord] = []
-    seen: dict[tuple[str, str], datetime] = {}
-    for record in sorted(records, key=lambda item: item.timestamp):
+def _iter_deduplicated(records: Iterable[LogRecord]) -> Iterator[LogRecord]:
+    """Deduplicate an ordered stream with state bounded to the two-second window."""
+    seen: dict[tuple[str, bytes], datetime] = {}
+    expiry: deque[tuple[datetime, tuple[str, bytes]]] = deque()
+    for record in records:
+        while expiry and (record.timestamp - expiry[0][0]).total_seconds() > 2:
+            stamp, expired = expiry.popleft()
+            if seen.get(expired) == stamp:
+                seen.pop(expired, None)
         # Structured/file and journal/file sinks can carry the same record with
         # different prefixes. A small time window avoids hiding true repeats.
-        key = (record.level, re.sub(r"\s+", " ", record.message).strip())
+        key = (record.level, _message_fingerprint(record.message))
         previous = seen.get(key)
         if (
             previous is not None
@@ -191,8 +271,16 @@ def _deduplicate(records: Iterable[LogRecord]) -> list[LogRecord]:
         ):
             continue
         seen[key] = record.timestamp
-        result.append(record)
-    return result
+        expiry.append((record.timestamp, key))
+        while len(expiry) > _DEDUP_WINDOW_ENTRIES:
+            stamp, expired = expiry.popleft()
+            if seen.get(expired) == stamp:
+                seen.pop(expired, None)
+        yield record
+
+
+def _deduplicate(records: Iterable[LogRecord]) -> list[LogRecord]:
+    return list(_iter_deduplicated(sorted(records, key=lambda item: item.timestamp)))
 
 
 def _matches(
@@ -253,6 +341,168 @@ def emit(
     )
 
 
+def _message_fingerprint(message: str) -> bytes:
+    normalized = re.sub(r"\s+", " ", message).strip().encode(errors="replace")
+    return hashlib.blake2b(normalized, digest_size=16).digest()
+
+
+def _record_key(record: LogRecord) -> tuple[str, bytes, int]:
+    return (
+        record.level,
+        _message_fingerprint(record.message),
+        int(record.timestamp.timestamp()),
+    )
+
+
+class _RecentKeys:
+    def __init__(self, maximum: int = 20_000) -> None:
+        self.maximum = maximum
+        self._queue: deque[tuple[str, bytes, int]] = deque()
+        self._values: set[tuple[str, bytes, int]] = set()
+
+    def __contains__(self, value: tuple[str, bytes, int]) -> bool:
+        return value in self._values
+
+    def add(self, value: tuple[str, bytes, int]) -> None:
+        if value in self._values:
+            return
+        self._values.add(value)
+        self._queue.append(value)
+        while len(self._queue) > self.maximum:
+            self._values.discard(self._queue.popleft())
+
+
+class _FollowFile:
+    """Follow one active file across rename and fast truncate/regrow cycles."""
+
+    def __init__(self, path: Path, source: str) -> None:
+        self.path = path
+        self.source = source
+        self.handle: BinaryIO | None = None
+        self.inode: int | None = None
+        self.offset = 0
+        self.anchor = b""
+        self._open(at_end=True)
+
+    def _open(self, *, at_end: bool) -> bool:
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+        )
+        descriptor = -1
+        try:
+            descriptor = os.open(self.path, flags)
+            value = os.fstat(descriptor)
+            if not stat.S_ISREG(value.st_mode):
+                os.close(descriptor)
+                descriptor = -1
+                return False
+            handle = os.fdopen(descriptor, "rb")
+            descriptor = -1
+        except OSError:
+            if descriptor >= 0:
+                os.close(descriptor)
+            return False
+        if at_end:
+            handle.seek(0, os.SEEK_END)
+        self.handle = handle
+        self.inode = value.st_ino
+        self._remember_position()
+        return True
+
+    def _read_anchor(self, offset: int) -> bytes:
+        if self.handle is None or offset <= 0:
+            return b""
+        start = max(0, offset - _FOLLOW_ANCHOR_BYTES)
+        try:
+            return os.pread(self.handle.fileno(), offset - start, start)
+        except OSError:
+            return b""
+
+    def _remember_position(self) -> None:
+        if self.handle is None:
+            self.offset = 0
+            self.anchor = b""
+            return
+        self.offset = int(self.handle.tell())
+        self.anchor = self._read_anchor(self.offset)
+
+    def _anchor_matches(self) -> bool:
+        return self.anchor == self._read_anchor(self.offset)
+
+    def _drain(self) -> Iterator[LogRecord]:
+        if self.handle is None:
+            return
+        fallback = datetime.now(UTC)
+        while raw_line := self.handle.readline():
+            line = raw_line.decode("utf-8", errors="replace")
+            if line.strip():
+                yield parse_line(line, self.source, fallback)
+        self._remember_position()
+
+    def poll(self) -> Iterator[LogRecord]:
+        if self.handle is None:
+            if not self._open(at_end=False):
+                return
+            yield from self._drain()
+            return
+        try:
+            current = self.path.lstat()
+        except FileNotFoundError:
+            yield from self._drain()
+            return
+        if not stat.S_ISREG(current.st_mode):
+            return
+
+        if current.st_ino == self.inode:
+            try:
+                size = os.fstat(self.handle.fileno()).st_size
+            except OSError:
+                size = 0
+            # Size-only tailers lose the prefix when copytruncate regrows past
+            # the prior offset between polls. Verify an anchor from the consumed
+            # prefix so that cycle also restarts at byte zero.
+            if size < self.offset or not self._anchor_matches():
+                self.handle.seek(0)
+                self._remember_position()
+            yield from self._drain()
+            return
+
+        # PA's rename/create handoff closes its old writer before publishing the
+        # new path, so draining the old descriptor here is complete and lossless.
+        yield from self._drain()
+        old = self.handle
+        if self._open(at_end=False):
+            old.close()
+            yield from self._drain()
+
+    def close(self) -> None:
+        if self.handle is not None:
+            self.handle.close()
+            self.handle = None
+
+
+def _source_records(
+    active: Path, source: str, diagnostics: TextIO
+) -> Iterator[LogRecord]:
+    for source_path in source_log_paths(active):
+        if not _regular_file(source_path):
+            continue
+        try:
+            yield from iter_file_records(source_path, source)
+        except FileNotFoundError:
+            # Compression atomically replaces a plain archive with .gz.
+            continue
+        except (OSError, EOFError, gzip.BadGzipFile, UnsafeLogPathError) as exc:
+            print(
+                f"warning: cannot read {source} log archive {source_path}: {exc}",
+                file=diagnostics,
+                flush=True,
+            )
+
+
 def show_logs(
     *,
     settings: Settings,
@@ -275,30 +525,35 @@ def show_logs(
         "stdout": settings.data_dir / "logs" / "server.log",
         "stderr": settings.data_dir / "logs" / "server.err.log",
         "structured": settings.data_dir / "logs" / "pa.jsonl",
+        "supervisor": settings.data_dir / "logs" / BOOTSTRAP_FILE,
     }
     selected: list[tuple[str, Path]] = []
-    records: list[LogRecord] = []
-    for source in sources:
+    iterators: list[Iterator[LogRecord]] = []
+    journal: list[LogRecord] = []
+    for source in dict.fromkeys(sources):
         if source == "journal":
             if not sys.platform.startswith("linux"):
                 raise RuntimeError(
                     "journald is only available on systemd/Linux; use --source stdout,stderr on launchd"
                 )
-            records.extend(journal_records(lines))
+            journal = sorted(journal_records(lines), key=lambda item: item.timestamp)
+            iterators.append(iter(journal))
             continue
         path = paths[source]
-        if not path.exists():
+        available = [item for item in source_log_paths(path) if _regular_file(item)]
+        if not available:
             print(
                 f"warning: {source} log is missing: {path} (start/restart PA or choose another --source)",
                 file=diagnostics,
             )
             continue
-        if not os.access(path, os.R_OK):
+        if any(not os.access(item, os.R_OK) for item in available):
             raise RuntimeError(
-                f"Cannot read {source} log: {path}; check file ownership and permissions"
+                f"Cannot read every {source} log at {path.parent}; "
+                "check file ownership and permissions"
             )
         selected.append((source, path))
-        records.extend(file_records(path, source))
+        iterators.append(_source_records(path, source, diagnostics))
     source_text = ", ".join(f"{name}={path}" for name, path in selected)
     if "journal" in sources:
         source_text += (", " if source_text else "") + "journal=pa-server.service"
@@ -315,80 +570,102 @@ def show_logs(
         file=diagnostics,
         flush=True,
     )
+    storage = read_log_status(settings.data_dir)
+    if storage:
+        pressure = storage.get("disk_pressure")
+        pressure_state = (
+            pressure.get("state", "unknown")
+            if isinstance(pressure, dict)
+            else "unknown"
+        )
+        free_bytes = pressure.get("free_bytes") if isinstance(pressure, dict) else None
+        minimum_free_bytes = (
+            pressure.get("minimum_free_bytes") if isinstance(pressure, dict) else None
+        )
+        supervisor = storage.get("supervisor")
+        supervisor_state = (
+            supervisor.get("state", "unknown")
+            if isinstance(supervisor, dict)
+            else "unknown"
+        )
+        ownership = (
+            supervisor.get("ownership", "unknown")
+            if isinstance(supervisor, dict)
+            else "unknown"
+        )
+        print(
+            "Log storage: "
+            f"current_bytes={storage.get('current_bytes', 0)} "
+            f"total_bytes={storage.get('total_bytes', 0)} "
+            f"oldest_age_seconds={storage.get('oldest_age_seconds', 0)} "
+            f"rotation_failures={storage.get('rotation_failures', 0)} "
+            f"compression_failures={storage.get('compression_failures', 0)} "
+            f"prune_failures={storage.get('prune_failures', 0)} "
+            f"pump_failures={storage.get('pump_failures', 0)} "
+            f"status_failures={storage.get('status_failures', 0)} "
+            f"bootstrap_failures={storage.get('bootstrap_failures', 0)} "
+            f"dropped_bytes={storage.get('dropped_bytes', 0)} "
+            f"disk_pressure={pressure_state} "
+            f"free_bytes={free_bytes} "
+            f"minimum_free_bytes={minimum_free_bytes} "
+            f"supervisor={supervisor_state} "
+            f"ownership={ownership} "
+            f"last_error={storage.get('last_error')}",
+            file=diagnostics,
+            flush=True,
+        )
     if not selected and "journal" not in sources:
         raise RuntimeError(
             "No readable log sources selected; run `pa status` and verify the PA data directory"
         )
-    filtered = [
-        record
-        for record in _deduplicate(records)
-        if _matches(record, since=threshold, severity=severity, component=component)
-    ]
-    for record in filtered[-lines:] if lines else filtered:
-        emit(record, settings, json_output=json_output, output=output)
-    if not follow:
-        return
-    offsets: dict[Path, tuple[int, int]] = {}
-    for _, path in selected:
-        stat = path.stat()
-        offsets[path] = (stat.st_ino, stat.st_size)
-    emitted = {
-        (
-            record.level,
-            re.sub(r"\s+", " ", record.message).strip(),
-            int(record.timestamp.timestamp()),
-        )
-        for record in filtered
-    }
+    merged = heapq.merge(*iterators, key=lambda item: item.timestamp)
+    tail: deque[LogRecord] | None = deque(maxlen=lines) if lines else None
+    recent = _RecentKeys()
     journal_cursor = max(
-        (record.timestamp for record in records if record.source == "journal"),
+        (record.timestamp for record in journal),
         default=datetime.fromtimestamp(0, UTC),
     )
+    for record in _iter_deduplicated(merged):
+        if not _matches(
+            record, since=threshold, severity=severity, component=component
+        ):
+            continue
+        if tail is None:
+            emit(record, settings, json_output=json_output, output=output)
+            recent.add(_record_key(record))
+        else:
+            tail.append(record)
+    if tail is not None:
+        for record in tail:
+            emit(record, settings, json_output=json_output, output=output)
+            recent.add(_record_key(record))
+    if not follow:
+        return
+    followers = [_FollowFile(path, source) for source, path in selected]
     try:
         while True:
-            for source, path in selected:
-                try:
-                    stat = path.stat()
-                except FileNotFoundError:
-                    continue
-                inode, offset = offsets.get(path, (stat.st_ino, 0))
-                if stat.st_ino != inode or stat.st_size < offset:
-                    offset = 0
-                if stat.st_size > offset:
-                    with path.open("r", encoding="utf-8", errors="replace") as handle:
-                        handle.seek(offset)
-                        for line in handle:
-                            record = parse_line(line, source, datetime.now(UTC))
-                            key = (
-                                record.level,
-                                re.sub(r"\s+", " ", record.message).strip(),
-                                int(record.timestamp.timestamp()),
-                            )
-                            if key not in emitted and _matches(
-                                record,
-                                since=threshold,
-                                severity=severity,
-                                component=component,
-                            ):
-                                emit(
-                                    record,
-                                    settings,
-                                    json_output=json_output,
-                                    output=output,
-                                )
-                                emitted.add(key)
-                        offset = handle.tell()
-                offsets[path] = (stat.st_ino, offset)
+            for follower in followers:
+                for record in follower.poll():
+                    key = _record_key(record)
+                    if key not in recent and _matches(
+                        record,
+                        since=threshold,
+                        severity=severity,
+                        component=component,
+                    ):
+                        emit(
+                            record,
+                            settings,
+                            json_output=json_output,
+                            output=output,
+                        )
+                        recent.add(key)
             if "journal" in sources:
                 for record in journal_records(max(lines, 100)):
-                    key = (
-                        record.level,
-                        re.sub(r"\s+", " ", record.message).strip(),
-                        int(record.timestamp.timestamp()),
-                    )
+                    key = _record_key(record)
                     if (
                         record.timestamp > journal_cursor
-                        and key not in emitted
+                        and key not in recent
                         and _matches(
                             record,
                             since=threshold,
@@ -397,8 +674,11 @@ def show_logs(
                         )
                     ):
                         emit(record, settings, json_output=json_output, output=output)
-                        emitted.add(key)
+                        recent.add(key)
                     journal_cursor = max(journal_cursor, record.timestamp)
             time.sleep(0.2)
     except KeyboardInterrupt:
         return
+    finally:
+        for follower in followers:
+            follower.close()
