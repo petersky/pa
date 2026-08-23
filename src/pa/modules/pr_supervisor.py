@@ -207,6 +207,8 @@ def _page_context(request: Request) -> dict[str, Any]:
             )
     if health.get("stopped_renewers"):
         degradation = f"{len(health['stopped_renewers'])} watch renewer(s) are stopped."
+    if health.get("state") == "worker_stale":
+        degradation = "The PR supervisor worker is dead or has stopped making progress."
     return {
         "watches": watches,
         "watch": selected,

@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from pa.acp.final_message import assemble_final_assistant_message
+from pa.core.background import BackgroundTaskSupervisor
 from pa.domain.models import CardLane
 from pa.execution.dispatch import (
     CompletionOutbox,
@@ -68,6 +69,11 @@ class CompletionReconciler:
         self._wake = asyncio.Event()
         self._lock = asyncio.Lock()
         self._closing = False
+        self._supervisor = BackgroundTaskSupervisor(
+            "completion-reconciler",
+            self._run,
+            self.dispatch_store.db_path.parent / "completion_reconciler_worker.json",
+        )
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         runtime = getattr(self.agent, "async_runtime", None)
@@ -76,18 +82,14 @@ class CompletionReconciler:
         return await asyncio.to_thread(call, *args, **kwargs)
 
     def start(self) -> None:
-        if not self._task or self._task.done():
-            self._closing = False
-            self._task = asyncio.create_task(self._run())
+        self._closing = False
+        self._supervisor.start()
+        self._task = self._supervisor._task
 
     async def close(self) -> None:
         self._closing = True
         self._wake.set()
-        if self._task:
-            try:
-                await asyncio.wait_for(self._task, timeout=1.0)
-            except TimeoutError:
-                self._task.cancel()
+        await self._supervisor.close()
 
     async def recover(self) -> None:
         """Adopt pre-restart missing dispositions before the outbox can send."""
@@ -341,8 +343,10 @@ class CompletionReconciler:
         )
         return bool(queued)
 
-    async def _run(self) -> None:
+    async def _run(self, heartbeat: Callable[[], None] | None = None) -> None:
         while not self._closing:
+            if heartbeat:
+                heartbeat()
             records = await self._offload(
                 "reconciliation.dispatch_read",
                 self.dispatch_store.list,
@@ -380,6 +384,9 @@ class CompletionReconciler:
                 await asyncio.wait_for(self._wake.wait(), self.retry_seconds)
             except TimeoutError:
                 pass
+
+    def worker_health(self) -> dict[str, Any]:
+        return self._supervisor.health()
 
     async def _recover_prompted(self, record: DispatchRecord) -> None:
         """Recover a reconciler turn that finished immediately before restart."""

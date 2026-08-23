@@ -269,9 +269,15 @@ def control_plane_status(request: Request) -> dict[str, Any]:
     """Expose honest compatibility state without treating static URLs as election."""
     service = request.app.state.ctx.services.get("pr_supervisor")
     health = service.authority_health() if service is not None else None
+    workers = {}
+    for name in ("completion_outbox", "completion_reconciler"):
+        worker = request.app.state.ctx.services.get(name)
+        if worker is not None:
+            workers[name] = worker.worker_health()
     return build_control_plane_status(
         request.app.state.ctx.settings,
         pr_supervisor_health=health,
+        worker_health=workers,
     )
 
 
