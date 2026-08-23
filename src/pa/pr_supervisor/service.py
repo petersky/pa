@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 import httpx
 
+from pa.core.background import BackgroundTaskSupervisor
 from pa.domain.models import AgentSession, CardLane, CardUpdate
 from pa.execution.disposition import (
     decide_card_disposition,
@@ -751,6 +752,12 @@ class PRSupervisor:
         self._lease_last_response: dict[str, dict[str, Any]] = {}
         self._lease_suppressed: dict[str, str] = {}
         self._lease_authority = self._lease_authority_key()
+        self._worker_heartbeat: Callable[[], None] | None = None
+        self._loop_supervisor = BackgroundTaskSupervisor(
+            "pr-supervisor",
+            self._run_loop,
+            self.settings.data_dir / "pr_supervisor_worker.json",
+        )
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         if self.async_runtime:
@@ -775,25 +782,25 @@ class PRSupervisor:
 
     async def start(self) -> None:
         self._stopping = False
-        if not self._task or self._task.done():
-            self._task = asyncio.create_task(self._run_loop(), name="pa-pr-supervisor")
+        self._loop_supervisor.start()
+        self._task = self._loop_supervisor._task
 
     async def stop(self) -> None:
         self._stopping = True
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        await self._loop_supervisor.close()
+        self._task = None
         self._clear_all_lease_state()
         if self._owns_http_client:
             await self.http_client.aclose()
 
-    async def _run_loop(self) -> None:
+    async def _run_loop(self, heartbeat: Callable[[], None] | None = None) -> None:
+        self._worker_heartbeat = heartbeat
+        if heartbeat:
+            heartbeat()
         try:
             await self.refresh_capability(force=True)
+            if heartbeat:
+                heartbeat()
             await self.migrate_discoverable_associations()
         except asyncio.CancelledError:
             raise
@@ -805,6 +812,8 @@ class PRSupervisor:
                 "loop_errors",
             )
         while not self._stopping:
+            if heartbeat:
+                heartbeat()
             try:
                 await self.run_once()
             except asyncio.CancelledError:
@@ -867,6 +876,8 @@ class PRSupervisor:
 
     async def run_once(self) -> None:
         capability = await self.refresh_capability()
+        if self._worker_heartbeat:
+            self._worker_heartbeat()
         await self._prune_lease_state(capability)
         await self._renew_due_local_leases(capability)
         await self._reconcile_merged_cards()
@@ -874,6 +885,8 @@ class PRSupervisor:
         if not due:
             return
         for watch in due:
+            if self._worker_heartbeat:
+                self._worker_heartbeat()
             if not capability.supports(watch.repository):
                 self._forget_watch(watch.id)
                 eligible = await self._eligible_capabilities(watch.repository)
@@ -3144,8 +3157,12 @@ class PRSupervisor:
             state = "authority_unverified"
         else:
             state = "ready"
+        worker = self._loop_supervisor.health()
+        if self._loop_supervisor._task is not None and worker["stale"]:
+            state = "worker_stale"
         return {
             "state": state,
+            "worker": worker,
             "role": "worker" if remote else "lease_authority",
             "authority_url": configured or None,
             "explicit_authority": bool(self.settings.pr_supervisor_authority_url),

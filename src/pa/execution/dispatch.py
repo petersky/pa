@@ -28,6 +28,7 @@ from pa.core.async_runtime import (
     BlockingOperationTimeout,
     BlockingQueueFull,
 )
+from pa.core.background import BackgroundTaskSupervisor
 from pa.core.io import atomic_write_json, atomic_write_text
 from pa.execution.post_turn import (
     ActionReceiptStatus,
@@ -4814,6 +4815,11 @@ class CompletionOutbox:
         self._wake = asyncio.Event()
         self._closing = False
         self._client: httpx.AsyncClient | None = None
+        self._supervisor = BackgroundTaskSupervisor(
+            "completion-outbox",
+            self._run,
+            self.store.db_path.parent / "completion_outbox_worker.json",
+        )
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         if self.async_runtime:
@@ -4831,9 +4837,9 @@ class CompletionOutbox:
         return self._client
 
     def start(self) -> None:
-        if not self._task or self._task.done():
-            self._closing = False
-            self._task = asyncio.create_task(self._run())
+        self._closing = False
+        self._supervisor.start()
+        self._task = self._supervisor._task
 
     def queue(self, session_id: str, payload: dict[str, Any]) -> bool:
         queued = self.store.queue_completion_payload(session_id, payload)
@@ -4892,17 +4898,15 @@ class CompletionOutbox:
         await self.drain(timeout)
         self._closing = True
         self._wake.set()
-        if self._task:
-            try:
-                await asyncio.wait_for(self._task, timeout=1.0)
-            except asyncio.TimeoutError:
-                self._task.cancel()
+        await self._supervisor.close()
         if self._client is not None:
             await self._client.aclose()
             self._client = None
 
-    async def _run(self) -> None:
+    async def _run(self, heartbeat: Callable[[], None] | None = None) -> None:
         while not self._closing:
+            if heartbeat:
+                heartbeat()
             pending = await self._offload(
                 "dispatch.completion_pending_read", self.store.pending
             )
@@ -4932,6 +4936,9 @@ class CompletionOutbox:
             for record, turn in followups:
                 await self._send_followup(record, turn)
             await asyncio.sleep(min(self.retry_seconds, 1.0))
+
+    def worker_health(self) -> dict[str, Any]:
+        return self._supervisor.health()
 
     async def _send_followup(
         self, record: DispatchRecord, turn: dict[str, Any]
