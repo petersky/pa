@@ -201,6 +201,36 @@ class OrchestrationStore:
             plans = [plan for plan in plans if plan.realm_id == realm_id]
         return sorted(plans, key=lambda plan: plan.updated_at, reverse=True)
 
+    def archive(self, plan_ids: set[str], *, migration_id: str) -> list[str]:
+        """Move legacy plans to an append-only provenance ledger, idempotently."""
+        archive_path = self.path.with_name("goal_orchestration_archive.json")
+        with self._lock:
+            try:
+                archive = json.loads(archive_path.read_text())
+            except (OSError, ValueError):
+                archive = {}
+            archived: list[str] = []
+            for plan_id in sorted(plan_ids):
+                plan = self._plans.get(plan_id)
+                if plan is None:
+                    if plan_id in archive:
+                        archived.append(plan_id)
+                    continue
+                archive.setdefault(
+                    plan_id,
+                    {
+                        "migration_id": migration_id,
+                        "archived_at": datetime.now(UTC).isoformat(),
+                        "plan": plan.model_dump(mode="json"),
+                    },
+                )
+                self._plans.pop(plan_id, None)
+                archived.append(plan_id)
+            if archived:
+                atomic_write_json(archive_path, archive)
+                self._save()
+            return archived
+
     def ready_tasks(self, plan: GoalPlan) -> list[TaskPlan]:
         completed = {
             task.card_id for task in plan.tasks if task.state == TaskState.DONE

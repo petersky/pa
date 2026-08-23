@@ -309,7 +309,10 @@ class Kernel:
         event_log = self.ctx.services.get("event_log")
         if event_log:
             lease_mgr = LeaseManager(
-                self.ctx.store, event_log, self.ctx.settings.instance_id
+                self.ctx.store,
+                event_log,
+                self.ctx.settings.instance_id,
+                cloud=self.ctx.services.get("cloud_coordinator"),
             )
             self.ctx.register_service("lease_manager", lease_mgr)
             fleet: FleetRegistry = self.ctx.require_service("fleet_registry")

@@ -84,6 +84,7 @@ class _SyncNetwork:
         self.unavailable: set[str] = set()
         self.omit_push_head: set[str] = set()
         self.reject_push: set[str] = set()
+        self.legacy_need: set[str] = set()
 
     def client(self, *args, **kwargs):
         return _SyncClient(self)
@@ -99,6 +100,17 @@ class _SyncNetwork:
         if path == "/api/sync/have":
             missing = sorted(set(node.objects.list_hashes()) - set(body["hashes"]))
             return httpx.Response(200, json={"missing": missing}, request=request)
+        if path == "/api/sync/need":
+            if host in self.legacy_need:
+                return httpx.Response(404, json={"detail": "Not Found"}, request=request)
+            missing = [
+                object_hash
+                for object_hash in body["hashes"]
+                if not node.objects.has(object_hash)
+            ]
+            return httpx.Response(
+                200, json={"protocol": 2, "missing": missing}, request=request
+            )
         if path == "/api/sync/get":
             objects = {
                 object_hash: base64.b64encode(node.objects.get(object_hash)).decode()
@@ -182,6 +194,121 @@ class _SyncClient:
 
 
 class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_prepared_objects_are_single_flight_and_reused_per_head(self) -> None:
+        card = self._shared_card()
+        head = self._update(self.authority, card.id, title="Prepared once")
+        original = self.authority.engine._collect_objects
+        calls = 0
+
+        def counted(head_hash: str) -> dict[str, str]:
+            nonlocal calls
+            calls += 1
+            time.sleep(0.02)
+            return original(head_hash)
+
+        self.authority.engine._collect_objects = counted
+        prepared = await asyncio.gather(
+            *(
+                self.authority.engine._prepare_objects("default", head)
+                for _ in range(8)
+            )
+        )
+        warm_started = time.perf_counter()
+        warm = await self.authority.engine._prepare_objects("default", head)
+
+        self.assertEqual(calls, 1)
+        self.assertTrue(all(item is warm for item in prepared))
+        self.assertLess(time.perf_counter() - warm_started, 0.2)
+        self.assertEqual(
+            self.authority.engine.status("default")["object_preparation"]["builds"],
+            1,
+        )
+
+    async def test_unchanged_peers_receive_no_objects(self) -> None:
+        self._shared_card()
+        transferred: list[int] = []
+        original_response = self.network.response
+
+        def observe(method: str, url: str, **kwargs) -> httpx.Response:
+            if urlsplit(url).path == "/api/sync/push":
+                transferred.append(len((kwargs.get("json") or {}).get("objects", {})))
+            return original_response(method, url, **kwargs)
+
+        self.network.response = observe
+        state = await self.authority.engine.converge_realm("default")
+
+        self.assertEqual(state["phase"], "converged")
+        self.assertEqual(transferred, [0, 0])
+        self.assertEqual(
+            self.authority.engine.status("default")["object_preparation"]["builds"], 1
+        )
+
+    async def test_legacy_peer_falls_back_to_complete_bundle(self) -> None:
+        card = Card(id="legacy-card", title="Legacy")
+        _, commit = self.authority.log.append_event(
+            CardEvent(
+                type=EventType.CARD_CREATED,
+                realm_id="default",
+                card_id=card.id,
+                author_principal="user:test",
+                author_instance="authority",
+                payload=card.model_dump(mode="json"),
+            )
+        )
+        self.network.legacy_need.add("target")
+        self.authority.engine._open_client()
+        assert self.authority.engine._client is not None
+        result = await self.authority.engine._push_peer(
+            self.authority.engine._client,
+            "default",
+            self.authority.peers.routes_for_realm("default")[0],
+            commit.hash,
+        )
+
+        self.assertEqual(result["status"], "reachable")
+        self.assertEqual(self.target.log.get_head("default"), commit.hash)
+
+    async def test_ten_thousand_commit_merge_history_is_iterative_and_bounded(
+        self,
+    ) -> None:
+        event = CardEvent(
+            type=EventType.CARD_UPDATED,
+            realm_id="default",
+            card_id="stress-card",
+            author_principal="user:test",
+            author_instance="authority",
+            payload={"title": "stress"},
+        )
+        event_hash = self.authority.objects.put_json(event.model_dump(mode="json"))
+        parent: str | None = None
+        merge_parent: str | None = None
+        for index in range(10_000):
+            parents = [parent] if parent else []
+            if merge_parent and index % 1_000 == 0:
+                parents.append(merge_parent)
+            commit = SyncCommit(
+                hash="",
+                realm_id="default",
+                instance_id="authority",
+                parent_hashes=parents,
+                event_hashes=[event_hash],
+                author_principal="user:test",
+            )
+            commit.hash = self.authority.objects.put_json(
+                commit.model_dump(mode="json")
+            )
+            if index % 1_000 == 500:
+                merge_parent = commit.hash
+            parent = commit.hash
+
+        collected = self.authority.engine._collect_objects(parent or "")
+
+        self.assertEqual(len(collected), 10_001)
+        self.assertIn(parent, collected)
+        self.assertLessEqual(
+            sum(len(value) for value in collected.values()), 128 * 1024 * 1024
+        )
+
     async def test_object_collection_handles_history_deeper_than_recursion_limit(
         self,
     ) -> None:

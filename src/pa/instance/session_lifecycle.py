@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
-from collections import Counter
+import threading
+from collections import Counter, OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -33,6 +36,11 @@ class SessionLifecyclePolicy:
         self._wake = asyncio.Event()
         self._closing = False
         self._lock = asyncio.Lock()
+        self._close_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="pa-session-lifecycle"
+        )
+        self._attempt = 0
+        self.diagnostics: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
     def start(self) -> None:
         if not self._task or self._task.done():
@@ -51,6 +59,7 @@ class SessionLifecyclePolicy:
                 await asyncio.wait_for(self._task, timeout=2.0)
             except TimeoutError:
                 self._task.cancel()
+        self._close_executor.shutdown(wait=False, cancel_futures=True)
 
     async def _run(self) -> None:
         while not self._closing:
@@ -69,15 +78,18 @@ class SessionLifecyclePolicy:
 
     async def run_once(self, *, now: datetime | None = None) -> dict[str, int]:
         now = now or datetime.now(UTC)
+        if self._lock.locked():
+            self.metrics["coalesced:sweep_active"] += 1
+            return dict(self.metrics)
         async with self._lock:
-            sessions = await self.manager._offload(
+            sessions = await self._offload(
                 "session_lifecycle.sessions",
                 self.manager.store.list_sessions,
                 exclude_statuses=("closed",),
             )
             dispatch_store = self.services.get("dispatch_store")
             dispatches = (
-                await self.manager._offload(
+                await self._offload(
                     "session_lifecycle.dispatches",
                     dispatch_store.list,
                     limit=10000,
@@ -88,7 +100,7 @@ class SessionLifecyclePolicy:
             )
             supervisor = self.services.get("pr_supervisor")
             watches = (
-                await self.manager._offload(
+                await self._offload(
                     "session_lifecycle.watches",
                     supervisor.store.list_watches,
                     include_retired=True,
@@ -96,7 +108,7 @@ class SessionLifecyclePolicy:
                 if supervisor and getattr(supervisor, "store", None)
                 else []
             )
-            leases = await self.manager._offload(
+            leases = await self._offload(
                 "session_lifecycle.leases", self.manager.workspace_manager.list
             )
             closed_ids: list[str] = []
@@ -113,7 +125,7 @@ class SessionLifecyclePolicy:
                 if decision == "retire":
                     card_id = session.card_id
                     if card_id:
-                        retired = await self.manager._offload(
+                        retired = await self._offload(
                             "session_lifecycle.retire_card",
                             self.manager.store.unlink_session_card,
                             session.id,
@@ -130,21 +142,72 @@ class SessionLifecyclePolicy:
                     continue
                 if decision != "close":
                     continue
-                runtime = self.manager.get(session.id)
-                if runtime and not getattr(runtime, "_closed", False):
-                    changed = await runtime.close(
-                        reason=f"auto:{reason}", reconcile_workspace=False
-                    )
-                    self.manager._runtimes.pop(session.id, None)
-                else:
-                    closed, prior = await self.manager._offload(
-                        "session_lifecycle.close",
-                        self.manager.store.close_session,
+                self._attempt += 1
+                attempt = self._attempt
+                session_leases = [
+                    lease for lease in leases if lease.session_id == session.id
+                ]
+                detail: dict[str, Any] = {
+                    "session_id": session.id,
+                    "close_reason": reason,
+                    "queue_state": "empty",
+                    "lease_state": (
+                        ",".join(sorted({lease.state for lease in session_leases}))
+                        or "none"
+                    ),
+                    "worker_owner": None,
+                    "attempt_fence": attempt,
+                    "terminal_result": "submitted",
+                }
+                self.diagnostics[session.id] = detail
+                self.diagnostics.move_to_end(session.id)
+                while len(self.diagnostics) > 100:
+                    self.diagnostics.popitem(last=False)
+
+                def close_durable():
+                    detail["worker_owner"] = threading.current_thread().name
+                    return self.manager.store.close_session(
                         session.id,
                         reason=f"auto:{reason}",
                         closed_at=now,
+                        lock_timeout_seconds=1.0,
+                        busy_timeout_ms=1000,
+                        diagnostics=detail,
                     )
-                    changed = closed is not None and prior is not None
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    closed, prior = await loop.run_in_executor(
+                        self._close_executor, close_durable
+                    )
+                except Exception as exc:
+                    self.metrics["deferred:close_contention"] += 1
+                    logger.warning(
+                        "Agent session lifecycle close deferred",
+                        extra={
+                            **detail,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    continue
+                changed = closed is not None and prior is not None
+                runtime = self.manager.get(session.id)
+                if changed and runtime:
+                    runtime._closed = True
+                    runtime.session.status = "closed"
+                    runtime.session.updated_at = now
+                    connection = runtime.connection
+                    runtime.connection = None
+                    if connection:
+                        try:
+                            await asyncio.wait_for(connection.disconnect(), timeout=2.0)
+                        except Exception:
+                            logger.warning(
+                                "Provider disconnect after durable auto-close failed",
+                                extra={"session_id": session.id, "close_reason": reason},
+                                exc_info=True,
+                            )
+                    self.manager._runtimes.pop(session.id, None)
                 if changed:
                     closed_ids.append(session.id)
                     self.metrics["auto_closed"] += 1
@@ -152,6 +215,21 @@ class SessionLifecyclePolicy:
             if closed_ids:
                 await self.manager.reconcile_closed_sessions(closed_ids)
             return dict(self.metrics)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return redacted control-plane diagnostics; transcript data is excluded."""
+        return {
+            "metrics": dict(self.metrics),
+            "active": self._lock.locked(),
+            "attempts": list(self.diagnostics.values()),
+        }
+
+    async def _offload(self, _operation: str, call, *args, **kwargs):
+        """Keep lifecycle work off the shared control-plane blocking pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._close_executor, functools.partial(call, *args, **kwargs)
+        )
 
     async def _decision(
         self,
@@ -214,7 +292,7 @@ class SessionLifecyclePolicy:
         ]
         for lease in session_leases:
             try:
-                dirty, untracked = await self.manager._offload(
+                dirty, untracked = await self._offload(
                     "session_lifecycle.workspace_status",
                     self.manager.workspace_manager._status,
                     lease.worktree_path,
@@ -257,7 +335,7 @@ class SessionLifecyclePolicy:
         ):
             return "close", "pr_watch_terminal"
         card = (
-            await self.manager._offload(
+            await self._offload(
                 "session_lifecycle.card",
                 self.manager.store.get_card,
                 session.card_id,

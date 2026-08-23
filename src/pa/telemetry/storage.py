@@ -1018,9 +1018,16 @@ class TelemetryStorage:
                 "SELECT DISTINCT instance_id,instance_name,scope_type,scope_id,"
                 "provider_id,card_id,project_id,realm_id FROM samples"
                 + visibility
-                + " ORDER BY instance_name,scope_type,scope_id",
+                + " ORDER BY instance_name,scope_type,scope_id LIMIT 2001",
                 values,
             ).fetchall()
+            rollup_rows = conn.execute(
+                "SELECT DISTINCT instance_id,instance_name,scope_type,scope_id,"
+                "provider_id,card_id,project_id,realm_id FROM rollup_metrics "
+                "ORDER BY instance_name,scope_type,scope_id LIMIT 2001"
+            ).fetchall()
+        truncated = len(rows) > 2000 or len(rollup_rows) > 2000
+        rows = [*rows[:2000], *rollup_rows[:2000]]
         return {
             "instances": sorted(
                 {
@@ -1040,4 +1047,5 @@ class TelemetryStorage:
                 {row["project_id"] for row in rows if row["project_id"]}
             ),
             "realms": sorted({row["realm_id"] for row in rows if row["realm_id"]}),
+            "truncated": truncated,
         }

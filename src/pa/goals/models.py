@@ -536,6 +536,9 @@ class GoalWakeup(BaseModel):
     eligible_instance_ids: list[GoalReferenceId] = Field(default_factory=list)
     claimed_by_instance_id: GoalReferenceId | None = None
     claimed_at: datetime | None = None
+    attempt: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    last_outcome_reason: str = Field(default="", max_length=2000)
 
 
 class GoalAudit(BaseModel):

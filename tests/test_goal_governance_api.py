@@ -111,6 +111,14 @@ def test_advanced_goal_http_contract_and_dashboard() -> None:
     assert dashboard.status_code == 200
     assert "Organization portfolio" in dashboard.text
     assert "Priority 50" in dashboard.text
+    assert 'data-goal-create-form' in dashboard.text
+    assert 'aria-label="Governed goals"' in dashboard.text
+    assert 'data-goal-transition="active"' in dashboard.text
+    assert 'data-goal-edit-form' in dashboard.text
+    assert 'data-goal-work-form' in dashboard.text
+    assert 'data-goal-evidence-form' in dashboard.text
+    assert "Lifecycle history" in dashboard.text
+    assert "Next safe action:" in dashboard.text
 
 
 def test_goal_identity_and_authority_come_from_the_authenticated_request() -> None:

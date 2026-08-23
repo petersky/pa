@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 PROGRESS_SCHEMA_VERSION = 1
 SUPPORTED_PROGRESS_VERSIONS = [PROGRESS_SCHEMA_VERSION]
-MAX_PROGRESS_EVENTS = 200
+MAX_PROGRESS_EVENTS = 64
 MAX_PROGRESS_SEEN_KEYS = 512
 MAX_PROGRESS_SUMMARY = 500
 MAX_PROGRESS_DETAIL = 240
@@ -325,6 +325,7 @@ class ProgressIngestResult(BaseModel):
     dispatch_id: str
     sequence: int
     idempotency_key: str
+    replay_of_status: Literal["accepted", "coalesced", "late", "conflict"] | None = None
 
 
 def sanitize_text(value: Any, *, limit: int = MAX_PROGRESS_SUMMARY) -> str:
@@ -723,6 +724,7 @@ class ProgressService:
         self._observations: dict[str, int] = {}
         self._coalesced_observations: dict[str, int] = {}
         self._derived_fingerprints: dict[tuple[str, str], tuple[str, datetime]] = {}
+        self._meaningful_phases: dict[str, ProgressPhase] = {}
         self._observe_waiters = 0
         self._observe_max_waiters = 0
         self._malformed_sessions_warned: set[str] = set()
@@ -913,6 +915,45 @@ class ProgressService:
                 ):
                     await self._heartbeat(record, phase, "Agent active.")
                     return
+                # Tool lifecycle is replaceable detail, not a human milestone. Keep
+                # its latest live state in the heartbeat and persist only completed
+                # validations/failures. Neutral tools must not erase an explicit or
+                # previously meaningful implementation phase.
+                if event_type in {"tool_call", "tool_call_update"}:
+                    status = str(checkpoint_update.get("status") or "").lower()
+                    meaningful = self._meaningful_phases.get(session_id)
+                    effective_phase = (
+                        phase
+                        if phase
+                        in {
+                            ProgressPhase.TESTING,
+                            ProgressPhase.BLOCKED,
+                            ProgressPhase.RETRYING,
+                            ProgressPhase.OPENING_PR,
+                            ProgressPhase.WAITING_CI,
+                            ProgressPhase.ADDRESSING_REVIEW,
+                            ProgressPhase.MERGING,
+                        }
+                        else meaningful
+                        or (
+                            record.latest_progress.phase
+                            if record.latest_progress
+                            else phase
+                        )
+                    )
+                    durable_validation = bool(validations) and status in {
+                        "completed",
+                        "complete",
+                        "succeeded",
+                        "success",
+                        "failed",
+                        "error",
+                        "cancelled",
+                        "canceled",
+                    }
+                    if not durable_validation and phase != ProgressPhase.BLOCKED:
+                        await self._heartbeat(record, effective_phase, summary)
+                        return
                 await self._checkpoint(
                     record,
                     phase=phase,
@@ -927,8 +968,13 @@ class ProgressService:
                     ),
                 )
                 self._last_checkpoint_at[session_id] = now
+                if event_type not in {"tool_call", "tool_call_update"}:
+                    self._meaningful_phases[session_id] = phase
                 return
-        await self._heartbeat(record, phase_for_update(update), "Agent active.")
+        fallback_phase = self._meaningful_phases.get(
+            session_id, phase_for_update(update)
+        )
+        await self._heartbeat(record, fallback_phase, "Agent active.")
 
     async def explicit(
         self,
@@ -942,6 +988,7 @@ class ProgressService:
         )
         if not record:
             raise ValueError("Dispatch not found")
+        self._meaningful_phases[record.session_id or dispatch_id] = checkpoint.phase
         return await self._checkpoint(
             record,
             phase=checkpoint.phase,

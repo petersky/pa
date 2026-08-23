@@ -155,12 +155,21 @@ Environment variables (prefix `PA_`):
 | `PA_DEBUG` | `false` | Debug logging, hook history, dev tools |
 | `PA_DEV_TOOLS` | `false` | In-browser developer panel (auto-on with debug) |
 | `PA_LOG_LEVEL` | `INFO` | Log level (`DEBUG`, `INFO`, …) |
+| `PA_LOG_ROTATION_MAX_BYTES` | `26214400` | Rotate each service stdout/stderr log after this many active bytes |
+| `PA_LOG_ROTATION_INTERVAL_SECONDS` | `86400` | Rotate active service logs after this age |
+| `PA_LOG_RETENTION_COUNT` | `7` | Maximum retained service-log archives |
+| `PA_LOG_RETENTION_MAX_AGE_SECONDS` | `1209600` | Maximum service-log archive age |
+| `PA_LOG_RETENTION_MAX_TOTAL_BYTES` | `268435456` | Total active and archived service-log byte budget; active files are never pruned |
+| `PA_LOG_DISK_PRESSURE_FREE_BYTES` | `536870912` | Drain and account for dropped service output below this free-space reserve |
 | `PA_GITHUB_TOKEN` | — | Instance-local GitHub token used by PA service code and, when explicitly enabled, mapped to agent `GH_TOKEN` |
 | `PA_GITHUB_WEBHOOK_SECRET` | — | Instance-local secret for HMAC-SHA256 webhook verification |
 | `PA_TELEMETRY_ENABLED` | `true` | Collect bounded instance resource telemetry |
 | `PA_TELEMETRY_PER_SESSION_ENABLED` | `true` | Attribute metrics to PA-owned agent process trees when supported |
 | `PA_TELEMETRY_DATABASE_PATH` | `<PA_DATA_DIR>/telemetry.db` | Independent, local-only telemetry database |
 | `PA_RELEASE_TRACK` | `release` | Update track: `release`, `beta`, `alpha`, `dev`, or `pypi` |
+| `PA_CLOUD_ENDPOINT` | _(disabled)_ | Optional HTTPS PA coordination service for leases, dispatch, and shared-state updates |
+| `PA_CLOUD_TOKEN` | _(empty)_ | Bearer credential for the cloud coordination service |
+| `PA_CLOUD_LEASE_FAIL_OPEN` | `true` | Continue with local lease checks when the cloud service is unavailable |
 | `PA_UPDATE_CHANNEL` | *(alias)* | Legacy alias for `PA_RELEASE_TRACK` |
 | `PA_UPDATE_REPO` | `petersky/pa` | GitHub repo for release checks |
 | `PA_UV_BIN` | *(auto-detected)* | Absolute `uv` path override for install/update in sparse service or SSH environments |

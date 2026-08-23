@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -1086,16 +1087,53 @@ def list_session_observability(request: Request, limit: int = 100) -> dict[str, 
 
 
 @router.get("/observability/v1/sessions/{session_id}")
-def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
+async def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
     session = _manager(request).store.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return _observability(request, session)
+    if session:
+        return _observability(request, session)
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatch = dispatch_store.by_session(session_id) if dispatch_store else None
+    if not dispatch:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "canonical_session_unknown", "message": "No local session or durable dispatch owns this session ID."},
+        )
+    if dispatch.target_instance_id == request.app.state.ctx.settings.instance_id:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "target_session_projection_missing", "message": "The durable dispatch targets this instance, but its local runtime projection is missing.", "dispatch_id": dispatch.dispatch_id, "recoverable": True},
+        )
+    try:
+        # Imported lazily to keep module registration acyclic.
+        from pa.modules.fleet import _peer_agent_json
+
+        result = await _peer_agent_json(
+            request,
+            dispatch.target_instance_id,
+            "GET",
+            f"observability/v1/sessions/{session_id}",
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "target_session_unavailable",
+                "message": "The durable remote session is known, but target liveness could not be read.",
+                "dispatch_id": dispatch.dispatch_id,
+                "target_instance_id": dispatch.target_instance_id,
+                "upstream": exc.detail,
+                "recoverable": True,
+            },
+        ) from exc
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=502, detail={"code": "invalid_target_liveness", "dispatch_id": dispatch.dispatch_id})
+    result["routing"] = {"source": "durable_dispatch", "dispatch_id": dispatch.dispatch_id, "target_instance_id": dispatch.target_instance_id}
+    return result
 
 
 @router.get("/observability/v1/sessions/{session_id}/turns")
-def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
-    projection = get_session_observability(request, session_id)
+async def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
+    projection = await get_session_observability(request, session_id)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,
         "session_id": session_id,
@@ -1635,6 +1673,7 @@ async def get_agent_session_history(
             detail="Use either after_seq or before_seq, not both",
         )
     mgr = _manager(request)
+    query_started = perf_counter()
     session = await _offload(
         mgr,
         "sqlite.agent_session_read",
@@ -1645,7 +1684,9 @@ async def get_agent_session_history(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     runtime = mgr.get(session_id)
-    page_limit = max(1, min(limit, 5000))
+    # Keep this route bounded even for direct callers. The browser deliberately
+    # asks for smaller 250-event pages to leave headroom for markdown/tool work.
+    page_limit = max(1, min(limit, TRANSCRIPT_WINDOW_LIMIT))
     if after_seq is not None:
         events = await _offload(
             mgr,
@@ -1687,8 +1728,9 @@ async def get_agent_session_history(
             "has_newer": before_seq is not None,
             "limit": page_limit,
         }
+    query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
-    return {
+    payload = {
         "session": session.model_dump(mode="json"),
         "instance": {
             "id": settings.instance_id,
@@ -1701,6 +1743,16 @@ async def get_agent_session_history(
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }
+    serialization_started = perf_counter()
+    serialized = json.dumps(payload, separators=(",", ":"), default=str).encode()
+    serialization_ms = (perf_counter() - serialization_started) * 1000
+    payload["diagnostics"] = {
+        "query_ms": round(query_ms, 2),
+        "serialization_ms": round(serialization_ms, 2),
+        "payload_bytes": len(serialized),
+        "event_count": len(events),
+    }
+    return payload
 
 
 @router.post("/sessions/{session_id}/recover")
@@ -3012,6 +3064,8 @@ class AgentChatModule(Module):
                 ctx.settings,
                 "GET",
                 f"/api/agent/observability/v1/sessions/{session_id}",
+                # Unknown IDs retain the compatibility null. Dispatch-known IDs
+                # are routed above and therefore return data or an explicit 5xx.
                 allow_not_found=True,
                 timeout_seconds=15.0,
             )

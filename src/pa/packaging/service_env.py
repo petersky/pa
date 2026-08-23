@@ -25,7 +25,7 @@ _UNORDERED_LIST_ENV = {
 def _parse_env_list(value: str) -> list[str] | None:
     try:
         parsed = json.loads(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         parsed = None
     if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
         return parsed
@@ -49,7 +49,13 @@ def _canonical_url(value: str) -> str:
     )
     netloc = host if not port or default_port else f"{host}:{port}"
     return urlunsplit(
-        (parts.scheme.lower(), netloc, parts.path.rstrip("/"), parts.query, parts.fragment)
+        (
+            parts.scheme.lower(),
+            netloc,
+            parts.path.rstrip("/"),
+            parts.query,
+            parts.fragment,
+        )
     )
 
 
@@ -81,6 +87,12 @@ def service_environment(settings: Settings) -> dict[str, str]:
         "PA_RELEASE_TRACK": settings.release_track,
         "PA_FLEET_ID": settings.fleet_id,
         "PA_ZONE": settings.zone,
+        "PA_LOG_ROTATION_MAX_BYTES": str(settings.log_rotation_max_bytes),
+        "PA_LOG_ROTATION_INTERVAL_SECONDS": str(settings.log_rotation_interval_seconds),
+        "PA_LOG_RETENTION_COUNT": str(settings.log_retention_count),
+        "PA_LOG_RETENTION_MAX_AGE_SECONDS": str(settings.log_retention_max_age_seconds),
+        "PA_LOG_RETENTION_MAX_TOTAL_BYTES": str(settings.log_retention_max_total_bytes),
+        "PA_LOG_DISK_PRESSURE_FREE_BYTES": str(settings.log_disk_pressure_free_bytes),
     }
     if settings.agent_provider:
         env["PA_AGENT_PROVIDER"] = settings.agent_provider

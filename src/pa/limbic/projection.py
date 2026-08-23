@@ -162,6 +162,66 @@ def find_signal_by_dedupe(projection, realm_id: str, dedupe_key: str) -> dict | 
     }
 
 
+def limbic_operations(projection, realm_id: str, limit: int = 500) -> dict:
+    """Return bounded, content-free rollout metrics for operator inspection."""
+
+    with projection._conn() as conn:
+        rows = conn.execute(
+            "SELECT payload FROM limbic_appraisals WHERE realm_id=? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (realm_id, max(1, min(limit, 5_000))),
+        ).fetchall()
+    samples = [json.loads(row["payload"]) for row in rows]
+    durations = sorted(float(item.get("duration_ms") or 0) for item in samples)
+    diagnostics = [
+        str(diag.get("code"))
+        for item in samples
+        for diag in (item.get("appraisal") or {}).get("diagnostics", [])
+    ]
+    hits = [int(item.get("retrieval_hits") or 0) for item in samples]
+    usefulness = [
+        float(item["usefulness_score"])
+        for item in samples
+        if item.get("usefulness_score") is not None
+    ]
+    bypasses = [
+        (item.get("appraisal") or {}).get("deterministic_bypass") for item in samples
+    ]
+    return {
+        "realm_id": realm_id,
+        "sample_count": len(samples),
+        "shadow_count": sum(bool(item.get("shadow_mode")) for item in samples),
+        "latency_ms": {
+            "average": sum(durations) / len(durations) if durations else None,
+            "p95": durations[min(len(durations) - 1, int(len(durations) * 0.95))]
+            if durations else None,
+        },
+        "timeouts": diagnostics.count("provider_timeout"),
+        "fallbacks": sum(code.startswith("provider_") for code in diagnostics),
+        "spoof_attempts": diagnostics.count("control_provenance_spoof"),
+        "privileged_bypasses": sum(bool(value) for value in bypasses),
+        "retrieval": {
+            "hit_count": sum(value > 0 for value in hits),
+            "records": sum(hits),
+        },
+        "usefulness": {
+            "sample_count": len(usefulness),
+            "average": sum(usefulness) / len(usefulness) if usefulness else None,
+        },
+        "promotion_candidates": sum(
+            bool((item.get("signal") or {}).get("metadata", {}).get("promotion_candidate"))
+            for item in samples
+        ),
+        "evaluator_versions": sorted(
+            {
+                str((item.get("appraisal") or {}).get("evaluator_version"))
+                for item in samples
+                if (item.get("appraisal") or {}).get("evaluator_version")
+            }
+        ),
+    }
+
+
 def get_memory_payload(projection, record_id: str) -> dict | None:
     with projection._conn() as conn:
         row = conn.execute(

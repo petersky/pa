@@ -16,6 +16,7 @@ def build_control_plane_status(
     settings: Any,
     *,
     pr_supervisor_health: dict[str, Any] | None = None,
+    worker_health: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Return secret-free status without manufacturing leader or quorum state."""
     explicit_seed = (settings.pr_supervisor_authority_url or "").rstrip("/")
@@ -23,6 +24,7 @@ def build_control_plane_status(
     local_url = (settings.instance_url or "").rstrip("/")
     legacy_seed = explicit_seed or owner_seed or local_url or None
     health = pr_supervisor_health or {}
+    workers = worker_health or {}
 
     warnings = [
         "Consensus control plane is not enabled; no leader, term, commit index, "
@@ -34,6 +36,11 @@ def build_control_plane_status(
         warnings.append(
             "This instance currently treats itself as the legacy PR-supervisor "
             "lease authority because no static seed is configured."
+        )
+    stale_workers = sorted(name for name, item in workers.items() if item.get("stale"))
+    if stale_workers:
+        warnings.append(
+            "Essential background workers are stale: " + ", ".join(stale_workers)
         )
 
     return {
@@ -69,6 +76,8 @@ def build_control_plane_status(
                 "max_observed_resource_fence": health.get("max_fence_token", 0),
             }
         },
+        "background_workers": workers,
+        "background_workers_state": "degraded" if stale_workers else "ready",
         "migration": {
             "legacy_routing_active": True,
             "automatic_failover_enabled": False,

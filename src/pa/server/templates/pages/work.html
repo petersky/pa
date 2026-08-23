@@ -22,6 +22,16 @@
   </div>
   {% endif %}
 
+  <nav class="work-saved-views" aria-label="Work views">
+    <span>Views</span>
+    <a href="/work?realm={{ active_realm }}&amp;owner={{ principal_id | default('') }}&amp;blocked=unblocked">My active work</a>
+    <a href="/work?realm={{ active_realm }}&amp;blocked=blocked">Needs attention</a>
+    <a href="/work?realm={{ active_realm }}&amp;lane=waiting">Waiting</a>
+    <a href="/work?realm={{ active_realm }}&amp;lane=done&amp;updated=7">Recently completed</a>
+    {% for view in saved_views %}<a href="/work?{{ view.query }}" data-saved-view-id="{{ view.id }}">{{ view.name }}</a>{% endfor %}
+    <button type="button" class="ghost" data-save-work-view>Save current view</button>
+  </nav>
+
   <form class="work-filters panel"
         method="get" action="/work"
         hx-get="/work" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
@@ -54,10 +64,24 @@
       <option value="blocked" {% if filters.blocked == 'blocked' %}selected{% endif %}>Blocked</option>
       <option value="unblocked" {% if filters.blocked == 'unblocked' %}selected{% endif %}>Not blocked</option>
     </select></label>
-    <label><span>Tag</span><select name="tag">
-      <option value="">Any tag</option>
-      {% for tag in tags %}<option value="{{ tag }}" {% if filters.tag == tag %}selected{% endif %}>{{ tag }}</option>{% endfor %}
-    </select></label>
+    <fieldset class="work-tag-filter" data-work-tag-combobox data-facet-url="/api/cards/facets?facet=tag&amp;realm={{ active_realm }}">
+      <legend><span>Tag</span></legend>
+      <div class="facet-chips" data-facet-chips>
+        {% for tag in filters.tags %}<span class="facet-chip">{{ tag }}<button type="button" aria-label="Remove tag {{ tag }}" data-remove-tag="{{ tag }}">×</button><input type="hidden" name="tag" value="{{ tag }}"></span>{% endfor %}
+      </div>
+      <div class="facet-combobox-wrap">
+        <input type="search" role="combobox" aria-label="Search tags" aria-expanded="false" aria-controls="work-tag-options" aria-autocomplete="list" autocomplete="off" placeholder="Search tags" data-facet-input>
+        <ul id="work-tag-options" role="listbox" hidden data-facet-options></ul>
+      </div>
+      <select name="tag" aria-label="Tag (no JavaScript fallback)" class="facet-no-js">
+        <option value="">Any tag</option>
+        {% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}
+      </select>
+      <label class="tag-mode"><span>Match</span><select name="tag_mode"><option value="and" {% if filters.tag_mode == 'and' %}selected{% endif %}>All tags (AND)</option><option value="or" {% if filters.tag_mode == 'or' %}selected{% endif %}>Any tag (OR)</option></select></label>
+      <button type="button" class="ghost facet-clear" data-clear-tags {% if not filters.tags %}hidden{% endif %}>Clear tags</button>
+      <p class="sr-only" aria-live="polite" data-facet-status></p>
+      <noscript><p class="muted">Enter one tag at a time; apply the form to add it to the URL.</p></noscript>
+    </fieldset>
     <label><span>Updated</span><select name="updated">
       <option value="">Any time</option>
       <option value="1" {% if filters.updated == '1' %}selected{% endif %}>Past day</option>

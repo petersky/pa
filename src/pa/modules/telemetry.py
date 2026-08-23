@@ -15,6 +15,10 @@ from pa.config import Settings
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
+from pa.core.ui.instance_identity import (
+    canonical_instance_identities,
+    short_instance_id,
+)
 from pa.domain.instance_config import update_instance_config
 from pa.telemetry.models import TelemetryQuery
 from pa.telemetry.service import TelemetryService
@@ -217,6 +221,38 @@ def dimensions(request: Request) -> dict:
     )
 
 
+@router.get("/telemetry/dimensions/search")
+def search_dimensions(
+    request: Request,
+    kind: Literal["card_id", "scope_id"],
+    q: str = "",
+    limit: int = Query(default=50, ge=1, le=50),
+) -> dict:
+    if _instance_caller(request):
+        raise HTTPException(status_code=403, detail="User authorization required")
+    raw = dimensions(request)
+    ids = raw["cards" if kind == "card_id" else "sessions"]
+    records = (
+        {card.id: card for card in request.app.state.ctx.store.list_cards(limit=500)}
+        if kind == "card_id"
+        else {
+            session.id: session
+            for session in request.app.state.ctx.store.list_sessions()[:500]
+        }
+    )
+    needle = q.strip().casefold()
+    results = []
+    for value in ids:
+        record = records.get(value)
+        label = str(getattr(record, "title", "") or "Untitled").strip()
+        if needle and needle not in label.casefold() and needle not in value.casefold():
+            continue
+        results.append({"id": value, "label": label, "short_id": value[:8]})
+        if len(results) >= limit:
+            break
+    return {"results": results, "bounded": len(results) == limit}
+
+
 @router.get("/telemetry/series")
 def series(
     request: Request,
@@ -265,12 +301,24 @@ def export(
     range: str = "15m",
     scope_type: Literal["instance", "session"] | None = None,
     scope_id: Annotated[list[str] | None, Query()] = None,
+    instance_id: Annotated[list[str] | None, Query()] = None,
+    provider_id: Annotated[list[str] | None, Query()] = None,
+    card_id: Annotated[list[str] | None, Query()] = None,
+    metric: Annotated[list[str] | None, Query()] = None,
 ) -> JSONResponse:
     if _instance_caller(request):
         raise HTTPException(status_code=403, detail="User authorization required")
     query = _make_query(
         request,
-        QueryBody(range=range, scope_type=scope_type, scope_ids=scope_id or []),
+        QueryBody(
+            range=range,
+            scope_type=scope_type,
+            scope_ids=scope_id or [],
+            instance_ids=instance_id or [],
+            provider_ids=provider_id or [],
+            card_ids=card_id or [],
+            metrics=metric or [],
+        ),
     )
     try:
         payload = _service(request).storage.export(query)
@@ -409,7 +457,8 @@ async def fleet_query(request: Request, body: QueryBody) -> dict:
     body.provider_ids = []
     body.card_ids = []
     local_query = _make_query(request, body, force_instance=True)
-    combined = _service(request).storage.query(local_query)
+    service = _service(request)
+    combined = await asyncio.to_thread(service.storage.query, local_query)
     for series in combined.get("series") or []:
         series.setdefault("bucket_seconds", combined["bucket_seconds"])
     failures = []
@@ -424,7 +473,7 @@ async def fleet_query(request: Request, body: QueryBody) -> dict:
             if item.instance_id != ctx.settings.instance_id
             and item.url
             and (not selected or item.instance_id in selected)
-        ][:32]
+        ]
         remote_body = body.model_dump(mode="json")
         remote_body["instance_ids"] = []
         remote_body["start"] = local_query.start.isoformat()
@@ -486,12 +535,55 @@ def reports_page(request: Request) -> HTMLResponse:
 
 def _page_context(request: Request) -> dict[str, Any]:
     settings = request.app.state.ctx.settings
+    ctx = request.app.state.ctx
+    dimensions = _service(request).storage.dimensions(
+        visible_principal_id=None if _admin(request) else _principal(request)
+    )
+    # The canonical directory is authoritative for both querying and filtering.
+    # Historical telemetry identities are retained and explicitly labelled so a
+    # plotted/offline instance can never disappear from the selector.
+    identities = {item["id"]: item for item in canonical_instance_identities(ctx)}
+    historical_names = dict(dimensions["instances"])
+    for instance_id, historical_name in historical_names.items():
+        identities.setdefault(
+            instance_id,
+            {
+                "id": instance_id,
+                "name": historical_name or "Unknown instance",
+                "display_name": (
+                    f"{historical_name or 'Unknown instance'} (historical) · "
+                    f"{short_instance_id(instance_id)}"
+                ),
+                "historical": True,
+            },
+        )
+    cards = {card.id: card for card in ctx.store.list_cards(limit=500)}
+    sessions = {session.id: session for session in ctx.store.list_sessions()[:500]}
+
+    def labelled(
+        values: list[str], records: dict[str, Any], attribute: str
+    ) -> list[dict]:
+        result = []
+        for value in values[:500]:
+            record = records.get(value)
+            label = str(getattr(record, attribute, "") or "").strip()
+            result.append(
+                {"id": value, "label": label or "Untitled", "short_id": value[:8]}
+            )
+        return result
+
     return {
         "telemetry_default_range": settings.telemetry_default_report_range,
         "telemetry_ui_refresh_seconds": settings.telemetry_ui_refresh_seconds,
-        "telemetry_dimensions": _service(request).storage.dimensions(
-            visible_principal_id=None if _admin(request) else _principal(request)
-        ),
+        "telemetry_dimensions": {
+            **dimensions,
+            "instances": sorted(
+                identities.values(),
+                key=lambda item: item["display_name"].casefold(),
+            ),
+            "cards": labelled(dimensions["cards"], cards, "title"),
+            "sessions": labelled(dimensions["sessions"], sessions, "title"),
+        },
     }
 
 

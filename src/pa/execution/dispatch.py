@@ -28,8 +28,14 @@ from pa.core.async_runtime import (
     BlockingOperationTimeout,
     BlockingQueueFull,
 )
+from pa.core.background import BackgroundTaskSupervisor
 from pa.core.io import atomic_write_json, atomic_write_text
-from pa.execution.post_turn import PostTurnEvaluationV1, TurnEndSnapshotV1
+from pa.execution.post_turn import (
+    ActionReceiptStatus,
+    ActionReceiptV1,
+    PostTurnEvaluationV1,
+    TurnEndSnapshotV1,
+)
 from pa.execution.progress import (
     MAX_PROGRESS_EVENTS,
     MAX_PROGRESS_SEEN_KEYS,
@@ -255,11 +261,18 @@ class DispatchRecord(BaseModel):
     progress_heartbeat: DispatchProgressHeartbeatV1 | None = None
     progress_seen_keys: list[str] = Field(default_factory=list)
     progress_conflicts: int = 0
+    # Durable protocol coverage survives replacement/compaction of payload rows.
+    # Ranges are inclusive and deliberately independent of retained UI history.
+    progress_accepted_ranges: list[list[int]] = Field(default_factory=list)
+    progress_compacted_ranges: list[list[int]] = Field(default_factory=list)
+    progress_highest_accepted_sequence: int = 0
+    progress_late_arrivals: int = 0
     progress_authority_history: list[dict[str, Any]] = Field(default_factory=list)
     final_report: CompletionReportV1 | None = None
     turn_end_snapshots: list[TurnEndSnapshotV1] = Field(default_factory=list)
     post_turn_context_digests: dict[str, str] = Field(default_factory=dict)
     post_turn_evaluations: list[PostTurnEvaluationV1] = Field(default_factory=list)
+    post_turn_action_receipts: dict[str, ActionReceiptV1] = Field(default_factory=dict)
     followup_turns: list[dict[str, Any]] = Field(default_factory=list)
     lifecycle_inconsistencies: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -476,10 +489,19 @@ class DispatchRecord(BaseModel):
             ),
             default=None,
         )
-        sequences = sorted({event.sequence for event in self.progress_events})
-        sequence_gap = bool(
-            sequences and sequences != list(range(sequences[0], sequences[-1] + 1))
+        retained_sequences = {event.sequence for event in self.progress_events}
+        if heartbeat:
+            retained_sequences.add(heartbeat.sequence)
+        accepted_ranges = _normalized_sequence_ranges(
+            self.progress_accepted_ranges
+            or [[sequence, sequence] for sequence in sorted(retained_sequences)]
         )
+        highest_accepted = max(
+            self.progress_highest_accepted_sequence,
+            max((end for _, end in accepted_ranges), default=0),
+        )
+        missing_ranges = _missing_sequence_ranges(accepted_ranges, highest_accepted)
+        compacted_ranges = _normalized_sequence_ranges(self.progress_compacted_ranges)
         progress_delivery_error = next(
             (
                 payload.delivery_error
@@ -504,7 +526,22 @@ class DispatchRecord(BaseModel):
             ),
             "delivery_error": progress_delivery_error,
             "checkpoint_count": len(self.progress_events),
-            "sequence_gap": sequence_gap,
+            "highest_accepted_sequence": highest_accepted,
+            "accepted_ranges": accepted_ranges,
+            "compacted_ranges": compacted_ranges,
+            "missing_ranges": missing_ranges,
+            "gap_evidence": [
+                {
+                    "start": start,
+                    "end": end,
+                    "classification": "delivery_gap",
+                    "evidence": "No accepted protocol receipt or retained watermark covers this range.",
+                }
+                for start, end in missing_ranges
+            ],
+            "sequence_gap": bool(missing_ranges),
+            "late_arrivals": self.progress_late_arrivals,
+            "duplicate_detection": "durable_idempotency_receipts",
             "conflicts": self.progress_conflicts,
             "reporting": (
                 "structured"
@@ -513,6 +550,57 @@ class DispatchRecord(BaseModel):
             ),
         }
         return data
+
+
+def _normalized_sequence_ranges(ranges: list[list[int]]) -> list[list[int]]:
+    """Return sorted, merged inclusive ranges from persisted protocol watermarks."""
+    normalized = sorted(
+        (max(1, int(item[0])), max(1, int(item[1])))
+        for item in ranges
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
+    merged: list[list[int]] = []
+    for start, end in normalized:
+        if end < start:
+            start, end = end, start
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
+
+
+def _missing_sequence_ranges(
+    accepted_ranges: list[list[int]], highest_accepted: int
+) -> list[list[int]]:
+    if highest_accepted <= 0:
+        return []
+    missing: list[list[int]] = []
+    cursor = 1
+    for start, end in accepted_ranges:
+        if start > cursor:
+            missing.append([cursor, min(start - 1, highest_accepted)])
+        cursor = max(cursor, end + 1)
+        if cursor > highest_accepted:
+            break
+    if cursor <= highest_accepted:
+        missing.append([cursor, highest_accepted])
+    return [item for item in missing if item[0] <= item[1]]
+
+
+def _cover_progress_sequence(
+    record: DispatchRecord, sequence: int, *, compacted: bool = False
+) -> None:
+    record.progress_accepted_ranges = _normalized_sequence_ranges(
+        [*record.progress_accepted_ranges, [sequence, sequence]]
+    )
+    record.progress_highest_accepted_sequence = max(
+        record.progress_highest_accepted_sequence, sequence
+    )
+    if compacted:
+        record.progress_compacted_ranges = _normalized_sequence_ranges(
+            [*record.progress_compacted_ranges, [sequence, sequence]]
+        )
 
 
 def _canonical_digest(payload: Any) -> str:
@@ -745,10 +833,11 @@ class DispatchStore:
     immutable migration source and rollback artifact after verification.
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
     LEGACY_BACKUP_SUFFIX = ".pre-sqlite-backup"
     RECEIPT_REPLAY_DAYS = 30
     MAX_PROGRESS_BYTES_PER_DISPATCH = 4 * 1024 * 1024
+    MAX_PROGRESS_AGE_DAYS = 14
 
     def __init__(
         self,
@@ -1640,6 +1729,7 @@ class DispatchStore:
                 record.progress_heartbeat = DispatchProgressHeartbeatV1.model_validate_json(
                     row["payload_json"]
                 )
+        migrated = False
         for dispatch_id, record in records.items():
             rows = self._conn.execute(
                 "SELECT idempotency_key FROM dispatch_receipts WHERE dispatch_id=? "
@@ -1647,9 +1737,31 @@ class DispatchStore:
                 (dispatch_id, MAX_PROGRESS_SEEN_KEYS),
             ).fetchall()
             record.progress_seen_keys = [row["idempotency_key"] for row in reversed(rows)]
+            if not record.progress_accepted_ranges:
+                accepted = self._conn.execute(
+                    "SELECT sequence FROM dispatch_receipts WHERE dispatch_id=? "
+                    "AND accepted=1 ORDER BY sequence",
+                    (dispatch_id,),
+                ).fetchall()
+                retained = {item.sequence for item in record.progress_events}
+                if record.progress_heartbeat:
+                    retained.add(record.progress_heartbeat.sequence)
+                sequences = [int(row["sequence"]) for row in accepted]
+                record.progress_accepted_ranges = _normalized_sequence_ranges(
+                    [[sequence, sequence] for sequence in sequences]
+                )
+                record.progress_highest_accepted_sequence = max(sequences, default=0)
+                record.progress_compacted_ranges = _normalized_sequence_ranges(
+                    [
+                        [sequence, sequence]
+                        for sequence in sequences
+                        if sequence not in retained
+                    ]
+                )
+                if sequences:
+                    migrated = True
         self._records = records
         self._rebuild_latest_card_records_locked()
-        migrated = False
         self._rebuild_latest_session_records_locked()
         self._rebuild_history_counts_locked()
         self._rebuild_capacity_records_locked()
@@ -1804,13 +1916,17 @@ class DispatchStore:
                 "the idempotency key was committed for a different mutation kind",
             )
         if row["result_json"]:
-            return ProgressIngestResult.model_validate_json(row["result_json"])
-        return ProgressIngestResult(
-            accepted=bool(row["accepted"]),
-            status=row["result_status"],
-            dispatch_id=payload.dispatch_id,
-            sequence=int(row["sequence"]),
-            idempotency_key=payload.idempotency_key,
+            original = ProgressIngestResult.model_validate_json(row["result_json"])
+        else:
+            original = ProgressIngestResult(
+                accepted=bool(row["accepted"]),
+                status=row["result_status"],
+                dispatch_id=payload.dispatch_id,
+                sequence=int(row["sequence"]),
+                idempotency_key=payload.idempotency_key,
+            )
+        return original.model_copy(
+            update={"status": "duplicate", "replay_of_status": original.status}
         )
 
     def _persist_receipt_conn(
@@ -2829,6 +2945,72 @@ class DispatchStore:
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id])
 
+    def claim_post_turn_action(
+        self,
+        dispatch_id: str,
+        receipt: ActionReceiptV1,
+    ) -> tuple[DispatchRecord, ActionReceiptV1, bool]:
+        """Atomically install a durable started receipt and fencing token."""
+        with self._lock:
+            self._require_writer()
+            now = datetime.now(UTC)
+            with self._transaction(durability="full") as conn:
+                row = conn.execute(
+                    "SELECT payload_json FROM dispatches WHERE dispatch_id=?",
+                    (dispatch_id,),
+                ).fetchone()
+                if not row:
+                    raise KeyError(dispatch_id)
+                record = DispatchRecord.model_validate_json(row["payload_json"])
+                existing = record.post_turn_action_receipts.get(receipt.action_id)
+                if existing:
+                    if existing.action_digest != receipt.action_digest:
+                        raise ValueError("post-turn action binding conflict")
+                    return record, existing, False
+                receipt.status = ActionReceiptStatus.STARTED
+                receipt.fencing_token = 1
+                receipt.started_at = now
+                receipt.history.extend(
+                    [
+                        {"status": "planned", "at": receipt.planned_at.isoformat()},
+                        {"status": "started", "at": now.isoformat(), "fencing_token": 1},
+                    ]
+                )
+                record.post_turn_action_receipts[receipt.action_id] = receipt
+                record.updated_at = now
+                self._persist_record_conn(conn, record)
+            self._publish_records_locked([record])
+            return self._snapshot(record), receipt.model_copy(deep=True), True
+
+    def finish_post_turn_action(
+        self,
+        dispatch_id: str,
+        receipt: ActionReceiptV1,
+    ) -> DispatchRecord:
+        """Finalize only the exact currently fenced action claim."""
+        with self._lock:
+            self._require_writer()
+            with self._transaction(durability="full") as conn:
+                row = conn.execute(
+                    "SELECT payload_json FROM dispatches WHERE dispatch_id=?",
+                    (dispatch_id,),
+                ).fetchone()
+                if not row:
+                    raise KeyError(dispatch_id)
+                record = DispatchRecord.model_validate_json(row["payload_json"])
+                current = record.post_turn_action_receipts.get(receipt.action_id)
+                if (
+                    not current
+                    or current.action_digest != receipt.action_digest
+                    or current.fencing_token != receipt.fencing_token
+                ):
+                    raise ValueError("stale post-turn action fence")
+                record.post_turn_action_receipts[receipt.action_id] = receipt
+                record.updated_at = datetime.now(UTC)
+                self._persist_record_conn(conn, record)
+            self._publish_records_locked([record])
+            return self._snapshot(record)
+
     def mutate_current(
         self,
         dispatch_id: str,
@@ -3261,6 +3443,7 @@ class DispatchStore:
                 and abs((sanitized.occurred_at - latest.occurred_at).total_seconds())
                 <= 5
             ):
+                _cover_progress_sequence(record, sanitized.sequence, compacted=True)
                 record.progress_seen_keys.append(sanitized.idempotency_key)
                 record.progress_seen_keys = record.progress_seen_keys[
                     -MAX_PROGRESS_SEEN_KEYS:
@@ -3277,13 +3460,29 @@ class DispatchStore:
                     record, sanitized, result, persist_payload=False
                 )
             previous_max = max(
-                (item.sequence for item in record.progress_events), default=0
+                record.progress_highest_accepted_sequence,
+                max((item.sequence for item in record.progress_events), default=0),
             )
             record.progress_events.append(sanitized)
             record.progress_events.sort(
                 key=lambda item: (item.sequence, item.occurred_at, item.idempotency_key)
             )
             removed: list[DispatchProgressEventV1] = []
+            age_cutoff = datetime.now(UTC) - timedelta(days=self.MAX_PROGRESS_AGE_DAYS)
+            for candidate in list(record.progress_events):
+                if (
+                    candidate is not sanitized
+                    and candidate.occurred_at < age_cutoff
+                    and not self._progress_protected(candidate)
+                ):
+                    record.progress_events.remove(candidate)
+                    removed.append(candidate)
+                    record.progress_compacted_ranges = _normalized_sequence_ranges(
+                        [
+                            *record.progress_compacted_ranges,
+                            [candidate.sequence, candidate.sequence],
+                        ]
+                    )
             retained_bytes = sum(
                 len(item.model_dump_json().encode())
                 for item in record.progress_events
@@ -3304,12 +3503,21 @@ class DispatchStore:
                     break
                 record.progress_events.remove(candidate)
                 removed.append(candidate)
+                record.progress_compacted_ranges = _normalized_sequence_ranges(
+                    [
+                        *record.progress_compacted_ranges,
+                        [candidate.sequence, candidate.sequence],
+                    ]
+                )
                 retained_bytes -= len(candidate.model_dump_json().encode())
             record.progress_seen_keys.append(sanitized.idempotency_key)
             record.progress_seen_keys = record.progress_seen_keys[
                 -MAX_PROGRESS_SEEN_KEYS:
             ]
             record.progress_protocol_version = sanitized.schema_version
+            _cover_progress_sequence(record, sanitized.sequence)
+            if sanitized.sequence < previous_max:
+                record.progress_late_arrivals += 1
             record.progress_next_sequence = max(
                 record.progress_next_sequence, sanitized.sequence + 1
             )
@@ -3349,6 +3557,8 @@ class DispatchStore:
             record = self._snapshot(stored)
             current = record.progress_heartbeat
             if current and sanitized.sequence < current.sequence:
+                _cover_progress_sequence(record, sanitized.sequence, compacted=True)
+                record.progress_late_arrivals += 1
                 record.progress_seen_keys.append(sanitized.idempotency_key)
                 record.progress_seen_keys = record.progress_seen_keys[
                     -MAX_PROGRESS_SEEN_KEYS:
@@ -3366,12 +3576,20 @@ class DispatchStore:
                 )
             if delivered and sanitized.delivered_at is None:
                 sanitized.delivered_at = datetime.now(UTC)
+            if current and current.sequence != sanitized.sequence:
+                record.progress_compacted_ranges = _normalized_sequence_ranges(
+                    [
+                        *record.progress_compacted_ranges,
+                        [current.sequence, current.sequence],
+                    ]
+                )
             record.progress_heartbeat = sanitized
             record.progress_seen_keys.append(sanitized.idempotency_key)
             record.progress_seen_keys = record.progress_seen_keys[
                 -MAX_PROGRESS_SEEN_KEYS:
             ]
             record.progress_protocol_version = sanitized.schema_version
+            _cover_progress_sequence(record, sanitized.sequence)
             record.progress_next_sequence = max(
                 record.progress_next_sequence, sanitized.sequence + 1
             )
@@ -4058,6 +4276,7 @@ class DispatchStore:
                     "actions": self._retention_actions,
                     "max_events_per_dispatch": MAX_PROGRESS_EVENTS,
                     "max_bytes_per_dispatch": self.MAX_PROGRESS_BYTES_PER_DISPATCH,
+                    "max_age_days": self.MAX_PROGRESS_AGE_DAYS,
                     "receipt_replay_days": self.RECEIPT_REPLAY_DAYS,
                 },
                 "migration": migration,
@@ -4128,6 +4347,12 @@ class DispatchStore:
                                 (record.dispatch_id, event.idempotency_key),
                             )
                             record.progress_events.remove(event)
+                            record.progress_compacted_ranges = _normalized_sequence_ranges(
+                                [
+                                    *record.progress_compacted_ranges,
+                                    [event.sequence, event.sequence],
+                                ]
+                            )
                         protected_keys = {
                             event.idempotency_key for event in record.progress_events
                         }
@@ -4742,6 +4967,11 @@ class CompletionOutbox:
         self._wake = asyncio.Event()
         self._closing = False
         self._client: httpx.AsyncClient | None = None
+        self._supervisor = BackgroundTaskSupervisor(
+            "completion-outbox",
+            self._run,
+            self.store.db_path.parent / "completion_outbox_worker.json",
+        )
 
     async def _offload(self, operation: str, call, *args, **kwargs):
         if self.async_runtime:
@@ -4759,9 +4989,9 @@ class CompletionOutbox:
         return self._client
 
     def start(self) -> None:
-        if not self._task or self._task.done():
-            self._closing = False
-            self._task = asyncio.create_task(self._run())
+        self._closing = False
+        self._supervisor.start()
+        self._task = self._supervisor._task
 
     def queue(self, session_id: str, payload: dict[str, Any]) -> bool:
         queued = self.store.queue_completion_payload(session_id, payload)
@@ -4820,17 +5050,15 @@ class CompletionOutbox:
         await self.drain(timeout)
         self._closing = True
         self._wake.set()
-        if self._task:
-            try:
-                await asyncio.wait_for(self._task, timeout=1.0)
-            except asyncio.TimeoutError:
-                self._task.cancel()
+        await self._supervisor.close()
         if self._client is not None:
             await self._client.aclose()
             self._client = None
 
-    async def _run(self) -> None:
+    async def _run(self, heartbeat: Callable[[], None] | None = None) -> None:
         while not self._closing:
+            if heartbeat:
+                heartbeat()
             pending = await self._offload(
                 "dispatch.completion_pending_read", self.store.pending
             )
@@ -4861,11 +5089,14 @@ class CompletionOutbox:
                 await self._send_followup(record, turn)
             await asyncio.sleep(min(self.retry_seconds, 1.0))
 
+    def worker_health(self) -> dict[str, Any]:
+        return self._supervisor.health()
+
     async def _send_followup(
         self, record: DispatchRecord, turn: dict[str, Any]
     ) -> None:
         turn["delivery_attempts"] = int(turn.get("delivery_attempts") or 0) + 1
-        self.store.put(record)
+        await self._offload("dispatch.followup_record_write", self.store.put, record)
         key = (
             f"{record.mutation_id}:turn:"
             f"{turn.get('prompt_id') or turn.get('idempotency_key')}"
@@ -4913,7 +5144,7 @@ class CompletionOutbox:
                 turn["next_retry_at"] = (
                     datetime.now(UTC) + timedelta(seconds=delay)
                 ).isoformat()
-        self.store.put(record)
+        await self._offload("dispatch.followup_record_write", self.store.put, record)
 
     def _schedule_retry(self, record: DispatchRecord, error: str) -> None:
         record.last_error = sanitize_text(error, limit=500)

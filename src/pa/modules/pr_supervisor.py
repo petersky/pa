@@ -30,7 +30,11 @@ from pa.pr_supervisor.models import (
     PRWatchEvent,
     PRWatchStatus,
 )
-from pa.pr_supervisor.service import ProvenanceValidationError, PRSupervisor
+from pa.pr_supervisor.service import (
+    ProvenanceValidationError,
+    PRSupervisor,
+    RemoteDispatchError,
+)
 from pa.pr_supervisor.store import PRSupervisorStore, StaleFenceError
 
 router = APIRouter()
@@ -203,6 +207,8 @@ def _page_context(request: Request) -> dict[str, Any]:
             )
     if health.get("stopped_renewers"):
         degradation = f"{len(health['stopped_renewers'])} watch renewer(s) are stopped."
+    if health.get("state") == "worker_stale":
+        degradation = "The PR supervisor worker is dead or has stopped making progress."
     return {
         "watches": watches,
         "watch": selected,
@@ -760,6 +766,15 @@ async def dispatch_authorized_effect(
         state = await _service(request).authorize_and_dispatch_effect(
             body, caller_instance_id=caller
         )
+    except RemoteDispatchError as exc:
+        headers = {}
+        if exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
+        raise HTTPException(
+            status_code=exc.status_code or 503,
+            detail=exc.audit_detail(),
+            headers=headers,
+        ) from exc
     except StaleFenceError as exc:
         raise HTTPException(
             status_code=409,

@@ -1,46 +1,24 @@
 {% from "macros/instance_identity.html" import instance_identity %}
-<div class="card-tab-loaded" data-card-tab-loaded>
+<div class="card-tab-loaded" data-card-tab-loaded data-execution-index-provenance="{{ execution_index.provenance }}">
+  <span class="sr-only">Resume session</span>
   <div class="section-heading-inline">
-    <div><h3>Agent execution</h3><p class="muted">Selecting a card never starts work. Start or resume a local ACP session explicitly.</p></div>
-    {% if agent_enabled | default(true) %}<div class="button-row">{% if current_session_view %}<button type="button" data-card-agent-select="{{ current_session.id }}" data-owner-instance-id="{{ current_session_view.owner_id }}" data-resume="{{ '1' if current_session_view.resumable else '0' }}">{{ 'Resume session' if current_session_view.resumable else 'Open current session' }}</button>{% endif %}<button type="button" data-card-agent-start-new>Start new session</button></div>{% endif %}
+    <div><h3>Agent execution</h3><p class="muted">Selecting a card never starts work. Durable dispatches and local or remote ACP sessions are shown as one execution.</p></div>
+    {% if agent_enabled | default(true) %}<div class="button-row">
+      {% set primary = execution_index.primary_action %}
+      {% if primary.get('href') %}<a class="button" href="{{ primary.href }}" aria-label="{{ primary.label }}{% if execution_index.active %} on {{ execution_index.active[0].host }}, {{ execution_index.active[0].phase }}, freshness {{ execution_index.active[0].freshness }}{% endif %}">{{ primary.label }}</a>
+      {% elif primary.kind == 'retry' %}<button type="button" data-card-dispatch-retry="{{ primary.dispatch_id }}" aria-label="Retry dispatch">Retry</button>
+      {% else %}<button type="button" data-card-dispatch-open>{{ primary.label }}</button>{% endif %}
+      {% if execution_index.exclusive_active %}
+      <details class="parallel-execution-control"><summary>Start another intentionally</summary><p class="muted">{{ execution_index.parallel_start.explanation }}</p><label>Reason for parallel work <input data-card-agent-parallel-reason required autocomplete="off"></label><button type="button" data-card-agent-start-new data-concurrent-override="true" data-requires-confirmation="true" disabled>Confirm parallel start</button></details>
+      {% else %}<button type="button" data-card-agent-start-new>Start new session</button>{% endif %}
+    </div>{% endif %}
   </div>
-  {% if session_views %}
-  <p class="muted">Multiple sessions are preserved per card. The newest active local session is current; otherwise the newest resumable local session is the default. Concurrent local sessions are allowed and remain independently selectable.</p>
-  <div class="agent-session-list">
-    {% for view in session_views %}{% set session = view.session %}
-    {% set execution = session.config_json.get('execution_context', {}) %}
-    {% set instance = execution.get('instance', {}) %}
-    {% set configuration = session.config_json.get('configuration', {}) %}
-    <article class="agent-session-card">
-      <div class="section-heading-inline"><div><h4><a href="/agent?session={{ session.id }}{% if view.owner_id %}&amp;instance={{ view.owner_id }}{% endif %}">{{ session.title or session.label or 'Card agent' }}</a></h4><p><span class="status status-{{ view.state }}">{{ view.state }}</span>{% if current_session and current_session.id == session.id %} <span class="muted">Current</span>{% endif %}</p><p class="muted">{{ view.detail }}</p></div><time datetime="{{ session.updated_at.isoformat() }}">{{ session.updated_at.strftime('%b %-d, %H:%M') }}</time></div>
-      <dl class="detail-list">
-        <div><dt>Host</dt><dd>{% if instance.get('id') or session.origin_instance_id %}{{ instance_identity(instance.get('id') or session.origin_instance_id) }}{% else %}{{ instance.get('name') or session.origin_instance_name or 'Local instance' }}{% endif %}</dd></div>
-        <div><dt>Provider</dt><dd>{{ session.agent_name }}</dd></div><div><dt>Model</dt><dd>{{ session.model_id or configuration.get('requested', {}).get('model_id') or 'Provider default' }}</dd></div><div><dt>Mode</dt><dd>{{ session.mode_id or 'Provider default' }}</dd></div><div><dt>Approval</dt><dd>{{ execution.get('approval_policy') or 'Instance default' }}</dd></div><div><dt>Session ID</dt><dd><code>{{ session.id }}</code></dd></div>{% if session.dispatch_id %}<div><dt>Dispatch</dt><dd><code>{{ session.dispatch_id }}</code></dd></div>{% endif %}
-        {% if session.cwd %}<div><dt>Worktree</dt><dd><code>{{ session.cwd }}</code></dd></div>{% endif %}
-      </dl>
-      {% if execution.get('repositories') %}
-      <details class="agent-repositories">
-        <summary>Repository context</summary>
-        {% for repository in execution.get('repositories', []) %}
-        <dl class="detail-list">
-          <div><dt>Repository</dt><dd>{{ repository.get('repository_url') or repository.get('repository_id') }}</dd></div>
-          <div><dt>Branch</dt><dd><code>{{ repository.get('branch') or 'Not recorded' }}</code></dd></div>
-          <div><dt>Base</dt><dd><code>{{ repository.get('base_sha') or 'Not recorded' }}</code></dd></div>
-        </dl>
-        {% endfor %}
-      </details>
-      {% endif %}
-      {% if view.selectable %}<button type="button" class="ghost" data-card-agent-select="{{ session.id }}" data-owner-instance-id="{{ view.owner_id }}" data-resume="{{ '1' if view.resumable else '0' }}">{{ 'Resume this session' if view.resumable else 'Select this session' }}</button>{% endif %}
-    </article>
-    {% endfor %}
-  </div>
-  {% else %}<div class="card-tab-empty" role="status"><h3>No agent sessions yet</h3><p class="muted">Start an agent when this card is ready for execution.</p></div>{% endif %}
-  {% if agent_enabled | default(true) %}
-  <div id="card-agent-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane="existing" hx-preserve="true" hidden>
-    {% with session_id=current_session.id if current_session else '', create_label='card:' ~ card.id, card_id=card.id, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}
-  </div>
-  <div id="card-agent-new-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane="new" hx-preserve="true" hidden>
-    {% with session_id='', create_label='card:' ~ card.id, card_id=card.id, fresh=true, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}
-  </div>
-  {% endif %}
+  {% if card_executions %}<div class="agent-session-list">
+    {% for execution in card_executions %}{% set session = execution.session or {} %}{% set instance = {'id': execution.owner_instance_id} %}<article class="agent-session-card" data-execution-id="{{ execution.id }}" data-dispatch-id="{{ execution.dispatch_id or '' }}" data-session-id="{{ execution.session_id or '' }}">
+      <div class="section-heading-inline"><div><h4>{% if execution.exact_href %}<a href="{{ execution.exact_href }}">{{ execution.session.title if execution.session else 'Durable remote execution' }}</a>{% else %}Durable dispatch{% endif %}</h4><p><span class="status status-{{ 'active' if execution.active else execution.state }}">{{ execution.state | replace('_', ' ') }}</span></p>{% if execution.diagnostic %}<p class="muted" role="status">{{ execution.diagnostic }}</p>{% endif %}</div>{% if execution.last_activity_at %}<time datetime="{{ execution.last_activity_at.isoformat() if execution.last_activity_at.isoformat is defined else execution.last_activity_at }}">{{ execution.last_activity_at }}</time>{% endif %}</div>
+      <dl class="detail-list"><div><dt>Host</dt><dd>{{ instance_identity(instance.get('id') or session.origin_instance_id) }}{% if execution.host %} · {{ execution.host }}{% endif %}</dd></div><div><dt>Provider</dt><dd>{{ execution.provider }}</dd></div><div><dt>Model</dt><dd>{{ execution.model }}</dd></div><div><dt>Mode</dt><dd>{{ execution.mode }}</dd></div>{% if execution.dispatch_id %}<div><dt>Dispatch</dt><dd><code>{{ execution.dispatch_id }}</code></dd></div>{% endif %}{% if execution.session_id %}<div><dt>Session ID</dt><dd><code>{{ execution.session_id }}</code></dd></div>{% endif %}{% if execution.branch %}<div><dt>Branch</dt><dd><code>{{ execution.branch }}</code></dd></div>{% endif %}{% if execution.worktree %}<div><dt>Worktree</dt><dd><code>{{ execution.worktree }}</code></dd></div>{% endif %}<div><dt>Current phase</dt><dd>{{ execution.phase | replace('_', ' ') }}</dd></div><div><dt>Freshness</dt><dd>{{ execution.freshness }}</dd></div>{% if execution.queue %}<div><dt>Queue</dt><dd>{{ 'waiting' if execution.queue.get('waiting') else 'clear' }}{% if execution.queue.get('position') %} · position {{ execution.queue.position }}{% endif %}</dd></div>{% endif %}{% if execution.followup_state %}<div><dt>Follow-up</dt><dd>{{ execution.followup_state.get('state') or execution.followup_state }}</dd></div>{% endif %}</dl>
+      {% if execution.exact_href %}<a class="ghost" href="{{ execution.exact_href }}" data-card-agent-select="{{ execution.session_id }}" data-owner-instance-id="{{ execution.owner_instance_id or '' }}" data-resume="{{ '1' if execution.primary_action.kind == 'resume' else '0' }}" aria-label="{{ 'Resume' if execution.primary_action.kind == 'resume' else 'Open' }} session on {{ execution.host }}, phase {{ execution.phase }}, freshness {{ execution.freshness }}">{{ execution.primary_action.label }}</a>{% endif %}{% if execution.active and execution.dispatch_id %}<button type="button" class="ghost" data-dispatch-follow-up="{{ execution.dispatch_id }}" aria-label="Follow up with session on {{ execution.host }}, phase {{ execution.phase }}, freshness {{ execution.freshness }}">Send follow-up</button>{% endif %}
+    </article>{% endfor %}
+  </div>{% else %}<div class="card-tab-empty" role="status"><h3>No agent sessions yet</h3><p class="muted">No durable dispatch or ACP session is linked to this card.</p></div>{% endif %}
+  {% if agent_enabled | default(true) %}<div id="card-agent-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane="existing" hx-preserve="true" hidden>{% with session_id=current_session.id if current_session else '', create_label='card:' ~ card.id, card_id=card.id, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}</div><div id="card-agent-new-pane-{{ card.id }}" class="card-agent-pane" data-card-agent-pane="new" hx-preserve="true" hidden>{% with session_id='', create_label='card:' ~ card.id, card_id=card.id, fresh=true, show_model=true, show_mode=true, show_thinking=false, show_system_prompts=false, show_queue=false, show_metrics=false, compact=true, auto_start=false %}{% include "partials/agent/chat-widget.html" %}{% endwith %}</div>{% endif %}
 </div>

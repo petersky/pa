@@ -222,6 +222,36 @@
   }
 
   var remoteInstanceId = "";
+
+  function updateRemoteStartAvailability() {
+    var form = $("#pa-remote-start-form");
+    if (!form) return;
+    var submit = form.querySelector("[data-remote-start]");
+    var card = form.elements.card_id;
+    var selected = card && card.selectedOptions.length ? card.selectedOptions[0] : null;
+    var dispatchId = selected && selected.dataset.activeDispatchId || "";
+    var sessionId = selected && selected.dataset.activeSessionId || "";
+    var targetId = selected && selected.dataset.activeTargetId || "";
+    var concurrent = form.querySelector("[data-remote-concurrent]");
+    var reason = form.querySelector("[data-remote-concurrent-reason]");
+    var override = !!(concurrent && concurrent.checked && reason && reason.value.trim());
+    var blocked = !remoteInstanceId || (!!dispatchId && !override);
+    if (submit) {
+      submit.disabled = blocked;
+      submit.setAttribute("aria-disabled", blocked ? "true" : "false");
+      submit.title = !remoteInstanceId ? "Choose a remote instance first" : dispatchId && !override ? "This card already has an exclusive active dispatch" : "";
+    }
+    var wrap = form.querySelector("[data-remote-concurrent-wrap]");
+    var reasonWrap = form.querySelector("[data-remote-concurrent-reason-wrap]");
+    if (wrap) wrap.hidden = !dispatchId;
+    if (reasonWrap) reasonWrap.hidden = !dispatchId || !(concurrent && concurrent.checked);
+    var open = form.querySelector("[data-remote-open-current]");
+    if (open) {
+      open.hidden = !dispatchId;
+      open.textContent = sessionId ? "Open current session" : "View dispatch";
+      open.href = sessionId ? "/agent?session=" + encodeURIComponent(sessionId) + "&instance=" + encodeURIComponent(targetId) : "/fleet?section=operations";
+    }
+  }
   var remoteOperationsSectionActive = false;
   var remoteActivitySource = null;
   var remoteActivityInstanceId = "";
@@ -1082,6 +1112,18 @@
             escapeHtml(validation.status || "unknown") +
             "</summary><code>" + escapeHtml(command) + "</code></details></li>";
         }).join("");
+        var rangeLabel = function (range) {
+          return range[0] === range[1] ? String(range[0]) : range[0] + "–" + range[1];
+        };
+        var missingRanges = (progress.missing_ranges || []).map(rangeLabel).join(", ");
+        var compactedRanges = (progress.compacted_ranges || []).map(rangeLabel).join(", ");
+        var protocolDetail = missingRanges || compactedRanges || progress.conflicts || progress.late_arrivals
+          ? '<details><summary>Protocol delivery diagnostics</summary><p class="muted small">' +
+            (missingRanges ? 'Missing accepted sequence: ' + escapeHtml(missingRanges) + '. ' : '') +
+            (compactedRanges ? 'Intentionally compacted: ' + escapeHtml(compactedRanges) + '. ' : '') +
+            (progress.late_arrivals ? 'Late arrivals: ' + escapeHtml(progress.late_arrivals) + '. ' : '') +
+            (progress.conflicts ? 'Conflicts: ' + escapeHtml(progress.conflicts) + '.' : '') +
+            '</p></details>' : '';
         progressText = '<div class="dispatch-progress dispatch-progress-' +
           escapeHtml(freshness.state || "delayed") + '"><p><strong>' +
           escapeHtml((checkpoint.phase || "investigating").replace(/_/g, " ")) +
@@ -1092,7 +1134,7 @@
           "</p>" + (toolRows || validationRows
             ? "<details><summary>Sanitized tool and validation details</summary><ul>" +
               validationRows + toolRows + "</ul></details>"
-            : "") + "</div>";
+            : "") + protocolDetail + "</div>";
       } else if (progress.reporting === "lifecycle_only") {
         progressText = '<p class="muted small">Lifecycle-only reporting from an older peer.</p>';
       }
@@ -1451,6 +1493,7 @@
       remoteActivityCursors = {};
     }
     remoteInstanceId = nextInstanceId;
+    updateRemoteStartAvailability();
     if (remoteInstanceId) loadRemoteOperations();
     else clearRemoteWatchers();
   }
@@ -3366,6 +3409,7 @@
     if (!e.target || e.target.id !== "pa-remote-instance") return;
     cancelRemoteSessionLoad("remote-instance-changed");
     remoteInstanceId = e.target.value || "";
+    updateRemoteStartAvailability();
     remoteAuditGeneration += 1;
     try { localStorage.setItem("pa-remote-instance", remoteInstanceId); } catch (err) {}
     clearRemoteWatchers();
@@ -3376,6 +3420,13 @@
     if (chat) chat.hidden = true;
     if (audit) audit.hidden = true;
     loadRemoteOperations();
+  });
+
+  document.addEventListener("change", function (e) {
+    if (e.target && (e.target.matches('#pa-remote-start-form [name="card_id"]') || e.target.matches("[data-remote-concurrent]"))) updateRemoteStartAvailability();
+  });
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.matches("[data-remote-concurrent-reason]")) updateRemoteStartAvailability();
   });
 
   async function pollJob(jobId, logEl, statusEl) {

@@ -3,6 +3,11 @@
 {% from "macros/instance_identity.html" import instance_identity %}
 
 {% set left %}
+{% if session_attribution %}<aside class="panel-inset" role="status" aria-label="Session attribution from {{ session_attribution.source }}">
+  <strong>Execution attribution</strong>
+  <p class="muted small">Initiator {{ session_attribution.initiator }} · authority {{ instance_identity(session_attribution.authority_instance_id) }} · target {{ instance_identity(session_attribution.target_instance_id) }} · provider {{ session_attribution.provider }}{% if session_attribution.stale %} · dispatch is no longer live{% endif %}</p>
+  <p class="muted small">Provenance: {{ session_attribution.source }} · dispatch <code>{{ session_attribution.dispatch_id }}</code> · session <code>{{ session_attribution.session_id }}</code></p>
+</aside>{% endif %}
 <div class="panel agent-sessions-panel">
   <div class="panel-header">
     <h2>Sessions</h2>

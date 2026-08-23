@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import logging
 import os
 import tempfile
+import tracemalloc
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pa.cli.logs import journal_records, parse_line, parse_since, show_logs
+from pa.cli.logs import (
+    iter_file_records,
+    journal_records,
+    parse_line,
+    parse_since,
+    show_logs,
+)
 from pa.config import Settings
+from pa.core.log_rotation import UnsafeLogPathError
 from pa.core.logging import (
     ExpectedShutdownCancellationFilter,
     JsonFormatter,
@@ -101,6 +110,136 @@ class LogReaderTests(unittest.TestCase):
             self.assertNotIn("abcdef", output.getvalue())
             self.assertNotIn("session-value", output.getvalue())
 
+    def test_initial_tail_includes_compressed_rotated_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            with gzip.open(logs / "server.log.20260801.gz", "wt") as archive:
+                archive.write("2026-08-01T00:00:00Z INFO archived-access\n")
+            (logs / "server.log").write_text(
+                "2026-08-02T00:00:00Z INFO active-access\n"
+            )
+            output = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["stdout"],
+                lines=2,
+                output=output,
+                diagnostics=io.StringIO(),
+            )
+
+            self.assertIn("archived-access", output.getvalue())
+            self.assertIn("active-access", output.getvalue())
+
+    def test_numbered_structured_archives_are_read_oldest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            for suffix, stamp, message in (
+                ("2", "2026-08-01T00:00:00Z", "oldest"),
+                ("1", "2026-08-02T00:00:00Z", "newer"),
+                ("", "2026-08-03T00:00:00Z", "active"),
+            ):
+                path = logs / ("pa.jsonl" + (f".{suffix}" if suffix else ""))
+                path.write_text(
+                    json.dumps(
+                        {
+                            "timestamp": stamp,
+                            "level": "INFO",
+                            "logger": "pa.test",
+                            "message": message,
+                        }
+                    )
+                    + "\n"
+                )
+            output = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["structured"],
+                lines=3,
+                output=output,
+                diagnostics=io.StringIO(),
+            )
+
+            messages = [
+                line.rsplit(" ", 1)[-1] for line in output.getvalue().splitlines()
+            ]
+            self.assertEqual(messages, ["oldest", "newer", "active"])
+
+    def test_storage_diagnostics_expose_bounded_log_health(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            (logs / "server.log").write_text("active\n")
+            (logs / "status.json").write_text(
+                json.dumps(
+                    {
+                        "current_bytes": 7,
+                        "total_bytes": 11,
+                        "oldest_age_seconds": 12,
+                        "rotation_failures": 2,
+                        "compression_failures": 4,
+                        "prune_failures": 3,
+                        "pump_failures": 5,
+                        "status_failures": 7,
+                        "bootstrap_failures": 8,
+                        "dropped_bytes": 6,
+                        "last_error": "OSError: disk full",
+                        "supervisor": {
+                            "state": "running",
+                            "ownership": "exclusive",
+                        },
+                        "disk_pressure": {
+                            "state": "pressure",
+                            "free_bytes": 9,
+                            "minimum_free_bytes": 10,
+                        },
+                    }
+                )
+            )
+            diagnostics = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["stdout"],
+                lines=1,
+                output=io.StringIO(),
+                diagnostics=diagnostics,
+            )
+
+            self.assertIn("current_bytes=7", diagnostics.getvalue())
+            self.assertIn("rotation_failures=2", diagnostics.getvalue())
+            self.assertIn("compression_failures=4", diagnostics.getvalue())
+            self.assertIn("prune_failures=3", diagnostics.getvalue())
+            self.assertIn("pump_failures=5", diagnostics.getvalue())
+            self.assertIn("status_failures=7", diagnostics.getvalue())
+            self.assertIn("bootstrap_failures=8", diagnostics.getvalue())
+            self.assertIn("dropped_bytes=6", diagnostics.getvalue())
+            self.assertIn("disk_pressure=pressure", diagnostics.getvalue())
+            self.assertIn("free_bytes=9", diagnostics.getvalue())
+            self.assertIn("minimum_free_bytes=10", diagnostics.getvalue())
+            self.assertIn("supervisor=running", diagnostics.getvalue())
+            self.assertIn("ownership=exclusive", diagnostics.getvalue())
+            self.assertIn("last_error=OSError: disk full", diagnostics.getvalue())
+
+    def test_streaming_reader_rejects_symlink_without_reading_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "outside.log"
+            target.write_text("private target data\n")
+            link = root / "server.log"
+            link.symlink_to(target)
+
+            with self.assertRaises((OSError, UnsafeLogPathError)):
+                list(iter_file_records(link, "stdout"))
+
+            self.assertEqual(target.read_text(), "private target data\n")
+
     def test_missing_source_is_actionable_and_all_missing_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             diagnostics = io.StringIO()
@@ -178,6 +317,122 @@ class LogReaderTests(unittest.TestCase):
                     diagnostics=io.StringIO(),
                 )
             self.assertIn("rotated ✓", output.getvalue())
+
+    def test_follow_drains_old_inode_before_opening_rotated_active_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "logs" / "server.log"
+            path.parent.mkdir()
+            path.write_text("initial\n")
+            writer = path.open("a")
+            output = io.StringIO()
+            calls = 0
+
+            def rotate_then_stop(_: float) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    writer.write("last-old-inode\n")
+                    writer.flush()
+                    os.replace(path, path.with_name("server.log.1"))
+                    path.write_text("first-new-inode\n")
+                else:
+                    raise KeyboardInterrupt
+
+            try:
+                with patch("pa.cli.logs.time.sleep", side_effect=rotate_then_stop):
+                    show_logs(
+                        settings=self.settings(root),
+                        sources=["stdout"],
+                        lines=0,
+                        follow=True,
+                        output=output,
+                        diagnostics=io.StringIO(),
+                    )
+            finally:
+                writer.close()
+            self.assertIn("last-old-inode", output.getvalue())
+            self.assertIn("first-new-inode", output.getvalue())
+
+    def test_follow_detects_copytruncate_that_regrows_past_prior_offset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "logs" / "server.log"
+            path.parent.mkdir()
+            path.write_text("old-" + ("x" * 200) + "\n")
+            output = io.StringIO()
+            calls = 0
+
+            def truncate_regrow_then_stop(_: float) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    with path.open("w") as handle:
+                        handle.write("copytruncate-first-line\n" + ("z" * 400) + "\n")
+                else:
+                    raise KeyboardInterrupt
+
+            with patch("pa.cli.logs.time.sleep", side_effect=truncate_regrow_then_stop):
+                show_logs(
+                    settings=self.settings(root),
+                    sources=["stdout"],
+                    lines=0,
+                    follow=True,
+                    output=output,
+                    diagnostics=io.StringIO(),
+                )
+
+            self.assertIn("copytruncate-first-line", output.getvalue())
+
+    def test_tail_streams_highly_compressed_history_with_bounded_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            archive = logs / "server.log.20260801.gz"
+            with gzip.open(archive, "wt") as handle:
+                for index in range(50_000):
+                    handle.write(
+                        f"2026-08-01T00:00:00Z INFO unique-{index:05d}-{'x' * 120}\n"
+                    )
+            (logs / "server.log").write_text(
+                "2026-08-02T00:00:00Z INFO latest-record\n"
+            )
+            output = io.StringIO()
+
+            tracemalloc.start()
+            show_logs(
+                settings=self.settings(root),
+                sources=["stdout"],
+                lines=1,
+                output=output,
+                diagnostics=io.StringIO(),
+            )
+            _, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+
+            self.assertIn("latest-record", output.getvalue())
+            self.assertLess(peak, 20 * 1024 * 1024)
+
+    def test_supervisor_bootstrap_log_is_a_first_class_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            (logs / "supervisor-bootstrap.log").write_text(
+                "2026-08-02T00:00:00Z ERROR bootstrap-visible\n"
+            )
+            output = io.StringIO()
+
+            show_logs(
+                settings=self.settings(root),
+                sources=["supervisor"],
+                lines=5,
+                output=output,
+                diagnostics=io.StringIO(),
+            )
+
+            self.assertIn("bootstrap-visible", output.getvalue())
 
     def test_journal_json_is_parsed(self) -> None:
         row = json.dumps(

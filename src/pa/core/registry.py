@@ -66,6 +66,7 @@ class ModuleRegistry:
         from pa.modules.backups import BackupsModule
         from pa.modules.browser import BrowserModule
         from pa.modules.collaboration import CollaborationModule
+        from pa.modules.cloud import CloudModule
         from pa.modules.debug import DebugModule
         from pa.modules.files import FilesModule
         from pa.modules.fleet import FleetModule
@@ -90,6 +91,7 @@ class ModuleRegistry:
             BackupsModule(),
             FleetModule(),
             SyncModule(),
+            CloudModule(),
             NotificationsModule(),
             IntegrationsModule(),
             ProjectsModule(),
