@@ -36,6 +36,9 @@ from pa.domain.models import CardCreate, CardUpdate
 from pa.domain.projection import CardProjection
 
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
 def context(tmp: str, provider):
     settings = Settings(
         data_dir=Path(tmp),
@@ -129,6 +132,8 @@ def test_connection_uses_staged_values_without_mutating_settings_and_is_idempote
             assert first["provider"] == "anthropic"
             assert first["model"] == "claude-test"
             assert first["configuration"] == "staged"
+            assert first["invocation"]["ok"] is True
+            assert first["summary_schema"]["ok"] is True
             assert "staged-secret" not in json.dumps(first)
             assert ctx.settings.card_summary_provider == "openai"
             assert ctx.settings.card_summary_api_key == "test"
@@ -734,6 +739,129 @@ def test_parse_chat_completion_documented_shapes(message: dict, expected: str) -
     assert parse_chat_completion_summary({"choices": [{"message": message}]}) == expected
 
 
+def test_parse_minimax_m3_production_shaped_fixtures() -> None:
+    fixtures = json.loads(
+        (FIXTURES / "minimax_m3_summary_shapes.json").read_text(encoding="utf-8")
+    )
+    assert parse_chat_completion_summary(fixtures["content_blocks"]) == (
+        "Normalize the supported content-block tool envelope."
+    )
+    assert parse_chat_completion_summary(fixtures["tool_and_display_text"]) == (
+        "Prefer the authoritative structured tool result."
+    )
+    assert parse_chat_completion_summary(fixtures["plain_text"]) == (
+        "Normalize a bounded plain-text response into PA's summary schema."
+    )
+
+
+def test_connection_separates_successful_invocation_from_schema_failure() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, _ = context(tmp, None)
+            service = CardSummaryService(ctx)
+            failure = SummaryProviderError(
+                SummaryFailureCode.SCHEMA_VIOLATION,
+                "The provider response did not match the required summary envelope.",
+                retryable=False,
+                invocation_succeeded=True,
+                response_shape={
+                    "payload_object": True,
+                    "choice_count": 1,
+                    "message_object": True,
+                    "content_type": "list",
+                },
+            )
+            with patch.object(service, "_call_provider", side_effect=failure):
+                result = await service.test_connection(
+                    changes={}, clear=set(), idempotency_key="schema-failure"
+                )
+            assert result["ok"] is False
+            assert result["invocation"] == {
+                "ok": True,
+                "code": "success",
+                "message": "Authentication, transport, and model invocation succeeded.",
+            }
+            assert result["summary_schema"]["ok"] is False
+            assert result["summary_schema"]["code"] == "schema_violation"
+            serialized = json.dumps(result)
+            assert "fixture-display-text" not in serialized
+            assert "test" not in serialized
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure_kind", ["authentication", "transport"])
+def test_connection_does_not_claim_invocation_success_before_provider_response(
+    failure_kind: str,
+) -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, _ = context(tmp, None)
+            service = CardSummaryService(ctx)
+            if failure_kind == "authentication":
+                request = httpx.Request("POST", "https://provider.invalid")
+                response = httpx.Response(
+                    401, request=request, text="private credential detail"
+                )
+                failure: Exception = httpx.HTTPStatusError(
+                    "private authentication detail",
+                    request=request,
+                    response=response,
+                )
+            else:
+                failure = httpx.ReadTimeout("private transport detail")
+            with patch.object(service, "_call_provider", side_effect=failure):
+                result = await service.test_connection(
+                    changes={}, clear=set(), idempotency_key=failure_kind
+                )
+            assert result["ok"] is False
+            assert result["invocation"]["ok"] is False
+            assert result["summary_schema"] == {
+                "ok": False,
+                "code": "not_evaluated",
+                "message": "Summary schema conformance was not evaluated.",
+            }
+            assert "private" not in json.dumps(result)
+
+    asyncio.run(run())
+
+
+def test_response_shape_diagnostics_do_not_expose_raw_provider_content(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    private_value = "private-card-and-provider-content"
+    with caplog.at_level("WARNING"):
+        with pytest.raises(SummaryProviderError) as raised:
+            parse_chat_completion_summary(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {"summary": private_value, "unexpected": private_value}
+                                ),
+                                "reasoning_content": private_value,
+                            }
+                        }
+                    ],
+                    "credential": private_value,
+                }
+            )
+    assert raised.value.response_shape == {
+        "payload_object": True,
+        "choice_count": 1,
+        "message_object": True,
+        "content_type": "str",
+        "parsed_present": False,
+        "tool_call_count": None,
+        "reasoning_separated": True,
+        "content_block_count": None,
+        "legacy_function_call": False,
+    }
+    assert private_value not in caplog.text
+    assert private_value not in json.dumps(raised.value.response_shape)
+
+
 @pytest.mark.parametrize(
     ("message", "code"),
     [
@@ -744,14 +872,10 @@ def test_parse_chat_completion_documented_shapes(message: dict, expected: str) -
         ({"content": '{"not_summary":"wrong"}'}, "schema_violation"),
         (
             {
-                "content": '{"summary":"ambiguous"}',
+                "content": "ignored",
                 "tool_calls": [
-                    {
-                        "function": {
-                            "name": SUBMIT_SUMMARY_TOOL,
-                            "arguments": '{"summary":"also ambiguous"}',
-                        }
-                    }
+                    {"function": {"name": SUBMIT_SUMMARY_TOOL, "arguments": "{}"}},
+                    {"function": {"name": SUBMIT_SUMMARY_TOOL, "arguments": "{}"}},
                 ],
             },
             "schema_violation",
