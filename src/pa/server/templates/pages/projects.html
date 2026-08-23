@@ -16,13 +16,15 @@
     </nav>
 
     {% if projects_view == 'repos' %}
-    <details class="projects-create">
-      <summary class="button">+ New Repo</summary>
-      <form class="stack"
+    <div class="projects-create">
+      <button type="button" class="button" data-project-create-open="new-repository-dialog" aria-haspopup="dialog">+ New Repo</button>
+      <dialog id="new-repository-dialog" class="project-create-dialog" aria-labelledby="new-repository-title">
+      <form class="stack project-create-form"
             data-operation="Add repository"
             hx-post="/projects/repositories?realm={{ active_realm }}&view=repos&project={{ selected_project }}"
             hx-target="#app-view"
             hx-swap="innerHTML">
+        <header><h2 id="new-repository-title">New repository</h2><button type="button" class="ghost" data-project-create-close aria-label="Close new repository dialog">Close</button></header>
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label>Repository URL <input type="url" name="url" required placeholder="https://github.com/org/repo.git"></label>
         <label>Name <input type="text" name="name" placeholder="Optional display name"></label>
@@ -39,9 +41,10 @@
             <option value="public">Public</option>
           </select>
         </label>
-        <button type="submit">Add repository</button>
+        <div class="form-actions"><button type="button" class="ghost" data-project-create-close>Cancel</button><button type="submit">Add repository</button></div>
       </form>
-    </details>
+      </dialog>
+    </div>
     <label class="projects-search">
       <span class="sr-only">Search repositories</span>
       <input type="search" placeholder="Search repos…" data-projects-filter="repositories" autocomplete="off">
@@ -60,20 +63,23 @@
       <p class="empty projects-filter-empty" hidden>No matching repositories.</p>
     </div>
     {% else %}
-    <details class="projects-create">
-      <summary class="button">+ New Project</summary>
-      <form class="stack"
+    <div class="projects-create">
+      <button type="button" class="button" data-project-create-open="new-project-dialog" aria-haspopup="dialog">+ New Project</button>
+      <dialog id="new-project-dialog" class="project-create-dialog" aria-labelledby="new-project-title">
+      <form class="stack project-create-form"
           hx-post="/projects"
           hx-target="#app-view"
           hx-push-url="true"
           hx-swap="innerHTML">
+        <header><h2 id="new-project-title">New project</h2><button type="button" class="ghost" data-project-create-close aria-label="Close new project dialog">Close</button></header>
         <input type="hidden" name="realm" value="{{ active_realm }}">
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
         <label>Title <input type="text" name="title" required placeholder="Project name"></label>
         <label>Description <textarea name="description" rows="2" placeholder="Optional"></textarea></label>
-        <button type="submit">Create project</button>
+        <div class="form-actions"><button type="button" class="ghost" data-project-create-close>Cancel</button><button type="submit">Create project</button></div>
       </form>
-    </details>
+      </dialog>
+    </div>
     <label class="projects-search">
       <span class="sr-only">Search projects</span>
       <input type="search" placeholder="Search projects…" data-projects-filter="projects" autocomplete="off">

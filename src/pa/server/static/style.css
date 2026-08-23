@@ -3726,17 +3726,23 @@ code {
   background: var(--pa-bg);
 }
 .projects-create { margin: 0.8rem; }
-.projects-create > summary,
-.projects-create > .project-disclosure-toggle { display: flex; justify-content: center; list-style: none; cursor: pointer; }
-.projects-create > summary::-webkit-details-marker { display: none; }
-.projects-create form {
-  max-height: min(60dvh, 36rem);
-  padding: 0.75rem;
+.projects-create > .button { display: flex; width: 100%; justify-content: center; }
+.project-create-dialog {
+  width: min(calc(100vw - 2rem), 36rem);
+  max-height: min(calc(100dvh - 2rem), 46rem);
+  padding: 0;
   border: 1px solid var(--pa-border);
   border-radius: 7px;
   background: var(--pa-bg);
+  color: var(--pa-text);
+  box-shadow: 0 1.25rem 3rem rgb(0 0 0 / 0.28);
   overflow-y: auto;
 }
+.project-create-dialog::backdrop { background: rgb(0 0 0 / 0.56); backdrop-filter: blur(2px); }
+.project-create-form { padding: 1rem; }
+.project-create-form header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.project-create-form header h2 { margin: 0; }
+.project-create-form .form-actions { justify-content: flex-end; }
 .projects-search { display: block; padding: 0 0.8rem 0.65rem; }
 .projects-search input { width: 100%; }
 .projects-nav-list {
