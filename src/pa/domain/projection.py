@@ -131,6 +131,7 @@ class CardProjection:
         self.db_path = db_path
         self.event_log = event_log
         self._mutation_lock = threading.RLock()
+        self._connection_local = threading.local()
         self._legacy_integrity_upgrade_required = False
         self._operation_owner = str(uuid4())
         self._replaying_from_log = False
@@ -145,15 +146,26 @@ class CardProjection:
                 self.rebuild_from_log(realm)
 
     @contextmanager
-    def _conn(self, *, busy_timeout_ms: int = 30000) -> Iterator[sqlite3.Connection]:
+    def _conn(
+        self, *, busy_timeout_ms: int = 30000
+    ) -> Iterator[sqlite3.Connection]:
+        current = getattr(self._connection_local, "connection", None)
+        if current is not None:
+            yield current
+            return
         conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
         conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.row_factory = sqlite3.Row
+        self._connection_local.connection = conn
         try:
             yield conn
             conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
         finally:
+            del self._connection_local.connection
             conn.close()
 
     @contextmanager
@@ -5673,6 +5685,9 @@ class CardProjection:
         head = self.event_log.get_head(realm_id)
         if not head:
             return
+        # Keep the destructive reset, complete replay, and head checkpoint in
+        # one SQLite transaction. Nested projection helpers reuse this thread's
+        # connection, so concurrent readers retain the last-good snapshot.
         with self._conn() as conn:
             conn.execute("DELETE FROM cards WHERE realm_id = ?", (realm_id,))
             # Goal state and its event/index projections are all derived from the
@@ -5721,42 +5736,100 @@ class CardProjection:
                 "DELETE FROM fleet_policy_audit_events WHERE realm_id = ?",
                 (realm_id,),
             )
-        present_cards: set[tuple[str, str]] = set()
+            present_cards: set[tuple[str, str]] = set()
 
-        def apply_replay_event(event: CardEvent) -> None:
-            if event.card_id:
-                key = (event.realm_id, event.card_id)
-                if event.type == EventType.CARD_CREATED:
-                    if key in present_cards:
-                        return
-                    present_cards.add(key)
-                elif event.type == EventType.CARD_DELETED:
-                    present_cards.discard(key)
-                else:
-                    # Field-only legacy histories establish that this identity
-                    # already existed even when their create event is missing.
-                    present_cards.add(key)
-            self.apply_event(event)
+            def apply_replay_event(event: CardEvent) -> None:
+                if event.card_id:
+                    key = (event.realm_id, event.card_id)
+                    if event.type == EventType.CARD_CREATED:
+                        if key in present_cards:
+                            return
+                        present_cards.add(key)
+                    elif event.type == EventType.CARD_DELETED:
+                        present_cards.discard(key)
+                    else:
+                        present_cards.add(key)
+                self.apply_event(event)
 
-        def restore_receipt(
-            commit_hash: str, event_hash: str, event: CardEvent
-        ) -> None:
-            self.mark_operation_durable(
-                event, commit_hash, event_hash=event_hash
-            )
+            def restore_receipt(
+                commit_hash: str, event_hash: str, event: CardEvent
+            ) -> None:
+                self.mark_operation_durable(
+                    event, commit_hash, event_hash=event_hash
+                )
 
-        self._replaying_from_log = True
-        self._replay_operation_keys_seen: set[str] = set()
-        try:
-            self.event_log.apply_commit_chain(
-                head,
-                apply_replay_event,
-                provenance_handler=restore_receipt,
-            )
-        finally:
-            self._replaying_from_log = False
-            del self._replay_operation_keys_seen
-        self._record_projection_head(realm_id, head)
+            self._replaying_from_log = True
+            self._replay_operation_keys_seen: set[str] = set()
+            try:
+                self.event_log.apply_commit_chain(
+                    head,
+                    apply_replay_event,
+                    provenance_handler=restore_receipt,
+                )
+            finally:
+                self._replaying_from_log = False
+                del self._replay_operation_keys_seen
+            self._record_projection_head(realm_id, head)
+
+    @serialized_mutation
+    def catch_up_projection(self, realm_id: str, target_head: str) -> dict[str, Any]:
+        """Atomically fast-forward a projection without replaying its history."""
+        started = time.perf_counter()
+        if not self.event_log:
+            return {
+                "commits_applied": 0,
+                "rebuilt": False,
+                "reason": "no_event_log",
+                "sqlite_ms": 0.0,
+            }
+        current = self.get_projection_head(realm_id)
+        if current == target_head:
+            return {
+                "commits_applied": 0,
+                "rebuilt": False,
+                "reason": "identical",
+                "sqlite_ms": 0.0,
+            }
+        if not self.event_log.get_commit(target_head):
+            raise ValueError(f"missing projection target {target_head}")
+        if current is None or not self.event_log.get_commit(current):
+            self.rebuild_from_log(realm_id)
+            return {
+                "commits_applied": 0,
+                "rebuilt": True,
+                "reason": "missing_projection_head",
+                "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
+            }
+        if not self.event_log.is_ancestor(current, target_head):
+            self.rebuild_from_log(realm_id)
+            return {
+                "commits_applied": 0,
+                "rebuilt": True,
+                "reason": "non_fast_forward",
+                "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
+            }
+
+        applied = 0
+        with self._conn():
+            for commit_hash, commit in self.event_log._iter_commits_parent_first(
+                target_head, stop={current}
+            ):
+                for event_hash in commit.event_hashes:
+                    event = self.event_log.get_event(event_hash)
+                    if event is None:
+                        raise ValueError(f"missing event object {event_hash}")
+                    self.mark_operation_durable(
+                        event, commit_hash, event_hash=event_hash
+                    )
+                    self.apply_event(event)
+                applied += 1
+            self._record_projection_head(realm_id, target_head)
+        return {
+            "commits_applied": applied,
+            "rebuilt": False,
+            "reason": "fast_forward",
+            "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
+        }
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:
         with self._conn() as conn:

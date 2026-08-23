@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
+from pa.core.async_runtime import AsyncRuntime
 from pa.core.live_updates import LiveUpdateBroker
 from pa.core.writer_lock import DataDirWriterLock
 from pa.domain.models import (
@@ -76,6 +78,87 @@ class _Node:
             self.membership,
             self.fleet,
         )
+
+
+class ProjectionWorkCoordinatorTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.node = _Node(Path(self.tmp.name), "coordinator", "Coordinator")
+        self.runtime = AsyncRuntime(max_workers=2, max_queue=2)
+        self.node.engine.async_runtime = self.runtime
+
+    async def asyncTearDown(self) -> None:
+        await self.runtime.close(drain_timeout=1)
+        self.tmp.cleanup()
+
+    async def test_eight_identical_waiters_use_one_worker(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        calls = 0
+
+        def apply() -> dict:
+            nonlocal calls
+            calls += 1
+            entered.set()
+            release.wait(2)
+            return {"commits_applied": 1, "reason": "fast_forward"}
+
+        waiters = [
+            asyncio.create_task(
+                self.node.engine.apply_realm_head(
+                    "default", "same-head", "sync.test_projection", apply
+                )
+            )
+            for _ in range(8)
+        ]
+        await asyncio.to_thread(entered.wait, 1)
+        await asyncio.sleep(0)
+        self.assertEqual(calls, 1)
+        self.assertEqual(self.runtime.snapshot()["executor"]["active"], 1)
+        release.set()
+        self.assertEqual(len(await asyncio.gather(*waiters)), 8)
+        status = self.node.engine.projection_work_status("default")
+        self.assertEqual(status["coalesced"], 7)
+        self.assertFalse(status["active_residual_worker"])
+
+    async def test_timeout_and_cancellation_preserve_residual_ownership(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        calls = 0
+
+        def apply() -> dict:
+            nonlocal calls
+            calls += 1
+            entered.set()
+            release.wait(2)
+            return {"commits_applied": 1, "reason": "fast_forward"}
+
+        with self.assertRaises(TimeoutError):
+            await self.node.engine.apply_realm_head(
+                "default", "protected-head", "sync.test_projection", apply, timeout=0.01
+            )
+        self.assertTrue(entered.is_set())
+        follower = asyncio.create_task(
+            self.node.engine.apply_realm_head(
+                "default", "protected-head", "sync.test_projection", apply
+            )
+        )
+        cancelled = asyncio.create_task(
+            self.node.engine.apply_realm_head(
+                "default", "protected-head", "sync.test_projection", apply
+            )
+        )
+        cancelled.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await cancelled
+        await asyncio.sleep(0)
+        status = self.node.engine.projection_work_status("default")
+        self.assertTrue(status["active_residual_worker"])
+        self.assertEqual(status["deadline_overruns"], 1)
+        self.assertEqual(calls, 1)
+        release.set()
+        await follower
+        self.assertEqual(calls, 1)
 
 
 class _SyncNetwork:
