@@ -10,6 +10,14 @@
   const MAX_TOTAL_IMAGE_BYTES = 20 * 1024 * 1024;
   const TRANSCRIPT_PAGE_LIMIT = 250;
   const TRANSCRIPT_LATENCY_BUDGET_MS = 2000;
+  // Browser retention is deliberately smaller than durable history. These are
+  // public through memoryDiagnostics() so layout/memory regressions can assert
+  // the contract without sampling implementation-specific browser heaps.
+  const MAX_RETAINED_EVENTS = 2000;
+  const MAX_MESSAGE_ROWS = 600;
+  const MAX_ACTIVITY_ROWS = 300;
+  const MAX_PLANS = 50;
+  const MAX_STREAM_CHARS = 250000;
   const SESSION_ROUTE_TIMEOUT_MS = 4000;
   const LIVE_SNAPSHOT_TIMEOUT_MS = 3000;
   const LIVE_STATE_RETRY_MS = 3000;
@@ -177,6 +185,8 @@
       loadOlderLabel: root.querySelector("[data-acw-load-older-label]"),
       historySpinner: root.querySelector("[data-acw-history-spinner]"),
       loadOlderStatus: root.querySelector("[data-acw-load-older-status]"),
+      loadNewer: root.querySelector("[data-acw-load-newer]"),
+      loadNewerStatus: root.querySelector("[data-acw-load-newer-status]"),
       placeholder: root.querySelector("[data-acw-placeholder]"),
       form: root.querySelector("[data-acw-form]"),
       input: root.querySelector("[data-acw-input]"),
@@ -255,7 +265,12 @@
     this.loadingOlder = false;
     this.olderAbortController = null;
     this.olderError = "";
+    this.hasNewer = false;
+    this.newerCursor = null;
+    this.newerError = "";
+    this.loadingNewer = false;
     this.streaming = {};
+    this.messageRowCount = 0;
     this.toolTimers = {};
     this.currentActivity = null;
     this.activityStreams = {};
@@ -315,6 +330,11 @@
     if (this.els.loadOlder) {
       this.els.loadOlder.addEventListener("click", function () {
         self.loadOlderTranscript();
+      });
+    }
+    if (this.els.loadNewer) {
+      this.els.loadNewer.addEventListener("click", function () {
+        self.loadNewerTranscript();
       });
     }
     if (this.els.form) {
@@ -1445,6 +1465,9 @@
       this.olderCursor = snap.transcript_page && (
         snap.transcript_page.next_before_seq || snap.transcript_page.oldest_seq
       );
+      this.hasNewer = !!(snap.transcript_page && snap.transcript_page.has_newer);
+      this.newerCursor = snap.transcript_page && snap.transcript_page.newest_seq;
+      this.newerError = "";
       this.olderError = "";
       this.renderTranscript(snap.transcript || [], { scrollBottom: true });
     }
@@ -1508,6 +1531,95 @@
     }
   };
 
+  AgentChatWidget.prototype.updateNewerControl = function () {
+    if (!this.els || !this.els.loadNewer) return;
+    this.els.loadNewer.hidden = !this.hasNewer && !this.newerError;
+    this.els.loadNewer.disabled = this.loadingNewer;
+    this.els.loadNewer.textContent = this.loadingNewer
+      ? "Loading…"
+      : this.newerError ? "Retry loading newer messages" : "Load newer messages";
+    this.els.loadNewer.setAttribute("aria-busy", this.loadingNewer ? "true" : "false");
+    if (this.els.loadNewerStatus) {
+      this.els.loadNewerStatus.hidden = !this.newerError;
+      this.els.loadNewerStatus.textContent = this.newerError;
+    }
+  };
+
+  AgentChatWidget.prototype._boundedEvents = function (events, keepOldest) {
+    if (events.length <= MAX_RETAINED_EVENTS) return events;
+    if (keepOldest) {
+      this.hasNewer = true;
+      return events.slice(0, MAX_RETAINED_EVENTS);
+    }
+    this.hasOlder = true;
+    return events.slice(events.length - MAX_RETAINED_EVENTS);
+  };
+
+  AgentChatWidget.prototype._rebuildSeenEvents = function () {
+    const self = this;
+    this.seenEvents = {};
+    this.transcriptEvents.forEach(function (event) {
+      const key = self._eventKey(event);
+      if (key) self.seenEvents[key] = true;
+    });
+  };
+
+  AgentChatWidget.prototype._pruneMessageRows = function (keepOldest) {
+    if (
+      !this.els || !this.els.messages ||
+      typeof this.els.messages.querySelectorAll !== "function"
+    ) return;
+    if (this.messageRowCount != null && this.messageRowCount <= MAX_MESSAGE_ROWS) return;
+    let rows = Array.from(this.els.messages.querySelectorAll(".acw-msg"));
+    const oldHeight = this.els.messages.scrollHeight;
+    const oldTop = this.els.messages.scrollTop;
+    const activeRows = {};
+    Object.keys(this.streaming).forEach(function (key) {
+      const row = this.streaming[key] && this.streaming[key].row;
+      if (row) activeRows[key] = row;
+    }, this);
+    while (rows.length > MAX_MESSAGE_ROWS) {
+      const candidates = keepOldest ? rows.slice().reverse() : rows;
+      const row = candidates.find(function (candidate) {
+        return Object.keys(activeRows).every(function (key) { return activeRows[key] !== candidate; });
+      });
+      if (!row) break;
+      row.remove();
+      rows = rows.filter(function (candidate) { return candidate !== row; });
+    }
+    this.messageRowCount = rows.length;
+    if (!keepOldest) {
+      this.els.messages.scrollTop = Math.max(
+        0,
+        oldTop - Math.max(0, oldHeight - this.els.messages.scrollHeight)
+      );
+    }
+  };
+
+  AgentChatWidget.prototype.memoryDiagnostics = function () {
+    const messageRows = this.els && this.els.messages
+      ? this.els.messages.querySelectorAll(".acw-msg").length : 0;
+    const activityRows = this.els && this.els.toolActivity
+      ? this.els.toolActivity.querySelectorAll(".acw-tool,.acw-progress-update").length : 0;
+    return {
+      retainedEvents: this.transcriptEvents.length,
+      dedupeKeys: Object.keys(this.seenEvents).length,
+      messageRows: messageRows,
+      activityRows: activityRows,
+      streams: Object.keys(this.streaming).length,
+      activityStreams: Object.keys(this.activityStreams).length,
+      toolTimers: Object.keys(this.toolTimers).length,
+      plans: this.plans.length,
+      bounds: {
+        retainedEvents: MAX_RETAINED_EVENTS,
+        messageRows: MAX_MESSAGE_ROWS,
+        activityRows: MAX_ACTIVITY_ROWS,
+        plans: MAX_PLANS,
+        streamChars: MAX_STREAM_CHARS,
+      },
+    };
+  };
+
   AgentChatWidget.prototype.prependTranscript = function (events) {
     const self = this;
     const page = [];
@@ -1531,7 +1643,9 @@
     const anchor = existingChildren.find(function (child) {
       return !child.hasAttribute("data-acw-placeholder") &&
         !child.hasAttribute("data-acw-load-older") &&
-        !child.hasAttribute("data-acw-load-older-status");
+        !child.hasAttribute("data-acw-load-older-status") &&
+        !child.hasAttribute("data-acw-load-newer") &&
+        !child.hasAttribute("data-acw-load-newer-status");
     }) || null;
     page.forEach(function (event) { self.handleEvent(event, true, false); });
     const inserted = Array.from(this.els.messages.children).filter(function (child) {
@@ -1541,9 +1655,11 @@
     inserted.forEach(function (child) { fragment.appendChild(child); });
     if (anchor) this.els.messages.insertBefore(fragment, anchor);
     else this.els.messages.appendChild(fragment);
-    this.transcriptEvents = page.concat(this.transcriptEvents).sort(function (a, b) {
+    this.transcriptEvents = this._boundedEvents(page.concat(this.transcriptEvents).sort(function (a, b) {
       return (a.seq || 0) - (b.seq || 0);
-    });
+    }), true);
+    this._rebuildSeenEvents();
+    this._pruneMessageRows(true);
     this.clearPlaceholder();
     return page.length;
   };
@@ -1562,7 +1678,8 @@
       unique.push(normalized);
     });
     unique.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
-    this.transcriptEvents = unique;
+    this.transcriptEvents = this._boundedEvents(unique, !!options.keepOldest);
+    const retained = this.transcriptEvents;
     this.seenEvents = {};
     Object.keys(this.toolTimers).forEach(function (id) {
       const timer = self.toolTimers[id];
@@ -1575,19 +1692,25 @@
       if (
         !child.hasAttribute("data-acw-placeholder") &&
         !child.hasAttribute("data-acw-load-older") &&
-        !child.hasAttribute("data-acw-load-older-status")
+        !child.hasAttribute("data-acw-load-older-status") &&
+        !child.hasAttribute("data-acw-load-newer") &&
+        !child.hasAttribute("data-acw-load-newer-status")
       ) child.remove();
     });
+    this.messageRowCount = 0;
     this.streaming = {};
     this.updateOlderControl();
-    if (!unique.length) {
+    this.updateNewerControl();
+    if (!retained.length) {
       this.setPlaceholder("Send a message to the agent.");
       return;
     }
     this.clearPlaceholder();
-    unique.forEach(function (event) {
+    retained.forEach(function (event) {
       self.handleEvent(event, true, false);
     });
+    this._rebuildSeenEvents();
+    this._pruneMessageRows(!!options.keepOldest);
     if (options.scrollBottom) this.scrollToBottom();
   };
 
@@ -1598,6 +1721,8 @@
     }, 0);
     if (!oldest) return;
     const self = this;
+    const requestSessionId = this.sessionId;
+    const requestGeneration = this.subscriptionGeneration;
     const requestedSession = this.sessionId;
     const requestedApiBase = this.apiBase;
     const controller = new AbortController();
@@ -1605,7 +1730,7 @@
     const requestStarted = performance.now();
     const status = this.els.status && this.els.status.dataset.state;
     const wasPrompting = this.prompting;
-    const startedAt = this.turnStartedAt && this.turnStartedAt.toISOString();
+    const startedAt = this.turnStartedAt && new Date(this.turnStartedAt).toISOString();
     this.loadingOlder = true;
     this.olderError = "";
     this.updateOlderControl();
@@ -1614,7 +1739,11 @@
       "?before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
       { signal: controller.signal }
     ).then(function (data) {
-      if (controller.signal.aborted || self.sessionId !== requestedSession || self.apiBase !== requestedApiBase) return;
+      if (
+        self.destroyed || controller.signal.aborted ||
+        self.sessionId !== requestSessionId || self.sessionId !== requestedSession ||
+        self.subscriptionGeneration !== requestGeneration || self.apiBase !== requestedApiBase
+      ) return;
       const pageEvents = data && data.events || [];
       self.hasOlder = !!(data && data.page && data.page.has_older);
       self.olderCursor = data && data.page && (
@@ -1627,6 +1756,9 @@
       const renderStarted = performance.now();
       const insertedCount = self.prependTranscript(pageEvents);
       const renderMs = performance.now() - renderStarted;
+      self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
+        return event.seq && event.seq > result ? event.seq : result;
+      }, 0) || null;
       self.setTurnActive(wasPrompting, startedAt);
       if (status) self.setStatus(status);
       self.els.messages.scrollTop = anchoredScrollTop(
@@ -1648,13 +1780,60 @@
       }
     }).catch(function (err) {
       if (err && err.name === "AbortError") return;
-      if (self.sessionId !== requestedSession || self.apiBase !== requestedApiBase) return;
+      if (
+        self.destroyed || self.sessionId !== requestSessionId ||
+        self.sessionId !== requestedSession || self.subscriptionGeneration !== requestGeneration ||
+        self.apiBase !== requestedApiBase
+      ) return;
       self.olderError = "Could not load older messages: " + err.message;
     }).finally(function () {
       if (self.olderAbortController !== controller) return;
       self.olderAbortController = null;
+      if (
+        self.destroyed || self.sessionId !== requestSessionId ||
+        self.subscriptionGeneration !== requestGeneration
+      ) return;
       self.loadingOlder = false;
       self.updateOlderControl();
+    });
+  };
+
+  AgentChatWidget.prototype.loadNewerTranscript = function () {
+    if (this.loadingNewer || (!this.hasNewer && !this.newerError) || !this.sessionId || !this.els.messages) return;
+    const newest = this.newerCursor || this.transcriptEvents.reduce(function (result, event) {
+      return event.seq && event.seq > result ? event.seq : result;
+    }, 0);
+    if (!newest) return;
+    const self = this;
+    const requestSessionId = this.sessionId;
+    const requestGeneration = this.subscriptionGeneration;
+    const oldHeight = this.els.messages.scrollHeight;
+    const oldTop = this.els.messages.scrollTop;
+    this.loadingNewer = true;
+    this.newerError = "";
+    this.updateNewerControl();
+    this.api(
+      "/history/" + encodeURIComponent(this.sessionId) +
+      "?after_seq=" + newest + "&limit=" + TRANSCRIPT_PAGE_LIMIT
+    ).then(function (data) {
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      const pageEvents = data && data.events || [];
+      self.hasNewer = !!(data && data.page && data.page.has_newer);
+      self.renderTranscript(self.transcriptEvents.concat(pageEvents), { scrollBottom: false });
+      self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
+        return event.seq && event.seq > result ? event.seq : result;
+      }, 0) || null;
+      self.olderCursor = self.transcriptEvents.reduce(function (result, event) {
+        return event.seq && (!result || event.seq < result) ? event.seq : result;
+      }, 0) || null;
+      self.els.messages.scrollTop = Math.max(0, oldTop - Math.max(0, oldHeight - self.els.messages.scrollHeight));
+    }).catch(function (err) {
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      self.newerError = "Could not load newer messages: " + err.message;
+    }).finally(function () {
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      self.loadingNewer = false;
+      self.updateNewerControl();
     });
   };
 
@@ -1814,22 +1993,47 @@
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     this.liveStateRetryId = null;
     Object.keys(this.toolTimers).forEach(function (key) {
-      clearTimeout(this.toolTimers[key]);
+      const timer = this.toolTimers[key];
+      if (timer && timer.interval) clearInterval(timer.interval);
     }, this);
     this.toolTimers = {};
+    this.clearPendingImages();
+    this.transcriptEvents = [];
+    this.seenEvents = {};
+    this.streaming = {};
+    this.resetArtifacts();
+    if (this.els.messages) {
+      Array.from(this.els.messages.querySelectorAll(".acw-msg")).forEach(function (row) { row.remove(); });
+    }
     if (this.root && this.root._acw === this) this.root._acw = null;
   };
 
   AgentChatWidget.prototype.handleEvent = function (event, replay, record) {
     if (!event) return;
     event = this._normalizeEvent(event);
+    const seq = event.seq || 0;
+    // Retired dedupe keys are safe to discard because a live transport must
+    // never apply a sequence at or behind the high-water mark again.
+    if (!replay && seq && seq <= this.lastSeq) return;
     const eventKey = this._eventKey(event);
     if (eventKey && this.seenEvents[eventKey]) return;
     if (eventKey) this.seenEvents[eventKey] = true;
-    if (record !== false) this.transcriptEvents.push(event);
+    if (record !== false) {
+      this.transcriptEvents.push(event);
+      if (this.transcriptEvents.length > MAX_RETAINED_EVENTS) {
+        // When the user is browsing an older durable page, retain that window
+        // and let forward paging retrieve live arrivals from durable storage.
+        // Active stream/tool UI state is maintained independently below.
+        const evicted = this.hasNewer
+          ? this.transcriptEvents.pop()
+          : this.transcriptEvents.shift();
+        const evictedKey = this._eventKey(evicted);
+        if (evictedKey) delete this.seenEvents[evictedKey];
+        this.hasOlder = true;
+      }
+    }
     const shouldFollow = !replay && this.isNearBottom();
     const self = this;
-    const seq = event.seq || 0;
     if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
     const type = event.type || event.event_type;
     const payload = event.payload || {};
@@ -1966,6 +2170,7 @@
       default:
         break;
     }
+    this._pruneMessageRows(!!this.hasNewer);
     if (!replay && shouldFollow) this.scrollToBottom();
   };
 
@@ -2012,6 +2217,7 @@
       row.appendChild(time);
     }
     this.els.messages.appendChild(row);
+    this.messageRowCount = (this.messageRowCount || 0) + 1;
     return { row: row, bubble: bubble };
   };
 
@@ -2144,6 +2350,10 @@
     }
     const next = chunk || "";
     stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (stream.text.length > MAX_STREAM_CHARS) {
+      stream.text = "[… earlier streamed text is available in durable history …]\n" +
+        stream.text.slice(-MAX_STREAM_CHARS);
+    }
     stream.bubble.dataset.markdown = stream.text;
     this.renderMarkdownBubble(stream.bubble);
   };
@@ -2200,8 +2410,32 @@
     }
     const next = chunk || "";
     stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (stream.text.length > MAX_STREAM_CHARS) {
+      stream.text = "[… earlier progress is available in durable history …]\n" +
+        stream.text.slice(-MAX_STREAM_CHARS);
+    }
     stream.el.textContent = stream.text;
+    this._pruneActivityRows();
     this.followToolActivity(shouldFollow);
+  };
+
+  AgentChatWidget.prototype._pruneActivityRows = function () {
+    if (!this.els.toolActivity || this.activityCount == null || this.activityCount <= MAX_ACTIVITY_ROWS) return;
+    let rows = Array.from(this.els.toolActivity.querySelectorAll(".acw-tool,.acw-progress-update"));
+    while (rows.length > MAX_ACTIVITY_ROWS) {
+      const stale = rows.find(function (row) {
+        return !row.dataset.toolId || !this.activeToolIds[row.dataset.toolId];
+      }, this);
+      if (!stale) break;
+      const staleId = stale.dataset.toolId;
+      if (staleId && this.toolTimers[staleId]) {
+        if (this.toolTimers[staleId].interval) clearInterval(this.toolTimers[staleId].interval);
+        delete this.toolTimers[staleId];
+      }
+      stale.remove();
+      rows = rows.filter(function (row) { return row !== stale; });
+    }
+    this.activityCount = rows.length;
   };
 
   AgentChatWidget.prototype.finalizeActivity = function () {
@@ -2244,6 +2478,7 @@
       tick();
       this.toolTimers[id].interval = setInterval(tick, 500);
     }
+    this._pruneActivityRows();
     const title = el.querySelector(".acw-tool-title");
     const status = el.querySelector(".acw-tool-status");
     if (title) title.textContent = payload.title || payload.kind || "Tool";
@@ -2320,6 +2555,13 @@
     if (isNew) {
       index = this.plans.length;
       this.plans.push({ key: planKey });
+      if (this.plans.length > MAX_PLANS) {
+        this.plans.shift();
+        index -= 1;
+        if (this.els.planList && this.els.planList.firstElementChild) {
+          this.els.planList.firstElementChild.remove();
+        }
+      }
     }
     this.plans[index] = {
       key: planKey,
@@ -2334,7 +2576,9 @@
       button.type = "button";
       button.className = "ghost";
       button.dataset.planKey = planKey;
-      button.addEventListener("click", function () { self.selectPlan(index); });
+      button.addEventListener("click", function () {
+        self.selectPlan(self.plans.findIndex(function (plan) { return plan.key === planKey; }));
+      });
       item.appendChild(button);
       this.els.planList.appendChild(item);
     }
@@ -2703,7 +2947,12 @@
     this.olderCursor = null;
     this.loadingOlder = false;
     this.olderError = "";
+    this.hasNewer = false;
+    this.newerCursor = null;
+    this.loadingNewer = false;
+    this.newerError = "";
     this.updateOlderControl();
+    this.updateNewerControl();
     this.streaming = {};
     this.lastSnapshot = null;
     this.renderTranscript([], { scrollBottom: false });
@@ -2735,9 +2984,15 @@
     this.olderCursor = null;
     this.loadingOlder = false;
     this.olderError = "";
+    this.hasNewer = false;
+    this.newerCursor = null;
+    this.loadingNewer = false;
+    this.newerError = "";
     this.updateOlderControl();
+    this.updateNewerControl();
     this.streaming = {};
     this.lastSnapshot = null;
+    this.renderTranscript([], { scrollBottom: false });
     this.setTurnActive(false);
     this.setStatus("offline");
     this.setPlaceholder("Select or start a remote session.");

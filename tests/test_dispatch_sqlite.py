@@ -544,7 +544,7 @@ def test_commit_kill_never_false_acknowledges_or_partially_persists(
         assert persisted is not None
         assert len(persisted.progress_events) == int(committed)
         result = resumed.ingest_progress(event)
-        assert result.status == "accepted"
+        assert result.status == ("duplicate" if committed else "accepted")
         assert len(resumed.get(record.dispatch_id).progress_events) == 1
 
 
@@ -586,8 +586,8 @@ def test_duplicate_conflict_and_late_semantics_survive_restart() -> None:
         assert store.ingest_progress(conflict).status == "conflict"
 
         resumed = DispatchStore(root)
-        assert resumed.ingest_progress(third).status == "accepted"
-        assert resumed.ingest_progress(conflict).status == "conflict"
+        assert resumed.ingest_progress(third).status == "duplicate"
+        assert resumed.ingest_progress(conflict).status == "duplicate"
         persisted = resumed.get(record.dispatch_id)
         assert [item.sequence for item in persisted.progress_events] == [1, 3]
         assert persisted.progress_conflicts == 1
@@ -619,7 +619,9 @@ def test_exact_accepted_receipts_and_payload_conflicts_survive_restart(
 
         accepted = ingest(payload)
         assert accepted.accepted is True
-        assert ingest(payload) == accepted
+        duplicate = ingest(payload)
+        assert duplicate.status == "duplicate"
+        assert duplicate.replay_of_status == accepted.status
         changed = payload.model_copy(deep=True)
         changed.summary = "same key, different canonical payload"
         with pytest.raises(DispatchReceiptConflict, match="different payload"):
@@ -632,7 +634,9 @@ def test_exact_accepted_receipts_and_payload_conflicts_survive_restart(
             if mutation_kind == "heartbeat"
             else resumed.ingest_progress
         )
-        assert resumed_ingest(payload) == accepted
+        replay = resumed_ingest(payload)
+        assert replay.status == "duplicate"
+        assert replay.replay_of_status == accepted.status
         with pytest.raises(DispatchReceiptConflict, match="different payload"):
             resumed_ingest(changed)
 
@@ -671,7 +675,9 @@ def test_exact_rejected_receipt_and_payload_conflict_survive_restart() -> None:
         result = store.ingest_progress(rejected)
         assert result.accepted is False
         assert result.status == "conflict"
-        assert store.ingest_progress(rejected) == result
+        duplicate = store.ingest_progress(rejected)
+        assert duplicate.status == "duplicate"
+        assert duplicate.replay_of_status == result.status
         changed = rejected.model_copy(deep=True)
         changed.summary = "changed rejected payload"
         with pytest.raises(DispatchReceiptConflict, match="different payload"):
@@ -679,7 +685,9 @@ def test_exact_rejected_receipt_and_payload_conflict_survive_restart() -> None:
         store.close()
 
         resumed = DispatchStore(root)
-        assert resumed.ingest_progress(rejected) == result
+        replay = resumed.ingest_progress(rejected)
+        assert replay.status == "duplicate"
+        assert replay.replay_of_status == result.status
         with pytest.raises(DispatchReceiptConflict, match="different payload"):
             resumed.ingest_progress(changed)
 
@@ -919,7 +927,8 @@ def test_retention_keeps_operator_final_and_active_dispatch_evidence() -> None:
 
         assert store.compact(now=datetime.now(UTC)) == {"events": 0, "receipts": 0}
         persisted = store.get(record.dispatch_id)
-        assert [item.sequence for item in persisted.progress_events] == [1, 2, 3]
+        assert [item.sequence for item in persisted.progress_events] == [2, 3]
+        assert persisted.progress_compacted_ranges == [[1, 1]]
 
         for event in persisted.progress_events:
             store.mark_progress_delivered(record.dispatch_id, event.idempotency_key)
@@ -948,7 +957,7 @@ def test_retention_keeps_operator_final_and_active_dispatch_evidence() -> None:
         store.put(persisted)
 
         removed = store.compact(now=datetime.now(UTC) + timedelta(days=60))
-        assert removed == {"events": 1, "receipts": 1}
+        assert removed == {"events": 0, "receipts": 1}
         retained = store.get(record.dispatch_id).progress_events
         assert [item.sequence for item in retained] == [2, 3]
 

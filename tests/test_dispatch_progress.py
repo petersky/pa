@@ -116,7 +116,9 @@ class ProgressStoreTests(unittest.TestCase):
 
             self.assertEqual(later.status, "accepted")
             self.assertEqual(late.status, "late")
-            self.assertEqual(duplicate, later)
+            self.assertEqual(duplicate.status, "duplicate")
+            self.assertEqual(duplicate.replay_of_status, later.status)
+            self.assertEqual(duplicate.sequence, later.sequence)
             self.assertEqual(conflict.status, "conflict")
             self.assertFalse(conflict.accepted)
 
@@ -167,6 +169,33 @@ class ProgressStoreTests(unittest.TestCase):
             public = persisted.public_dict()["progress"]
             self.assertEqual(public["freshness"]["state"], "live")
             self.assertEqual(public["heartbeat"]["summary"], "Tests active")
+            self.assertFalse(public["sequence_gap"])
+            self.assertEqual(public["accepted_ranges"], [[1, 2]])
+            self.assertEqual(public["compacted_ranges"], [[1, 1]])
+
+    def test_true_gap_reports_exact_range_without_confusing_compaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            store.put(record())
+            store.ingest_progress(checkpoint(1))
+            store.ingest_heartbeat(
+                DispatchProgressHeartbeatV1(
+                    card_id=CARD,
+                    dispatch_id=DISPATCH,
+                    acp_session_id=SESSION,
+                    originating_instance_id=TARGET,
+                    authority_instance_id=AUTHORITY,
+                    authority_version=VERSION,
+                    sequence=3,
+                    idempotency_key="heartbeat-3",
+                    phase=ProgressPhase.IMPLEMENTING,
+                    summary="Agent active",
+                )
+            )
+            diagnostic = store.get(DISPATCH).public_dict()["progress"]
+            self.assertTrue(diagnostic["sequence_gap"])
+            self.assertEqual(diagnostic["missing_ranges"], [[2, 2]])
+            self.assertEqual(diagnostic["highest_accepted_sequence"], 3)
 
     def test_history_and_payloads_are_bounded_and_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,6 +323,43 @@ class ProgressStoreTests(unittest.TestCase):
 
 
 class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fifteen_minute_tool_trace_stays_concise_phase_stable_and_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = DispatchStore(Path(tmp))
+            store.put(record())
+            service = ProgressService(store, instance_id=TARGET, token="")
+            await service.explicit(
+                DISPATCH,
+                ExplicitProgressCheckpointV1(
+                    phase=ProgressPhase.IMPLEMENTING,
+                    summary="Implementing compaction-aware diagnostics",
+                    idempotency_key="milestone-implementing",
+                ),
+            )
+            # One update per simulated second for fifteen minutes. Edit/inspection
+            # lifecycle chatter is replaceable and cannot regress the milestone.
+            for index in range(900):
+                await service.observe(
+                    SESSION,
+                    {
+                        "type": "tool_call_update",
+                        "tool_call_id": f"edit-{index % 12}",
+                        "title": "Edit dispatch ledger",
+                        "kind": "apply_patch",
+                        "status": "completed" if index % 2 else "running",
+                    },
+                )
+
+            persisted = store.get(DISPATCH)
+            assert persisted is not None
+            public = persisted.public_dict()["progress"]
+            self.assertEqual(len(persisted.progress_events), 1)
+            self.assertEqual(persisted.latest_progress.phase, ProgressPhase.IMPLEMENTING)
+            self.assertEqual(persisted.progress_heartbeat.phase, ProgressPhase.IMPLEMENTING)
+            self.assertLessEqual(len(persisted.progress_events), MAX_PROGRESS_EVENTS)
+            self.assertFalse(public["sequence_gap"])
+            self.assertGreater(public["highest_accepted_sequence"], 1)
+
     async def test_repeated_tool_updates_coalesce_before_durable_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = DispatchStore(Path(tmp))
@@ -312,9 +378,9 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
 
             persisted = store.get(DISPATCH)
             assert persisted is not None
-            self.assertEqual(len(persisted.progress_events), 1)
+            self.assertEqual(len(persisted.progress_events), 0)
             self.assertEqual(
-                persisted.progress_events[0].summary, "Run focused tests · running"
+                persisted.progress_heartbeat.summary, "Run focused tests · running"
             )
             self.assertLessEqual(persisted.progress_next_sequence, 3)
             self.assertEqual(
@@ -342,7 +408,7 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
             assert persisted is not None
             self.assertEqual(
                 [event.tool_details[0].status for event in persisted.progress_events],
-                ["running", "completed"],
+                ["completed"],
             )
 
     async def test_repeated_malformed_updates_log_once_and_do_not_escape(self) -> None:
@@ -389,17 +455,11 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
 
             persisted = store.get(DISPATCH)
             assert persisted is not None
-            self.assertEqual(len(persisted.progress_events), 2)
-            tool_event = persisted.progress_events[0]
-            self.assertLessEqual(len(tool_event.summary), 500)
-            self.assertLessEqual(len(tool_event.tool_details[0].title), 240)
-            self.assertLessEqual(
-                len(tool_event.validations[0].command), MAX_VALIDATION_COMMAND
-            )
-            self.assertLessEqual(len(tool_event.validations[0].summary or ""), 240)
+            self.assertEqual(len(persisted.progress_events), 1)
+            self.assertLessEqual(len(persisted.progress_heartbeat.summary), 500)
             self.assertIn(
                 "Unrelated progress",
-                persisted.progress_events[1].summary,
+                persisted.progress_events[0].summary,
             )
 
     async def test_visible_commentary_and_allowlisted_tool_metadata_only(self) -> None:
@@ -451,16 +511,9 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("hidden password", serialized)
             self.assertNotIn("unrestricted output", serialized)
             self.assertNotIn("do-not-record", serialized)
-            self.assertEqual(persisted.progress_events[0].phase, ProgressPhase.TESTING)
+            self.assertEqual(len(persisted.progress_events), 1)
             self.assertEqual(
-                persisted.progress_events[0].validations[0].status, "running"
-            )
-            self.assertEqual(
-                persisted.progress_events[0].validations[0].command,
-                "Run pytest token=[REDACTED]",
-            )
-            self.assertEqual(
-                persisted.progress_events[-1].phase, ProgressPhase.IMPLEMENTING
+                persisted.progress_events[0].phase, ProgressPhase.IMPLEMENTING
             )
 
     async def test_explicit_checkpoint_builds_structured_final_report(self) -> None:
