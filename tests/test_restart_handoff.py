@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from pa.config import Settings
-from pa.domain.models import AgentSession, CardCreate
+from pa.domain.models import AgentSession, CardCreate, RestartHandoff
 from pa.domain.projection import CardProjection
 from pa.instance.agent_session import AgentSessionManager
+from pa.modules.agent_chat import list_restart_handoffs
 
 
 def test_execution_binding_survives_primary_card_change(tmp_path: Path) -> None:
@@ -208,12 +211,106 @@ def test_restart_handoff_idempotency_is_content_fenced(tmp_path: Path) -> None:
     assert duplicate.id == first.id
     assert duplicate.continuation_prompt_id == first.continuation_prompt_id
     assert len(store.list_restart_handoffs(session_id="s")) == 1
+    with pytest.raises(ValueError, match="nonterminal restart handoff"):
+        asyncio.run(
+            manager.request_restart_handoff(
+                session_id="s", continuation_prompt="Also continue", idempotency_key="other"
+            )
+        )
+    assert len(manager._restart_handoff_tasks) == 1
     with pytest.raises(ValueError, match="different content"):
         asyncio.run(
             manager.request_restart_handoff(
                 session_id="s", continuation_prompt="Different", idempotency_key="stable"
             )
         )
+
+
+def test_restart_handoff_serializes_nonterminal_requests_per_session(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    store.save_session(AgentSession(id="s", agent_name="codex"))
+
+    def create(key: str) -> RestartHandoff:
+        return store.create_restart_handoff(
+            RestartHandoff(
+                session_id="s",
+                idempotency_key=key,
+                continuation_prompt=f"continue {key}",
+                continuation_prompt_id=f"prompt-{key}",
+            )
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda key: _capture_handoff(create, key), ("a", "b")))
+
+    created = [value for value in outcomes if isinstance(value, RestartHandoff)]
+    rejected = [value for value in outcomes if isinstance(value, ValueError)]
+    assert len(created) == 1
+    assert len(rejected) == 1
+    assert "nonterminal restart handoff" in str(rejected[0])
+    assert create(created[0].idempotency_key).id == created[0].id
+
+    store.update_restart_handoff(created[0].id, status="continuation_delivered")
+    assert create("later").idempotency_key == "later"
+    store.update_restart_handoff(
+        store.list_restart_handoffs(session_id="s")[-1].id,
+        status="failed",
+    )
+    assert create("after-failure").idempotency_key == "after-failure"
+
+
+def _capture_handoff(call, key: str) -> RestartHandoff | ValueError:
+    try:
+        return call(key)
+    except ValueError as exc:
+        return exc
+
+
+def test_restart_handoff_listing_requires_session_owner_or_admin(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    store.save_session(
+        AgentSession(id="private", agent_name="codex", principal_id="user:owner")
+    )
+    store.create_restart_handoff(
+        RestartHandoff(
+            session_id="private",
+            idempotency_key="secret",
+            continuation_prompt="agent-authored private continuation",
+            continuation_prompt_id="private-prompt",
+        )
+    )
+    manager = SimpleNamespace(store=store)
+    request = MagicMock()
+    request.app.state.ctx.settings.auth_required = True
+    request.state.user.role = "member"
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:other"),
+        pytest.raises(HTTPException) as denied,
+    ):
+        list_restart_handoffs(request, "private")
+    assert denied.value.status_code == 403
+
+    request.state.user.role = "admin"
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:other"),
+    ):
+        admin_result = list_restart_handoffs(request, "private")
+    assert admin_result["handoffs"][0]["continuation_prompt"] == (
+        "agent-authored private continuation"
+    )
+
+    request.state.user.role = "member"
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:owner"),
+    ):
+        owner_result = list_restart_handoffs(request, "private")
+    assert owner_result == admin_result
 
 
 def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) -> None:

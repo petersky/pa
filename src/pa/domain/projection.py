@@ -4626,7 +4626,7 @@ class CardProjection:
         return [self._row_to_session(row) for row in rows]
 
     def create_restart_handoff(self, handoff: RestartHandoff) -> RestartHandoff:
-        """Insert once; an idempotent retry returns the original receipt."""
+        """Insert once and serialize each session's nonterminal restart lifecycle."""
         with self._mutation_lock, self._conn() as conn:
             existing = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE session_id=? AND idempotency_key=?",
@@ -4639,6 +4639,17 @@ class CardProjection:
                         "Restart handoff idempotency key was reused with different content"
                     )
                 return prior
+            active = conn.execute(
+                """SELECT * FROM agent_restart_handoffs
+                   WHERE session_id=? AND status NOT IN ('failed', 'continuation_delivered')
+                   ORDER BY created_at, id LIMIT 1""",
+                (handoff.session_id,),
+            ).fetchone()
+            if active:
+                raise ValueError(
+                    "Session already has a nonterminal restart handoff; retry with "
+                    "the original idempotency key or wait for it to finish"
+                )
             conn.execute(
                 """INSERT INTO agent_restart_handoffs
                    (id, session_id, idempotency_key, continuation_prompt,

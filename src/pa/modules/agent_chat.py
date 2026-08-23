@@ -1129,8 +1129,17 @@ async def request_restart_handoff(
 @router.get("/sessions/{session_id}/restart-handoffs")
 def list_restart_handoffs(request: Request, session_id: str) -> dict:
     mgr = _require_session_traffic_ready(request)
-    if not mgr.store.get_session(session_id):
+    session = mgr.store.get_session(session_id)
+    if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
     return {
         "handoffs": [
             item.model_dump(mode="json")
