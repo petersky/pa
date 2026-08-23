@@ -504,6 +504,72 @@ class LocalMcpApiTests(unittest.TestCase):
             sent_key = request.call_args.kwargs["headers"]["Idempotency-Key"]
             self.assertEqual(raised.exception.idempotency_key, sent_key)
 
+    def test_http2_cancel_retries_mcp_read_with_same_correlation_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            success = httpx.Response(
+                200,
+                json={"status": "converged"},
+                request=httpx.Request("GET", "http://127.0.0.1/api/sync/status"),
+            )
+            cancelled = httpx.RemoteProtocolError(
+                "partial response body: http/2 stream closed with error code CANCEL (0x8)"
+            )
+            with patch("httpx.request", side_effect=[cancelled, success]) as request:
+                result = request_local_pa(settings, "GET", "/api/sync/status")
+
+            self.assertEqual(result["status"], "converged")
+            self.assertEqual(request.call_count, 2)
+            correlations = [
+                call.kwargs["headers"]["X-Request-ID"] for call in request.call_args_list
+            ]
+            self.assertEqual(len(set(correlations)), 1)
+
+    def test_http2_cancel_exhaustion_names_read_retry_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            cancelled = httpx.RemoteProtocolError(
+                "response headers: http/2 stream closed with error code CANCEL (0x8)"
+            )
+            with (
+                patch("httpx.request", side_effect=cancelled),
+                self.assertRaises(LocalPAServerUnavailable) as raised,
+            ):
+                request_local_pa(settings, "GET", "/api/sync/status")
+            self.assertIn("CANCEL (0x8)", str(raised.exception))
+            self.assertIn("operation=GET", str(raised.exception))
+            self.assertIn("safe_to_retry=True", str(raised.exception))
+            self.assertIn("correlation_id=", str(raised.exception))
+
+    def test_http2_cancel_retries_keyed_mcp_write_without_changing_key(self) -> None:
+        phases = ("request body", "response headers", "partial response body")
+        for phase in phases:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as tmp:
+                settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+                success = httpx.Response(
+                    200,
+                    json={"effect_id": "one-durable-effect"},
+                    request=httpx.Request("POST", "http://127.0.0.1/api/cards"),
+                )
+                cancelled = httpx.RemoteProtocolError(
+                    f"{phase}: http/2 stream closed with error code CANCEL (0x8)"
+                )
+                with patch("httpx.request", side_effect=[cancelled, success]) as request:
+                    result = request_local_pa(
+                        settings,
+                        "POST",
+                        "/api/cards",
+                        json={"title": "once"},
+                        headers={"Idempotency-Key": "stable-mcp-write"},
+                    )
+
+                self.assertEqual(result["effect_id"], "one-durable-effect")
+                keys = [
+                    call.kwargs["headers"]["Idempotency-Key"]
+                    for call in request.call_args_list
+                ]
+                self.assertEqual(keys, ["stable-mcp-write", "stable-mcp-write"])
+
     def test_mutation_server_errors_are_unknown_without_noncommit_proof(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)

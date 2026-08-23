@@ -68,6 +68,10 @@ class QueuedPrompt(BaseModel):
     agent_env: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "api"
+    priority: int = Field(default=100, ge=0, le=1000)
+    turn_reason: str = "operator_input"
+    supersedes: list[str] = Field(default_factory=list)
+    publication_fence: bool = False
     prompt_audit: list[dict[str, Any]] = Field(default_factory=list)
     acceptance_result: str | None = None
 

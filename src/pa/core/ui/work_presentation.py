@@ -38,6 +38,7 @@ STARTING_DISPATCH_STATES = {
     "dispatching",
     "dispatched",
     "materialized",
+    "completion_pending",
 }
 TERMINAL_DISPATCH_STATES = {"completed", "acknowledged", "failed", "cancelled"}
 ACTIVE_SESSION_STATES = {"busy", "working", "prompting", "running", "starting"}
@@ -462,11 +463,7 @@ def present_work_item(
             external=bool(review_url),
         )
         action_explanation = None
-    elif (
-        lane == "done"
-        and state in {"failed", "cancelled"}
-        and not session_facts["active"]
-    ):
+    elif lane == "done" and not session_facts["active"]:
         group = "outcome"
         state_code = "completed"
         state_label = "Completed"
@@ -476,7 +473,7 @@ def present_work_item(
             or latest_summary
             or "Work completed."
         )
-        reason = "The card is Done; the linked dispatch did not finish autonomously."
+        reason = "The card is Done; linked execution state is historical."
         tone = "success"
         priority = 50
         action = _action("open_card", "Open card", href=card_href)
@@ -534,6 +531,16 @@ def present_work_item(
         attention_code = "retry_decision"
         action = _action("retry", "Retry", dispatch_id=dispatch_id)
         action_explanation = None
+    elif state in STARTING_DISPATCH_STATES:
+        group = "motion"
+        state_code = state
+        state_label = DISPATCH_LABELS.get(state, "Starting")
+        summary = latest_summary or state_label
+        reason = "The dispatch is progressing autonomously."
+        tone = "active"
+        priority = 80
+        action = _action("open_card", "Open card", href=card_href)
+        action_explanation = "No operator action needed; startup is in progress."
     elif freshness_state in STALE_PROGRESS_STATES and state in ACTIVE_DISPATCH_STATES:
         group = "attention"
         state_code = "progress_stale"
@@ -545,16 +552,6 @@ def present_work_item(
         attention_code = "stale_progress"
         action = _action("inspect", "Inspect progress", href=card_href)
         action_explanation = None
-    elif state in STARTING_DISPATCH_STATES:
-        group = "motion"
-        state_code = state
-        state_label = DISPATCH_LABELS.get(state, "Starting")
-        summary = latest_summary or state_label
-        reason = "The dispatch is progressing autonomously."
-        tone = "active"
-        priority = 80
-        action = _action("open_card", "Open card", href=card_href)
-        action_explanation = "No operator action needed; startup is in progress."
     elif state in ACTIVE_DISPATCH_STATES:
         group = "motion"
         state_code = "awaiting_turn" if session_facts["quiet"] else state

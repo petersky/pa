@@ -133,6 +133,10 @@ class PRSupervisorStore:
                     watch_id TEXT NOT NULL,
                     target_instance_id TEXT,
                     target_session_id TEXT,
+                    authorization_id TEXT,
+                    owner_instance_id TEXT,
+                    fence_token INTEGER,
+                    lease_version INTEGER,
                     state TEXT NOT NULL DEFAULT 'claimed',
                     detail TEXT,
                     created_at TEXT NOT NULL,
@@ -177,6 +181,22 @@ class PRSupervisorStore:
                 "CREATE INDEX IF NOT EXISTS idx_pr_watches_project_history "
                 "ON pr_watches(realm_id, project_id, updated_at DESC)"
             )
+            claim_columns = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(pr_dispatch_claims)"
+                ).fetchall()
+            }
+            for column, declaration in (
+                ("authorization_id", "TEXT"),
+                ("owner_instance_id", "TEXT"),
+                ("fence_token", "INTEGER"),
+                ("lease_version", "INTEGER"),
+            ):
+                if column not in claim_columns:
+                    conn.execute(
+                        f"ALTER TABLE pr_dispatch_claims ADD COLUMN {column} {declaration}"
+                    )
 
     def upsert_watch(self, watch: PRWatch, *, preserve_lease: bool = True) -> PRWatch:
         with self._conn(immediate=True) as conn:
@@ -1206,6 +1226,10 @@ class PRSupervisorStore:
         *,
         target_instance_id: str | None,
         target_session_id: str | None,
+        authorization_id: str | None = None,
+        owner_instance_id: str | None = None,
+        fence_token: int | None = None,
+        lease_version: int | None = None,
     ) -> bool:
         now = utcnow()
         with self._conn(immediate=True) as conn:
@@ -1218,6 +1242,7 @@ class PRSupervisorStore:
                     existing["watch_id"] == watch_id
                     and existing["target_instance_id"] == target_instance_id
                     and existing["target_session_id"] == target_session_id
+                    and existing["authorization_id"] == authorization_id
                 )
                 stale_claim = existing["state"] == "claimed" and datetime.fromisoformat(
                     existing["updated_at"]
@@ -1229,10 +1254,18 @@ class PRSupervisorStore:
                 conn.execute(
                     """
                     UPDATE pr_dispatch_claims
-                    SET state = 'claimed', detail = NULL, updated_at = ?
+                    SET state = 'claimed', detail = NULL,
+                        owner_instance_id = ?, fence_token = ?, lease_version = ?,
+                        updated_at = ?
                     WHERE event_key = ?
                     """,
-                    (now.isoformat(), event_key),
+                    (
+                        owner_instance_id,
+                        fence_token,
+                        lease_version,
+                        now.isoformat(),
+                        event_key,
+                    ),
                 )
                 return True
             try:
@@ -1240,14 +1273,19 @@ class PRSupervisorStore:
                     """
                     INSERT INTO pr_dispatch_claims (
                         event_key, watch_id, target_instance_id, target_session_id,
+                        authorization_id, owner_instance_id, fence_token, lease_version,
                         state, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, 'claimed', ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'claimed', ?, ?)
                     """,
                     (
                         event_key,
                         watch_id,
                         target_instance_id,
                         target_session_id,
+                        authorization_id,
+                        owner_instance_id,
+                        fence_token,
+                        lease_version,
                         now.isoformat(),
                         now.isoformat(),
                     ),
@@ -1256,15 +1294,32 @@ class PRSupervisorStore:
             except sqlite3.IntegrityError:
                 return False
 
-    def finish_dispatch(self, event_key: str, *, state: str, detail: str = "") -> None:
+    def finish_dispatch(
+        self,
+        event_key: str,
+        *,
+        state: str,
+        detail: str = "",
+        authorization_id: str | None = None,
+    ) -> bool:
         with self._conn() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 UPDATE pr_dispatch_claims
-                SET state = ?, detail = ?, updated_at = ? WHERE event_key = ?
+                SET state = ?, detail = ?, updated_at = ?
+                WHERE event_key = ? AND state = 'claimed'
+                  AND (authorization_id = ? OR (authorization_id IS NULL AND ? IS NULL))
                 """,
-                (state, detail[:2000], utcnow().isoformat(), event_key),
+                (
+                    state,
+                    detail[:2000],
+                    utcnow().isoformat(),
+                    event_key,
+                    authorization_id,
+                    authorization_id,
+                ),
             )
+            return cursor.rowcount == 1
 
     def list_dispatches(
         self, watch_id: str, *, limit: int = 100
@@ -1272,6 +1327,7 @@ class PRSupervisorStore:
         with self._conn() as conn:
             rows = conn.execute(
                 """SELECT event_key, watch_id, target_instance_id, target_session_id,
+                          authorization_id, owner_instance_id, fence_token, lease_version,
                           state, detail, created_at, updated_at
                    FROM pr_dispatch_claims WHERE watch_id = ?
                    ORDER BY created_at DESC LIMIT ?""",
