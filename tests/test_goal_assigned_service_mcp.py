@@ -179,6 +179,42 @@ def test_assigned_progress_tool_uses_only_the_bound_local_route() -> None:
     assert "dispatch_id" not in call.kwargs["json"]
 
 
+def test_assigned_restart_handoff_tool_uses_identity_free_bound_route() -> None:
+    delegate = FakeMcp()
+    restricted = ToolAllowlistProxy(delegate, ASSIGNED_SERVICE_TOOL_ALLOWLIST)
+    settings = SimpleNamespace()
+    local_api = MagicMock(return_value={"session_id": "session-bound"})
+    with (
+        patch.dict(
+            os.environ,
+            {
+                ASSIGNED_SERVICE_MODE_ENV: "1",
+                ASSIGNED_SERVICE_SESSION_ENV: "session-bound",
+            },
+            clear=True,
+        ),
+        patch("pa.mcp.local_api.request_local_pa", local_api),
+    ):
+        FleetModule().register_mcp(restricted, SimpleNamespace(settings=settings))
+        result = delegate.functions["request_agent_restart_handoff"](
+            continuation_prompt="continue exact assigned work",
+            idempotency_key="assigned-restart-once",
+        )
+
+    assert result == {"session_id": "session-bound"}
+    call = local_api.call_args
+    assert call.args == (
+        settings,
+        "POST",
+        "/api/goal-assigned-session/restart-handoff",
+    )
+    assert call.kwargs["json"] == {
+        "continuation_prompt": "continue exact assigned work",
+        "idempotency_key": "assigned-restart-once",
+    }
+    assert "session_id" not in call.kwargs["json"]
+
+
 def test_assigned_local_api_derives_exact_capability_without_owner_token() -> None:
     dispatch_id = "dispatch-bound"
     session_id = "session-bound"

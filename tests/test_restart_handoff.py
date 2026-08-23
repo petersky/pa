@@ -8,12 +8,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from typer.testing import CliRunner
 
+from pa.cli.main import app
 from pa.config import Settings
 from pa.domain.models import AgentSession, CardCreate, RestartHandoff
 from pa.domain.projection import CardProjection
-from pa.instance.agent_session import AgentSessionManager
-from pa.modules.agent_chat import list_restart_handoffs
+from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
+from pa.instance.quiesce import QueuedPrompt
+from pa.modules.agent_chat import (
+    RestartHandoffBody,
+    list_restart_handoffs,
+    request_restart_handoff as request_normal_restart_handoff,
+)
+from pa.modules.fleet import (
+    AssignedRestartHandoffBody,
+    request_assigned_restart_handoff,
+)
 
 
 def test_execution_binding_survives_primary_card_change(tmp_path: Path) -> None:
@@ -313,6 +324,117 @@ def test_restart_handoff_listing_requires_session_owner_or_admin(tmp_path: Path)
     assert owner_result == admin_result
 
 
+def test_managed_turn_cli_restart_requires_operator_emergency(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path)
+    runner = CliRunner()
+    managed_env = {"PA_BROWSER_SESSION_ID": "managed-session"}
+
+    with (
+        patch("pa.cli.main.get_settings", return_value=settings),
+        patch("pa.cli.service.restart") as restart_service,
+    ):
+        ordinary = runner.invoke(app, ["restart"], env=managed_env)
+        no_quiesce = runner.invoke(
+            app, ["restart", "--no-acp-quiesce"], env=managed_env
+        )
+    assert ordinary.exit_code == 2
+    assert no_quiesce.exit_code == 2
+    assert "Refusing synchronous restart" in ordinary.output
+    assert "operator emergency only" in no_quiesce.output
+    restart_service.assert_not_called()
+
+    with (
+        patch("pa.cli.main.get_settings", return_value=settings),
+        patch("pa.cli.service.restart") as restart_service,
+        patch("pa.instance.quiesce.request_skip_quiesce"),
+        patch("pa.cli.startup.print_service_ready"),
+    ):
+        override = runner.invoke(
+            app,
+            ["restart", "--no-acp-quiesce", "--operator-emergency"],
+            env=managed_env,
+        )
+    assert override.exit_code == 0
+    restart_service.assert_called_once()
+
+
+def test_authenticated_normal_restart_handoff_post_and_get_ownership(
+    tmp_path: Path,
+) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(
+        AgentSession(id="owned", agent_name="codex", principal_id="user:owner")
+    )
+    manager = SimpleNamespace(store=store, request_restart_handoff=AsyncMock())
+    manager.request_restart_handoff.return_value = RestartHandoff(
+        session_id=session.id,
+        idempotency_key="owned-key",
+        continuation_prompt="continue owned session",
+        continuation_prompt_id="owned-prompt",
+    )
+    request = MagicMock()
+    request.app.state.ctx.settings.auth_required = True
+    request.state.user.role = "member"
+    body = RestartHandoffBody(
+        continuation_prompt="continue owned session", idempotency_key="owned-key"
+    )
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:other"),
+        pytest.raises(HTTPException) as denied,
+    ):
+        asyncio.run(request_normal_restart_handoff(request, session.id, body))
+    assert denied.value.status_code == 403
+    manager.request_restart_handoff.assert_not_awaited()
+
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:owner"),
+    ):
+        posted = asyncio.run(request_normal_restart_handoff(request, session.id, body))
+    assert posted["session_id"] == session.id
+    manager.request_restart_handoff.assert_awaited_once_with(
+        session_id=session.id,
+        continuation_prompt="continue owned session",
+        idempotency_key="owned-key",
+    )
+
+    store.create_restart_handoff(manager.request_restart_handoff.return_value)
+    with (
+        patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager),
+        patch("pa.modules.agent_chat.get_principal_id", return_value="user:owner"),
+    ):
+        listed = list_restart_handoffs(request, session.id)
+    assert listed["handoffs"][0]["continuation_prompt"] == "continue owned session"
+
+
+def test_assigned_restart_handoff_derives_exact_durable_session() -> None:
+    manager = SimpleNamespace(request_restart_handoff=AsyncMock())
+    manager.request_restart_handoff.return_value = RestartHandoff(
+        session_id="durable-session",
+        idempotency_key="assigned-key",
+        continuation_prompt="continue assigned work",
+        continuation_prompt_id="assigned-prompt",
+    )
+    request = MagicMock()
+    request.app.state.ctx.require_service.return_value = manager
+    body = AssignedRestartHandoffBody(
+        continuation_prompt="continue assigned work", idempotency_key="assigned-key"
+    )
+    record = SimpleNamespace(session_id="durable-session")
+
+    with patch("pa.modules.fleet._assigned_local_dispatch", return_value=record):
+        result = asyncio.run(request_assigned_restart_handoff(request, body))
+
+    assert result["session_id"] == "durable-session"
+    manager.request_restart_handoff.assert_awaited_once_with(
+        session_id="durable-session",
+        continuation_prompt="continue assigned work",
+        idempotency_key="assigned-key",
+    )
+
+
 def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) -> None:
     store = CardProjection(tmp_path / "pa.db")
     session = store.save_session(AgentSession(id="s", agent_name="codex", status="quiesced"))
@@ -339,6 +461,39 @@ def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) ->
         project_id=None,
     )
     assert store.get_restart_handoff(receipt.id).status == "continuation_queued"
+
+
+def test_restart_replay_appends_continuation_after_durable_queue(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="ordered", agent_name="codex"))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager._execute_restart_handoff = AsyncMock()
+    receipt = asyncio.run(
+        manager.request_restart_handoff(
+            session_id=session.id,
+            continuation_prompt="restart continuation",
+            idempotency_key="ordered-restart",
+        )
+    )
+    store.update_restart_handoff(receipt.id, status="restarting")
+    runtime = AgentSessionRuntime(manager, session)
+    runtime._queue_paused = True
+    runtime._queue = [
+        QueuedPrompt(id="first", session_id=session.id, message="already queued first"),
+        QueuedPrompt(id="second", session_id=session.id, message="already queued second"),
+    ]
+    runtime._checkpoint_runtime = MagicMock()
+    runtime._append_transcript = MagicMock()
+    runtime._flush_transcript = MagicMock()
+    manager.get = MagicMock(return_value=runtime)
+
+    asyncio.run(manager._resume_restart_handoffs())
+
+    assert [item.id for item in runtime._queue] == [
+        "first",
+        "second",
+        receipt.continuation_prompt_id,
+    ]
 
 
 def test_legacy_mismatch_recovers_using_existing_workspace_fence(tmp_path: Path) -> None:
