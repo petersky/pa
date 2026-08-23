@@ -397,14 +397,32 @@ def restart_cmd(
             "--no-acp-resume", help="Do not resume quiesced ACP sessions after restart"
         ),
     ] = False,
+    operator_emergency: Annotated[
+        bool,
+        typer.Option(
+            "--operator-emergency",
+            help="Operator-only override for a managed-session restart",
+            hidden=True,
+        ),
+    ] = False,
 ) -> None:
-    """Restart the PA host service."""
+    """Restart PA (agents use the durable restart-handoff MCP tool instead)."""
+    import os
     from pa.cli import service as svc
     from pa.cli.acp_lifecycle import mark_no_resume, quiesce_running_agent
     from pa.cli.startup import print_service_ready
     from pa.instance.quiesce import request_skip_quiesce
 
     settings = get_settings()
+    managed_session = os.environ.get("PA_BROWSER_SESSION_ID", "").strip()
+    if managed_session and not operator_emergency:
+        typer.echo(
+            "Refusing synchronous restart inside a PA-managed agent turn. "
+            "Use PA MCP request_agent_restart_handoff with a continuation prompt "
+            "and stable idempotency key. --no-acp-quiesce is operator emergency only.",
+            err=True,
+        )
+        raise typer.Exit(2)
     if no_acp_quiesce:
         request_skip_quiesce(settings.data_dir)
     else:

@@ -688,6 +688,9 @@ class AgentSession(BaseModel):
     mode_id: str | None = None
     config_json: dict = Field(default_factory=dict)
     metrics_json: dict = Field(default_factory=dict)
+    # Immutable workspace provenance.  card_id/project_id remain conversational
+    # associations and may change without moving a provider or its worktree.
+    execution_binding: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -697,6 +700,26 @@ class AgentSession(BaseModel):
         if "lifecycle_owner" not in self.model_fields_set and self.dispatch_id:
             self.lifecycle_owner = "dispatch"
         return self
+
+
+class RestartHandoff(BaseModel):
+    """Durable, exactly-once request to continue one exact session after restart."""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    session_id: str
+    idempotency_key: str
+    continuation_prompt: str
+    status: str = "requested"
+    card_id: str | None = None
+    project_id: str | None = None
+    instance_id: str | None = None
+    execution_binding: dict = Field(default_factory=dict)
+    continuation_prompt_id: str
+    error: str | None = None
+    attempts: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    delivered_at: datetime | None = None
 
 
 class TranscriptEvent(BaseModel):
