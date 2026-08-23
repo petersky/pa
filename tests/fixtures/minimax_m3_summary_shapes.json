@@ -1,0 +1,60 @@
+{
+  "content_blocks": {
+    "id": "fixture-response-id",
+    "model": "minimax-m3",
+    "choices": [
+      {
+        "finish_reason": "tool_calls",
+        "message": {
+          "role": "assistant",
+          "reasoning_content": "fixture-reasoning-omitted",
+          "content": [
+            {"type": "text", "text": "fixture-display-text-ignored"},
+            {
+              "type": "tool_use",
+              "name": "submit_summary",
+              "input": {"summary": "Normalize the supported content-block tool envelope."}
+            }
+          ]
+        }
+      }
+    ],
+    "usage": {"prompt_tokens": 17, "completion_tokens": 9, "total_tokens": 26}
+  },
+  "tool_and_display_text": {
+    "id": "fixture-response-id",
+    "model": "minimax-m3",
+    "choices": [
+      {
+        "finish_reason": "tool_calls",
+        "message": {
+          "role": "assistant",
+          "content": "A provider may include display text beside its tool result.",
+          "tool_calls": [
+            {
+              "id": "fixture-call-id",
+              "type": "function",
+              "function": {
+                "name": "submit_summary",
+                "arguments": "{\"summary\":\"Prefer the authoritative structured tool result.\"}"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "plain_text": {
+    "id": "fixture-response-id",
+    "model": "minimax-m3",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "message": {
+          "role": "assistant",
+          "content": "Normalize a bounded plain-text response into PA's summary schema."
+        }
+      }
+    ]
+  }
+}

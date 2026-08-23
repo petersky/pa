@@ -108,6 +108,10 @@
         summaryResult.querySelector("[data-summary-test-model]").textContent = result.model;
         summaryResult.querySelector("[data-summary-test-configuration]").textContent =
           result.configuration === "staged" ? "Staged values (not saved)" : "Saved effective values";
+        summaryResult.querySelector("[data-summary-test-invocation]").textContent =
+          result.invocation.ok ? "Succeeded" : "Failed (" + result.invocation.code + ")";
+        summaryResult.querySelector("[data-summary-test-schema]").textContent =
+          result.summary_schema.ok ? "Conformant" : "Not conformant (" + result.summary_schema.code + ")";
         summaryResult.querySelector("[data-summary-test-elapsed]").textContent =
           result.elapsed_ms + " ms";
         summaryResult.querySelector("[data-summary-test-message]").textContent = result.message;

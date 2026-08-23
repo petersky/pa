@@ -97,11 +97,15 @@ class SummaryProviderError(RuntimeError):
         public_message: str,
         *,
         retryable: bool,
+        invocation_succeeded: bool = False,
+        response_shape: dict[str, object] | None = None,
     ) -> None:
         super().__init__(public_message)
         self.code = code
         self.public_message = public_message
         self.retryable = retryable
+        self.invocation_succeeded = invocation_succeeded
+        self.response_shape = response_shape
 
 
 def summary_input_hash(title: str, body: str) -> str:
@@ -187,6 +191,26 @@ def _message_text(content: object) -> str:
     return ""
 
 
+def _content_tool_candidates(content: object) -> list[object]:
+    """Extract tool arguments from OpenAI-compatible content blocks."""
+    if not isinstance(content, list):
+        return []
+    candidates: list[object] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        function = item.get("function")
+        if isinstance(function, dict) and function.get("name") == SUBMIT_SUMMARY_TOOL:
+            candidates.append(function.get("arguments"))
+        elif item.get("name") == SUBMIT_SUMMARY_TOOL and item.get("type") in {
+            "tool_call",
+            "function_call",
+            "tool_use",
+        }:
+            candidates.append(item.get("input", item.get("arguments")))
+    return candidates
+
+
 def _parse_summary_object(value: object) -> str:
     if isinstance(value, dict):
         if set(value) != {"summary"} or not isinstance(value.get("summary"), str):
@@ -266,43 +290,82 @@ def _response_shape(payload: object) -> dict[str, object]:
             isinstance(message, dict)
             and ("reasoning_details" in message or "reasoning_content" in message)
         ),
+        "content_block_count": (
+            len(message.get("content"))
+            if isinstance(message, dict) and isinstance(message.get("content"), list)
+            else None
+        ),
+        "legacy_function_call": bool(
+            isinstance(message, dict) and isinstance(message.get("function_call"), dict)
+        ),
     }
 
 
 def parse_chat_completion_summary(payload: dict) -> str:
+    shape = _response_shape(payload)
     try:
         if not isinstance(payload.get("choices"), list) or len(payload["choices"]) != 1:
             raise TypeError("provider response must contain exactly one choice")
         message = payload["choices"][0]["message"]
-        candidates: list[object] = []
+        if not isinstance(message, dict):
+            raise TypeError("provider message must be an object")
+        tool_candidates: list[object] = []
         for call in message.get("tool_calls") or []:
             function = call.get("function") if isinstance(call, dict) else None
             if isinstance(function, dict) and function.get("name") == SUBMIT_SUMMARY_TOOL:
-                candidates.append(function.get("arguments"))
-        if message.get("parsed") not in (None, ""):
-            candidates.append(message["parsed"])
-        content = _message_text(message.get("content"))
-        if content.strip():
-            candidates.append(content)
-        if len(candidates) != 1:
-            if not candidates:
-                raise SummaryProviderError(
-                    SummaryFailureCode.EMPTY_OUTPUT,
-                    "The provider returned no summary output.",
-                    retryable=False,
-                )
-            raise TypeError("provider returned ambiguous summary outputs")
-        return _parse_summary_object(candidates[0])
-    except SummaryProviderError:
+                tool_candidates.append(function.get("arguments"))
+        legacy_call = message.get("function_call")
+        if (
+            isinstance(legacy_call, dict)
+            and legacy_call.get("name") == SUBMIT_SUMMARY_TOOL
+        ):
+            tool_candidates.append(legacy_call.get("arguments"))
+        tool_candidates.extend(_content_tool_candidates(message.get("content")))
+        if len(tool_candidates) > 1:
+            raise TypeError("provider returned multiple summary tool outputs")
+        if tool_candidates:
+            return sanitize_summary(_parse_summary_object(tool_candidates[0]))
+
+        parsed = message.get("parsed")
+        if parsed not in (None, ""):
+            return sanitize_summary(_parse_summary_object(parsed))
+
+        content = _message_text(message.get("content")).strip()
+        if not content and isinstance(payload["choices"][0].get("text"), str):
+            content = payload["choices"][0]["text"].strip()
+        if not content:
+            raise SummaryProviderError(
+                SummaryFailureCode.EMPTY_OUTPUT,
+                "The provider returned no summary output.",
+                retryable=False,
+            )
+        try:
+            return sanitize_summary(_parse_summary_object(content))
+        except SummaryProviderError as exc:
+            # Some supported OpenAI-compatible models return the requested value as
+            # plain message text. It is normalized into PA's schema before the same
+            # bounded final validation; JSON-looking text must still satisfy it.
+            stripped = re.sub(r"^\s*<think>[\s\S]*?</think>\s*", "", content, count=1)
+            if exc.code == SummaryFailureCode.MALFORMED_JSON and not re.match(
+                r"^\s*(?:```|[\[{])", stripped
+            ):
+                return sanitize_summary(stripped)
+            raise
+    except SummaryProviderError as exc:
+        exc.invocation_succeeded = True
+        exc.response_shape = shape
+        logger.warning("card-summary provider response rejected shape=%s", shape)
         raise
     except (KeyError, IndexError, TypeError) as exc:
         logger.warning(
-            "card-summary provider response rejected shape=%s", _response_shape(payload)
+            "card-summary provider response rejected shape=%s", shape
         )
         raise SummaryProviderError(
             SummaryFailureCode.SCHEMA_VIOLATION,
             "The provider response did not match the required summary envelope.",
             retryable=False,
+            invocation_succeeded=True,
+            response_shape=shape,
         ) from exc
 
 
@@ -960,6 +1023,16 @@ class CardSummaryService:
                 "ok": False,
                 "code": SummaryFailureCode.UNCONFIGURED.value,
                 "message": configuration.setup_guidance,
+                "invocation": {
+                    "ok": False,
+                    "code": "not_attempted",
+                    "message": "No provider invocation was attempted.",
+                },
+                "summary_schema": {
+                    "ok": False,
+                    "code": "not_attempted",
+                    "message": "No provider response was available to validate.",
+                },
                 "elapsed_ms": 0,
             }
         try:
@@ -971,11 +1044,41 @@ class CardSummaryService:
             sanitize_summary(value)
         except Exception as exc:  # noqa: BLE001 - provider adapters expose varied errors
             failure = self._classify_failure(exc, configuration)
+            invoked = failure.invocation_succeeded
+            schema_failure = failure.code in {
+                SummaryFailureCode.EMPTY_OUTPUT,
+                SummaryFailureCode.MALFORMED_JSON,
+                SummaryFailureCode.SCHEMA_VIOLATION,
+                SummaryFailureCode.INVALID_RESPONSE,
+            }
             return {
                 **common,
                 "ok": False,
                 "code": failure.code.value,
                 "message": failure.public_message,
+                "invocation": {
+                    "ok": invoked,
+                    "code": "success" if invoked else failure.code.value,
+                    "message": (
+                        "Authentication, transport, and model invocation succeeded."
+                        if invoked
+                        else failure.public_message
+                    ),
+                },
+                "summary_schema": {
+                    "ok": False,
+                    "code": failure.code.value if schema_failure else "not_evaluated",
+                    "message": (
+                        failure.public_message
+                        if schema_failure
+                        else "Summary schema conformance was not evaluated."
+                    ),
+                    **(
+                        {"response_shape": failure.response_shape}
+                        if failure.response_shape is not None
+                        else {}
+                    ),
+                },
                 "elapsed_ms": round((time.monotonic() - started) * 1000),
             }
         return {
@@ -983,6 +1086,16 @@ class CardSummaryService:
             "ok": True,
             "code": "success",
             "message": "A usable summary response was generated and parsed.",
+            "invocation": {
+                "ok": True,
+                "code": "success",
+                "message": "Authentication, transport, and model invocation succeeded.",
+            },
+            "summary_schema": {
+                "ok": True,
+                "code": "success",
+                "message": "The response conformed to PA's bounded summary schema.",
+            },
             "elapsed_ms": round((time.monotonic() - started) * 1000),
         }
 
@@ -1081,6 +1194,18 @@ class CardSummaryService:
                 SummaryFailureCode.MALFORMED_JSON,
                 "The provider returned a malformed JSON response envelope.",
                 retryable=False,
+                invocation_succeeded=True,
+                response_shape={
+                    "payload_object": False,
+                    "choice_count": None,
+                    "message_object": False,
+                    "content_type": None,
+                    "parsed_present": False,
+                    "tool_call_count": None,
+                    "reasoning_separated": False,
+                    "content_block_count": None,
+                    "legacy_function_call": False,
+                },
             ) from exc
         return parse_chat_completion_summary(response_payload)
 
