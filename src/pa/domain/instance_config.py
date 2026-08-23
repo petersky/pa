@@ -52,6 +52,12 @@ class InstanceConfig(BaseModel):
         default_factory=dict
     )
     relay_enabled: bool = False
+    cloud_endpoint: str = ""
+    cloud_token: str = ""
+    cloud_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    cloud_lease_fail_open: bool = True
+    cloud_publish_queue_capacity: int = Field(default=1000, ge=1, le=100_000)
+    cloud_allow_insecure_http: bool = False
     peers: list[str] = Field(default_factory=list)
     release_track: str = "release"
     sync_token: str = ""
