@@ -4304,6 +4304,16 @@ async def fleet_health(request: Request, instance_id: str | None = None) -> list
                         f"{base}/api/health", timeout=FLEET_HEALTH_TIMEOUT
                     )
                     health_state = "up" if resp.status_code == 200 else "down"
+                    if resp.status_code == 200:
+                        try:
+                            health_payload = resp.json()
+                            if (
+                                isinstance(health_payload, dict)
+                                and health_payload.get("status") == "degraded"
+                            ):
+                                health_state = "degraded"
+                        except ValueError:
+                            pass
                 except TimeoutError:
                     health_state = "timeout"
                 except httpx.HTTPError:

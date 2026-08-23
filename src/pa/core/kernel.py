@@ -132,6 +132,56 @@ class _CacheControlMiddleware:
         await self.app(scope, receive, send_wrapper)
 
 
+class _SyncRecoveryAdmissionMiddleware:
+    """Reject ordinary mutations while canonical history is incomplete."""
+
+    ALLOWED = frozenset(
+        {
+            "/api/sync/get",
+            "/api/sync/have",
+            "/api/sync/need",
+            "/api/sync/reconcile",
+            "/api/sync/recovery",
+        }
+    )
+
+    def __init__(self, app, ctx: AppContext) -> None:
+        self.app = app
+        self.ctx = ctx
+
+    async def __call__(self, scope, receive, send) -> None:
+        recovery = self.ctx.services.get("sync_recovery")
+        method = str(scope.get("method") or "GET").upper()
+        path = str(scope.get("path") or "")
+        blocked = (
+            scope.get("type") == "http"
+            and method not in {"GET", "HEAD", "OPTIONS"}
+            and recovery
+            and recovery.degraded()
+            and path not in self.ALLOWED
+        )
+        if blocked:
+            from starlette.responses import JSONResponse
+
+            response = JSONResponse(
+                {
+                    "detail": {
+                        "code": "sync_history_recovery",
+                        "message": (
+                            "Mutation rejected while canonical sync history "
+                            "is incomplete"
+                        ),
+                        "recovery": recovery.public(),
+                    }
+                },
+                status_code=503,
+                headers={"Retry-After": "10"},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 class _DebugRequestMiddleware:
     """Debug request hooks without BaseHTTPMiddleware hitching."""
 
@@ -550,6 +600,7 @@ class Kernel:
 
         install_openapi_contract(app)
         self._install_auth_middleware(app)
+        app.add_middleware(_SyncRecoveryAdmissionMiddleware, ctx=self.ctx)
 
         if self.ctx.settings.debug:
             self._install_debug_middleware(app)
