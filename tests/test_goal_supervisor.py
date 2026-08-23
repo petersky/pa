@@ -49,6 +49,7 @@ from pa.goals.models import (
     GoalProposalCreate,
     GoalState,
     GoalTransition,
+    GoalWakeup,
     GoalWorkPackage,
     ProposalStatus,
     RecordEvidenceAction,
@@ -709,6 +710,104 @@ class GoalSupervisorTests(unittest.TestCase):
             self.assertEqual(second.work_packages[0].state, WorkPackageState.DISPATCHED)
             self.assertEqual(second.linked_dispatch_ids, ["dispatch-1"])
             self.assertEqual(second.state, GoalState.ACTIVE)
+
+    def test_three_nodes_autoplan_consume_wakeup_and_dispatch_once(self) -> None:
+        clock = datetime(2026, 8, 22, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp, now=lambda: clock)
+            criterion = GoalCriterion(
+                description="autonomous work is checkpointed",
+                verification_method="durable evidence",
+                evidence_requirement="recorded observation",
+            )
+            goal = service.create(
+                self._goal_create(criterion), self._ctx(0, "autoplan-create")
+            )
+            for state in (GoalState.READY, GoalState.ACTIVE):
+                goal = service.transition(
+                    goal.id,
+                    GoalTransition(state=state, reason="activate autonomous goal"),
+                    self._ctx(goal.version, f"autoplan-{state.value}"),
+                )
+            goal = service.schedule_wakeup(
+                goal.id,
+                GoalWakeup(
+                    wake_at=clock,
+                    reason="newly active goal",
+                    eligible_instance_ids=["instance-a", "instance-b", "instance-c"],
+                ),
+                self._ctx(goal.version, "autoplan-wakeup"),
+            )
+            calls: list[dict] = []
+
+            def dispatch(payload: dict) -> dict:
+                calls.append(payload)
+                return {"dispatch_id": "autoplan-dispatch"}
+
+            supervisors = [
+                GoalSupervisor(
+                    GoalService(projection, instance, clock=lambda: clock),
+                    projection,
+                    instance,
+                    dispatch=dispatch,
+                    default_provider="codex",
+                    now=lambda: clock,
+                )
+                for instance in ("instance-a", "instance-b", "instance-c")
+            ]
+            for _ in range(3):
+                for supervisor in supervisors:
+                    supervisor.run_once(goal.id)
+
+            current = service.get(goal.id)
+            assert current is not None
+            self.assertIsNone(current.wakeup)
+            self.assertEqual(len(current.work_packages), 1)
+            self.assertEqual(current.linked_dispatch_ids, ["autoplan-dispatch"])
+            self.assertEqual(len(calls), 1)
+
+            self.assertIsNotNone(
+                current.work_packages[0].dispatch_admission_receipt_digest
+            )
+            self.assertGreater(current.supervision.cycle, 0)
+
+    def test_provider_rejection_exhausts_retry_budget_without_hot_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service, projection = self._services(tmp)
+            criterion = GoalCriterion(
+                description="bounded provider retries",
+                verification_method="attempt count",
+                evidence_requirement="inspectable failure",
+            )
+            goal = service.create(
+                self._goal_create(criterion), self._ctx(0, "retry-create")
+            )
+            for state in (GoalState.READY, GoalState.ACTIVE):
+                goal = service.transition(
+                    goal.id,
+                    GoalTransition(state=state, reason="activate retry test"),
+                    self._ctx(goal.version, f"retry-{state.value}"),
+                )
+            calls: list[dict] = []
+            supervisor = GoalSupervisor(
+                service,
+                projection,
+                "instance-a",
+                dispatch=lambda payload: calls.append(payload)
+                or {"accepted": False, "error": "provider unavailable"},
+                default_provider="codex",
+            )
+            for _ in range(30):
+                supervisor.run_once(goal.id)
+            current = service.get(goal.id)
+            assert current is not None
+            package = current.work_packages[0]
+            self.assertEqual(package.state, WorkPackageState.FAILED)
+            self.assertEqual(package.attempts, package.max_attempts)
+            self.assertIn("retry limit exhausted", package.result_summary.lower())
+            self.assertEqual(len(calls), package.max_attempts)
+            supervisor.run_once(goal.id)
+            self.assertEqual(len(calls), package.max_attempts)
 
     def test_failed_dispatch_recovers_with_replacement_session_and_attempt(
         self,
