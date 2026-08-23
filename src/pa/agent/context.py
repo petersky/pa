@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 from pa.config import Settings
 from pa.domain.models import AgentSession, Card, Project
 from pa.domain.store import Store
+from pa.limbic.appraisal import LimbicService
+from pa.limbic.memory import MemoryService
+from pa.limbic.models import MemoryQuery, Sensitivity, SignalEnvelope, SignalSource
 from pa.prompts import PROMPTS, RenderedPrompt
 
 
@@ -22,6 +25,101 @@ class PromptComposition(BaseModel):
 
 _CONTEXT_TRUNCATION_MARKER = "\n… [truncated to fit provider context]"
 _CONTEXT_SEPARATOR = "\n\n---\n\n"
+_MEMORY_CONTEXT_LIMIT = 12_000
+
+
+def _autonomy_policy(
+    settings: Settings, realm: str, project: Project | None
+) -> dict[str, Any]:
+    """Resolve the deliberately fail-closed realm/project rollout contract."""
+
+    raw = dict(settings.autonomy_context_by_realm.get(realm) or {})
+    if project:
+        raw.update(dict((project.tool_config or {}).get("autonomy_context") or {}))
+    mode = str(raw.get("mode") or "off")
+    if mode not in {"off", "shadow", "promoted"}:
+        mode = "off"
+    return {
+        "mode": mode,
+        "kill_switch": bool(raw.get("kill_switch", False)),
+        "policy_gate": bool(raw.get("policy_gate", False)),
+        "max_memories": max(1, min(int(raw.get("max_memories", 12)), 50)),
+        "max_characters": max(512, min(int(raw.get("max_characters", 8_000)), _MEMORY_CONTEXT_LIMIT)),
+    }
+
+
+def _memory_prompt(
+    store: Store,
+    settings: Settings,
+    session: AgentSession,
+    project: Project | None,
+    message: str,
+    realm: str,
+    provider: str,
+) -> RenderedPrompt | None:
+    """Run shadow appraisal/retrieval; only inject behind every promotion gate."""
+
+    policy = _autonomy_policy(settings, realm, project)
+    if policy["mode"] == "off" or policy["kill_switch"]:
+        return None
+    principal = session.principal_id or "system:anonymous"
+    goal_ids = [value for value in (session.card_id, session.project_id) if value]
+    packet = MemoryService(store, settings.instance_id).working_packet(
+        MemoryQuery(
+            realm_id=realm,
+            requester_principal=principal,
+            goal_ids=goal_ids,
+            query=message[:2_000],
+            max_sensitivity=Sensitivity.INTERNAL,
+            limit=policy["max_memories"],
+        )
+    )
+    appraisal = LimbicService(store, settings.instance_id).appraise(
+        SignalEnvelope(
+            realm_id=realm,
+            source=SignalSource.AGENT,
+            event_class="agent_prompt_context",
+            subject_type="agent_session",
+            subject_id=session.id,
+            actor_principal=principal,
+            goal_refs=goal_ids,
+            content=message,
+            metadata={
+                "deep_review": False,
+                "retrieval_hits": len(packet.memories),
+                "promotion_candidate": (
+                    policy["mode"] == "promoted" and policy["policy_gate"]
+                ),
+            },
+        ),
+        shadow_mode=True,
+    )
+    # Shadow mode records the redacted comparison and retrieval outcome only.
+    # Promotion additionally requires the explicit project gate and a healthy,
+    # non-bypass appraisal. No route can grant privileges here.
+    if (
+        policy["mode"] != "promoted"
+        or not policy["policy_gate"]
+        or appraisal.route.preliminary
+        or appraisal.appraisal.deterministic_bypass
+    ):
+        return None
+    lines: list[str] = []
+    used = 0
+    for item in packet.memories:
+        record = item.record
+        source = f"{record.provenance.source_type}:{record.provenance.source_id}"
+        trust = "trusted" if item.instruction_trusted else "untrusted"
+        line = f"- [memory:{record.id}] {record.summary} (source: {source}; {trust})"
+        if used + len(line) + 1 > policy["max_characters"]:
+            break
+        lines.append(line)
+        used += len(line) + 1
+    if not lines:
+        return None
+    return PROMPTS.render(
+        "agent.context.memory", {"memory": {"records": "\n".join(lines)}}, provider=provider
+    )
 
 
 def _bounded_text(value: Any, limit: int) -> str:
@@ -260,6 +358,11 @@ def compose_session_prompt(
                 provider=provider,
             )
         )
+    memory_prompt = _memory_prompt(
+        store, settings, session, project, message, realm, provider
+    )
+    if memory_prompt:
+        prompts.append(memory_prompt)
     if not card and not project:
         prompts.append(
             PROMPTS.render(

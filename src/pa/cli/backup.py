@@ -130,6 +130,7 @@ def config(
     concurrency: Annotated[int | None, typer.Option()] = None,
     alert_after_failures: Annotated[int | None, typer.Option()] = None,
     jitter_seconds: Annotated[int | None, typer.Option()] = None,
+    scrub_interval_seconds: Annotated[int | None, typer.Option()] = None,
     patch: Annotated[
         str | None, typer.Option(help="Additional JSON object for optional limits")
     ] = None,
@@ -154,6 +155,7 @@ def config(
             "concurrency": concurrency,
             "alert_after_failures": alert_after_failures,
             "jitter_seconds": jitter_seconds,
+            "scrub_interval_seconds": scrub_interval_seconds,
         }.items()
         if value is not None
     }

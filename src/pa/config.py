@@ -74,6 +74,17 @@ class Settings(BaseSettings):
     )
     relay_enabled: bool = False
 
+    # Optional always-on coordination plane. The endpoint implements PA's
+    # provider-neutral cloud protocol; local persistence remains authoritative
+    # when this is blank. Tokens are deliberately settings-only and are never
+    # serialized into shared state.
+    cloud_endpoint: str = ""
+    cloud_token: str = ""
+    cloud_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    cloud_lease_fail_open: bool = True
+    cloud_publish_queue_capacity: int = Field(default=1000, ge=1, le=100_000)
+    cloud_allow_insecure_http: bool = False
+
     # Auth (T1)
     sync_token: str = ""
     sync_token_previous: Annotated[list[str], NoDecode] = Field(default_factory=list)
@@ -142,6 +153,9 @@ class Settings(BaseSettings):
     # Optional ACP final-fact candidates. Disabled by default; when enabled,
     # only policy-marked candidates enter pending review.
     memory_auto_capture_enabled: bool = False
+    # Fail-closed limbic/Memory rollout defaults keyed by realm. Projects may
+    # override these through tool_config.autonomy_context.
+    autonomy_context_by_realm: dict[str, dict] = Field(default_factory=dict)
 
     # Card summaries use the selected provider's native HTTP contract.
     # OpenAI and MiniMax are Chat Completions; Anthropic/Claude is Messages.
@@ -237,6 +251,9 @@ class Settings(BaseSettings):
     backup_concurrency: Literal[1] = 1
     backup_alert_after_failures: int = Field(default=3, ge=1, le=1000)
     backup_jitter_seconds: int = Field(default=300, ge=0, le=60 * 60)
+    backup_scrub_interval_seconds: int = Field(
+        default=7 * 24 * 60 * 60, ge=60 * 60, le=365 * 24 * 60 * 60
+    )
 
     # UI defaults (user preferences file overrides appearance at runtime)
     default_theme_id: str = "pa"
@@ -299,6 +316,19 @@ class Settings(BaseSettings):
         ):
             raise ValueError("workspace_root must be outside data_dir")
         self.workspace_root = workspace_root
+        self.cloud_endpoint = self.cloud_endpoint.strip().rstrip("/")
+        if self.cloud_endpoint:
+            from urllib.parse import urlparse
+
+            parsed_cloud = urlparse(self.cloud_endpoint)
+            if parsed_cloud.scheme not in {"https", "http"} or not parsed_cloud.netloc:
+                raise ValueError("cloud_endpoint must be an absolute HTTP(S) URL")
+            if parsed_cloud.scheme != "https" and not self.cloud_allow_insecure_http:
+                raise ValueError(
+                    "cloud_endpoint must use HTTPS unless cloud_allow_insecure_http is true"
+                )
+            if not self.cloud_token.strip():
+                raise ValueError("cloud_token is required when cloud_endpoint is set")
         if self.backup_destination_dir is not None:
             self.backup_destination_dir = (
                 self.backup_destination_dir.expanduser().resolve()

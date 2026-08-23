@@ -1,36 +1,27 @@
-<section class="page-header"><div><h1>Goals</h1><p>Durable intent, governed autonomy, authorized work graphs, evidence, and supervised recovery.</p></div></section>
-<article class="card">
-  <header><strong>Organization portfolio</strong><span class="badge">policy {{ governance_policy.version }}</span></header>
-  <p>{{ goals | rejectattr('state.value', 'in', ['achieved', 'abandoned']) | list | length }} governed goals · {{ pending_proposal_count }} pending proposals · active limit {{ governance_policy.max_active_goals }}</p>
-  {% if portfolio_review %}
-  <p>Last independent review: {{ portfolio_review.created_at }} · {{ portfolio_review.allocations | selectattr('disposition.value', 'equalto', 'active') | list | length }} active allocations{% if portfolio_review.requires_operator_review %} · operator review required{% endif %}</p>
-  {% else %}<p>No organization-level portfolio review has been recorded.</p>{% endif %}
-</article>
-<div class="card-list">
-{% for goal in goals %}
-  {% set goal_status = presentation_state('goal', goal.state.value) %}
-  <article class="card">
-    <header><strong>{{ goal.objective }}</strong><span class="badge" title="{{ goal_status.explanation }}">{{ goal_status.label }}</span><span class="badge">{{ goal.supervision.drift_state.value }}</span></header>
-    <p>{{ goal.progress_summary or goal.motivation }}</p>
-    <p>{{ goal.criteria | selectattr('verdict.value', 'equalto', 'satisfied') | list | length }}/{{ goal.criteria | length }} criteria satisfied · revision {{ goal.revision }} · policy {{ goal.policy.revision }}</p>
-    <p>Priority {{ autonomy[goal.id].priority }} · autonomy {{ goal.policy.autonomy_level }} · ${{ '%.2f' | format(autonomy[goal.id].usage.cost_usd) }} used · {{ autonomy[goal.id].provider_runs | length }} provider runs</p>
-    <p>{{ goal.work_packages | length }} work packages · {{ goal.proposals | length }} proposals · {{ goal.operator_interactions | selectattr('state.value', 'equalto', 'pending') | list | length }} operator requests</p>
-    {% if goal.lease.holder_instance_id %}<p>Controller: {{ goal.lease.holder_instance_id }} (fence {{ goal.lease.fencing_token }})</p>{% endif %}
-    {% if goal.wakeup %}<p>Next wake: {{ goal.wakeup.wake_at }} — {{ goal.wakeup.reason }}</p>{% endif %}
-    {% if goal.supervision.drift_reasons %}<p>{{ goal.supervision.drift_reasons | join('; ') }}</p>{% endif %}
-    <details><summary>Authorized work graph</summary>
-      <ul>{% for package in goal.work_packages %}
-        <li>{{ package.state.value }} · {{ package.role.value }} — {{ package.title }}{% if package.depends_on %} (depends on {{ package.depends_on | join(', ') }}){% endif %}</li>
-      {% else %}<li>No work packages yet.</li>{% endfor %}</ul>
-    </details>
-    <details><summary>Proposal ledger</summary>
-      <ul>{% for proposal in goal.proposals %}
-        <li>{{ proposal.status.value }} · {{ proposal.proposer_role.value }} — {{ proposal.action.kind }}{% if proposal.authorization %} ({{ proposal.authorization.reason_code }}){% endif %}</li>
-      {% else %}<li>No proposals yet.</li>{% endfor %}</ul>
-    </details>
-    <details><summary>Evidence and criteria</summary>
-      <ul>{% for criterion in goal.criteria %}<li>{{ criterion.verdict.value }} — {{ criterion.description }} ({{ criterion.evidence_ids | length }} evidence)</li>{% endfor %}</ul>
-    </details>
-  </article>
-{% else %}<p>No durable goals yet.</p>{% endfor %}
-</div>
+<section class="page-header goals-header"><div><h1>Goals</h1><p>Durable intent with one governed creation and lifecycle path.</p></div><button type="button" data-goal-create-toggle aria-expanded="false" aria-controls="goal-create">Create governed goal</button></section>
+<section id="goal-create" class="card goal-editor" hidden aria-labelledby="goal-create-title"><h2 id="goal-create-title">Create governed goal</h2><form data-goal-create-form>
+  <label>Objective<input name="objective" required maxlength="1000"></label><label>Motivation<textarea name="motivation" rows="3"></textarea></label>
+  <label>Success criterion<input name="criterion" required></label><label>Verification method<input name="verification" required></label><label>Evidence requirement<input name="requirement" required></label>
+  <button type="submit">Create draft</button><p role="alert" data-goal-form-status></p>
+</form></section>
+<article class="card goal-portfolio" aria-label="Organization goal portfolio"><header><strong>Organization portfolio</strong><span class="badge">policy {{ governance_policy.version }}</span></header><p>{{ goals | rejectattr('state.value', 'in', ['achieved', 'abandoned']) | list | length }} governed goals · {{ pending_proposal_count }} pending proposals · active limit {{ governance_policy.max_active_goals }}</p></article>
+<div class="goal-layout" data-goal-workspace>
+<nav class="card goal-list" aria-label="Governed goals">{% for goal in goals %}{% set goal_status = presentation_state('goal', goal.state.value) %}<button type="button" class="goal-list-item{% if loop.first %} is-selected{% endif %}" data-goal-select="{{ goal.id }}" aria-controls="goal-{{ goal.id }}" aria-current="{% if loop.first %}true{% else %}false{% endif %}"><strong>{{ goal.objective }}</strong><span>{{ goal_status.label }} · {{ goal.criteria | selectattr('verdict.value', 'equalto', 'satisfied') | list | length }}/{{ goal.criteria | length }} criteria</span></button>{% else %}<p>No durable goals yet. Create one to define evidence and governance before work begins.</p>{% endfor %}</nav>
+<section class="goal-details" aria-live="polite">{% for goal in goals %}{% set goal_status = presentation_state('goal', goal.state.value) %}
+<article id="goal-{{ goal.id }}" class="card goal-detail" data-goal-detail="{{ goal.id }}" data-version="{{ goal.version }}" data-policy="{{ goal.policy.revision }}" {% if not loop.first %}hidden{% endif %}>
+  <header><div><p class="eyebrow">Governed goal</p><h2>{{ goal.objective }}</h2></div><span class="badge" title="{{ goal_status.explanation }}">{{ goal_status.label }}</span></header><p>{{ goal.progress_summary or goal.motivation or 'No progress summary yet.' }}</p>
+  <p><strong>Next safe action:</strong> {% if goal.state.value in ['draft','shaping','ready'] %}activate after reviewing policy and criteria{% elif goal.state.value == 'paused' %}resume when the pause reason is resolved{% elif goal.criteria | selectattr('verdict.value', 'equalto', 'pending') | list %}record evidence, then request an independent review{% else %}review lifecycle history and transition when governance gates permit{% endif %}.</p>
+  <div class="goal-actions" role="group" aria-label="Goal lifecycle actions">{% if goal.state.value in ['draft','shaping','ready'] %}<button type="button" data-goal-transition="active">Activate</button>{% elif goal.state.value == 'paused' %}<button type="button" data-goal-transition="active">Resume</button>{% elif goal.state.value not in ['achieved','abandoned'] %}<button type="button" data-goal-transition="paused">Pause</button>{% endif %}<button type="button" class="ghost" data-goal-edit-toggle aria-expanded="false">Edit</button></div>
+  <form class="goal-inline-form" data-goal-edit-form hidden><label>Objective<input name="objective" value="{{ goal.objective }}" required></label><label>Motivation<textarea name="motivation">{{ goal.motivation }}</textarea></label><label>Reason<input name="reason" required value="Operator edit"></label><button type="submit">Save revision</button></form>
+  <details><summary><span>Policy and budget</span></summary><p>Policy revision {{ goal.policy.revision }} · autonomy {{ goal.policy.autonomy_level }} · maximum risk {{ goal.policy.max_action_risk }} · ${{ '%.2f' | format(autonomy[goal.id].usage.cost_usd) }} used.</p></details>
+  <p>Priority {{ autonomy[goal.id].priority }} · {{ goal.work_packages | length }} work packages · {{ goal.proposals | length }} proposals</p>
+  <details><summary><span>Authorized work and proposals</span></summary><ul>{% for package in goal.work_packages %}<li>{{ package.state.value }} · {{ package.role.value }} — {{ package.title }}{% if package.state.value in ['ready','planned'] %} <button type="button" class="ghost small" data-goal-dispatch="{{ package.id }}">Propose dispatch</button>{% endif %}</li>{% else %}<li>No authorized work packages. Propose one against a success criterion.</li>{% endfor %}</ul>
+    <form class="goal-inline-form" data-goal-work-form><label>Criterion<select name="criterion_id">{% for criterion in goal.criteria %}<option value="{{ criterion.id }}">{{ criterion.description }}</option>{% endfor %}</select></label><label>Work package title<input name="title" required></label><label>Bounded objective<textarea name="objective" required></textarea></label><button type="submit">Propose and authorize work</button></form>
+    <ul aria-label="Proposal ledger">{% for proposal in goal.proposals %}<li>{{ proposal.status.value }} · {{ proposal.action.kind }}{% if proposal.authorization %} — {{ proposal.authorization.reason_code }}{% endif %}</li>{% else %}<li>No proposals recorded.</li>{% endfor %}</ul>
+  </details>
+  <details open><summary><span>Evidence and review</span></summary><ul>{% for criterion in goal.criteria %}<li><strong>{{ criterion.verdict.value }}</strong> — {{ criterion.description }} ({{ criterion.evidence_ids | length }} evidence)</li>{% endfor %}</ul>
+    <form class="goal-inline-form" data-goal-evidence-form><label>Criterion<select name="criterion_id">{% for criterion in goal.criteria %}<option value="{{ criterion.id }}">{{ criterion.description }}</option>{% endfor %}</select></label><label>Evidence summary<input name="summary" required></label><label>Artifact URI<input name="uri" type="url" placeholder="https://…"></label><button type="submit">Record evidence</button></form>
+    {% if goal.evidence %}<form class="goal-inline-form" data-goal-audit-form>{% for evidence in goal.evidence %}<input type="hidden" name="evidence_id" value="{{ evidence.id }}">{% endfor %}<label>Review explanation<input name="explanation" required></label><label>Verdict<select name="verdict"><option value="satisfied">Accept evidence</option><option value="unsatisfied">Reject evidence</option><option value="inconclusive">Inconclusive</option></select></label><button type="submit">Record independent review</button></form>{% endif %}
+  </details>
+  <details><summary><span>Lifecycle history ({{ goal_events[goal.id] | length }})</span></summary><ol class="goal-history">{% for event in goal_events[goal.id] | reverse %}<li><strong>{{ event.event_type | default(event.type) }}</strong> <span>{{ event.created_at }}</span></li>{% else %}<li>No lifecycle events.</li>{% endfor %}</ol></details><p role="status" data-goal-status></p>
+</article>{% endfor %}</section></div>

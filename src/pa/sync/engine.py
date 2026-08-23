@@ -6,6 +6,8 @@ import asyncio
 import base64
 import json
 import logging
+import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -26,6 +28,16 @@ if TYPE_CHECKING:
 
 MAX_SYNC_OBJECTS = 20_000
 MAX_SYNC_ENCODED_BYTES = 128 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class PreparedObjects:
+    """Immutable, bounded transfer material for one durable realm head."""
+
+    realm_id: str
+    head_hash: str
+    objects: dict[str, str]
+    encoded_bytes: int
 
 
 class SyncEngine:
@@ -57,6 +69,23 @@ class SyncEngine:
         self._rebuild_projection: Callable[[str], None] | None = None
         self._client: httpx.AsyncClient | None = None
         self._peer_slots = asyncio.Semaphore(8)
+        # Only one newest realm/head bundle is retained, capping cache memory at
+        # MAX_SYNC_ENCODED_BYTES. In-flight
+        # construction is shared and shielded so one peer timeout cannot cancel
+        # work needed by the other peers in the same pass.
+        self._prepared: PreparedObjects | None = None
+        self._preparing: dict[tuple[str, str], asyncio.Task[PreparedObjects]] = {}
+        self._prepare_metrics: dict[str, int | float | str | None] = {
+            "phase": "idle",
+            "builds": 0,
+            "hits": 0,
+            "waiters": 0,
+            "last_head": None,
+            "last_collect_ms": 0.0,
+            "last_prepare_ms": 0.0,
+            "last_object_count": 0,
+            "last_encoded_bytes": 0,
+        }
 
     async def _offload(
         self,
@@ -253,6 +282,7 @@ class SyncEngine:
         ]
         if self._periodic_task:
             tasks.append(self._periodic_task)
+        tasks.extend(self._preparing.values())
         for task in tasks:
             if not task.done():
                 task.cancel()
@@ -261,6 +291,86 @@ class SyncEngine:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    def invalidate_prepared(self, realm_id: str | None = None) -> None:
+        """Invalidate retained bundles after compaction/corruption repair."""
+        if realm_id is None or (
+            self._prepared is not None and self._prepared.realm_id == realm_id
+        ):
+            self._prepared = None
+
+    async def _prepare_objects(self, realm_id: str, head: str) -> PreparedObjects:
+        started = time.perf_counter()
+        cached = self._prepared
+        if cached and cached.realm_id == realm_id and cached.head_hash == head:
+            self._prepare_metrics["hits"] = int(self._prepare_metrics["hits"]) + 1
+            self._prepare_metrics["last_prepare_ms"] = round(
+                (time.perf_counter() - started) * 1000, 3
+            )
+            return cached
+
+        key = (realm_id, head)
+        task = self._preparing.get(key)
+        if task is None:
+            task = asyncio.create_task(
+                self._build_prepared(realm_id, head),
+                name=f"sync-prepare:{realm_id}:{head[:12]}",
+            )
+            self._preparing[key] = task
+        else:
+            self._prepare_metrics["waiters"] = int(
+                self._prepare_metrics["waiters"]
+            ) + 1
+        try:
+            result = await asyncio.shield(task)
+            self._prepare_metrics["last_prepare_ms"] = round(
+                (time.perf_counter() - started) * 1000, 3
+            )
+            return result
+        finally:
+            if task.done() and self._preparing.get(key) is task:
+                self._preparing.pop(key, None)
+
+    async def _build_prepared(self, realm_id: str, head: str) -> PreparedObjects:
+        self._prepare_metrics["phase"] = "collecting"
+        started = time.perf_counter()
+        try:
+            objects = await self._offload(
+                "sync.object_collect", self._collect_objects, head, timeout=60.0
+            )
+            encoded_bytes = sum(len(value) for value in objects.values())
+            if encoded_bytes > MAX_SYNC_ENCODED_BYTES:
+                raise ValueError("sync history exceeds the 128 MiB encoded object limit")
+            prepared = PreparedObjects(
+                realm_id=realm_id,
+                head_hash=head,
+                objects=objects,
+                encoded_bytes=encoded_bytes,
+            )
+            # A newer head may have completed first; never replace it with stale
+            # work. The caller may still safely use this immutable result.
+            current = self._prepared
+            durable_head = await self._offload(
+                "sync.ref_read", self.log.get_head, realm_id
+            )
+            if durable_head == head and (
+                current is None
+                or current.realm_id != realm_id
+                or current.head_hash != durable_head
+            ):
+                self._prepared = prepared
+            self._prepare_metrics.update(
+                phase="ready",
+                builds=int(self._prepare_metrics["builds"]) + 1,
+                last_head=head,
+                last_collect_ms=round((time.perf_counter() - started) * 1000, 3),
+                last_object_count=len(objects),
+                last_encoded_bytes=encoded_bytes,
+            )
+            return prepared
+        except Exception:
+            self._prepare_metrics["phase"] = "failed"
+            raise
 
     async def _periodic_anti_entropy(self, interval_seconds: float) -> None:
         while True:
@@ -439,6 +549,7 @@ class SyncEngine:
                     advanced_head = merge.hash
                 if self._rebuild_projection:
                     self._rebuild_projection(realm_id)
+                self.invalidate_prepared(realm_id)
                 return {
                     "advanced": True,
                     "head": advanced_head,
@@ -460,13 +571,43 @@ class SyncEngine:
         realm_id: str,
         route: PeerRoute,
         head: str,
+        prepared: PreparedObjects | None = None,
     ) -> dict:
         descriptor = self._instance(route.target_instance_id, route.target_url)
         try:
             endpoint = f"{route.target_url.rstrip('/')}/api/sync/push"
-            objects = await self._offload(
-                "sync.object_collect", self._collect_objects, head, timeout=60.0
-            )
+            prepared = prepared or await self._prepare_objects(realm_id, head)
+            objects = prepared.objects
+            inventory_protocol = 1
+            if route.mode != PeerRouteMode.RELAY:
+                inventory_started = time.perf_counter()
+                inventory = await self._request(
+                    "POST",
+                    f"{route.target_url.rstrip('/')}/api/sync/need",
+                    payload={
+                        "realm_id": realm_id,
+                        "head_hash": head,
+                        "hashes": list(prepared.objects),
+                        "protocol": 2,
+                    },
+                )
+                if inventory.status_code != 404:
+                    inventory_protocol = 2
+                    inventory.raise_for_status()
+                    inventory_data = await self._response_json(inventory)
+                    if not isinstance(inventory_data, dict) or not isinstance(
+                        inventory_data.get("missing"), list
+                    ):
+                        raise ValueError("peer returned an invalid sync inventory")
+                    missing = inventory_data["missing"]
+                    if any(item not in prepared.objects for item in missing):
+                        raise ValueError(
+                            "peer requested an object outside the advertised inventory"
+                        )
+                    objects = {item: prepared.objects[item] for item in missing}
+                self._prepare_metrics["last_inventory_ms"] = round(
+                    (time.perf_counter() - inventory_started) * 1000, 3
+                )
             payload = {
                 "realm_id": realm_id,
                 "head_hash": head,
@@ -515,6 +656,9 @@ class SyncEngine:
                 **descriptor,
                 "status": "reachable",
                 "head": data.get("head"),
+                "objects_sent": len(objects),
+                "encoded_bytes_sent": sum(len(value) for value in objects.values()),
+                "inventory_protocol": inventory_protocol,
             }
         except (httpx.HTTPError, TimeoutError) as exc:
             return {
@@ -618,11 +762,15 @@ class SyncEngine:
                 if all_conflicts or not local_head:
                     break
 
+                prepared = await self._prepare_objects(realm_id, local_head)
+
                 push_calls = [
                     asyncio.sleep(0, result=observed)
                     if observed.get("status")
                     in {"invalid_response", "unavailable"}
-                    else self._push_peer(client, realm_id, route, local_head)
+                    else self._push_peer(
+                        client, realm_id, route, local_head, prepared=prepared
+                    )
                     for route, observed in zip(routes, instances, strict=True)
                 ]
                 pushed = list(await asyncio.gather(*push_calls))
@@ -730,6 +878,19 @@ class SyncEngine:
         objects: dict[str, str] = {}
         seen: set[str] = set()
         pending = [head_hash]
+        encoded_bytes = 0
+
+        def add(object_hash: str, data: bytes) -> None:
+            nonlocal encoded_bytes
+            encoded = base64.b64encode(data).decode()
+            encoded_bytes += len(encoded)
+            if len(objects) >= MAX_SYNC_OBJECTS:
+                raise ValueError(f"sync history exceeds {MAX_SYNC_OBJECTS} objects")
+            if encoded_bytes > MAX_SYNC_ENCODED_BYTES:
+                raise ValueError(
+                    "sync history exceeds the 128 MiB encoded object limit"
+                )
+            objects[object_hash] = encoded
 
         while pending:
             commit_hash = pending.pop()
@@ -738,11 +899,7 @@ class SyncEngine:
             seen.add(commit_hash)
             data = self.store.get(commit_hash)
             if data:
-                objects[commit_hash] = base64.b64encode(data).decode()
-                if len(objects) > MAX_SYNC_OBJECTS:
-                    raise ValueError(
-                        f"sync history exceeds {MAX_SYNC_OBJECTS} objects"
-                    )
+                add(commit_hash, data)
             commit = self.log.get_commit(commit_hash)
             if not commit:
                 continue
@@ -751,11 +908,7 @@ class SyncEngine:
                     seen.add(event_hash)
                     event_data = self.store.get(event_hash)
                     if event_data:
-                        objects[event_hash] = base64.b64encode(event_data).decode()
-                        if len(objects) > MAX_SYNC_OBJECTS:
-                            raise ValueError(
-                                f"sync history exceeds {MAX_SYNC_OBJECTS} objects"
-                            )
+                        add(event_hash, event_data)
             pending.extend(commit.parent_hashes)
 
         return objects
@@ -770,4 +923,5 @@ class SyncEngine:
             "peer_count": len(routes),
             "zone": self.settings.zone,
             "convergence": self.convergence_status(realm_id),
+            "object_preparation": dict(self._prepare_metrics),
         }

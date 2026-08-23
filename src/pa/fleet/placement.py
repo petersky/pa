@@ -146,6 +146,13 @@ class PlacementDecision(BaseModel):
     policy_versions: dict[str, int | None] = Field(default_factory=dict)
     principal_id: str | None = None
     participation_override_reason: str | None = None
+    requested_provider: str | None = None
+    requested_model_id: str | None = None
+    requested_mode_id: str | None = None
+    resolved_provider: str | None = None
+    resolved_model_id: str | None = None
+    resolved_mode_id: str | None = None
+    execution_selector_provenance: dict[str, str] = Field(default_factory=dict)
 
 
 class PlacementError(RuntimeError):

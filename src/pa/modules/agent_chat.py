@@ -1093,16 +1093,53 @@ def list_session_observability(request: Request, limit: int = 100) -> dict[str, 
 
 
 @router.get("/observability/v1/sessions/{session_id}")
-def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
+async def get_session_observability(request: Request, session_id: str) -> dict[str, Any]:
     session = _manager(request).store.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return _observability(request, session)
+    if session:
+        return _observability(request, session)
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    dispatch = dispatch_store.by_session(session_id) if dispatch_store else None
+    if not dispatch:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "canonical_session_unknown", "message": "No local session or durable dispatch owns this session ID."},
+        )
+    if dispatch.target_instance_id == request.app.state.ctx.settings.instance_id:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "target_session_projection_missing", "message": "The durable dispatch targets this instance, but its local runtime projection is missing.", "dispatch_id": dispatch.dispatch_id, "recoverable": True},
+        )
+    try:
+        # Imported lazily to keep module registration acyclic.
+        from pa.modules.fleet import _peer_agent_json
+
+        result = await _peer_agent_json(
+            request,
+            dispatch.target_instance_id,
+            "GET",
+            f"observability/v1/sessions/{session_id}",
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "target_session_unavailable",
+                "message": "The durable remote session is known, but target liveness could not be read.",
+                "dispatch_id": dispatch.dispatch_id,
+                "target_instance_id": dispatch.target_instance_id,
+                "upstream": exc.detail,
+                "recoverable": True,
+            },
+        ) from exc
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=502, detail={"code": "invalid_target_liveness", "dispatch_id": dispatch.dispatch_id})
+    result["routing"] = {"source": "durable_dispatch", "dispatch_id": dispatch.dispatch_id, "target_instance_id": dispatch.target_instance_id}
+    return result
 
 
 @router.get("/observability/v1/sessions/{session_id}/turns")
-def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
-    projection = get_session_observability(request, session_id)
+async def list_session_turns(request: Request, session_id: str) -> dict[str, Any]:
+    projection = await get_session_observability(request, session_id)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,
         "session_id": session_id,
@@ -3042,6 +3079,8 @@ class AgentChatModule(Module):
                 ctx.settings,
                 "GET",
                 f"/api/agent/observability/v1/sessions/{session_id}",
+                # Unknown IDs retain the compatibility null. Dispatch-known IDs
+                # are routed above and therefore return data or an explicit 5xx.
                 allow_not_found=True,
                 timeout_seconds=15.0,
             )

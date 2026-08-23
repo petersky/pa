@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import tempfile
+import threading
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from pa.domain.models import AgentSession, CardLane
+from pa.core.async_runtime import AsyncRuntime
+from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord
 from pa.instance.session_lifecycle import SessionLifecyclePolicy
 from pa.pr_supervisor.models import PRWatchStatus
@@ -331,3 +338,95 @@ class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             manager.store.retirement[:2], ("session-1", "card-done")
         )
+
+    async def test_close_has_reserved_capacity_when_unrelated_pool_is_saturated(self):
+        release = threading.Event()
+        started = threading.Event()
+        shared = AsyncRuntime(max_workers=1, max_queue=0, default_timeout=None)
+
+        def unrelated_work():
+            started.set()
+            release.wait(2)
+
+        unrelated = asyncio.create_task(
+            shared.run_blocking("sync.projection", unrelated_work)
+        )
+        await asyncio.to_thread(started.wait, 1)
+        expired = _session(updated_at=datetime.now(UTC) - timedelta(hours=25))
+
+        class _ClosingStore(_Store):
+            def list_sessions(self, **_kwargs):
+                return [expired]
+
+            def close_session(self, _session_id, **kwargs):
+                detail = kwargs["diagnostics"]
+                detail["lock_wait_ms"] = 0.0
+                detail["terminal_result"] = "closed"
+                return expired.model_copy(update={"status": "closed"}), "idle"
+
+        manager = _Manager()
+        manager.store = _ClosingStore()
+        manager.workspace_manager.list = lambda: []
+        policy = SessionLifecyclePolicy(manager, {})
+        try:
+            before = time.monotonic()
+            metrics = await asyncio.wait_for(policy.run_once(), timeout=2.0)
+            self.assertLess(time.monotonic() - before, 1.5)
+            self.assertEqual(metrics["auto_closed"], 1)
+            attempt = policy.snapshot()["attempts"][0]
+            self.assertEqual(attempt["terminal_result"], "closed")
+            self.assertTrue(attempt["worker_owner"].startswith("pa-session-lifecycle"))
+            self.assertEqual(shared.snapshot()["executor"]["active"], 1)
+        finally:
+            release.set()
+            await unrelated
+            await policy.close()
+            await shared.close()
+
+    async def test_concurrent_sweeps_are_coalesced(self):
+        manager = _Manager()
+        manager.store.list_sessions = lambda **_kwargs: []
+        manager.workspace_manager.list = lambda: []
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        policy = SessionLifecyclePolicy(manager, {})
+        original = policy._offload
+
+        async def paused_offload(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return await original(*args, **kwargs)
+
+        policy._offload = paused_offload
+        first = asyncio.create_task(policy.run_once())
+        await entered.wait()
+        second = await policy.run_once()
+        self.assertEqual(second["coalesced:sweep_active"], 1)
+        release.set()
+        await first
+        await policy.close()
+
+    async def test_bounded_lock_failure_cannot_close_later(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            session = _session()
+            store.save_session(session)
+            detail = {}
+            store._mutation_lock.acquire()
+            try:
+                with self.assertRaises(TimeoutError):
+                    await asyncio.to_thread(
+                        store.close_session,
+                        session.id,
+                        reason="auto:test",
+                        lock_timeout_seconds=0.02,
+                        busy_timeout_ms=20,
+                        diagnostics=detail,
+                    )
+                await asyncio.sleep(0.03)
+                self.assertEqual(store.get_session(session.id).status, "idle")
+                self.assertEqual(store.list_transcript_events(session.id), [])
+                self.assertEqual(detail["terminal_result"], "lock_timeout")
+                self.assertGreaterEqual(detail["lock_wait_ms"], 15)
+            finally:
+                store._mutation_lock.release()

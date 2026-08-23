@@ -218,6 +218,26 @@ def test_card_modal_renders_dispatch_progress_retry_and_session_links() -> None:
         assert '" queued; "' in script
 
 
+def test_agent_tab_uses_durable_remote_dispatch_when_local_session_index_is_empty() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        app = Kernel.boot(settings=Settings(data_dir=Path(tmp), instance_id="macbook", instance_name="MacBook", instance_url="http://pa.test:8080", agent_enabled=False, subscribed_realms=["default"], peers=[])).build_app()
+        with TestClient(app) as client:
+            card = app.state.ctx.store.create_card(CardCreate(title="Remote work"))
+            record = _record(card.id, "running")
+            record.target_instance_id = "monica"
+            record.target_instance_name = "Monica"
+            record.session_id = "remote-session"
+            app.state.ctx.require_service("dispatch_store").put(record)
+            response = client.get(f"/partials/cards/{card.id}/agent")
+
+    assert response.status_code == 200
+    assert response.text.count('data-session-id="remote-session"') == 1
+    assert "Durable remote execution" in response.text
+    assert "No agent sessions yet" not in response.text
+    template = (Path(__file__).parents[1] / "src/pa/server/templates/partials/card-detail-agent.html").read_text()
+    assert "Start another intentionally" in template
+    assert "/agent?session=remote-session&amp;instance=monica" in response.text
+
 def test_card_item_actions_follow_context_and_detail_opens_dispatch_status() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         app = Kernel.boot(settings=Settings(data_dir=Path(tmp), instance_id="local", instance_name="Local", instance_url="http://pa.test:8080", agent_enabled=False, subscribed_realms=["default"], peers=[])).build_app()

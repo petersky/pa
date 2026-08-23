@@ -706,7 +706,7 @@ const page = Array.from({ length: 250 }, function (_, index) { return { seq: ind
 page.push({ seq: 251, type: "tool_call" }); // duplicate with retained transcript
 resolveRequest({ events: page, page: { has_older: false, oldest_seq: 1 }, diagnostics: { payload_bytes: 1234 } });
 setImmediate(function () {
-  assert.strictEqual(widget.transcriptEvents.length, 10250);
+  assert.strictEqual(widget.transcriptEvents.length, 2000, "durable paging honors the browser retention bound");
   assert.strictEqual(widget.transcriptEvents[0].seq, 1);
   assert.strictEqual(widget.transcriptEvents[249].seq, 250);
   assert.strictEqual(widget.els.messages.children[252].name, "event-250");

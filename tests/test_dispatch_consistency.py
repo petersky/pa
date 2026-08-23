@@ -4106,7 +4106,8 @@ class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
             create_body = peer_agent.await_args_list[0].kwargs["body"]
             self.assertEqual(create_body["label"], f"dispatch:{record.dispatch_id}")
             self.assertNotEqual(create_body["label"], "card:card-1")
-            domain.add_knowledge.assert_called_once()
+            domain.add_knowledge.assert_not_called()
+            self.assertIsNotNone(record.knowledge_recorded_at)
 
     async def test_remote_proxy_rejects_unconfirmed_config_before_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

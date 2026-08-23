@@ -306,6 +306,76 @@ def test_automatic_provider_records_concrete_target_provider(tmp_path: Path) -> 
     assert decision.eligible_candidates[0]["provider_id"] == "codex"
 
 
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/api/fleet/dispatch",
+            {"placement_policy": "best_match"},
+        ),
+        (
+            "/api/fleet/instances/local/agent/start",
+            {},
+        ),
+    ],
+)
+def test_collaboration_policy_uses_resolved_target_provider(
+    path: str, payload: dict[str, str]
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        settings = Settings(
+            data_dir=Path(tmp),
+            instance_id="local",
+            instance_name="Local",
+            instance_url="http://pa.test:8080",
+            agent_provider="cursor",
+            agent_enabled=False,
+            subscribed_realms=["default"],
+            peers=[],
+        )
+        app = Kernel.boot(settings=settings).build_app()
+        with (
+            patch(
+                "pa.modules.fleet._placement_candidates",
+                autospec=True,
+                return_value=[_candidate("local", local=True)],
+            ),
+            TestClient(app) as client,
+        ):
+            assert client.get("/").status_code == 200
+            response = client.post(
+                path,
+                headers={"X-CSRF-Token": client.cookies.get("pa_csrf")},
+                json={
+                    **payload,
+                    "idempotency_key": f"resolved-provider-{path}",
+                    "collaboration_mode": "plan",
+                    "execution_contract": {
+                        "version": 1,
+                        "profile": "research",
+                        "confirmed": True,
+                    },
+                },
+            )
+
+        assert response.status_code == 202, response.text
+        dispatch = response.json()["dispatch"]
+        decision = dispatch["collaboration"]["decision"]
+        placement = dispatch["placement_decision"]
+        assert dispatch["collaboration"]["requested_mode"] == "plan"
+        assert decision["inputs"]["provider"] == "codex"
+        assert decision["inputs"]["supported_modes"] == ["default", "plan"]
+        assert decision["effective_mode"] == "plan"
+        assert placement["requested_provider"] is None
+        assert placement["resolved_provider"] == "codex"
+        assert placement["resolved_mode_id"] == "agent-full-access"
+        assert placement["execution_selector_provenance"] == {
+            "provider": "selected_target",
+            "model": "provider_default",
+            "mode": "provider_default",
+        }
+
+
 def test_legacy_none_model_selector_normalizes_to_automatic() -> None:
     from pa.modules.fleet import RemoteAgentStartBody
 

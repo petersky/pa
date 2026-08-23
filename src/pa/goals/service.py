@@ -632,7 +632,12 @@ class GoalService:
         )
 
     def schedule_wakeup(
-        self, goal_id: str, wakeup: GoalWakeup | None, context: GoalMutationContext
+        self,
+        goal_id: str,
+        wakeup: GoalWakeup | None,
+        context: GoalMutationContext,
+        *,
+        outcome_reason: str | None = None,
     ) -> Goal:
         def mutate(goal: Goal) -> dict[str, Any]:
             candidate = wakeup.model_copy(deep=True) if wakeup else None
@@ -662,6 +667,7 @@ class GoalService:
                 "control_authority_instance_id": goal.control_authority_instance_id,
                 "authority_transferred": transferred,
                 "fencing_token": goal.lease.fencing_token,
+                "outcome_reason": outcome_reason,
             }
 
         return self._mutate(
@@ -669,7 +675,7 @@ class GoalService:
             context,
             "goal.wakeup_scheduled",
             mutate,
-            operation=wakeup,
+            operation={"wakeup": wakeup, "outcome_reason": outcome_reason},
         )
 
     def submit_proposal(
