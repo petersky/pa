@@ -1609,7 +1609,7 @@ def _new_card_context(request: Request) -> dict:
     return {
         "active_realm": realm,
         "selected_project": selected_project,
-        "kinds": list(CardKind),
+        "kinds": [kind for kind in CardKind if kind is not CardKind.GOAL],
         "lanes": list(CardLane),
         "projects": projects,
         "parent_cards": store.list_cards(realm_id=realm, limit=500),
@@ -2409,6 +2409,11 @@ async def create_card_modal_ui(
     cleaned_title = title.strip()
     if not cleaned_title:
         raise HTTPException(status_code=422, detail="Title is required")
+    if kind is CardKind.GOAL:
+        raise HTTPException(
+            status_code=422,
+            detail="Goals must be created from the governed Goals workspace.",
+        )
 
     store = get_store()
     selected_project = project_id.strip() or None
