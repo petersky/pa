@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import logging
 import time
@@ -801,16 +802,59 @@ class SyncEngine:
         ]
         return result
 
+    def _projection_callback_accepts_target(self) -> bool:
+        callback = self._rebuild_projection
+        if callback is None:
+            return False
+        try:
+            signature = inspect.signature(callback)
+        except (TypeError, ValueError):
+            return False
+        parameters = list(signature.parameters.values())
+        if any(
+            parameter.kind == inspect.Parameter.VAR_POSITIONAL
+            for parameter in parameters
+        ):
+            return True
+        # Bound methods omit self; accept an optional/required second parameter.
+        return len(parameters) >= 2
+
     def _rebuild_to_head(
         self, realm_id: str, target_head: str | None = None
     ) -> dict[str, Any] | None:
         if not self._rebuild_projection:
             return None
-        try:
+        if target_head is not None and self._projection_callback_accepts_target():
             return self._rebuild_projection(realm_id, target_head)
-        except TypeError:
-            # Older one-arg callbacks remain supported.
-            return self._rebuild_projection(realm_id)
+        if (
+            target_head is not None
+            and self.log.get_head(realm_id) != target_head
+        ):
+            # Legacy one-arg callbacks read get_head(); callers must publish the
+            # durable tip first, then invoke without a target.
+            return {
+                "commits_applied": 0,
+                "rebuilt": False,
+                "reason": "deferred_legacy_callback",
+            }
+        return self._rebuild_projection(realm_id)
+
+    def _publish_head_with_projection(
+        self,
+        realm_id: str,
+        new_head: str,
+        *,
+        expected_head: str | None,
+    ) -> dict[str, Any] | None:
+        """Catch up target-aware projections before CAS; legacy after."""
+        if self._projection_callback_accepts_target():
+            projection = self._rebuild_to_head(realm_id, new_head)
+            self.log.advance_ref(
+                realm_id, new_head, expected_head=expected_head
+            )
+            return projection
+        self.log.advance_ref(realm_id, new_head, expected_head=expected_head)
+        return self._rebuild_to_head(realm_id)
 
     def _reconcile_remote_head(self, realm_id: str, remote_head: str) -> dict:
         for attempt in range(1, 4):
@@ -818,6 +862,8 @@ class SyncEngine:
             if local_head == remote_head:
                 # Repair projection lag even when the durable tip already matches.
                 projection = self._rebuild_to_head(realm_id, remote_head) or {}
+                if projection.get("reason") == "deferred_legacy_callback":
+                    projection = self._rebuild_to_head(realm_id) or {}
                 if projection.get("commits_applied") or projection.get("rebuilt"):
                     return {
                         "advanced": False,
@@ -831,14 +877,12 @@ class SyncEngine:
                 if not local_head:
                     if not self.log.get_commit(remote_head):
                         return {"advanced": False, "missing_head": remote_head}
-                    # Catch up projection before publishing the durable tip so a
-                    # failed rebuild cannot leave head ahead of projection.
-                    projection = self._rebuild_to_head(realm_id, remote_head)
-                    self.log.advance_ref(realm_id, remote_head, expected_head=None)
+                    projection = self._publish_head_with_projection(
+                        realm_id, remote_head, expected_head=None
+                    )
                     advanced_head = remote_head
                 elif self.log.is_ancestor(local_head, remote_head):
-                    projection = self._rebuild_to_head(realm_id, remote_head)
-                    self.log.advance_ref(
+                    projection = self._publish_head_with_projection(
                         realm_id, remote_head, expected_head=local_head
                     )
                     advanced_head = remote_head
@@ -882,7 +926,10 @@ class SyncEngine:
                         ),
                     )
                     advanced_head = merge.hash
+                    # merge_heads already published the tip; rebuild after.
                     projection = self._rebuild_to_head(realm_id, advanced_head)
+                    if projection and projection.get("reason") == "deferred_legacy_callback":
+                        projection = self._rebuild_to_head(realm_id)
                 self.invalidate_prepared(realm_id)
                 return {
                     "advanced": True,
@@ -1298,19 +1345,6 @@ class SyncEngine:
                 conflicts=[],
                 attempt=0,
             )
-            # Repair local projection lag before peer exchange so peers with a
-            # matching durable tip still catch up their SQLite projection.
-            local_tip = await self._offload(
-                "sync.ref_read", self.log.get_head, realm_id
-            )
-            if local_tip and self._rebuild_projection:
-                await self._offload(
-                    "sync.projection_repair",
-                    self._rebuild_to_head,
-                    realm_id,
-                    local_tip,
-                    timeout=60.0,
-                )
             if not routes:
                 head = await self._offload(
                     "sync.ref_read", self.log.get_head, realm_id
