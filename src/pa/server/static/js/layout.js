@@ -204,6 +204,41 @@
     });
   }
 
+  function initProjectCreateDialogs(root) {
+    var scope = root || document;
+    scope.querySelectorAll("[data-project-create-open]").forEach(function (button) {
+      if (button.dataset.projectCreateReady) return;
+      button.dataset.projectCreateReady = "1";
+      var dialog = document.getElementById(button.dataset.projectCreateOpen);
+      if (!dialog) return;
+
+      function closeDialog() {
+        var form = dialog.querySelector("form");
+        if (form) form.reset();
+        if (dialog.open && typeof dialog.close === "function") dialog.close();
+        else dialog.removeAttribute("open");
+        button.focus({ preventScroll: true });
+      }
+
+      button.addEventListener("click", function () {
+        if (typeof dialog.showModal === "function") dialog.showModal();
+        else dialog.setAttribute("open", "");
+        var first = dialog.querySelector("input:not([type=hidden]), textarea, select");
+        if (first) first.focus();
+      });
+      dialog.querySelectorAll("[data-project-create-close]").forEach(function (close) {
+        close.addEventListener("click", closeDialog);
+      });
+      dialog.addEventListener("cancel", function (event) {
+        event.preventDefault();
+        closeDialog();
+      });
+      dialog.addEventListener("click", function (event) {
+        if (event.target === dialog) closeDialog();
+      });
+    });
+  }
+
   document.addEventListener("click", function (e) {
     var link = e.target.closest("[data-section-link]");
     if (!link) return;
@@ -433,6 +468,7 @@
     initResize(root);
     initSections(root);
     initProjectFilters(root);
+    initProjectCreateDialogs(root);
     transformProjectDisclosures(root);
     initProjectDisclosureJumps(root);
     restoreProjectDisclosureFocus(root);

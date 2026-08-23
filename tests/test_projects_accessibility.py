@@ -308,6 +308,30 @@ class ProjectsHealthRouteTests(unittest.TestCase):
             response.text,
         )
 
+    def test_new_project_uses_an_accessible_modal_instead_of_a_sidebar_disclosure(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            response = client.get("/projects?realm=default&view=projects")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            'data-project-create-open="new-project-dialog" aria-haspopup="dialog"',
+            response.text,
+        )
+        self.assertIn(
+            '<dialog id="new-project-dialog" class="project-create-dialog" '
+            'aria-labelledby="new-project-title">',
+            response.text,
+        )
+        self.assertIn('data-project-create-close', response.text)
+        self.assertNotIn('<details class="projects-create">', response.text)
+
+        layout = (ROOT / "src/pa/server/static/js/layout.js").read_text()
+        self.assertIn('dialog.showModal()', layout)
+        self.assertIn('dialog.addEventListener("cancel"', layout)
+        self.assertIn('button.focus({ preventScroll: true })', layout)
+
 
 @unittest.skipUnless(_browser_executable(), "managed Chromium is not installed")
 class ProjectsManagedChromiumTests(unittest.IsolatedAsyncioTestCase):
