@@ -3593,6 +3593,16 @@ code {
 
 .page-heading p { margin: 0.2rem 0 0; color: var(--pa-text-muted); }
 
+.project-heading-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.project-heading-actions > details { margin: 0; }
+
 .metadata-row {
   display: flex;
   align-items: center;

@@ -755,6 +755,32 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("Linked repositories &amp; worktrees", response.text)
         self.assertIn("Agents &amp; pull requests", response.text)
 
+    def test_project_overview_create_card_opens_shared_modal_for_project(self) -> None:
+        with TestClient(self.app) as client:
+            project = self.app.state.ctx.store.create_project(
+                ProjectCreate(title="Card creation project")
+            )
+
+            overview = client.get(f"/projects?project={project.id}")
+            form = client.get(f"/partials/cards/new?project={project.id}")
+
+        self.assertEqual(overview.status_code, 200)
+        self.assertRegex(
+            overview.text,
+            rf'<button[^>]+data-new-card-open[^>]+data-new-card-project="{project.id}"[^>]*>\s*Create Card\s*</button>',
+        )
+        self.assertEqual(form.status_code, 200)
+        self.assertIn(f'value="{project.id}" selected', form.text)
+
+    def test_new_card_opener_prefers_explicit_project_context(self) -> None:
+        script = (
+            Path(__file__).parents[1] / "src/pa/server/static/js/spa.js"
+        ).read_text()
+
+        self.assertIn("function newCardContextUrl(opener)", script)
+        self.assertIn("opener.dataset.newCardProject", script)
+        self.assertIn("fetch(newCardContextUrl(opener)", script)
+
     def test_home_does_not_guess_motion_from_active_lane(self) -> None:
         with TestClient(self.app) as client:
             card = self.app.state.ctx.store.create_card(

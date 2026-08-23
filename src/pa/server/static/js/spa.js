@@ -1302,11 +1302,13 @@
     return document.getElementById("new-card-dialog-content");
   }
 
-  function newCardContextUrl() {
+  function newCardContextUrl(opener) {
     var current = new URL(window.location.href);
     var params = new URLSearchParams();
     params.set("realm", current.searchParams.get("realm") || "default");
-    var project = current.searchParams.get("project");
+    var project = opener && opener.dataset.newCardProject
+      ? opener.dataset.newCardProject
+      : current.searchParams.get("project");
     if (project) params.set("project", project);
     return "/partials/cards/new?" + params.toString();
   }
@@ -1638,7 +1640,7 @@
     newCardRequest = new AbortController();
     content.innerHTML = '<div class="card-dialog-state" role="status"><p>Loading new card…</p></div>';
     showNewCardDialog();
-    fetch(newCardContextUrl(), {
+    fetch(newCardContextUrl(opener), {
       credentials: "same-origin",
       signal: newCardRequest.signal,
     })
