@@ -109,7 +109,17 @@ class _SyncNetwork:
                 if not node.objects.has(object_hash)
             ]
             return httpx.Response(
-                200, json={"protocol": 2, "missing": missing}, request=request
+                200,
+                json={
+                    "protocol": 3,
+                    "missing": missing,
+                    "present_commits": [
+                        object_hash
+                        for object_hash in body.get("commit_hashes", [])
+                        if node.objects.has(object_hash)
+                    ],
+                },
+                request=request,
             )
         if path == "/api/sync/get":
             objects = {
@@ -149,8 +159,12 @@ class _SyncNetwork:
                     request=request,
                 )
             node.engine.ingest_objects(body.get("objects", {}))
-            result = node.engine._reconcile_remote_head(
-                body.get("realm_id", "default"), body["head_hash"]
+            result = (
+                node.engine._reconcile_remote_head(
+                    body.get("realm_id", "default"), body["head_hash"]
+                )
+                if body.get("head_hash")
+                else {"conflicts": []}
             )
             if result.get("conflicts"):
                 return httpx.Response(
@@ -194,6 +208,173 @@ class _SyncClient:
 
 
 class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_thirty_thousand_object_history_converges_in_bounded_batches(
+        self,
+    ) -> None:
+        hashes = [f"{index:064x}" for index in range(1, 30_002)]
+        objects = {item: b"{}" for item in hashes}
+        commits = {
+            item: SimpleNamespace(
+                parent_hashes=[hashes[index - 1]] if index else [],
+                event_hashes=[],
+            )
+            for index, item in enumerate(hashes)
+        }
+        received: set[str] = set()
+        remote_head: str | None = None
+
+        self.authority.engine.store = SimpleNamespace(
+            get=lambda object_hash: objects.get(object_hash)
+        )
+        self.authority.engine.log = SimpleNamespace(
+            get_commit=lambda commit_hash: commits.get(commit_hash)
+        )
+
+        async def request(method: str, url: str, *, payload=None, **_kwargs):
+            nonlocal remote_head
+            request = httpx.Request(method, url)
+            body = payload or {}
+            if url.endswith("/api/sync/need"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "protocol": 3,
+                        "missing": [
+                            item for item in body["hashes"] if item not in received
+                        ],
+                        "present_commits": [
+                            item
+                            for item in body["commit_hashes"]
+                            if item in received
+                        ],
+                    },
+                    request=request,
+                )
+            received.update(body.get("objects", {}))
+            remote_head = body.get("head_hash") or remote_head
+            return httpx.Response(200, json={"head": remote_head}, request=request)
+
+        self.authority.engine._request = request
+        head = hashes[-1]
+
+        result = await self.authority.engine._push_peer(
+            MagicMock(),
+            "default",
+            self.authority.peers.routes_for_realm("default")[0],
+            head,
+        )
+
+        self.assertEqual(result["status"], "reachable")
+        self.assertEqual(result["inventory_protocol"], 3)
+        self.assertEqual(result["objects_sent"], 30_001)
+        self.assertGreater(result["inventory_batches"], 1)
+        self.assertGreater(result["object_batches"], 1)
+        self.assertEqual(remote_head, head)
+        self.assertEqual(len(received), 30_001)
+
+    async def test_peer_missing_one_commit_receives_only_commit_and_event(self) -> None:
+        card = self._shared_card()
+        head = self._update(self.authority, card.id, title="One delta")
+        self.authority.engine._open_client()
+        assert self.authority.engine._client is not None
+
+        result = await self.authority.engine._push_peer(
+            self.authority.engine._client,
+            "default",
+            self.authority.peers.routes_for_realm("default")[0],
+            head,
+        )
+
+        self.assertEqual(result["status"], "reachable")
+        self.assertEqual(result["objects_sent"], 2)
+        self.assertEqual(result["inventory_protocol"], 3)
+        self.assertEqual(self.target.log.get_head("default"), head)
+
+    async def test_interrupted_transfer_restarts_idempotently(self) -> None:
+        card = self._shared_card()
+        head = self._update(self.authority, card.id, title="Resumable")
+        original_response = self.network.response
+        interrupted = False
+
+        def interrupt_once(method: str, url: str, **kwargs) -> httpx.Response:
+            nonlocal interrupted
+            body = kwargs.get("json") or {}
+            if (
+                not interrupted
+                and urlsplit(url).hostname == "target"
+                and urlsplit(url).path == "/api/sync/push"
+                and body.get("objects")
+            ):
+                interrupted = True
+                response = original_response(method, url, **kwargs)
+                raise httpx.ConnectError(
+                    "connection lost after durable batch",
+                    request=httpx.Request(method, url),
+                )
+            return original_response(method, url, **kwargs)
+
+        self.network.response = interrupt_once
+        route = self.authority.peers.routes_for_realm("default")[0]
+        first = await self.authority.engine._push_peer(
+            MagicMock(), "default", route, head
+        )
+        second = await self.authority.engine._push_peer(
+            MagicMock(), "default", route, head
+        )
+
+        self.assertEqual(first["status"], "unavailable")
+        self.assertEqual(second["status"], "reachable")
+        self.assertEqual(second["objects_sent"], 0)
+        self.assertEqual(self.target.log.get_head("default"), head)
+
+    async def test_cancelled_preparation_failure_is_observed_and_retired(self) -> None:
+        card = self._shared_card()
+        head = self._update(self.authority, card.id, title="Cancelled")
+        contexts: list[dict] = []
+        loop = asyncio.get_running_loop()
+        previous = loop.get_exception_handler()
+        loop.set_exception_handler(lambda _loop, context: contexts.append(context))
+
+        def delayed_failure(_head: str) -> dict[str, str]:
+            time.sleep(0.05)
+            raise ValueError("collector failed after waiter cancellation")
+
+        try:
+            self.authority.engine._collect_objects = delayed_failure
+            waiter = asyncio.create_task(
+                self.authority.engine._prepare_objects("default", head)
+            )
+            await asyncio.sleep(0.01)
+            waiter.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await waiter
+            async with asyncio.timeout(2):
+                while self.authority.engine._preparing:
+                    await asyncio.sleep(0.01)
+            self.assertEqual(self.authority.engine._preparing, {})
+            diagnostics = self.authority.engine.status("default")[
+                "object_preparation"
+            ]
+            self.assertEqual(diagnostics["phase"], "failed")
+            self.assertEqual(diagnostics["active_residual_work"], 0)
+            self.assertEqual(contexts, [])
+        finally:
+            loop.set_exception_handler(previous)
+
+    async def test_legacy_oversize_is_actionable_and_does_not_advance_ref(self) -> None:
+        card = self._shared_card()
+        head = self._update(self.authority, card.id, title="Too large for legacy")
+        self.network.legacy_need.add("target")
+        route = self.authority.peers.routes_for_realm("default")[0]
+        with patch("pa.sync.engine.MAX_SYNC_OBJECTS", 1):
+            result = await self.authority.engine._push_peer(
+                MagicMock(), "default", route, head
+            )
+
+        self.assertEqual(result["status"], "protocol_incompatible")
+        self.assertEqual(result["error"]["code"], "legacy_bundle_too_large")
+        self.assertNotEqual(self.target.log.get_head("default"), head)
+
     async def test_prepared_objects_are_single_flight_and_reused_per_head(self) -> None:
         card = self._shared_card()
         head = self._update(self.authority, card.id, title="Prepared once")
@@ -240,7 +421,7 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["phase"], "converged")
         self.assertEqual(transferred, [0, 0])
         self.assertEqual(
-            self.authority.engine.status("default")["object_preparation"]["builds"], 1
+            self.authority.engine.status("default")["object_preparation"]["builds"], 0
         )
 
     async def test_legacy_peer_falls_back_to_complete_bundle(self) -> None:
