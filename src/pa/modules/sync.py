@@ -24,7 +24,7 @@ from pa.sync.engine import (
     SYNC_PROTOCOL,
     SyncEngine,
 )
-from pa.sync.event_log import EventLog, StaleSyncHeadError
+from pa.sync.event_log import EventHistoryObjectError, EventLog, StaleSyncHeadError
 from pa.sync.infrastructure import get_event_log, get_object_store
 from pa.sync.object_store import ObjectStore
 
@@ -270,6 +270,11 @@ def _sync_status_local(ctx: AppContext, realm_id: str) -> dict:
             log.index_status(realm_id)
             if hasattr(log, "index_status")
             else {"state": "unavailable", "ready": False}
+        ),
+        recovery=(
+            ctx.services["sync_recovery"].public()
+            if ctx.services.get("sync_recovery")
+            else {"state": "healthy"}
         ),
     )
     return status
@@ -875,6 +880,21 @@ def sync_reconcile(
         raise
 
 
+@router.post("/sync/recovery")
+async def sync_recovery(request: Request, body: dict) -> dict:
+    """Retry bounded authenticated recovery without changing a durable ref."""
+    ctx: AppContext = request.app.state.ctx
+    realm_id = body.get("realm_id") or ctx.settings.primary_realm
+    _check_realm_access(request, realm_id)
+    recovery = ctx.services.get("sync_recovery")
+    if recovery is None:
+        raise HTTPException(status_code=409, detail={"code": "recovery_unavailable"})
+    recovered = await recovery.retry(realm_id)
+    if recovered:
+        ctx.services["sync_startup_repaired"] = True
+    return {"recovered": recovered, "recovery": recovery.public()}
+
+
 @router.post("/sync/index/maintenance")
 async def dag_index_maintenance(
     request: Request,
@@ -996,22 +1016,46 @@ class SyncModule(Module):
         engine.on_head_advanced(rebuild_projection)
         runtime = ctx.require_service("async_runtime")
 
+        failures: list[tuple[str, EventHistoryObjectError]] = []
+
         def repair_local_projections() -> None:
             for realm in settings.subscribed_realms:
-                durable_head = event_log.get_head(realm)
-                if durable_head:
-                    event_log.ensure_indexed(realm, durable_head)
-                if durable_head and store.get_projection_head(realm) != durable_head:
-                    if event_log.get_commit(durable_head):
-                        store.rebuild_from_log(realm)
+                try:
+                    durable_head = event_log.get_head(realm)
+                    if durable_head:
+                        event_log.ensure_indexed(realm, durable_head)
+                    if durable_head and store.get_projection_head(realm) != durable_head:
+                        if event_log.get_commit(durable_head):
+                            store.rebuild_from_log(realm)
+                except EventHistoryObjectError as exc:
+                    failures.append((realm, exc))
 
         # Local durability is restored before admission. Peer/DNS/network work is
         # explicitly backgrounded so health and status endpoints become live.
         await runtime.run_blocking(
             "sync.startup_reconcile", repair_local_projections, timeout=120.0
         )
-        ctx.register_service("sync_startup_repaired", True)
+
+        from pa.sync.recovery import SyncRecovery
+
+        recovery = SyncRecovery(settings, engine, rebuild_projection)
+        ctx.register_service("sync_recovery", recovery)
+        ctx.register_service("sync_startup_repaired", not failures)
+        if not failures:
+            recovery.mark_healthy()
         engine.start()
+        if failures:
+            task = recovery.start(failures)
+            ctx.register_service("sync_recovery_task", task)
+
+            def completed(done) -> None:
+                try:
+                    if done.result():
+                        ctx.services["sync_startup_repaired"] = True
+                except Exception:
+                    pass
+
+            task.add_done_callback(completed)
         for realm in settings.subscribed_realms:
             engine.request_convergence(realm)
 

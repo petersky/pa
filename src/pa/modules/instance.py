@@ -214,7 +214,12 @@ def _unreachable_repository_instances(ctx: AppContext) -> set[str]:
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
+async def health(request: Request = None) -> dict:
+    recovery = (
+        request.app.state.ctx.services.get("sync_recovery") if request else None
+    )
+    if recovery and recovery.degraded():
+        return {"status": "degraded", "recovery": recovery.public()}
     return {"status": "ok"}
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,28 @@ class ObjectStore:
 
     def put_json(self, obj: Any) -> str:
         return self.put(json.dumps(obj, default=str).encode())
+
+    def repair(self, expected_hash: str, data: bytes) -> str:
+        """Atomically install verified content, including over a corrupt object."""
+        actual = object_hash(data)
+        if actual != expected_hash:
+            raise ValueError("object content hash does not match requested hash")
+        path = self._path_for(expected_hash)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, path)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+        return actual
 
     def get(self, obj_hash: str) -> bytes | None:
         path = self._path_for(obj_hash)

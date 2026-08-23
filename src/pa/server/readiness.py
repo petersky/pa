@@ -63,7 +63,16 @@ def evaluate_ready(app: FastAPI, ctx: Any, settings: Settings) -> dict[str, Any]
         return {"status": "starting", "lifecycle": phase or "unknown"}
 
     if "event_log" in services and not services.get("sync_startup_repaired"):
-        return {"status": "starting", "sync": "repair_pending"}
+        recovery = services.get("sync_recovery")
+        return {
+            "status": "degraded" if recovery and recovery.degraded() else "starting",
+            "sync": (
+                "history_recovery"
+                if recovery and recovery.degraded()
+                else "repair_pending"
+            ),
+            **({"recovery": recovery.public()} if recovery else {}),
+        }
 
     owner = owner_channel_health(settings)
     owner_state = str(owner.get("state") or "")
