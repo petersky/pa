@@ -116,12 +116,19 @@ class BrowserSessionError(RuntimeError):
         self.details = details or {}
 
     def as_dict(self) -> dict[str, Any]:
+        guidance = {
+            "retryable": self.retryable,
+            "requires_same_operation_id": self.ambiguous,
+            "automatic_retry_allowed": self.retryable and not self.ambiguous,
+            "outcome_lookup": "browser_operation_outcome" if self.ambiguous else None,
+        }
         return {
             "code": self.code,
             "message": str(self),
             "retryable": self.retryable,
             "ambiguous": self.ambiguous,
             "details": self.details,
+            "retry_guidance": guidance,
         }
 
 
@@ -345,6 +352,7 @@ class BrowserSessionManager:
         self.shares: dict[str, ShareGrant] = {}
         self.audit: list[AuditRecord] = []
         self._registry_lock = asyncio.Lock()
+        self._attach_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
         self._cleanup_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -381,14 +389,37 @@ class BrowserSessionManager:
     async def attach(
         self,
         scope: BrowserScope,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Serialize the full attach outcome, including its idempotency receipt."""
+        self._validate_scope(scope)
+        lock = self._attach_locks.setdefault(scope.key(), asyncio.Lock())
+        async with lock:
+            return await self._attach_once(scope, **kwargs)
+
+    async def _attach_once(
+        self,
+        scope: BrowserScope,
         *,
         url: str = "about:blank",
         width: int = 1440,
         height: int = 900,
         device_scale_factor: float = 1,
         share_handle: str | None = None,
+        operation_id: str | None = None,
     ) -> dict[str, Any]:
         self._validate_scope(scope)
+        if operation_id and not OPERATION_RE.fullmatch(operation_id):
+            raise BrowserSessionError("invalid_operation_id", "Invalid operation_id.")
+        if operation_id:
+            try:
+                prior_session = self.resolve(scope)
+            except BrowserSessionError:
+                prior_session = None
+            if prior_session and operation_id in prior_session.operations:
+                result = dict(prior_session.operations[operation_id])
+                result["deduplicated"] = True
+                return result
         try:
             url = validate_browser_url(url)
         except CdpError as exc:
@@ -472,6 +503,9 @@ class BrowserSessionManager:
         else:
             result = await self._state(session, scope)
         self._audit(session, scope, "attach", None, "success")
+        if operation_id:
+            result = {**result, "operation_id": operation_id}
+            self._remember(session, operation_id, result)
         return result
 
     def _redeem_share(self, scope: BrowserScope, token: str) -> BrowserSession:
@@ -588,13 +622,52 @@ class BrowserSessionManager:
     ) -> dict[str, Any]:
         try:
             session = self.resolve(scope, handle)
-            result = await self._state(session, scope)
-            self._audit(session, scope, "state", None, "success")
-            return result
+            return await self.execute(
+                scope,
+                "state",
+                lambda current: self._state(current, scope),
+                handle=handle,
+                mutation=False,
+            )
         except BrowserSessionError as exc:
             if exc.code == "browser_not_attached":
                 return {"ok": True, "attached": False}
             raise
+
+    async def operation_outcome(
+        self,
+        scope: BrowserScope,
+        *,
+        operation_id: str,
+        handle: str | None = None,
+    ) -> dict[str, Any]:
+        session = self.resolve(scope, handle)
+        if not OPERATION_RE.fullmatch(operation_id):
+            raise BrowserSessionError("invalid_operation_id", "Invalid operation_id.")
+        completed = session.operations.get(operation_id)
+        if completed is not None:
+            return {
+                "ok": True,
+                "operation_id": operation_id,
+                "state": "completed",
+                "result": dict(completed),
+                "safe_to_retry_with_same_operation_id": True,
+            }
+        if operation_id in session.inflight:
+            return {
+                "ok": True,
+                "operation_id": operation_id,
+                "state": "running",
+                "result": None,
+                "safe_to_retry_with_same_operation_id": True,
+            }
+        return {
+            "ok": True,
+            "operation_id": operation_id,
+            "state": "not_started",
+            "result": None,
+            "safe_to_retry_with_same_operation_id": True,
+        }
 
     async def _state(
         self, session: BrowserSession, scope: BrowserScope, *, shared: bool = False
@@ -664,7 +737,9 @@ class BrowserSessionManager:
                 "invalid_operation_id",
                 "operation_id must contain 1-128 letters, numbers, dots, colons, underscores, or hyphens.",
             )
-        if mutation and operation_id:
+        explicit_operation_id = operation_id is not None
+        tracked = mutation or explicit_operation_id
+        if tracked and operation_id:
             cached = session.operations.get(operation_id)
             if cached is not None:
                 result = dict(cached)
@@ -678,11 +753,13 @@ class BrowserSessionManager:
                 self._audit(session, scope, action_class, operation_id, "deduplicated")
                 return result
         operation_id = operation_id or _opaque("op_")
-        if mutation:
+        if tracked:
             session.inflight[operation_id] = asyncio.get_running_loop().create_future()
         try:
+            queued_at = time.monotonic()
             async with asyncio.timeout(timeout):
                 async with session.interaction_lock:
+                    lock_acquired_at = time.monotonic()
                     try:
                         result = await callback(session)
                     except BaseException:
@@ -699,7 +776,7 @@ class BrowserSessionManager:
                     ambiguous=True,
                 ).as_dict(),
             }
-            self._complete_operation(session, operation_id, result, mutation=mutation)
+            self._complete_operation(session, operation_id, result, tracked=tracked)
             self._audit(
                 session,
                 scope,
@@ -721,12 +798,12 @@ class BrowserSessionManager:
                 "operation_id": operation_id,
                 "error": error.as_dict(),
             }
-            self._complete_operation(session, operation_id, result, mutation=mutation)
+            self._complete_operation(session, operation_id, result, tracked=tracked)
             self._audit(session, scope, action_class, operation_id, "error", error.code)
             raise error from exc
         except BrowserSessionError as exc:
             result = {"ok": False, "operation_id": operation_id, "error": exc.as_dict()}
-            self._complete_operation(session, operation_id, result, mutation=mutation)
+            self._complete_operation(session, operation_id, result, tracked=tracked)
             self._audit(session, scope, action_class, operation_id, "error", exc.code)
             raise
         except CdpError as exc:
@@ -741,7 +818,7 @@ class BrowserSessionManager:
                 "operation_id": operation_id,
                 "error": error.as_dict(),
             }
-            self._complete_operation(session, operation_id, result, mutation=mutation)
+            self._complete_operation(session, operation_id, result, tracked=tracked)
             self._audit(session, scope, action_class, operation_id, "error", error.code)
             raise error from exc
         except Exception as exc:
@@ -756,7 +833,7 @@ class BrowserSessionManager:
                 "operation_id": operation_id,
                 "error": error.as_dict(),
             }
-            self._complete_operation(session, operation_id, result, mutation=mutation)
+            self._complete_operation(session, operation_id, result, tracked=tracked)
             self._audit(session, scope, action_class, operation_id, "error", error.code)
             logger.error(
                 "browser operation failed action=%s error_type=%s",
@@ -770,7 +847,18 @@ class BrowserSessionManager:
             "browser_handle": session.handle,
             **result,
         }
-        self._complete_operation(session, operation_id, result, mutation=mutation)
+        result.setdefault("diagnostics", {})
+        result["diagnostics"].update(
+            {
+                "operation_id": operation_id,
+                "target_id": session.attachment.target_id,
+                "queue_wait_ms": round((lock_acquired_at - queued_at) * 1000, 3),
+                "browser_operation_ms": round(
+                    (time.monotonic() - lock_acquired_at) * 1000, 3
+                ),
+            }
+        )
+        self._complete_operation(session, operation_id, result, tracked=tracked)
         self._audit(session, scope, action_class, operation_id, "success")
         return result
 
@@ -780,9 +868,9 @@ class BrowserSessionManager:
         operation_id: str,
         result: dict[str, Any],
         *,
-        mutation: bool,
+        tracked: bool,
     ) -> None:
-        if mutation:
+        if tracked:
             self._remember(session, operation_id, result)
         pending = session.inflight.pop(operation_id, None)
         if pending is not None and not pending.done():
@@ -835,7 +923,11 @@ class BrowserSessionManager:
         )
 
     async def snapshot(
-        self, scope: BrowserScope, *, handle: str | None = None
+        self,
+        scope: BrowserScope,
+        *,
+        handle: str | None = None,
+        operation_id: str | None = None,
     ) -> dict[str, Any]:
         async def take(session: BrowserSession) -> dict[str, Any]:
             value = await session.page.evaluate(_SNAPSHOT_JS)
@@ -884,7 +976,12 @@ class BrowserSessionManager:
             }
 
         return await self.execute(
-            scope, "snapshot", take, handle=handle, mutation=False
+            scope,
+            "snapshot",
+            take,
+            handle=handle,
+            operation_id=operation_id,
+            mutation=False,
         )
 
     async def _document_state(self, session: BrowserSession) -> dict[str, Any]:
@@ -941,17 +1038,24 @@ class BrowserSessionManager:
                     "invalid_snapshot_reference",
                     "Element reference is unknown for this browser target.",
                     retryable=True,
+                    details={
+                        "expected_target_id": snapshot.target_id,
+                        "actual_target_id": str(metadata.get("target_id") or ""),
+                        "expected_document_id": snapshot.document_id,
+                        "actual_document_id": str(state.get("document_id") or ""),
+                        "snapshot_revision": snapshot.revision,
+                        "actual_revision": int(state.get("revision") or 0),
+                    },
                 )
             state = await self._document_state(session)
             metadata = await session.page.metadata()
             if (
                 snapshot.target_id != str(metadata.get("target_id") or "")
                 or snapshot.document_id != str(state.get("document_id") or "")
-                or snapshot.revision != int(state.get("revision") or 0)
             ):
                 raise BrowserSessionError(
                     "stale_snapshot_reference",
-                    "Element reference is stale because the target navigated or the DOM changed; take a new snapshot and retry.",
+                    "Element reference is stale because the target navigated; take a new snapshot and retry.",
                     retryable=True,
                 )
             locator = snapshot.locators[ref]

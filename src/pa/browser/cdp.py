@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -46,30 +47,41 @@ class CdpPage:
         self.endpoint = endpoint.rstrip("/")
         self.target_id = target_id
         self._next_id = 0
+        # A target is a single ordered CDP transport.  Keep commands serialized even
+        # when callers accidentally overlap state/snapshot work.
+        self._command_lock = asyncio.Lock()
 
     async def command(
         self, method: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        target = await page_target(self.endpoint, self.target_id)
-        self.target_id = str(target["id"])
-        websocket_url = str(target["webSocketDebuggerUrl"])
-        self._next_id += 1
-        command_id = self._next_id
-        async with websockets.connect(
-            websocket_url, open_timeout=5, close_timeout=2
-        ) as ws:
-            await ws.send(
-                json.dumps({"id": command_id, "method": method, "params": params or {}})
-            )
-            while True:
-                message = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
-                if message.get("id") != command_id:
-                    continue
-                if "error" in message:
-                    raise CdpError(
-                        str(message["error"].get("message") or message["error"])
-                    )
-                return dict(message.get("result") or {})
+        async with self._command_lock:
+            try:
+                async with asyncio.timeout(15):
+                    target = await page_target(self.endpoint, self.target_id)
+                    self.target_id = str(target["id"])
+                    websocket_url = str(target["webSocketDebuggerUrl"])
+                    self._next_id += 1
+                    command_id = self._next_id
+                    async with websockets.connect(
+                        websocket_url, open_timeout=5, close_timeout=2
+                    ) as ws:
+                        await ws.send(json.dumps({
+                            "id": command_id, "method": method, "params": params or {}
+                        }))
+                        while True:
+                            message = json.loads(await ws.recv())
+                            if message.get("id") != command_id:
+                                continue
+                            if "error" in message:
+                                raise CdpError(
+                                    str(message["error"].get("message") or message["error"])
+                                )
+                            return dict(message.get("result") or {})
+            except TimeoutError as exc:
+                raise CdpError(
+                    f"CDP command {method} timed out after 15 seconds "
+                    f"(target_id={self.target_id or 'unresolved'}, command_id={self._next_id})"
+                ) from exc
 
     async def evaluate(self, expression: str, *, await_promise: bool = True) -> Any:
         result = await self.command(
@@ -125,8 +137,19 @@ class CdpPage:
         )
 
     async def navigate_and_wait(self, url: str) -> dict[str, Any]:
+        navigation_started = time.monotonic()
         await self.navigate(url)
-        return await self.wait_until_usable()
+        navigation_finished = time.monotonic()
+        diagnostic = await self.wait_until_usable()
+        diagnostic["latency"] = {
+            "browser_transport_ms": round(
+                (navigation_finished - navigation_started) * 1000, 3
+            ),
+            "page_shell_probe_ms": round(
+                (time.monotonic() - navigation_finished) * 1000, 3
+            ),
+        }
+        return diagnostic
 
     async def screenshot(self) -> bytes:
         result = await self.command(
