@@ -305,7 +305,7 @@ class CardProjection:
                     project_id TEXT,
                     instance_id TEXT,
                     execution_binding_json TEXT NOT NULL DEFAULT '{}',
-                    error TEXT,
+                    error TEXT, failure_stage TEXT,
                     attempts INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -654,11 +654,22 @@ class CardProjection:
                    continuation_prompt_id TEXT NOT NULL, status TEXT NOT NULL,
                    card_id TEXT, project_id TEXT, instance_id TEXT,
                    execution_binding_json TEXT NOT NULL DEFAULT '{}', error TEXT,
+                   failure_stage TEXT,
                    attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
                    updated_at TEXT NOT NULL, delivered_at TEXT,
                    UNIQUE(session_id, idempotency_key), UNIQUE(continuation_prompt_id)
                )"""
         )
+        handoff_cols = {
+            row[1]
+            for row in conn.execute(
+                "PRAGMA table_info(agent_restart_handoffs)"
+            ).fetchall()
+        }
+        if "failure_stage" not in handoff_cols:
+            conn.execute(
+                "ALTER TABLE agent_restart_handoffs ADD COLUMN failure_stage TEXT"
+            )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_restart_handoffs_status_updated "
             "ON agent_restart_handoffs(status, updated_at)"
@@ -4766,8 +4777,9 @@ class CardProjection:
                 """INSERT INTO agent_restart_handoffs
                    (id, session_id, idempotency_key, continuation_prompt,
                     continuation_prompt_id, status, card_id, project_id, instance_id,
-                    execution_binding_json, error, attempts, created_at, updated_at, delivered_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    execution_binding_json, error, failure_stage, attempts,
+                    created_at, updated_at, delivered_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     handoff.id,
                     handoff.session_id,
@@ -4780,6 +4792,7 @@ class CardProjection:
                     handoff.instance_id,
                     json.dumps(handoff.execution_binding or {}),
                     handoff.error,
+                    handoff.failure_stage,
                     handoff.attempts,
                     handoff.created_at.isoformat(),
                     handoff.updated_at.isoformat(),
@@ -4792,6 +4805,20 @@ class CardProjection:
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(row) if row else None
+
+    def find_restart_handoff_by_idempotency(
+        self, idempotency_key: str, *, realm_id: str = "default"
+    ) -> RestartHandoff | None:
+        """Find the newest realm-local handoff without exposing its prompt."""
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT h.* FROM agent_restart_handoffs h
+                   JOIN agent_sessions s ON s.id=h.session_id
+                   WHERE h.idempotency_key=? AND s.realm_id=?
+                   ORDER BY h.created_at DESC, h.id DESC LIMIT 1""",
+                (idempotency_key, realm_id),
             ).fetchone()
         return self._row_to_restart_handoff(row) if row else None
 
@@ -4819,16 +4846,18 @@ class CardProjection:
         error: str | None = None,
         delivered: bool = False,
         increment_attempts: bool = False,
+        failure_stage: str | None = None,
     ) -> RestartHandoff | None:
         now = datetime.now(UTC)
         with self._mutation_lock, self._conn() as conn:
             conn.execute(
-                """UPDATE agent_restart_handoffs SET status=?, error=?, updated_at=?,
+                """UPDATE agent_restart_handoffs SET status=?, error=?, failure_stage=?, updated_at=?,
                    attempts=attempts+?, delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
                    WHERE id=?""",
                 (
                     status,
                     error,
+                    failure_stage,
                     now.isoformat(),
                     int(increment_attempts),
                     int(delivered),
@@ -4871,11 +4900,18 @@ class CardProjection:
             ).fetchone()
             if competing:
                 raise ValueError("Session already has a nonterminal restart handoff")
+            retry_status = (
+                "requested"
+                if handoff.failure_stage in {
+                    "waiting_for_turn_end", "quiescing", "restarting"
+                }
+                else "resuming"
+            )
             conn.execute(
                 """UPDATE agent_restart_handoffs
-                   SET status='resuming', error=NULL, updated_at=?
+                   SET status=?, error=NULL, failure_stage=NULL, updated_at=?
                    WHERE id=? AND status='failed'""",
-                (now.isoformat(), handoff_id),
+                (retry_status, now.isoformat(), handoff_id),
             )
             refreshed = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
@@ -5928,6 +5964,9 @@ class CardProjection:
             instance_id=row["instance_id"],
             execution_binding=json.loads(row["execution_binding_json"] or "{}"),
             error=row["error"],
+            failure_stage=(
+                row["failure_stage"] if "failure_stage" in row.keys() else None
+            ),
             attempts=int(row["attempts"] or 0),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),

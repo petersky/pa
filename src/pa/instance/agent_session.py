@@ -1241,6 +1241,7 @@ class AgentSessionRuntime:
         prompt_audit: list[dict[str, Any]] | None = None,
         prompt_id: str | None = None,
         acceptance_result: str | None = None,
+        _defer_drain: bool = False,
     ) -> QueuedPrompt:
         cwd = self._validated_cwd(cwd)
         requested_images = [image.public_dict() for image in (images or [])]
@@ -1321,7 +1322,7 @@ class AgentSessionRuntime:
             self._queue = [queued for queued in self._queue if queued.id != item.id]
             raise
         self._flush_transcript()
-        if not self._queue_paused:
+        if not self._queue_paused and not _defer_drain:
             self._start_drain()
         return item
 
@@ -3460,9 +3461,6 @@ class AgentSessionManager:
                 self.settings.data_dir,
             )
 
-        if self._resume_on_start:
-            await self._resume_restart_handoffs()
-
         # A no-resume boot is intentionally inert until an explicit admission.
         # Durable nonterminal sessions remain recoverable on a later normal boot.
         # The default provider is admitted lazily by attach_default() when an
@@ -3501,15 +3499,34 @@ class AgentSessionManager:
         handoff = await self._offload(
             "sqlite.restart_handoff_create", self.store.create_restart_handoff, handoff
         )
-        if handoff.status == "requested" and handoff.id not in self._restart_handoff_tasks:
-            self._restart_handoff_tasks[handoff.id] = asyncio.create_task(
-                self._execute_restart_handoff(handoff.id),
-                name=f"pa-restart-handoff-{handoff.id}",
+        if handoff.status == "failed":
+            return await self.retry_restart_handoff(
+                session_id=session_id, handoff_id=handoff.id
             )
+        if handoff.status == "requested":
+            self._schedule_restart_handoff(handoff.id)
         return handoff
+
+    def _schedule_restart_handoff(self, handoff_id: str) -> None:
+        task = self._restart_handoff_tasks.get(handoff_id)
+        if task is not None and not task.done():
+            return
+        task = asyncio.create_task(
+            self._execute_restart_handoff(handoff_id),
+            name=f"pa-restart-handoff-{handoff_id}",
+        )
+        self._restart_handoff_tasks[handoff_id] = task
+        task.add_done_callback(
+            lambda completed, receipt_id=handoff_id: (
+                self._restart_handoff_tasks.pop(receipt_id, None)
+                if self._restart_handoff_tasks.get(receipt_id) is completed
+                else None
+            )
+        )
 
     async def _execute_restart_handoff(self, handoff_id: str) -> None:
         """Wait outside the initiating turn, flush, quiesce, then ask the host to restart."""
+        stage = "waiting_for_turn_end"
         try:
             handoff = await self._offload(
                 "sqlite.restart_handoff_read", self.store.get_restart_handoff, handoff_id
@@ -3526,14 +3543,25 @@ class AgentSessionManager:
             while runtime and runtime.prompting:
                 await asyncio.sleep(_QUIESCE_POLL_SECONDS)
                 runtime = self.get(handoff.session_id)
+            # Assigned-session traffic can become usable while background startup
+            # recovery is still finishing. The durable request remains accepted,
+            # but shutdown must not race that internal fence.
+            while not self._startup_complete:
+                if self._startup_phase == "failed":
+                    raise AgentStartupNotReady(
+                        "Durable ACP session recovery failed before restart"
+                    )
+                await asyncio.sleep(_QUIESCE_POLL_SECONDS)
             if runtime:
                 runtime._flush_transcript()
                 await runtime._drain_transcripts()
+            stage = "quiescing"
             await self._offload(
                 "sqlite.restart_handoff_quiescing", self.store.update_restart_handoff,
                 handoff_id, status="quiescing"
             )
             await self.quiesce(reason=f"restart-handoff:{handoff_id}")
+            stage = "restarting"
             await self._offload(
                 "sqlite.restart_handoff_restarting", self.store.update_restart_handoff,
                 handoff_id, status="restarting", increment_attempts=True
@@ -3549,7 +3577,8 @@ class AgentSessionManager:
             logger.exception("Deferred restart handoff %s failed", handoff_id)
             await self._offload(
                 "sqlite.restart_handoff_failed", self.store.update_restart_handoff,
-                handoff_id, status="failed", error=str(exc)[:1000]
+                handoff_id, status="failed", error=str(exc)[:1000],
+                failure_stage=stage,
             )
 
     async def _resume_restart_handoffs(self) -> None:
@@ -3563,10 +3592,7 @@ class AgentSessionManager:
         for handoff in pending:
             if handoff.status in {"requested", "waiting_for_turn_end", "quiescing"}:
                 if handoff.id not in self._restart_handoff_tasks:
-                    self._restart_handoff_tasks[handoff.id] = asyncio.create_task(
-                        self._execute_restart_handoff(handoff.id),
-                        name=f"pa-restart-handoff-{handoff.id}",
-                    )
+                    self._schedule_restart_handoff(handoff.id)
                 continue
             if handoff.status == "continuation_queued":
                 # enqueue() checkpoints the durable queue before this receipt is
@@ -3588,17 +3614,26 @@ class AgentSessionManager:
                     source=f"restart-handoff:{handoff.id}",
                     card_id=handoff.card_id,
                     project_id=handoff.project_id,
+                    _defer_drain=True,
                 )
                 await self._offload(
                     "sqlite.restart_handoff_queued", self.store.update_restart_handoff,
                     handoff.id, status="continuation_queued"
                 )
+                runtime._start_drain()
             except Exception as exc:
                 await self._offload(
                     "sqlite.restart_handoff_resume_failed",
                     self.store.update_restart_handoff, handoff.id,
-                    status="failed", error=str(exc)[:1000]
+                    status="failed", error=str(exc)[:1000],
+                    failure_stage="resuming",
                 )
+
+    async def resume_restart_handoffs_after_startup(self) -> None:
+        """Replay receipts only after normal prompt admission is declared ready."""
+        self.require_startup_complete()
+        if self._resume_on_start:
+            await self._resume_restart_handoffs()
 
     async def retry_restart_handoff(
         self, *, session_id: str, handoff_id: str
@@ -3615,7 +3650,9 @@ class AgentSessionManager:
             handoff_id,
             session_id=session_id,
         )
-        if handoff.status == "resuming":
+        if handoff.status == "requested":
+            self._schedule_restart_handoff(handoff.id)
+        elif handoff.status == "resuming":
             await self._resume_restart_handoffs()
             handoff = await self._offload(
                 "sqlite.restart_handoff_read",
