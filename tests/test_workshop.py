@@ -834,10 +834,10 @@ def test_live_session_enriches_card_beyond_newest_card_read_window():
         "loaded": WORKSHOP_PROJECTION_LIMIT,
         "total": 121,
         "omitted": 121 - WORKSHOP_PROJECTION_LIMIT,
-        "overflow_href": "/?realm=default",
+        "overflow_href": "/work?realm=default",
         "description": (
             "Newest and operational cards are bounded in Workshop; "
-            "open Cards for the full inventory."
+            "open the Work board for the full inventory."
         ),
     }
 
@@ -1154,7 +1154,8 @@ def test_workshop_ui_contract_is_accessible_and_excludes_replay_controls():
     assert 'data-workshop-compact-row="work-order"' in script
     assert "PAGE_SIZE = 20" in script
     assert "Loaded inventory" in template
-    assert "Open full Cards inventory" in template
+    assert "Open Work board" in template
+    assert 'overflow.textContent = "Open Work board"' in script
     assert "data-workshop-search" in template
     assert 'data-label="Evaluated outcome"' in script
     assert "root === activeRoot" in script

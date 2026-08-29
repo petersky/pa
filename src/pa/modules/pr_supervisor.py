@@ -950,7 +950,7 @@ class PRSupervisorModule(Module):
                 id="pull-requests",
                 path="/pull-requests",
                 label="Pull requests",
-                icon="work",
+                icon="pull-requests",
                 template="pages/pr-supervisor.html",
                 nav_order=18,
                 context_builder=_page_context,

@@ -110,8 +110,8 @@ class SharedHeaderBrowserLayoutTests(unittest.TestCase):
       instanceText: instance.textContent.trim(),
       brandInsideHeader: brandRect.top >= headerRect.top &&
         brandRect.bottom <= headerRect.bottom,
-      actionsSingleLine: actions.getBoundingClientRect().height < 40,
-      navSingleLine: nav.getBoundingClientRect().height < 40,
+      actionsSingleLine: actions.getBoundingClientRect().height <= 44.5,
+      navSingleLine: nav.getBoundingClientRect().height <= 44.5,
       responsiveMenuVisible: getComputedStyle(responsive).display !== "none",
       menuLabels: Array.from(responsive.querySelectorAll("a")).map(function (link) {{
         return link.textContent.trim();
@@ -171,7 +171,7 @@ class SharedHeaderBrowserLayoutTests(unittest.TestCase):
                 else:
                     self.assertTrue(measurement["navSingleLine"])
                 self.assertTrue(measurement["noPageOverflow"])
-                self.assertLessEqual(measurement["headerHeight"], 52)
+                self.assertLessEqual(measurement["headerHeight"], 64)
                 self.assertNotEqual(
                     measurement["instanceColor"],
                     measurement["backgroundColor"],

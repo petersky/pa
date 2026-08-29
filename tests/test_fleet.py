@@ -600,6 +600,28 @@ class FleetPageLazyLoadTests(unittest.TestCase):
                 self.assertIn("pa-fleet-topology", page.text)
                 self.assertNotIn("Checking…", page.text)
 
+                for label in (
+                    "Machine",
+                    "Health &amp; sync",
+                    "Software",
+                    "Authentication",
+                    "Activity",
+                    "Capacity",
+                    "Freshness",
+                    "Actions",
+                ):
+                    self.assertIn(f'data-label="{label}"', page.text)
+                self.assertNotRegex(
+                    page.text,
+                    r'<tr data-fleet-instance="[^"]+" tabindex=',
+                )
+                style = (
+                    Path(__file__).parents[1]
+                    / "src/pa/server/static/style.css"
+                ).read_text()
+                self.assertIn("content: attr(data-label);", style)
+                self.assertNotIn(".fleet-instance-table td:nth-child", style)
+
                 self.assertIn(
                     'aria-label="1/4 slots used · 9 prompts queued"', page.text
                 )

@@ -12,19 +12,30 @@
     return clean || "/";
   }
 
+  var lastRoutePath = normalizePath(window.location.pathname);
+
   function setActiveNav(path) {
     var current = normalizePath(path || window.location.pathname);
     document.querySelectorAll(".nav-btn").forEach(function (btn) {
-      btn.classList.toggle("active", normalizePath(btn.getAttribute("href")) === current);
+      var active = normalizePath(btn.getAttribute("href")) === current;
+      btn.classList.toggle("active", active);
+      if (active) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
     });
-    document.querySelectorAll(".icon-btn[href]").forEach(function (btn) {
+    document.querySelectorAll(".icon-btn[href], .status-btn[href]").forEach(function (btn) {
       var href = normalizePath(btn.getAttribute("href"));
       if (href === "/settings" || href === "/agent") {
-        btn.classList.toggle("active", href === current);
+        var active = href === current;
+        btn.classList.toggle("active", active);
+        if (active) btn.setAttribute("aria-current", "page");
+        else btn.removeAttribute("aria-current");
       }
     });
     document.querySelectorAll("[data-responsive-nav]").forEach(function (menu) {
       menu.removeAttribute("open");
+      var active = menu.querySelector(".responsive-nav-menu .nav-btn.active span:last-child");
+      var label = menu.querySelector("[data-responsive-nav-label]");
+      if (active && label) label.textContent = active.textContent.trim();
     });
   }
 
@@ -56,6 +67,8 @@
       toast.className = "pa-toast";
       document.body.appendChild(toast);
     }
+    toast.setAttribute("role", kind === "error" || !kind ? "alert" : "status");
+    toast.setAttribute("aria-live", kind === "error" || !kind ? "assertive" : "polite");
     toast.textContent = message;
     toast.dataset.kind = kind || "error";
     toast.classList.add("visible");
@@ -63,6 +76,43 @@
     showToast._timer = window.setTimeout(function () {
       toast.classList.remove("visible");
     }, 4000);
+  }
+
+  function renderLoadFailure(source, message) {
+    if (!source || typeof source.matches !== "function") return;
+    var trigger = source.getAttribute("hx-trigger") || "";
+    if (!source.matches("[hx-get]") || trigger.indexOf("load") === -1) return;
+    var failure = document.createElement("div");
+    failure.className = "notice danger request-failure";
+    failure.dataset.paLoadError = "1";
+    failure.setAttribute("role", "alert");
+    var heading = document.createElement("strong");
+    heading.textContent = "This content could not be loaded.";
+    var detail = document.createElement("p");
+    detail.className = "small";
+    detail.textContent = message || "Check the connection and try again.";
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "secondary small";
+    retry.dataset.paLoadRetry = "1";
+    retry.textContent = "Try again";
+    failure.appendChild(heading);
+    failure.appendChild(detail);
+    failure.appendChild(retry);
+    source.replaceChildren(failure);
+    source.setAttribute("aria-busy", "false");
+  }
+
+  function announceRoute(target) {
+    var current = normalizePath(window.location.pathname);
+    if (!target || current === lastRoutePath) return;
+    lastRoutePath = current;
+    var heading = target.querySelector("h1");
+    var status = document.getElementById("pa-route-status");
+    if (status) status.textContent = heading
+      ? heading.textContent.trim() + " loaded."
+      : "Page loaded.";
+    target.focus({ preventScroll: true });
   }
 
   function restoreHomeRefreshFocus(message) {
@@ -1751,6 +1801,7 @@
     if (target && target.id === "app-view") {
       setActiveNav(window.location.pathname);
       updateTitle();
+      announceRoute(target);
       initBoardDragDrop(target);
       initBoardLiveUpdates();
       initAgentReconnect();
@@ -1840,6 +1891,7 @@
     }
     if (operation) message = operation + " — " + message;
     showToast(message, "error");
+    renderLoadFailure(source, message);
     if (homeRefreshFocusKey && isHomeRefreshSource(source)) {
       restoreHomeRefreshFocus("Home attention queue refresh failed.");
     }
@@ -1937,6 +1989,16 @@
   });
 
   document.body.addEventListener("click", function (event) {
+    var loadRetry = event.target.closest("[data-pa-load-retry]");
+    if (loadRetry) {
+      var loadTarget = loadRetry.closest("[hx-get]");
+      if (loadTarget && window.htmx) {
+        loadTarget.setAttribute("aria-busy", "true");
+        loadTarget.innerHTML = '<p class="muted" role="status">Trying again…</p>';
+        window.htmx.trigger(loadTarget, "load");
+      }
+      return;
+    }
     var dispatchOpen = event.target.closest("[data-card-dispatch-open]");
     if (dispatchOpen) {
       event.preventDefault();

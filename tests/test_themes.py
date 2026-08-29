@@ -85,6 +85,22 @@ class ThemeCatalogTests(unittest.TestCase):
         self.assertIn("root.style.colorScheme = resolved", shell)
         self.assertNotIn("/light.css') }}", shell)
 
+    def test_login_loads_matching_pa_theme_variables(self) -> None:
+        login = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "pa"
+            / "server"
+            / "templates"
+            / "pages"
+            / "login.html"
+        ).read_text()
+
+        self.assertIn('data-theme="pa" data-appearance="light"', login)
+        self.assertIn("document.documentElement.dataset.appearance", login)
+        self.assertIn("static_url('themes/pa/light.css')", login)
+        self.assertIn("static_url('themes/pa/dark.css')", login)
+
     def test_requested_themes_are_discoverable(self) -> None:
         catalog = {theme["id"]: theme for theme in get_theme_catalog()}
 

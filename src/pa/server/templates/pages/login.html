@@ -1,16 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="pa" data-appearance="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in — PA</title>
+  <script>
+    document.documentElement.dataset.appearance =
+      window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  </script>
   <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  <link rel="stylesheet" href="{{ static_url('themes/pa/light.css') }}">
+  <link rel="stylesheet" href="{{ static_url('themes/pa/dark.css') }}">
 </head>
 <body class="app-shell login-page">
   <main class="login-panel">
-    <h1>Sign in to PA</h1>
+    <div class="login-brand" aria-hidden="true">PA</div>
+    <div class="login-heading">
+      <p class="eyebrow">Personal automation</p>
+      <h1>Sign in to PA</h1>
+      <p class="muted">Return to your work, agents, goals, and fleet.</p>
+    </div>
     {% if error %}
     <p class="login-error" role="alert">{{ error }}</p>
     {% endif %}
@@ -24,9 +35,9 @@
         Password
         <input type="password" name="password" required autocomplete="current-password">
       </label>
-      <button type="submit">Sign in</button>
+      <button type="submit" class="primary">Sign in</button>
     </form>
-    <p class="muted">Use credentials created via <code>pa user create</code>.</p>
+    <p class="muted small login-help">Use credentials created via <code>pa user create</code>.</p>
   </main>
 </body>
 </html>

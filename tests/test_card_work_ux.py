@@ -512,9 +512,9 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         instance_rules = css.split(".brand-instance {", 1)[1].split("}", 1)[0]
         mobile_rules = css.split("@media (max-width: 700px)", 1)[1]
 
-        self.assertIn("flex-direction: column", brand_rules)
+        self.assertIn("grid-template-columns: auto minmax(0, 1fr)", brand_rules)
         self.assertIn("flex: 0 0 auto", brand_rules)
-        self.assertIn("font-size: 0.6875rem", instance_rules)
+        self.assertIn("font-size: 0.75rem", instance_rules)
         self.assertIn("color: var(--pa-text-muted)", instance_rules)
         self.assertIn("white-space: nowrap", instance_rules)
         self.assertIn(
@@ -769,6 +769,15 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             overview.text,
             rf'<button[^>]+data-new-card-open[^>]+data-new-card-project="{project.id}"[^>]*>\s*Create Card\s*</button>',
         )
+        self.assertRegex(
+            overview.text,
+            rf'<button[^>]+data-new-card-open[^>]+data-new-card-project="{project.id}"[^>]*>\s*Create a card\s*</button>',
+        )
+        self.assertIn(
+            '<section class="projects-editor" aria-label="Project workspace">',
+            overview.text,
+        )
+        self.assertNotIn('<main class="projects-editor">', overview.text)
         self.assertEqual(form.status_code, 200)
         self.assertIn(f'value="{project.id}" selected', form.text)
 
@@ -913,6 +922,10 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertIn('name="q" value="ship"', response.text)
             self.assertIn('data-board-lane="active"', response.text)
             self.assertIn('aria-label="Work board"', response.text)
+            self.assertIn(
+                'href="/work?realm=default&amp;blocked=blocked">Blocked work</a>',
+                response.text,
+            )
             self.assertNotIn("page-sidebar-right", response.text)
 
     def test_shell_exposes_labeled_responsive_navigation_and_bounded_card_modal(self) -> None:
@@ -921,7 +934,9 @@ class CoreWorkUiRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('class="responsive-nav" data-responsive-nav', response.text)
-        self.assertIn('aria-label="Open main navigation"', response.text)
+        self.assertIn(
+            'aria-label="Open main navigation; current page Work"', response.text
+        )
         self.assertIn('aria-label="Main navigation menu"', response.text)
         self.assertIn('<span>Sessions</span>', response.text)
         self.assertIn('<span>Settings</span>', response.text)
@@ -1268,6 +1283,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         agent = (root / "partials" / "agent" / "chat-widget.html").read_text()
         memory = (root / "pages" / "knowledge.html").read_text()
         fleet = (root / "pages" / "fleet.html").read_text()
+        styles = (root.parent / "static" / "style.css").read_text()
 
         self.assertIn('aria-label="Open Sessions; agent is', chrome)
         self.assertIn('aria-label="Toggle theme appearance"', chrome)
@@ -1279,6 +1295,11 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn('aria-live="polite"', fleet)
         self.assertIn('aria-label="Update {{ inst.name }}"', fleet)
         self.assertIn('aria-label="Remove {{ inst.name }} from fleet"', fleet)
+        move_menu_focus = styles.split(
+            ".card-move-menu summary:focus-visible,", 1
+        )[1].split("}", 1)[0]
+        self.assertIn("box-shadow: var(--pa-focus)", move_menu_focus)
+        self.assertNotIn("solid var(--pa-focus", move_menu_focus)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@
 
   <button type="button" class="new-card-button" data-new-card-open
           title="Create a new card" aria-label="Create a new card">
-    <span aria-hidden="true">+</span> New
+    <span aria-hidden="true">+</span><span class="new-card-label">New</span>
   </button>
 
   <div class="notification-chrome" data-notification-chrome>
@@ -48,9 +48,9 @@
         <button type="button" class="ghost small" data-notification-close aria-label="Close notifications">Close</button>
       </header>
       <div class="notification-filters" role="group" aria-label="Notification filters">
-        <button type="button" class="small active" data-notification-filter="outstanding">Outstanding</button>
-        <button type="button" class="ghost small" data-notification-filter="unread">Unread</button>
-        <button type="button" class="ghost small" data-notification-filter="all">All</button>
+        <button type="button" class="small active" aria-pressed="true" data-notification-filter="outstanding">Outstanding</button>
+        <button type="button" class="ghost small" aria-pressed="false" data-notification-filter="unread">Unread</button>
+        <button type="button" class="ghost small" aria-pressed="false" data-notification-filter="all">All</button>
       </div>
       <div class="notification-list" data-notification-list></div>
       <button type="button" class="ghost small notification-more" data-notification-more hidden>Load more</button>
@@ -59,6 +59,7 @@
 
   <a href="/agent"
      class="status-btn {{ 'online' if agent_connected else 'offline' }}"
+     {% if active_path == '/agent' %}aria-current="page"{% endif %}
      title="{{ 'Agent online — open Sessions' if agent_connected else ('Agent starting — open Sessions' if not agent_startup.get('complete', true) else 'Agent offline — open Sessions') }}"
      aria-label="Open Sessions; agent is {{ 'online' if agent_connected else ('starting' if not agent_startup.get('complete', true) else 'offline') }}"
      hx-get="/agent"
@@ -87,6 +88,7 @@
 
   <a href="/settings"
      class="icon-btn{% if active_path == '/settings' %} active{% endif %}"
+     {% if active_path == '/settings' %}aria-current="page"{% endif %}
      title="Settings"
      aria-label="Settings"
      hx-get="/settings"

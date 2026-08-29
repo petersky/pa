@@ -1689,7 +1689,7 @@ class GoalsModule(Module):
                 id="goals",
                 path="/goals",
                 label="Goals",
-                icon="work",
+                icon="goals",
                 template="pages/goals.html",
                 nav_order=15,
                 context_builder=_goals_context,

@@ -100,7 +100,7 @@
     {% endif %}
   </aside>
 
-  <main class="projects-editor">
+  <section class="projects-editor" aria-label="Project workspace">
   {% if projects_view == 'repos' and selected_repository %}
   {% set repository = selected_repository %}
   {% set remote = repository.remotes[0] if repository.remotes else none %}
@@ -149,9 +149,19 @@
     </form>
   </div>
   {% elif projects_view == 'repos' %}
-  <div class="empty-state"><h2>Select a repository</h2><p class="muted">Choose a repository from the sidebar to edit its settings.</p></div>
+  <div class="empty-state projects-editor-empty">
+    <p class="eyebrow">Repository catalog</p>
+    <h1>Repositories</h1>
+    <p class="muted">Select a repository to edit its settings, or add the first repository for this realm.</p>
+    <button type="button" data-project-create-open="new-repository-dialog" aria-haspopup="dialog">Add repository</button>
+  </div>
   {% elif not project %}
-  <div class="empty-state"><h2>Select a project</h2><p class="muted">Choose a project from the sidebar to open its workspace.</p></div>
+  <div class="empty-state projects-editor-empty">
+    <p class="eyebrow">Project workspace</p>
+    <h1>Projects</h1>
+    <p class="muted">Select a project to open its workspace, or create one to organize goals, repositories, cards, and agent work.</p>
+    <button type="button" data-project-create-open="new-project-dialog" aria-haspopup="dialog">Create project</button>
+  </div>
   {% endif %}
 
   {% if projects_view != 'repos' and project %}
@@ -355,7 +365,7 @@
     </details>
     <h2>Work overview</h2>
     {% if not cards %}
-    <div class="empty-state"><h3>No work is linked yet</h3><p class="muted">Create a card from Home or Work, then assign it to this project to start tracking progress.</p><a class="button" href="/?realm={{ active_realm }}">Create a card</a></div>
+    <div class="empty-state"><h3>No work is linked yet</h3><p class="muted">Create a card from Home or Work, then assign it to this project to start tracking progress.</p><button type="button" data-new-card-open data-new-card-project="{{ project.id }}">Create a card</button></div>
     {% else %}
       <h3>Blocked ({{ blocked_cards | length }})</h3>
       {% with cards=blocked_cards %}{% include "partials/cards.html" %}{% endwith %}
@@ -412,7 +422,7 @@
   </div>
   {% endif %}
 
-  </main>
+  </section>
 </div>
 {% endset %}
 

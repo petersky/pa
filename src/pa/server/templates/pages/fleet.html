@@ -25,13 +25,13 @@
      data-primary-realm="{{ primary_realm }}">
 
   <section data-section="overview">
-    <div class="panel-header">
+    <header class="page-heading fleet-page-heading">
       <div>
-        <h2>Fleet activity</h2>
-        <p class="muted small">Cached state appears immediately; independent fields refresh in the background.</p>
+        <h1>Fleet activity</h1>
+        <p>Cached state appears immediately; independent fields refresh in the background.</p>
       </div>
       <button class="ghost" type="button" id="pa-fleet-refresh">Refresh all</button>
-    </div>
+    </header>
     {% if fleet_instances %}
     <script type="application/json" id="pa-fleet-overview-data">{{ fleet_overview | tojson }}</script>
     <div class="fleet-overview-grid">
@@ -101,25 +101,25 @@
         {% set providers = dims.providers %}
         {% set activity = dims.activity %}
         {% set sync = dims.sync %}
-        <tr data-fleet-instance="{{ node.id }}" tabindex="0">
-	          <td>
+        <tr data-fleet-instance="{{ node.id }}">
+	          <td data-label="Machine">
 	            <div class="fleet-machine-select">{{ instance_identity(node.id) }}{% if node.local %}<span class="badge">local</span>{% endif %}<button type="button" class="ghost small" data-fleet-node="{{ node.id }}" aria-label="Inspect {{ node.name }}">Inspect</button></div>
 	            <span class="muted small">{{ node.zone }}</span>
 	            {% set overview_policy = participation_policies.get(node.id, {}) %}
 	            <span class="muted small" data-fleet-participation>{{ overview_policy.get('summary', 'Compatibility policy') }}</span>
 	            <details><summary class="muted small">Connection details</summary><dl><dt>Instance</dt><dd>{{ instance_identity(node.id) }}</dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
           </td>
-          <td>
+          <td data-label="Health &amp; sync">
             <div data-fleet-health class="fleet-field fleet-field-{{ reach.state }}">
               <span class="status {% if reach.value and reach.value.health == 'up' %}status-active{% else %}status-blocked{% endif %}">{{ reach.value.health if reach.value else reach.state }}</span>
             </div>
             <div data-fleet-sync class="muted small">{{ 'in sync' if sync.value and sync.value.consistent else sync.state }}</div>
           </td>
-          <td>
+          <td data-label="Software">
             <div data-fleet-current-version class="fleet-field fleet-field-{{ status.state }}">{{ status.value.version if status.value and status.value.version else status.state }}</div>
             <div data-fleet-available-version class="muted small">{% if update.value and update.value.available_version %}{{ update.value.available_version }}{% else %}{{ update.state }}{% endif %}</div>
           </td>
-          <td data-fleet-providers class="fleet-field fleet-field-{{ providers.state }}">
+          <td data-label="Authentication" data-fleet-providers class="fleet-field fleet-field-{{ providers.state }}">
             {% if providers.value %}
               {% for provider in providers.value %}
                 {% set auth_state = provider.auth_state or ('authenticated' if provider.auth_configured else 'unknown') %}
@@ -131,7 +131,7 @@
               {% endfor %}
             {% else %}<span class="muted">{{ providers.state }}</span>{% endif %}
           </td>
-          <td data-fleet-active-work class="fleet-field fleet-field-{{ activity.state }}">
+          <td data-label="Activity" data-fleet-active-work class="fleet-field fleet-field-{{ activity.state }}">
             {% set current_dispatch = activity.value.current_dispatch if activity.value else none %}
             <strong>{{ current_dispatch.phase | replace('_', ' ') if current_dispatch else (activity.value.state if activity.value and activity.value.state else activity.state) }}</strong>
             <span class="muted small">{{ current_dispatch.summary if current_dispatch else (activity.value.summary if activity.value and activity.value.summary else 'No activity detail yet') }}</span>
@@ -142,7 +142,7 @@
           {% set capacity = activity.value.capacity if activity.value and activity.value.capacity else none %}
           {% set queue_capacity = activity.value.queue_capacity if activity.value and activity.value.queue_capacity else none %}
           {% set prompt_backlog = activity.value.queued_prompts if activity.value and activity.value.queued_prompts is defined else 0 %}
-          <td data-fleet-capacity class="fleet-field fleet-field-{{ activity.state }}">
+          <td data-label="Capacity" data-fleet-capacity class="fleet-field fleet-field-{{ activity.state }}">
             {% if capacity %}
             <strong aria-label="{{ capacity.consumed }}/{{ capacity.limit }} slots used · {{ prompt_backlog }} prompt{{ '' if prompt_backlog == 1 else 's' }} queued">{{ capacity.consumed }}/{{ capacity.limit }} slots used · {{ prompt_backlog }} prompt{{ '' if prompt_backlog == 1 else 's' }} queued</strong>
             <span class="muted small">{{ capacity.source | replace('_', ' ') }}</span>
@@ -152,11 +152,11 @@
             <span class="muted small">{{ 'configured' if node.dispatch_capacity else 'compatibility probe pending' }}</span>
             {% endif %}
           </td>
-          <td data-fleet-freshness>
+          <td data-label="Freshness" data-fleet-freshness>
             <span class="fleet-freshness fleet-field-{{ reach.state }}">{{ reach.state }}</span>
             {% if reach.observed_at %}<time class="muted small" datetime="{{ reach.observed_at }}">{{ reach.observed_at }}</time>{% endif %}
           </td>
-          <td>
+          <td data-label="Actions">
             <button type="button" class="ghost small" data-fleet-retry-instance="{{ node.id }}">Retry</button>
             {% if not node.local %}<button type="button" class="ghost small" data-fleet-update="{{ node.id }}" data-instance-name="{{ node.name }}" aria-label="Update {{ inst.name }}">Update</button><button type="button" class="ghost danger small" data-fleet-remove="{{ node.id }}" aria-label="Remove {{ inst.name }} from fleet">Remove</button>{% endif %}
           </td>

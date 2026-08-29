@@ -1357,10 +1357,10 @@ def build_workshop_snapshot(
             "loaded": len(work_orders),
             "total": total_cards,
             "omitted": max(0, total_cards - len(work_orders)),
-            "overflow_href": f"/?realm={realm_id}",
+            "overflow_href": f"/work?realm={realm_id}",
             "description": (
                 "Newest and operational cards are bounded in Workshop; "
-                "open Cards for the full inventory."
+                "open the Work board for the full inventory."
             ),
         },
         "areas": lane_cards,

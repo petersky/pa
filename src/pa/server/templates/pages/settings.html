@@ -19,6 +19,12 @@
 {% endset %}
 
 {% set main %}
+<header class="page-heading settings-page-heading">
+  <div>
+    <h1>Settings</h1>
+    <p>Configure this PA instance, its agent behavior, connected tools, and operational safeguards.</p>
+  </div>
+</header>
 <section class="hidden stack" data-section="mcp-servers" hidden>
   <div class="panel">
     <div class="panel-header"><h2>Auxiliary MCP servers</h2></div>
@@ -56,7 +62,7 @@
         <button type="button"
                 class="theme-card{% if t.id == prefs.theme_id %} active{% endif %}"
                 data-theme-id="{{ t.id }}"
-                onclick="PATheme.setThemeId('{{ t.id }}', this)">
+                aria-pressed="{{ 'true' if t.id == prefs.theme_id else 'false' }}">
           <strong>{{ t.name }}</strong>
           <span class="muted">{{ t.description }}</span>
         </button>

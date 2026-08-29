@@ -372,7 +372,7 @@
     if (restart) restart.addEventListener("click", function () { self.restartSession(); });
     const cardLink = this.root.querySelector("[data-acw-card-link]");
     if (cardLink) cardLink.addEventListener("click", function () {
-      openSessionCardDialog(self);
+      openSessionCardDialog(self, cardLink);
     });
     if (this.els.recoveryRetry) {
       this.els.recoveryRetry.addEventListener("click", function () {
@@ -3996,16 +3996,21 @@
     });
   }
 
-  function openSessionCardDialog(widget) {
+  function openSessionCardDialog(widget, opener) {
     const dialog = document.querySelector("[data-agent-card-dialog]");
     if (!dialog || !widget || !widget.sessionId) return;
     dialog._agentWidget = widget;
+    dialog._agentOpener = opener || document.activeElement;
     const form = dialog.querySelector("[data-agent-card-form]");
     const error = dialog.querySelector("[data-agent-card-error]");
     if (form) form.reset();
     if (error) error.hidden = true;
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
+    window.requestAnimationFrame(function () {
+      const initial = dialog.querySelector("[data-agent-card-existing]");
+      if (initial) initial.focus();
+    });
   }
 
   let sessionListRecovery = null;
@@ -4044,8 +4049,6 @@
         ? "false"
         : "true";
       li.dataset.sessionRecoverable = s.recovery && s.recovery.recoverable ? "true" : "false";
-      li.setAttribute("role", "button");
-      li.tabIndex = 0;
       if (activeId && s.id === activeId) li.classList.add("active");
       const sessionInstanceId = s.origin_instance_id || s.instance_id || "";
       const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
@@ -4097,8 +4100,11 @@
             escapeHtml(String(s.agent_name || "PA").slice(0, 2).toUpperCase()) + "</span>" +
           '<div class="agent-session-summary">' +
             '<div class="agent-session-row-head">' +
-              '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
-                escapeHtml(title) + '">' + escapeHtml(title) + "</strong>" +
+              '<button type="button" class="agent-session-select" data-agent-session-open ' +
+                'aria-label="Open session ' + escapeHtml(title) + '"' +
+                (activeId && s.id === activeId ? ' aria-current="true"' : '') + '>' +
+                '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
+                  escapeHtml(title) + '">' + escapeHtml(title) + "</strong></button>" +
               '<span class="agent-session-state agent-session-state-' + escapeHtml(state.key) + '">' +
                 '<span aria-hidden="true">●</span> ' + escapeHtml(state.label) + "</span>" +
             "</div>" +
@@ -4273,11 +4279,11 @@
       if (!item) return;
       const clamped = title.scrollHeight > title.clientHeight + 1;
       item.dataset.titleClamped = clamped ? "true" : "false";
-      if (clamped) {
-        item.setAttribute("aria-label", title.dataset.fullTitle || title.textContent || "Agent session");
-      } else {
-        item.removeAttribute("aria-label");
-      }
+      const open = item.querySelector("[data-agent-session-open]");
+      if (open) open.setAttribute(
+        "aria-label",
+        "Open session " + (title.dataset.fullTitle || title.textContent || "Agent session")
+      );
     });
   }
 
@@ -4730,22 +4736,7 @@
           });
           return;
         }
-        if (e.target.closest("a, summary, details, button, pa-instance-identity")) return;
-        const widget = document.querySelector("[data-agent-chat]");
-        if (widget && widget._acw) {
-          widget._acw.switchSession(
-            li.dataset.sessionId,
-            li.dataset.sessionLive !== "false",
-            li.dataset.sessionInstance || ""
-          );
-        }
-      });
-      list.addEventListener("keydown", function (e) {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        if (e.target.closest("a, summary, details, button, pa-instance-identity")) return;
-        const li = e.target.closest("[data-session-id]");
-        if (!li) return;
-        e.preventDefault();
+        if (!e.target.closest("[data-agent-session-open]")) return;
         const widget = document.querySelector("[data-agent-chat]");
         if (widget && widget._acw) {
           widget._acw.switchSession(
@@ -4815,9 +4806,14 @@
         if (!dialog) return;
         const error = dialog.querySelector("[data-agent-new-error]");
         if (error) error.hidden = true;
+        dialog._agentOpener = neu;
         prepareNewSessionDialog(dialog, widget);
         if (typeof dialog.showModal === "function") dialog.showModal();
         else dialog.setAttribute("open", "");
+        window.requestAnimationFrame(function () {
+          const initial = dialog.querySelector('input[name="title"]');
+          if (initial) initial.focus();
+        });
       });
     }
     const dialog = root.querySelector("[data-agent-new-dialog]");
@@ -4844,6 +4840,10 @@
       }
       dialog.querySelectorAll("[data-agent-new-cancel]").forEach(function (button) {
         button.addEventListener("click", function () { dialog.close(); });
+      });
+      dialog.addEventListener("close", function () {
+        if (dialog._agentOpener && dialog._agentOpener.isConnected) dialog._agentOpener.focus();
+        dialog._agentOpener = null;
       });
       const form = dialog.querySelector("[data-agent-new-form]");
       if (form) form.addEventListener("submit", function (event) {
@@ -4894,6 +4894,12 @@
       cardDialog._acwBound = true;
       cardDialog.querySelectorAll("[data-agent-card-cancel]").forEach(function (button) {
         button.addEventListener("click", function () { cardDialog.close(); });
+      });
+      cardDialog.addEventListener("close", function () {
+        if (cardDialog._agentOpener && cardDialog._agentOpener.isConnected) {
+          cardDialog._agentOpener.focus();
+        }
+        cardDialog._agentOpener = null;
       });
       const cardForm = cardDialog.querySelector("[data-agent-card-form]");
       if (cardForm) cardForm.addEventListener("submit", function (event) {

@@ -99,6 +99,21 @@
     event.stopImmediatePropagation();
     navigate(match.url.href).catch(function () {});
   }, true);
+
+  document.addEventListener("click", function (event) {
+    document.querySelectorAll("[data-responsive-nav][open]").forEach(function (menu) {
+      if (!menu.contains(event.target)) menu.removeAttribute("open");
+    });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll("[data-responsive-nav][open]").forEach(function (menu) {
+      menu.removeAttribute("open");
+      var summary = menu.querySelector("summary");
+      if (summary) summary.focus();
+    });
+  });
   document.addEventListener("pa:historyWillReload", function () { cancel("pa-history-reload"); });
   window.addEventListener("pagehide", function () { cancel("pa-pagehide"); });
 
