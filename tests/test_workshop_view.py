@@ -219,7 +219,7 @@ def _snapshot() -> dict:
             "loaded": len(inventory),
             "total": len(inventory),
             "omitted": 0,
-            "overflow_href": "/cards",
+            "overflow_href": "/work?realm=default",
         },
         "counts": {
             "total": len(inventory),
@@ -266,7 +266,7 @@ def _workshop_markup() -> str:
         <label>Group<select data-workshop-group><option value="attention">Attention first</option>
           <option value="location">Group by location</option><option value="lane">Group by card lane</option></select></label>
         <p data-workshop-results aria-live="polite"></p>
-        <a data-workshop-overflow href="/cards">Open full Cards inventory</a>
+        <a data-workshop-overflow href="/work?realm=default">Open Work board</a>
       </form>
       <div class="workshop-layout">
         <div class="workshop-scene" data-workshop-scene></div>

@@ -2,7 +2,7 @@
   if (window.__paNotificationsBound) return;
   window.__paNotificationsBound = true;
 
-  var state = { filter: "outstanding", offset: 0, next: null, loading: false };
+  var state = { filter: "outstanding", offset: 0, next: null, loading: false, refreshPending: false };
   var drafts = new Map();
   var pollTimer = null;
 
@@ -114,7 +114,16 @@
     if (state.filter === "unread") params.set("unread", "true");
     return params.toString();
   }
-  function load(append) {
+  function hasFocusedControl() {
+    var chrome = root();
+    var flyout = chrome && chrome.querySelector("#pa-notification-panel");
+    return Boolean(flyout && !flyout.hidden && flyout.contains(document.activeElement) && document.activeElement !== flyout);
+  }
+  function load(append, force) {
+    if (!append && !force && hasFocusedControl()) {
+      state.refreshPending = true;
+      return Promise.resolve();
+    }
     if (state.loading) return Promise.resolve();
     state.loading = true;
     return fetch("/api/notifications?" + query(), { credentials: "same-origin", cache: "no-store" })
@@ -134,7 +143,7 @@
         var chrome = root();
         if (chrome) chrome.querySelector("[data-notification-status]").textContent = " · unavailable";
       })
-      .finally(function () { state.loading = false; });
+      .finally(function () { state.loading = false; state.refreshPending = false; });
   }
   function mutate(item, action, body) {
     return fetch("/api/notifications/" + encodeURIComponent(item.dataset.notificationId) + "/" + action, {
@@ -145,7 +154,7 @@
       if (!response.ok) return response.json().catch(function () { return {}; }).then(function (data) { throw new Error((data.detail && data.detail.message) || "Action could not be completed"); });
       clearDrafts(item.dataset.notificationId);
       state.offset = 0;
-      return load(false);
+      return load(false, true);
     }).catch(function (error) {
       var warning = item.querySelector(".notification-warning") || document.createElement("p");
       warning.className = "notification-warning";
@@ -169,7 +178,7 @@
     var flyout = chrome.querySelector("#pa-notification-panel");
     flyout.hidden = false;
     chrome.querySelector("#pa-notification-bell").setAttribute("aria-expanded", "true");
-    state.offset = 0; load(false).then(function () { flyout.focus(); });
+    state.offset = 0; load(false, true).then(function () { flyout.focus(); });
   }
   function close() {
     var chrome = root(); if (!chrome) return;
@@ -183,7 +192,7 @@
     if (event.target.closest("#pa-notification-bell")) { chrome.querySelector("#pa-notification-panel").hidden ? open() : close(); return; }
     if (event.target.closest("[data-notification-close]")) { close(); return; }
     var filter = event.target.closest("[data-notification-filter]");
-    if (filter) { state.filter = filter.dataset.notificationFilter; state.offset = 0; chrome.querySelectorAll("[data-notification-filter]").forEach(function (b) { b.classList.toggle("active", b === filter); b.classList.toggle("ghost", b !== filter); }); load(false); return; }
+    if (filter) { state.filter = filter.dataset.notificationFilter; state.offset = 0; chrome.querySelectorAll("[data-notification-filter]").forEach(function (b) { var active = b === filter; b.classList.toggle("active", active); b.classList.toggle("ghost", !active); b.setAttribute("aria-pressed", active ? "true" : "false"); }); load(false, true); return; }
     if (event.target.closest("[data-notification-more]")) { state.offset = state.next || 0; load(true); return; }
     var item = event.target.closest("[data-notification-id]"); if (!item) { if (!event.target.closest("[data-notification-chrome]")) close(); return; }
     if (event.target.closest("[data-notification-ack]")) return void mutate(item, "acknowledge", { idempotency_key: key() });
@@ -208,6 +217,17 @@
     if (event.key === "Escape") { var chrome = root(); if (chrome && !chrome.querySelector("#pa-notification-panel").hidden) close(); }
     var item = event.target.closest && event.target.closest("[data-notification-id]");
     if (item && (event.key === "Enter" || event.key === " ") && event.target === item && item.dataset.notificationDestination) { event.preventDefault(); navigateFrom(item); }
+  });
+  document.addEventListener("focusout", function (event) {
+    var chrome = root();
+    var flyout = chrome && chrome.querySelector("#pa-notification-panel");
+    if (!flyout || !flyout.contains(event.target)) return;
+    window.setTimeout(function () {
+      if (state.refreshPending && !hasFocusedControl()) {
+        state.offset = 0;
+        load(false, true);
+      }
+    }, 0);
   });
   function boot() {
     load(false);

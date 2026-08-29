@@ -412,7 +412,7 @@ class UiShellModule(Module):
             PageDefinition(
                 id="agent",
                 path="/agent",
-                label="Agent",
+                label="Sessions",
                 icon="agent",
                 template="pages/agent.html",
                 nav=False,

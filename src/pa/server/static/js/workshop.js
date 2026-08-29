@@ -210,9 +210,9 @@
     }
     var overflow = root.querySelector("[data-workshop-overflow]");
     if (overflow) {
-      overflow.href = inventory.overflow_href || "/";
+      overflow.href = inventory.overflow_href || "/work";
       overflow.hidden = !inventory.omitted;
-      overflow.textContent = "Open " + inventory.omitted + " additional cards in Cards";
+      overflow.textContent = "Open Work board";
     }
     var pager = root.querySelector("[data-workshop-pagination]");
     if (pager) {

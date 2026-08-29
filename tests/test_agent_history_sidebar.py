@@ -61,7 +61,8 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert 'code === "session_deleted"' in script
     assert 'getAttribute("aria-checked") === "true"' in script
     assert "updateSessionTitleTooltips" in script
-    assert 'item.setAttribute("aria-label"' in script
+    assert 'item.querySelector("[data-agent-session-open]")' in script
+    assert 'open.setAttribute(' in script
     assert "sessionListExecution" in script
     assert "sessionListState" in script
     assert "sessionRuntimeLabel" in script

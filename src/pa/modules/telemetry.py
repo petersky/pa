@@ -609,7 +609,7 @@ class TelemetryModule(Module):
                 id="reports",
                 path="/reports",
                 label="Reports",
-                icon="fleet",
+                icon="reports",
                 template="pages/reports.html",
                 nav_order=19,
                 context_builder=_page_context,

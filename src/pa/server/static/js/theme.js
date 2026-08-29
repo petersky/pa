@@ -96,6 +96,16 @@
     updateThemeButton(btn.dataset.appearance || getPreferences().appearance);
   }
 
+  function bindThemeCards(root) {
+    (root || document).querySelectorAll(".theme-card[data-theme-id]").forEach(function (button) {
+      if (button.dataset.themeBound) return;
+      button.dataset.themeBound = "1";
+      button.addEventListener("click", function () {
+        setThemeId(button.dataset.themeId, button);
+      });
+    });
+  }
+
   function cycleAppearance() {
     const current = getPreferences().appearance;
     const idx = APPEARANCE_ORDER.indexOf(current);
@@ -109,6 +119,7 @@
     applyTheme(prefs);
     loadVariantStyles(prefs.themeId, prefs.appearance);
     bindThemeToggle();
+    bindThemeCards(document);
 
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
       const current = getPreferences();
@@ -144,7 +155,9 @@
     applyTheme({ appearance: prefs.appearance, themeId });
     loadVariantStyles(themeId, prefs.appearance);
     document.querySelectorAll(".theme-card").forEach(function (el) {
-      el.classList.toggle("active", el.dataset.themeId === themeId);
+      var active = el.dataset.themeId === themeId;
+      el.classList.toggle("active", active);
+      el.setAttribute("aria-pressed", active ? "true" : "false");
     });
     if (button) button.classList.add("active");
     try {
@@ -164,5 +177,8 @@
     staticUrl,
   };
   init();
-  document.body.addEventListener("htmx:afterSwap", bindThemeToggle);
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    bindThemeToggle();
+    bindThemeCards(event.detail && event.detail.target || document);
+  });
 })();

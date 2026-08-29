@@ -25,7 +25,7 @@
   <nav class="work-saved-views" aria-label="Work views">
     <span>Views</span>
     <a href="/work?realm={{ active_realm }}&amp;owner={{ principal_id | default('') }}&amp;blocked=unblocked">My active work</a>
-    <a href="/work?realm={{ active_realm }}&amp;blocked=blocked">Needs attention</a>
+    <a href="/work?realm={{ active_realm }}&amp;blocked=blocked">Blocked work</a>
     <a href="/work?realm={{ active_realm }}&amp;lane=waiting">Waiting</a>
     <a href="/work?realm={{ active_realm }}&amp;lane=done&amp;updated=7">Recently completed</a>
     {% for view in saved_views %}<a href="/work?{{ view.query }}" data-saved-view-id="{{ view.id }}">{{ view.name }}</a>{% endfor %}
@@ -100,7 +100,7 @@
   <section class="board-grid" aria-label="Work board" data-work-board data-realm="{{ active_realm }}">
     {% for lane in lanes %}
     <section class="board-column" id="lane-{{ lane.value }}" data-lane="{{ lane.value }}" data-mobile-active="{{ 'true' if lane.value == selected_lane else 'false' }}">
-      <header><h2>{{ lane.value | capitalize }}</h2><span class="muted" aria-hidden="true">•</span></header>
+      <header><h2>{{ lane.value | capitalize }}</h2></header>
       <div class="board-column-body"
            hx-get="/partials/cards?{{ filter_query }}{% if filter_query %}&{% endif %}lane={{ lane.value }}"
            hx-trigger="load, every 15s, boardRefresh from:body"

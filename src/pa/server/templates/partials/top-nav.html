@@ -4,6 +4,7 @@
   {% for nav_page in nav_pages %}
   <a href="{{ nav_page.path }}"
      class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
+     {% if active_path == nav_page.path %}aria-current="page"{% endif %}
      hx-get="{{ nav_page.path }}"
      hx-target="#app-view"
      hx-push-url="true"
@@ -15,11 +16,15 @@
 </nav>
 
 <details class="responsive-nav" data-responsive-nav>
-  <summary class="nav-menu-button" aria-label="Open main navigation">Menu</summary>
+  <summary class="nav-menu-button" aria-label="Open main navigation; current page {{ page.label | default('PA') }}">
+    {{ icon('menu') }}
+    <span data-responsive-nav-label>{{ page.label | default('Menu') }}</span>
+  </summary>
   <nav class="responsive-nav-menu" aria-label="Main navigation menu">
     {% for nav_page in nav_pages %}
     <a href="{{ nav_page.path }}"
        class="nav-btn{% if active_path == nav_page.path %} active{% endif %}"
+       {% if active_path == nav_page.path %}aria-current="page"{% endif %}
        hx-get="{{ nav_page.path }}"
        hx-target="#app-view"
        hx-push-url="true"
@@ -28,11 +33,13 @@
       <span>{{ nav_page.label }}</span>
     </a>
     {% endfor %}
-    <a href="/agent" class="nav-btn{% if active_path == '/agent' %} active{% endif %}"
+    <a href="/agent" class="nav-btn responsive-nav-system{% if active_path == '/agent' %} active{% endif %}"
+       {% if active_path == '/agent' %}aria-current="page"{% endif %}
        hx-get="/agent" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
       {{ icon('agent') }}<span>Sessions</span>
     </a>
     <a href="/settings" class="nav-btn{% if active_path == '/settings' %} active{% endif %}"
+       {% if active_path == '/settings' %}aria-current="page"{% endif %}
        hx-get="/settings" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">
       {{ icon('gear') }}<span>Settings</span>
     </a>

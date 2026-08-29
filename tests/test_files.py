@@ -194,6 +194,13 @@ class FileBrowserTests(unittest.TestCase):
         file_html = file_response.body.decode()
         self.assertIn("data-file-markdown", file_html)
         self.assertIn("file-browser.js", file_html)
+        self.assertIn("<h1>README.md</h1>", file_html)
+        self.assertIn('role="tablist"', file_html)
+        self.assertIn('id="file-view-tab-rendered"', file_html)
+        self.assertIn('aria-selected="true"', file_html)
+        self.assertIn('aria-controls="file-view-panel-rendered"', file_html)
+        self.assertIn('role="tabpanel"', file_html)
+        self.assertIn('aria-labelledby="file-view-tab-rendered"', file_html)
 
         directory_response = asyncio.run(browse_files(self.request, str(self.root)))
         directory_html = directory_response.body.decode()

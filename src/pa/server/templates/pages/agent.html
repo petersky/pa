@@ -3,11 +3,11 @@
 {% from "macros/instance_identity.html" import instance_identity %}
 
 {% set left %}
-{% if session_attribution %}<aside class="panel-inset" role="status" aria-label="Session attribution from {{ session_attribution.source }}">
+{% if session_attribution %}<section class="panel-inset" role="status" aria-label="Session attribution from {{ session_attribution.source }}">
   <strong>Execution attribution</strong>
   <p class="muted small">Initiator {{ session_attribution.initiator }} · authority {{ instance_identity(session_attribution.authority_instance_id) }} · target {{ instance_identity(session_attribution.target_instance_id) }} · provider {{ session_attribution.provider }}{% if session_attribution.stale %} · dispatch is no longer live{% endif %}</p>
   <p class="muted small">Provenance: {{ session_attribution.source }} · dispatch <code>{{ session_attribution.dispatch_id }}</code> · session <code>{{ session_attribution.session_id }}</code></p>
-</aside>{% endif %}
+</section>{% endif %}
 <div class="panel agent-sessions-panel">
   <div class="panel-header">
     <h2>Sessions</h2>
@@ -50,9 +50,7 @@
     <li class="{% if s.id == session_id %}active{% endif %}"
         data-session-id="{{ s.id }}"
         data-session-instance="{{ s.origin_instance_id or '' }}"
-        data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}"
-        role="button"
-        tabindex="0">
+        data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}">
       {% set session_title = s.title or s.label or s.agent_name %}
       {% set state = detail.state or s.status or 'unknown' %}
       {% set admission = (s.config_json or {}).get('configuration', {}) %}
@@ -65,7 +63,10 @@
         <span class="agent-session-provider-mark" aria-hidden="true">{{ (s.agent_name or 'PA')[:2] | upper }}</span>
         <div class="agent-session-summary">
           <div class="agent-session-row-head">
-            <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{{ session_title }}</strong>
+            <button type="button" class="agent-session-select" data-agent-session-open
+                    aria-label="Open session {{ session_title }}"{% if s.id == session_id %} aria-current="true"{% endif %}>
+              <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{{ session_title }}</strong>
+            </button>
             <span class="agent-session-state agent-session-state-{{ state }}"><span aria-hidden="true">●</span> {{ 'Approval' if detail.pending_approval else state | replace('_', ' ') | title }}</span>
           </div>
           <span class="agent-session-title-tooltip" role="tooltip">{{ session_title }}</span>
@@ -113,11 +114,11 @@
     {% endif %}
   </ul>
 </div>
-<dialog class="agent-new-session-dialog" data-agent-new-dialog>
+<dialog class="agent-new-session-dialog" data-agent-new-dialog aria-labelledby="agent-new-session-title">
   <form method="dialog" data-agent-new-form>
     <header>
       <div>
-        <h2>New agent session</h2>
+        <h2 id="agent-new-session-title">New agent session</h2>
         <p class="muted">Choose the runtime before PA starts the session.</p>
       </div>
       <button type="button" class="ghost" data-agent-new-cancel aria-label="Close">×</button>
@@ -175,18 +176,19 @@
       <input name="cwd" placeholder="Instance default" autocomplete="off">
     </label>
     <p class="muted" data-agent-new-status hidden role="status" aria-live="polite">Loading session options…</p>
-    <p class="agent-new-session-error" data-agent-new-error hidden></p>
+    <p class="agent-new-session-error" data-agent-new-error role="alert" aria-live="assertive" hidden></p>
     <div class="form-actions">
       <button type="button" class="ghost" data-agent-new-cancel>Cancel</button>
       <button type="submit" class="primary" data-agent-new-submit>Start session</button>
     </div>
   </form>
 </dialog>
-<dialog class="agent-new-session-dialog" data-agent-card-dialog data-agent-card-realm="{{ agent_realm_id }}">
+<dialog class="agent-new-session-dialog" data-agent-card-dialog data-agent-card-realm="{{ agent_realm_id }}"
+        aria-labelledby="agent-card-dialog-title">
   <form method="dialog" data-agent-card-form>
     <header>
       <div>
-        <h2>Capture session in a card</h2>
+        <h2 id="agent-card-dialog-title">Capture session in a card</h2>
         <p class="muted">Link an existing card or create one without ending this session.</p>
       </div>
       <button type="button" class="ghost" data-agent-card-cancel aria-label="Close">×</button>
@@ -210,7 +212,7 @@
       </select>
     </label>
     <p class="muted small">The link captures provenance and makes this the current card context. Repository work still needs a PA dispatch to materialize a fenced worktree.</p>
-    <p class="agent-new-session-error" data-agent-card-error hidden></p>
+    <p class="agent-new-session-error" data-agent-card-error role="alert" aria-live="assertive" hidden></p>
     <div class="form-actions">
       <button type="button" class="ghost" data-agent-card-cancel>Cancel</button>
       <button type="submit" class="primary" data-agent-card-submit>Capture session</button>
@@ -229,7 +231,13 @@
 {% endset %}
 
 {% set main %}
-<div class="panel panel-fill page-agent-main">
+<header class="page-heading agent-page-heading">
+  <div>
+    <h1>Sessions</h1>
+    <p>Run, recover, and connect agent work to the cards and projects it belongs to.</p>
+  </div>
+</header>
+<div class="panel panel-fill page-agent-main{% if not agent_enabled %} agent-disabled-panel{% endif %}">
   {% if agent_enabled %}
   {% with
       session_id=session_id,
@@ -252,7 +260,8 @@
   <div class="empty-state">
     {{ icon('agent', 'icon icon-lg') }}
     <h2>Agent disabled</h2>
-    <p class="muted">Enable the agent and restart PA to chat.</p>
+    <p class="muted">Enable the agent for this instance and restart PA to start or recover sessions.</p>
+    <a class="secondary" href="/settings?section=agent">Review agent settings</a>
   </div>
   {% endif %}
 </div>

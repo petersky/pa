@@ -19,12 +19,38 @@
   }
 
   function showView(root, name) {
-    root.querySelectorAll("[data-file-view]").forEach(function (button) {
-      button.classList.toggle("active", button.dataset.fileView === name);
+    var selectedTab = null;
+    root.querySelectorAll('[role="tab"][data-file-view]').forEach(function (button) {
+      var selected = button.dataset.fileView === name;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", selected ? "true" : "false");
+      button.tabIndex = selected ? 0 : -1;
+      if (selected) selectedTab = button;
     });
+    if (!selectedTab) return null;
     root.querySelectorAll("[data-file-view-panel]").forEach(function (panel) {
       panel.hidden = panel.dataset.fileViewPanel !== name;
     });
+    return selectedTab;
+  }
+
+  function handleTabKeydown(browser, button, event) {
+    var tabs = Array.prototype.slice.call(
+      browser.querySelectorAll('[role="tab"][data-file-view]')
+    );
+    var index = tabs.indexOf(button);
+    var nextIndex = index;
+
+    if (index < 0 || tabs.length < 1) return;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+    else return;
+
+    event.preventDefault();
+    var selectedTab = showView(browser, tabs[nextIndex].dataset.fileView);
+    if (selectedTab) selectedTab.focus();
   }
 
   function mount(root) {
@@ -32,9 +58,21 @@
     scope.querySelectorAll("[data-file-browser]").forEach(function (browser) {
       if (browser.dataset.fileBrowserMounted === "1") return;
       browser.dataset.fileBrowserMounted = "1";
-      browser.querySelectorAll("[data-file-view]").forEach(function (button) {
+      var tabs = Array.prototype.slice.call(
+        browser.querySelectorAll('[role="tab"][data-file-view]')
+      );
+      tabs.forEach(function (button) {
         button.addEventListener("click", function () { showView(browser, button.dataset.fileView); });
+        button.addEventListener("keydown", function (event) {
+          handleTabKeydown(browser, button, event);
+        });
       });
+      var selectedTab = tabs.find(function (button) {
+        return button.getAttribute("aria-selected") === "true";
+      }) || tabs.find(function (button) {
+        return button.classList.contains("active");
+      }) || tabs[0];
+      if (selectedTab) showView(browser, selectedTab.dataset.fileView);
       var markdown = browser.querySelector("[data-file-markdown]");
       var source = browser.querySelector("[data-file-markdown-source]");
       if (markdown && source && window.PAAgentChat) {

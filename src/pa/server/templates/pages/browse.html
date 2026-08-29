@@ -4,7 +4,7 @@
 <div class="panel file-browser" data-file-browser>
   <header class="panel-header file-browser-header">
     <div>
-      <h2>{{ path.name or path }}</h2>
+      <h1>{{ path.name or path }}</h1>
       <nav class="file-breadcrumbs" aria-label="Filesystem path">
         {% for crumb in breadcrumbs %}
         <a href="{{ crumb.url }}">{{ crumb.label }}</a>{% if not loop.last %}<span>/</span>{% endif %}
@@ -37,26 +37,30 @@
   {% elif too_large %}
   <div class="empty-state"><h2>File too large to preview</h2><p class="muted">Text previews are limited to 2 MB. You can still download the file.</p></div>
   {% elif is_text %}
-  <div class="file-view-tabs" role="tablist">
-    {% if is_markdown %}<button type="button" class="ghost small active" data-file-view="rendered">Rendered</button>{% endif %}
-    <button type="button" class="ghost small{% if not is_markdown %} active{% endif %}" data-file-view="source">Source</button>
+  <div class="file-view-tabs">
+    <div class="file-view-tablist" role="tablist" aria-label="File preview">
+    {% if is_markdown %}<button type="button" id="file-view-tab-rendered" class="ghost small active" role="tab" aria-selected="true" aria-controls="file-view-panel-rendered" tabindex="0" data-file-view="rendered">Rendered</button>{% endif %}
+    <button type="button" id="file-view-tab-source" class="ghost small{% if not is_markdown %} active{% endif %}" role="tab" aria-selected="{{ 'false' if is_markdown else 'true' }}" aria-controls="file-view-panel-source" tabindex="{{ '-1' if is_markdown else '0' }}" data-file-view="source">Source</button>
     {% if inline_diff %}
-    <button type="button" class="ghost small" data-file-view="inline-diff">Inline diff</button>
-    <button type="button" class="ghost small" data-file-view="side-diff">Side-by-side diff</button>
+    <button type="button" id="file-view-tab-inline-diff" class="ghost small" role="tab" aria-selected="false" aria-controls="file-view-panel-inline-diff" tabindex="-1" data-file-view="inline-diff">Inline diff</button>
+    <button type="button" id="file-view-tab-side-diff" class="ghost small" role="tab" aria-selected="false" aria-controls="file-view-panel-side-diff" tabindex="-1" data-file-view="side-diff">Side-by-side diff</button>
+    {% endif %}
+    </div>
+    {% if inline_diff %}
     <span class="muted small">against {{ diff_base }}</span>
     {% endif %}
   </div>
   {% if is_markdown %}
-  <article class="file-markdown-view" data-file-view-panel="rendered" data-file-markdown></article>
+  <article id="file-view-panel-rendered" class="file-markdown-view" role="tabpanel" aria-labelledby="file-view-tab-rendered" tabindex="0" data-file-view-panel="rendered" data-file-markdown></article>
   <textarea data-file-markdown-source hidden>{{ text }}</textarea>
   {% endif %}
-  <div class="file-source-view" data-file-view-panel="source" {% if is_markdown %}hidden{% endif %}>
+  <div id="file-view-panel-source" class="file-source-view" role="tabpanel" aria-labelledby="file-view-tab-source" tabindex="0" data-file-view-panel="source" {% if is_markdown %}hidden{% endif %}>
     <pre><code data-source-code data-language="{{ language }}" data-focus-line="{{ line or '' }}">{{ text }}</code></pre>
   </div>
   {% if inline_diff %}
-  <div class="file-diff file-diff-inline" data-file-view-panel="inline-diff" hidden><pre>{% for row in inline_diff %}<span class="diff-line diff-{{ row.kind }}">{{ row.text }}
+  <div id="file-view-panel-inline-diff" class="file-diff file-diff-inline" role="tabpanel" aria-labelledby="file-view-tab-inline-diff" tabindex="0" data-file-view-panel="inline-diff" hidden><pre>{% for row in inline_diff %}<span class="diff-line diff-{{ row.kind }}">{{ row.text }}
 </span>{% endfor %}</pre></div>
-  <div class="file-diff file-diff-side" data-file-view-panel="side-diff" hidden>
+  <div id="file-view-panel-side-diff" class="file-diff file-diff-side" role="tabpanel" aria-labelledby="file-view-tab-side-diff" tabindex="0" data-file-view-panel="side-diff" hidden>
     <table><tbody>{% for row in side_diff %}<tr class="diff-{{ row.kind }}"><td class="diff-line-no">{{ row.left_no }}</td><td><pre>{{ row.left }}</pre></td><td class="diff-line-no">{{ row.right_no }}</td><td><pre>{{ row.right }}</pre></td></tr>{% endfor %}</tbody></table>
   </div>
   {% endif %}
