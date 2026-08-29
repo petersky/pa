@@ -665,7 +665,10 @@ class WorkspaceManager:
                     "Agent cwd must be within the configured workspace_root"
                 )
             if not cwd.is_dir():
-                raise WorkspaceProvisioningError(f"Agent cwd does not exist: {cwd}")
+                raise WorkspaceProvisioningError(
+                    f"Agent cwd does not exist: {cwd}. Choose an existing folder "
+                    "inside workspace_root, or leave Working directory empty."
+                )
             root = cwd
         else:
             root = self.scratch_root / self._entity_key(session_id)
