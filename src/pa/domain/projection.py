@@ -4477,6 +4477,7 @@ class CardProjection:
             "workspace_materialized",
             "legacy_workspace_recovered",
             "stale_data_dir_cwd_removed",
+            "missing_cwd_removed",
         }
         if reason not in allowed_reasons:
             raise ValueError("Unsupported execution binding transition reason")
