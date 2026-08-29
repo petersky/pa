@@ -2595,28 +2595,42 @@ class AgentSessionManager:
             "principal_id": session.principal_id,
             "dispatch_id": session.dispatch_id,
         }
-        if requested_cwd:
-            requested_path = Path(requested_cwd).expanduser().resolve()
-            data_dir = self.settings.data_dir.expanduser().resolve()
-            if requested_path == data_dir or data_dir in requested_path.parents:
-                logger.warning(
-                    "Ignoring stale session cwd inside PA_DATA_DIR for session %s; "
-                    "rematerializing an allowed workspace",
-                    session.id,
-                )
+        data_dir = self.settings.data_dir.expanduser().resolve()
+
+        def unusable_cwd(value: str | None) -> str | None:
+            if not value:
+                return None
+            path = Path(value).expanduser().resolve()
+            if path == data_dir or data_dir in path.parents:
+                return "stale_data_dir_cwd_removed"
+            if not path.is_dir():
+                return "missing_cwd_removed"
+            return None
+
+        drop_reason = unusable_cwd(binding.get("cwd")) or unusable_cwd(requested_cwd)
+        if drop_reason:
+            dropped = binding.get("cwd") or requested_cwd
+            logger.warning(
+                "Ignoring unusable session cwd %s (%s) for session %s; "
+                "rematerializing an allowed workspace",
+                dropped,
+                drop_reason,
+                session.id,
+            )
+            if unusable_cwd(requested_cwd):
                 requested_cwd = None
-                if binding.get("cwd"):
-                    binding.pop("cwd", None)
-                    await self._offload(
-                        "sqlite.execution_binding_stale_cwd_remove",
-                        self.store.set_session_execution_binding,
-                        session.id,
-                        binding,
-                        reason="stale_data_dir_cwd_removed",
-                        expected_binding=persisted_binding,
-                    )
-                    session.execution_binding = dict(binding)
-                    persisted_binding = dict(session.execution_binding or {})
+            if unusable_cwd(binding.get("cwd")):
+                binding.pop("cwd", None)
+                await self._offload(
+                    "sqlite.execution_binding_stale_cwd_remove",
+                    self.store.set_session_execution_binding,
+                    session.id,
+                    binding,
+                    reason=drop_reason,
+                    expected_binding=persisted_binding,
+                )
+                session.execution_binding = dict(binding)
+                persisted_binding = dict(session.execution_binding or {})
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {

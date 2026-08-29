@@ -966,6 +966,29 @@ def test_workspace_recovery_rematerializes_cwd_from_data_dir(tmp_path: Path) -> 
     assert workspace_manager.settings.data_dir not in Path(session.cwd).parents
 
 
+def test_workspace_recovery_rematerializes_missing_cwd(tmp_path: Path) -> None:
+    workspace_manager, _, _ = manager_for(tmp_path)
+    manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
+    missing = workspace_manager.root / "sessions" / "gone"
+    session = AgentSession(
+        id="recovery-session",
+        agent_name="codex",
+        cwd=str(missing),
+        execution_binding={"cwd": str(missing)},
+    )
+
+    asyncio.run(
+        manager._prepare_workspace(
+            session, requested_cwd=str(missing), provider_id="codex"
+        )
+    )
+
+    assert session.cwd != str(missing)
+    assert Path(session.cwd).is_dir()
+    assert session.cwd.startswith(str(workspace_manager.root))
+    assert session.execution_binding.get("cwd") != str(missing)
+
+
 def test_missing_project_records_actionable_blocked_state(tmp_path: Path) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     workspace_manager.store.get_project.return_value = None
