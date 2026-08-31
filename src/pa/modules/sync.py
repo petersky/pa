@@ -355,18 +355,39 @@ def sync_have(request: Request, body: dict) -> dict:
             },
         )
     catalog = getattr(store, "catalog", None)
+    catalog_stale = False
     if catalog is not None and catalog.count() > 0:
-        missing = catalog.hashes_missing_from(
-            [item for item in remote_hashes if isinstance(item, str)],
-            limit=SYNC_HAVE_MAX_HASHES,
+        # Prefer DAG-reachable population when the index is ready so a partial
+        # post-upgrade catalog cannot pretend to be authoritative.
+        log: EventLog = request.app.state.ctx.require_service("event_log")
+        index_status = (
+            log.index_status(realm_id) if hasattr(log, "index_status") else {}
         )
+        expected = 0
+        if index_status.get("ready"):
+            expected = int(index_status.get("commit_count") or 0) + int(
+                index_status.get("event_count") or 0
+            )
+        coverage = catalog.coverage(expected_reachable=expected)
+        catalog_stale = bool(coverage.get("stale"))
+        if catalog_stale:
+            # Incomplete catalogs under-report; refuse to invent a full inventory
+            # via filesystem scan on the hot path.
+            missing = []
+        else:
+            missing = catalog.hashes_missing_from(
+                [item for item in remote_hashes if isinstance(item, str)],
+                limit=SYNC_HAVE_MAX_HASHES,
+            )
     else:
         # Compatibility for empty catalogs: never scan unbounded on the request path.
         missing = []
+        catalog_stale = True
     return {
         "missing": missing,
         "protocol": SYNC_PROTOCOL,
         "bounded": True,
+        "catalog_stale": catalog_stale,
         "truncated": len(missing) >= SYNC_HAVE_MAX_HASHES,
     }
 
@@ -985,10 +1006,19 @@ async def dag_index_maintenance(
     """Verify, rebuild, or cancel the disposable DAG index through the server."""
     realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
     action = str(body.get("action") or "verify")
-    if action not in {"verify", "rebuild", "cancel", "catalog_rebuild"}:
+    if action not in {
+        "verify",
+        "rebuild",
+        "cancel",
+        "catalog_rebuild",
+        "catalog_cancel",
+    }:
         raise HTTPException(
             status_code=400,
-            detail="action must be verify, rebuild, cancel, or catalog_rebuild",
+            detail=(
+                "action must be verify, rebuild, cancel, catalog_rebuild, "
+                "or catalog_cancel"
+            ),
         )
     _check_realm_access(request, realm_id)
     ctx: AppContext = request.app.state.ctx
@@ -1004,14 +1034,27 @@ async def dag_index_maintenance(
                 "cancelled": True,
                 "dag_index": log.index_status(realm_id),
             }
+        if action == "catalog_cancel":
+            catalog = ctx.require_service("object_catalog")
+            catalog.request_cancel()
+            return {
+                "realm_id": realm_id,
+                "action": action,
+                "cancelled": True,
+                "catalog": catalog.coverage(),
+            }
         if action == "catalog_rebuild":
             catalog = ctx.require_service("object_catalog")
             store = ctx.require_service("object_store")
-            stats = catalog.rebuild_from_store(store)
+            resume = bool(body.get("resume", True))
+            force = bool(body.get("force", False))
+            catalog.clear_cancel()
+            stats = catalog.rebuild_from_store(store, resume=resume, force=force)
             return {
                 "realm_id": realm_id,
                 "action": action,
                 "catalog": stats,
+                "coverage": catalog.coverage(),
                 "dag_index": log.index_status(realm_id),
             }
         if head:
@@ -1034,7 +1077,8 @@ async def dag_index_maintenance(
             "dag_index": status,
         }
 
-    return await _offload(ctx, f"sync.index_{action}", maintain, timeout=120.0)
+    timeout = 600.0 if action.startswith("catalog_") else 120.0
+    return await _offload(ctx, f"sync.index_{action}", maintain, timeout=timeout)
 
 
 @router.post("/sync/epoch")
@@ -1323,6 +1367,52 @@ class SyncModule(Module):
                     pass
 
             task.add_done_callback(completed)
+
+        # Resume interrupted GC deletes and backfill a stale object catalog in
+        # the background so readiness is not blocked on large store scans.
+        planner = ctx.services.get("gc_planner")
+        if planner is not None:
+            try:
+                await runtime.run_blocking(
+                    "sync.gc_resume", planner.resume_interrupted, timeout=60.0
+                )
+            except Exception:
+                pass
+
+        catalog = ctx.services.get("object_catalog")
+        if catalog is not None:
+            expected = 0
+            for realm in settings.subscribed_realms:
+                status = event_log.index_status(realm)
+                if status.get("ready"):
+                    expected = max(
+                        expected,
+                        int(status.get("commit_count") or 0)
+                        + int(status.get("event_count") or 0),
+                    )
+            if catalog.needs_backfill(expected_reachable=expected):
+
+                def backfill_catalog() -> dict:
+                    catalog.clear_cancel()
+                    return catalog.rebuild_from_store(obj_store, resume=True)
+
+                import asyncio
+
+                async def run_backfill() -> None:
+                    try:
+                        await runtime.run_blocking(
+                            "sync.catalog_backfill",
+                            backfill_catalog,
+                            timeout=None,
+                        )
+                    except Exception:
+                        pass
+
+                ctx.register_service(
+                    "object_catalog_backfill_task",
+                    asyncio.create_task(run_backfill()),
+                )
+
         for realm in settings.subscribed_realms:
             engine.request_convergence(realm)
 
@@ -1375,9 +1465,18 @@ class SyncModule(Module):
             action: str = "verify",
             realm: str = "default",
         ) -> dict:
-            """Verify or rebuild the derived DAG index through the PA server."""
-            if action not in {"verify", "rebuild"}:
-                raise ValueError("action must be verify or rebuild")
+            """Verify or rebuild the derived DAG index / object catalog."""
+            if action not in {
+                "verify",
+                "rebuild",
+                "cancel",
+                "catalog_rebuild",
+                "catalog_cancel",
+            }:
+                raise ValueError(
+                    "action must be verify, rebuild, cancel, catalog_rebuild, "
+                    "or catalog_cancel"
+                )
             return await _offload(
                 ctx,
                 "mcp.dag_index_maintenance_http",
