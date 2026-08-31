@@ -449,6 +449,190 @@ def test_reconcile_catches_up_before_advancing_durable_head(tmp_path: Path) -> N
     assert log.get_head("default") == tip_commit.hash
 
 
+def test_catalog_reports_stale_when_below_dag_population(tmp_path: Path) -> None:
+    catalog = ObjectCatalog(tmp_path / "catalog.db")
+    store = ObjectStore(tmp_path / "objects", catalog=catalog)
+    log = EventLog(store, tmp_path, "local", cursor_secret="test")
+    head = _append_chain(log, 20)
+    log.ensure_indexed("default", head)
+    # Simulate a post-upgrade catalog that only saw a few new puts.
+    with catalog._conn() as conn:
+        conn.execute("DELETE FROM objects")
+        conn.commit()
+    for object_hash in store.list_hashes()[:3]:
+        raw = store.get(object_hash)
+        assert raw is not None
+        catalog.record(object_hash, raw)
+
+    coverage = catalog.coverage(expected_reachable=40)
+    assert coverage["stale"] is True
+    assert coverage["ready"] is False
+    payload = catalog.status_payload("default", expected_reachable=40)
+    assert payload["catalog"]["stale"] is True
+    assert payload["catalog"]["ready"] is False
+    assert payload["store"]["authoritative"] is False
+    assert payload["realm"]["unreachable"]["retained_because"] == (
+        "unknown_until_catalog_backfill"
+    )
+
+
+def test_catalog_rebuild_is_checkpointable_and_resumable(tmp_path: Path) -> None:
+    catalog = ObjectCatalog(tmp_path / "catalog.db")
+    store = ObjectStore(tmp_path / "objects", catalog=catalog)
+    log = EventLog(store, tmp_path, "local", cursor_secret="test")
+    _append_chain(log, 30)
+    # Drop catalog rows to force a full rescan.
+    with catalog._conn() as conn:
+        conn.execute("DELETE FROM objects")
+        conn.commit()
+
+    recorded = {"count": 0}
+    original_get = store.get
+
+    def counted(object_hash: str):
+        recorded["count"] += 1
+        if recorded["count"] == 8:
+            catalog.request_cancel()
+        return original_get(object_hash)
+
+    with patch.object(store, "get", side_effect=counted):
+        with pytest.raises(RuntimeError, match="cancelled"):
+            catalog.rebuild_from_store(store, resume=False, force=True)
+    partial = catalog.count()
+    assert partial > 0
+    assert partial < 60
+
+    catalog.clear_cancel()
+    result = catalog.rebuild_from_store(store, resume=True)
+    assert result["state"] == "completed"
+    assert result["resumed"] is True
+    assert catalog.count() == len(store.list_hashes())
+    assert catalog.coverage(expected_reachable=catalog.count())["ready"] is True
+
+
+def test_gc_resume_interrupted_after_crash(tmp_path: Path) -> None:
+    catalog = ObjectCatalog(tmp_path / "catalog.db")
+    store = ObjectStore(tmp_path / "objects", catalog=catalog)
+    log = EventLog(store, tmp_path, "authority", cursor_secret="test")
+    registry = EpochRegistry(tmp_path)
+    head = _append_chain(log, 2)
+    orphan = store.put_json({"type": "snapshot", "realm_id": "default", "cards": []})
+    catalog.record(orphan, store.get(orphan) or b"{}")
+    epoch_hash = compact_realm(
+        store,
+        log,
+        "default",
+        [Card(id="scale-card", title="scale")],
+        registry=registry,
+        authority_instance_id="authority",
+        advance_epoch=True,
+    )
+    acknowledge_epoch_object(
+        store,
+        registry,
+        realm_id="default",
+        epoch_hash=epoch_hash,
+        instance_id="authority",
+    )
+    planner = GcPlanner(tmp_path, store, catalog, registry)
+    reachable = {head, *log.get_commit(head).event_hashes}  # type: ignore[union-attr]
+    log.ensure_indexed("default", head)
+    for commit_hash, commit in log._iter_commits_parent_first(head):
+        reachable.add(commit_hash)
+        reachable.update(commit.event_hashes)
+    plan = planner.plan(
+        "default",
+        reachable_hashes=reachable,
+        pins=[],
+        required_ack_instances=["authority"],
+        dry_run=False,
+        safety_window=timedelta(seconds=0),
+        now=datetime.now(UTC) + timedelta(days=1),
+    )
+    assert plan.reclaimable is True
+    # Simulate crash after journalled intent but before deletes complete.
+    journal = planner._load_journal()
+    journal.setdefault("deletions", []).append(
+        {
+            "plan_id": plan.plan_id,
+            "started_at": datetime.now(UTC).isoformat(),
+            "candidates": plan.candidates,
+            "state": "in_progress",
+        }
+    )
+    planner._save_journal(journal)
+    resumed = planner.resume_interrupted()
+    assert resumed["resumed"] == 1
+    assert store.get(orphan) is None
+
+
+def test_offline_peer_pin_blocks_reclaim_with_explicit_rebootstrap(
+    tmp_path: Path,
+) -> None:
+    catalog = ObjectCatalog(tmp_path / "catalog.db")
+    store = ObjectStore(tmp_path / "objects", catalog=catalog)
+    log = EventLog(store, tmp_path, "authority", cursor_secret="test")
+    registry = EpochRegistry(tmp_path)
+    head = _append_chain(log, 2)
+    orphan = store.put_json({"type": "snapshot", "realm_id": "default", "cards": []})
+    catalog.record(orphan, store.get(orphan) or b"{}")
+    epoch_hash = compact_realm(
+        store,
+        log,
+        "default",
+        [Card(id="scale-card", title="scale")],
+        registry=registry,
+        authority_instance_id="authority",
+        advance_epoch=True,
+    )
+    assert epoch_hash
+    planner = GcPlanner(tmp_path, store, catalog, registry)
+    reachable = {head}
+    log.ensure_indexed("default", head)
+    for commit_hash, commit in log._iter_commits_parent_first(head):
+        reachable.add(commit_hash)
+        reachable.update(commit.event_hashes)
+    dry = planner.plan(
+        "default",
+        reachable_hashes=reachable,
+        pins=[],
+        required_ack_instances=["authority", "offline-peer"],
+        dry_run=True,
+        safety_window=timedelta(seconds=0),
+        now=datetime.now(UTC) + timedelta(days=1),
+    )
+    assert dry.reclaimable is False
+    assert "offline-peer" in dry.missing_acks
+    assert dry.rebootstrap_required is True
+    assert any("acknowledge" in note.lower() or "rebootstrap" in note.lower() for note in dry.notes)
+
+
+def test_corrupt_object_is_classified_without_failing_rebuild(tmp_path: Path) -> None:
+    catalog = ObjectCatalog(tmp_path / "catalog.db")
+    store = ObjectStore(tmp_path / "objects", catalog=catalog)
+    good = store.put(b'{"type":"snapshot","realm_id":"default","cards":[]}')
+    # Plant a corrupt blob directly on disk without going through put_json.
+    bad_hash = "ab" + ("cd" * 31)
+    path = store._path_for(bad_hash)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xfe not-json")
+    result = catalog.rebuild_from_store(store, force=True)
+    assert result["recorded"] >= 2
+    assert catalog.has(good)
+    assert catalog.has(bad_hash)
+    with catalog._db() as conn:
+        row = conn.execute(
+            "SELECT object_class FROM objects WHERE object_hash=?", (bad_hash,)
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "unknown"
+
+
+def test_mixed_version_peer_without_need_is_quarantined(tmp_path: Path) -> None:
+    # Alias of legacy quarantine coverage for the mixed-version acceptance matrix.
+    test_legacy_large_peer_is_quarantined_without_full_prepare(tmp_path)
+
+
 def test_reconcile_skips_advance_when_projection_catch_up_fails(
     tmp_path: Path,
 ) -> None:

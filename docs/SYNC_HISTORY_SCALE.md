@@ -47,14 +47,19 @@ deleted by normal sync.
 - DAG index, snapshot epoch, recovery, and quarantine diagnostics
 
 Counts come from `object_catalog.db` and `dag_index.db`. The status handler does
-**not** scandir the object store. After upgrade, run
+**not** scandir the object store. After upgrade, the server compares catalog
+population to DAG-reachable commit+event counts. When coverage is below 95%,
+status reports `history.catalog.stale=true` / `ready=false`, refuses to invent
+unreachable counts, and schedules a **background checkpointable catalog
+backfill** on startup. Operators can also force:
 
 ```http
 POST /api/sync/index/maintenance
 {"action":"catalog_rebuild","realm_id":"default"}
 ```
 
-once so the catalog matches existing objects.
+Rebuilds are resumable (`resume=true` by default) and cancellable via
+`action=catalog_cancel`.
 
 ## Snapshot epoch protocol (v1)
 
@@ -136,7 +141,8 @@ quadratic transitive-closure table for publication; ancestry uses parent edges.
 | Goal | Action |
 |---|---|
 | Inspect scale | `GET /api/sync/status` / MCP `sync_status` |
-| Backfill catalog after upgrade | `POST /api/sync/index/maintenance` `catalog_rebuild` |
+| Backfill catalog after upgrade | Automatic on startup when stale; or `POST /api/sync/index/maintenance` `catalog_rebuild` |
+| Cancel catalog backfill | `action=catalog_cancel` |
 | Rebuild DAG index | `action=rebuild` (cancellable) |
 | Open a retention checkpoint | `POST /api/sync/epoch` then peer ACKs |
 | Plan reclaim | `POST /api/sync/gc/plan` |

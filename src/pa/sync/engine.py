@@ -1584,11 +1584,20 @@ class SyncEngine:
         if catalog is not None:
             # Refresh realm reachability stats from the DAG index when ready.
             index_status = self.log.index_status(realm_id)
+            commit_count = 0
+            event_count = 0
             if index_status.get("ready"):
                 commit_count = int(index_status.get("commit_count") or 0)
                 event_count = int(index_status.get("event_count") or 0)
+                expected = commit_count + event_count
+                coverage = catalog.coverage(expected_reachable=expected)
                 store_total = catalog.count()
-                unreachable = max(0, store_total - commit_count - event_count)
+                # Only compute unreachable when the catalog covers the DAG.
+                unreachable = (
+                    max(0, store_total - expected)
+                    if coverage.get("ready")
+                    else 0
+                )
                 oldest, newest = catalog.age_bounds_ns()
                 catalog.publish_realm_stats(
                     realm_id,
@@ -1601,7 +1610,10 @@ class SyncEngine:
                     oldest_reachable_ns=oldest,
                     newest_reachable_ns=newest,
                 )
-            history = catalog.status_payload(realm_id)
+            history = catalog.status_payload(
+                realm_id,
+                expected_reachable=commit_count + event_count,
+            )
             object_count = history["object_count"]
         else:
             history = None
