@@ -39,6 +39,66 @@ class _TranscriptStore:
 
 
 class AgentSessionLiveEventTests(unittest.TestCase):
+    def test_provider_config_update_reconciles_model_metadata_and_persists(self) -> None:
+        runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
+        runtime.session = AgentSession(
+            id="session-config-update",
+            agent_name="codex",
+            model_id="gpt-5.6-sol[high]",
+            status="idle",
+            config_json={
+                "values": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+                "configuration": {
+                    "state": "ready",
+                    "requested": {"model_id": "gpt-6-astra"},
+                    "effective": {
+                        "model_id": "gpt-5.6-sol[high]",
+                        "config": {"model": "gpt-5.6-sol"},
+                    },
+                },
+            },
+        )
+        runtime._turn_streamed = False
+        runtime._in_flight = None
+        runtime._turn_agent_events = []
+        runtime.connection = SimpleNamespace(config_options=None)
+        runtime._save_session_preserving_external_browser_async = AsyncMock()
+        runtime._append_transcript = MagicMock()
+        runtime._report_progress = AsyncMock()
+
+        asyncio.run(
+            runtime._on_acp_update(
+                "provider-session",
+                {
+                    "sessionUpdate": "config_options_update",
+                    "configOptions": [
+                        {
+                            "id": "model",
+                            "name": "Model",
+                            "currentValue": "gpt-6-astra",
+                        },
+                        {
+                            "id": "reasoning_effort",
+                            "name": "Reasoning effort",
+                            "currentValue": "high",
+                        },
+                    ],
+                },
+            )
+        )
+
+        self.assertEqual(runtime.session.model_id, "gpt-6-astra")
+        self.assertEqual(runtime.session.config_json["values"]["model"], "gpt-6-astra")
+        self.assertEqual(
+            runtime.session.config_json["configuration"]["effective"]["model_id"],
+            "gpt-6-astra",
+        )
+        self.assertEqual(
+            runtime.connection.config_options,
+            runtime.session.config_json["options"],
+        )
+        runtime._save_session_preserving_external_browser_async.assert_awaited_once()
+
     def test_operator_prompt_precedes_automatic_reconciliation_deterministically(self) -> None:
         automatic = QueuedPrompt(
             id="automatic",

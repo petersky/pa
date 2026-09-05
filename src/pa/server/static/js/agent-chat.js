@@ -3021,7 +3021,7 @@
   AgentChatWidget.prototype.renderModelsModes = function (snap) {
     if (this.showModel && this.els.model && this.els.modelWrap) {
       const models = (snap.models && (snap.models.availableModels || snap.models.available_models)) || [];
-      const current = (snap.session && snap.session.model_id) ||
+      const current = confirmedSessionFields(sessionRecordFromSnapshot(snap)).modelId ||
         (snap.models && (snap.models.currentModelId || snap.models.current_model_id));
       if (models.length) {
         this.els.modelWrap.hidden = false;
@@ -3090,8 +3090,9 @@
     const self = this;
     if (!this.settingsDirty || !this.sessionId) return Promise.resolve();
     const snap = this.lastSnapshot || {};
-    const currentModel = (snap.session && snap.session.model_id) || (snap.models && (snap.models.currentModelId || snap.models.current_model_id));
-    const currentMode = (snap.session && snap.session.mode_id) || (snap.modes && (snap.modes.currentModeId || snap.modes.current_mode_id));
+    const confirmed = confirmedSessionFields(sessionRecordFromSnapshot(snap));
+    const currentModel = confirmed.modelId || (snap.models && (snap.models.currentModelId || snap.models.current_model_id));
+    const currentMode = confirmed.modeId || (snap.modes && (snap.modes.currentModeId || snap.modes.current_mode_id));
     const requests = [];
     if (this.els.model && this.els.model.value && this.els.model.value !== currentModel) {
       const modelId = this.els.model.value;
@@ -4031,6 +4032,148 @@
   }
 
   let sessionListRecovery = null;
+  let sessionListFreshness = null;
+  const SESSION_LIST_REFRESH_EVENTS = [
+    "session_started", "session_closed", "session_recovered",
+    "user_message", "turn_waiting", "turn_completed", "cancelled",
+    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
+    "queue_paused", "queue_resumed", "prompt_failed", "connection_lost",
+    "model_changed", "mode_changed", "current_mode_update", "config_changed",
+    "configuration_changed",
+    "config_option_update", "config_options_update", "permission_request",
+    "permission_resolved", "elicitation_request", "elicitation_resolved", "error"
+  ];
+  const SESSION_MULTIPLEX_EVENTS = [
+    "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
+    "tool_call", "tool_call_update", "plan", "usage_update", "card_disposition",
+    "available_commands_update", "command_result", "browser_attachment_changed",
+    "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
+    "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
+    "queue_paused", "queue_resumed", "session_started", "session_closed",
+    "session_recovered", "connection_lost", "model_changed", "mode_changed",
+    "current_mode_update", "config_changed", "configuration_changed", "config_option_update",
+    "config_options_update", "permission_request", "permission_resolved",
+    "elicitation_request", "elicitation_resolved", "error", "message"
+  ];
+  const SESSION_LIST_REFRESH_EVENT_SET = SESSION_LIST_REFRESH_EVENTS.reduce(function (result, type) {
+    result[type] = true;
+    return result;
+  }, {});
+
+  function selectedSessionId() {
+    const widget = document.querySelector("[data-agent-chat]");
+    return widget && widget._acw ? widget._acw.sessionId : "";
+  }
+
+  function localSessionWidget() {
+    const root = document.querySelector("[data-agent-chat]");
+    const widget = root && root._acw;
+    if (!widget || widget.destroyed) return null;
+    return widget.apiBase === "/api/agent" ? widget : null;
+  }
+
+  function useSessionListTransportForChat(enabled) {
+    const widget = localSessionWidget();
+    if (!widget) return;
+    widget.useExternalEventTransport(!!enabled);
+    if (!enabled && !document.hidden && widget.sessionId) widget.connectSSE();
+  }
+
+  function stopSessionListFreshness(reason) {
+    if (!sessionListFreshness) return;
+    const state = sessionListFreshness;
+    sessionListFreshness = null;
+    state.generation += 1;
+    if (state.refreshTimer) clearTimeout(state.refreshTimer);
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+    if (state.source) state.source.close();
+    if (reason && window.console && console.debug) {
+      console.debug("Agent session list freshness stopped", { reason: reason });
+    }
+  }
+
+  function scheduleSessionListPoll(state) {
+    if (!state || state !== sessionListFreshness) return;
+    if (state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = setTimeout(function () {
+      state.pollTimer = null;
+      if (state !== sessionListFreshness || !state.list.isConnected) return;
+      if (!document.hidden) refreshSessionList(selectedSessionId(), false);
+      scheduleSessionListPoll(state);
+    }, 15000);
+  }
+
+  function scheduleSessionListEventRefresh(state) {
+    if (!state || state !== sessionListFreshness || state.refreshTimer) return;
+    state.refreshTimer = setTimeout(function () {
+      state.refreshTimer = null;
+      if (state !== sessionListFreshness || !state.list.isConnected) return;
+      refreshSessionList(selectedSessionId(), true);
+    }, 50);
+  }
+
+  function connectSessionListFreshness(state) {
+    if (!state || state !== sessionListFreshness || state.source || document.hidden) return;
+    if (typeof EventSource !== "function") {
+      scheduleSessionListPoll(state);
+      return;
+    }
+    const generation = state.generation;
+    const source = new EventSource("/api/agent/session-events?client_id=agent-sidebar");
+    state.source = source;
+    useSessionListTransportForChat(true);
+    source.addEventListener("ready", function () {
+      if (state !== sessionListFreshness || generation !== state.generation) return;
+      state.reconnects = 0;
+      scheduleSessionListEventRefresh(state);
+    });
+    SESSION_MULTIPLEX_EVENTS.forEach(function (type) {
+      source.addEventListener(type, function (event) {
+        if (state !== sessionListFreshness || generation !== state.generation) return;
+        let data = null;
+        try { data = JSON.parse(event.data || "{}"); } catch (_error) { data = null; }
+        const widget = localSessionWidget();
+        if (data && widget && data.session_id === widget.sessionId) {
+          widget.handleEvent(data, false);
+        }
+        if (SESSION_LIST_REFRESH_EVENT_SET[type]) scheduleSessionListEventRefresh(state);
+      });
+    });
+    source.onerror = function () {
+      if (state !== sessionListFreshness || generation !== state.generation) return;
+      if (state.source === source) state.source = null;
+      source.close();
+      useSessionListTransportForChat(false);
+      scheduleSessionListEventRefresh(state);
+      const delay = Math.min(
+        30000,
+        1000 * Math.pow(2, Math.min(5, state.reconnects++))
+      );
+      state.reconnectTimer = setTimeout(function () {
+        state.reconnectTimer = null;
+        connectSessionListFreshness(state);
+      }, delay);
+    };
+    scheduleSessionListPoll(state);
+  }
+
+  function startSessionListFreshness() {
+    const list = document.querySelector("[data-agent-session-list]");
+    if (!list || list.dataset.agentEnabled === "false") return;
+    if (sessionListFreshness && sessionListFreshness.list === list) return;
+    stopSessionListFreshness("list-replaced");
+    sessionListFreshness = {
+      list: list,
+      source: null,
+      refreshTimer: null,
+      pollTimer: null,
+      reconnectTimer: null,
+      reconnects: 0,
+      generation: 1,
+    };
+    connectSessionListFreshness(sessionListFreshness);
+  }
 
   function renderSessionListState(list, message, blocked) {
     if (!list || !list.isConnected) return;
@@ -4046,6 +4189,12 @@
 
   function renderSessionList(list, sessions, includeClosed, activeId) {
     if (!list || !list.isConnected) return;
+    const previousScrollTop = list.scrollTop;
+    const openDetails = {};
+    list.querySelectorAll("[data-session-id]").forEach(function (item) {
+      const details = item.querySelector(".agent-session-details");
+      if (details && details.open) openDetails[item.dataset.sessionId] = true;
+    });
     list.innerHTML = "";
     list.setAttribute("aria-busy", "false");
     if (!sessions || !sessions.length) {
@@ -4072,6 +4221,9 @@
       const title = s.title || s.label || "Agent";
       const state = sessionListState(s);
       const presentation = s.presentation || {};
+      const stateLabel = state.label + (s.prompting && Number(s.queue_length || 0) > 0
+        ? " · " + Number(s.queue_length) + " queued"
+        : "");
       const cards = s.cards || [];
       const primaryCard = cards.find(function (card) { return card.primary; }) || cards[0];
       const project = s.project || null;
@@ -4126,7 +4278,7 @@
                 '<strong class="agent-session-title" data-agent-session-title data-full-title="' +
                   escapeHtml(title) + '">' + escapeHtml(title) + "</strong></button>" +
               '<span class="agent-session-state agent-session-state-' + escapeHtml(state.key) + '">' +
-                '<span aria-hidden="true">●</span> ' + escapeHtml(state.label) + "</span>" +
+                '<span aria-hidden="true">●</span> ' + escapeHtml(stateLabel) + "</span>" +
             "</div>" +
             '<span class="agent-session-title-tooltip" role="tooltip">' +
               escapeHtml(title) + "</span>" +
@@ -4206,12 +4358,21 @@
         actions.appendChild(continuation);
       }
       list.appendChild(li);
+      const details = li.querySelector(".agent-session-details");
+      if (details && openDetails[s.id]) details.open = true;
     });
+    list.scrollTop = previousScrollTop;
     updateSessionTitleTooltips(list);
     filterSessionList();
   }
 
   function cancelSessionListRecovery(scope, reason) {
+    if (sessionListFreshness) {
+      const freshnessList = sessionListFreshness.list;
+      const containsFreshnessList = scope === document || scope === freshnessList ||
+        (scope && typeof scope.contains === "function" && scope.contains(freshnessList));
+      if (containsFreshnessList) stopSessionListFreshness(reason || "session-list-removed");
+    }
     if (!sessionListRecovery) return;
     const list = sessionListRecovery.list;
     const containsList = scope === document || scope === list ||
@@ -4232,7 +4393,8 @@
       (archived ? "&archived=true" : "") +
       (effectiveView === "activity" && panel && panel.dataset.agentActivityFilter
         ? "&activity_filter=" + encodeURIComponent(panel.dataset.agentActivityFilter)
-        : "");
+        : "") +
+      (activeId ? "&selected_session_id=" + encodeURIComponent(activeId) : "");
     const includeClosed = effectiveView === "all" || archived;
     if (sessionListRecovery &&
         (sessionListRecovery.list !== list || sessionListRecovery.path !== path)) {
@@ -4400,6 +4562,63 @@
     return raw;
   }
 
+  function semanticSessionValue(values, aliases) {
+    if (!values || typeof values !== "object") return null;
+    const matches = Object.keys(values).filter(function (key) {
+      const compact = String(key).toLowerCase().replace(/[^a-z0-9]+/g, "");
+      return aliases.indexOf(compact) !== -1 && values[key] != null && values[key] !== "";
+    }).map(function (key) { return values[key]; });
+    if (!matches.length) return null;
+    return matches.every(function (value) { return String(value) === String(matches[0]); })
+      ? matches[0]
+      : null;
+  }
+
+  function confirmedSessionFields(sessionOrConfig) {
+    const record = sessionRecord(sessionOrConfig);
+    const config = record.config_json || {};
+    const values = Object.assign({}, config.values || {});
+    (config.options || []).forEach(function (option) {
+      if (!option || typeof option !== "object") return;
+      const id = option.id || option.configId || option.config_id;
+      const current = option.currentValue != null ? option.currentValue : option.current_value;
+      if (id && current != null) values[id] = current;
+    });
+    const admission = config.configuration || {};
+    const effective = admission.effective || {};
+    const effectiveConfig = effective.config || {};
+    const modelAliases = ["model", "models", "modelid", "languagemodel"];
+    const modeAliases = ["mode", "sessionmode", "agentmode", "interactionmode"];
+    const reasoningAliases = [
+      "effort", "reasoning", "reasoningeffort", "reasoninglevel",
+      "thought", "thoughteffort", "thoughtlevel", "thinking",
+      "thinkingeffort", "thinkinglevel"
+    ];
+    let modelId = semanticSessionValue(values, modelAliases);
+    if (modelId == null) modelId = semanticSessionValue(effectiveConfig, modelAliases);
+    if (modelId == null) modelId = effective.model_id;
+    if (modelId == null) modelId = record.model_id;
+    let selectorReasoning = null;
+    const rawModel = String(modelId || "").trim();
+    if (rawModel.endsWith("]") && rawModel.lastIndexOf("[") > 0) {
+      const opened = rawModel.lastIndexOf("[");
+      const candidate = rawModel.slice(opened + 1, -1).trim();
+      if (candidate) {
+        modelId = rawModel.slice(0, opened).trim();
+        selectorReasoning = candidate;
+      }
+    }
+    let modeId = semanticSessionValue(values, modeAliases);
+    if (modeId == null) modeId = semanticSessionValue(effectiveConfig, modeAliases);
+    if (modeId == null) modeId = effective.mode_id;
+    if (modeId == null) modeId = record.mode_id;
+    let reasoning = semanticSessionValue(values, reasoningAliases);
+    if (reasoning == null) reasoning = semanticSessionValue(effectiveConfig, reasoningAliases);
+    if (reasoning == null) reasoning = effective.reasoning;
+    if (reasoning == null) reasoning = selectorReasoning;
+    return { modelId: modelId || null, modeId: modeId || null, reasoning: reasoning || null, values: values };
+  }
+
   function sessionConfigOptionLabel(key) {
     const compact = String(key || "").toLowerCase().replace(/[_-]+/g, "");
     if ([
@@ -4443,21 +4662,22 @@
 
   function sessionRuntimeLabel(session) {
     const record = sessionRecord(session);
-    const values = (record.config_json && record.config_json.values) || {};
-    const model = formatSessionModelId(record.model_id) || "default model";
+    const confirmed = confirmedSessionFields(record);
+    const model = formatSessionModelId(confirmed.modelId) || "default model";
     const parts = [record.agent_name || "Default provider", model];
-    if (record.mode_id) parts.push(record.mode_id);
-    return parts.concat(sessionConfigOptionParts(values)).join(" · ");
+    if (confirmed.modeId) parts.push(confirmed.modeId);
+    return parts.concat(sessionConfigOptionParts(confirmed.values)).join(" · ");
   }
 
   function sessionConfigSummary(sessionOrConfig) {
     const record = sessionRecord(sessionOrConfig);
     const config = record.config_json || {};
-    const values = config.values || {};
+    const confirmed = confirmedSessionFields(record);
+    const values = confirmed.values;
     const liveParts = [];
-    const model = formatSessionModelId(record.model_id);
+    const model = formatSessionModelId(confirmed.modelId);
     if (model) liveParts.push("model " + model);
-    if (record.mode_id) liveParts.push("mode " + record.mode_id);
+    if (confirmed.modeId) liveParts.push("mode " + confirmed.modeId);
     liveParts.push.apply(liveParts, sessionConfigOptionParts(values));
     const admission = config.configuration;
     const requested = (admission && admission.requested) || {};
@@ -4468,9 +4688,9 @@
       requested.reasoning && ("reasoning " + requested.reasoning)
     ].filter(Boolean);
     const effectiveParts = [
-      effective.model_id && ("model " + effective.model_id),
-      effective.mode_id && ("mode " + effective.mode_id),
-      effective.reasoning && ("reasoning " + effective.reasoning)
+      confirmed.modelId && ("model " + confirmed.modelId),
+      confirmed.modeId && ("mode " + confirmed.modeId),
+      confirmed.reasoning && ("reasoning " + confirmed.reasoning)
     ].filter(Boolean);
     const summary = [
       liveParts.length && ("live: " + liveParts.join(", ")),
@@ -4486,12 +4706,14 @@
   function sessionRecordFromSnapshot(snap, fallback) {
     const nested = (snap && snap.session) || {};
     const base = fallback || {};
+    const config = Object.assign({}, nested.config_json || base.config_json || {});
+    if (snap && Array.isArray(snap.config_options)) config.options = snap.config_options;
     return {
       id: nested.id || base.id,
       agent_name: nested.agent_name || base.agent_name,
       model_id: nested.model_id != null ? nested.model_id : base.model_id,
       mode_id: nested.mode_id != null ? nested.mode_id : base.mode_id,
-      config_json: nested.config_json || base.config_json || {}
+      config_json: config
     };
   }
 
@@ -5127,6 +5349,7 @@
       el._acw = new AgentChatWidget(el);
     });
     bindSessionSidebar(root);
+    startSessionListFreshness();
     const dialog = root.querySelector("[data-agent-new-dialog]");
     if (dialog) {
       fillProviderSelect(
@@ -5170,6 +5393,10 @@
     patchSessionListFromSnapshot: patchSessionListFromSnapshot,
     sessionRuntimeLabel: sessionRuntimeLabel,
     sessionConfigSummary: sessionConfigSummary,
+    confirmedSessionFields: confirmedSessionFields,
+    startSessionListFreshness: startSessionListFreshness,
+    stopSessionListFreshness: stopSessionListFreshness,
+    sessionListRefreshEvents: SESSION_LIST_REFRESH_EVENTS.slice(),
     anchoredScrollTop: anchoredScrollTop,
     renderMarkdown: renderMarkdown,
     renderMarkdownAsync: renderMarkdownAsync,
@@ -5180,6 +5407,14 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     mountAll(document);
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      stopSessionListFreshness("document-hidden");
+      return;
+    }
+    startSessionListFreshness();
+    refreshSessionList(selectedSessionId(), true);
   });
   if (window.addEventListener) {
     window.addEventListener("pagehide", function (event) {

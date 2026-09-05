@@ -20,7 +20,10 @@ from pa.acp.client import (
     permission_cancelled,
     permission_selected,
 )
-from pa.acp.configuration import SessionConfigurationRequest
+from pa.acp.configuration import (
+    SessionConfigurationRequest,
+    normalized_session_config_json,
+)
 from pa.acp.environment import (
     ASSIGNED_SERVICE_DISPATCH_ENV,
     ASSIGNED_SERVICE_MODE_ENV,
@@ -504,6 +507,15 @@ class AgentSessionRuntime:
             if options is not None:
                 cfg = dict(self.session.config_json or {})
                 cfg["options"] = options
+                cfg, confirmed = normalized_session_config_json(
+                    cfg,
+                    model_id=self.session.model_id,
+                    mode_id=self.session.mode_id,
+                )
+                if confirmed.get("model_id"):
+                    self.session.model_id = str(confirmed["model_id"])
+                if confirmed.get("mode_id"):
+                    self.session.mode_id = str(confirmed["mode_id"])
                 self.session.config_json = cfg
                 await self._save_session_preserving_external_browser_async()
                 if self.connection:

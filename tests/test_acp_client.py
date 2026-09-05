@@ -23,6 +23,8 @@ from pa.acp.client import (
 from pa.acp.configuration import (
     ACPConfigurationError,
     SessionConfigurationRequest,
+    confirmed_session_configuration,
+    normalized_session_config_json,
     parse_model_selector,
 )
 from pa.acp.errors import ProviderTurnError
@@ -359,6 +361,78 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
         )
         self.assertEqual(parse_model_selector("vendor/model"), ("vendor/model", None))
 
+    def test_confirmed_config_model_overrides_stale_model_alias(self) -> None:
+        config = {
+            "values": {"model": "gpt-6-astra", "reasoning_effort": "high"},
+            "models": {"currentModelId": "gpt-5.6-sol[high]"},
+            "configuration": {
+                "state": "ready",
+                "requested": {"model_id": "gpt-6-astra"},
+                "effective": {
+                    "model_id": "gpt-5.6-sol[high]",
+                    "config": {
+                        "model": "gpt-6-astra",
+                        "reasoning_effort": "high",
+                    },
+                },
+            },
+        }
+
+        confirmed = confirmed_session_configuration(
+            config, model_id="gpt-5.6-sol[high]"
+        )
+        normalized, normalized_fields = normalized_session_config_json(
+            config, model_id="gpt-5.6-sol[high]"
+        )
+
+        self.assertEqual(confirmed["model_id"], "gpt-6-astra")
+        self.assertEqual(confirmed["reasoning"], "high")
+        self.assertEqual(normalized_fields, confirmed)
+        self.assertEqual(
+            normalized["configuration"]["effective"]["model_id"],
+            "gpt-6-astra",
+        )
+
+    def test_session_meta_prefers_confirmed_config_option_after_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection, _store = self._connection(tmp, object())
+            connection.session.model_id = "gpt-5.6-sol[high]"
+            connection.session.config_json = {
+                "configuration": {
+                    "state": "ready",
+                    "requested": {"model_id": "gpt-6-astra"},
+                    "effective": {"model_id": "gpt-5.6-sol[high]", "config": {}},
+                }
+            }
+
+            connection._apply_session_meta(
+                {
+                    "models": {"currentModelId": "gpt-5.6-sol[high]"},
+                    "modes": None,
+                    "config_options": [
+                        {
+                            "id": "model",
+                            "name": "Model",
+                            "currentValue": "gpt-6-astra",
+                        },
+                        {
+                            "id": "reasoning_effort",
+                            "name": "Reasoning effort",
+                            "currentValue": "high",
+                        },
+                    ],
+                    "model_id": "gpt-5.6-sol[high]",
+                    "mode_id": None,
+                }
+            )
+
+        self.assertEqual(connection.session.model_id, "gpt-6-astra")
+        self.assertEqual(connection.session.config_json["values"]["model"], "gpt-6-astra")
+        self.assertEqual(
+            connection.session.config_json["configuration"]["effective"]["model_id"],
+            "gpt-6-astra",
+        )
+
     def test_config_only_connection_sets_and_verifies_model_and_reasoning(self) -> None:
         options = [
             {
@@ -414,6 +488,47 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             connection.session.config_json["configuration"]["state"], "ready"
         )
+
+    def test_model_config_option_path_normalizes_to_model_metadata(self) -> None:
+        options = [
+            {
+                "id": "model",
+                "name": "Model",
+                "type": "select",
+                "currentValue": "gpt-old",
+                "options": [
+                    {"value": "gpt-old", "name": "Old"},
+                    {"value": "gpt-new", "name": "New"},
+                ],
+            }
+        ]
+
+        class ConfigClient:
+            async def set_config_option(self, **kwargs):
+                options[0]["currentValue"] = kwargs["value"]
+                return {"configOptions": options}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            connection, _store = self._connection(
+                tmp, ConfigClient(), options=options
+            )
+            connection.session.model_id = "gpt-old"
+            connection.session.config_json = {
+                "configuration": {
+                    "state": "ready",
+                    "requested": SessionConfigurationRequest.from_values(
+                        model_id="gpt-old"
+                    ).as_dict(),
+                    "effective": {"model_id": "gpt-old"},
+                }
+            }
+            asyncio.run(connection.set_config("model", "gpt-new"))
+
+        self.assertEqual(connection.session.model_id, "gpt-new")
+        admission = connection.session.config_json["configuration"]
+        self.assertEqual(admission["requested"]["model_id"], "gpt-new")
+        self.assertEqual(admission["effective"]["model_id"], "gpt-new")
+        self.assertNotIn("model", admission["requested"]["config"])
 
     def test_unchanged_config_option_skips_set_config_option(self) -> None:
         options = [
@@ -481,6 +596,46 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
                         SessionConfigurationRequest.from_values(reasoning="high")
                     )
                 )
+
+    def test_rejected_config_model_does_not_replace_confirmed_model(self) -> None:
+        options = [
+            {
+                "id": "model",
+                "name": "Model",
+                "type": "select",
+                "currentValue": "gpt-stable",
+                "options": [
+                    {"value": "gpt-stable", "name": "Stable"},
+                    {"value": "gpt-next", "name": "Next"},
+                ],
+            }
+        ]
+
+        class DeferredClient:
+            async def set_config_option(self, **_kwargs):
+                return {"configOptions": options}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            connection, _store = self._connection(
+                tmp, DeferredClient(), options=options
+            )
+            connection.session.model_id = "gpt-stable"
+            with self.assertRaisesRegex(
+                ACPConfigurationError, "effective value was 'gpt-stable'"
+            ):
+                asyncio.run(
+                    connection.configure(
+                        SessionConfigurationRequest.from_values(model_id="gpt-next")
+                    )
+                )
+
+        self.assertEqual(connection.session.model_id, "gpt-stable")
+        self.assertEqual(
+            connection.session.config_json["configuration"]["state"], "failed"
+        )
+        self.assertNotIn(
+            "effective", connection.session.config_json["configuration"]
+        )
 
     def test_thought_session_updates_normalize_to_agent_thought_chunk(self) -> None:
         normalized = normalize_session_update(
