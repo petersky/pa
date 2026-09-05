@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -12,6 +13,50 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 MAX_INTERACTION_BYTES = 128 * 1024
 MAX_NOTIFICATION_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
+
+
+def concise_notification_summary(value: str, *, limit: int = 1000) -> str:
+    """Return a bounded readable excerpt without cutting an ordinary sentence."""
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    window = text[: limit + 1]
+    sentence_end = max(window.rfind(". "), window.rfind("? "), window.rfind("! "))
+    if sentence_end >= max(80, limit // 2):
+        return window[: sentence_end + 1]
+    word_end = window.rfind(" ", 0, limit - 1)
+    if word_end <= 0:
+        return text[: limit - 1] + "…"
+    return window[:word_end].rstrip() + "…"
+
+
+def interaction_notification_title(
+    kind: InteractionKind,
+    prompt: str,
+    *,
+    choices: list[InteractionChoice] | None = None,
+    response_schema: dict[str, Any] | None = None,
+) -> str:
+    """Describe the actual contract instead of presenting every request generically."""
+    labels = " ".join(
+        f"{choice.id} {choice.label}" for choice in (choices or [])
+    ).casefold()
+    if kind == InteractionKind.ACP_PERMISSION:
+        category = "Permission required"
+    elif kind == InteractionKind.APPROVAL or re.search(
+        r"\b(?:approve|approval|deny|reject)\b", labels
+    ):
+        category = "Approval required"
+    elif choices:
+        category = "Decision required"
+    elif response_schema:
+        category = "Details required"
+    elif re.search(r"(?i)\b(?:sign[ -]?in|log[ -]?in|run|upload|attach)\b", prompt):
+        category = "Action required"
+    else:
+        category = "Response required"
+    subject = concise_notification_summary(prompt, limit=180).strip(" #*`:-")
+    return f"{category}: {subject}"[:300] if subject else category
 
 
 class NotificationType(StrEnum):
@@ -114,7 +159,7 @@ class InteractionRequest(BaseModel):
     request_id: str = Field(default_factory=lambda: str(uuid4()))
     kind: InteractionKind
     state: InteractionState = InteractionState.OUTSTANDING
-    prompt: str = Field(min_length=1, max_length=8000)
+    prompt: str = Field(min_length=1, max_length=32_000)
     response_schema: dict[str, Any] | None = None
     choices: list[InteractionChoice] = Field(default_factory=list, max_length=100)
     allow_freeform: bool = False
@@ -168,7 +213,7 @@ class Notification(BaseModel):
     severity: NotificationSeverity = NotificationSeverity.INFO
     priority: NotificationPriority = NotificationPriority.NORMAL
     title: str = Field(min_length=1, max_length=300)
-    body: str = Field(default="", max_length=16000)
+    body: str = Field(default="", max_length=128_000)
     summary: str = Field(default="", max_length=1000)
     source_instance_id: str | None = Field(default=None, max_length=200)
     source_instance_name: str | None = Field(default=None, max_length=300)
@@ -248,7 +293,7 @@ class NotificationCreate(BaseModel):
     severity: NotificationSeverity = NotificationSeverity.INFO
     priority: NotificationPriority = NotificationPriority.NORMAL
     title: str = Field(min_length=1, max_length=300)
-    body: str = Field(default="", max_length=16000)
+    body: str = Field(default="", max_length=128_000)
     summary: str = Field(default="", max_length=1000)
     source_instance_id: str | None = None
     source_instance_name: str | None = None
@@ -278,6 +323,7 @@ class InteractionResponse(BaseModel):
     value: Any = None
     fields: dict[str, Any] | None = None
     cancel: bool = False
+    retry: bool = False
 
     @model_validator(mode="after")
     def exactly_one_response_shape(self) -> InteractionResponse:
@@ -287,11 +333,12 @@ class InteractionResponse(BaseModel):
                 self.value is not None,
                 self.fields is not None,
                 self.cancel,
+                self.retry,
             ]
         )
         if supplied != 1:
             raise ValueError(
-                "provide exactly one of choice_id, value, fields, or cancel"
+                "provide exactly one of choice_id, value, fields, cancel, or retry"
             )
         if len(self.model_dump_json().encode()) > MAX_RESPONSE_BYTES:
             raise ValueError("interaction response exceeds 64 KB")

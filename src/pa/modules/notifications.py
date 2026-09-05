@@ -15,6 +15,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.domain.notifications import (
     InteractionResponse,
+    InteractionState,
     Notification,
     NotificationPriority,
     NotificationType,
@@ -108,6 +109,142 @@ def _route_metadata(request: Request, item: Notification) -> dict[str, Any]:
     }
 
 
+def _context_metadata(request: Request, item: Notification) -> dict[str, Any]:
+    """Resolve friendly labels while retaining exact correlated identifiers."""
+    store = request.app.state.ctx.store
+    card = (
+        store.get_card(item.card_id, realm_id=item.realm_id) if item.card_id else None
+    )
+    project = (
+        store.get_project(item.project_id, realm_id=item.realm_id)
+        if item.project_id
+        else None
+    )
+    session = store.get_session(item.session_id) if item.session_id else None
+    owner_label = item.source_instance_name
+    if item.owner_instance_id:
+        fleet = request.app.state.ctx.services.get("fleet_registry")
+        owner = fleet.get_instance(item.owner_instance_id) if fleet else None
+        owner_label = getattr(owner, "name", None) or owner_label
+    return {
+        "card": (
+            {"id": item.card_id, "label": card.title if card else "Linked card"}
+            if item.card_id
+            else None
+        ),
+        "project": (
+            {
+                "id": item.project_id,
+                "label": project.title if project else "Linked project",
+            }
+            if item.project_id
+            else None
+        ),
+        "session": (
+            {
+                "id": item.session_id,
+                "label": (
+                    session.title
+                    or session.label
+                    or f"{session.agent_name} session"
+                    if session
+                    else "Agent session"
+                ),
+            }
+            if item.session_id
+            else None
+        ),
+        "dispatch": (
+            {"id": item.dispatch_id, "label": "Agent dispatch"}
+            if item.dispatch_id
+            else None
+        ),
+        "owner": (
+            {"id": item.owner_instance_id, "label": owner_label or "Owning instance"}
+            if item.owner_instance_id
+            else None
+        ),
+    }
+
+
+def _presentation_metadata(item: Notification) -> dict[str, Any]:
+    interaction = item.interaction
+    if interaction:
+        state = interaction.state
+        if state == InteractionState.FAILED:
+            required_action = "Retry delivery of the recorded response"
+            status = "Delivery failed"
+        elif state == InteractionState.DELIVERY_PENDING:
+            required_action = "No new response needed while delivery is pending"
+            status = "Response submitted · delivering"
+        elif state == InteractionState.OUTSTANDING:
+            status = "Response required"
+            if interaction.choices:
+                required_action = "Choose one of the available responses"
+            elif interaction.response_schema:
+                required_action = "Complete the required response fields"
+            elif interaction.allow_freeform:
+                required_action = "Write and submit a response"
+            else:
+                required_action = "Open the linked session to respond"
+        else:
+            required_action = None
+            status = {
+                InteractionState.DELIVERED: "Response delivered",
+                InteractionState.CANCELLED: "Request cancelled",
+                InteractionState.EXPIRED: "Request expired",
+                InteractionState.SUPERSEDED: "Request superseded",
+                InteractionState.ANSWERED: "Response recorded",
+            }.get(state, state.value.replace("_", " ").title())
+        next_effect = {
+            "protocol": "Submitting sends the response to the waiting agent request.",
+            "prompt": "Submitting resumes work in this exact agent session.",
+            "none": "Submitting records this decision; it does not resume an agent.",
+        }.get(interaction.continuation_mode)
+        if state == InteractionState.FAILED:
+            next_effect = (
+                "Retry sends the same recorded response; it does not create a new reply."
+            )
+        return {
+            "category": "request",
+            "status": status,
+            "required_action": required_action,
+            "next_effect": next_effect,
+        }
+    blocker_types = {
+        NotificationType.DISPATCH_FAILURE,
+        NotificationType.SYNC_CONFLICT,
+        NotificationType.SECURITY,
+        NotificationType.SERVICE_HEALTH,
+    }
+    update_types = {
+        NotificationType.PR_EVENT,
+        NotificationType.CI_EVENT,
+        NotificationType.REVIEW_EVENT,
+    }
+    return {
+        "category": (
+            "blocker"
+            if item.type in blocker_types
+            else "progress"
+            if item.type in update_types
+            else "notice"
+        ),
+        "status": "Information only",
+        "required_action": None,
+        "next_effect": "Dismissing hides this notice without sending an agent response.",
+    }
+
+
+def _public_notice(request: Request, item: Notification) -> dict[str, Any]:
+    return {
+        **item.public_dict(),
+        "routing": _route_metadata(request, item),
+        "context": _context_metadata(request, item),
+        "presentation": _presentation_metadata(item),
+    }
+
+
 @router.get("/notifications")
 async def list_notifications(
     request: Request,
@@ -150,11 +287,17 @@ async def list_notifications(
         records, outstanding_count = await asyncio.to_thread(
             service.list_inbox, **list_kwargs
         )
+    if runtime:
+        items = await runtime.run_blocking(
+            "notifications.present_page",
+            lambda: [_public_notice(request, item) for item in records],
+        )
+    else:
+        items = await asyncio.to_thread(
+            lambda: [_public_notice(request, item) for item in records]
+        )
     return {
-        "items": [
-            {**item.public_dict(), "routing": _route_metadata(request, item)}
-            for item in records
-        ],
+        "items": items,
         "offset": offset,
         "limit": limit,
         "next_offset": offset + len(records) if len(records) == limit else None,
@@ -166,8 +309,7 @@ async def list_notifications(
 def get_notification(request: Request, notification_id: str) -> dict[str, Any]:
     item = _authorized_notice(request, notification_id)
     return {
-        **item.public_dict(),
-        "routing": _route_metadata(request, item),
+        **_public_notice(request, item),
         "audit": request.app.state.ctx.store.list_notification_audit(item.id),
     }
 
@@ -431,8 +573,9 @@ class NotificationsModule(Module):
             value: str | None = None,
             fields: dict[str, Any] | None = None,
             cancel: bool = False,
+            retry: bool = False,
         ) -> dict:
-            """Answer a durable interaction by choice, freeform value, fields, or cancellation."""
+            """Answer an interaction or retry delivery of its recorded response."""
             return request_local_pa(
                 ctx.settings,
                 "POST",
@@ -443,5 +586,6 @@ class NotificationsModule(Module):
                     "value": value,
                     "fields": fields,
                     "cancel": cancel,
+                    "retry": retry,
                 },
             )

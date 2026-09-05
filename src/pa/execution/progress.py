@@ -146,10 +146,16 @@ class OperatorInputRequestV1(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     response_schema: dict[str, Any] | None = None
     choices: list[OperatorInputChoiceV1] = Field(default_factory=list, max_length=100)
-    allow_freeform: bool = True
+    allow_freeform: bool | None = None
     allow_cancel: bool = True
     sensitive: bool = False
     deadline: datetime | None = None
+
+    @model_validator(mode="after")
+    def infer_freeform_contract(self) -> OperatorInputRequestV1:
+        if self.allow_freeform is None:
+            self.allow_freeform = not self.choices and self.response_schema is None
+        return self
 
 
 class CompletionReportV1(BaseModel):

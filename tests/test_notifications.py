@@ -11,10 +11,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from pa.acp.final_message import likely_user_input_request
+from pa.acp.final_message import (
+    assemble_final_assistant_message,
+    likely_user_input_request,
+)
 from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel, reset_kernel
-from pa.domain.models import AgentSession, CardEvent, EventType
+from pa.domain.models import (
+    AgentSession,
+    CardCreate,
+    CardEvent,
+    EventType,
+    ProjectCreate,
+)
 from pa.domain.notifications import (
     InteractionChoice,
     InteractionKind,
@@ -25,10 +34,12 @@ from pa.domain.notifications import (
     NotificationCreate,
     NotificationType,
     NotificationVisibility,
+    concise_notification_summary,
 )
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
 from pa.execution.dispatch import DispatchRecord
+from pa.execution.progress import OperatorInputRequestV1
 from pa.instance.agent_session import AgentSessionRuntime, reset_instance_agent
 from pa.modules.fleet import _create_operator_input_notification
 from pa.notifications import NotificationConflict
@@ -85,6 +96,13 @@ def _interaction(
         deadline=deadline,
         continuation_mode=continuation_mode,
     )
+
+
+def test_notification_summary_keeps_useful_unbroken_context() -> None:
+    value = "x" * 1200
+    summary = concise_notification_summary(value)
+    assert len(summary) == 1000
+    assert summary == ("x" * 999) + "…"
 
 
 def _create(service, **updates):
@@ -174,6 +192,24 @@ def test_durable_lifecycle_dedup_audit_and_idempotent_delivery(tmp_path: Path) -
         )
         == 0
     )
+
+
+def test_acknowledgement_never_answers_or_refreshes_an_interaction(
+    tmp_path: Path,
+) -> None:
+    service = _kernel(tmp_path).ctx.require_service("notifications")
+    notice = _create(service)
+    acknowledged = service.acknowledge(
+        notice, principal_id="user:local", idempotency_key="seen-once"
+    )
+    repeated = service.acknowledge(
+        acknowledged, principal_id="user:local", idempotency_key="seen-again"
+    )
+
+    assert acknowledged.outstanding is True
+    assert acknowledged.interaction.state == InteractionState.OUTSTANDING
+    assert repeated.version == acknowledged.version
+    assert repeated.updated_at == acknowledged.updated_at
 
 
 def test_concurrent_creation_uses_one_deterministic_notification(
@@ -513,6 +549,49 @@ def test_failed_delivery_can_only_retry_the_same_response(tmp_path: Path) -> Non
     assert delivered == ["yes"]
 
 
+def test_failed_sensitive_delivery_retries_recorded_value_without_new_reply(
+    tmp_path: Path,
+) -> None:
+    service = _kernel(tmp_path).ctx.require_service("notifications")
+    notice = _create(
+        service,
+        deduplication_key="interaction:sensitive-retry",
+        interaction=_interaction(sensitive=True),
+    )
+    delivered: list[str] = []
+
+    def fail_once(response: InteractionResponse) -> None:
+        delivered.append(str(response.value))
+        if len(delivered) == 1:
+            raise RuntimeError("provider temporarily unavailable")
+
+    service.register_delivery_handler(notice.id, fail_once)
+    with pytest.raises(NotificationConflict) as failed:
+        asyncio.run(
+            service.respond(
+                notice,
+                InteractionResponse(idempotency_key="submit", value="private value"),
+                principal_id="user:local",
+            )
+        )
+    assert failed.value.code == "delivery_failed"
+    assert "private value" not in str(failed.value)
+    assert failed.value.notification.interaction.delivery_error == (
+        "Delivery to the owning request failed"
+    )
+
+    result = asyncio.run(
+        service.respond(
+            failed.value.notification,
+            InteractionResponse(idempotency_key="retry", retry=True),
+            principal_id="user:local",
+        )
+    )
+    assert result.interaction.state == InteractionState.DELIVERED
+    assert delivered == ["private value", "private value"]
+    assert result.public_dict()["interaction"]["response"] is None
+
+
 def test_prompt_continuation_is_correlated_to_recoverable_session(
     tmp_path: Path,
 ) -> None:
@@ -724,6 +803,67 @@ def test_structured_mcp_operator_input_creates_remote_owned_request(
     assert result["delivery_state"] == "remote"
 
 
+def test_structured_operator_input_only_enables_declared_response_shapes() -> None:
+    choice = OperatorInputRequestV1(
+        prompt="Choose a target",
+        choices=[{"id": "stage", "label": "Staging"}],
+    )
+    freeform = OperatorInputRequestV1(prompt="Describe the blocker")
+    structured = OperatorInputRequestV1(
+        prompt="Provide details",
+        response_schema={"type": "object", "properties": {"reason": {"type": "string"}}},
+    )
+
+    assert choice.allow_freeform is False
+    assert freeform.allow_freeform is True
+    assert structured.allow_freeform is False
+
+
+def test_notification_api_resolves_human_context_and_keeps_exact_ids(
+    tmp_path: Path,
+) -> None:
+    kernel = _kernel(tmp_path)
+    project = kernel.ctx.store.create_project(
+        ProjectCreate(title="PA Core"), via_log=False
+    )
+    card = kernel.ctx.store.create_card(
+        CardCreate(title="Readable agent notifications", project_id=project.id),
+        via_log=False,
+    )
+    session = AgentSession(
+        id="session-exact-id",
+        agent_name="codex",
+        title="Notification implementation",
+        card_id=card.id,
+        project_id=project.id,
+    )
+    kernel.ctx.store.save_session(session)
+    notice = _create(
+        kernel.ctx.require_service("notifications"),
+        deduplication_key="interaction:context",
+        card_id=card.id,
+        project_id=project.id,
+        session_id=session.id,
+        dispatch_id="dispatch-exact-id",
+    )
+
+    with TestClient(kernel.build_app()) as client:
+        assert client.get("/").status_code == 200
+        payload = client.get(f"/api/notifications/{notice.id}").json()
+
+    assert payload["context"]["project"] == {"id": project.id, "label": "PA Core"}
+    assert payload["context"]["card"] == {
+        "id": card.id,
+        "label": "Readable agent notifications",
+    }
+    assert payload["context"]["session"] == {
+        "id": session.id,
+        "label": "Notification implementation",
+    }
+    assert payload["context"]["dispatch"]["id"] == "dispatch-exact-id"
+    assert payload["presentation"]["required_action"] == "Write and submit a response"
+
+
 def test_concurrent_notification_heads_merge_deterministically(tmp_path: Path) -> None:
     objects = ObjectStore(tmp_path / "objects")
     left = EventLog(objects, tmp_path / "left", "left")
@@ -849,7 +989,88 @@ def test_notification_polls_throttle_expiry_and_use_one_store_call(
         ("I need you to choose one of these two environments.", True),
         ("No action is required; all tests passed.", False),
         ("Implemented the change and verified the focused tests.", False),
+        (
+            "run. **PR #397 is merged.** The supervisor is green, then the card was closed.",
+            False,
+        ),
+        ("Which environment should I use for the deployment?", True),
     ],
 )
 def test_final_output_input_fallback_is_conservative(text: str, expected: bool) -> None:
     assert bool(likely_user_input_request(text)) is expected
+
+
+def test_unidentified_commentary_is_not_concatenated_with_final_json() -> None:
+    final = '{"schema_version":1,"lane":"done","evidence":{"merged":true}}'
+    assembled = assemble_final_assistant_message(
+        [
+            {"type": "agent_message_chunk", "text": "I am checking the PR."},
+            {"type": "agent_message_chunk", "text": final},
+        ]
+    )
+    assert assembled == final
+    assert likely_user_input_request(assembled) is None
+
+
+def test_final_fallback_preserves_full_markdown_and_precise_action_title(
+    tmp_path: Path,
+) -> None:
+    kernel = _kernel(tmp_path)
+    runtime = _agent_runtime(kernel)
+    details = "\n".join(f"- check {index}" for index in range(400))
+    final = (
+        "## Authentication blocker\n\n"
+        f"{details}\n\n"
+        "Please run `gh auth login`, then tell me when it is complete."
+    )
+    item = SimpleNamespace(card_id="card-1", project_id="project-1")
+
+    asyncio.run(runtime._surface_final_input_fallback(final, item))
+    notices = kernel.ctx.require_service("notifications").list_authorized(
+        principal_id="user:local",
+        realms={"default"},
+        realm_id="default",
+        outstanding=True,
+    )
+
+    assert len(notices) == 1
+    assert notices[0].title.startswith("Action required:")
+    assert notices[0].body == final
+    assert notices[0].summary.endswith("complete.")
+
+
+def test_later_operator_prompt_auditably_supersedes_only_fallback_notice(
+    tmp_path: Path,
+) -> None:
+    kernel = _kernel(tmp_path)
+    runtime = _agent_runtime(kernel)
+    service = kernel.ctx.require_service("notifications")
+    fallback = _create(
+        service,
+        deduplication_key="final-input:session:old",
+        session_id=runtime.session_id,
+        interaction=InteractionRequest(
+            kind=InteractionKind.FINAL_OUTPUT_FALLBACK,
+            prompt="Please confirm the target.",
+            allow_freeform=True,
+            continuation_mode="prompt",
+        ),
+    )
+    protocol = _create(
+        service,
+        deduplication_key="protocol:keep",
+        session_id=runtime.session_id,
+        interaction=_interaction(request_id="protocol-keep"),
+    )
+    item = SimpleNamespace(id="later-prompt", turn_reason="operator_input")
+
+    asyncio.run(runtime._supersede_obsolete_final_input_fallbacks(item))
+
+    assert service.get_authorized(
+        fallback.id, principal_id="user:local", realms={"default"}
+    ).interaction.state == InteractionState.SUPERSEDED
+    assert service.get_authorized(
+        protocol.id, principal_id="user:local", realms={"default"}
+    ).interaction.state == InteractionState.OUTSTANDING
+    audit = kernel.ctx.store.list_notification_audit(fallback.id)
+    assert any(entry["action"] == "interaction.superseded" for entry in audit)

@@ -65,6 +65,8 @@ from pa.domain.notifications import (
     NotificationPriority,
     NotificationType,
     NotificationVisibility,
+    concise_notification_summary,
+    interaction_notification_title,
 )
 from pa.execution.dispatch import (
     CAPACITY_RESERVATION_STATES,
@@ -3161,19 +3163,22 @@ async def _create_operator_input_notification(
             )
             for item in structured.choices
         ]
-        allow_freeform = structured.allow_freeform
+        allow_freeform = bool(structured.allow_freeform)
         allow_cancel = structured.allow_cancel
         sensitive = structured.sensitive
         deadline = structured.deadline
     ctx = request.app.state.ctx
+    title = interaction_notification_title(
+        kind, prompt, choices=choices, response_schema=response_schema
+    )
     data = NotificationCreate(
         realm_id=record.realm_id,
         visibility=NotificationVisibility.REALM,
         type=NotificationType.INTERACTION,
         priority=NotificationPriority.HIGH,
-        title="Operator input requested",
+        title=title,
         body=prompt,
-        summary=prompt[:1000],
+        summary=concise_notification_summary(prompt),
         card_id=record.card_id,
         session_id=record.session_id,
         dispatch_id=record.dispatch_id,
