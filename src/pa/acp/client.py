@@ -34,6 +34,7 @@ from pa.acp.configuration import (
     advertised_state_values,
     find_option,
     find_option_by_id,
+    normalized_session_config_json,
     option_current_value,
     option_id,
     parse_model_selector,
@@ -1318,6 +1319,15 @@ class AgentConnection:
             config["modes"] = meta.get("modes")
         if meta.get("config_options") is not None:
             config["options"] = meta.get("config_options")
+        config, confirmed = normalized_session_config_json(
+            config,
+            model_id=meta.get("model_id") or self.session.model_id,
+            mode_id=meta.get("mode_id") or self.session.mode_id,
+        )
+        if confirmed.get("model_id"):
+            self.session.model_id = str(confirmed["model_id"])
+        if confirmed.get("mode_id"):
+            self.session.mode_id = str(confirmed["mode_id"])
         self.session.config_json = config
 
     async def prompt(
@@ -1495,6 +1505,43 @@ class AgentConnection:
         )
 
     async def set_config(self, config_id: str, value: str | bool) -> None:
+        options = [
+            dict(item)
+            for item in (_to_plain(self.config_options) or [])
+            if isinstance(item, dict)
+        ]
+        selected = find_option_by_id(options, config_id)
+        semantic: str | None = None
+        for candidate in ("model", "mode", "reasoning"):
+            try:
+                semantic_option = find_option(options, candidate)
+            except ACPConfigurationError:
+                semantic_option = None
+            if (
+                selected is not None
+                and semantic_option is not None
+                and option_id(selected) == option_id(semantic_option)
+            ):
+                semantic = candidate
+                break
+        if semantic == "model":
+            await self.configure(
+                SessionConfigurationRequest.from_values(model_id=str(value)),
+                merge=True,
+            )
+            return
+        if semantic == "mode":
+            await self.configure(
+                SessionConfigurationRequest.from_values(mode_id=str(value)),
+                merge=True,
+            )
+            return
+        if semantic == "reasoning":
+            await self.configure(
+                SessionConfigurationRequest.from_values(reasoning=str(value)),
+                merge=True,
+            )
+            return
         await self.configure(
             SessionConfigurationRequest.from_values(config={config_id: value}),
             merge=True,

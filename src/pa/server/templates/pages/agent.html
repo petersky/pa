@@ -40,7 +40,7 @@
            autocomplete="off"
            data-agent-session-search>
   </div>
-  <ul class="session-list" data-agent-session-list>
+  <ul class="session-list" data-agent-session-list data-agent-enabled="{{ 'true' if agent_enabled else 'false' }}">
     {% if sessions %}
     {% for s in sessions %}
     {% set detail = session_details.get(s.id, {}) %}
@@ -52,11 +52,13 @@
       {% set state = detail.state or s.status or 'unknown' %}
       {% set presentation = detail.presentation or {} %}
       {% if session_view == 'activity' %}<div class="agent-activity-group">{{ detail.activity_group }}</div>{% endif %}
-      {% set admission = (s.config_json or {}).get('configuration', {}) %}
+      {% set normalized_config = detail.config_json or s.config_json or {} %}
+      {% set admission = normalized_config.get('configuration', {}) %}
       {% set requested = admission.get('requested', {}) %}
       {% set effective = admission.get('effective', {}) %}
-      {% set live_values = (s.config_json or {}).get('values', {}) %}
-      {% set raw_model = (s.model_id or '')|trim %}
+      {% set live_values = normalized_config.get('values', {}) %}
+      {% set raw_model = (detail.model_id or s.model_id or '')|trim %}
+      {% set live_mode = detail.mode_id or s.mode_id %}
       {% set live_model = raw_model[:-2] if raw_model.endswith('[]') else (raw_model or 'default model') %}
       <div class="agent-session-shell">
         <span class="agent-session-provider-mark" aria-hidden="true">{{ (s.agent_name or 'PA')[:2] | upper }}</span>
@@ -78,7 +80,7 @@
           <div class="agent-session-facts">
             <span class="agent-session-instance" title="Execution instance">{% if s.origin_instance_id %}{{ instance_identity(s.origin_instance_id) }}{% else %}{{ detail.host or 'Local instance' }}{% endif %}</span>
             <span class="agent-session-age" title="Elapsed time">{{ detail.elapsed }}</span>
-            <span class="agent-session-runtime" title="Live provider, model, and settings">{{ s.agent_name }} · {{ live_model }}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}{% for key, value in live_values.items() if value is not none and value != '' and key not in ['model', 'model_id', 'mode', 'mode_id', 'collaboration_mode'] %} · {{ 'effort' if key in ['effort', 'reasoning', 'reasoningEffort', 'reasoning_effort'] else ('thinking' if key in ['thinking', 'thinkingLevel', 'thinking_level'] else key) }} {{ value }}{% endfor %}</span>
+            <span class="agent-session-runtime" title="Live provider, model, and settings">{{ s.agent_name }} · {{ live_model }}{% if live_mode %} · {{ live_mode }}{% endif %}{% for key, value in live_values.items() if value is not none and value != '' and key not in ['model', 'model_id', 'mode', 'mode_id', 'collaboration_mode'] %} · {{ 'effort' if key in ['effort', 'reasoning', 'reasoningEffort', 'reasoning_effort'] else ('thinking' if key in ['thinking', 'thinkingLevel', 'thinking_level'] else key) }} {{ value }}{% endfor %}</span>
             {% if detail.turns or detail.total_tokens %}<span class="agent-session-usage" title="Session usage">{% if detail.turns %}{{ detail.turns }} turn{{ '' if detail.turns == 1 else 's' }}{% endif %}{% if detail.turns and detail.total_tokens %} · {% endif %}{% if detail.total_tokens %}{{ '%.1fk' | format(detail.total_tokens / 1000) if detail.total_tokens >= 1000 else detail.total_tokens }} tokens{% endif %}</span>{% else %}<span class="agent-session-usage muted">No usage yet</span>{% endif %}
           </div>
         </div>
@@ -93,8 +95,8 @@
       <details class="agent-session-details">
         <summary>Details</summary>
         <div class="agent-session-details-body">
-          {% if s.model_id or s.mode_id or live_values %}<span class="muted small agent-session-config"><b>Live</b> {{ live_model }}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}{% for key, value in live_values.items() if value is not none and value != '' and key not in ['model', 'model_id', 'mode', 'mode_id', 'collaboration_mode'] %} · {{ key }} {{ value }}{% endfor %}</span>{% endif %}
-          {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
+          {% if raw_model or live_mode or live_values %}<span class="muted small agent-session-config"><b>Live</b> {{ live_model }}{% if live_mode %} · {{ live_mode }}{% endif %}{% for key, value in live_values.items() if value is not none and value != '' and key not in ['model', 'model_id', 'mode', 'mode_id', 'collaboration_mode'] %} · {{ key }} {{ value }}{% endfor %}</span>{% endif %}
+          {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or detail.model_id or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
           <span class="muted small">Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
           {% if presentation.explanation %}<span class="muted small">{{ presentation.explanation }}</span>{% endif %}
           <span class="muted small"><b>Purpose</b> {{ s.purpose | replace('_', ' ') }} · <b>Control</b> {{ s.control_mode }} · <b>Raw lifecycle</b> {{ s.status }}</span>

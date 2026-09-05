@@ -17,7 +17,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
-from pa.acp.configuration import ACPConfigurationError, SessionConfigurationRequest
+from pa.acp.configuration import (
+    ACPConfigurationError,
+    SessionConfigurationRequest,
+    normalized_session_config_json,
+)
 from pa.acp.sandbox_health import sandbox_health_registry
 from pa.auth.middleware import get_principal_id
 from pa.core.contracts import Module
@@ -1340,6 +1344,8 @@ def list_agent_sessions(
     view: Literal["active", "chats", "activity", "all"] = "active",
     archived: bool = False,
     activity_filter: Literal["all", "needs_you", "running", "completed"] = "all",
+    limit: int = 250,
+    selected_session_id: str | None = None,
 ) -> list[dict]:
     mgr = _require_session_traffic_ready(request)
     runtimes = {
@@ -1407,9 +1413,20 @@ def list_agent_sessions(
             key=lambda item: item["human_activity_at"] or item["updated_at"],
             reverse=True,
         )
-        return pinned + unpinned
-    items.sort(key=lambda item: item["updated_at"], reverse=True)
-    return items
+        items = pinned + unpinned
+    else:
+        items.sort(key=lambda item: item["updated_at"], reverse=True)
+    bounded_limit = max(1, min(limit, 500))
+    bounded = items[:bounded_limit]
+    if selected_session_id and not any(
+        item["id"] == selected_session_id for item in bounded
+    ):
+        selected = next(
+            (item for item in items if item["id"] == selected_session_id), None
+        )
+        if selected is not None:
+            bounded[-1] = selected
+    return bounded
 
 
 @router.get("/session-events/capabilities")
@@ -1675,7 +1692,11 @@ def _session_list_item(
     *,
     runtime: AgentSessionRuntime | None = None,
 ) -> dict:
-    config = session.config_json or {}
+    config, confirmed = normalized_session_config_json(
+        session.config_json,
+        model_id=session.model_id,
+        mode_id=session.mode_id,
+    )
     configuration = config.get("configuration", {})
     current_origin_name = current_instance_name(
         request.app.state.ctx,
@@ -1730,8 +1751,8 @@ def _session_list_item(
         "prompting": bool(runtime and runtime.prompting),
         "live": runtime is not None,
         "orphan": runtime is None,
-        "model_id": session.model_id,
-        "mode_id": session.mode_id,
+        "model_id": confirmed.get("model_id"),
+        "mode_id": confirmed.get("mode_id"),
         "created_at": session.created_at.isoformat(),
         "metrics_json": session.metrics_json or {},
         "card_id": session.card_id,
@@ -1749,7 +1770,7 @@ def _session_list_item(
         "card_ids": [card.id for card in associated_cards],
         "requested_model_id": configuration.get("requested", {}).get("model_id"),
         "requested_reasoning": configuration.get("requested", {}).get("reasoning"),
-        "effective_reasoning": configuration.get("effective", {}).get("reasoning"),
+        "effective_reasoning": confirmed.get("reasoning"),
         "configuration_state": configuration.get("state"),
         "provider_attempts": sum(
             event.event_type in {"session_started", "session_admission_failed"}
@@ -1902,6 +1923,7 @@ def list_agent_session_history(
     card_id: str | None = None,
     project_id: str | None = None,
     limit: int = 100,
+    selected_session_id: str | None = None,
 ) -> list[dict]:
     """List persisted sessions, including sessions that are no longer live."""
     mgr = _manager(request)
@@ -1916,25 +1938,50 @@ def list_agent_session_history(
         ]
     if project_id:
         sessions = [session for session in sessions if session.project_id == project_id]
-    return [
-        {
-            **session.model_dump(mode="json"),
-            "cards": _session_cards_payload(request, session),
-            "card_ids": mgr.store.list_card_ids_for_session(session.id),
-            "project": _session_project_payload(request, session),
-            "instance_id": settings.instance_id,
-            "instance_name": settings.instance_name,
-            "pr_watches": _session_pr_watches(request, session),
-            "card_reconciliation": _session_reconciliation(request, session.id),
-            "live": bool(
-                (runtime := mgr.get(session.id))
-                and not getattr(runtime, "_closed", False)
-            ),
-            "recovery": _durable_session_state(mgr, session),
-            "presentation": _presentation(request, session),
-        }
-        for session in sessions[: max(1, min(limit, 500))]
-    ]
+    bounded_limit = max(1, min(limit, 500))
+    bounded_sessions = sessions[:bounded_limit]
+    if selected_session_id and not any(
+        session.id == selected_session_id for session in bounded_sessions
+    ):
+        selected = next(
+            (session for session in sessions if session.id == selected_session_id), None
+        )
+        if selected is not None:
+            bounded_sessions[-1] = selected
+    result: list[dict[str, Any]] = []
+    for session in bounded_sessions:
+        session_payload = session.model_dump(mode="json")
+        config, confirmed = normalized_session_config_json(
+            session.config_json,
+            model_id=session.model_id,
+            mode_id=session.mode_id,
+        )
+        session_payload.update(
+            {
+                "model_id": confirmed.get("model_id"),
+                "mode_id": confirmed.get("mode_id"),
+                "config_json": config,
+            }
+        )
+        result.append(
+            {
+                **session_payload,
+                "cards": _session_cards_payload(request, session),
+                "card_ids": mgr.store.list_card_ids_for_session(session.id),
+                "project": _session_project_payload(request, session),
+                "instance_id": settings.instance_id,
+                "instance_name": settings.instance_name,
+                "pr_watches": _session_pr_watches(request, session),
+                "card_reconciliation": _session_reconciliation(request, session.id),
+                "live": bool(
+                    (runtime := mgr.get(session.id))
+                    and not getattr(runtime, "_closed", False)
+                ),
+                "recovery": _durable_session_state(mgr, session),
+                "presentation": _presentation(request, session),
+            }
+        )
+    return result
 
 
 @router.get("/history/{session_id}")
@@ -2009,8 +2056,21 @@ async def get_agent_session_history(
         }
     query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
+    session_payload = session.model_dump(mode="json")
+    normalized_config, confirmed = normalized_session_config_json(
+        session.config_json,
+        model_id=session.model_id,
+        mode_id=session.mode_id,
+    )
+    session_payload.update(
+        {
+            "model_id": confirmed.get("model_id"),
+            "mode_id": confirmed.get("mode_id"),
+            "config_json": normalized_config,
+        }
+    )
     payload = {
-        "session": session.model_dump(mode="json"),
+        "session": session_payload,
         "instance": {
             "id": settings.instance_id,
             "name": settings.instance_name,
@@ -2132,6 +2192,20 @@ async def recover_session(
 async def get_session_snapshot(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     snapshot = runtime.snapshot(include_transcript=False)
+    normalized_config, confirmed = normalized_session_config_json(
+        runtime.session.config_json,
+        model_id=runtime.session.model_id,
+        mode_id=runtime.session.mode_id,
+    )
+    snapshot["session"].update(
+        {
+            "model_id": confirmed.get("model_id"),
+            "mode_id": confirmed.get("mode_id"),
+            "config_json": normalized_config,
+        }
+    )
+    snapshot["configuration"] = normalized_config.get("configuration", {})
+    snapshot["presentation"] = _presentation(request, runtime.session, runtime)
     snapshot["card_reconciliation"] = _session_reconciliation(request, session_id)
     snapshot["observability"] = _observability(
         request,

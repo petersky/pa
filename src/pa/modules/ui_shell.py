@@ -8,6 +8,7 @@ from time import perf_counter
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from pa.acp.configuration import normalized_session_config_json
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.core.context import AppContext
@@ -309,6 +310,11 @@ def _agent_context(request: Request) -> dict:
         else:
             elapsed_label = f"{elapsed}s"
         config = session.config_json or {}
+        normalized_config, confirmed_configuration = normalized_session_config_json(
+            config,
+            model_id=session.model_id,
+            mode_id=session.mode_id,
+        )
         runtime = runtimes_by_session.get(session.id)
         durable = dict(config.get("durable_runtime") or {})
         queued = list(runtime._queue) if runtime else durable.get("queued_prompts") or []
@@ -369,6 +375,9 @@ def _agent_context(request: Request) -> dict:
                 .replace("_", " ")
                 .title()
             ),
+            "model_id": confirmed_configuration.get("model_id"),
+            "mode_id": confirmed_configuration.get("mode_id"),
+            "config_json": normalized_config,
         }
     if selected_view == "activity":
         if activity_filter != "all":

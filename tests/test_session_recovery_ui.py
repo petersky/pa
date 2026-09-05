@@ -138,17 +138,16 @@ class SessionRecoveryUiTests(unittest.TestCase):
 
               let forcedCalls = 0;
               let firstSignal = null;
+              let resolveStale = null;
               let forcedReady = null;
               const forced = new Recovery.Controller({{
                 operation: (signal) => {{
                   forcedCalls += 1;
                   if (forcedCalls === 1) {{
                     firstSignal = signal;
-                    return new Promise((_resolve, reject) => {{
-                      signal.addEventListener("abort", () => {{
-                        reject(new DOMException("aborted", "AbortError"));
-                      }});
-                    }});
+                    // Model a peer/proxy that ignores AbortSignal and delivers
+                    // its older snapshot after the replacement request.
+                    return new Promise((resolve) => {{ resolveStale = resolve; }});
                   }}
                   return Promise.resolve([{{ id: "fresh" }}]);
                 }},
@@ -159,8 +158,9 @@ class SessionRecoveryUiTests(unittest.TestCase):
               const refreshed = forced.start(true);
               assert.notStrictEqual(stale, refreshed);
               assert.strictEqual(firstSignal.aborted, true);
-              const staleResult = await stale;
               const refreshedResult = await refreshed;
+              resolveStale([{{ id: "stale" }}]);
+              const staleResult = await stale;
               assert.strictEqual(staleResult, null);
               assert.strictEqual(refreshedResult[0].id, "fresh");
               assert.strictEqual(forcedCalls, 2);

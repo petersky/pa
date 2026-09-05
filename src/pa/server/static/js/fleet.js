@@ -272,8 +272,9 @@
     "queue_resumed", "cancelled", "session_started", "session_closed",
     "session_recovered", "browser_attachment_changed", "connection_lost",
     "usage_update", "model_changed", "mode_changed", "config_changed",
-    "config_option_update", "current_mode_update", "card_disposition",
-    "error", "message"
+    "config_option_update", "config_options_update", "current_mode_update",
+    "turn_waiting", "prompt_failed", "elicitation_request",
+    "elicitation_resolved", "card_disposition", "error", "message"
   ];
   var remoteNotificationEventTypes = [
     "turn_completed", "permission_request", "error", "connection_lost"
@@ -741,8 +742,15 @@
         owner_tab_id: remoteTabId
       });
     }
-    if (["turn_completed", "session_closed", "session_recovered",
-         "connection_lost", "error"].indexOf(type) >= 0) {
+    if ([
+      "session_started", "session_closed", "session_recovered", "user_message",
+      "turn_waiting", "turn_completed", "cancelled", "queue_enqueued",
+      "queue_dequeued", "queue_removed", "queue_reordered", "queue_paused",
+      "queue_resumed", "prompt_failed", "connection_lost", "model_changed",
+      "mode_changed", "current_mode_update", "config_changed",
+      "config_option_update", "config_options_update", "permission_request",
+      "permission_resolved", "elicitation_request", "elicitation_resolved", "error"
+    ].indexOf(type) >= 0) {
       scheduleRemoteSessionRefresh(instanceId);
     }
   }
@@ -899,9 +907,16 @@
     }
     list.innerHTML = sessions.map(function (session) {
       var title = escapeHtml(session.title || session.label || session.id);
-      var state = session.prompting ? "working" : (session.status || "idle");
+      var presentation = session.presentation || {};
+      var state = presentation.display_status ||
+        (session.prompting ? "working" : (session.status || "unknown"));
+      var runtime = window.PAAgentChat && window.PAAgentChat.sessionRuntimeLabel
+        ? window.PAAgentChat.sessionRuntimeLabel(session)
+        : "";
       return '<li><button type="button" class="ghost pa-remote-session-button" data-remote-session="' +
-        escapeHtml(session.id) + '"><span>' + title + '</span><span class="status status-' +
+        escapeHtml(session.id) + '"><span>' + title +
+        (runtime ? '<small class="muted">' + escapeHtml(runtime) + '</small>' : '') +
+        '</span><span class="status status-' +
         (session.prompting ? "active" : "open") + '">' + escapeHtml(state) +
         '</span></button><a class="text-btn small" href="/agent?session=' +
         encodeURIComponent(session.id) + '&instance=' + encodeURIComponent(remoteInstanceId) +

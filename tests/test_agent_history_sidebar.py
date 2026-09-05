@@ -45,6 +45,7 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
 
     assert 'const path = "/sessions?view="' in script
+    assert '"&selected_session_id=" + encodeURIComponent(activeId)' in script
     assert '"/history/" + encodeURIComponent(sessionId),' in script
     assert "LIVE_SNAPSHOT_TIMEOUT_MS" in script
     assert "filterSessionList" in script
