@@ -28,7 +28,9 @@ Interaction states are `outstanding`, `answered`, `cancelled`, `expired`,
 `superseded`, `delivery_pending`, `delivered`, and `failed`. Submission first
 records the answer, then marks delivery pending, and finally records delivery or
 failure. Retrying failed delivery must use the same semantic answer because the
-original delivery may have partially succeeded. Mutation and response
+original delivery may have partially succeeded; clients use the explicit
+delivery-only `retry` response shape so sensitive or structured answers never
+need to be re-entered or exposed. Mutation and response
 idempotency keys make reconnect, repeated click, proxy retry, and sync replay
 safe. A deduplication key identifies one logical prompt and coalesces repeated
 creation.
@@ -83,7 +85,11 @@ Agents should choose the narrowest protocol-native mechanism:
 Agents must not rely only on ordinary final prose when work cannot continue
 without a user. PA has a deliberately conservative final-output fallback for
 explicit requests such as “run `gh auth login`, then tell me”; it is recovery,
-not the primary contract.
+not the primary contract. Completion reports, card-disposition JSON, commentary,
+and text that merely contains action-like words are not treated as requests.
+When a later operator prompt proves that a fallback is obsolete, PA supersedes
+that fallback with an audit event; reading or acknowledging it alone never
+answers, approves, cancels, or resolves the request.
 
 Protocol interactions deliver directly to the waiting ACP request. Prompt-mode
 interactions enqueue a correlated continuation on the same live or recoverable
@@ -124,7 +130,8 @@ Stable HTTP endpoints are:
 - `POST /api/notifications/{id}/acknowledge`;
 - `POST /api/notifications/{id}/resolve`; and
 - `POST /api/notifications/{id}/respond` with exactly one of `choice_id`,
-  `value`, `fields`, or `cancel`, plus an `idempotency_key`.
+  `value`, `fields`, `cancel`, or delivery-only `retry`, plus an
+  `idempotency_key`.
 
 PA MCP exposes matching `list_notifications`, `get_notification`,
 `acknowledge_notification`, `resolve_notification`, and
@@ -140,10 +147,16 @@ color, `--color`/`--no-color`, and `--json`. Use `view`, `acknowledge`,
 a remote-authority requirement exits 2 and prints its destination.
 
 The global bell badge appears only when the authorized outstanding count is
-positive. Its responsive, keyboard-accessible panel provides source context,
-filters, navigation, choices, freeform and structured inputs, cancellation, and
-acknowledgement. Polling and fleet live-update events refresh state while draft
-values are retained by notification and field ID.
+positive. Its responsive, keyboard-accessible panel resolves project, card, and
+session names while retaining exact IDs in technical details. It distinguishes
+information from requests, states the required action and the effect of a
+response, renders the complete body as sanitized Markdown (raw HTML and embedded
+media are disabled), and provides only the choices, freeform input, structured
+fields, validation, and cancellation declared by the request contract. Read,
+dismiss, cancel, respond, delivery-pending, delivered, failed, expired, and
+superseded states are labeled separately. Polling and fleet live-update events
+refresh state while non-sensitive drafts are retained by notification and field
+ID in session storage; sensitive drafts remain memory-only.
 
 ## Extension points
 

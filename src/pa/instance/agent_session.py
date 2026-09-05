@@ -574,6 +574,8 @@ class AgentSessionRuntime:
                 NotificationPriority,
                 NotificationType,
                 NotificationVisibility,
+                concise_notification_summary,
+                interaction_notification_title,
             )
 
             options = request.get("options") or []
@@ -599,6 +601,9 @@ class AgentSessionRuntime:
                 )
             tool = request.get("tool_call") or {}
             title = str(tool.get("title") or tool.get("kind") or "Agent permission")
+            notice_title = interaction_notification_title(
+                InteractionKind.ACP_PERMISSION, title, choices=choices
+            )
             notice = await self._offload(
                 "sqlite.notification_create",
                 notification_service.create,
@@ -612,9 +617,11 @@ class AgentSessionRuntime:
                     principal_id=self.session.principal_id,
                     type=NotificationType.INTERACTION,
                     priority=NotificationPriority.HIGH,
-                    title="Permission requested",
+                    title=notice_title,
                     body=title,
-                    summary=f"{self.session.agent_name} needs permission: {title}",
+                    summary=concise_notification_summary(
+                        f"{self.session.agent_name} needs permission: {title}"
+                    ),
                     card_id=self.session.card_id or self.session.item_id,
                     session_id=self.session.id,
                     dispatch_id=self.session.dispatch_id,
@@ -764,6 +771,8 @@ class AgentSessionRuntime:
                 NotificationPriority,
                 NotificationType,
                 NotificationVisibility,
+                concise_notification_summary,
+                interaction_notification_title,
             )
 
             raw_choices = request.get("choices") or request.get("options") or []
@@ -803,6 +812,12 @@ class AgentSessionRuntime:
                 or request.get("requested_schema")
                 or request.get("schema")
             )
+            notice_title = interaction_notification_title(
+                InteractionKind.ACP_ELICITATION,
+                prompt,
+                choices=choices,
+                response_schema=response_schema,
+            )
             notice = await self._offload(
                 "sqlite.notification_create",
                 notification_service.create,
@@ -816,9 +831,9 @@ class AgentSessionRuntime:
                     principal_id=self.session.principal_id,
                     type=NotificationType.INTERACTION,
                     priority=NotificationPriority.HIGH,
-                    title="Agent input requested",
+                    title=notice_title,
                     body=prompt,
-                    summary=prompt[:1000],
+                    summary=concise_notification_summary(prompt),
                     card_id=self.session.card_id or self.session.item_id,
                     session_id=self.session.id,
                     dispatch_id=self.session.dispatch_id,
@@ -842,7 +857,11 @@ class AgentSessionRuntime:
                         response_schema=response_schema,
                         allow_freeform=bool(
                             request.get(
-                                "allowFreeform", request.get("allow_freeform", True)
+                                "allowFreeform",
+                                request.get(
+                                    "allow_freeform",
+                                    not choices and response_schema is None,
+                                ),
                             )
                         ),
                         allow_cancel=bool(
@@ -1487,6 +1506,7 @@ class AgentSessionRuntime:
             self._turn_started_at = datetime.now(UTC)
             self._turn_agent_events = []
             self._turn_streamed = False
+            await self._supersede_obsolete_final_input_fallbacks(item)
             await self._checkpoint_runtime_async(lifecycle="prompting")
             try:
                 composition = await self._offload(
@@ -1786,9 +1806,14 @@ class AgentSessionRuntime:
             NotificationPriority,
             NotificationType,
             NotificationVisibility,
+            concise_notification_summary,
+            interaction_notification_title,
         )
 
         digest = hashlib.sha256(prompt.encode()).hexdigest()[:24]
+        title = interaction_notification_title(
+            InteractionKind.FINAL_OUTPUT_FALLBACK, prompt
+        )
         notice = await self._offload(
             "sqlite.notification_create",
             service.create,
@@ -1802,9 +1827,9 @@ class AgentSessionRuntime:
                 principal_id=self.session.principal_id,
                 type=NotificationType.INTERACTION,
                 priority=NotificationPriority.HIGH,
-                title="Agent is waiting for you",
-                body=prompt,
-                summary=prompt[:1000],
+                title=title,
+                body=final_text,
+                summary=concise_notification_summary(prompt),
                 card_id=item.card_id,
                 session_id=self.session_id,
                 dispatch_id=self.session.dispatch_id,
@@ -1840,6 +1865,50 @@ class AgentSessionRuntime:
         )
         self._flush_transcript()
         await self._drain_transcripts()
+
+    async def _supersede_obsolete_final_input_fallbacks(
+        self, item: QueuedPrompt
+    ) -> None:
+        """Close fallback requests only after a later operator prompt proves progress."""
+        service = getattr(self.manager, "notification_service", None)
+        if not service or item.turn_reason != "operator_input":
+            return
+        notices = await self._offload(
+            "sqlite.notification_list",
+            service.list_authorized,
+            principal_id=self.session.principal_id or "user:local",
+            realms={self.session.realm_id},
+            realm_id=self.session.realm_id,
+            outstanding=True,
+            limit=200,
+            offset=0,
+        )
+        superseded = []
+        for notice in notices:
+            interaction = notice.interaction
+            if (
+                notice.session_id != self.session_id
+                or not interaction
+                or interaction.kind.value != "final_output_fallback"
+            ):
+                continue
+            updated = await self._offload(
+                "sqlite.notification_supersede",
+                service.supersede,
+                notice,
+                principal_id=self.session.principal_id or "user:local",
+                idempotency_key=f"superseded-by-prompt:{item.id}:{notice.id}",
+            )
+            superseded.append(updated.id)
+        if superseded:
+            self._append_transcript(
+                "interaction_superseded",
+                {
+                    "notification_ids": superseded,
+                    "evidence": "later_operator_prompt_accepted",
+                    "queued_prompt_id": item.id,
+                },
+            )
 
     def _turn_waiting_payload(
         self, item: QueuedPrompt, elapsed_s: float

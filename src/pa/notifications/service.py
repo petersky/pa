@@ -93,7 +93,11 @@ class NotificationService:
             notification.delivery_updated_at = notification.interaction.delivered_at
         except Exception as exc:  # noqa: BLE001 - protocol handlers are provider-owned
             notification.interaction.delivery_attempts += 1
-            notification.interaction.delivery_error = sanitize_text(exc, limit=1000)
+            notification.interaction.delivery_error = (
+                "Delivery to the owning request failed"
+                if notification.interaction.sensitive
+                else sanitize_text(exc, limit=1000)
+            )
             notification.delivery_state = DeliveryState.FAILED
             notification.delivery_updated_at = datetime.now(UTC)
         notification.version += 1
@@ -238,7 +242,10 @@ class NotificationService:
             if idempotency_key in current.idempotency_keys:
                 return current
             now = datetime.now(UTC)
+            before = current.model_dump(mode="python")
             mutation(current, now)
+            if current.model_dump(mode="python") == before:
+                return current
             current.idempotency_keys = [
                 *current.idempotency_keys[-126:],
                 idempotency_key,
@@ -405,6 +412,17 @@ class NotificationService:
                 "Notification has no response contract",
                 notification=notification,
             )
+        if response.retry:
+            if (
+                interaction.state != InteractionState.FAILED
+                or interaction.response is None
+            ):
+                raise NotificationConflict(
+                    "delivery_retry_not_available",
+                    "There is no failed response delivery to retry",
+                    notification=notification,
+                )
+            return interaction.response
         if response.cancel:
             if not interaction.allow_cancel:
                 raise NotificationConflict(
@@ -450,6 +468,25 @@ class NotificationService:
                     notification=notification,
                 ) from exc
         return value
+
+    @staticmethod
+    def _delivery_response(
+        interaction, response: InteractionResponse
+    ) -> InteractionResponse:
+        """Rebuild the exact recorded answer for a delivery-only retry."""
+        if not response.retry:
+            return response
+        stored = interaction.response
+        key = response.idempotency_key
+        if stored == {"cancelled": True}:
+            return InteractionResponse(idempotency_key=key, cancel=True)
+        if isinstance(stored, dict) and "choice_id" in stored:
+            return InteractionResponse(
+                idempotency_key=key, choice_id=str(stored["choice_id"])
+            )
+        if interaction.response_schema and isinstance(stored, dict):
+            return InteractionResponse(idempotency_key=key, fields=stored)
+        return InteractionResponse(idempotency_key=key, value=stored)
 
     async def respond(
         self,
@@ -516,17 +553,19 @@ class NotificationService:
                     notification=current,
                 )
             now = datetime.now(UTC)
-            interaction.response = value
-            interaction.response_principal = principal_id
-            interaction.responded_at = now
-            interaction.response_summary = (
-                "Sensitive response recorded"
-                if interaction.sensitive
-                else sanitize_text(value, limit=500)
-            )
+            delivery_response = self._delivery_response(interaction, response)
+            if not response.retry:
+                interaction.response = value
+                interaction.response_principal = principal_id
+                interaction.responded_at = now
+                interaction.response_summary = (
+                    "Sensitive response recorded"
+                    if interaction.sensitive
+                    else sanitize_text(value, limit=500)
+                )
             interaction.state = (
                 InteractionState.CANCELLED
-                if response.cancel
+                if delivery_response.cancel
                 else InteractionState.ANSWERED
             )
             current.delivery_state = DeliveryState.PENDING
@@ -539,17 +578,21 @@ class NotificationService:
             current.updated_at = now
             await self._save_async(current, principal_id=principal_id)
             self._publish(current)
-            if not response.cancel:
+            if not delivery_response.cancel:
                 interaction.state = InteractionState.DELIVERY_PENDING
                 current.version += 1
                 current.updated_at = datetime.now(UTC)
                 await self._save_async(current, principal_id="system:delivery")
                 self._publish(current)
             try:
-                await self._deliver(current, response)
+                await self._deliver(current, delivery_response)
             except Exception as exc:
                 interaction.delivery_attempts += 1
-                interaction.delivery_error = sanitize_text(exc, limit=1000)
+                interaction.delivery_error = (
+                    "Delivery to the owning request failed"
+                    if interaction.sensitive
+                    else sanitize_text(exc, limit=1000)
+                )
                 interaction.state = InteractionState.FAILED
                 current.delivery_state = DeliveryState.FAILED
                 current.delivery_updated_at = datetime.now(UTC)
@@ -565,7 +608,7 @@ class NotificationService:
             interaction.delivered_at = datetime.now(UTC)
             interaction.state = (
                 InteractionState.CANCELLED
-                if response.cancel
+                if delivery_response.cancel
                 else InteractionState.DELIVERED
             )
             current.delivery_state = DeliveryState.DELIVERED

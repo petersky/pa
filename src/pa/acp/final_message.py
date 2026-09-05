@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -23,17 +24,40 @@ _FINAL_MESSAGE_TYPES = {
     "message_completed",
 }
 
+_REQUEST_ACTION = (
+    r"(?:choose|select|confirm|approve|deny|provide|reply|respond|run|"
+    r"sign[ -]?in|log[ -]?in|upload|attach|enter|tell|decide|pick|review)"
+)
 _INPUT_REQUEST = re.compile(
-    r"(?is)(?:\b(?:please|need you to|can you|could you|would you|"
-    r"choose|select|confirm|approve|provide|reply|respond|run|sign in|log in)\b"
-    r".{0,500}(?:\?|\b(?:then|after that|to continue|before I can continue)\b))|"
-    r"(?:\b(?:I|we)\s+need you to\s+(?:choose|select|confirm|approve|provide|"
-    r"reply|respond|run|sign in|log in)\b)|"
-    r"(?:\b(?:gh|aws|gcloud|az|npm|docker)\s+(?:auth\s+)?login\b)"
+    rf"(?is)(?:"
+    rf"\b(?:please|can you|could you|would you)\s+{_REQUEST_ACTION}\b|"
+    rf"\b(?:I|we)\s+(?:still\s+)?need you to\s+{_REQUEST_ACTION}\b|"
+    rf"\b(?:I(?:'m| am)|we(?:'re| are)|the agent is)\s+(?:blocked|waiting)\s+"
+    rf"(?:on|for|until)\b.{{0,240}}\b(?:you|your)\b|"
+    rf"\b(?:to continue|before (?:I|we|the agent) can continue)\b.{{0,240}}"
+    rf"\b(?:you|your)\b|"
+    rf"\b(?:which|what|where)\b.{{0,240}}\b(?:should (?:I|we)|do you want|"
+    rf"would you prefer)\b.{{0,120}}\?|"
+    rf"\bdo you (?:approve|confirm|want)\b.{{0,240}}\?"
+    rf")"
 )
 _NO_INPUT_REQUIRED = re.compile(
-    r"(?i)\b(?:no (?:user|operator) action (?:is )?required|nothing for you to do)\b"
+    r"(?i)\b(?:no (?:user|operator) action (?:is )?required|"
+    r"nothing for you to do|no response (?:is )?needed)\b"
 )
+
+
+def _json_object_text(value: str) -> bool:
+    candidate = value.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL)
+    if fenced:
+        candidate = fenced.group(1).strip()
+    if not (candidate.startswith("{") and candidate.endswith("}")):
+        return False
+    try:
+        return isinstance(json.loads(candidate), dict)
+    except (TypeError, ValueError):
+        return False
 
 
 def normalize_provider_phase(value: Any) -> str | None:
@@ -117,6 +141,18 @@ def assemble_final_assistant_message(events: Iterable[Any]) -> str:
         candidates[-1],
     )
     selected_message_id = selected["payload"].get("message_id")
+    selected_text = str(selected["payload"].get("text") or "")
+    # A complete machine-readable final object is its own message boundary.
+    # Older providers sometimes omitted message IDs and phases, which used to
+    # prepend commentary to a final disposition object.
+    if selected_message_id in {None, ""} and _json_object_text(selected_text):
+        return selected_text.strip()
+    if (
+        selected_message_id in {None, ""}
+        and selected["type"] in _FINAL_MESSAGE_TYPES
+        and selected_text
+    ):
+        return selected_text.strip()
     selected_key = (
         str(selected_message_id)
         if selected_message_id not in {None, ""}
@@ -152,14 +188,20 @@ def likely_user_input_request(text: str) -> str | None:
     normalized = str(text or "").strip()
     if not normalized or _NO_INPUT_REQUIRED.search(normalized):
         return None
-    match = _INPUT_REQUEST.search(normalized)
-    if not match:
+    # Card dispositions and other final protocol objects are not questions,
+    # even when string values happen to contain words such as "run" or "then".
+    if _json_object_text(normalized):
         return None
     paragraphs = [
         part.strip() for part in re.split(r"\n\s*\n", normalized) if part.strip()
     ]
+    if paragraphs and _json_object_text(paragraphs[-1]):
+        return None
+    match = _INPUT_REQUEST.search(normalized)
+    if not match:
+        return None
     selected = next(
         (part for part in reversed(paragraphs) if _INPUT_REQUEST.search(part)),
         match.group(0),
     )
-    return selected[:4000]
+    return selected[:8000]
