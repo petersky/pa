@@ -122,6 +122,21 @@ class SessionLifecyclePolicy:
                     now=now,
                 )
                 self.metrics[f"{decision}:{reason}"] += 1
+                if decision == "release":
+                    try:
+                        released = await self.manager.release_session_process(
+                            session.id, reason=reason
+                        )
+                    except Exception:
+                        self.metrics["deferred:provider_release_failed"] += 1
+                        logger.exception(
+                            "Idle provider release failed for session %s", session.id
+                        )
+                    else:
+                        if released:
+                            self.metrics["provider_released"] += 1
+                            self.metrics[f"provider_released:{reason}"] += 1
+                    continue
                 if decision == "retire":
                     card_id = session.card_id
                     if card_id:
@@ -142,6 +157,28 @@ class SessionLifecyclePolicy:
                     continue
                 if decision != "close":
                     continue
+                if session.purpose in {"automated_run", "one_shot_job"}:
+                    if reason.startswith("workflow_"):
+                        session.workflow_state = reason.removeprefix("workflow_")
+                    elif reason in {"dispatch_completed", "single_purpose_finished"}:
+                        session.workflow_state = "succeeded"
+                    elif "cancel" in reason:
+                        session.workflow_state = "cancelled"
+                    else:
+                        session.workflow_state = "failed"
+                    session.workflow_outcome = {
+                        **dict(session.workflow_outcome or {}),
+                        "reason": reason,
+                        "completed_at": now.isoformat(),
+                    }
+                    await self._offload(
+                        "session_lifecycle.workflow_outcome",
+                        self.manager.store.save_session,
+                        session,
+                    )
+                    runtime_for_outcome = self.manager.get(session.id)
+                    if runtime_for_outcome:
+                        runtime_for_outcome.session = session
                 self._attempt += 1
                 attempt = self._attempt
                 session_leases = [
@@ -256,6 +293,10 @@ class SessionLifecyclePolicy:
         durable = dict((session.config_json or {}).get("durable_runtime") or {})
         if durable.get("in_flight") or durable.get("queued_prompts"):
             return "retained", "durable_prompt_pending"
+        if durable.get("pending_permissions") or durable.get("pending_elicitations"):
+            return "retained", "durable_interaction_pending"
+        if durable.get("pending_interaction"):
+            return "retained", "requested_input_pending"
 
         linked_dispatches = [
             item
@@ -303,6 +344,55 @@ class SessionLifecyclePolicy:
                 return "retained", "workspace_uncommitted"
             if lease.state in {"provisioning", "cleanup_blocked"}:
                 return "retained", "workspace_obligation"
+
+        retention = timedelta(
+            hours=self.manager.settings.agent_session_idle_retention_hours
+        )
+        # Conversations are durable product objects.  Inactivity may release an
+        # eligible provider process, but card lifecycle and newer conversations
+        # never archive, close, or unlink them.
+        if session.purpose == "chat":
+            if session.archived_at is not None:
+                return "retained", "conversation_archived"
+            last_human_activity = session.human_activity_at or session.updated_at
+            if runtime and now - last_human_activity >= retention:
+                return "release", "idle_process_retention_expired"
+            return "retained", "conversation_available"
+
+        # Runs remain active across any number of provider turns.  Only their
+        # owning workflow outcome, after the obligation guards above have
+        # settled, may finish them.
+        if session.purpose == "automated_run":
+            if session.workflow_state in {
+                "succeeded",
+                "failed",
+                "cancelled",
+                "validation_failed",
+            }:
+                return "close", f"workflow_{session.workflow_state}"
+            if linked_dispatches and all(
+                item.state == "completed" for item in linked_dispatches
+            ):
+                return "close", "dispatch_completed"
+            if linked_dispatches and all(
+                item.state in {"failed", "cancelled"} and not item.recoverable
+                for item in linked_dispatches
+            ):
+                state = linked_dispatches[-1].state
+                return "close", f"dispatch_{state}"
+            return "retained", "workflow_active"
+
+        if session.purpose == "one_shot_job":
+            if session.workflow_state in {
+                "succeeded",
+                "failed",
+                "cancelled",
+                "validation_failed",
+            }:
+                return "close", f"workflow_{session.workflow_state}"
+            if session.status == "idle" and (session.metrics_json or {}).get("turns"):
+                return "close", "single_purpose_finished"
+            return "retained", "job_active"
 
         newer = [
             candidate
@@ -356,9 +446,6 @@ class SessionLifecyclePolicy:
             return "close", "single_purpose_finished"
         if str(session.label or "").startswith(_SINGLE_PURPOSE_LABEL_PREFIXES):
             return "close", "single_purpose_terminal"
-        retention = timedelta(
-            hours=self.manager.settings.agent_session_idle_retention_hours
-        )
         if session.status == "idle" and now - session.updated_at >= retention:
             return "close", "idle_retention_expired"
         if card_completed:

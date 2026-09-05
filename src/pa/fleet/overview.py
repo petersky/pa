@@ -22,6 +22,7 @@ from pa.core.async_runtime import AsyncRuntime
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
 from pa.execution.dispatch import TERMINAL_DISPATCH_STATES, DispatchStore
+from pa.execution.session_presentation import build_session_presentation
 from pa.fleet.capacity import (
     deduplicate_consumer_links,
     effective_capacity,
@@ -549,6 +550,13 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
     session_total = max(durable_session_total, len(session_candidates))
     for session in ranked_sessions[:WORKSHOP_SESSION_LIMIT]:
         runtime = runtime_by_id.get(session.id)
+        durable_runtime = dict((session.config_json or {}).get("durable_runtime") or {})
+        presentation = build_session_presentation(
+            session,
+            runtime=runtime,
+            quiescing=bool(progress.get("quiescing")),
+            startup_complete=progress.get("phase") not in {"starting", "restoring"},
+        )
         active = bool(runtime) or session.status in {
             "active",
             "working",
@@ -559,11 +567,11 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         }
         if not active:
             continue
-        if runtime and runtime.prompting:
+        if presentation["turn"]["state"] == "running":
             semantic_state = "working"
-        elif runtime and runtime._queue:
+        elif presentation["queue"]["count"]:
             semantic_state = "queued"
-        elif runtime:
+        elif runtime or presentation["display_status"] == "Ready":
             semantic_state = "idle"
         else:
             semantic_state = "deferred"
@@ -580,7 +588,9 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
                 "connected": bool(runtime and runtime.connected),
                 "capacity_consuming": semantic_state == "working",
                 "provider": session.agent_name,
-                "queued": len(runtime._queue) if runtime else 0,
+                "queued": presentation["queue"]["count"],
+                "queue_reason": presentation["queue"]["reason"],
+                "presentation": presentation,
                 "cwd": session.cwd,
                 "updated_at": session.updated_at.isoformat(),
             }

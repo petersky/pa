@@ -51,8 +51,8 @@ class AgentChatDraftContractTests(unittest.TestCase):
             SERVER / "static" / "js" / "agent-chat-draft-widget.js"
         ).read_text()
         self.assertIn('href="/agent"', chrome)
-        self.assertIn("starting up — restoring sessions", agent_page)
-        self.assertIn("else 'offline'", agent_page)
+        self.assertIn("PA is restarting — restoring unfinished work", agent_page)
+        self.assertIn("Provider processes start on demand", agent_page)
         self.assertIn("data-draft-pending-id", widget)
         self.assertIn("promoteSession", draft_widget)
         self.assertIn("data-pa-principal-id", shell)
@@ -94,8 +94,8 @@ class AgentChatDraftContractTests(unittest.TestCase):
             self.assertIn('hx-get="/agent"', html)
             self.assertNotIn("disabled", html)
             self.assertNotIn("pointer-events: none", html)
-        self.assertIn("Offline", offline)
-        self.assertIn("Starting", starting)
+        self.assertIn("Ready", offline)
+        self.assertIn("Restoring", starting)
 
         style = (SERVER / "static" / "style.css").read_text()
         offline_rule = style.split(".status-btn.offline {", 1)[1].split("}", 1)[0]

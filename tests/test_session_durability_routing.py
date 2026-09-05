@@ -222,7 +222,7 @@ class RemoteOwnerReconnectTests(unittest.IsolatedAsyncioTestCase):
         request.app.state.ctx = ctx
 
         for status, expected_state, recoverable in (
-            ("idle", "recoverable", True),
+            ("idle", "limited", False),
             ("closed", "expired", False),
         ):
             with (

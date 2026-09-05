@@ -8,6 +8,7 @@ from time import perf_counter
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from pa.acp.configuration import normalized_session_config_json
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
 from pa.core.context import AppContext
@@ -231,20 +232,65 @@ def _agent_context(request: Request) -> dict:
     live = [rt.session for rt in active_runtimes]
     runtimes_by_session = {rt.session.id: rt for rt in active_runtimes}
     live_ids = {session.id for session in live}
-    orphans = [
-        session
-        for session in ctx.store.list_sessions()
-        if session.status != "closed" and session.id not in live_ids
-    ]
+    persisted = ctx.store.list_sessions()
+    by_id = {session.id: session for session in persisted}
+    by_id.update({session.id: session for session in live})
+    all_sessions = list(by_id.values())
     selected_id = request.query_params.get("session")
-    default = next((s for s in live if s.id == selected_id), None)
+    default = next((s for s in all_sessions if s.id == selected_id), None)
     if not default and not selected_id:
         default = next(
-            (s for s in live if s.label == "default"), live[0] if live else None
+            (
+                s
+                for s in all_sessions
+                if s.purpose == "chat" and s.archived_at is None
+            ),
+            live[0] if live else None,
         )
-    # Durable nonterminal sessions remain actionable even when their ACP
-    # runtime was lost. Closed sessions are still opt-in history.
-    sessions = live + orphans
+    chat_sessions = [
+        session
+        for session in all_sessions
+        if session.purpose == "chat" and session.archived_at is None
+    ]
+    chat_sessions.sort(
+        key=lambda session: (
+            session.pinned_at is not None,
+            session.pinned_at
+            or session.human_activity_at
+            or session.updated_at,
+        ),
+        reverse=True,
+    )
+    archived_chats = [
+        session
+        for session in all_sessions
+        if session.purpose == "chat" and session.archived_at is not None
+    ]
+    archived_chats.sort(key=lambda session: session.archived_at, reverse=True)
+    activity_sessions = [
+        session
+        for session in all_sessions
+        if session.purpose in {"automated_run", "one_shot_job"}
+        and not (
+            session.purpose == "one_shot_job"
+            and session.workflow_state == "succeeded"
+        )
+    ]
+    activity_sessions.sort(key=lambda session: session.updated_at, reverse=True)
+    all_sessions.sort(key=lambda session: session.updated_at, reverse=True)
+    selected_view = request.query_params.get("view", "chats")
+    activity_filter = request.query_params.get("filter", "all")
+    if activity_filter not in {"all", "needs_you", "running", "completed"}:
+        activity_filter = "all"
+    if selected_view == "activity":
+        sessions = activity_sessions
+    elif selected_view == "all":
+        sessions = all_sessions
+    elif selected_view == "archived":
+        sessions = archived_chats
+    else:
+        selected_view = "chats"
+        sessions = chat_sessions
     realm_id = ctx.settings.primary_realm
     cards = {card.id: card for card in ctx.store.list_cards(realm_id=realm_id)}
     projects = {
@@ -252,7 +298,10 @@ def _agent_context(request: Request) -> dict:
     }
     now = datetime.now(UTC)
     session_details = {}
-    for session in sessions:
+    from pa.execution.session_presentation import build_session_presentation
+
+    dispatch_store = ctx.services.get("dispatch_store")
+    for session in all_sessions:
         elapsed = max(0, int((now - session.created_at).total_seconds()))
         if elapsed >= 3600:
             elapsed_label = f"{elapsed // 3600}h {(elapsed % 3600) // 60}m"
@@ -261,6 +310,11 @@ def _agent_context(request: Request) -> dict:
         else:
             elapsed_label = f"{elapsed}s"
         config = session.config_json or {}
+        normalized_config, confirmed_configuration = normalized_session_config_json(
+            config,
+            model_id=session.model_id,
+            mode_id=session.mode_id,
+        )
         runtime = runtimes_by_session.get(session.id)
         durable = dict(config.get("durable_runtime") or {})
         queued = list(runtime._queue) if runtime else durable.get("queued_prompts") or []
@@ -268,17 +322,14 @@ def _agent_context(request: Request) -> dict:
             (session.metrics_json or {}).get("pending_approval")
             or config.get("pending_approval")
         )
-        state = (
-            "waiting"
-            if pending_approval
-            else "working"
-            if runtime and runtime.prompting
-            else "queued"
-            if queued
-            else "idle"
-            if runtime
-            else session.status
+        presentation = build_session_presentation(
+            session,
+            runtime=runtime,
+            dispatch=dispatch_store.by_session(session.id) if dispatch_store else None,
+            quiescing=agent.quiescing,
+            startup_complete=agent.startup_complete,
         )
+        state = presentation["display_status"].casefold().replace(" ", "_")
         execution = dict(config.get("execution_context") or {})
         repositories = list(execution.get("repositories") or [])
         repository = dict(repositories[0]) if repositories else {}
@@ -289,6 +340,15 @@ def _agent_context(request: Request) -> dict:
         metrics = dict(session.metrics_json or {})
         usage = dict(metrics.get("last_usage") or metrics.get("usage") or {})
         associated_cards = ctx.store.list_cards_for_session(session.id)
+        recent_events = ctx.store.list_transcript_events_before(session.id, limit=100)
+        closure = next(
+            (
+                event
+                for event in reversed(recent_events)
+                if event.event_type == "session_closed"
+            ),
+            None,
+        )
         session_details[session.id] = {
             "card": cards.get(session.card_id),
             "cards": associated_cards,
@@ -302,12 +362,56 @@ def _agent_context(request: Request) -> dict:
             "branch": repository.get("branch"),
             "turns": metrics.get("turns"),
             "total_tokens": usage.get("total_tokens") or usage.get("totalTokens"),
+            "presentation": presentation,
+            "provider_attempts": sum(
+                event.event_type in {"session_started", "session_admission_failed"}
+                for event in recent_events
+            ),
+            "closure_reason": (closure.payload or {}).get("reason") if closure else None,
+            "activity_group": (
+                cards[session.card_id].title
+                if session.card_id in cards
+                else str((session.initiating_workflow or {}).get("kind") or "Other activity")
+                .replace("_", " ")
+                .title()
+            ),
+            "model_id": confirmed_configuration.get("model_id"),
+            "mode_id": confirmed_configuration.get("mode_id"),
+            "config_json": normalized_config,
         }
-    watches_by_session: dict[str, list] = {session.id: [] for session in sessions}
+    if selected_view == "activity":
+        if activity_filter != "all":
+            activity_sessions = [
+                session
+                for session in activity_sessions
+                if (
+                    activity_filter == "needs_you"
+                    and session_details[session.id]["presentation"]["display_status"]
+                    == "Needs you"
+                )
+                or (
+                    activity_filter == "completed"
+                    and session_details[session.id]["presentation"]["workflow"]["state"]
+                    in {"succeeded", "failed", "cancelled", "validation_failed"}
+                )
+                or (
+                    activity_filter == "running"
+                    and session_details[session.id]["presentation"]["display_status"]
+                    in {"Running", "Queued", "Restoring your work", "Waiting"}
+                )
+            ]
+        activity_sessions.sort(
+            key=lambda session: (
+                session_details[session.id]["activity_group"].casefold(),
+                -session.updated_at.timestamp(),
+            )
+        )
+        sessions = activity_sessions
+    watches_by_session: dict[str, list] = {session.id: [] for session in all_sessions}
     supervisor_store = ctx.services.get("pr_supervisor_store")
     if supervisor_store:
         for watch in supervisor_store.list_watches(include_retired=True):
-            for session in sessions:
+            for session in all_sessions:
                 if watch.originating_session_id == session.id or (
                     watch.card_id and watch.card_id == session.card_id
                 ):
@@ -315,7 +419,6 @@ def _agent_context(request: Request) -> dict:
     from pa.acp.providers.registry import provider_catalog
 
     selected_dispatch = None
-    dispatch_store = ctx.services.get("dispatch_store")
     if selected_id and dispatch_store:
         selected_dispatch = dispatch_store.by_session(selected_id)
     attribution = None
@@ -338,6 +441,12 @@ def _agent_context(request: Request) -> dict:
         "agent_startup": startup_state(agent),
         "agent_enabled": ctx.settings.agent_enabled,
         "sessions": sessions,
+        "chat_sessions": chat_sessions,
+        "activity_sessions": activity_sessions,
+        "archived_chat_sessions": archived_chats,
+        "all_sessions": all_sessions,
+        "session_view": selected_view,
+        "activity_filter": activity_filter,
         "live_session_ids": live_ids,
         "session_id": selected_id or (default.id if default else ""),
         "session_instance_id": request.query_params.get("instance")

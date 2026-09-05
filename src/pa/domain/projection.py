@@ -141,9 +141,63 @@ class CardProjection:
         self._init_db()
         self.transcripts = TranscriptStorage(db_path)
         self._migrate_legacy_transcripts()
+        self._migrate_conversation_closures()
         if self._legacy_integrity_upgrade_required and self.event_log:
             for realm in {ref.realm_id for ref in self.event_log.list_refs()}:
                 self.rebuild_from_log(realm)
+
+    def _migrate_conversation_closures(self) -> None:
+        """Translate legacy close reasons after transcript storage is available."""
+        migration = "agent_session_product_v1_closures"
+        with self._conn() as conn:
+            if conn.execute(
+                "SELECT 1 FROM projection_migrations WHERE name=?", (migration,)
+            ).fetchone():
+                return
+            rows = conn.execute(
+                "SELECT id FROM agent_sessions "
+                "WHERE purpose='chat' AND status='closed'"
+            ).fetchall()
+        # A fresh projection may receive legacy events after construction.  Do
+        # not mark the migration complete until there is durable data to assess.
+        if not rows:
+            return
+        idle_expired: list[str] = []
+        for row in rows:
+            events = self.transcripts.list_before(str(row["id"]), limit=1001)
+            latest_close = next(
+                (
+                    event
+                    for event in reversed(events)
+                    if event.event_type == "session_closed"
+                ),
+                None,
+            )
+            if (
+                latest_close
+                and latest_close.payload.get("reason")
+                == "auto:idle_retention_expired"
+            ):
+                idle_expired.append(str(row["id"]))
+        with self._conn() as conn:
+            # Historical default chats may coexist only because they are closed.
+            # They return as ordinary saved conversations, not competing default
+            # aliases, so the canonical-session uniqueness fence remains intact.
+            conn.executemany(
+                "UPDATE agent_sessions SET label=NULL "
+                "WHERE id=? AND label='default' AND status='closed'",
+                [(session_id,) for session_id in idle_expired],
+            )
+            conn.executemany(
+                "UPDATE agent_sessions SET status='available', archived_at=NULL, "
+                "archive_reason=NULL WHERE id=? AND purpose='chat' AND status='closed'",
+                [(session_id,) for session_id in idle_expired],
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO projection_migrations (name, applied_at) "
+                "VALUES (?, ?)",
+                (migration, datetime.now(UTC).isoformat()),
+            )
 
     @contextmanager
     def _conn(
@@ -298,6 +352,16 @@ class CardProjection:
                     authority_instance_id TEXT,
                     dispatch_id TEXT,
                     lifecycle_owner TEXT NOT NULL DEFAULT 'standalone',
+                    purpose TEXT NOT NULL DEFAULT 'unknown',
+                    initiating_workflow_json TEXT NOT NULL DEFAULT '{}',
+                    control_mode TEXT NOT NULL DEFAULT 'automation',
+                    archived_at TEXT,
+                    archive_reason TEXT,
+                    pinned_at TEXT,
+                    human_activity_at TEXT,
+                    workflow_state TEXT NOT NULL DEFAULT 'unknown',
+                    workflow_outcome_json TEXT NOT NULL DEFAULT '{}',
+                    recovery_json TEXT NOT NULL DEFAULT '{}',
                     realm_id TEXT NOT NULL DEFAULT 'default',
                     item_id TEXT,
                     card_id TEXT,
@@ -614,6 +678,16 @@ class CardProjection:
             ("authority_instance_id", "TEXT"),
             ("dispatch_id", "TEXT"),
             ("lifecycle_owner", "TEXT NOT NULL DEFAULT 'standalone'"),
+            ("purpose", "TEXT NOT NULL DEFAULT 'unknown'"),
+            ("initiating_workflow_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("control_mode", "TEXT NOT NULL DEFAULT 'automation'"),
+            ("archived_at", "TEXT"),
+            ("archive_reason", "TEXT"),
+            ("pinned_at", "TEXT"),
+            ("human_activity_at", "TEXT"),
+            ("workflow_state", "TEXT NOT NULL DEFAULT 'unknown'"),
+            ("workflow_outcome_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("recovery_json", "TEXT NOT NULL DEFAULT '{}'"),
             ("realm_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("cwd", "TEXT"),
             ("title", "TEXT"),
@@ -631,6 +705,49 @@ class CardProjection:
                         "UPDATE agent_sessions SET lifecycle_owner = 'dispatch' "
                         "WHERE dispatch_id IS NOT NULL"
                     )
+        # Purpose migration uses structured creation provenance first.  Labels
+        # are deliberately only migration evidence; anything ambiguous remains
+        # visible as ``unknown`` in All sessions.
+        conn.execute(
+            "UPDATE agent_sessions SET purpose='automated_run', "
+            "control_mode='automation', workflow_state='active' "
+            "WHERE purpose='unknown' AND dispatch_id IS NOT NULL"
+        )
+        conn.execute(
+            "UPDATE agent_sessions SET purpose='automated_run', "
+            "control_mode='automation', workflow_state='active' "
+            "WHERE purpose='unknown' AND label='execution'"
+        )
+        conn.execute(
+            "UPDATE agent_sessions SET purpose='one_shot_job', "
+            "control_mode='automation', workflow_state="
+            "CASE WHEN status='closed' THEN 'unknown' ELSE 'active' END "
+            "WHERE purpose='unknown' AND "
+            "(label IN ('advisor','device-login','login','operational','pr-executor') "
+            "OR label LIKE 'card-enrichment:%')"
+        )
+        conn.execute(
+            "UPDATE agent_sessions SET purpose='chat', control_mode='human', "
+            "workflow_state='not_applicable', "
+            "human_activity_at=COALESCE(human_activity_at, updated_at) "
+            "WHERE purpose='unknown' AND dispatch_id IS NULL AND "
+            "(label='default' OR label='chat')"
+        )
+        # Undo only the historical policy closure that is known to have ended a
+        # confidently classified chat for inactivity.  Explicit user closure is
+        # preserved as an archive and no runtime is started here.
+        conn.execute(
+            "UPDATE agent_sessions SET status='available' "
+            "WHERE purpose='chat' AND status='closed' AND EXISTS ("
+            "SELECT 1 FROM agent_transcript_events te WHERE te.session_id=agent_sessions.id "
+            "AND te.event_type='session_closed' "
+            "AND te.payload LIKE '%auto:idle_retention_expired%')"
+        )
+        conn.execute(
+            "UPDATE agent_sessions SET archived_at=COALESCE(archived_at, updated_at), "
+            "archive_reason=COALESCE(archive_reason, 'legacy_explicit_closure') "
+            "WHERE purpose='chat' AND status='closed' AND archived_at IS NULL"
+        )
         link_cols = {
             row[1]
             for row in conn.execute("PRAGMA table_info(agent_session_cards)").fetchall()
@@ -4366,11 +4483,13 @@ class CardProjection:
                 INSERT INTO agent_sessions
                 (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
                  authority_instance_id, dispatch_id, realm_id,
-                 lifecycle_owner,
+                 lifecycle_owner, purpose, initiating_workflow_json, control_mode,
+                 archived_at, archive_reason, pinned_at, human_activity_at,
+                 workflow_state, workflow_outcome_json, recovery_json,
                  item_id, card_id, project_id, principal_id,
                  status, cwd, title, label, model_id, mode_id, config_json, metrics_json,
                  execution_binding_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     agent_name=excluded.agent_name,
                     external_session_id=excluded.external_session_id,
@@ -4380,6 +4499,16 @@ class CardProjection:
                     dispatch_id=excluded.dispatch_id,
                     realm_id=excluded.realm_id,
                     lifecycle_owner=excluded.lifecycle_owner,
+                    purpose=excluded.purpose,
+                    initiating_workflow_json=excluded.initiating_workflow_json,
+                    control_mode=excluded.control_mode,
+                    archived_at=excluded.archived_at,
+                    archive_reason=excluded.archive_reason,
+                    pinned_at=excluded.pinned_at,
+                    human_activity_at=excluded.human_activity_at,
+                    workflow_state=excluded.workflow_state,
+                    workflow_outcome_json=excluded.workflow_outcome_json,
+                    recovery_json=excluded.recovery_json,
                     item_id=excluded.item_id,
                     card_id=excluded.card_id,
                     project_id=excluded.project_id,
@@ -4408,6 +4537,18 @@ class CardProjection:
                     session.dispatch_id,
                     session.realm_id,
                     session.lifecycle_owner,
+                    session.purpose,
+                    json.dumps(session.initiating_workflow or {}),
+                    session.control_mode,
+                    session.archived_at.isoformat() if session.archived_at else None,
+                    session.archive_reason,
+                    session.pinned_at.isoformat() if session.pinned_at else None,
+                    session.human_activity_at.isoformat()
+                    if session.human_activity_at
+                    else None,
+                    session.workflow_state,
+                    json.dumps(session.workflow_outcome or {}),
+                    json.dumps(session.recovery_json or {}),
                     session.item_id or session.card_id,
                     session.card_id or session.item_id,
                     session.project_id,
@@ -5989,6 +6130,34 @@ class CardProjection:
                 if "lifecycle_owner" in keys
                 else ("dispatch" if row["dispatch_id"] else "standalone")
             ),
+            purpose=(row["purpose"] if "purpose" in keys else "unknown"),
+            initiating_workflow=_json_col("initiating_workflow_json"),
+            control_mode=(
+                row["control_mode"] if "control_mode" in keys else "automation"
+            ),
+            archived_at=(
+                datetime.fromisoformat(row["archived_at"])
+                if "archived_at" in keys and row["archived_at"]
+                else None
+            ),
+            archive_reason=(
+                row["archive_reason"] if "archive_reason" in keys else None
+            ),
+            pinned_at=(
+                datetime.fromisoformat(row["pinned_at"])
+                if "pinned_at" in keys and row["pinned_at"]
+                else None
+            ),
+            human_activity_at=(
+                datetime.fromisoformat(row["human_activity_at"])
+                if "human_activity_at" in keys and row["human_activity_at"]
+                else None
+            ),
+            workflow_state=(
+                row["workflow_state"] if "workflow_state" in keys else "unknown"
+            ),
+            workflow_outcome=_json_col("workflow_outcome_json"),
+            recovery_json=_json_col("recovery_json"),
             realm_id=(row["realm_id"] if "realm_id" in keys else "default"),
             item_id=row["item_id"],
             card_id=row["card_id"] if "card_id" in keys else row["item_id"],

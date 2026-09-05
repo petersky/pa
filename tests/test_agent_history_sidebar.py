@@ -4,21 +4,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] / "src" / "pa" / "server"
 
 
-def test_agent_sidebar_exposes_opt_in_history_controls() -> None:
+def test_agent_sidebar_separates_chats_activity_archives_and_inspection() -> None:
     template = (ROOT / "templates" / "pages" / "agent.html").read_text()
     widget = (
         ROOT / "templates" / "partials" / "agent" / "chat-widget.html"
     ).read_text()
 
-    assert "data-agent-history-toggle" in template
-    assert "Show closed sessions" in template
-    assert 'role="switch"' in template
-    assert 'aria-checked="false"' in template
+    assert 'data-agent-session-view="{{ session_view }}"' in template
+    assert 'href="/agent?view=chats"' in template
+    assert 'href="/agent?view=activity"' in template
+    assert 'href="/agent?view=all"' in template
+    assert 'href="/agent?view=archived"' in template
+    assert "data-agent-session-pin" in template
+    assert "data-agent-session-archive" in template
+    assert "data-agent-session-control" in template
+    assert "data-agent-session-continue" in template
     assert "data-agent-session-search" in template
     assert "live_session_ids" in template
-    assert "data-agent-session-close" in template
-    assert "Forget" in template
-    assert "data-agent-end-all" in template
+    assert "Forget" not in template
+    assert "data-agent-end-all" not in template
     assert "agent-session-title-tooltip" in template
     assert 'role="tooltip"' in template
     for marker in (
@@ -40,13 +44,15 @@ def test_agent_sidebar_exposes_opt_in_history_controls() -> None:
 def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     script = (ROOT / "static" / "js" / "agent-chat.js").read_text()
 
-    assert 'includeClosed ? "/history?limit=500" : "/sessions"' in script
+    assert 'const path = "/sessions?view="' in script
+    assert '"&selected_session_id=" + encodeURIComponent(activeId)' in script
     assert '"/history/" + encodeURIComponent(sessionId),' in script
     assert "LIVE_SNAPSHOT_TIMEOUT_MS" in script
     assert "filterSessionList" in script
     assert 'li.dataset.sessionLive !== "false"' in script
-    assert 'csrfFetch("/sessions/close-all"' in script
-    assert "data-agent-session-close" in script
+    assert 'unarchive ? "/unarchive" : "/archive"' in script
+    assert "data-agent-session-pin" in script
+    assert "data-agent-session-control" in script
     assert '"/api/fleet/session-route/" + encodeURIComponent(sessionId)' in script
     assert "this.openSession(sessionId, ownerInstanceId" in script
     assert "retryAfterStartupRecovery" in script
@@ -59,7 +65,7 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
     assert "clearSelectedSession" in script
     assert '"/sessions/" + encodeURIComponent(targetSessionId) + "/recover"' in script
     assert 'code === "session_deleted"' in script
-    assert 'getAttribute("aria-checked") === "true"' in script
+    assert 'presentation.purpose === "chat"' in script
     assert "updateSessionTitleTooltips" in script
     assert 'item.querySelector("[data-agent-session-open]")' in script
     assert 'open.setAttribute(' in script
@@ -163,4 +169,4 @@ def test_blocked_session_surfaces_retry_and_close_guidance() -> None:
     assert "data-acw-recovery-action" in template
     assert "data-acw-retry" in template
     assert '"/sessions/" + this.sessionId + "/retry"' in script
-    assert "end it from the Session menu" in script
+    assert "Correct the project availability" in script

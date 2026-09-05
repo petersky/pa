@@ -88,7 +88,7 @@ def test_followup_turn_is_independent_of_terminal_dispatch() -> None:
     assert result["liveness"]["classification"] == "quiet_active"
 
 
-def test_missing_runtime_is_stale_not_healthy_or_idle() -> None:
+def test_missing_runtime_for_active_run_is_workflow_waiting_not_healthy_or_idle() -> None:
     result = build_session_observability(
         session(status="connected"),
         runtime=None,
@@ -97,7 +97,7 @@ def test_missing_runtime_is_stale_not_healthy_or_idle() -> None:
         instance_name="Monica",
         now=NOW,
     )
-    assert result["liveness"]["classification"] == "stale"
+    assert result["liveness"]["classification"] == "workflow_waiting"
     assert result["liveness"]["heartbeat_age_ms"] is None
     assert result["transport"]["connected"] is False
 
