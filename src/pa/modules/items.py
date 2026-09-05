@@ -2063,7 +2063,7 @@ def operation_outcome_api(
     )
     if handoff is not None:
         failed = handoff.status == "failed"
-        terminal = handoff.status == "continuation_delivered"
+        terminal = handoff.status in {"continuation_delivered", "restart_completed"}
         return {
             "idempotency_key": idempotency_key,
             "operation": "agent_restart_handoff",
@@ -2072,6 +2072,8 @@ def operation_outcome_api(
             "recovery_state": (
                 "retryable_existing_receipt"
                 if failed
+                else "restart_completed_without_continuation"
+                if handoff.status == "restart_completed"
                 else "continuation_delivered_exactly_once"
                 if terminal
                 else "durable_restart_handoff_in_progress"

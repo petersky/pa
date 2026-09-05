@@ -460,8 +460,12 @@ class ContinueSessionBody(BaseModel):
 
 
 class RestartHandoffBody(BaseModel):
-    continuation_prompt: str
+    continuation_prompt: str = ""
     idempotency_key: str
+
+
+class RestartHandoffEditBody(BaseModel):
+    continuation_prompt: str = ""
 
 
 class SessionCardLinkBody(BaseModel):
@@ -1204,6 +1208,37 @@ def list_restart_handoffs(request: Request, session_id: str) -> dict:
             for item in mgr.store.list_restart_handoffs(session_id=session_id)
         ]
     }
+
+
+@router.patch("/sessions/{session_id}/restart-handoffs/{handoff_id}")
+async def edit_restart_handoff(
+    request: Request,
+    session_id: str,
+    handoff_id: str,
+    body: RestartHandoffEditBody,
+) -> dict:
+    """Edit or remove a pending continuation before service quiescing begins."""
+    mgr = _require_session_traffic_ready(request)
+    session = mgr.store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    principal_id = get_principal_id(request)
+    user = getattr(request.state, "user", None)
+    if (
+        request.app.state.ctx.settings.auth_required is True
+        and session.principal_id != principal_id
+        and getattr(user, "role", None) != "admin"
+    ):
+        raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    try:
+        handoff = await mgr.edit_restart_handoff(
+            session_id=session_id,
+            handoff_id=handoff_id,
+            continuation_prompt=body.continuation_prompt,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return handoff.model_dump(mode="json")
 
 
 @router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/retry")
@@ -2295,16 +2330,62 @@ async def get_prompt_acceptance_status(
         accepted.event_type == "queue_enqueued"
         and (accepted.payload or {}).get("action") != "run"
     )
+    lifecycle = await _offload(
+        mgr,
+        "sqlite.prompt_lifecycle_read",
+        mgr.store.get_prompt_lifecycle,
+        session_id,
+        client_prompt_id,
+        timeout=2.0,
+    )
+    lifecycle_type = lifecycle.event_type if lifecycle else accepted.event_type
+    status = {
+        "queue_enqueued": "queued",
+        "queue_dequeued": "executing",
+        "user_message": "executing",
+        "prompt_blocked": "blocked",
+        "turn_completed": "completed",
+        "error": "failed",
+        "connection_lost": "failed",
+    }.get(lifecycle_type, "accepted")
+    queued = status == "queued"
+    reason = (
+        str(
+            (lifecycle.payload or {}).get("reason")
+            or (lifecycle.payload or {}).get("message")
+            or ""
+        )
+        if lifecycle
+        else ""
+    )
+    next_action = {
+        "queued": "wait_for_provider_capacity",
+        "executing": "wait_for_response",
+        "blocked": "resolve_pending_interaction",
+        "failed": "wait_for_safe_recovery",
+    }.get(status)
     return {
         "session_id": session_id,
         "prompt_id": client_prompt_id,
         "accepted": True,
         "queued": queued,
-        "status": "queued" if queued else "accepted",
+        "status": status,
         "accepted_event": accepted.event_type,
         "seq": accepted.seq,
         "duplicate_safe": True,
-        "message": "Prompt queued." if queued else "Prompt accepted.",
+        "durably_pending": status in {"queued", "blocked", "failed"},
+        "next_automatic_action": next_action,
+        "message": (
+            reason
+            if reason
+            else {
+                "queued": "Prompt queued.",
+                "executing": "Prompt is executing.",
+                "blocked": "Prompt is blocked before provider delivery.",
+                "completed": "Prompt completed.",
+                "failed": "Prompt failed.",
+            }.get(status, "Prompt accepted.")
+        ),
     }
 
 

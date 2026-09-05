@@ -93,6 +93,10 @@ _TURN_STREAM_EVENT_TYPES = {
 }
 PromptAction = Literal["append", "prepend", "interrupt"]
 
+
+class PromptAdmissionBlocked(RuntimeError):
+    """A durable prompt was accepted but policy blocked provider delivery."""
+
 _AUTOMATIC_PROMPT_PREFIXES = (
     "card-enrichment:",
     "card-reconciliation:",
@@ -480,6 +484,29 @@ class AgentSessionRuntime:
                 "Timed out draining transcript for session %s", self.session_id
             )
 
+    async def _reconcile_confirmed_collaboration(self, mode: Any) -> None:
+        if mode not in {"default", "plan"}:
+            return
+        cfg = dict(self.session.config_json or {})
+        values = dict(cfg.get("values") or {})
+        values["collaboration_mode"] = mode
+        cfg["values"] = values
+        collaboration_state = dict(cfg.get("collaboration") or {})
+        collaboration_state.update(
+            current_mode=mode,
+            pending=None,
+            confirmed_by="provider_config_update",
+            confirmed_at=datetime.now(UTC).isoformat(),
+        )
+        cfg["collaboration"] = collaboration_state
+        self.session.config_json = cfg
+        collaboration = getattr(self.manager, "collaboration_service", None)
+        reconcile = getattr(collaboration, "reconcile_provider_mode", None)
+        if callable(reconcile):
+            result = reconcile(self.session, mode)
+            if inspect.isawaitable(result):
+                await result
+
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
         event_type = str(normalized.get("type") or "session_update")
@@ -516,7 +543,14 @@ class AgentSessionRuntime:
                     self.session.model_id = str(confirmed["model_id"])
                 if confirmed.get("mode_id"):
                     self.session.mode_id = str(confirmed["mode_id"])
+                confirmed_collaboration = confirmed["values"].get(
+                    "collaboration_mode"
+                )
                 self.session.config_json = cfg
+                if confirmed_collaboration in {"default", "plan"}:
+                    await self._reconcile_confirmed_collaboration(
+                        confirmed_collaboration
+                    )
                 await self._save_session_preserving_external_browser_async()
                 if self.connection:
                     self.connection.config_options = options
@@ -1264,15 +1298,6 @@ class AgentSessionRuntime:
             if eligible_index is None:
                 break
             item = self._queue.pop(eligible_index)
-            if item.source.startswith("restart-handoff:"):
-                handoff_id = item.source.split(":", 1)[1]
-                await self._offload(
-                    "sqlite.restart_handoff_delivering",
-                    self.store.update_restart_handoff,
-                    handoff_id,
-                    status="continuation_delivered",
-                    delivered=True,
-                )
             self._append_transcript(
                 "queue_dequeued",
                 {
@@ -1286,6 +1311,15 @@ class AgentSessionRuntime:
             )
             try:
                 await self._run_prompt(item)
+                if item.source.startswith("restart-handoff:"):
+                    handoff_id = item.source.split(":", 1)[1]
+                    await self._offload(
+                        "sqlite.restart_handoff_delivered",
+                        self.store.update_restart_handoff,
+                        handoff_id,
+                        status="continuation_delivered",
+                        delivered=True,
+                    )
                 if item.publication_fence:
                     self._queue_paused = True
                     self._append_transcript(
@@ -1297,6 +1331,15 @@ class AgentSessionRuntime:
                         },
                     )
                     await self._checkpoint_runtime_async(lifecycle="paused_for_review")
+            except PromptAdmissionBlocked as exc:
+                logger.info(
+                    "Prompt %s is blocked before provider delivery for session %s: %s",
+                    item.id,
+                    self.session_id,
+                    exc,
+                )
+                await self._preserve_blocked_prompt(item, exc)
+                break
             except Exception as exc:
                 logger.exception("Queued prompt failed for session %s", self.session_id)
                 self._append_transcript(
@@ -1304,7 +1347,46 @@ class AgentSessionRuntime:
                     {"message": str(exc), "queued_prompt_id": item.id},
                 )
                 self._queue.insert(0, item)
+                await self._checkpoint_runtime_async(
+                    lifecycle="recoverable_interrupted"
+                )
                 break
+        self._flush_transcript()
+
+    async def _preserve_blocked_prompt(
+        self,
+        item: QueuedPrompt,
+        exc: PromptAdmissionBlocked,
+        *,
+        record_acceptance: bool = False,
+    ) -> None:
+        """Keep a pre-provider admission durable without inventing a completion."""
+        if record_acceptance:
+            self._append_transcript(
+                "queue_enqueued",
+                {
+                    "id": item.id,
+                    "message": item.message,
+                    "images": [image.public_dict() for image in item.images],
+                    "action": "run",
+                    "position": 0,
+                    "source": item.source,
+                    "priority": item.priority,
+                    "turn_reason": item.turn_reason,
+                },
+            )
+        self._append_transcript(
+            "prompt_blocked",
+            {
+                "queued_prompt_id": item.id,
+                "reason": str(exc),
+                "before_provider_delivery": True,
+            },
+        )
+        if not any(queued.id == item.id for queued in self._queue):
+            self._queue.insert(0, item)
+            self._queue.sort(key=lambda queued: queued.priority)
+        await self._checkpoint_runtime_async(lifecycle="admission_blocked")
         self._flush_transcript()
 
     def enqueue(
@@ -1544,7 +1626,19 @@ class AgentSessionRuntime:
         if not _is_automatic_source(source):
             self._record_human_activity()
             await self._checkpoint_runtime_async(lifecycle="prompting")
-        result = await self._run_prompt(item)
+        try:
+            result = await self._run_prompt(item)
+        except PromptAdmissionBlocked as exc:
+            logger.info(
+                "Prompt %s is blocked before provider delivery for session %s: %s",
+                item.id,
+                self.session_id,
+                exc,
+            )
+            await self._preserve_blocked_prompt(
+                item, exc, record_acceptance=not _from_queue
+            )
+            return "blocked"
         if item.publication_fence:
             self._queue_paused = True
             self._append_transcript(
@@ -1606,7 +1700,10 @@ class AgentSessionRuntime:
             if collaboration is not None:
                 # This is the exact between-turn boundary. Revalidate and apply
                 # a durable pending transition before the next prompt is built.
-                await collaboration.prepare_turn(self)
+                try:
+                    await collaboration.prepare_turn(self)
+                except Exception as exc:
+                    raise PromptAdmissionBlocked(str(exc)) from exc
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
             self._turn_agent_events = []
@@ -2292,6 +2389,10 @@ class AgentSessionRuntime:
         async with self._prompt_lock:
             effective = await self.connection.configure(requested, merge=True)
             self.session = self.connection.session or self.session
+            await self._reconcile_confirmed_collaboration(
+                dict(effective.get("config") or {}).get("collaboration_mode")
+            )
+            await self._save_session_preserving_external_browser_async()
             self._append_transcript(
                 "configuration_changed",
                 {"requested": requested.as_dict(), "effective": effective},
@@ -2314,6 +2415,9 @@ class AgentSessionRuntime:
             raise RuntimeError("Session not connected")
         await self.connection.set_config(config_id, value)
         self.session = self.connection.session or self.session
+        if config_id == "collaboration_mode":
+            await self._reconcile_confirmed_collaboration(value)
+            await self._save_session_preserving_external_browser_async()
         self._append_transcript(
             "config_changed", {"config_id": config_id, "value": value}
         )
@@ -4041,8 +4145,6 @@ class AgentSessionManager:
         if not session or session.status == "closed":
             raise AgentSessionRecoveryError("Exact durable session is not recoverable")
         prompt = continuation_prompt.strip()
-        if not prompt:
-            raise ValueError("continuation_prompt is required")
         if not idempotency_key.strip():
             raise ValueError("idempotency_key is required")
         from uuid import NAMESPACE_URL, uuid5
@@ -4069,6 +4171,17 @@ class AgentSessionManager:
         if handoff.status == "requested":
             self._schedule_restart_handoff(handoff.id)
         return handoff
+
+    async def edit_restart_handoff(
+        self, *, session_id: str, handoff_id: str, continuation_prompt: str
+    ) -> RestartHandoff:
+        return await self._offload(
+            "sqlite.restart_handoff_edit",
+            self.store.edit_restart_handoff,
+            handoff_id,
+            session_id=session_id,
+            continuation_prompt=continuation_prompt,
+        )
 
     def _schedule_restart_handoff(self, handoff_id: str) -> None:
         task = self._restart_handoff_tasks.get(handoff_id)
@@ -4162,6 +4275,15 @@ class AgentSessionManager:
                 # advanced. Recovery restores that queue; never append it again.
                 continue
             try:
+                if not handoff.continuation_prompt.strip():
+                    await self._offload(
+                        "sqlite.restart_handoff_no_continuation",
+                        self.store.update_restart_handoff,
+                        handoff.id,
+                        status="restart_completed",
+                        delivered=True,
+                    )
+                    continue
                 await self._offload(
                     "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
                     handoff.id, status="resuming"

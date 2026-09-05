@@ -19,6 +19,7 @@ _SAFE_EVENT_FIELDS = {
     "queue_dequeued": {"id"},
     "user_message": {"id", "source"},
     "turn_completed": {"queued_prompt_id", "stop_reason", "usage"},
+    "prompt_blocked": {"queued_prompt_id", "reason", "before_provider_delivery"},
     "tool_call": {"title", "kind", "status"},
     "tool_call_update": {"title", "kind", "status"},
     "error": {"queued_prompt_id"},
@@ -59,6 +60,19 @@ def _turns(events: list[Any], runtime: Any | None) -> list[dict[str, Any]]:
     turns: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for event in events:
+        if event.event_type not in {
+            "queue_enqueued",
+            "queue_dequeued",
+            "user_message",
+            "turn_completed",
+            "prompt_blocked",
+            "error",
+            "connection_lost",
+        }:
+            # Command receipts and other protocol records may also carry an
+            # ``id``.  They are not prompt admissions and must not manufacture
+            # phantom turns.
+            continue
         payload = event.payload or {}
         prompt_id = payload.get("id") or payload.get("queued_prompt_id")
         if not prompt_id:
@@ -83,9 +97,17 @@ def _turns(events: list[Any], runtime: Any | None) -> list[dict[str, Any]]:
                 state="queued",
                 queue_position=payload.get("position"),
                 accepted_at=_iso(event.created_at),
+                started_at=None,
+                completed_at=None,
+                stop_reason=None,
             )
         elif event.event_type == "queue_dequeued":
-            turn.update(state="starting", started_at=_iso(event.created_at))
+            turn.update(
+                state="starting",
+                started_at=_iso(event.created_at),
+                completed_at=None,
+                stop_reason=None,
+            )
         elif event.event_type == "user_message":
             turn.update(
                 state="running",
@@ -99,6 +121,12 @@ def _turns(events: list[Any], runtime: Any | None) -> list[dict[str, Any]]:
                 state="completed",
                 completed_at=_iso(event.created_at),
                 stop_reason=sanitize_text(payload.get("stop_reason"), limit=80) or None,
+            )
+        elif event.event_type == "prompt_blocked":
+            turn.update(
+                state="blocked",
+                completed_at=None,
+                stop_reason=sanitize_text(payload.get("reason"), limit=160) or None,
             )
         elif event.event_type in {"error", "connection_lost"}:
             turn.update(state="failed", completed_at=_iso(event.created_at))
@@ -121,6 +149,8 @@ def _turns(events: list[Any], runtime: Any | None) -> list[dict[str, Any]]:
             }
         else:
             turns[prompt_id]["state"] = "running"
+            turns[prompt_id]["completed_at"] = None
+            turns[prompt_id]["stop_reason"] = None
             turns[prompt_id]["started_at"] = turns[prompt_id]["started_at"] or _iso(
                 getattr(runtime, "_turn_started_at", None)
             )
@@ -226,7 +256,7 @@ def build_session_observability(
         (
             turn
             for turn in reversed(turns)
-            if turn["state"] in {"queued", "starting", "running"}
+            if turn["state"] in {"queued", "starting", "running", "blocked"}
         ),
         None,
     )
@@ -381,10 +411,18 @@ def build_session_observability(
             ],
         },
         "activity": {
-            "phase": "running" if busy else "idle",
+            "phase": (
+                "running"
+                if busy
+                else "blocked"
+                if current_turn and current_turn["state"] == "blocked"
+                else "idle"
+            ),
             "summary": (
                 "Turn currently running"
                 if busy
+                else "Prompt blocked before provider delivery"
+                if current_turn and current_turn["state"] == "blocked"
                 else "Prompt queued"
                 if current_turn
                 else "No active turn"
@@ -425,7 +463,9 @@ def build_session_observability(
         },
         "recovery": {
             "recommended_action": (
-                "observe"
+                "wait_for_user"
+                if presentation["display_status"] == "Needs you"
+                else "observe"
                 if classification in {"live", "quiet_active"}
                 else "checkpoint"
                 if classification == "potentially_stalled"

@@ -13,6 +13,7 @@ from pa.instance.agent_session import (
     AgentSessionManager,
     AgentSessionRecoveryError,
     AgentSessionRuntime,
+    PromptAdmissionBlocked,
     _prompt_authority,
 )
 from pa.instance.quiesce import QueuedPrompt, QuiesceSnapshot, SessionSnapshot
@@ -98,6 +99,121 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             runtime.session.config_json["options"],
         )
         runtime._save_session_preserving_external_browser_async.assert_awaited_once()
+
+    def test_provider_config_update_reconciles_stale_collaboration_projection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = AgentSessionManager(
+                Settings(data_dir=Path(tmp)), MagicMock()
+            )
+            session = AgentSession(
+                id="provider-mode",
+                agent_name="codex",
+                config_json={
+                    "values": {"collaboration_mode": "plan"},
+                    "collaboration": {"current_mode": "plan", "plan_turns": 2},
+                },
+            )
+            runtime = AgentSessionRuntime(manager, session, initial_transcript_seq=0)
+            runtime.connection = MagicMock()
+            manager.collaboration_service = MagicMock()
+            manager.collaboration_service.reconcile_provider_mode = AsyncMock()
+            runtime._save_session_preserving_external_browser_async = AsyncMock()
+            runtime._report_progress = AsyncMock()
+            runtime._append_transcript = MagicMock()
+
+            asyncio.run(
+                runtime._on_acp_update(
+                    "external",
+                    {
+                        "sessionUpdate": "config_options_update",
+                        "configOptions": [
+                            {
+                                "id": "collaboration_mode",
+                                "currentValue": "default",
+                            }
+                        ],
+                    },
+                )
+            )
+
+            self.assertEqual(
+                session.config_json["values"]["collaboration_mode"], "default"
+            )
+            self.assertEqual(
+                session.config_json["collaboration"]["current_mode"], "default"
+            )
+            self.assertEqual(
+                session.config_json["collaboration"]["confirmed_by"],
+                "provider_config_update",
+            )
+            manager.collaboration_service.reconcile_provider_mode.assert_awaited_once_with(
+                session, "default"
+            )
+
+    def test_blocked_direct_prompt_becomes_durable_queue_with_same_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.next_transcript_seq.return_value = 1
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            session = AgentSession(id="blocked-direct", agent_name="codex")
+            runtime = AgentSessionRuntime(manager, session, initial_transcript_seq=0)
+            runtime.connection = MagicMock()
+            runtime._run_prompt = AsyncMock(
+                side_effect=PromptAdmissionBlocked("user approval required")
+            )
+            runtime._checkpoint_runtime_async = AsyncMock()
+            runtime._append_transcript = MagicMock()
+
+            result = asyncio.run(
+                runtime.prompt(
+                    "continue",
+                    prompt_id="stable-direct",
+                    source="dispatch:test",
+                    wait=True,
+                )
+            )
+
+            self.assertEqual(result, "blocked")
+            self.assertEqual(
+                [queued.id for queued in runtime._queue], ["stable-direct"]
+            )
+            runtime._checkpoint_runtime_async.assert_awaited_with(
+                lifecycle="admission_blocked"
+            )
+            blocked = [
+                call
+                for call in runtime._append_transcript.call_args_list
+                if call.args[0] == "prompt_blocked"
+            ]
+            self.assertEqual(blocked[0].args[1]["queued_prompt_id"], "stable-direct")
+
+    def test_pre_provider_block_preserves_prompt_without_terminal_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MagicMock()
+            store.next_transcript_seq.return_value = 1
+            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)
+            session = AgentSession(id="blocked", agent_name="codex")
+            runtime = AgentSessionRuntime(manager, session, initial_transcript_seq=0)
+            runtime.connection = MagicMock()
+            item = QueuedPrompt(id="stable", message="continue", source="ui")
+            runtime._queue = [item]
+            runtime._run_prompt = AsyncMock(
+                side_effect=PromptAdmissionBlocked("user approval required")
+            )
+            runtime._checkpoint_runtime_async = AsyncMock()
+            runtime._append_transcript = MagicMock()
+
+            asyncio.run(runtime._drain_queue())
+
+            self.assertEqual([queued.id for queued in runtime._queue], ["stable"])
+            event_types = [call.args[0] for call in runtime._append_transcript.call_args_list]
+            self.assertIn("prompt_blocked", event_types)
+            self.assertNotIn("error", event_types)
+            runtime._checkpoint_runtime_async.assert_awaited_with(
+                lifecycle="admission_blocked"
+            )
 
     def test_operator_prompt_precedes_automatic_reconciliation_deterministically(self) -> None:
         automatic = QueuedPrompt(

@@ -66,7 +66,7 @@ def test_card_agent_template_defines_fresh_and_multi_session_controls() -> None:
     assert "recoverSession(selectedId)" in script
     assert "body.fresh = true" in widget
     assert "this.recoverSession(this.sessionId)" in widget
-    assert 'data-acw-restart hidden>Restart session' in (
+    assert 'data-acw-restart hidden>Resume session' in (
         root / "templates" / "partials" / "agent" / "chat-widget.html"
     ).read_text()
 

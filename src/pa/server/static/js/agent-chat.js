@@ -626,8 +626,8 @@
       this.els.restart.disabled = !canRestart;
       this.els.restart.setAttribute("aria-disabled", canRestart ? "false" : "true");
       this.els.restart.title = canRestart
-        ? "Resume this session using its existing durable provider identity."
-        : "Restart is unavailable for this session.";
+        ? "Resume this ended session using its existing durable provider identity. This does not restart PA."
+        : "Session resume is unavailable.";
     }
     if (this.els.recover) {
       const showRecover = hasSession && this.recoveryControlVisible && !canRestart;
@@ -1674,7 +1674,10 @@
         restarting: "PA is restarting.",
         resuming: "PA restarted; resuming the exact session.",
         continuation_queued: "Session resumed; continuation is queued in order.",
-        continuation_delivered: "Post-restart continuation delivered.",
+        continuation_delivered: handoff.continuation_prompt
+          ? "PA service restarted; the previewed continuation was delivered."
+          : "PA service restarted; no continuation prompt was sent.",
+        restart_completed: "PA service restarted; no continuation prompt was sent.",
         failed: "Restart handoff failed: " + (handoff.error || "operator repair and retry required.")
       };
       this.els.sessionActionStatus.textContent = labels[handoff.status] || handoff.status;
@@ -3511,12 +3514,14 @@
       if (!self._isCurrentSessionRequest(targetSessionId, generation)) return null;
       const elapsed = performance.now() - started;
       if (status && status.accepted) {
+        const lifecycleState = status.status || (status.queued ? "queued" : "accepted");
         if (self.drafts) {
           self.drafts.observeAcceptance(promptId, !!status.queued);
-          self.setSubmissionState(status.queued ? "queued" : "accepted", false);
+          self.setSubmissionState(lifecycleState, false, { retryVisible: false });
         } else {
           const rawText = self.els.input && self.els.input.value || "";
           self.markSubmissionAccepted(status, rawText, []);
+          self.setSubmissionState(lifecycleState, false, { retryVisible: false });
         }
         self.addBubble(
           "system",

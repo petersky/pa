@@ -2440,6 +2440,11 @@ class DispatchStore:
             if item.dispatch_id != exclude_dispatch_id
             and item.target_instance_id == record.target_instance_id
         ]
+        observed_dispatches = {
+            str(link.get("dispatch_id"))
+            for link in capacity.consumer_links
+            if isinstance(link, dict) and link.get("dispatch_id")
+        }
 
         def local_counts(*, provider_only: bool) -> tuple[int, int, int]:
             scoped = [
@@ -2447,8 +2452,40 @@ class DispatchStore:
                 for item in records
                 if not provider_only or item.capacity_provider == capacity.provider
             ]
+            observed_active = (
+                capacity.observed_provider_active or 0
+                if provider_only
+                else capacity.observed_global_active
+                if capacity.observed_global_active is not None
+                else capacity.observed_active
+            )
+            authoritative_live_evidence = (
+                capacity.observed_provider_active is not None
+                if provider_only
+                else capacity.observed_global_active is not None
+            )
+            explicitly_observed = sum(
+                item.state == "running"
+                and item.dispatch_id in observed_dispatches
+                for item in scoped
+            )
+            started_after_observation = sum(
+                item.state == "running"
+                and item.dispatch_id not in observed_dispatches
+                and item.updated_at > capacity.observed_at
+                for item in scoped
+            )
+            running = (
+                max(observed_active, explicitly_observed)
+                + started_after_observation
+                if authoritative_live_evidence
+                else sum(item.state == "running" for item in scoped)
+            )
             return (
-                sum(item.state == "running" for item in scoped),
+                # Fresh target activity owns the baseline. Only executions
+                # started after that observation are additive; older retained
+                # running rows are workflow history, not phantom occupancy.
+                running,
                 sum(item.state in CAPACITY_RESERVATION_STATES for item in scoped),
                 sum(item.state in QUEUE_CONSUMING_STATES for item in scoped),
             )
