@@ -675,6 +675,21 @@ class AgentSession(BaseModel):
     authority_instance_id: str | None = None
     dispatch_id: str | None = None
     lifecycle_owner: Literal["standalone", "dispatch"] = "standalone"
+    # Product identity is independent from provider, mode, permissions, and card
+    # association.  ``unknown`` is intentionally retained for legacy records that
+    # cannot be classified without inventing history.
+    purpose: Literal["chat", "automated_run", "one_shot_job", "unknown"] = (
+        "unknown"
+    )
+    initiating_workflow: dict = Field(default_factory=dict)
+    control_mode: Literal["automation", "human"] = "automation"
+    archived_at: datetime | None = None
+    archive_reason: str | None = None
+    pinned_at: datetime | None = None
+    human_activity_at: datetime | None = None
+    workflow_state: str = "unknown"
+    workflow_outcome: dict = Field(default_factory=dict)
+    recovery_json: dict = Field(default_factory=dict)
     realm_id: str = "default"
     item_id: str | None = None
     card_id: str | None = None
@@ -699,6 +714,8 @@ class AgentSession(BaseModel):
         """Infer worker ownership only at construction, never from later links."""
         if "lifecycle_owner" not in self.model_fields_set and self.dispatch_id:
             self.lifecycle_owner = "dispatch"
+        if "purpose" not in self.model_fields_set and self.dispatch_id:
+            self.purpose = "automated_run"
         return self
 
 

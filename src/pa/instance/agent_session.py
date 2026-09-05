@@ -8,7 +8,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal
@@ -48,6 +48,7 @@ from pa.core.preferences import get_preferences_store
 from pa.domain.models import AgentSession, RestartHandoff, TranscriptEvent
 from pa.domain.store import Store
 from pa.execution.progress import sanitize_text
+from pa.execution.session_presentation import build_session_presentation
 from pa.instance.quiesce import (
     ImageAttachment,
     QueuedPrompt,
@@ -72,6 +73,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _RETRY_SECONDS = 30
+_RECOVERY_BASE_SECONDS = 5
+_RECOVERY_MAX_SECONDS = 300
+_RECOVERY_MAX_ATTEMPTS = 8
 _QUIESCE_POLL_SECONDS = 0.4
 TURN_WAITING_SECONDS = 15.0
 TRANSCRIPT_WINDOW_LIMIT = 1000
@@ -87,12 +91,22 @@ _TURN_STREAM_EVENT_TYPES = {
 PromptAction = Literal["append", "prepend", "interrupt"]
 
 _AUTOMATIC_PROMPT_PREFIXES = (
+    "card-enrichment:",
     "card-reconciliation:",
     "pr-supervisor",
     "post-turn",
     "evaluation",
     "reconciliation",
+    "dispatch",
+    "goal",
+    "recovery",
+    "restart-handoff:",
 )
+
+
+def _is_automatic_source(source: str) -> bool:
+    normalized = (source or "api").strip().casefold()
+    return normalized.startswith(_AUTOMATIC_PROMPT_PREFIXES)
 
 
 def _prompt_authority(source: str, action: PromptAction) -> tuple[int, str]:
@@ -267,6 +281,7 @@ class AgentSessionRuntime:
             "last_event_cursor": self._seq,
             "pending_permissions": list(self._permission_requests.values()),
             "pending_elicitations": list(self._elicitation_requests.values()),
+            "pending_interaction": previous.get("pending_interaction"),
             "updated_at": datetime.now(UTC).isoformat(),
         }
         self.session.config_json = config
@@ -310,6 +325,26 @@ class AgentSessionRuntime:
             self._subscribers.remove(queue)
 
     def _emit_live(self, event: dict[str, Any]) -> None:
+        if "presentation" not in event:
+            try:
+                presentation = build_session_presentation(
+                    self.session,
+                    runtime=self,
+                    quiescing=bool(
+                        getattr(getattr(self, "manager", None), "quiescing", False)
+                    ),
+                    startup_complete=bool(
+                        getattr(
+                            getattr(self, "manager", None),
+                            "startup_complete",
+                            True,
+                        )
+                    ),
+                )
+            except (AttributeError, TypeError, ValueError):
+                presentation = None
+            if presentation is not None:
+                event = {**event, "presentation": presentation}
         for sub in self._subscribers:
             try:
                 sub.put_nowait(event)
@@ -1171,6 +1206,10 @@ class AgentSessionRuntime:
             return
         if self._queue_paused or not self._queue:
             return
+        if self.session.control_mode == "human" and not any(
+            not _is_automatic_source(item.source) for item in self._queue
+        ):
+            return
         self._drain_task = asyncio.create_task(self._drain_queue())
 
     async def _drain_queue(self) -> None:
@@ -1182,7 +1221,18 @@ class AgentSessionRuntime:
         ):
             if self.manager.quiescing:
                 break
-            item = self._queue.pop(0)
+            eligible_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(self._queue)
+                    if self.session.control_mode != "human"
+                    or not _is_automatic_source(candidate.source)
+                ),
+                None,
+            )
+            if eligible_index is None:
+                break
+            item = self._queue.pop(eligible_index)
             if item.source.startswith("restart-handoff:"):
                 handoff_id = item.source.split(":", 1)[1]
                 await self._offload(
@@ -1316,15 +1366,34 @@ class AgentSessionRuntime:
                 "acceptance_result": item.acceptance_result,
             },
         )
+        if not _is_automatic_source(source):
+            self._record_human_activity()
         try:
             self._checkpoint_runtime(lifecycle="queued")
         except Exception:
             self._queue = [queued for queued in self._queue if queued.id != item.id]
             raise
         self._flush_transcript()
-        if not self._queue_paused and not _defer_drain:
+        if not _is_automatic_source(source):
+            self._checkpoint_runtime(lifecycle="queued")
+        if (
+            not self._queue_paused
+            and not _defer_drain
+            and not (
+                self.session.control_mode == "human"
+                and _is_automatic_source(source)
+            )
+        ):
             self._start_drain()
         return item
+
+    def _record_human_activity(self) -> None:
+        self.session.human_activity_at = datetime.now(UTC)
+        config = dict(self.session.config_json or {})
+        durable = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
+        durable.pop("pending_interaction", None)
+        config[_DURABLE_RUNTIME_KEY] = durable
+        self.session.config_json = config
 
     async def prompt(
         self,
@@ -1338,6 +1407,7 @@ class AgentSessionRuntime:
         cwd: str | None = None,
         action: PromptAction = "append",
         prompt_id: str | None = None,
+        source: str = "api",
         _from_queue: bool = False,
         wait: bool = True,
     ) -> str:
@@ -1354,6 +1424,7 @@ class AgentSessionRuntime:
                 principal_id=principal_id,
                 cwd=cwd,
                 agent_env=agent_env,
+                source=source,
                 prompt_id=prompt_id,
             )
             return "queued"
@@ -1371,11 +1442,26 @@ class AgentSessionRuntime:
                     principal_id=principal_id,
                     cwd=cwd,
                     agent_env=agent_env,
+                    source=source,
                     prompt_id=prompt_id,
                 )
                 return "queued"
 
-        priority, turn_reason = _prompt_authority("in_flight", action)
+        if self.session.control_mode == "human" and _is_automatic_source(source):
+            self.enqueue(
+                message,
+                images=images,
+                action=action,
+                card_id=item_id,
+                project_id=project_id,
+                principal_id=principal_id,
+                cwd=cwd,
+                agent_env=agent_env,
+                source=source,
+                prompt_id=prompt_id,
+            )
+            return "queued"
+        priority, turn_reason = _prompt_authority(source, action)
         item = QueuedPrompt(
             id=prompt_id or str(uuid4()),
             message=message,
@@ -1386,7 +1472,7 @@ class AgentSessionRuntime:
             principal_id=principal_id or self.session.principal_id,
             cwd=cwd,
             agent_env=self._merged_agent_env(agent_env),
-            source="in_flight",
+            source=source,
             priority=priority,
             turn_reason=turn_reason,
             publication_fence=action == "interrupt",
@@ -1403,6 +1489,7 @@ class AgentSessionRuntime:
                     principal_id=principal_id,
                     cwd=cwd,
                     agent_env=agent_env,
+                    source=source,
                     prompt_id=prompt_id,
                 )
                 return "queued"
@@ -1419,7 +1506,13 @@ class AgentSessionRuntime:
             )
             self._flush_transcript()
             self._start_drain()
+            if not _is_automatic_source(source):
+                self._record_human_activity()
+                await self._checkpoint_runtime_async(lifecycle="queued")
             return "started"
+        if not _is_automatic_source(source):
+            self._record_human_activity()
+            await self._checkpoint_runtime_async(lifecycle="prompting")
         result = await self._run_prompt(item)
         if item.publication_fence:
             self._queue_paused = True
@@ -1646,7 +1739,28 @@ class AgentSessionRuntime:
                 self._flush_transcript()
                 await self._drain_transcripts()
                 final_text = assemble_final_assistant_message(self._turn_agent_events)
-                await self._surface_final_input_fallback(final_text, item)
+                needs_input = await self._surface_final_input_fallback(final_text, item)
+                metrics = dict(self.session.metrics_json or {})
+                metrics["turns"] = int(metrics.get("turns") or 0) + 1
+                self.session.metrics_json = metrics
+                if self.session.purpose == "one_shot_job":
+                    self.session.workflow_state = "active" if needs_input else "succeeded"
+                    self.session.workflow_outcome = {
+                        **dict(self.session.workflow_outcome or {}),
+                        "summary": (
+                            "The job is waiting for requested input."
+                            if needs_input
+                            else sanitize_text(final_text, limit=1000)
+                            or "The one-shot job completed."
+                        ),
+                        "next_expected_event": (
+                            "A response to the requested input."
+                            if needs_input
+                            else None
+                        ),
+                        "completed_at": None if needs_input else datetime.now(UTC).isoformat(),
+                    }
+                await self._save_session_preserving_external_browser_async()
                 if (
                     self.connection
                     and self.connection.last_memory_candidate
@@ -1754,11 +1868,11 @@ class AgentSessionRuntime:
 
     async def _surface_final_input_fallback(
         self, final_text: str, item: QueuedPrompt
-    ) -> None:
+    ) -> bool:
         prompt = likely_user_input_request(final_text)
         service = getattr(self.manager, "notification_service", None)
         if not prompt or not service:
-            return
+            return False
         existing = await self._offload(
             "sqlite.notification_list",
             service.list_authorized,
@@ -1775,7 +1889,7 @@ class AgentSessionRuntime:
             and notice.interaction.kind.value != "final_output_fallback"
             for notice in existing
         ):
-            return
+            return True
         import hashlib
 
         from pa.domain.notifications import (
@@ -1838,8 +1952,21 @@ class AgentSessionRuntime:
                 "kind": "final_output_fallback",
             },
         )
+        config = dict(self.session.config_json or {})
+        durable = dict(config.get(_DURABLE_RUNTIME_KEY) or {})
+        durable["pending_interaction"] = {
+            "kind": "input",
+            "count": 1,
+            "request_ids": [notice.interaction.request_id],
+            "notification_id": notice.id,
+            "action": "Respond to the agent's requested input.",
+        }
+        config[_DURABLE_RUNTIME_KEY] = durable
+        self.session.config_json = config
+        await self._save_session_preserving_external_browser_async()
         self._flush_transcript()
         await self._drain_transcripts()
+        return True
 
     def _turn_waiting_payload(
         self, item: QueuedPrompt, elapsed_s: float
@@ -1906,7 +2033,10 @@ class AgentSessionRuntime:
                 "detail": str(exc),
             },
         )
+        self.session.status = "recoverable_interrupted"
+        self._checkpoint_runtime(lifecycle="recoverable_interrupted")
         self._flush_transcript()
+        self.manager.request_recovery(self.session_id)
 
     async def cancel(self, *, pause_queue: bool = True) -> None:
         if pause_queue:
@@ -1933,6 +2063,41 @@ class AgentSessionRuntime:
         self._checkpoint_runtime(lifecycle="queued" if self._queue else "ready")
         self._flush_transcript()
         self._start_drain()
+
+    async def set_control_mode(self, mode: Literal["automation", "human"]) -> None:
+        """Persist takeover before changing which durable prompts may drain."""
+        if mode == self.session.control_mode:
+            return
+        self.session.control_mode = mode
+        self.session.updated_at = datetime.now(UTC)
+        self._append_transcript(
+            "session_control_changed",
+            {"mode": mode, "automatic_prompts_held": mode == "human"},
+        )
+        await self._checkpoint_runtime_async(
+            lifecycle="taken_over" if mode == "human" else "queued"
+            if self._queue
+            else "ready"
+        )
+        self._flush_transcript()
+        await self._drain_transcripts()
+        if mode == "automation":
+            self._start_drain()
+
+    async def release_provider(self, *, reason: str) -> None:
+        """Release an idle process without ending the durable conversation."""
+        if self.prompting or self._queue or self._pending_permissions or self._pending_elicitations:
+            raise RuntimeError("Session still has active provider obligations")
+        self.session.status = "available"
+        self._append_transcript("provider_released", {"reason": reason})
+        await self._checkpoint_runtime_async(lifecycle="available")
+        self._flush_transcript()
+        await self._drain_transcripts()
+        connection = self.connection
+        self.connection = None
+        self._closed = True
+        if connection:
+            await connection.disconnect()
 
     def remove_queued(self, prompt_id: str) -> bool:
         before = len(self._queue)
@@ -2096,6 +2261,16 @@ class AgentSessionRuntime:
         )
         snapshot = {
             "session": self.session.model_dump(mode="json"),
+            "presentation": build_session_presentation(
+                self.session,
+                runtime=self,
+                quiescing=bool(
+                    getattr(getattr(self, "manager", None), "quiescing", False)
+                ),
+                startup_complete=bool(
+                    getattr(getattr(self, "manager", None), "startup_complete", True)
+                ),
+            ),
             "connected": self.connected,
             "prompting": self.prompting,
             "queue_paused": self._queue_paused,
@@ -2164,6 +2339,13 @@ class AgentSessionRuntime:
             origin_instance_id=self.session.origin_instance_id,
             dispatch_id=self.session.dispatch_id,
             realm_id=self.session.realm_id,
+            purpose=self.session.purpose,
+            initiating_workflow=dict(self.session.initiating_workflow or {}),
+            control_mode=self.session.control_mode,
+            archived_at=self.session.archived_at,
+            workflow_state=self.session.workflow_state,
+            workflow_outcome=dict(self.session.workflow_outcome or {}),
+            recovery_json=dict(self.session.recovery_json or {}),
             prompting=False,
             queue_paused=self._queue_paused,
             queued_prompts=list(self._queue),
@@ -2314,6 +2496,17 @@ class AgentSessionManager:
         self._terminal_repair_fences: dict[str, str] = {}
         self._terminal_repair_fence_acquisitions: dict[str, str] = {}
         self._reconnect_task: asyncio.Task[bool] | None = None
+        self._recovery_coordinator_task: asyncio.Task[None] | None = None
+        self._recovery_wake = asyncio.Event()
+        self._recovery_tasks: dict[str, asyncio.Task[None]] = {}
+        self._recovery_metrics: dict[str, int] = {
+            "attempted": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "blocked": 0,
+            "exhausted": 0,
+            "coalesced": 0,
+        }
         self._label_locks: dict[str, asyncio.Lock] = {}
         self.async_runtime: AsyncRuntime | None = None
         self.browser = BrowserManager(settings.data_dir)
@@ -2465,6 +2658,8 @@ class AgentSessionManager:
         self._startup_phase = "failed" if error else "ready"
         self._startup_complete = error is None
         self._startup_session_id = None
+        if error is None and self.settings.agent_enabled:
+            self._start_recovery_coordinator()
 
     @property
     def startup_complete(self) -> bool:
@@ -2487,6 +2682,176 @@ class AgentSessionManager:
     def startup_recovery_diagnostics(self) -> list[dict[str, str]]:
         """Explain per-session startup decisions after the snapshot is cleared."""
         return list(self._startup_decisions)
+
+    def request_recovery(self, _session_id: str | None = None) -> None:
+        """Wake the server-owned coordinator after loss, network return, or demand."""
+        self._start_recovery_coordinator()
+        self._recovery_wake.set()
+
+    def recovery_diagnostics(self) -> dict[str, Any]:
+        pending = []
+        oldest_pending_admission: str | None = None
+        contradictory_states = 0
+        unintended_chat_closures = 0
+        for session in self.store.list_sessions():
+            recovery = dict(session.recovery_json or {})
+            durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+            admissions = list(durable.get("queued_prompts") or [])
+            if durable.get("in_flight"):
+                admissions.append(durable["in_flight"])
+            for admission in admissions:
+                created_at = str(admission.get("created_at") or "")
+                if created_at and (
+                    oldest_pending_admission is None
+                    or created_at < oldest_pending_admission
+                ):
+                    oldest_pending_admission = created_at
+            runtime = self.get(session.id)
+            if admissions and runtime and not runtime._queue and not runtime._in_flight:
+                contradictory_states += 1
+            if (
+                session.purpose == "chat"
+                and session.status == "closed"
+                and session.archived_at is None
+            ):
+                unintended_chat_closures += 1
+            if recovery.get("next_retry_at") or recovery.get("blocked"):
+                pending.append(
+                    {
+                        "session_id": session.id,
+                        "attempts": int(recovery.get("attempts") or 0),
+                        "next_retry_at": recovery.get("next_retry_at"),
+                        "blocked": bool(recovery.get("blocked")),
+                        "code": recovery.get("code"),
+                    }
+                )
+        return {
+            "metrics": dict(self._recovery_metrics),
+            "in_flight": sorted(self._recovery_tasks),
+            "pending": pending,
+            "oldest_pending_admission": oldest_pending_admission,
+            "contradictory_states": contradictory_states,
+            "unintended_chat_closures": unintended_chat_closures,
+        }
+
+    def _start_recovery_coordinator(self) -> None:
+        task = self._recovery_coordinator_task
+        if task and not task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Some embedders finish their startup fence synchronously.  The
+            # first async demand/startup continuation will start the loop.
+            return
+        self._recovery_coordinator_task = loop.create_task(
+            self._recovery_loop(), name="pa-agent-recovery-coordinator"
+        )
+        self._recovery_wake.set()
+
+    async def _recovery_loop(self) -> None:
+        while self._accepting and not self._quiescing:
+            try:
+                await self._recovery_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Agent recovery coordinator sweep failed")
+            self._recovery_wake.clear()
+            try:
+                await asyncio.wait_for(self._recovery_wake.wait(), timeout=5.0)
+            except TimeoutError:
+                pass
+
+    async def _recovery_once(self, *, now: datetime | None = None) -> None:
+        if not self._startup_complete or self._should_abort_recovery():
+            return
+        now = now or datetime.now(UTC)
+        sessions = await self._offload(
+            "agent.recovery_sessions", self.store.list_sessions, timeout=30.0
+        )
+        due: list[AgentSession] = []
+        for session in sessions:
+            if session.archived_at or session.status == "closed":
+                continue
+            if session.control_mode == "human" and session.purpose == "automated_run":
+                continue
+            durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+            if durable.get("queue_paused"):
+                continue
+            eligibility = await self._automatic_recovery_eligibility(session)
+            if not eligibility:
+                continue
+            runtime = self.get(session.id)
+            if runtime and runtime.connected:
+                continue
+            recovery = dict(session.recovery_json or {})
+            if recovery.get("blocked"):
+                continue
+            raw_retry = recovery.get("next_retry_at")
+            if raw_retry:
+                try:
+                    if datetime.fromisoformat(raw_retry) > now:
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            if session.id in self._recovery_tasks:
+                self._recovery_metrics["coalesced"] += 1
+                continue
+            due.append(session)
+        for session in due[: self.settings.agent_recovery_concurrency]:
+            task = asyncio.create_task(
+                self._coordinate_recovery(session.id),
+                name=f"pa-agent-recover-{session.id}",
+            )
+            self._recovery_tasks[session.id] = task
+            task.add_done_callback(
+                lambda completed, sid=session.id: (
+                    self._recovery_tasks.pop(sid, None)
+                    if self._recovery_tasks.get(sid) is completed
+                    else None
+                )
+            )
+
+    async def _coordinate_recovery(self, session_id: str) -> None:
+        self._recovery_metrics["attempted"] += 1
+        runtime = self.get(session_id)
+        if runtime and not runtime.connected and not runtime.prompting:
+            connection = runtime.connection
+            runtime.connection = None
+            runtime._closed = True
+            if connection:
+                try:
+                    await connection.disconnect()
+                except Exception:
+                    logger.debug("Failed runtime disconnect before recovery", exc_info=True)
+            with self._runtime_lifecycle_lock:
+                if self._runtimes.get(session_id) is runtime:
+                    self._runtimes.pop(session_id, None)
+        try:
+            recovered = await self.recover_session(session_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            session = await self._offload(
+                "sqlite.agent_session_read", self.store.get_session, session_id
+            )
+            if session:
+                await self._mark_recovery_interrupted(
+                    self._snapshot_from_persisted(session), exc
+                )
+                current = await self._offload(
+                    "sqlite.agent_session_read", self.store.get_session, session_id
+                )
+                if current and current.recovery_json.get("blocked"):
+                    self._recovery_metrics["blocked"] += 1
+                    if current.recovery_json.get("exhausted"):
+                        self._recovery_metrics["exhausted"] += 1
+            self._recovery_metrics["failed"] += 1
+            return
+        recovered.session.recovery_json = {}
+        await recovered._save_session_preserving_external_browser_async()
+        self._recovery_metrics["succeeded"] += 1
 
     def require_startup_complete(self) -> None:
         if not self._startup_complete:
@@ -2995,6 +3360,102 @@ class AgentSessionManager:
         with self._runtime_lifecycle_lock:
             return list(self._runtimes.values())
 
+    async def set_session_control(
+        self, session_id: str, mode: Literal["automation", "human"]
+    ) -> AgentSession:
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session:
+            raise LookupError("Session not found")
+        if session.purpose != "automated_run":
+            raise ValueError("Takeover is available only for automated runs")
+        runtime = self.get(session_id)
+        if runtime and not runtime._closed:
+            await runtime.set_control_mode(mode)
+            return runtime.session
+        session.control_mode = mode
+        session.updated_at = datetime.now(UTC)
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, session
+        )
+        if mode == "automation":
+            self.request_recovery(session_id)
+        return session
+
+    async def release_session_process(self, session_id: str, *, reason: str) -> bool:
+        runtime = self.get(session_id)
+        if not runtime or runtime._closed:
+            return False
+        try:
+            await runtime.release_provider(reason=reason)
+        finally:
+            with self._runtime_lifecycle_lock:
+                if self._runtimes.get(session_id) is runtime and runtime._closed:
+                    self._runtimes.pop(session_id, None)
+            self._invalidate_provider_overview()
+        return True
+
+    async def archive_session(
+        self, session_id: str, *, reason: str = "user_archive"
+    ) -> AgentSession:
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session:
+            raise LookupError("Session not found")
+        if session.purpose != "chat":
+            raise ValueError("Only conversations can be archived")
+        runtime = self.get(session_id)
+        if runtime and (
+            runtime.prompting
+            or runtime._queue
+            or runtime._pending_permissions
+            or runtime._pending_elicitations
+        ):
+            raise RuntimeError("Stop or finish active work before archiving this conversation")
+        now = datetime.now(UTC)
+        session.archived_at = now
+        session.archive_reason = reason
+        session.status = "available"
+        session.updated_at = now
+        if runtime and not runtime._closed:
+            runtime.session = session
+            await self.release_session_process(session_id, reason=reason)
+        else:
+            await self._offload(
+                "sqlite.agent_session_save", self.store.save_session, session
+            )
+        return session
+
+    async def unarchive_session(self, session_id: str) -> AgentSession:
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session:
+            raise LookupError("Session not found")
+        if session.purpose != "chat":
+            raise ValueError("Only conversations can be unarchived")
+        session.archived_at = None
+        session.archive_reason = None
+        session.status = "available" if session.status == "closed" else session.status
+        session.updated_at = datetime.now(UTC)
+        await self._offload("sqlite.agent_session_save", self.store.save_session, session)
+        return session
+
+    async def pin_session(self, session_id: str, *, pinned: bool) -> AgentSession:
+        session = await self._offload(
+            "sqlite.agent_session_read", self.store.get_session, session_id
+        )
+        if not session:
+            raise LookupError("Session not found")
+        if session.purpose != "chat":
+            raise ValueError("Only conversations can be pinned")
+        session.pinned_at = datetime.now(UTC) if pinned else None
+        session.updated_at = datetime.now(UTC)
+        await self._offload("sqlite.agent_session_save", self.store.save_session, session)
+        return session
+
     async def reconcile_closed_sessions(self, session_ids: list[str]) -> None:
         """Expire closed-session leases, then reconcile and collect once."""
         unique_session_ids = list(dict.fromkeys(session_ids))
@@ -3113,7 +3574,7 @@ class AgentSessionManager:
             return f"{prompting} ACP session{'s' if prompting != 1 else ''} working, {queued} queued"
         if active:
             return f"{active} ACP session{'s' if active != 1 else ''} idle, {queued} queued"
-        return "ACP agent offline"
+        return "Agent ready; provider processes start on demand"
 
     def _default_requires_provider_resolution(
         self, label: str | None, resume_external_id: str | None
@@ -3207,9 +3668,13 @@ class AgentSessionManager:
     async def _automatic_recovery_eligibility(
         self, session: AgentSession
     ) -> str | None:
+        durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+        if session.archived_at is not None or durable.get("queue_paused"):
+            return None
+        if session.purpose == "automated_run" and session.control_mode == "human":
+            return None
         if session.status in AUTO_RECOVERY_SESSION_STATUSES:
             return "status"
-        durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
         if (
             durable.get("in_flight")
             or durable.get("queued_prompts")
@@ -3387,9 +3852,12 @@ class AgentSessionManager:
                     return
                 self._startup_session_id = sess.session_id
                 try:
-                    await self._resume_from_snapshot(
+                    recovered = await self._resume_from_snapshot(
                         sess, snapshot or QuiesceSnapshot(reason="recovery")
                     )
+                    if recovered is not None and recovered.session.recovery_json:
+                        recovered.session.recovery_json = {}
+                        await recovered._save_session_preserving_external_browser_async()
                     self._startup_recovered += 1
                     self._startup_decisions.append(
                         {
@@ -3646,6 +4114,7 @@ class AgentSessionManager:
     async def resume_restart_handoffs_after_startup(self) -> None:
         """Replay receipts only after normal prompt admission is declared ready."""
         self.require_startup_complete()
+        self._start_recovery_coordinator()
         if self._resume_on_start:
             await self._resume_restart_handoffs()
 
@@ -3675,14 +4144,32 @@ class AgentSessionManager:
             )
         return handoff
 
-    @staticmethod
-    def _snapshot_from_persisted(session: AgentSession) -> SessionSnapshot:
+    def _snapshot_from_persisted(self, session: AgentSession) -> SessionSnapshot:
         durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+        completed_prompt_ids: set[str] = set()
+        try:
+            events = self.store.list_transcript_events_before(session.id, limit=1000)
+        except (AttributeError, OSError, RuntimeError, ValueError):
+            events = []
+        for event in events:
+            if event.event_type not in {"turn_completed", "prompt_failed"}:
+                continue
+            prompt_id = (event.payload or {}).get("queued_prompt_id") or (
+                event.payload or {}
+            ).get("id")
+            if prompt_id:
+                completed_prompt_ids.add(str(prompt_id))
         queued = [
             QueuedPrompt.model_validate(item)
             for item in durable.get("queued_prompts") or []
+            if str(item.get("id") or "") not in completed_prompt_ids
         ]
         in_flight_raw = durable.get("in_flight")
+        if (
+            in_flight_raw
+            and str(in_flight_raw.get("id") or "") in completed_prompt_ids
+        ):
+            in_flight_raw = None
         return SessionSnapshot(
             session_id=session.id,
             external_session_id=session.external_session_id,
@@ -3703,6 +4190,13 @@ class AgentSessionManager:
             origin_instance_id=session.origin_instance_id,
             dispatch_id=session.dispatch_id,
             realm_id=session.realm_id,
+            purpose=session.purpose,
+            initiating_workflow=dict(session.initiating_workflow or {}),
+            control_mode=session.control_mode,
+            archived_at=session.archived_at,
+            workflow_state=session.workflow_state,
+            workflow_outcome=dict(session.workflow_outcome or {}),
+            recovery_json=dict(session.recovery_json or {}),
             prompting=bool(in_flight_raw),
             queue_paused=bool(durable.get("queue_paused")),
             queued_prompts=queued,
@@ -3724,7 +4218,38 @@ class AgentSessionManager:
         config = dict(session.config_json or {})
         # Classify the current failure, not a stale blocked marker. The project
         # may have arrived since the last boot and exposed a different failure.
-        blocked = bool(session.project_id and _project_recovery_block(exc))
+        from pa.acp.errors import classify_acp_failure
+
+        classified = classify_acp_failure(
+            exc, provider_id=session.agent_name, stage="session_recovery"
+        )
+        previous_recovery = dict(session.recovery_json or {})
+        attempts = int(previous_recovery.get("attempts") or 0) + 1
+        code = str(classified.get("code") or "recovery_failed")
+        actionable = (
+            not bool(classified.get("recoverable", True))
+            or "auth" in code
+            or "credential" in code
+            or "config" in code
+        )
+        exhausted = attempts >= _RECOVERY_MAX_ATTEMPTS
+        lowered_error = str(exc).casefold()
+        context_lost = any(
+            marker in lowered_error
+            for marker in (
+                "provider session is unavailable",
+                "provider thread is unavailable",
+                "existing provider conversation could not be restored",
+                "session restore is unsupported",
+                "session not found by provider",
+            )
+        )
+        blocked = bool(
+            (session.project_id and _project_recovery_block(exc))
+            or actionable
+            or exhausted
+            or context_lost
+        )
         recovery_state = (
             RECOVERY_BLOCKED_STATUS if blocked else "recoverable_interrupted"
         )
@@ -3738,6 +4263,41 @@ class AgentSessionManager:
             durable["recovery_action"] = self._recovery_action(session)
         config[_DURABLE_RUNTIME_KEY] = durable
         session.config_json = config
+        retry_delay = min(
+            _RECOVERY_MAX_SECONDS,
+            _RECOVERY_BASE_SECONDS * (2 ** max(0, attempts - 1)),
+        )
+        if session.project_id and _project_recovery_block(exc):
+            remedy = self._recovery_action(session)
+        elif context_lost:
+            remedy = (
+                "The original provider context is unavailable. Continue in a new "
+                "linked chat to preserve saved history with an explicit context boundary."
+            )
+        elif blocked:
+            remedy = (
+                classified.get("action")
+                or classified.get("message")
+                or "Correct the provider configuration, then retry."
+            )
+        else:
+            remedy = None
+        session.recovery_json = {
+            "version": 1,
+            "attempts": attempts,
+            "last_attempt_at": datetime.now(UTC).isoformat(),
+            "last_error": str(exc)[:1000],
+            "code": code,
+            "blocked": blocked,
+            "exhausted": exhausted,
+            "context_lost": context_lost,
+            "next_retry_at": (
+                None
+                if blocked
+                else (datetime.now(UTC) + timedelta(seconds=retry_delay)).isoformat()
+            ),
+            "remedy": remedy,
+        }
         session.status = recovery_state
         session.updated_at = datetime.now(UTC)
         await self._offload(
@@ -3833,6 +4393,13 @@ class AgentSessionManager:
             origin_instance_id=snap.origin_instance_id,
             dispatch_id=snap.dispatch_id,
             realm_id=snap.realm_id,
+            purpose=snap.purpose,
+            initiating_workflow=dict(snap.initiating_workflow or {}),
+            control_mode=snap.control_mode,
+            archived_at=snap.archived_at,
+            workflow_state=snap.workflow_state,
+            workflow_outcome=dict(snap.workflow_outcome or {}),
+            recovery_json=dict(snap.recovery_json or {}),
         )
         session.cwd = snap.cwd or session.cwd
         session.label = snap.label or session.label
@@ -3974,6 +4541,9 @@ class AgentSessionManager:
         project_tool_config: dict | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
         execution_context_seed: dict[str, Any] | None = None,
+        purpose: Literal["chat", "automated_run", "one_shot_job", "unknown"] | None = None,
+        initiating_workflow: dict[str, Any] | None = None,
+        control_mode: Literal["automation", "human"] | None = None,
         startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
         require_restore: bool = False,
@@ -4099,6 +4669,14 @@ class AgentSessionManager:
                     model=requested_model,
                 )
 
+        inferred_purpose = purpose or (
+            "automated_run"
+            if dispatch_id or surface_key == SURFACE_EXECUTION
+            else "chat"
+        )
+        inferred_control = control_mode or (
+            "automation" if inferred_purpose != "chat" else "human"
+        )
         session = existing or AgentSession(
             id=session_id or str(uuid4()),
             agent_name=provider_id,
@@ -4114,6 +4692,19 @@ class AgentSessionManager:
             authority_instance_id=authority_instance_id or self.settings.instance_id,
             dispatch_id=dispatch_id,
             lifecycle_owner="dispatch" if dispatch_id else "standalone",
+            purpose=inferred_purpose,
+            initiating_workflow=dict(initiating_workflow or {}),
+            control_mode=inferred_control,
+            workflow_state=(
+                "active"
+                if inferred_purpose in {"automated_run", "one_shot_job"}
+                else "not_applicable"
+            ),
+            human_activity_at=(
+                datetime.now(UTC)
+                if inferred_purpose == "chat"
+                else None
+            ),
             realm_id=realm_id or self.settings.primary_realm,
             item_id=card_id,
         )
@@ -4144,6 +4735,12 @@ class AgentSessionManager:
                 session.authority_instance_id = authority_instance_id
             if dispatch_id is not None:
                 session.dispatch_id = dispatch_id
+            if purpose is not None:
+                session.purpose = purpose
+            if initiating_workflow is not None:
+                session.initiating_workflow = dict(initiating_workflow)
+            if control_mode is not None:
+                session.control_mode = control_mode
             if realm_id is not None:
                 session.realm_id = realm_id
             if not provider_override and session.agent_name in {"instance", ""}:
@@ -4422,7 +5019,7 @@ class AgentSessionManager:
                 existing=session,
                 resume_external_id=session.external_session_id,
                 provider_override=provider_override,
-                require_restore=True,
+                require_restore=bool(session.external_session_id),
             )
 
     def enqueue_prompt(
@@ -4488,6 +5085,7 @@ class AgentSessionManager:
         wait: bool = True,
         surface: str | None = None,
         provider_override: str | None = None,
+        source: str | None = None,
     ) -> str:
         self.require_startup_complete()
         if session_id:
@@ -4574,6 +5172,9 @@ class AgentSessionManager:
                     agent_env=agent_env,
                     provider_override=provider_override,
                 )
+        effective_source = source or (
+            "dispatch" if surface == SURFACE_EXECUTION else "api"
+        )
         return await runtime.prompt(
             message,
             images=images,
@@ -4583,6 +5184,7 @@ class AgentSessionManager:
             agent_env=agent_env,
             cwd=cwd,
             action=action,
+            source=effective_source,
             _from_queue=_from_queue,
             wait=wait,
         )
@@ -4590,6 +5192,10 @@ class AgentSessionManager:
     async def stop(self, *, fast: bool = False) -> None:
         self._accepting = False
         self._quiescing = True
+        if self._recovery_coordinator_task:
+            self._recovery_coordinator_task.cancel()
+        for task in list(self._recovery_tasks.values()):
+            task.cancel()
 
         async def stop_runtime(runtime: AgentSessionRuntime) -> None:
             try:

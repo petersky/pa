@@ -87,7 +87,7 @@
           {% if allow_card_capture %}<button type="button" class="ghost" data-acw-card-link>Capture in card…</button>{% endif %}
           <a class="text-btn" data-acw-promote
              href="/knowledge{% if sid %}?session={{ sid }}{% endif %}">Promote to memory</a>
-          <button type="button" class="ghost danger" data-acw-end>End session</button>
+          <button type="button" class="ghost danger" data-acw-end>Archive conversation</button>
           <p class="muted small" data-acw-session-action-status role="status" aria-live="polite"></p>
         </div>
       </details>
@@ -235,7 +235,7 @@
       </div>
       <div class="acw-send-group">
         <button type="button" class="ghost" data-acw-stop
-                title="Stop the current turn and pause the queue" disabled>Stop</button>
+                title="Stop only the current response" disabled>Stop response</button>
         <button type="submit" class="primary" data-acw-send>Send</button>
         <details class="acw-send-menu">
           <summary aria-label="Send options">▾</summary>

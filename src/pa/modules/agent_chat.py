@@ -31,6 +31,7 @@ from pa.execution.observability import (
     build_session_observability,
     diagnostic_timeline,
 )
+from pa.execution.session_presentation import build_session_presentation
 from pa.instance.agent_session import (
     RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
@@ -187,8 +188,13 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
         not recovery_capabilities
         or bool(recovery_capabilities.get("resume") or recovery_capabilities.get("load"))
     )
+    chat_available = bool(
+        session.purpose == "chat"
+        and session.archived_at is None
+        and session.status != "closed"
+    )
     recoverable = (
-        provider_recoverable
+        (provider_recoverable or chat_available)
         and session.status != RECOVERY_BLOCKED_STATUS
         and not live
     )
@@ -206,6 +212,8 @@ def _durable_session_state(manager, session) -> dict[str, Any]:
             if session.status == "closed"
             else "recovery_blocked"
             if session.status == RECOVERY_BLOCKED_STATUS
+            else "available_on_demand"
+            if chat_available
             else "provider_thread_lost"
         ),
         "status": session.status,
@@ -272,6 +280,8 @@ class CreateSessionBody(BaseModel):
     resume_session_id: str | None = None
     fresh: bool = False
     goal_provenance: GoalDispatchProvenance | None = None
+    purpose: Literal["chat", "automated_run", "one_shot_job"] = "chat"
+    initiating_workflow: dict[str, Any] = Field(default_factory=dict)
 
 
 def _config_option_id(runtime, requested: str) -> str:
@@ -433,6 +443,18 @@ class RecoverSessionBody(BaseModel):
     provider: str | None = None
 
 
+class SessionControlBody(BaseModel):
+    mode: Literal["automation", "human"]
+
+
+class SessionPinBody(BaseModel):
+    pinned: bool = True
+
+
+class ContinueSessionBody(BaseModel):
+    provider: str | None = None
+
+
 class RestartHandoffBody(BaseModel):
     continuation_prompt: str
     idempotency_key: str
@@ -505,6 +527,18 @@ async def _bind_live_dispatch_session(
 ) -> None:
     """Attach dispatch provenance and, when required, a worktree to a live session."""
     session = runtime.session
+    session.purpose = "automated_run"
+    session.control_mode = "automation"
+    session.workflow_state = "active"
+    session.initiating_workflow = {
+        "kind": "dispatch",
+        "dispatch_id": dispatch_record.dispatch_id,
+        "goal": (
+            body.goal_provenance.model_dump(mode="json")
+            if body.goal_provenance
+            else None
+        ),
+    }
     binding = dict(session.execution_binding or {})
     bound_card = binding.get("execution_card_id")
     bound_project = binding.get("execution_project_id")
@@ -756,6 +790,17 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             "principal_id": dispatch_record.principal_id,
             "authority_instance_id": dispatch_record.authority_instance_id,
             "dispatch_id": dispatch_record.dispatch_id,
+            "purpose": "automated_run",
+            "control_mode": "automation",
+            "initiating_workflow": {
+                "kind": "dispatch",
+                "dispatch_id": dispatch_record.dispatch_id,
+                "goal": (
+                    body.goal_provenance.model_dump(mode="json")
+                    if body.goal_provenance
+                    else None
+                ),
+            },
             "realm_id": dispatch_record.realm_id,
             "execution_context_seed": {
                 "authority_instance": {
@@ -936,6 +981,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             provider_override=body.provider,
                             project_tool_config=project_tool_config,
                             initial_configuration=new_session_configuration,
+                            purpose=body.purpose,
+                            initiating_workflow=body.initiating_workflow,
+                            control_mode=(
+                                "human" if body.purpose == "chat" else "automation"
+                            ),
                             startup_trace=startup_trace,
                         )
                         created_runtime = True
@@ -954,6 +1004,9 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 provider_override=body.provider,
                 project_tool_config=project_tool_config,
                 initial_configuration=new_session_configuration,
+                purpose=body.purpose,
+                initiating_workflow=body.initiating_workflow,
+                control_mode=("human" if body.purpose == "chat" else "automation"),
                 startup_trace=startup_trace,
             )
             created_runtime = True
@@ -1282,20 +1335,81 @@ def request_session_diagnostics(
 
 
 @router.get("/sessions")
-def list_agent_sessions(request: Request) -> list[dict]:
+def list_agent_sessions(
+    request: Request,
+    view: Literal["active", "chats", "activity", "all"] = "active",
+    archived: bool = False,
+    activity_filter: Literal["all", "needs_you", "running", "completed"] = "all",
+) -> list[dict]:
     mgr = _require_session_traffic_ready(request)
-    result: list[dict] = []
-    live_ids: set[str] = set()
-    for runtime in mgr.list_runtimes():
-        if runtime._closed:
-            continue
-        live_ids.add(runtime.session.id)
-        result.append(_session_list_item(request, runtime.session, runtime=runtime))
-    for session in mgr.store.list_sessions():
-        if session.id in live_ids or session.status == "closed":
-            continue
-        result.append(_session_list_item(request, session))
-    return result
+    runtimes = {
+        runtime.session.id: runtime
+        for runtime in mgr.list_runtimes()
+        if not runtime._closed
+    }
+    sessions = {session.id: session for session in mgr.store.list_sessions()}
+    sessions.update({session_id: runtime.session for session_id, runtime in runtimes.items()})
+    items = [
+        _session_list_item(request, session, runtime=runtimes.get(session.id))
+        for session in sessions.values()
+    ]
+    if view == "active":
+        items = [item for item in items if item["status"] != "closed"]
+    elif view == "chats":
+        items = [
+            item
+            for item in items
+            if item["purpose"] == "chat"
+            and bool(item["archived_at"]) == archived
+        ]
+    elif view == "activity":
+        items = [
+            item
+            for item in items
+            if item["purpose"] in {"automated_run", "one_shot_job"}
+            and not (
+                item["purpose"] == "one_shot_job"
+                and item["presentation"]["workflow"]["state"] == "succeeded"
+            )
+        ]
+        if activity_filter != "all":
+            items = [
+                item
+                for item in items
+                if (
+                    activity_filter == "needs_you"
+                    and item["presentation"]["display_status"] == "Needs you"
+                )
+                or (
+                    activity_filter == "running"
+                    and item["presentation"]["display_status"]
+                    in {"Running", "Queued", "Restoring your work", "Waiting"}
+                )
+                or (
+                    activity_filter == "completed"
+                    and item["presentation"]["workflow"]["state"]
+                    in {"succeeded", "failed", "cancelled", "validation_failed"}
+                )
+            ]
+    if view == "chats":
+        items.sort(
+            key=lambda item: (
+                item["pinned_at"] is None,
+                item["human_activity_at"] or item["updated_at"],
+                item["id"],
+            ),
+            reverse=False,
+        )
+        pinned = [item for item in items if item["pinned_at"]]
+        unpinned = [item for item in items if not item["pinned_at"]]
+        pinned.sort(key=lambda item: item["pinned_at"], reverse=True)
+        unpinned.sort(
+            key=lambda item: item["human_activity_at"] or item["updated_at"],
+            reverse=True,
+        )
+        return pinned + unpinned
+    items.sort(key=lambda item: item["updated_at"], reverse=True)
+    return items
 
 
 @router.get("/session-events/capabilities")
@@ -1536,6 +1650,25 @@ def _multiplex_sse(data: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _presentation(
+    request: Request,
+    session: AgentSession,
+    runtime: AgentSessionRuntime | None = None,
+) -> dict[str, Any]:
+    mgr = _manager(request)
+    if runtime is None:
+        candidate = mgr.get(session.id)
+        runtime = candidate if candidate and not candidate._closed else None
+    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    return build_session_presentation(
+        session,
+        runtime=runtime,
+        dispatch=dispatch_store.by_session(session.id) if dispatch_store else None,
+        quiescing=mgr.quiescing,
+        startup_complete=mgr.startup_complete,
+    )
+
+
 def _session_list_item(
     request: Request,
     session: AgentSession,
@@ -1552,6 +1685,18 @@ def _session_list_item(
     durable = config.get("durable_runtime", {})
     queued = durable.get("queued_prompts") or []
     associated_cards = request.app.state.ctx.store.list_cards_for_session(session.id)
+    events = request.app.state.ctx.store.list_transcript_events_before(
+        session.id, limit=1001
+    )
+    observability = _observability(request, session, events=events)
+    closure = next(
+        (event for event in reversed(events) if event.event_type == "session_closed"),
+        None,
+    )
+    primary_card = next(
+        (card for card in associated_cards if card.id == session.card_id),
+        associated_cards[0] if associated_cards else None,
+    )
     return {
         "id": session.id,
         "title": session.title,
@@ -1567,6 +1712,20 @@ def _session_list_item(
             else None
         ),
         "status": session.status,
+        "purpose": session.purpose,
+        "activity_group": (
+            primary_card.title
+            if primary_card
+            else str((session.initiating_workflow or {}).get("kind") or "Other activity")
+            .replace("_", " ")
+            .title()
+        ),
+        "control_mode": session.control_mode,
+        "archived_at": session.archived_at.isoformat() if session.archived_at else None,
+        "pinned_at": session.pinned_at.isoformat() if session.pinned_at else None,
+        "human_activity_at": (
+            session.human_activity_at.isoformat() if session.human_activity_at else None
+        ),
         "connected": bool(runtime and runtime.connected),
         "prompting": bool(runtime and runtime.prompting),
         "live": runtime is not None,
@@ -1592,6 +1751,11 @@ def _session_list_item(
         "requested_reasoning": configuration.get("requested", {}).get("reasoning"),
         "effective_reasoning": configuration.get("effective", {}).get("reasoning"),
         "configuration_state": configuration.get("state"),
+        "provider_attempts": sum(
+            event.event_type in {"session_started", "session_admission_failed"}
+            for event in events
+        ),
+        "closure_reason": (closure.payload or {}).get("reason") if closure else None,
         "pa_mcp": runtime.connection.pa_mcp_health
         if runtime and runtime.connection
         else None,
@@ -1601,7 +1765,8 @@ def _session_list_item(
         "updated_at": session.updated_at.isoformat(),
         "pr_watches": _session_pr_watches(request, session),
         "card_reconciliation": _session_reconciliation(request, session.id),
-        "observability": _observability(request, session),
+        "observability": observability,
+        "presentation": _presentation(request, session, runtime),
     }
 
 
@@ -1766,6 +1931,7 @@ def list_agent_session_history(
                 and not getattr(runtime, "_closed", False)
             ),
             "recovery": _durable_session_state(mgr, session),
+            "presentation": _presentation(request, session),
         }
         for session in sessions[: max(1, min(limit, 500))]
     ]
@@ -1853,6 +2019,7 @@ async def get_agent_session_history(
         "pr_watches": _session_pr_watches(request, session),
         "card_reconciliation": _session_reconciliation(request, session.id),
         "recovery": _durable_session_state(mgr, session),
+        "presentation": _presentation(request, session, runtime),
         "events": [event.model_dump(mode="json") for event in events],
         "page": page,
     }
@@ -2407,6 +2574,7 @@ async def _submit_client_prompt(
             project_id=body.project_id,
             action=body.action,
             prompt_id=prompt_id,
+            source="ui",
             wait=False,
         )
         runtime._flush_transcript()
@@ -2468,7 +2636,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
         if (
-            exc.status_code != 409
+            exc.status_code not in {404, 409}
             or detail.get("code") != "session_not_live"
             or not detail.get("recoverable")
         ):
@@ -2487,6 +2655,20 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         getattr(request.state, "instance_authenticated", False) is True
     )
     session_record = runtime.session if runtime is not None else durable_session
+    if (
+        not instance_authenticated
+        and getattr(session_record, "purpose", "unknown") == "automated_run"
+        and getattr(session_record, "control_mode", "automation") == "automation"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "takeover_required",
+                "message": "Take over this automated run before sending a human prompt.",
+                "recoverable": True,
+                "action": "take_over",
+            },
+        )
     linked_dispatch_value = getattr(session_record, "dispatch_id", None)
     linked_dispatch_id = (
         linked_dispatch_value.strip()
@@ -2710,6 +2892,11 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         principal_id=principal_id,
         project_id=body.project_id,
         action=body.action,
+        source=(
+            f"dispatch:{body.dispatch_id}"
+            if instance_authenticated and body.dispatch_id
+            else "ui"
+        ),
         wait=False,
     )
     runtime._flush_transcript()
@@ -2835,8 +3022,152 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
 @router.post("/sessions/{session_id}/cancel")
 async def session_cancel(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
-    await runtime.cancel(pause_queue=True)
-    return {"ok": True, "queue_paused": True}
+    await runtime.cancel(pause_queue=False)
+    return {"ok": True, "queue_paused": runtime.queue_paused}
+
+
+@router.post("/sessions/{session_id}/archive")
+async def session_archive(request: Request, session_id: str) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        session = await mgr.archive_session(session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "session": session.model_dump(mode="json"),
+        "presentation": _presentation(request, session),
+    }
+
+
+@router.post("/sessions/{session_id}/unarchive")
+async def session_unarchive(request: Request, session_id: str) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        session = await mgr.unarchive_session(session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "session": session.model_dump(mode="json"),
+        "presentation": _presentation(request, session),
+    }
+
+
+@router.put("/sessions/{session_id}/pin")
+async def session_pin(
+    request: Request, session_id: str, body: SessionPinBody
+) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        session = await mgr.pin_session(session_id, pinned=body.pinned)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "session": session.model_dump(mode="json"),
+        "presentation": _presentation(request, session),
+    }
+
+
+@router.post("/sessions/{session_id}/control")
+async def session_control(
+    request: Request, session_id: str, body: SessionControlBody
+) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        session = await mgr.set_session_control(session_id, body.mode)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "session": session.model_dump(mode="json"),
+        "presentation": _presentation(request, session),
+    }
+
+
+@router.post("/sessions/{session_id}/continue")
+async def continue_session(
+    request: Request,
+    session_id: str,
+    body: ContinueSessionBody | None = None,
+) -> dict:
+    """Explicitly cross a lost provider-context boundary into a linked chat."""
+    mgr = _require_session_traffic_ready(request)
+    source = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not source.recovery_json.get("context_lost"):
+        raise HTTPException(
+            status_code=409,
+            detail="A new linked chat is offered only when provider context is unavailable",
+        )
+    events = await _offload(
+        mgr,
+        "sqlite.transcript_read",
+        mgr.store.list_transcript_events_before,
+        session_id,
+        limit=100,
+    )
+    excerpts: list[str] = []
+    for event in events:
+        if event.event_type not in {"user_message", "agent_message", "agent_message_chunk"}:
+            continue
+        payload = dict(event.payload or {})
+        text = payload.get("message") or payload.get("text") or payload.get("content")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        role = "User" if event.event_type == "user_message" else "Assistant"
+        excerpts.append(f"{role}: {text.strip()}")
+    saved_context = "\n\n".join(excerpts[-12:])[-8000:]
+    boundary_id = str(uuid4())
+    runtime = await mgr.create_session(
+        label=f"continued:{session_id}:{boundary_id}",
+        title=f"Continue: {source.title or source.label or 'conversation'}",
+        principal_id=source.principal_id,
+        card_id=source.card_id,
+        project_id=source.project_id,
+        provider_override=body.provider if body else None,
+        purpose="chat",
+        control_mode="human",
+        initiating_workflow={
+            "kind": "context_rebuild",
+            "source_session_id": session_id,
+            "context_boundary_id": boundary_id,
+        },
+    )
+    runtime._append_transcript(
+        "context_boundary",
+        {
+            "source_session_id": session_id,
+            "reason": "provider_context_unavailable",
+            "boundary_id": boundary_id,
+        },
+    )
+    prompt = (
+        "Continue this saved conversation across an explicit provider context "
+        "boundary. Do not claim hidden continuity with the former provider."
+    )
+    if saved_context:
+        prompt += f"\n\nSaved transcript excerpts:\n\n{saved_context}"
+    await runtime.prompt(prompt, source="ui:context-rebuild", wait=False)
+    old_config = dict(source.config_json or {})
+    linked = list(old_config.get("linked_chats") or [])
+    linked.append({"session_id": runtime.session_id, "boundary_id": boundary_id})
+    old_config["linked_chats"] = linked[-20:]
+    source.config_json = old_config
+    await _offload(mgr, "sqlite.agent_session_save", mgr.store.save_session, source)
+    return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
 @router.post("/sessions/{session_id}/retry")
@@ -2989,7 +3320,7 @@ async def _reconcile_closed_session_workspaces(
 
 @router.post("/sessions/close-all")
 async def session_close_all(request: Request) -> dict:
-    """Close every live or durable nonterminal session on this instance."""
+    """Compatibility bulk action: archive idle chats and close bounded activity."""
     mgr = _require_session_traffic_ready(request)
     runtimes = [
         runtime
@@ -3005,8 +3336,19 @@ async def session_close_all(request: Request) -> dict:
     closed_ids: list[str] = []
     live_closed = 0
     orphan_closed = 0
+    archived = 0
+    active_chats_skipped = 0
 
     for runtime in runtimes:
+        if runtime.session.purpose == "chat":
+            try:
+                await mgr.archive_session(
+                    runtime.session_id, reason="bulk_user_archive_via_close_compat"
+                )
+                archived += 1
+            except RuntimeError:
+                active_chats_skipped += 1
+            continue
         changed = await runtime.close(
             reason="bulk_user_close",
             reconcile_workspace=False,
@@ -3018,6 +3360,12 @@ async def session_close_all(request: Request) -> dict:
 
     for session in persisted:
         if session.id in live_ids or session.status == "closed":
+            continue
+        if session.purpose == "chat":
+            await mgr.archive_session(
+                session.id, reason="bulk_user_archive_via_close_compat"
+            )
+            archived += 1
             continue
         prior_status = await _close_orphan_session(
             mgr,
@@ -3038,24 +3386,47 @@ async def session_close_all(request: Request) -> dict:
             "session_ids": closed_ids,
         },
     )
-    return {
+    result = {
         "ok": True,
         "closed": len(closed_ids),
         "live_closed": live_closed,
         "orphan_closed": orphan_closed,
         "session_ids": closed_ids,
     }
+    if archived or active_chats_skipped:
+        result.update(
+            archived=archived,
+            active_chats_skipped=active_chats_skipped,
+        )
+    return result
 
 
 @router.post("/sessions/{session_id}/close")
 async def session_close(request: Request, session_id: str) -> dict:
-    """Close a live runtime, or mark a store-only orphan session closed.
+    """Compatibility endpoint: archive chats; close bounded activities.
 
     After abrupt restarts, sessions can remain `prompting`/`connected` in the
     durable store with no live ACP runtime. Operators still need `/close` to
     clear those so card labels can be reused.
     """
     mgr = _require_session_traffic_ready(request)
+    durable_session = await _offload(
+        mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
+    )
+    if durable_session and durable_session.purpose == "chat":
+        try:
+            archived = await mgr.archive_session(
+                session_id, reason="user_archive_via_close_compat"
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "ok": True,
+            "live": False,
+            "archived": True,
+            "recovery": _durable_session_state(mgr, archived),
+            "presentation": _presentation(request, archived),
+        }
     runtime = mgr.get(session_id)
     if runtime and not getattr(runtime, "_closed", False):
         await runtime.close(reason="user_close")

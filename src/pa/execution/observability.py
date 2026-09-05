@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pa.execution.progress import sanitize_text
+from pa.execution.session_presentation import build_session_presentation
 
 SESSION_OBSERVABILITY_VERSION = 1
 SESSION_OBSERVABILITY_CAPABILITY = "pa.session-observability.v1"
@@ -126,6 +127,21 @@ def _turns(events: list[Any], runtime: Any | None) -> list[dict[str, Any]]:
     return [turns[prompt_id] for prompt_id in order]
 
 
+def _durable_prompt_state(session: Any, runtime: Any | None) -> tuple[Any | None, list[Any], bool | None]:
+    if runtime:
+        return (
+            getattr(runtime, "_in_flight", None),
+            list(getattr(runtime, "_queue", []) or []),
+            bool(getattr(runtime, "_queue_paused", False)),
+        )
+    durable = dict((session.config_json or {}).get("durable_runtime") or {})
+    return durable.get("in_flight"), list(durable.get("queued_prompts") or []), (
+        bool(durable.get("queue_paused"))
+        if "queue_paused" in durable
+        else None
+    )
+
+
 def build_session_observability(
     session: Any,
     *,
@@ -141,6 +157,71 @@ def build_session_observability(
     """Normalize live and durable evidence without manufacturing legacy health."""
     now = now or datetime.now(UTC)
     turns = _turns(events, runtime)
+    durable_in_flight, durable_queue, queue_paused = _durable_prompt_state(
+        session, runtime
+    )
+    terminal_prompt_ids = {
+        str(turn["id"])
+        for turn in turns
+        if turn.get("state") in {"completed", "failed"}
+    }
+    if not runtime and durable_in_flight:
+        in_flight_id = (
+            durable_in_flight.get("id")
+            if isinstance(durable_in_flight, dict)
+            else getattr(durable_in_flight, "id", None)
+        )
+        if in_flight_id and str(in_flight_id) in terminal_prompt_ids:
+            durable_in_flight = None
+    if not runtime and durable_queue:
+        durable_queue = [
+            item
+            for item in durable_queue
+            if str(
+                item.get("id")
+                if isinstance(item, dict)
+                else getattr(item, "id", "")
+            )
+            not in terminal_prompt_ids
+        ]
+    if durable_in_flight and not runtime:
+        raw_id = (
+            durable_in_flight.get("id")
+            if isinstance(durable_in_flight, dict)
+            else getattr(durable_in_flight, "id", None)
+        )
+        if raw_id and not any(turn["id"] == str(raw_id) for turn in turns):
+            turns.append(
+                {
+                    "id": str(raw_id),
+                    "sequence": len(turns) + 1,
+                    "state": "starting",
+                    "prompt_source": "durable_admission",
+                    "queue_position": None,
+                    "accepted_at": None,
+                    "started_at": None,
+                    "completed_at": None,
+                    "stop_reason": None,
+                }
+            )
+    for position, queued in enumerate(durable_queue):
+        raw_id = queued.get("id") if isinstance(queued, dict) else getattr(queued, "id", None)
+        if not raw_id or any(turn["id"] == str(raw_id) for turn in turns):
+            continue
+        source = queued.get("source") if isinstance(queued, dict) else getattr(queued, "source", None)
+        turns.append(
+            {
+                "id": str(raw_id),
+                "sequence": len(turns) + 1,
+                "state": "queued",
+                "prompt_source": sanitize_text(source, limit=80) or "durable_admission",
+                "queue_position": position,
+                "accepted_at": None,
+                "started_at": None,
+                "completed_at": None,
+                "stop_reason": None,
+            }
+        )
     current_turn = next(
         (
             turn
@@ -174,12 +255,24 @@ def build_session_observability(
     connected = bool(runtime and runtime.connected)
     busy = bool(current_turn and current_turn["state"] in {"starting", "running"})
 
-    if session.status in {"closed", "quiesced"}:
+    durable_obligations = bool(durable_in_flight or durable_queue)
+    if session.status == "closed":
         classification = "completed_idle"
+    elif session.status == "quiesced":
+        classification = "restarting"
     elif session.status in {"failed", "configuration_failed", "provisioning_failed"}:
         classification = "failed_closed"
+    elif not runtime and durable_obligations:
+        classification = "restoring"
+    elif not runtime and getattr(session, "purpose", "unknown") == "chat":
+        classification = "available"
+    elif not runtime and getattr(session, "purpose", "unknown") in {
+        "automated_run",
+        "one_shot_job",
+    }:
+        classification = "workflow_waiting"
     elif not runtime:
-        classification = "stale"
+        classification = "unknown"
     elif not connected:
         classification = "disconnected_recovering"
     elif current_turn and current_turn["state"] == "queued" and not busy:
@@ -195,7 +288,7 @@ def build_session_observability(
 
     conn = getattr(runtime, "connection", None) if runtime else None
     proc = getattr(conn, "_proc", None) if conn else None
-    queue = list(getattr(runtime, "_queue", []) or []) if runtime else []
+    queue = durable_queue
     active_tool_event = next(
         (
             event
@@ -229,11 +322,14 @@ def build_session_observability(
         else "recovering"
         if runtime
         else "closed"
-        if session.status in {"closed", "quiesced"}
+        if session.status == "closed"
+        else "restarting"
+        if session.status == "quiesced"
         else "failed"
         if "failed" in session.status
         else "idle"
     )
+    presentation = build_session_presentation(session, runtime=runtime, now=now)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,
         "capabilities": [SESSION_OBSERVABILITY_CAPABILITY],
@@ -251,14 +347,18 @@ def build_session_observability(
             "mode": session.mode_id,
         },
         "session_state": lifecycle,
+        "presentation": presentation,
         "turn": current_turn,
         "turns": turns,
         "queue": {
             "length": len(queue),
-            "paused": bool(getattr(runtime, "_queue_paused", False))
-            if runtime
-            else None,
-            "prompt_ids": [item.id for item in queue],
+            "paused": queue_paused,
+            "prompt_ids": [
+                str(item.get("id"))
+                if isinstance(item, dict)
+                else str(item.id)
+                for item in queue
+            ],
         },
         "liveness": {
             "classification": classification,
@@ -330,14 +430,10 @@ def build_session_observability(
                 else "checkpoint"
                 if classification == "potentially_stalled"
                 else "reconnect"
-                if classification in {"stale", "disconnected_recovering"}
+                if classification in {"restoring", "disconnected_recovering"}
                 else None
             ),
-            "actions": (
-                ["checkpoint", "append", "prepend", "interrupt", "cancel", "close"]
-                if runtime
-                else ["recover"]
-            ),
+            "actions": presentation["permitted_actions"],
         },
         "last_state_transition": _iso(session.updated_at),
         "error": {

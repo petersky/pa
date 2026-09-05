@@ -53,6 +53,19 @@ async def _close_enrichment_session(
     needs_reconciliation = False
     if runtime is not None:
         try:
+            diagnostics = dict((runtime.session.config_json or {}).get("diagnostics") or {})
+            failed = bool(diagnostics.get("enrichment_failure"))
+            validation_failed = diagnostics.get("enrichment_failure_kind") == "validation"
+            runtime.session.workflow_state = (
+                "validation_failed" if validation_failed else "failed" if failed else "succeeded"
+            )
+            runtime.session.workflow_outcome = {
+                "summary": (
+                    "Card enrichment failed; diagnostics are available on the card."
+                    if failed
+                    else "Card enrichment completed."
+                )
+            }
             needs_reconciliation = await runtime.close(
                 reason="card_enrichment_complete",
                 reconcile_workspace=False,
@@ -198,8 +211,11 @@ async def enrich_card(
             label=f"card-enrichment:{card.id}",
             title=f"Enrich: {card.title[:80]}",
             principal_id=card.created_by_principal,
+            purpose="one_shot_job",
+            initiating_workflow={"kind": "card_enrichment", "card_id": card.id},
+            control_mode="automation",
         )
-        await runtime.prompt(prompt, wait=True)
+        await runtime.prompt(prompt, source="card-enrichment:initial", wait=True)
         final_text = assemble_final_assistant_message(runtime._turn_agent_events)
         current = store.get_card(card.id, realm_id=card.realm_id)
         if not current:
@@ -243,6 +259,11 @@ async def enrich_card(
                 config = dict(runtime.session.config_json or {})
                 diagnostics = dict(config.get("diagnostics") or {})
                 diagnostics["enrichment_failure"] = classified
+                diagnostics["enrichment_failure_kind"] = (
+                    "validation"
+                    if isinstance(exc, (ValueError, TypeError, json.JSONDecodeError))
+                    else "execution"
+                )
                 config["diagnostics"] = diagnostics
                 runtime.session.config_json = config
                 save = getattr(

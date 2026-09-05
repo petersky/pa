@@ -94,7 +94,7 @@
 <aside class="panel command-health" aria-labelledby="system-health-title">
   <div class="panel-header"><h2 id="system-health-title">Agent &amp; fleet health</h2></div>
   <dl class="health-summary">
-    <div><dt>Local agent</dt><dd><span class="status status-{{ 'active' if agent_connected else 'waiting' }}">{{ 'Connected' if agent_connected else 'Offline' }}</span></dd></div>
+    <div><dt>Local agent</dt><dd><span class="status status-{{ 'active' if agent_connected else 'waiting' }}">{{ 'Working' if agent_connected else 'Ready on demand' }}</span></dd></div>
     <div><dt>This instance</dt><dd>{{ instance_identity(instance_id) }}</dd></div>
     <div><dt>Fleet instances</dt><dd>{{ fleet_instances | length }}</dd></div>
     <div><dt>Cached inventory</dt><dd>{{ home_inventory.loaded }} / {{ home_inventory.total }}</dd></div>
