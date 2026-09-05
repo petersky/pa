@@ -607,13 +607,19 @@
     const ownerUnreachable = !!(this.sessionRoute &&
       (this.sessionRoute.state === "owner_unreachable" || this.sessionRoute.state === "live_degraded"));
     const hasSession = !!this.sessionId;
-    const canEnd = hasSession && !terminal && !ownerUnreachable;
+    const presentation = (this.lastSnapshot && this.lastSnapshot.presentation) || {};
+    const isChat = !presentation.purpose || presentation.purpose === "chat";
+    const archived = !!(presentation.archive && presentation.archive.archived);
+    const canEnd = hasSession && isChat && !archived && !terminal && !ownerUnreachable;
     const canRestart = hasSession && terminal && recoverable;
     if (this.els.end) {
       this.els.end.hidden = !canEnd;
       this.els.end.disabled = !canEnd || this.closePending;
       this.els.end.setAttribute("aria-disabled", this.els.end.disabled ? "true" : "false");
-      this.els.end.title = this.closePending ? "End session request is in progress." : "End this live session.";
+      this.els.end.textContent = "Archive conversation";
+      this.els.end.title = this.closePending
+        ? "Archive request is in progress."
+        : "Archive this conversation without deleting its history.";
     }
     if (this.els.restart) {
       this.els.restart.hidden = !canRestart;
@@ -633,14 +639,14 @@
     if (this.els.history) this.els.history.hidden = !this.durableHistoryAvailable;
     if (this.els.sessionActionStatus) {
       this.els.sessionActionStatus.textContent = this.closePending
-        ? "Ending this session…"
+        ? "Archiving this conversation…"
         : canRestart
           ? "This session has ended and can be resumed from durable state."
           : terminal
-            ? "This session has ended. End session is unavailable."
+            ? "This session has ended or is not currently connected."
             : ownerUnreachable
               ? "Live session controls are unavailable while the owner cannot be reached."
-              : canEnd ? "This session is live." : "No session is selected.";
+              : canEnd ? "This conversation is available." : "No session is selected.";
     }
   };
 
@@ -709,6 +715,7 @@
       if (!self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
       const snap = {
         session: history.session,
+        presentation: history.presentation || {},
         transcript: history.events || [],
         transcript_page: history.page || {},
         prompting: false,
@@ -865,6 +872,7 @@
   AgentChatWidget.prototype._historySnapshot = function (history) {
     return {
       session: history.session,
+      presentation: history.presentation || {},
       transcript: history.events || [],
       transcript_page: history.page || {},
       prompting: false,
@@ -1218,6 +1226,15 @@
             history_url: "/api/agent/history/" + sessionId,
           });
           self.renderSessionActions({ terminal: true, recoverable: route.recoverable === true });
+          const presentation = history && history.presentation || {};
+          const actions = presentation.permitted_actions || [];
+          const autoPrepare = presentation.purpose === "chat" &&
+            !(presentation.archive && presentation.archive.archived) &&
+            actions.indexOf("recover") !== -1;
+          if (autoPrepare) {
+            self.setPlaceholder("Preparing this conversation…");
+            return self.recoverSession(sessionId, generation);
+          }
           if (route.recoverable) {
             self._setRecoveryControl(true, "Recover session");
             self.addBubble("system", "PA restored this session's durable history. Reconnect it to continue.", new Date().toISOString(), { system: true, forceVisible: true });
@@ -1669,7 +1686,7 @@
       this.els.recovery.hidden = !recoveryBlocked;
       if (this.els.recoveryAction) {
         this.els.recoveryAction.textContent = provisioning.action ||
-          "Correct the project availability, retry this session, or end it from the Session menu.";
+          "Correct the project availability, then retry this session.";
       }
       if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
     }
@@ -3888,10 +3905,10 @@
     const generation = this.subscriptionGeneration;
     this.closePending = true;
     this.renderSessionActions();
-    this.api("/sessions/" + targetSessionId + "/close", { method: "POST", body: "{}" }).then(function (result) {
+    this.api("/sessions/" + targetSessionId + "/archive", { method: "POST", body: "{}" }).then(function (result) {
       if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
-      if (self.drafts) self.drafts.clear(true, "Draft cleared because this session ended.");
-      self.markSessionEnded("Session ended. Start or select another session to send more prompts.");
+      if (self.drafts) self.drafts.clear(true, "Draft cleared because this conversation was archived.");
+      self.markSessionEnded("Conversation archived. Its history remains available under Archived.");
       const recovery = result && result.recovery || {};
       self.showRecoveryActions({
         recoverable: recovery.recoverable,
@@ -3903,7 +3920,7 @@
       if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
       self.closePending = false;
       self.renderSessionActions();
-      self.addBubble("system", "Could not end session: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
+      self.addBubble("system", "Could not archive conversation: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
     });
   };
 
@@ -4035,9 +4052,7 @@
       const empty = document.createElement("li");
       empty.className = "muted";
       empty.dataset.agentSessionEmpty = "1";
-      empty.textContent = includeClosed
-        ? "No matching session history."
-        : "No live agent sessions yet.";
+      empty.textContent = "No matching sessions.";
       list.appendChild(empty);
       return;
     }
@@ -4045,7 +4060,7 @@
       const li = document.createElement("li");
       li.dataset.sessionId = s.id;
       li.dataset.sessionInstance = s.origin_instance_id || s.instance_id || "";
-      li.dataset.sessionLive = s.live === false || s.status === "closed"
+      li.dataset.sessionLive = s.live === false
         ? "false"
         : "true";
       li.dataset.sessionRecoverable = s.recovery && s.recovery.recoverable ? "true" : "false";
@@ -4056,6 +4071,7 @@
         : "";
       const title = s.title || s.label || "Agent";
       const state = sessionListState(s);
+      const presentation = s.presentation || {};
       const cards = s.cards || [];
       const primaryCard = cards.find(function (card) { return card.primary; }) || cards[0];
       const project = s.project || null;
@@ -4095,6 +4111,10 @@
           '">PR #' + escapeHtml(watch.pr_number) + " · " + escapeHtml(watch.status) + "</a>";
       })).join("");
       li.innerHTML =
+        (presentation.purpose === "automated_run" || presentation.purpose === "one_shot_job"
+          ? '<div class="agent-activity-group">' +
+              escapeHtml(s.activity_group || "Other activity") + "</div>"
+          : "") +
         '<div class="agent-session-shell">' +
           '<span class="agent-session-provider-mark" aria-hidden="true">' +
             escapeHtml(String(s.agent_name || "PA").slice(0, 2).toUpperCase()) + "</span>" +
@@ -4111,6 +4131,9 @@
             '<span class="agent-session-title-tooltip" role="tooltip">' +
               escapeHtml(title) + "</span>" +
             '<div class="agent-session-context-line">' + contextParts.join("") + "</div>" +
+            '<div class="agent-session-context-line"><span>' +
+              escapeHtml(presentation.explanation || "Session details are limited on this peer.") +
+              "</span></div>" +
             '<div class="agent-session-facts">' +
               '<span class="agent-session-instance" title="Execution instance">' +
                 (sessionIdentity || escapeHtml(s.origin_instance_name || "Local instance")) + "</span>" +
@@ -4131,21 +4154,56 @@
             '<span class="muted small">Last activity <time datetime="' +
               escapeHtml(s.updated_at || "") + '">' + escapeHtml(sessionTimestamp(s.updated_at)) +
               "</time></span>" +
+            '<span class="muted small"><b>Provider attempts</b> ' +
+              escapeHtml(s.provider_attempts || 0) +
+              (s.closure_reason ? " · <b>Closure reason</b> " + escapeHtml(s.closure_reason) : "") +
+              "</span>" +
             '<a class="text-btn small" href="/knowledge?session=' + encodeURIComponent(s.id) +
               '">Promote conclusion to memory</a>' +
             '<span class="agent-session-actions"></span>' +
           "</div></details>";
-      if (s.status !== "closed") {
-        const close = document.createElement("button");
-        close.type = "button";
-        close.className = "ghost small danger agent-session-close";
-        close.dataset.agentSessionClose = "1";
-        close.textContent = s.live === false ? "Forget" : "Close";
-        close.title = s.live === false
-          ? "Forget this orphan so it is not retried"
-          : "Close the live session";
-        const actions = li.querySelector(".agent-session-actions");
-        actions.appendChild(close);
+      const actions = li.querySelector(".agent-session-actions");
+      const permitted = presentation.permitted_actions || [];
+      if (presentation.purpose === "chat" &&
+          (permitted.indexOf("pin") !== -1 || permitted.indexOf("unpin") !== -1)) {
+        const pin = document.createElement("button");
+        pin.type = "button";
+        pin.className = "ghost small";
+        pin.dataset.agentSessionPin = "1";
+        pin.dataset.pinned = s.pinned_at ? "true" : "false";
+        pin.textContent = s.pinned_at ? "Unpin" : "Pin";
+        actions.appendChild(pin);
+      }
+      if (permitted.indexOf("archive") !== -1 || permitted.indexOf("unarchive") !== -1) {
+        const archive = document.createElement("button");
+        archive.type = "button";
+        archive.className = "ghost small danger agent-session-close";
+        archive.dataset.agentSessionArchive = "1";
+        const isArchived = !!(presentation.archive && presentation.archive.archived);
+        archive.dataset.archived = isArchived ? "true" : "false";
+        archive.textContent = isArchived ? "Unarchive" : "Archive";
+        archive.title = isArchived
+          ? "Return this conversation to Chats"
+          : "Archive this conversation without deleting its history";
+        actions.appendChild(archive);
+      }
+      if (permitted.indexOf("take_over") !== -1 || permitted.indexOf("return_to_automation") !== -1) {
+        const control = document.createElement("button");
+        control.type = "button";
+        control.className = "ghost small";
+        control.dataset.agentSessionControl = "1";
+        control.dataset.mode = permitted.indexOf("take_over") !== -1 ? "human" : "automation";
+        control.textContent = control.dataset.mode === "human" ? "Take over" : "Return to automation";
+        actions.appendChild(control);
+      }
+      if (permitted.indexOf("continue_in_new_chat") !== -1) {
+        const continuation = document.createElement("button");
+        continuation.type = "button";
+        continuation.className = "ghost small";
+        continuation.dataset.agentSessionContinue = "1";
+        continuation.textContent = "Continue in new chat";
+        continuation.title = "Start a linked conversation with an explicit context boundary";
+        actions.appendChild(continuation);
       }
       list.appendChild(li);
     });
@@ -4166,9 +4224,16 @@
   function refreshSessionList(activeId, force) {
     const list = document.querySelector("[data-agent-session-list]");
     if (!list) return Promise.resolve(null);
-    const toggle = document.querySelector("[data-agent-history-toggle]");
-    const includeClosed = !!(toggle && toggle.getAttribute("aria-checked") === "true");
-    const path = includeClosed ? "/history?limit=500" : "/sessions";
+    const panel = list.closest("[data-agent-session-view]");
+    const view = panel && panel.dataset.agentSessionView || "chats";
+    const archived = view === "archived";
+    const effectiveView = archived ? "chats" : view;
+    const path = "/sessions?view=" + encodeURIComponent(effectiveView) +
+      (archived ? "&archived=true" : "") +
+      (effectiveView === "activity" && panel && panel.dataset.agentActivityFilter
+        ? "&activity_filter=" + encodeURIComponent(panel.dataset.agentActivityFilter)
+        : "");
+    const includeClosed = effectiveView === "all" || archived;
     if (sessionListRecovery &&
         (sessionListRecovery.list !== list || sessionListRecovery.path !== path)) {
       sessionListRecovery.controller.cancel("session-list-context-changed");
@@ -4257,6 +4322,14 @@
   }
 
   function sessionListState(session) {
+    const presentation = session.presentation || {};
+    if (presentation.display_status) {
+      return {
+        key: String(presentation.status_code || presentation.display_status)
+          .toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+        label: presentation.display_status,
+      };
+    }
     if ((session.metrics_json || {}).pending_approval ||
         (session.config_json || {}).pending_approval) {
       return { key: "waiting", label: "Approval" };
@@ -4716,23 +4789,81 @@
       list.addEventListener("click", function (e) {
         const li = e.target.closest("[data-session-id]");
         if (!li) return;
-        if (e.target.closest("[data-agent-session-close]")) {
+        const archiveButton = e.target.closest(
+          "[data-agent-session-archive], [data-agent-session-unarchive]"
+        );
+        if (archiveButton) {
           e.preventDefault();
           e.stopPropagation();
           const sessionId = li.dataset.sessionId;
+          const unarchive = archiveButton.hasAttribute("data-agent-session-unarchive") ||
+            archiveButton.dataset.archived === "true";
           const widget = document.querySelector("[data-agent-chat]");
-          csrfFetch("/sessions/" + encodeURIComponent(sessionId) + "/close", {
+          csrfFetch("/sessions/" + encodeURIComponent(sessionId) +
+            (unarchive ? "/unarchive" : "/archive"), {
             method: "POST",
             body: "{}",
           }).then(function () {
-            if (widget && widget._acw && widget._acw.sessionId === sessionId) {
+            if (!unarchive && widget && widget._acw && widget._acw.sessionId === sessionId) {
               widget._acw.markSessionEnded(
-                "Session ended. Start or select another session to send more prompts."
+                "Conversation archived. Its durable history remains available."
               );
             }
             refreshSessionList(null);
           }).catch(function (err) {
-            window.alert("Could not close session: " + err.message);
+            window.alert("Could not " + (unarchive ? "unarchive" : "archive") +
+              " conversation: " + err.message);
+          });
+          return;
+        }
+        const pinButton = e.target.closest("[data-agent-session-pin]");
+        if (pinButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          const pinned = pinButton.dataset.pinned !== "true";
+          csrfFetch("/sessions/" + encodeURIComponent(li.dataset.sessionId) + "/pin", {
+            method: "PUT",
+            body: JSON.stringify({ pinned: pinned }),
+          }).then(function () {
+            refreshSessionList(null, true);
+          }).catch(function (err) {
+            window.alert("Could not update pin: " + err.message);
+          });
+          return;
+        }
+        const controlButton = e.target.closest("[data-agent-session-control]");
+        if (controlButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          const mode = controlButton.dataset.mode || controlButton.dataset.controlMode;
+          csrfFetch("/sessions/" + encodeURIComponent(li.dataset.sessionId) + "/control", {
+            method: "POST",
+            body: JSON.stringify({ mode: mode }),
+          }).then(function () {
+            refreshSessionList(null, true);
+          }).catch(function (err) {
+            window.alert("Could not change session control: " + err.message);
+          });
+          return;
+        }
+        const continueButton = e.target.closest("[data-agent-session-continue]");
+        if (continueButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          continueButton.disabled = true;
+          csrfFetch("/sessions/" + encodeURIComponent(li.dataset.sessionId) + "/continue", {
+            method: "POST",
+            body: "{}",
+          }).then(function (snapshot) {
+            const widget = document.querySelector("[data-agent-chat]");
+            const sessionId = snapshot && snapshot.session && snapshot.session.id;
+            if (widget && widget._acw && sessionId) {
+              widget._acw.switchSession(sessionId, true, "");
+            }
+            refreshSessionList(sessionId, true);
+          }).catch(function (err) {
+            continueButton.disabled = false;
+            window.alert("Could not continue in a new chat: " + err.message);
           });
           return;
         }

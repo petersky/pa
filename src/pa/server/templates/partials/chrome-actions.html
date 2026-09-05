@@ -58,17 +58,17 @@
   </div>
 
   <a href="/agent"
-     class="status-btn {{ 'online' if agent_connected else 'offline' }}"
+     class="status-btn {{ 'online' if agent_connected else 'idle' }}"
      {% if active_path == '/agent' %}aria-current="page"{% endif %}
-     title="{{ 'Agent online — open Sessions' if agent_connected else ('Agent starting — open Sessions' if not agent_startup.get('complete', true) else 'Agent offline — open Sessions') }}"
-     aria-label="Open Sessions; agent is {{ 'online' if agent_connected else ('starting' if not agent_startup.get('complete', true) else 'offline') }}"
+     title="{{ 'Agent is working — open Chats and Activity' if agent_connected else ('PA is restarting — open Chats and Activity' if not agent_startup.get('complete', true) else 'Open Chats and Activity') }}"
+     aria-label="Open Sessions; agent is {{ 'working' if agent_connected else ('restoring' if not agent_startup.get('complete', true) else 'ready on demand') }}"
      hx-get="/agent"
      hx-target="#app-view"
      hx-push-url="true"
      hx-swap="innerHTML">
     {{ icon('agent', 'icon icon-sm') }}
     <span class="status-dot"></span>
-    <span class="status-label">{{ 'Agent' if agent_connected else ('Starting' if not agent_startup.get('complete', true) else 'Offline') }}</span>
+    <span class="status-label">{{ 'Agent' if agent_connected else ('Restoring' if not agent_startup.get('complete', true) else 'Ready') }}</span>
   </a>
 
   <button type="button"

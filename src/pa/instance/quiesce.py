@@ -7,7 +7,7 @@ import binascii
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -105,6 +105,13 @@ class SessionSnapshot(BaseModel):
     origin_instance_id: str | None = None
     dispatch_id: str | None = None
     realm_id: str = "default"
+    purpose: Literal["chat", "automated_run", "one_shot_job", "unknown"] = "unknown"
+    initiating_workflow: dict[str, Any] = Field(default_factory=dict)
+    control_mode: Literal["automation", "human"] = "automation"
+    archived_at: datetime | None = None
+    workflow_state: str = "unknown"
+    workflow_outcome: dict[str, Any] = Field(default_factory=dict)
+    recovery_json: dict[str, Any] = Field(default_factory=dict)
     prompting: bool = False
     queue_paused: bool = False
     queued_prompts: list[QueuedPrompt] = Field(default_factory=list)

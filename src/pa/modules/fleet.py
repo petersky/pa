@@ -89,6 +89,7 @@ from pa.execution.dispatch import (
     goal_dispatch_placement_input_snapshot,
     goal_dispatch_record_placement_input_valid,
 )
+from pa.execution.session_presentation import build_session_presentation
 from pa.execution.disposition import decide_card_disposition
 from pa.execution.post_turn import (
     ActionApprovalV1,
@@ -14070,12 +14071,34 @@ def _local_session_route(request: Request, session_id: str) -> dict[str, Any] | 
     manager = ctx.services.get("instance_agent")
     runtime = manager.get(session_id) if manager else None
     live = bool(runtime and not getattr(runtime, "_closed", False))
-    ended = session.status in {"closed", "quiesced"}
+    dispatch_store = ctx.services.get("dispatch_store")
+    presentation = build_session_presentation(
+        session,
+        runtime=runtime if live else None,
+        dispatch=dispatch_store.by_session(session_id) if dispatch_store else None,
+        quiescing=bool(manager and manager.quiescing),
+        startup_complete=bool(manager and manager.startup_complete),
+    )
+    ended = session.status == "closed" or session.archived_at is not None
+    blocked = bool(presentation["recovery"]["blocked"])
+    context_lost = bool(presentation["recovery"]["context_lost"])
+    recoverable = not live and not ended and not blocked and not context_lost
     return {
         "session_id": session_id,
-        "state": "live" if live else "expired" if ended else "recoverable",
+        "state": (
+            "live"
+            if live
+            else "expired"
+            if ended
+            else "context_lost"
+            if context_lost
+            else "blocked"
+            if blocked
+            else "recoverable"
+        ),
         "live": live,
-        "recoverable": not live and not ended,
+        "recoverable": recoverable,
+        "presentation": presentation,
         "api_base": "/api/agent",
         "owner": {
             "instance_id": session.origin_instance_id or ctx.settings.instance_id,
@@ -14093,7 +14116,7 @@ def _local_session_route(request: Request, session_id: str) -> dict[str, Any] | 
         "history_url": f"/api/agent/history/{session_id}",
         "recovery_url": (
             f"/api/agent/sessions/{session_id}/recover"
-            if not live and not ended
+            if recoverable
             else None
         ),
     }
@@ -14248,12 +14271,37 @@ async def resolve_session_route(
         }
     session = history["session"]
     live = bool(history.get("live"))
-    ended = session.get("status") in {"closed", "quiesced"}
+    presentation = history.get("presentation")
+    has_product_contract = isinstance(presentation, dict) and bool(
+        presentation.get("version")
+    )
+    ended = session.get("status") == "closed" or bool(session.get("archived_at"))
+    blocked = bool(
+        has_product_contract and (presentation.get("recovery") or {}).get("blocked")
+    )
+    context_lost = bool(
+        has_product_contract
+        and (presentation.get("recovery") or {}).get("context_lost")
+    )
+    recoverable = not live and not ended and not blocked and not context_lost
     return {
         "session_id": session_id,
-        "state": "live" if live else "expired" if ended else "recoverable",
+        "state": (
+            "live"
+            if live
+            else "expired"
+            if ended
+            else "limited"
+            if not has_product_contract
+            else "context_lost"
+            if context_lost
+            else "blocked"
+            if blocked
+            else "recoverable"
+        ),
         "live": live,
-        "recoverable": not live and not ended,
+        "recoverable": recoverable if has_product_contract else False,
+        "presentation": presentation,
         "api_base": api_base,
         "owner": {
             "instance_id": owner_id,
@@ -14266,7 +14314,7 @@ async def resolve_session_route(
         "history_url": f"{api_base}/history/{session_id}",
         "recovery_url": (
             f"{api_base}/sessions/{session_id}/recover"
-            if not live and not ended
+            if recoverable and has_product_contract
             else None
         ),
     }

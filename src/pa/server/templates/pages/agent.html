@@ -8,40 +8,37 @@
   <p class="muted small">Initiator {{ session_attribution.initiator }} · authority {{ instance_identity(session_attribution.authority_instance_id) }} · target {{ instance_identity(session_attribution.target_instance_id) }} · provider {{ session_attribution.provider }}{% if session_attribution.stale %} · dispatch is no longer live{% endif %}</p>
   <p class="muted small">Provenance: {{ session_attribution.source }} · dispatch <code>{{ session_attribution.dispatch_id }}</code> · session <code>{{ session_attribution.session_id }}</code></p>
 </section>{% endif %}
-<div class="panel agent-sessions-panel">
+<div class="panel agent-sessions-panel" data-agent-session-view="{{ session_view }}" data-agent-activity-filter="{{ activity_filter }}">
   <div class="panel-header">
-    <h2>Sessions</h2>
+    <h2>{{ 'Chats' if session_view == 'chats' else ('Activity' if session_view == 'activity' else ('Archived' if session_view == 'archived' else 'All sessions')) }}</h2>
     <div class="agent-session-header-actions">
-      {% if sessions %}
-      <button type="button" class="ghost small danger" data-agent-end-all title="End every live or recoverable session">End all</button>
-      {% endif %}
-      {% if agent_enabled %}
-      <button type="button" class="ghost small" data-agent-new-session title="New session">New</button>
+      {% if agent_enabled and session_view == 'chats' %}
+      <button type="button" class="ghost small" data-agent-new-session title="New conversation">New chat</button>
       {% endif %}
     </div>
   </div>
+  <nav class="agent-session-view-tabs" aria-label="Agent navigation">
+    <a href="/agent?view=chats" class="{{ 'active' if session_view == 'chats' }}">Chats</a>
+    <a href="/agent?view=activity" class="{{ 'active' if session_view == 'activity' }}">Activity</a>
+    <a href="/agent?view=all" class="{{ 'active' if session_view == 'all' }}"
+       aria-label="All sessions; Show closed sessions and provider attempts">All sessions</a>
+  </nav>
   {% set startup_in_progress = not agent_startup.get('complete', true) %}
-  <div class="agent-lifecycle-state status status-{{ 'active' if agent_connected else ('waiting' if startup_in_progress else 'offline') }}"
+  <div class="agent-lifecycle-state status status-{{ 'waiting' if startup_in_progress else 'active' }}"
        role="status" aria-live="polite" data-agent-lifecycle-state>
-    Agent {{ 'connected' if agent_connected else ('starting up — restoring sessions' if startup_in_progress else 'offline') }}
+    {{ 'PA is restarting — restoring unfinished work' if startup_in_progress else 'Provider processes start on demand' }}
   </div>
-  {% if not agent_connected and not startup_in_progress %}
-  <button type="button" class="ghost small" id="pa-agent-reconnect">Reconnect agent</button>
-  {% endif %}
   <div class="agent-session-history-controls">
-    <button type="button" class="agent-session-history-toggle" role="switch"
-            aria-checked="false" data-agent-history-toggle>
-      <span class="agent-session-toggle-track" aria-hidden="true"><span></span></span>
-      <span>Show closed sessions</span>
-      <span class="sr-only" data-agent-history-state>Off</span>
-    </button>
+    {% if session_view == 'chats' %}<a class="text-btn small" href="/agent?view=archived">Archived</a>{% endif %}
+    {% if session_view == 'activity' %}<nav class="agent-activity-filters" aria-label="Activity filters">
+      {% for filter_id, filter_label in [('all', 'All'), ('needs_you', 'Needs you'), ('running', 'Running'), ('completed', 'Completed')] %}<a href="/agent?view=activity&filter={{ filter_id }}" class="{{ 'active' if activity_filter == filter_id }}">{{ filter_label }}</a>{% endfor %}
+    </nav>{% endif %}
     <label class="sr-only" for="agent-session-search">Filter sessions</label>
     <input id="agent-session-search"
            type="search"
            placeholder="Search session history…"
            autocomplete="off"
-           data-agent-session-search
-           hidden>
+           data-agent-session-search>
   </div>
   <ul class="session-list" data-agent-session-list>
     {% if sessions %}
@@ -53,6 +50,8 @@
         data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}">
       {% set session_title = s.title or s.label or s.agent_name %}
       {% set state = detail.state or s.status or 'unknown' %}
+      {% set presentation = detail.presentation or {} %}
+      {% if session_view == 'activity' %}<div class="agent-activity-group">{{ detail.activity_group }}</div>{% endif %}
       {% set admission = (s.config_json or {}).get('configuration', {}) %}
       {% set requested = admission.get('requested', {}) %}
       {% set effective = admission.get('effective', {}) %}
@@ -65,15 +64,15 @@
           <div class="agent-session-row-head">
             <button type="button" class="agent-session-select" data-agent-session-open
                     aria-label="Open session {{ session_title }}"{% if s.id == session_id %} aria-current="true"{% endif %}>
-              <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{{ session_title }}</strong>
+              <strong class="agent-session-title" data-agent-session-title data-full-title="{{ session_title }}">{% if s.pinned_at %}📌 {% endif %}{{ session_title }}</strong>
             </button>
-            <span class="agent-session-state agent-session-state-{{ state }}"><span aria-hidden="true">●</span> {{ 'Approval' if detail.pending_approval else state | replace('_', ' ') | title }}</span>
+            <span class="agent-session-state agent-session-state-{{ state }}"><span aria-hidden="true">●</span> {{ presentation.display_status or ('Approval' if detail.pending_approval else state | replace('_', ' ') | title) }}</span>
           </div>
           <span class="agent-session-title-tooltip" role="tooltip">{{ session_title }}</span>
           <div class="agent-session-context-line">
             {% if detail.card %}<a href="/work?card={{ detail.card.id }}" title="Current card">Card · {{ detail.card.title }}</a>
             {% elif detail.project %}<a href="/projects?project={{ detail.project.id }}" title="Project">Project · {{ detail.project.title }}</a>
-            {% else %}<span class="muted">Standalone session</span>{% endif %}
+            {% else %}<span class="muted">{{ s.purpose | replace('_', ' ') | title }}</span>{% endif %}
             {% if detail.repository_name %}<span title="{{ detail.repository_url }}">{{ detail.repository_name }}{% if detail.branch %} · {{ detail.branch }}{% endif %}</span>{% endif %}
           </div>
           <div class="agent-session-facts">
@@ -97,20 +96,21 @@
           {% if s.model_id or s.mode_id or live_values %}<span class="muted small agent-session-config"><b>Live</b> {{ live_model }}{% if s.mode_id %} · {{ s.mode_id }}{% endif %}{% for key, value in live_values.items() if value is not none and value != '' and key not in ['model', 'model_id', 'mode', 'mode_id', 'collaboration_mode'] %} · {{ key }} {{ value }}{% endfor %}</span>{% endif %}
           {% if requested or effective %}<span class="muted small agent-session-config"><b>Requested</b> {{ requested.get('model_id') or 'default model' }}{% if requested.get('reasoning') %} · effort {{ requested.get('reasoning') }}{% endif %}<br><b>Effective</b> {{ effective.get('model_id') or s.model_id or 'default model' }}{% if effective.get('reasoning') %} · effort {{ effective.get('reasoning') }}{% endif %}<br><b>Settings status</b> {{ admission.get('state', 'unknown') }}</span>{% endif %}
           <span class="muted small">Last activity <time datetime="{{ s.updated_at.isoformat() }}">{{ s.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></span>
+          {% if presentation.explanation %}<span class="muted small">{{ presentation.explanation }}</span>{% endif %}
+          <span class="muted small"><b>Purpose</b> {{ s.purpose | replace('_', ' ') }} · <b>Control</b> {{ s.control_mode }} · <b>Raw lifecycle</b> {{ s.status }}</span>
+          <span class="muted small"><b>Provider attempts</b> {{ detail.provider_attempts }}{% if detail.closure_reason %} · <b>Closure reason</b> {{ detail.closure_reason }}{% endif %}</span>
           <a class="text-btn small" href="/knowledge?session={{ s.id }}">Promote conclusion to memory</a>
           <span class="agent-session-actions">
-        <button type="button" class="ghost small danger agent-session-close"
-                data-agent-session-close
-                title="{{ 'Close the live session' if s.id in live_session_ids else 'Forget this orphan so it is not retried' }}">
-          {{ 'Close' if s.id in live_session_ids else 'Forget' }}
-        </button>
+          {% if s.purpose == 'chat' and not s.archived_at %}<button type="button" class="ghost small" data-agent-session-pin data-pinned="{{ 'true' if s.pinned_at else 'false' }}">{{ 'Unpin' if s.pinned_at else 'Pin' }}</button><button type="button" class="ghost small danger" data-agent-session-archive>Archive</button>{% elif s.purpose == 'chat' %}<button type="button" class="ghost small" data-agent-session-unarchive>Unarchive</button>{% endif %}
+          {% if s.purpose == 'automated_run' and s.workflow_state not in ['succeeded', 'failed', 'cancelled', 'validation_failed'] %}<button type="button" class="ghost small" data-agent-session-control data-control-mode="{{ 'automation' if s.control_mode == 'human' else 'human' }}">{{ 'Return to automation' if s.control_mode == 'human' else 'Take over' }}</button>{% endif %}
+          {% if 'continue_in_new_chat' in presentation.permitted_actions %}<button type="button" class="ghost small" data-agent-session-continue>Continue in new chat</button>{% endif %}
           </span>
         </div>
       </details>
     </li>
     {% endfor %}
     {% else %}
-    <li class="muted" data-agent-session-empty>No live agent sessions yet.</li>
+    <li class="muted" data-agent-session-empty>No sessions in this view.</li>
     {% endif %}
   </ul>
 </div>
@@ -223,8 +223,8 @@
   <summary class="panel-header"><h2>Tips</h2></summary>
   <ul class="muted tip-list">
     <li>Messages queue while the agent is working.</li>
-    <li>Stop pauses the active turn and queue.</li>
-    <li>Session actions and display options are in the Session menu.</li>
+    <li>Stop response affects only the current turn; queue controls are separate.</li>
+    <li>Conversation actions and technical details are in the Session menu.</li>
     <li>Permission prompts appear inline unless auto-approve is on.</li>
   </ul>
 </details>
@@ -233,8 +233,8 @@
 {% set main %}
 <header class="page-heading agent-page-heading">
   <div>
-    <h1>Sessions</h1>
-    <p>Run, recover, and connect agent work to the cards and projects it belongs to.</p>
+    <h1>{{ 'Chats' if session_view == 'chats' else ('Activity' if session_view == 'activity' else 'Session inspection') }}</h1>
+    <p>{{ 'Persistent human conversations.' if session_view == 'chats' else ('Managed automated work and requests that need you.' if session_view == 'activity' else 'Search durable sessions, provider attempts, lifecycle, and closure history.') }}</p>
   </div>
 </header>
 <div class="panel panel-fill page-agent-main{% if not agent_enabled %} agent-disabled-panel{% endif %}">

@@ -3397,6 +3397,43 @@ code {
   padding: 0 0.75rem 0.75rem;
 }
 
+.agent-session-view-tabs,
+.agent-activity-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0 0.75rem 0.65rem;
+}
+
+.agent-session-view-tabs a,
+.agent-activity-filters a {
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.35rem;
+  color: var(--pa-text-muted);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.agent-session-view-tabs a.active,
+.agent-activity-filters a.active {
+  background: color-mix(in srgb, var(--pa-accent) 14%, transparent);
+  color: var(--pa-accent);
+  font-weight: 700;
+}
+
+.agent-activity-filters {
+  padding: 0;
+}
+
+.agent-activity-group {
+  margin-bottom: 0.35rem;
+  color: var(--pa-text-muted);
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .agent-session-history-toggle {
   display: inline-flex;
   align-items: center;

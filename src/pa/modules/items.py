@@ -535,34 +535,39 @@ def _progress_from_dispatch(ctx: AppContext, record) -> dict:
 def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
     if session is None:
         return None
+    from pa.execution.session_presentation import build_session_presentation
+
     agent = ctx.services.get("instance_agent")
     runtime = agent.get(session.id) if agent and hasattr(agent, "get") else None
-    if runtime and not getattr(runtime, "_closed", False):
-        active = bool(
-            getattr(runtime, "prompting", False) or getattr(runtime, "_in_flight", None)
-        )
-        return {
-            "id": session.id,
-            "session_state": "busy" if active else "connected",
-            "state": "working" if active else "connected",
-            "connected": bool(getattr(runtime, "connected", False)),
-            "turn": {"state": "running"} if active else None,
-            "liveness": {
-                "classification": "live" if active else "completed_idle",
-            },
-        }
-    status = str(session.status or "")
-    failed = status in {"failed", "error", "recovery_blocked"}
-    terminal = status in {"closed", "quiesced"} or failed
+    presentation = build_session_presentation(
+        session,
+        runtime=runtime,
+        quiescing=bool(getattr(agent, "_quiescing", False)) if agent else False,
+        startup_complete=bool(getattr(agent, "startup_complete", True)) if agent else True,
+    )
+    display = presentation["display_status"]
+    if display in {"Responding", "Running"}:
+        state = "working"
+    elif display == "Queued":
+        state = "queued"
+    elif display in {"Completed", "Cancelled", "Archived"}:
+        state = "completed"
+    elif display in {"Failed", "Validation failed", "Recovery blocked"}:
+        state = "failed"
+    elif display in {"Restoring your work", "PA is restarting"}:
+        state = "deferred"
+    else:
+        state = "available"
     return {
         "id": session.id,
-        "session_state": "failed" if failed else "closed" if terminal else "stale",
-        "state": "failed" if failed else "completed" if terminal else "stale",
-        "connected": False,
-        "turn": None,
+        "session_state": state,
+        "state": state,
+        "connected": presentation["connection"]["state"] == "connected",
+        "turn": presentation["turn"],
         "liveness": {
-            "classification": "failed_closed" if failed else "stale",
+            "classification": display.lower().replace(" ", "_"),
         },
+        "presentation": presentation,
     }
 
 
