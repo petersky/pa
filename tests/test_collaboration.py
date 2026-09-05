@@ -22,6 +22,7 @@ from pa.collaboration.models import (
 )
 from pa.collaboration.policy import decide_initial_mode
 from pa.collaboration.service import CollaborationService
+from pa.domain.notifications import InteractionResponse, Notification
 from pa.domain.models import AgentSession
 
 
@@ -97,6 +98,19 @@ class _Manager:
         if self.runtime and self.runtime.session.id == session_id:
             return self.runtime
         return None
+
+
+class _Notifier:
+    def __init__(self) -> None:
+        self.created = []
+
+    def create(self, data, **_kwargs):
+        values = data.model_dump(exclude={"id"})
+        if data.id:
+            values["id"] = data.id
+        notice = Notification(**values)
+        self.created.append(notice)
+        return notice
 
 
 def _session() -> AgentSession:
@@ -328,7 +342,7 @@ class CollaborationServiceTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.status, TransitionStatus.REJECTED)
         self.assertIn("denies", result.reason)
 
-    async def test_agent_cannot_self_approve_leaving_plan_mode(self):
+    async def test_agent_transition_creates_correlated_durable_approval(self):
         self.service.save_policy(
             CollaborationPolicy(
                 id="approval-required",
@@ -338,6 +352,8 @@ class CollaborationServiceTests(IsolatedAsyncioTestCase):
             )
         )
         self.session.config_json["values"]["collaboration_mode"] = "plan"
+        notifier = _Notifier()
+        self.service.bind_runtime(self.manager, notifier=notifier)
         result = await self.service.request_transition(
             self.session,
             self.request(
@@ -347,8 +363,87 @@ class CollaborationServiceTests(IsolatedAsyncioTestCase):
                 actor="agent",
             ),
         )
-        self.assertEqual(result.status, TransitionStatus.REJECTED)
+        self.assertEqual(result.status, TransitionStatus.APPROVAL_REQUIRED)
         self.assertIn("user approval", result.reason)
+        self.assertTrue(result.pending)
+        self.assertEqual(result.approval_notification_id, notifier.created[0].id)
+        notice = notifier.created[0]
+        self.assertEqual(notice.type.value, "interaction")
+        self.assertEqual(notice.interaction.protocol_request_id, result.request_id)
+        self.assertEqual([choice.id for choice in notice.interaction.choices], ["approve", "decline"])
+        notice.interaction.response_principal = "user:local"
+        await self.service.handle_mode_approval(
+            notice,
+            InteractionResponse(idempotency_key="approve-1", choice_id="approve"),
+        )
+        await self.service.handle_mode_approval(
+            notice,
+            InteractionResponse(idempotency_key="approve-1", choice_id="approve"),
+        )
+        applied = self.service.store.get_mode_request(
+            self.session.id, "transition-1"
+        )[2]
+        self.assertEqual(applied.status, TransitionStatus.APPROVED_APPLIED)
+        self.assertEqual(applied.approved_by, "user:local")
+        self.assertEqual(len(self.runtime.configure_calls), 1)
+
+    async def test_stale_policy_mode_does_not_override_provider_confirmed_user_choice(self):
+        self.session.config_json.update(
+            values={"collaboration_mode": "default"},
+            collaboration={"current_mode": "plan", "plan_turns": 2},
+        )
+        result = await self.service.request_transition(
+            self.session,
+            self.request(
+                requested_mode=CollaborationMode.DEFAULT,
+                actor="user:local",
+            ),
+        )
+        self.assertEqual(result.status, TransitionStatus.APPROVED_APPLIED)
+        self.assertEqual(result.effective_mode, CollaborationMode.DEFAULT)
+        self.assertEqual(self.runtime.configure_calls, [])
+
+    async def test_provider_confirmed_mode_settles_pending_approval_without_reprompt(self):
+        self.service.save_policy(
+            CollaborationPolicy(
+                id="approval-required",
+                scope_type=PolicyScope.INSTANCE,
+                scope_id="instance-1",
+                lifecycle=PlanLifecycle(require_user_approval=True),
+            )
+        )
+        self.session.config_json["values"]["collaboration_mode"] = "plan"
+        notifier = _Notifier()
+        self.service.bind_runtime(self.manager, notifier=notifier)
+        approval = await self.service.request_transition(
+            self.session,
+            self.request(
+                requested_mode=CollaborationMode.DEFAULT,
+                actor="agent",
+            ),
+        )
+        self.assertEqual(approval.status, TransitionStatus.APPROVAL_REQUIRED)
+
+        self.session.config_json["values"]["collaboration_mode"] = "default"
+        reconciled = await self.service.reconcile_provider_mode(
+            self.session, "default"
+        )
+
+        self.assertEqual(reconciled.status, TransitionStatus.APPROVED_APPLIED)
+        self.assertIsNone(self.service.store.pending_mode_request(self.session.id))
+        self.assertNotIn(
+            "pending_interaction",
+            self.session.config_json.get("durable_runtime", {}),
+        )
+        repeated = await self.service.request_transition(
+            self.session,
+            self.request(
+                requested_mode=CollaborationMode.DEFAULT,
+                actor="agent",
+            ),
+        )
+        self.assertEqual(repeated.status, TransitionStatus.APPROVED_APPLIED)
+        self.assertTrue(repeated.duplicate)
 
     async def test_user_can_approve_leaving_plan_mode(self):
         self.service.save_policy(
@@ -490,3 +585,34 @@ class CollaborationServiceTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.status, TransitionStatus.APPROVED_APPLIED)
         self.assertEqual(result.effective_mode, CollaborationMode.DEFAULT)
         self.assertEqual(self.session.mode_id, before_mode)
+
+    async def test_expired_plan_escalation_preserves_work_behind_actionable_approval(self):
+        self.service.save_policy(
+            CollaborationPolicy(
+                id="plan-expired",
+                scope_type=PolicyScope.INSTANCE,
+                scope_id="instance-1",
+                lifecycle=PlanLifecycle(
+                    max_turns=3,
+                    expires_minutes=1,
+                    require_user_approval=True,
+                    unavailable_user_fallback=PlanFallback.ESCALATE,
+                ),
+            )
+        )
+        self.session.config_json["values"]["collaboration_mode"] = "plan"
+        self.session.config_json["collaboration"] = {
+            "current_mode": "plan",
+            "plan_turns": 2,
+            "plan_started_at": (datetime.now(UTC) - timedelta(minutes=2)).isoformat(),
+        }
+        notifier = _Notifier()
+        self.service.bind_runtime(self.manager, notifier=notifier)
+
+        with self.assertRaisesRegex(RuntimeError, "trusted user approval"):
+            await self.service.prepare_turn(self.runtime)
+
+        pending = self.service.store.pending_mode_request(self.session.id)
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending[1].status, TransitionStatus.APPROVAL_REQUIRED)
+        self.assertEqual(notifier.created[0].interaction.kind.value, "approval")

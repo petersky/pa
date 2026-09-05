@@ -181,6 +181,45 @@ def test_durable_lifecycle_dedup_audit_and_idempotent_delivery(tmp_path: Path) -
     )
     assert repeated.version == result.version
     assert len(delivered) == 1
+
+
+def test_collaboration_approval_requires_response_and_delivers_trusted_principal(tmp_path: Path) -> None:
+    kernel = _kernel(tmp_path)
+    service = kernel.ctx.require_service("notifications")
+    collaboration = MagicMock()
+    collaboration.handle_mode_approval = AsyncMock()
+    kernel.ctx.services["collaboration"] = collaboration
+    notice = _create(
+        service,
+        session_id="session-1",
+        interaction=InteractionRequest(
+            request_id="mode-request-1",
+            kind=InteractionKind.APPROVAL,
+            prompt="Approve leaving Plan mode?",
+            choices=[
+                InteractionChoice(id="approve", label="Approve", value="approve"),
+                InteractionChoice(id="decline", label="Decline", value="decline"),
+            ],
+            allow_cancel=False,
+            protocol_method="pa/collaboration_mode_approval",
+            protocol_request_id="mode-request-1",
+            continuation_mode="protocol",
+        ),
+    )
+    service.mark_read(notice, principal_id="user:local", idempotency_key="read-only")
+    collaboration.handle_mode_approval.assert_not_awaited()
+
+    answered = asyncio.run(
+        service.respond(
+            notice,
+            InteractionResponse(idempotency_key="approve-mode", choice_id="approve"),
+            principal_id="user:local",
+        )
+    )
+    collaboration.handle_mode_approval.assert_awaited_once()
+    delivered_notice = collaboration.handle_mode_approval.await_args.args[0]
+    assert delivered_notice.interaction.response_principal == "user:local"
+    assert answered.interaction.state == InteractionState.DELIVERED
     audit = kernel.ctx.store.list_notification_audit(notice.id)
     assert len(audit) >= 4
     assert {entry["action"] for entry in audit}.issuperset(

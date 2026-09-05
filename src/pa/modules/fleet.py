@@ -2728,8 +2728,13 @@ async def proxy_assigned_session_progress(
 
 
 class AssignedRestartHandoffBody(BaseModel):
-    continuation_prompt: str
+    continuation_prompt: str = ""
     idempotency_key: str
+
+
+class AssignedRestartHandoffEditBody(BaseModel):
+    handoff_id: str
+    continuation_prompt: str = ""
 
 
 @router.post("/goal-assigned-session/restart-handoff")
@@ -2743,6 +2748,21 @@ async def request_assigned_restart_handoff(
         session_id=str(record.session_id),
         continuation_prompt=body.continuation_prompt,
         idempotency_key=body.idempotency_key,
+    )
+    return handoff.model_dump(mode="json")
+
+
+@router.post("/goal-assigned-session/restart-handoff/edit")
+async def edit_assigned_restart_handoff(
+    request: Request, body: AssignedRestartHandoffEditBody
+) -> dict[str, Any]:
+    """Edit or remove a pending continuation through the bound session capability."""
+    record = _assigned_local_dispatch(request)
+    manager = request.app.state.ctx.require_service("instance_agent")
+    handoff = await manager.edit_restart_handoff(
+        session_id=str(record.session_id),
+        handoff_id=body.handoff_id,
+        continuation_prompt=body.continuation_prompt,
     )
     return handoff.model_dump(mode="json")
 
@@ -5677,28 +5697,47 @@ async def _peer_dispatch_json(
     request: Request, instance_id: str, body: dict[str, Any]
 ) -> dict:
     inst = _fleet_instance_or_404(request, instance_id)
-    client = request.app.state.ctx.services.get("fleet_http_client")
+    # Materialization is control-plane traffic.  It must not contend with the
+    # long-lived fleet probe/overview pool, which can be saturated while the
+    # selected local target is otherwise healthy.
+    client = request.app.state.ctx.services.get("dispatch_http_client")
     owns_client = client is None
-    client = client or httpx.AsyncClient(timeout=15.0)
+    client = client or httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=3.0, read=15.0, write=15.0, pool=2.0),
+        limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+    )
     try:
-        resp, _selected_endpoint = await _fleet_http(
-            request,
-            "http.fleet_dispatch",
-            request_peer(
-                request.app.state.ctx,
-                client,
-                inst,
-                "POST",
-                "api/fleet/dispatch/materialize",
-                headers={
-                    **_peer_headers(request),
-                    "Idempotency-Key": str(body["mutation_id"]),
-                },
-                json=body,
+        async def send(selected_client: httpx.AsyncClient):
+            return await _fleet_http(
+                request,
+                "http.fleet_dispatch",
+                request_peer(
+                    request.app.state.ctx,
+                    selected_client,
+                    inst,
+                    "POST",
+                    "api/fleet/dispatch/materialize",
+                    headers={
+                        **_peer_headers(request),
+                        "Idempotency-Key": str(body["mutation_id"]),
+                    },
+                    json=body,
+                    timeout=15.0,
+                ),
                 timeout=15.0,
-            ),
-            timeout=15.0,
-        )
+            )
+
+        try:
+            resp, _selected_endpoint = await send(client)
+        except httpx.PoolTimeout:
+            # The request is durably idempotent. One isolated retry prevents a
+            # stale shared-pool waiter from requiring a service restart while
+            # retaining a strict bound on attempts and elapsed time.
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=3.0, read=15.0, write=15.0, pool=2.0),
+                limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
+            ) as isolated:
+                resp, _selected_endpoint = await send(isolated)
     except (httpx.HTTPError, TimeoutError) as exc:
         selected_endpoint = getattr(exc, "selected_endpoint", None)
         if selected_endpoint is None:
@@ -14669,6 +14708,11 @@ class FleetModule(Module):
             limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
         )
         ctx.register_service("fleet_http_client", fleet_http_client)
+        dispatch_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=3.0, read=15.0, write=15.0, pool=2.0),
+            limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+        )
+        ctx.register_service("dispatch_http_client", dispatch_http_client)
         ctx.register_service(
             "endpoint_health_registry", EndpointHealthRegistry(ctx.settings.data_dir)
         )
@@ -14795,6 +14839,9 @@ class FleetModule(Module):
         client = ctx.services.get("fleet_http_client")
         if client:
             await client.aclose()
+        dispatch_client = ctx.services.get("dispatch_http_client")
+        if dispatch_client:
+            await dispatch_client.aclose()
         dispatch_store = ctx.services.get("dispatch_store")
         if dispatch_store:
             await asyncio.to_thread(dispatch_store.close)
@@ -15506,11 +15553,47 @@ class FleetModule(Module):
             )
 
         @mcp.tool()
+        def preview_agent_restart_handoff(
+            continuation_prompt: str = "",
+        ) -> dict[str, Any]:
+            """Preview a service restart and optional exact-session continuation without restarting."""
+            import os
+            from pa.acp.environment import ASSIGNED_SERVICE_SESSION_ENV
+
+            session_id = os.environ.get(ASSIGNED_SERVICE_SESSION_ENV, "") or os.environ.get(
+                "PA_BROWSER_SESSION_ID", ""
+            )
+            if not session_id:
+                raise ValueError("Restart preview requires a managed PA session binding")
+            pending = [
+                item.model_dump(mode="json")
+                for item in ctx.store.list_restart_handoffs(session_id=session_id)
+                if item.status not in {
+                    "failed",
+                    "continuation_delivered",
+                    "restart_completed",
+                }
+            ]
+            prompt = continuation_prompt.strip()
+            return {
+                "operation": "service_restart_preview",
+                "session_id": session_id,
+                "explanation": (
+                    "PA will wait for the current turn, preserve durable state, restart the service, "
+                    + ("then queue the displayed continuation once." if prompt else "and will not send a continuation prompt.")
+                ),
+                "continuation_prompt": prompt or None,
+                "will_send_continuation": bool(prompt),
+                "pending_handoffs": pending,
+                "next_action": "Edit the prompt if needed, then call request_agent_restart_handoff.",
+            }
+
+        @mcp.tool()
         def request_agent_restart_handoff(
-            continuation_prompt: str,
             idempotency_key: str,
+            continuation_prompt: str = "",
         ) -> dict | None:
-            """Safely restart after this turn and continue the exact session once."""
+            """Restart the PA service after preview; an optional continuation is delivered once."""
             import os
             from pa.acp.environment import (
                 ASSIGNED_SERVICE_MODE_ENV,
@@ -15535,6 +15618,41 @@ class FleetModule(Module):
                     "continuation_prompt": continuation_prompt,
                     "idempotency_key": idempotency_key,
                 },
+                allow_not_found=True,
+                timeout_seconds=15.0,
+            )
+
+        @mcp.tool()
+        def edit_agent_restart_handoff(
+            handoff_id: str,
+            continuation_prompt: str = "",
+        ) -> dict | None:
+            """Edit or remove an already-pending restart continuation before quiescing."""
+            import os
+            from pa.acp.environment import (
+                ASSIGNED_SERVICE_MODE_ENV,
+                ASSIGNED_SERVICE_SESSION_ENV,
+            )
+
+            assigned = os.environ.get(ASSIGNED_SERVICE_MODE_ENV) == "1"
+            session_id = os.environ.get(ASSIGNED_SERVICE_SESSION_ENV, "") or os.environ.get(
+                "PA_BROWSER_SESSION_ID", ""
+            )
+            if not session_id:
+                raise ValueError("Restart handoff edit requires a managed PA session binding")
+            path = (
+                "/api/goal-assigned-session/restart-handoff/edit"
+                if assigned
+                else f"/api/agent/sessions/{session_id}/restart-handoffs/{handoff_id}"
+            )
+            payload = {"continuation_prompt": continuation_prompt}
+            if assigned:
+                payload["handoff_id"] = handoff_id
+            return request_local_pa(
+                ctx.settings,
+                "POST" if assigned else "PATCH",
+                path,
+                json=payload,
                 allow_not_found=True,
                 timeout_seconds=15.0,
             )

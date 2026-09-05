@@ -148,51 +148,90 @@ class CardProjection:
 
     def _migrate_conversation_closures(self) -> None:
         """Translate legacy close reasons after transcript storage is available."""
-        migration = "agent_session_product_v1_closures"
+        migration = "agent_session_product_v2_closures"
         with self._conn() as conn:
             if conn.execute(
                 "SELECT 1 FROM projection_migrations WHERE name=?", (migration,)
             ).fetchone():
                 return
-            rows = conn.execute(
-                "SELECT id FROM agent_sessions "
-                "WHERE purpose='chat' AND status='closed'"
-            ).fetchall()
+            has_rows = conn.execute(
+                "SELECT 1 FROM agent_sessions "
+                "WHERE purpose='chat' AND (status='closed' OR "
+                "(status='available' AND archived_at IS NULL)) LIMIT 1"
+            ).fetchone()
         # A fresh projection may receive legacy events after construction.  Do
         # not mark the migration complete until there is durable data to assess.
-        if not rows:
+        if not has_rows:
             return
-        idle_expired: list[str] = []
-        for row in rows:
-            events = self.transcripts.list_before(str(row["id"]), limit=1001)
-            latest_close = next(
-                (
-                    event
-                    for event in reversed(events)
-                    if event.event_type == "session_closed"
-                ),
-                None,
-            )
-            if (
-                latest_close
-                and latest_close.payload.get("reason")
-                == "auto:idle_retention_expired"
-            ):
-                idle_expired.append(str(row["id"]))
+        cursor = ""
+        while True:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT id,status,archived_at,updated_at FROM agent_sessions "
+                    "WHERE purpose='chat' AND (status='closed' OR "
+                    "(status='available' AND archived_at IS NULL)) AND id>? "
+                    "ORDER BY id LIMIT 250",
+                    (cursor,),
+                ).fetchall()
+            if not rows:
+                break
+            idle_expired: list[str] = []
+            explicit_restore: list[tuple[str, str]] = []
+            for row in rows:
+                session_id = str(row["id"])
+                events = self.transcripts.list_before(session_id, limit=1001)
+                latest_close = next(
+                    (
+                        event
+                        for event in reversed(events)
+                        if event.event_type == "session_closed"
+                    ),
+                    None,
+                )
+                if (
+                    latest_close
+                    and latest_close.payload.get("reason")
+                    == "auto:idle_retention_expired"
+                    and row["status"] == "closed"
+                ):
+                    idle_expired.append(session_id)
+                elif (
+                    latest_close
+                    and latest_close.payload.get("reason")
+                    != "auto:idle_retention_expired"
+                    and row["status"] == "available"
+                    and row["archived_at"] is None
+                    and datetime.fromisoformat(str(row["updated_at"]))
+                    <= latest_close.created_at
+                ):
+                    # Repair the short-lived v1 migration which could reopen a
+                    # later explicit closure after observing an older idle close.
+                    # A genuine subsequent unarchive has a newer updated_at and
+                    # is intentionally left alone.
+                    explicit_restore.append(
+                        (latest_close.created_at.isoformat(), session_id)
+                    )
+            with self._conn() as conn:
+                # Historical default chats may coexist only because they are
+                # closed. They return as saved conversations, not competing
+                # default aliases.
+                conn.executemany(
+                    "UPDATE agent_sessions SET label=NULL "
+                    "WHERE id=? AND label='default' AND status='closed'",
+                    [(session_id,) for session_id in idle_expired],
+                )
+                conn.executemany(
+                    "UPDATE agent_sessions SET status='available', archived_at=NULL, "
+                    "archive_reason=NULL WHERE id=? AND purpose='chat' AND status='closed'",
+                    [(session_id,) for session_id in idle_expired],
+                )
+                conn.executemany(
+                    "UPDATE agent_sessions SET status='closed', archived_at=?, "
+                    "archive_reason='legacy_explicit_closure' WHERE id=?",
+                    explicit_restore,
+                )
+            cursor = str(rows[-1]["id"])
         with self._conn() as conn:
-            # Historical default chats may coexist only because they are closed.
-            # They return as ordinary saved conversations, not competing default
-            # aliases, so the canonical-session uniqueness fence remains intact.
-            conn.executemany(
-                "UPDATE agent_sessions SET label=NULL "
-                "WHERE id=? AND label='default' AND status='closed'",
-                [(session_id,) for session_id in idle_expired],
-            )
-            conn.executemany(
-                "UPDATE agent_sessions SET status='available', archived_at=NULL, "
-                "archive_reason=NULL WHERE id=? AND purpose='chat' AND status='closed'",
-                [(session_id,) for session_id in idle_expired],
-            )
             conn.execute(
                 "INSERT OR IGNORE INTO projection_migrations (name, applied_at) "
                 "VALUES (?, ?)",
@@ -733,16 +772,10 @@ class CardProjection:
             "WHERE purpose='unknown' AND dispatch_id IS NULL AND "
             "(label='default' OR label='chat')"
         )
-        # Undo only the historical policy closure that is known to have ended a
-        # confidently classified chat for inactivity.  Explicit user closure is
-        # preserved as an archive and no runtime is started here.
-        conn.execute(
-            "UPDATE agent_sessions SET status='available' "
-            "WHERE purpose='chat' AND status='closed' AND EXISTS ("
-            "SELECT 1 FROM agent_transcript_events te WHERE te.session_id=agent_sessions.id "
-            "AND te.event_type='session_closed' "
-            "AND te.payload LIKE '%auto:idle_retention_expired%')"
-        )
+        # Closure migration is deliberately deferred until canonical transcript
+        # storage has imported the legacy table.  Looking for *any* historical
+        # idle close here can incorrectly reopen a conversation that was later
+        # archived explicitly by its user.
         conn.execute(
             "UPDATE agent_sessions SET archived_at=COALESCE(archived_at, updated_at), "
             "archive_reason=COALESCE(archive_reason, 'legacy_explicit_closure') "
@@ -4918,7 +4951,7 @@ class CardProjection:
                 return prior
             active = conn.execute(
                 """SELECT * FROM agent_restart_handoffs
-                   WHERE session_id=? AND status NOT IN ('failed', 'continuation_delivered')
+                   WHERE session_id=? AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed')
                    ORDER BY created_at, id LIMIT 1""",
                 (handoff.session_id,),
             ).fetchone()
@@ -5024,6 +5057,32 @@ class CardProjection:
             ).fetchone()
         return self._row_to_restart_handoff(row) if row else None
 
+    def edit_restart_handoff(
+        self, handoff_id: str, *, session_id: str, continuation_prompt: str
+    ) -> RestartHandoff:
+        """Edit or remove continuation only before service quiescing begins."""
+        now = datetime.now(UTC)
+        with self._mutation_lock, self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
+                (handoff_id, session_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Restart handoff not found for this session")
+            handoff = self._row_to_restart_handoff(row)
+            if handoff.status not in {"requested", "waiting_for_turn_end"}:
+                raise ValueError(
+                    "Restart continuation can only be edited before PA begins quiescing"
+                )
+            conn.execute(
+                "UPDATE agent_restart_handoffs SET continuation_prompt=?, updated_at=? WHERE id=?",
+                (continuation_prompt.strip(), now.isoformat(), handoff_id),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
+            ).fetchone()
+        return self._row_to_restart_handoff(refreshed)
+
     def retry_restart_handoff(
         self, handoff_id: str, *, session_id: str
     ) -> RestartHandoff:
@@ -5041,6 +5100,7 @@ class CardProjection:
                 "resuming",
                 "continuation_queued",
                 "continuation_delivered",
+                "restart_completed",
             }:
                 return handoff
             if handoff.status != "failed":
@@ -5048,7 +5108,7 @@ class CardProjection:
             competing = conn.execute(
                 """SELECT id FROM agent_restart_handoffs
                    WHERE session_id=? AND id!=?
-                     AND status NOT IN ('failed', 'continuation_delivered')
+                     AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed')
                    LIMIT 1""",
                 (session_id, handoff_id),
             ).fetchone()
@@ -5444,6 +5504,11 @@ class CardProjection:
     ) -> TranscriptEvent | None:
         """Find a durable browser prompt admission by its stable client id."""
         return self.transcripts.find_prompt(session_id, prompt_id)
+
+    def get_prompt_lifecycle(
+        self, session_id: str, prompt_id: str
+    ) -> TranscriptEvent | None:
+        return self.transcripts.find_prompt_lifecycle(session_id, prompt_id)
 
     def get_queued_prompt_acceptance(
         self, session_id: str, prompt_id: str

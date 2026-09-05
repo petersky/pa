@@ -102,6 +102,7 @@ def build_session_presentation(
             "completion_pending",
             "reconciliation_pending",
             "recoverable_interrupted",
+            "admission_blocked",
         }
     )
     interaction = _pending_interaction(session, runtime)
@@ -112,13 +113,31 @@ def build_session_presentation(
     initiating_workflow = dict(getattr(session, "initiating_workflow", None) or {})
     dispatch_state = str(_field(dispatch, "state", "") or "")
     if purpose in {"automated_run", "one_shot_job"} and workflow_state not in _TERMINAL_WORKFLOW_STATES:
-        if dispatch_state == "completed":
-            workflow_state = "succeeded"
-        elif dispatch_state in {"failed", "cancelled"}:
-            workflow_state = dispatch_state
+        followups = list(_field(dispatch, "followup_turns", []) or [])
+        dispatch_settled = bool(
+            dispatch_state in {"completed", "acknowledged"}
+            and _field(dispatch, "acknowledged_at")
+            and str(_field(dispatch, "reconciliation_state", "not_requested"))
+            in {"not_requested", "completed", "not_required"}
+            and all(
+                str(_field(item, "state", "")) == "ended"
+                and str(_field(item, "delivery_state", "")) == "acknowledged"
+                for item in followups
+            )
+        )
         evaluated = _field(dispatch, "evaluated_outcome")
+        if (
+            purpose == "one_shot_job"
+            and dispatch_settled
+            and evaluated == "attempt_succeeded"
+        ):
+            workflow_state = "succeeded"
+        elif purpose == "one_shot_job" and dispatch_state in {"failed", "cancelled"}:
+            workflow_state = dispatch_state
         if isinstance(evaluated, dict) and evaluated:
             workflow_outcome = {**workflow_outcome, **evaluated}
+        elif evaluated:
+            workflow_outcome = {**workflow_outcome, "evaluation": str(evaluated)}
     archived = getattr(session, "archived_at", None) is not None
     status = str(getattr(session, "status", "unknown") or "unknown")
 
@@ -131,6 +150,8 @@ def build_session_presentation(
             for item in queue
         ):
             queue_reason = "automation_paused_for_takeover"
+        elif not connected:
+            queue_reason = "waiting_for_recovery"
         elif prompting or in_flight:
             queue_reason = "waiting_for_current_response"
         else:
@@ -183,21 +204,22 @@ def build_session_presentation(
             "Automatic prompts are held. Human prompts can continue in this conversation.",
             None,
         )
-    elif prompting or in_flight:
+    elif connected and (prompting or in_flight):
         display_status = "Responding" if purpose == "chat" else "Running"
         explanation = "The provider is working on the current turn."
         next_action = "finish_current_turn"
-    elif queue:
+    elif connected and queue:
         display_status = "Queued" if purpose == "chat" else "Running"
         explanation = {
             "automation_paused_for_takeover": "Automatic prompts are held until control returns to automation.",
             "waiting_for_current_response": "Prompts are waiting for the current response.",
             "waiting_for_provider_capacity": "Prompts are durably queued for provider capacity.",
+            "waiting_for_recovery": "Prompts are durably queued while the provider session is restored.",
         }[queue_reason]
         next_action = (
             None if queue_reason == "automation_paused_for_takeover" else "start_next_prompt"
         )
-    elif not live and obligations:
+    elif not connected and obligations:
         retry_at = recovery.get("next_retry_at")
         display_status = "Restoring your work"
         explanation = (
@@ -234,13 +256,13 @@ def build_session_presentation(
         actions.extend(["open", "archive"] if not archived else ["unarchive"])
         if not archived:
             actions.extend(["pin" if not getattr(session, "pinned_at", None) else "unpin", "prompt"])
-            if not live:
+            if not connected:
                 actions.append("recover")
     elif purpose == "automated_run" and workflow_state not in _TERMINAL_WORKFLOW_STATES:
         actions.append("return_to_automation" if control == "human" else "take_over")
         if control == "human":
             actions.append("prompt")
-    if obligations and not live and not recovery.get("blocked"):
+    if obligations and not connected and not recovery.get("blocked"):
         actions.append("recover")
     if recovery.get("context_lost"):
         actions.append("continue_in_new_chat")
@@ -267,7 +289,15 @@ def build_session_presentation(
             "live_runtime": live,
         },
         "turn": {
-            "state": "running" if prompting or in_flight else "queued" if queue else "idle",
+            "state": (
+                "running"
+                if connected and (prompting or in_flight)
+                else "blocked"
+                if durable.get("lifecycle") == "admission_blocked"
+                else "queued"
+                if queue or in_flight
+                else "idle"
+            ),
         },
         "workflow": {
             "state": workflow_state,

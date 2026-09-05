@@ -725,7 +725,7 @@ class RestartHandoff(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_id: str
     idempotency_key: str
-    continuation_prompt: str
+    continuation_prompt: str = ""
     status: str = "requested"
     card_id: str | None = None
     project_id: str | None = None
