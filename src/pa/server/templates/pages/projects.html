@@ -17,32 +17,61 @@
 
     {% if projects_view == 'repos' %}
     <div class="projects-create">
-      <button type="button" class="button" data-project-create-open="new-repository-dialog" aria-haspopup="dialog">+ New Repo</button>
+      <button type="button" class="button" data-project-create-open="new-repository-dialog" aria-haspopup="dialog">+ Add Repo</button>
       <dialog id="new-repository-dialog" class="project-create-dialog" aria-labelledby="new-repository-title">
-      <form class="stack project-create-form"
-            data-operation="Add repository"
-            hx-post="/projects/repositories?realm={{ active_realm }}&view=repos&project={{ selected_project }}"
-            hx-target="#app-view"
-            hx-swap="innerHTML">
-        <header><h2 id="new-repository-title">New repository</h2><button type="button" class="ghost" data-project-create-close aria-label="Close new repository dialog">Close</button></header>
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <label>Repository URL <input type="url" name="url" required placeholder="https://github.com/org/repo.git"></label>
-        <label>Name <input type="text" name="name" placeholder="Optional display name"></label>
-        <label>Default branch <input type="text" name="default_branch" placeholder="main"></label>
-        <label>Remote name <input type="text" name="remote_name" value="origin"></label>
-        <label>Push URL <input type="url" name="push_url" placeholder="Defaults to repository URL"></label>
-        <label>Provider <input type="text" name="provider" placeholder="github"></label>
-        <label>Provider repository ID <input type="text" name="provider_repository_id" placeholder="Optional provider-native ID"></label>
-        <label>Provider metadata <textarea name="provider_metadata" rows="2" placeholder='{"owner":"org"}'></textarea></label>
-        <label>Visibility
-          <select name="visibility">
-            <option value="realm">Realm</option>
-            <option value="private">Private</option>
-            <option value="public">Public</option>
-          </select>
-        </label>
-        <div class="form-actions"><button type="button" class="ghost" data-project-create-close>Cancel</button><button type="submit">Add repository</button></div>
-      </form>
+      <div class="stack project-create-form" data-repository-dialog data-realm="{{ active_realm }}">
+        <header><h2 id="new-repository-title">Add repository</h2><button type="button" class="ghost" data-project-create-close aria-label="Close new repository dialog">Close</button></header>
+        <p data-github-identity role="status">Checking GitHub authentication…</p>
+        <div class="projects-tabs" role="tablist" aria-label="Repository source">
+          <button type="button" id="repository-existing-tab" role="tab" aria-selected="true" aria-controls="repository-existing" data-repository-tab="existing">Existing</button>
+          <button type="button" id="repository-new-tab" role="tab" aria-selected="false" aria-controls="repository-new" tabindex="-1" data-repository-tab="new">New</button>
+        </div>
+        <section id="repository-existing" role="tabpanel" aria-labelledby="repository-existing-tab">
+          <form class="stack" data-operation="Add repository"
+                hx-post="/projects/repositories?realm={{ active_realm }}&view=repos&project={{ selected_project }}"
+                hx-target="#app-view" hx-swap="innerHTML">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label for="repository-url">Repository URL</label>
+            <div class="repository-url-row">
+              <input id="repository-url" type="url" name="url" required placeholder="https://github.com/org/repo.git">
+              <button type="button" class="ghost" data-repository-browse aria-expanded="false" aria-controls="repository-browser" disabled>Browse</button>
+            </div>
+            <div id="repository-browser" class="stack panel-inset" hidden>
+              <label>Search loaded repositories <input type="search" data-repository-search placeholder="Name or description" autocomplete="off"></label>
+              <div class="repository-browser-controls">
+                <label>Visibility <select data-repository-visibility><option value="all">All</option><option value="private">Private</option><option value="public">Public</option></select></label>
+                <label>Sort <select data-repository-sort><option value="full_name">Name (A–Z)</option><option value="updated">Recently updated</option><option value="created">Newest</option><option value="pushed">Recently pushed</option></select></label>
+              </div>
+              <p data-repository-list-status role="status"></p>
+              <div class="repository-browser-results" data-repository-results></div>
+              <button type="button" class="ghost" data-repository-more hidden>Load more</button>
+              <button type="button" class="ghost" data-repository-retry hidden>Retry</button>
+            </div>
+            <details><summary>Repository settings (optional)</summary>
+              <div class="stack">
+                <label>Name <input type="text" name="name" placeholder="Optional display name"></label>
+                <label>Default branch <input type="text" name="default_branch" placeholder="main"></label>
+                <label>Remote name <input type="text" name="remote_name" value="origin"></label>
+                <label>Push URL <input type="url" name="push_url" placeholder="Defaults to repository URL"></label>
+                <label>Provider <input type="text" name="provider" placeholder="github"></label>
+                <label>Provider repository ID <input type="text" name="provider_repository_id" placeholder="Optional provider-native ID"></label>
+                <label>Provider metadata <textarea name="provider_metadata" rows="2" placeholder='{"owner":"org"}'></textarea></label>
+                <label>Visibility <select name="visibility"><option value="realm">Realm</option><option value="private">Private</option><option value="public">Public</option></select></label>
+              </div>
+            </details>
+            <div class="form-actions"><button type="button" class="ghost" data-project-create-close>Cancel</button><button type="submit">Add repository</button></div>
+          </form>
+        </section>
+        <section id="repository-new" role="tabpanel" aria-labelledby="repository-new-tab" hidden>
+          <form class="stack" data-repository-new-form>
+            <label>Repository name <input name="name" required maxlength="100" pattern="[A-Za-z0-9_.\-]+" autocomplete="off" data-repository-name></label>
+            <p class="muted">Creates a private GitHub repository in the account shown above, with an initial README.</p>
+            <button type="button" class="ghost" data-repository-check disabled>Check availability</button>
+            <p data-repository-availability role="status"></p>
+            <div class="form-actions"><button type="button" class="ghost" data-project-create-close>Cancel</button><button type="submit" data-repository-create disabled>Create and add repository</button></div>
+          </form>
+        </section>
+      </div>
       </dialog>
     </div>
     <label class="projects-search">
