@@ -48,7 +48,7 @@
     if (!list) return;
     list.querySelectorAll("[data-notification-draft]").forEach(function (input) {
       var key = input.dataset.notificationDraft;
-      var value = input.type === "checkbox" ? input.checked : input.value;
+      var value = input.multiple ? JSON.stringify(Array.from(input.selectedOptions).map(function (option) { return JSON.parse(option.value); })) : input.type === "checkbox" ? input.checked : input.value;
       if (value === "") drafts.delete(key); else drafts.set(key, value);
       if (input.dataset.sensitive !== "true") storageSet(key, value);
     });
@@ -88,7 +88,14 @@
       var requiredAttr = required.has(name) ? ' required data-required="true"' : "";
       var common = ' data-notification-draft="' + esc(draftKey) + '" data-notification-field="' + esc(name) + '" data-field-type="' + esc(spec.type || "string") + '" data-sensitive="' + (interaction.sensitive ? "true" : "false") + '"' + requiredAttr + constraintAttrs(spec);
       var control;
-      if (Array.isArray(spec.enum)) {
+      if (spec.type === "array" && spec.items && Array.isArray(spec.items.enum)) {
+        var selected = [];
+        try { selected = JSON.parse(saved || "[]"); } catch (_error) { /* ignore stale drafts */ }
+        control = '<select multiple' + common + '>' + spec.items.enum.map(function (value) {
+          var encoded = JSON.stringify(value);
+          return '<option value="' + esc(encoded) + '"' + (selected.some(function (entry) { return JSON.stringify(entry) === encoded; }) ? ' selected' : '') + '>' + esc(value) + '</option>';
+        }).join('') + '</select>';
+      } else if (Array.isArray(spec.enum)) {
         control = '<select' + common + '><option value="">Select…</option>' + spec.enum.map(function (value) {
           return '<option value="' + esc(value) + '"' + (saved === String(value) ? " selected" : "") + '>' + esc(value) + "</option>";
         }).join("") + "</select>";
@@ -125,19 +132,24 @@
     if (item.interaction && item.interaction.protocol_method) rows.push("<dt>protocol</dt><dd><code>" + esc(item.interaction.protocol_method) + "</code></dd>");
     return rows.length ? '<details class="notification-identifiers"><summary>Technical details</summary><dl>' + rows.join("") + "</dl></details>" : "";
   }
-  function choiceControls(interaction) {
-    return (interaction.choices || []).map(function (choice) {
-      return '<span class="notification-choice"><button type="button" class="small" data-notification-choice="' + esc(choice.id) + '">' + esc(choice.label) + "</button>" + (choice.description ? "<small>" + esc(choice.description) + "</small>" : "") + "</span>";
+  function choiceControls(interaction, itemId) {
+    var multiple = (interaction.response_schema || {}).type === "array";
+    var choices = (interaction.choices || []).map(function (choice) {
+      var control = multiple
+        ? '<label><input type="checkbox" data-notification-multi-choice="' + esc(choice.id) + '" data-notification-draft="' + esc(itemId + ':choice:' + choice.id) + '" data-sensitive="' + (interaction.sensitive ? 'true' : 'false') + '"' + (draftValue(itemId + ':choice:' + choice.id, interaction.sensitive) === true ? ' checked' : '') + '> ' + esc(choice.label) + '</label>'
+        : '<button type="button" class="small" data-notification-choice="' + esc(choice.id) + '">' + esc(choice.label) + '</button>';
+      return '<span class="notification-choice">' + control + (choice.description ? '<small>' + esc(choice.description) + '</small>' : '') + '</span>';
     }).join("");
+    return choices + (multiple && choices ? '<button type="button" class="primary small" data-notification-send-choices>Submit selected responses</button>' : '');
   }
   function interactionControls(item) {
     var interaction = item.interaction;
     if (!interaction) return "";
-    if (interaction.state === "failed") {
+    if (["failed", "answered", "delivery_pending"].indexOf(interaction.state) >= 0) {
       return '<div class="notification-actions"><button type="button" class="primary small" data-notification-retry>Retry delivery</button></div>';
     }
     if (interaction.state !== "outstanding") return "";
-    var choices = choiceControls(interaction);
+    var choices = choiceControls(interaction, item.id);
     var input = "";
     if (interaction.response_schema && interaction.response_schema.properties) {
       input = structuredControls(item, interaction);
@@ -149,6 +161,11 @@
     return '<div class="notification-actions">' + choices + input + cancel + "</div>";
   }
   function bodyMarkup(item) {
+    if (item.interaction && item.interaction.prompt) {
+      var question = '<p class="notification-question">' + esc(item.interaction.prompt) + '</p>';
+      var explanation = item.interaction.details || (item.body !== item.interaction.prompt ? item.body : '') || '';
+      return question + (explanation ? '<details class="notification-full"><summary>Details</summary><div class="notification-markdown card-markdown" data-notification-markdown-body>' + esc(explanation) + '</div></details>' : '');
+    }
     var body = item.body || item.summary || "";
     var summary = item.summary || "";
     var markdown = '<div class="notification-markdown card-markdown" data-notification-markdown-body>' + esc(body) + "</div>";
@@ -176,7 +193,7 @@
       var article = list.querySelector(selector);
       var target = article && article.querySelector("[data-notification-markdown-body]");
       if (!target || !window.PAAgentChat || typeof window.PAAgentChat.renderMarkdownAsync !== "function") return;
-      window.PAAgentChat.renderMarkdownAsync(safeMarkdownSource(item.body || item.summary || ""), { allowEmbeddedMedia: false }).then(function (html) {
+      window.PAAgentChat.renderMarkdownAsync(safeMarkdownSource((item.interaction && item.interaction.details) || item.body || item.summary || ""), { allowEmbeddedMedia: false }).then(function (html) {
         if (!target.isConnected) return;
         target.innerHTML = html;
         if (window.PALinks) window.PALinks.decorate(target);
@@ -196,6 +213,8 @@
         '<div class="notification-context">' + esc(routeContext(item)) + "</div>" +
         '<p class="notification-status"><strong>' + esc(presentation.status || "Notice") + "</strong></p>" +
         (presentation.required_action ? '<p class="notification-required"><strong>Required action:</strong> ' + esc(presentation.required_action) + "</p>" : "") +
+        (presentation.response_status ? '<p class="notification-response-status" role="status">' + esc(presentation.response_status.recording) + ' · ' + esc(presentation.response_status.delivery) + '<br>Continuation: ' + esc(presentation.response_status.continuation) + '</p>' : '') +
+        (item.interaction && item.interaction.responded_at && destination && /^\/(?!\/)/.test(destination) ? '<a href="' + esc(destination) + '">View continuation and progress</a>' : '') +
         bodyMarkup(item) +
         (presentation.next_effect ? '<p class="notification-effect">' + esc(presentation.next_effect) + "</p>" : "") +
         (remote ? '<p class="notification-warning">Respond on the owning instance. This copy will remain outstanding until the owner records the result.</p>' : "") +
@@ -284,7 +303,7 @@
     item.querySelectorAll("[data-notification-field]").forEach(function (input) {
       if (invalid) return;
       if (!input.checkValidity()) { invalid = input; message = input.validationMessage; return; }
-      var raw = input.type === "checkbox" ? input.checked : input.value;
+      var raw = input.multiple ? JSON.stringify(Array.from(input.selectedOptions).map(function (option) { return JSON.parse(option.value); })) : input.type === "checkbox" ? input.checked : input.value;
       if (input.dataset.required === "true" && raw === "") { invalid = input; message = "This field is required."; return; }
       if (raw === "" && input.dataset.required !== "true") return;
       try {
@@ -321,10 +340,16 @@
     if (event.target.closest("[data-notification-read]")) return void mutate(item, "read", { idempotency_key: key() }, "Marking read…");
     if (event.target.closest("[data-notification-resolve]")) return void mutate(item, "resolve", { idempotency_key: key() }, "Dismissing notice…");
     if (event.target.closest("[data-notification-retry]")) return void mutate(item, "respond", { idempotency_key: key(), retry: true }, "Retrying the recorded response…");
+    if (event.target.closest("[data-notification-send-choices]")) {
+      var selected = Array.from(item.querySelectorAll("[data-notification-multi-choice]:checked")).map(function (input) { return input.dataset.notificationMultiChoice; });
+      if (selected.length) mutate(item, "respond", { idempotency_key: key(), choice_ids: selected }, "Submitting selected responses…");
+      else item.querySelector("[data-notification-feedback]").textContent = "Select at least one response.";
+      return;
+    }
     var choice = event.target.closest("[data-notification-choice]");
     if (choice) return void mutate(item, "respond", { idempotency_key: key(), choice_id: choice.dataset.notificationChoice }, "Submitting selected response…");
     if (event.target.closest("[data-notification-send]")) {
-      var input = item.querySelector("[data-notification-draft]");
+      var input = item.querySelector("textarea[data-notification-draft]");
       if (input && input.value.trim()) mutate(item, "respond", { idempotency_key: key(), value: input.value }, "Submitting response…");
       else if (input) { input.setAttribute("aria-invalid", "true"); input.focus(); }
       return;

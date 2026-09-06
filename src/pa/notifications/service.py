@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import threading
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -414,7 +415,7 @@ class NotificationService:
             )
         if response.retry:
             if (
-                interaction.state != InteractionState.FAILED
+                interaction.state not in {InteractionState.FAILED, InteractionState.ANSWERED, InteractionState.DELIVERY_PENDING}
                 or interaction.response is None
             ):
                 raise NotificationConflict(
@@ -431,22 +432,25 @@ class NotificationService:
                     notification=notification,
                 )
             return {"cancelled": True}
-        if response.choice_id is not None:
-            choice = next(
-                (item for item in interaction.choices if item.id == response.choice_id),
-                None,
-            )
-            if not choice:
-                raise NotificationConflict(
-                    "invalid_choice",
-                    "The selected choice is not available",
-                    notification=notification,
-                )
-            return {"choice_id": choice.id, "value": choice.value}
+        if response.choice_id is not None or response.choice_ids is not None:
+            multiple = (interaction.response_schema or {}).get("type") == "array"
+            if multiple != (response.choice_ids is not None):
+                raise NotificationConflict("invalid_selection_mode", "Use the request's single or multiple selection contract", notification=notification)
+            ids = response.choice_ids if multiple else [response.choice_id]
+            available = {choice.id: choice for choice in interaction.choices}
+            if len(set(ids)) != len(ids) or any(key not in available for key in ids):
+                raise NotificationConflict("invalid_choice", "The selected choice is not available or is duplicated", notification=notification)
+            values = [available[key].value for key in ids]
+            if multiple:
+                try:
+                    validate_json_schema(values, interaction.response_schema)
+                except JsonSchemaValidationError as exc:
+                    raise NotificationConflict("response_validation_failed", "Selection did not match the required schema", notification=notification) from exc
+                return {"choice_ids": ids, "values": values}
+            return {"choice_id": ids[0], "value": values[0]}
         value = response.fields if response.fields is not None else response.value
         if (
-            response.fields is None
-            and not interaction.allow_freeform
+            not interaction.allow_freeform
             and not interaction.response_schema
         ):
             raise NotificationConflict(
@@ -480,6 +484,8 @@ class NotificationService:
         key = response.idempotency_key
         if stored == {"cancelled": True}:
             return InteractionResponse(idempotency_key=key, cancel=True)
+        if isinstance(stored, dict) and "choice_ids" in stored:
+            return InteractionResponse(idempotency_key=key, choice_ids=stored["choice_ids"])
         if isinstance(stored, dict) and "choice_id" in stored:
             return InteractionResponse(
                 idempotency_key=key, choice_id=str(stored["choice_id"])
@@ -505,6 +511,8 @@ class NotificationService:
             if not current:
                 raise KeyError(notification.id)
             if response.idempotency_key in current.idempotency_keys:
+                if not response.retry and current.interaction and self._validated_response(current, response) != current.interaction.response:
+                    raise NotificationConflict("idempotency_conflict", "This response key already recorded a different answer", notification=current)
                 return current
             interaction = current.interaction
             if not interaction:
@@ -515,6 +523,7 @@ class NotificationService:
                 )
             if interaction.state not in {
                 InteractionState.OUTSTANDING,
+                InteractionState.ANSWERED,
                 InteractionState.DELIVERY_PENDING,
                 InteractionState.FAILED,
             }:
@@ -543,8 +552,7 @@ class NotificationService:
                 )
             value = self._validated_response(current, response)
             if (
-                interaction.state == InteractionState.FAILED
-                and interaction.response is not None
+                interaction.response is not None
                 and interaction.response != value
             ):
                 raise NotificationConflict(
@@ -552,6 +560,8 @@ class NotificationService:
                     "Retry the same response because the previous delivery may have partially succeeded",
                     notification=current,
                 )
+            if interaction.continuation_mode == "prompt" and not interaction.continuation_prompt_id:
+                interaction.continuation_prompt_id = f"notification-response:{current.id}:{interaction.request_id}"
             now = datetime.now(UTC)
             delivery_response = self._delivery_response(interaction, response)
             if not response.retry:
@@ -651,18 +661,39 @@ class NotificationService:
             and manager
             and notification.session_id
         ):
+            prompt_id = interaction.continuation_prompt_id
+            # A crash after durable queue admission must never enqueue a new turn.
+            if prompt_id and await asyncio.to_thread(
+                self.store.get_prompt_acceptance, notification.session_id, prompt_id
+            ):
+                return
             runtime = manager.get(notification.session_id)
             if runtime is None:
                 runtime = await manager.recover_session(notification.session_id)
-            response_text = interaction.response_summary or "User response received"
+            envelope = {
+                "schema": "pa.interaction-response/v1",
+                "request_id": interaction.request_id,
+                "notification_id": notification.id,
+                "session_id": notification.session_id,
+                "dispatch_id": notification.dispatch_id,
+                "response": interaction.response,
+            }
             runtime.enqueue(
-                "A correlated user response was received for request "
-                f"{interaction.request_id}: {response_text}",
+                "A correlated user response was recorded. Apply it only to the originating "
+                "request, preserve its authorization scope, revalidate external state, and "
+                "report the result without quoting private response values.\n"
+                + json.dumps(envelope, ensure_ascii=False, separators=(",", ":")),
                 card_id=notification.card_id,
                 project_id=notification.project_id,
                 principal_id=interaction.response_principal,
                 source="notification-response",
+                prompt_id=prompt_id,
             )
+            drain = getattr(runtime, "_drain_transcripts", None)
+            if callable(drain):
+                pending = drain()
+                if inspect.isawaitable(pending):
+                    await pending
             return
         raise RuntimeError("The owning protocol request is no longer recoverable")
 

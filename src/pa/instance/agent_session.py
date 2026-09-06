@@ -600,6 +600,8 @@ class AgentSessionRuntime:
         stored = interaction.response
         if stored == {"cancelled": True}:
             return InteractionResponse(idempotency_key=retry_key, cancel=True)
+        if isinstance(stored, dict) and "choice_ids" in stored:
+            return InteractionResponse(idempotency_key=retry_key, choice_ids=stored["choice_ids"])
         if isinstance(stored, dict) and "choice_id" in stored:
             return InteractionResponse(
                 idempotency_key=retry_key, choice_id=str(stored["choice_id"])
@@ -971,6 +973,9 @@ class AgentSessionRuntime:
                     return
                 if response.fields is not None:
                     content: Any = response.fields
+                elif response.choice_ids is not None:
+                    by_id = {item.id: item.value for item in choices}
+                    content = [by_id[key] for key in response.choice_ids]
                 elif response.choice_id is not None:
                     choice = next(
                         (item for item in choices if item.id == response.choice_id),

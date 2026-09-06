@@ -138,7 +138,8 @@ class NotificationPanelManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
 <style>body{min-height:100vh;padding:1rem;background:var(--pa-bg)}.chrome-actions{justify-content:flex-end}</style>
 <script>
 window.__notificationPayload = __PAYLOAD__;
-window.fetch = function () { return Promise.resolve(new Response(JSON.stringify(window.__notificationPayload), {status: 200, headers: {'Content-Type':'application/json'}})); };
+window.__responses = [];
+window.fetch = function (url, options) { if (options && options.method === "POST") window.__responses.push({url: url, body: JSON.parse(options.body)}); return Promise.resolve(new Response(JSON.stringify(window.__notificationPayload), {status: 200, headers: {'Content-Type':'application/json'}})); };
 window.PAAgentChat = {renderMarkdownAsync: function (text) { return Promise.resolve('<p>' + text.replace(/\\n/g, '<br>') + '</p>'); }};
 </script><script src="/static/js/notifications.js" defer></script></head><body>
 <div class="chrome-actions"><div class="notification-chrome" data-notification-chrome>
@@ -238,3 +239,29 @@ window.PAAgentChat = {renderMarkdownAsync: function (text) { return Promise.reso
         self.assertEqual(narrow["width"], 390)
         self.assertTrue(narrow["page"])
         self.assertTrue(narrow["items"])
+
+
+    async def test_multiple_selection_requires_explicit_submit_and_preserves_ids(self):
+        session = self.manager.resolve(self.scope)
+        initial = await session.page.evaluate("window.__responses.length")
+        self.assertEqual(initial, 0)
+        await session.page.evaluate("""(() => {
+          document.querySelector('#pa-notification-panel').hidden = false;
+          var item = document.querySelector('[data-notification-id=choice]');
+          item.querySelector('.notification-actions').outerHTML = window.PANotificationsTest.interactionControls({id:'choice', interaction:{state:'outstanding', choices:[{id:'one',label:'One',value:0},{id:'two',label:'Two',value:false}], response_schema:{type:'array',minItems:1},allow_cancel:true}});
+          item.querySelector('[data-notification-send-choices]').click();
+        })()""")
+        self.assertEqual(await session.page.evaluate("window.__responses.length"), 0)
+        await session.page.evaluate("""(() => {
+          var item = document.querySelector('[data-notification-id=choice]');
+          item.querySelector('[data-notification-multi-choice=two]').click();
+        })()""")
+        self.assertEqual(await session.page.evaluate("window.__responses.length"), 0)
+        await session.page.evaluate("""(() => {
+          var submit = document.querySelector('[data-notification-id=choice] [data-notification-send-choices]');
+          submit.click(); submit.click();
+        })()""")
+        responses = await session.page.evaluate("window.__responses")
+        self.assertEqual(len(responses), 1)
+        self.assertEqual(responses[0]['url'], '/api/notifications/choice/respond')
+        self.assertEqual(responses[0]['body']['choice_ids'], ['two'])

@@ -290,13 +290,29 @@ _register(
     key="agent.context.interactions",
     purpose="Teach provider-neutral agents how to request and resume user interactions.",
     scope="global",
-    version=1,
+    version=2,
     template="""## Communicating with users
 Use the mechanism that owns the operation and preserve its correlation ID:
 - Tool or sandbox permission: use the provider's ACP permission request and its provider-defined choices.
 - ACP-supplied question, confirmation, choices, or structured fields: use `elicitation/*`.
 - During a PA dispatch: call `report_dispatch_progress` with structured `operator_input` for bounded questions, approvals, choices, freeform input, external actions, and deadlines. Legacy string `operator_input` remains supported.
 - After a turn: use the versioned `request_operator_input` post-turn action when available.
+
+For bounded questions, provide 2–4 meaningful choices with stable IDs and short
+labels (1–5 words). Keep the actual question and action consequences concise;
+put optional explanation/logs in details. Enable freeform only where needed.
+Example operator_input (native tool field, not quoted final output):
+{"schema_version":1,"request_id":"target-v1","prompt":"Where should tests run?",
+"choices":[{"id":"local","label":"Local","description":"Run in this worktree","value":"local"},
+{"id":"ci","label":"CI","description":"Push and run CI","value":"ci"}],
+"allow_freeform":false,"allow_cancel":true}
+For multiple selection, supply response_schema with type array and bounds;
+its items schema validates selected values. Never auto-submit a default.
+The versioned post-turn request_operator_input action uses question instead of
+prompt and also requires keep_lane; it accepts the same choice fields.
+Preserve native permission options exactly; do not invent approval choices or
+interpret prose/quoted JSON as authorization. If a tool rejects a request,
+report its error and correlation ID; never silently replace it with final prose.
 
 Do not rely only on ordinary final text when progress requires a user response.
 After PA delivers a correlated response, continue the same recoverable session,

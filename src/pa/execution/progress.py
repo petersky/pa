@@ -21,6 +21,8 @@ from pydantic import (
     model_validator,
 )
 
+from pa.domain.notifications import InteractionChoice
+
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
 
@@ -128,21 +130,16 @@ class ProgressToolDetailV1(BaseModel):
     result: str | None = Field(default=None, max_length=MAX_PROGRESS_DETAIL)
 
 
-class OperatorInputChoiceV1(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, max_length=200)
-    label: str = Field(min_length=1, max_length=300)
-    description: str | None = Field(default=None, max_length=1000)
-    value: Any = None
-
+OperatorInputChoiceV1 = InteractionChoice
 
 class OperatorInputRequestV1(BaseModel):
     """Structured operator-input request accepted alongside legacy strings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    request_id: str | None = Field(default=None, max_length=300)
+    schema_version: Literal[1] = 1
+    request_id: str | None = Field(default=None, min_length=1, max_length=300)
+    details: str | None = Field(default=None, max_length=16_000)
     prompt: str = Field(min_length=1, max_length=8000)
     response_schema: dict[str, Any] | None = None
     choices: list[OperatorInputChoiceV1] = Field(default_factory=list, max_length=100)
@@ -153,6 +150,8 @@ class OperatorInputRequestV1(BaseModel):
 
     @model_validator(mode="after")
     def infer_freeform_contract(self) -> OperatorInputRequestV1:
+        if len({choice.id for choice in self.choices}) != len(self.choices):
+            raise ValueError("choice IDs must be unique within a request")
         if self.allow_freeform is None:
             self.allow_freeform = not self.choices and self.response_schema is None
         return self
@@ -347,6 +346,7 @@ def sanitize_operator_input(
     return value.model_copy(
         update={
             "prompt": sanitize_text(value.prompt, limit=8000),
+            "details": sanitize_text(value.details, limit=16_000) if value.details else None,
             "choices": [
                 item.model_copy(
                     update={
