@@ -127,6 +127,30 @@ class CompletionReconciliationTests(unittest.TestCase):
         )
         return ledger, runtime, supervisor, outbox, reconciler
 
+    def test_replayed_previous_prompt_cannot_consume_current_recovery(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as tmp:
+                ledger, runtime, _, outbox, reconciler = self.make_fixture(Path(tmp))
+                await reconciler.handle_completion("session-1", {"card_disposition_error": "original parse failure"})
+                first = ledger.get("dispatch-1").reconciliation_prompt_id
+                payload = {"queued_prompt_id": first, "prompt_source": "card-reconciliation:dispatch-1", "card_disposition_error": "first retry failed"}
+                await reconciler.handle_completion("session-1", payload)
+                second = ledger.get("dispatch-1").reconciliation_prompt_id
+                assert second != first
+                for replay in (payload, payload | {"card_disposition": disposition("done")}):
+                    assert await reconciler.handle_completion("session-1", replay)
+                    current = ledger.get("dispatch-1")
+                    assert current.reconciliation_state == "prompted"
+                    assert current.reconciliation_prompt_id == second
+                    assert runtime.enqueued == 2
+                    assert outbox.payloads == []
+                await reconciler.handle_completion("session-1", {"queued_prompt_id": second, "card_disposition": disposition("active")})
+                resolved = ledger.get("dispatch-1")
+                assert resolved.reconciliation_state == "resolved"
+                assert "original parse failure" in resolved.reconciliation_parse_errors
+                assert len(outbox.payloads) == 1
+        asyncio.run(run())
+
     def test_strict_machine_readable_extraction(self) -> None:
         value, error = extract_card_disposition(
             f"```json\n{json.dumps(disposition())}\n```"
@@ -589,7 +613,7 @@ class CompletionReconciliationTests(unittest.TestCase):
                 self.assertIn(exact_error, retrying.reconciliation_reason)
                 self.assertEqual(retrying.reconciliation_state, "prompted")
                 self.assertEqual(retrying.reconciliation_prompt_count, 2)
-                self.assertEqual(retrying.reconciliation_parse_errors, [exact_error])
+                self.assertEqual(retrying.reconciliation_parse_errors[-1:], [exact_error])
                 self.assertIn(exact_error, runtime._queue[0].message)
                 self.assertEqual(
                     retrying.public_dict()["card_reconciliation"][
@@ -680,7 +704,7 @@ class CompletionReconciliationTests(unittest.TestCase):
                 self.assertEqual(failed.reconciliation_prompt_count, 2)
                 self.assertEqual(runtime.enqueued, 2)
                 self.assertEqual(
-                    failed.reconciliation_parse_errors,
+                    failed.reconciliation_parse_errors[-2:],
                     ["empty final response", "still not JSON"],
                 )
                 self.assertEqual(len(outbox.payloads), 1)

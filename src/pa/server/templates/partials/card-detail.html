@@ -48,9 +48,7 @@
         </div>
       </div>
       <div class="card-detail-actions">
-        {% if work_presentation.action.kind == 'open_agent' %}<a class="button" href="{{ work_presentation.action.href }}" aria-label="View running work for {{ card.title }}">View running work</a>
-        {% elif work_presentation.action.kind == 'respond' %}<a class="button" href="{{ work_presentation.action.href }}" aria-label="Follow up with running work for {{ card.title }}">Respond</a>
-        {% else %}<button type="button" data-card-dispatch-open data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}">Dispatch</button>{% endif %}
+        {% include "partials/card-primary-action.html" %}
         <button type="button" class="ghost danger"
                 hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
                 hx-target="#card-detail-dialog-content"
@@ -58,12 +56,6 @@
         <button type="button" class="ghost" data-card-dialog-close aria-label="Close card details">Close</button>
       </div>
     </div>
-
-    {% if card.summary_stale %}
-    <div class="card-critical-status" role="status">
-      <span><strong>Summary needs review.</strong></span>
-    </div>
-    {% endif %}
 
     {% include "partials/card-progress.html" %}
 
@@ -113,10 +105,13 @@
         </div>
         <div class="inline-edit-field" data-inline-edit-field>
           <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit summary">
-            {% if card.summary_status.value == 'ready' and card.summary %}
+            {% if card.summary and card.summary_source.value != 'fallback' %}
+            {% if card.summary_stale or card.summary_status.value != 'ready' %}<p class="muted" role="status">Previous summary; it may be out of date.</p>{% endif %}
             <span class="card-markdown card-detail-summary" data-card-markdown>
               <span hidden data-card-markdown-source>{{ card.summary | tojson }}</span>
             </span>
+            {% elif card.summary_status.value == 'failed' %}
+            <span class="muted" role="status">Summary generation failed; description is available.</span>
             {% elif card.summary_status.value in ('pending', 'stale') %}
             <span class="muted" role="status" aria-live="polite">Summary pending.</span>
             {% elif card.summary_status.value == 'disabled' %}
@@ -139,7 +134,10 @@
             </div>
           </form>
         </div>
-        <div class="muted small" data-card-summary-diagnostics>
+        {% if card.summary_next_attempt_at %}<p class="muted" role="status">Automatic summary retry scheduled for <time datetime="{{ card.summary_next_attempt_at.isoformat() }}">{{ card.summary_next_attempt_at.strftime('%Y-%m-%d %H:%M UTC') }}</time>.</p>
+        {% elif card.summary_status.value == 'failed' %}<p class="muted">Automatic summary attempts have stopped. Regenerate the summary to try again. Implementation status is shown separately above.</p>{% endif %}
+        <details class="muted small" data-card-summary-diagnostics>
+          <summary>Summary diagnostics · {{ card.summary_attempt_count }} attempt(s)</summary>
           Provider: {{ summary_diagnostics.effective_provider }} ·
           Model: {{ summary_diagnostics.effective_model }} ·
           Authentication: {{ summary_diagnostics.authentication_source }}
@@ -148,7 +146,7 @@
           {% elif summary_diagnostics.setup_guidance and card.summary_status.value == 'disabled' %}
           <br>{{ summary_diagnostics.setup_guidance }}
           {% endif %}
-        </div>
+        </details>
         {% if summary_diagnostics.authority == 'local' %}
         <form hx-post="/api/cards/{{ card.id }}/summary/regenerate?realm={{ card.realm_id }}"
               hx-swap="none">
@@ -198,8 +196,8 @@
         <section class="card-detail-section" aria-labelledby="card-metadata-title">
           <h3 id="card-metadata-title">Metadata</h3>
           <dl class="detail-list">
-            <div><dt>Owner</dt><dd>{{ card.owner_principal or 'Unassigned' }}</dd></div>
-            <div><dt>Preferred instance</dt><dd>{% if card.preferred_instance %}{{ instance_identity(card.preferred_instance) }}{% else %}None (routing metadata only){% endif %}</dd></div>
+            <div><dt>Card assignee</dt><dd>{{ card.owner_principal or 'Unassigned' }}</dd></div>
+            <div><dt>Preferred instance (routing only)</dt><dd>{% if card.preferred_instance %}{{ instance_identity(card.preferred_instance) }}{% else %}None (routing metadata only){% endif %}</dd></div>
             <div><dt>Updated</dt><dd><time datetime="{{ card.updated_at.isoformat() }}">{{ card.updated_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
             <div><dt>Created</dt><dd><time datetime="{{ card.created_at.isoformat() }}">{{ card.created_at.strftime('%Y-%m-%d %H:%M') }}</time></dd></div>
             {% if card.tags %}<div><dt>Tags</dt><dd>{{ card.tags | join(', ') }}</dd></div>{% endif %}
@@ -208,20 +206,50 @@
 
         <section class="card-detail-section" aria-labelledby="card-related-title">
           <h3 id="card-related-title">Related work</h3>
-          {% if parent %}<p>Parent: <a href="?realm={{ parent.realm_id }}&card={{ parent.id }}&tab=summary" data-card-detail-link data-card-id="{{ parent.id }}" data-card-realm="{{ parent.realm_id }}">{{ parent.title }}</a></p>{% endif %}
+          {% if parent %}<h4>Parent card</h4><p><a href="?realm={{ parent.realm_id }}&card={{ parent.id }}&tab=summary" data-card-detail-link data-card-id="{{ parent.id }}" data-card-realm="{{ parent.realm_id }}">{{ parent.title }}</a> · {{ parent.lane.value | capitalize }}</p>{% endif %}
           {% if project and project.repos %}
-          <p class="muted">Repositories</p>
+          <h4>Repositories</h4>
           <ul class="detail-link-list">
             {% for repo in project.repos %}<li><a href="{{ repo.url }}" target="_blank" rel="noopener">{{ repo.url }}</a>{% if repo.branch %} · {{ repo.branch }}{% endif %}</li>{% endfor %}
           </ul>
           {% endif %}
           {% if children %}
+          <h4>Child cards</h4>
           <ul class="detail-link-list">
-            {% for child in children %}<li><a href="?realm={{ child.realm_id }}&card={{ child.id }}&tab=summary" data-card-detail-link data-card-id="{{ child.id }}" data-card-realm="{{ child.realm_id }}">{{ child.title }}</a></li>{% endfor %}
+            {% for child in children %}<li><a href="?realm={{ child.realm_id }}&card={{ child.id }}&tab=summary" data-card-detail-link data-card-id="{{ child.id }}" data-card-realm="{{ child.realm_id }}">{{ child.title }}</a> · {{ child.lane.value | capitalize }}</li>{% endfor %}
           </ul>
           {% elif not parent %}<p class="muted">No parent or dependent cards linked.</p>{% endif %}
         </section>
       </div>
+
+  {% if card_reconciliations %}
+  <section class="card-detail-section" aria-labelledby="card-reconciliation-title">
+    <h3 id="card-reconciliation-title">Completion reconciliation</h3>
+    <ul class="detail-link-list">
+      {% for reconciliation in card_reconciliations %}
+      <li>
+        <span class="status status-{{ 'blocked' if reconciliation.needs_attention else 'muted' }}">{{ reconciliation.label }}</span>
+        <p>{{ reconciliation.detail }}</p>
+        <p class="muted small">Next action: {{ reconciliation.next_action }}{% if reconciliation.next_retry_at %} · <time datetime="{{ reconciliation.next_retry_at }}">{{ reconciliation.next_retry_at }}</time>{% endif %}</p>
+        {% if reconciliation.session_id %}<a href="/agent?session={{ reconciliation.session_id }}">Linked execution session {{ reconciliation.session_id[:8] }}</a>{% endif %}
+        <details class="small">
+          <summary>Completion check diagnostics and history</summary>
+          <dl class="detail-list">
+            <div><dt>Recorded state</dt><dd>{{ reconciliation.state }}</dd></div>
+            <div><dt>Updated</dt><dd><time datetime="{{ reconciliation.updated_at or '' }}">{{ reconciliation.updated_at or 'Time unavailable' }}</time></dd></div>
+            <div><dt>Recovery prompts</dt><dd>{{ reconciliation.prompt_count }} · {{ reconciliation.prompt_id or 'None queued' }}</dd></div>
+            <div><dt>Dispatch</dt><dd>{{ reconciliation.dispatch_id }}</dd></div>
+            <div><dt>Recorded reason</dt><dd>{{ reconciliation.reason or 'None' }}</dd></div>
+            <div><dt>Earlier extraction error</dt><dd>{{ reconciliation.disposition_error or 'None' }}</dd></div>
+            <div><dt>Prompt history</dt><dd>{{ reconciliation.prompt_ids | join(', ') }}</dd></div>
+            <div><dt>Parse history</dt><dd>{{ reconciliation.parse_errors | join('; ') }}</dd></div>
+          </dl>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
 
       {% if pr_watches %}
       <section class="card-detail-section" aria-labelledby="card-artifacts-title">
@@ -261,21 +289,5 @@
       <div class="card-tab-state" role="status"><p>Activity loads when this tab is selected.</p></div>
     </section>
   </div>
-  {% if card_reconciliations %}
-  <section class="card-detail-section" aria-labelledby="card-reconciliation-title">
-    <h3 id="card-reconciliation-title">Completion reconciliation</h3>
-    <ul class="detail-link-list">
-      {% for reconciliation in card_reconciliations %}
-      <li>
-        <span class="status status-{{ 'blocked' if reconciliation.recoverable else 'active' }}">{{ reconciliation.state }}</span>
-        {{ reconciliation.reason or 'No reconciliation detail recorded.' }}
-        {% if reconciliation.disposition_error and reconciliation.disposition_error not in (reconciliation.reason or '') %}
-        <span class="danger">{{ reconciliation.disposition_error }}</span>
-        {% endif %}
-        {% if reconciliation.session_id %}<a href="/agent?session={{ reconciliation.session_id }}">Session</a>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </section>
-  {% endif %}
+
 </article>

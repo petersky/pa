@@ -53,6 +53,7 @@ class HtmxDependencyContractTests(unittest.TestCase):
             "hx-preserve",
             "hx-push-url",
             "hx-swap",
+            "hx-swap-oob",  # Exact card header action, alongside progress refresh.
             "hx-target",
             "hx-trigger",
         }
@@ -185,6 +186,7 @@ window.fetch = (url, options) => new Promise((resolve, reject) => {{
         html = f"""<!doctype html>
 <meta name="htmx-config" content='{{"responseHandling":[{{"code":"204","swap":false}},{{"code":"304","swap":false}},{{"code":"[23]..","swap":true}},{{"code":"[45]..","swap":false,"error":true}}]}}'>
 <div id="target">initial</div>
+<span id="card-primary-action">Dispatch</span>
 <script>
 window.__errors = [];
 addEventListener("error", event => __errors.push(String(event.error || event.message)));
@@ -208,7 +210,7 @@ class FakeXHR {{
   getResponseHeader() {{ return null; }}
   send() {{
     this.status = 200;
-    this.response = this.responseText = '<p id="result">loaded</p>';
+    this.response = this.responseText = '<p id="result">loaded</p><span id="card-primary-action" hx-swap-oob="outerHTML">View running work</span>';
     setTimeout(() => this.onload(), 0);
   }}
   abort() {{ if (this.onabort) this.onabort(); }}
@@ -255,12 +257,16 @@ document.addEventListener("DOMContentLoaded", () => {{
                 """({
                   version: htmx.version,
                   result: document.querySelector('#target').textContent,
+                  primaryAction: document.querySelector('#card-primary-action').textContent,
+                  actionCount: document.querySelectorAll('#card-primary-action').length,
                   errors: window.__errors,
                   config: htmx.config.responseHandling
                 })"""
             )
             self.assertEqual(state["version"], "2.0.10")
             self.assertEqual(state["result"], "loaded")
+            self.assertEqual(state["primaryAction"], "View running work")
+            self.assertEqual(state["actionCount"], 1)
             self.assertEqual(state["errors"], [])
             self.assertFalse(state["config"][0]["swap"])
             self.assertFalse(state["config"][1]["swap"])

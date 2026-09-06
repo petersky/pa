@@ -249,9 +249,10 @@ def test_card_item_actions_follow_context_and_detail_opens_dispatch_status() -> 
             detail = client.get(f"/partials/cards/{dispatched.id}/detail")
 
         assert f'aria-label="Open card for {eligible.title}"' in cards.text
-        assert f'aria-label="Inspect progress for {dispatched.title}"' in cards.text
+        assert f'aria-label="Open agent for {dispatched.title}"' in cards.text
         assert f'aria-label="Dispatch {dispatched.title}"' not in cards.text
-        assert "data-card-dispatch-open" in detail.text
+        assert "data-card-dispatch-open" not in detail.text
+        assert "View running work" in detail.text
 
 
 def test_shared_modal_preserves_focus_and_workshop_uses_live_dispatch_state() -> None:
