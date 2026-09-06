@@ -2903,6 +2903,30 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MaterializationTests(unittest.TestCase):
+    def test_existing_local_admission_negotiates_progress_without_downgrade(self):
+        local = "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp), instance_id=local)
+            request = request_for(settings, MagicMock(), {"event_log": MagicMock()})
+            request.state.instance_authenticated = True
+            request.headers = {"X-PA-Origin-Instance-ID": local}
+            record = DispatchRecord(
+                dispatch_id="33333333-3333-4333-8333-333333333333",
+                mutation_id="44444444-4444-4444-8444-444444444444",
+                authority_instance_id=local, target_instance_id=local, authority_url="http://local",
+            )
+            ledger = DispatchStore(settings.data_dir)
+            ledger.put(record)
+            body = DispatchMaterializeBody(
+                dispatch_id=record.dispatch_id, mutation_id=record.mutation_id,
+                authority_instance_id=local, target_instance_id=local,
+                authority_url="http://local", realm_id="default", progress_versions=[1],
+            )
+            assert materialize_dispatch(request, body)["progress_protocol_version"] == 1
+            assert DispatchStore(settings.data_dir).get(record.dispatch_id).progress_protocol_version == 1
+            assert materialize_dispatch(request, body.model_copy(update={"progress_versions": []}))["progress_protocol_version"] == 1
+
+
     def test_target_identity_upgrade_is_monotonic_idempotent_and_session_exact(
         self,
     ) -> None:

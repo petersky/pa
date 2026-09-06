@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from pa.domain.notifications import InteractionChoice
+
 TURN_END_SNAPSHOT_V1 = "pa.turn-end-snapshot/v1"
 POST_TURN_CONTEXT_V1 = "pa.post-turn-context/v1"
 POST_TURN_EVALUATION_V1 = "pa.post-turn-evaluation/v1"
@@ -162,14 +164,10 @@ class _WaitParameters(_ActionParameters):
     condition: str = Field(min_length=1, max_length=1_000)
 
 
-class _OperatorInputChoice(_ActionParameters):
-    id: str = Field(min_length=1, max_length=200)
-    label: str = Field(min_length=1, max_length=300)
-    description: str | None = Field(default=None, max_length=1_000)
-    value: Any = None
-
+_OperatorInputChoice = InteractionChoice
 
 class _OperatorInputParameters(_ActionParameters):
+    details: str | None = Field(default=None, max_length=16_000)
     question: str = Field(min_length=1, max_length=2_000)
     keep_lane: Literal["inbox", "active", "waiting"]
     request_id: str | None = Field(default=None, max_length=300)
@@ -179,6 +177,12 @@ class _OperatorInputParameters(_ActionParameters):
     allow_cancel: bool = True
     sensitive: bool = False
     deadline: datetime | None = None
+
+    @model_validator(mode="after")
+    def unique_choices(self):
+        if len({choice.id for choice in self.choices}) != len(self.choices):
+            raise ValueError("choice IDs must be unique within a request")
+        return self
 
 
 class _CreateCardParameters(_ActionParameters):

@@ -180,7 +180,11 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
         elif state == InteractionState.OUTSTANDING:
             status = "Response required"
             if interaction.choices:
-                required_action = "Choose one of the available responses"
+                required_action = (
+                    "Select responses, then submit"
+                    if (interaction.response_schema or {}).get("type") == "array"
+                    else "Choose one of the available responses"
+                )
             elif interaction.response_schema:
                 required_action = "Complete the required response fields"
             elif interaction.allow_freeform:
@@ -198,9 +202,11 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
             }.get(state, state.value.replace("_", " ").title())
         next_effect = {
             "protocol": "Submitting sends the response to the waiting agent request.",
-            "prompt": "Submitting resumes work in this exact agent session.",
+            "prompt": "Submitting queues a continuation in this exact agent session.",
             "none": "Submitting records this decision; it does not resume an agent.",
         }.get(interaction.continuation_mode)
+        if state == InteractionState.DELIVERED:
+            next_effect = "Delivery is acknowledged; inspect continuation progress to see what the agent did."
         if state == InteractionState.FAILED:
             next_effect = (
                 "Retry sends the same recorded response; it does not create a new reply."
@@ -237,11 +243,37 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
 
 
 def _public_notice(request: Request, item: Notification) -> dict[str, Any]:
+    presentation = _presentation_metadata(item)
+    interaction = item.interaction
+    if interaction:
+        continuation = "Not requested"
+        prompt_id = interaction.continuation_prompt_id
+        if interaction.responded_at and interaction.continuation_mode != "none":
+            continuation = "Not yet confirmed"
+        if prompt_id and item.session_id and item.owner_instance_id in {None, request.app.state.ctx.settings.instance_id}:
+            event = request.app.state.ctx.store.get_prompt_lifecycle(item.session_id, prompt_id)
+            if event:
+                continuation = {
+                    "queue_enqueued": "Queued",
+                    "queue_dequeued": "Starting",
+                    "user_message": "Resumed",
+                    "turn_completed": "Turn ended — inspect progress for the outcome",
+                    "prompt_blocked": "Blocked",
+                    "error": "Failed",
+                    "connection_lost": "Interrupted",
+                }.get(event.event_type, "Not yet confirmed")
+        presentation["response_status"] = {
+            "recording": "Response recorded" if interaction.responded_at else "Awaiting response",
+            "delivery": ("Delivered to request" if interaction.delivered_at else
+                         "Delivery failed" if interaction.state == InteractionState.FAILED else
+                         "Delivery pending" if interaction.responded_at else "Not submitted"),
+            "continuation": continuation,
+        }
     return {
         **item.public_dict(),
         "routing": _route_metadata(request, item),
         "context": _context_metadata(request, item),
-        "presentation": _presentation_metadata(item),
+        "presentation": presentation,
     }
 
 
@@ -570,6 +602,7 @@ class NotificationsModule(Module):
             notification_id: str,
             idempotency_key: str,
             choice_id: str | None = None,
+            choice_ids: list[str] | None = None,
             value: str | None = None,
             fields: dict[str, Any] | None = None,
             cancel: bool = False,
@@ -583,6 +616,7 @@ class NotificationsModule(Module):
                 json={
                     "idempotency_key": idempotency_key,
                     "choice_id": choice_id,
+                    "choice_ids": choice_ids,
                     "value": value,
                     "fields": fields,
                     "cancel": cancel,

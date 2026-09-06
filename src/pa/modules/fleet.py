@@ -1718,6 +1718,18 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                 },
             )
         target_provenance = _target_goal_execution_identity_transition(recorded, body)
+        # Local authority/target dispatches already share this admission record.
+        # Negotiate on the authenticated materialization offer, even on replay.
+        # Never replace an established version with an absent/incompatible offer.
+        if (
+            recorded.progress_protocol_version is None
+            and progress_protocol_version is not None
+            and recorded.authority_instance_id == body.authority_instance_id
+            and recorded.target_instance_id == body.target_instance_id
+            and recorded.realm_id == body.realm_id
+        ):
+            recorded.progress_protocol_version = progress_protocol_version
+            ledger.put(recorded)
         if target_provenance != recorded.goal_provenance:
             recorded.goal_provenance = target_provenance
             ledger.put(recorded)
@@ -3153,6 +3165,23 @@ async def report_dispatch_checkpoint(
             detail={"code": "progress_reporting_unavailable", "recoverable": True},
         )
     if record.progress_protocol_version != PROGRESS_SCHEMA_VERSION:
+        if (isinstance(body.operator_input, OperatorInputRequestV1)
+                and record.session_id
+                and record.target_instance_id == request.app.state.ctx.settings.instance_id):
+            # Interaction delivery is local and already authenticated above; it
+            # does not require a remote progress transport upgrade. Keep older
+            # active dispatches usable without fabricating a negotiated version.
+            interaction_key = body.idempotency_key or body.operator_input.request_id
+            if not interaction_key:
+                raise HTTPException(status_code=422, detail={"code": "interaction_idempotency_required"})
+            notification = await _create_operator_input_notification(
+                request, record, body.operator_input,
+                idempotency_key=interaction_key,
+                kind=InteractionKind.MCP_OPERATOR_INPUT,
+            )
+            return {"schema_version": 1, "progress_recorded": False,
+                    "code": "progress_protocol_not_negotiated",
+                    "notification": notification}
         raise HTTPException(
             status_code=409,
             detail={
@@ -3254,6 +3283,7 @@ async def _create_operator_input_notification(
             request_id=request_id,
             kind=kind,
             prompt=prompt,
+            details=None if isinstance(structured, str) else structured.details,
             response_schema=response_schema,
             choices=choices,
             allow_freeform=allow_freeform,
@@ -11796,6 +11826,7 @@ async def execute_post_turn_action(
                 ),
                 "response_schema": action.parameters.get("response_schema"),
                 "choices": action.parameters.get("choices") or [],
+                "details": action.parameters.get("details"),
                 "allow_freeform": action.parameters.get("allow_freeform", True),
                 "allow_cancel": action.parameters.get("allow_cancel", True),
                 "sensitive": action.parameters.get("sensitive", False),
@@ -15632,9 +15663,14 @@ class FleetModule(Module):
             changed_file_count: int | None = None,
             blockers: list[str] | None = None,
             retry_reason: str | None = None,
-            operator_input: str | dict[str, Any] | None = None,
+            operator_input: str | OperatorInputRequestV1 | None = None,
         ) -> dict:
-            """Emit a sanitized structured checkpoint for a linked durable dispatch."""
+            """Report progress. For bounded questions supply operator_input with a stable
+            request_id, concise prompt and 2–4 choices (stable id, short label,
+            optional description/value). Put explanation in details. Enable
+            allow_freeform only when needed; preserve provider permission choices.
+            Never substitute quoted JSON or final prose for a rejected request.
+            """
             key = idempotency_key.strip()
             if not key:
                 raise ValueError("idempotency_key cannot be empty")
@@ -15653,7 +15689,8 @@ class FleetModule(Module):
                     "changed_file_count": changed_file_count,
                     "blockers": blockers or [],
                     "retry_reason": retry_reason,
-                    "operator_input": operator_input,
+                    "operator_input": (operator_input.model_dump(mode="json")
+                        if isinstance(operator_input, OperatorInputRequestV1) else operator_input),
                     "idempotency_key": key,
                 },
             )
@@ -15683,7 +15720,7 @@ class FleetModule(Module):
             changed_file_count: int | None = None,
             blockers: list[str] | None = None,
             retry_reason: str | None = None,
-            operator_input: str | dict[str, Any] | None = None,
+            operator_input: str | OperatorInputRequestV1 | None = None,
         ) -> dict:
             """Report progress for the dispatch bound to this assigned session."""
             key = idempotency_key.strip()
@@ -15704,7 +15741,8 @@ class FleetModule(Module):
                     "changed_file_count": changed_file_count,
                     "blockers": blockers or [],
                     "retry_reason": retry_reason,
-                    "operator_input": operator_input,
+                    "operator_input": (operator_input.model_dump(mode="json")
+                        if isinstance(operator_input, OperatorInputRequestV1) else operator_input),
                     "idempotency_key": key,
                 },
             )

@@ -343,8 +343,9 @@ def test_acp_permission_chat_and_bell_share_one_correlated_lifecycle(
     assert [event.event_type for event in events].count("permission_resolved") == 1
 
 
+@pytest.mark.parametrize("multiple", [False, True])
 def test_acp_structured_elicitation_delivers_fields_to_waiting_provider(
-    tmp_path: Path,
+    tmp_path: Path, multiple: bool,
 ) -> None:
     kernel = _kernel(tmp_path)
     runtime = _agent_runtime(kernel)
@@ -358,7 +359,8 @@ def test_acp_structured_elicitation_delivers_fields_to_waiting_provider(
                     "request_id": "elicitation-1",
                     "method": "elicitation/create",
                     "message": "Choose an environment",
-                    "requestedSchema": {
+                    "choices": [{"id": "one", "label": "One", "value": 0}, {"id": "two", "label": "Two", "value": False}] if multiple else [],
+                    "requestedSchema": {"type": "array", "minItems": 2} if multiple else {
                         "type": "object",
                         "properties": {"environment": {"type": "string"}},
                         "required": ["environment"],
@@ -394,7 +396,8 @@ def test_acp_structured_elicitation_delivers_fields_to_waiting_provider(
             notice,
             InteractionResponse(
                 idempotency_key="elicitation-answer",
-                fields={"environment": "staging"},
+                choice_ids=["two", "one"] if multiple else None,
+                fields=None if multiple else {"environment": "staging"},
             ),
             principal_id="user:local",
         )
@@ -402,7 +405,7 @@ def test_acp_structured_elicitation_delivers_fields_to_waiting_provider(
 
     assert asyncio.run(run()) == {
         "action": "accept",
-        "content": {"environment": "staging"},
+        "content": [False, 0] if multiple else {"environment": "staging"},
     }
 
 
@@ -1113,3 +1116,103 @@ def test_later_operator_prompt_auditably_supersedes_only_fallback_notice(
     ).interaction.state == InteractionState.OUTSTANDING
     audit = kernel.ctx.store.list_notification_audit(fallback.id)
     assert any(entry["action"] == "interaction.superseded" for entry in audit)
+
+
+@pytest.mark.parametrize("ids", [["a", "b"], ["b", "a"]])
+def test_multiple_choices_preserve_order_values_and_validate(tmp_path, ids):
+    kernel = _kernel(tmp_path)
+    service = kernel.ctx.require_service("notifications")
+    contract = InteractionRequest(
+        kind=InteractionKind.CHOICE, prompt="Select targets",
+        choices=[InteractionChoice(id="a", label="A", value=0), InteractionChoice(id="b", label="B", value=False)],
+        response_schema={"type": "array", "minItems": 2, "maxItems": 2},
+        continuation_mode="none",
+    )
+    notice = _create(service, interaction=contract)
+    for invalid in (["a"], ["a", "a"], ["missing", "b"]):
+        with pytest.raises(NotificationConflict):
+            asyncio.run(service.respond(notice, InteractionResponse(idempotency_key="bad", choice_ids=invalid), principal_id="user:local"))
+    with pytest.raises(NotificationConflict):
+        asyncio.run(service.respond(notice, InteractionResponse(idempotency_key="single", choice_id="a"), principal_id="user:local"))
+    response = InteractionResponse(idempotency_key="multi", choice_ids=ids)
+    result = asyncio.run(service.respond(notice, response, principal_id="user:local"))
+    assert result.interaction.response == {"choice_ids": ids, "values": [0 if key == "a" else False for key in ids]}
+    duplicate = asyncio.run(service.respond(notice, response, principal_id="user:local"))
+    assert duplicate.version == result.version
+    with pytest.raises(NotificationConflict, match="different answer"):
+        asyncio.run(service.respond(notice, InteractionResponse(idempotency_key="multi", choice_ids=list(reversed(ids))), principal_id="user:local"))
+
+
+def test_duplicate_choice_ids_rejected_in_normalized_contract():
+    for model, kwargs in ((InteractionRequest, {"kind": "choice"}), (OperatorInputRequestV1, {})):
+        with pytest.raises(ValueError, match="unique"):
+            model(prompt="Choose", choices=[{"id": "same", "label": "One"}, {"id": "same", "label": "Two"}], **kwargs)
+
+
+def test_sensitive_choice_prompt_uses_exact_value_and_durable_retry(tmp_path):
+    import json
+    kernel = _kernel(tmp_path)
+    service = kernel.ctx.require_service("notifications")
+    runtime = MagicMock()
+    kernel.ctx.register_service("instance_agent", SimpleNamespace(get=lambda _: runtime))
+    value = {"nested": "synthetic-value-" * 100}
+    notice = _create(service, session_id="exact-session", card_id="exact-card", interaction=InteractionRequest(
+        kind="choice", prompt="Select", sensitive=True, continuation_mode="prompt",
+        choices=[InteractionChoice(id="exact-id", label="Use target", value=value)],
+    ))
+    result = asyncio.run(service.respond(notice, InteractionResponse(idempotency_key="response", choice_id="exact-id"), principal_id="user:local"))
+    envelope = json.loads(runtime.enqueue.call_args.args[0].split("\n", 1)[1])
+    assert envelope["response"] == {"choice_id": "exact-id", "value": value}
+    assert envelope["session_id"] == "exact-session"
+    assert envelope["request_id"] == notice.interaction.request_id
+    assert runtime.enqueue.call_args.kwargs["prompt_id"] == result.interaction.continuation_prompt_id
+    assert result.public_dict()["interaction"]["response"] is None
+    # Simulate an acknowledgement lost after queue admission, then recovery.
+    result.interaction.state = InteractionState.FAILED
+    result.resolved_at = None
+    service.store.save_notification(result, principal_id="system:test", instance_id="local")
+    with patch.object(service.store, "get_prompt_acceptance", return_value=object()):
+        recovered = asyncio.run(service.respond(result, InteractionResponse(idempotency_key="retry", retry=True), principal_id="user:local"))
+    assert recovered.interaction.state == InteractionState.DELIVERED
+    runtime.enqueue.assert_called_once()
+
+
+def test_fields_cannot_bypass_choice_only_contract(tmp_path):
+    service = _kernel(tmp_path).ctx.require_service("notifications")
+    notice = _create(service, interaction=InteractionRequest(kind="choice", prompt="Choose", choices=[InteractionChoice(id="one", label="One")]))
+    with pytest.raises(NotificationConflict, match="listed choice"):
+        asyncio.run(service.respond(notice, InteractionResponse(idempotency_key="fields", fields={"anything": True}), principal_id="user:local"))
+
+
+def test_response_status_does_not_claim_delivered_agent_acted(tmp_path):
+    from pa.modules.notifications import _public_notice
+    kernel = _kernel(tmp_path)
+    notice = _create(kernel.ctx.require_service("notifications"), session_id="session", interaction=_interaction(continuation_mode="prompt"))
+    notice.interaction.responded_at = datetime.now(UTC)
+    notice.interaction.delivered_at = datetime.now(UTC)
+    notice.interaction.state = InteractionState.DELIVERED
+    notice.interaction.continuation_prompt_id = "stable"
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ctx=kernel.ctx)))
+    with patch.object(kernel.ctx.store, "get_prompt_lifecycle", return_value=None):
+        status = _public_notice(request, notice)["presentation"]["response_status"]
+    assert status == {"recording": "Response recorded", "delivery": "Delivered to request", "continuation": "Not yet confirmed"}
+    with patch.object(kernel.ctx.store, "get_prompt_lifecycle", return_value=SimpleNamespace(event_type="user_message")):
+        assert _public_notice(request, notice)["presentation"]["response_status"]["continuation"] == "Resumed"
+
+
+def test_unnegotiated_local_checkpoint_returns_structured_interaction_receipt(tmp_path):
+    from pa.execution.progress import ExplicitProgressCheckpointV1
+    from pa.modules.fleet import report_dispatch_checkpoint
+    kernel = _kernel(tmp_path)
+    record = DispatchRecord(dispatch_id="dispatch-local", mutation_id="mutation-local", authority_instance_id="local", target_instance_id="local", authority_url="http://local", session_id="session-local")
+    kernel.ctx.register_service("progress_service", MagicMock())
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ctx=kernel.ctx)))
+    body = ExplicitProgressCheckpointV1(phase="blocked", summary="Input needed", idempotency_key="request-v1", operator_input={"request_id": "exact-request", "prompt": "Choose target", "choices": [{"id": "local", "label": "Local", "value": 0}]})
+    with patch("pa.modules.fleet._dispatch_store", return_value=SimpleNamespace(get=lambda _: record)), patch("pa.modules.fleet._require_dispatch_access"), patch("pa.modules.fleet.get_principal_id", return_value="user:local"):
+        receipt = asyncio.run(report_dispatch_checkpoint(request, record.dispatch_id, body))
+        duplicate = asyncio.run(report_dispatch_checkpoint(request, record.dispatch_id, body))
+    assert receipt["progress_recorded"] is False
+    assert receipt["notification"]["interaction"]["choices"][0] == {"id": "local", "label": "Local", "description": None, "value": 0}
+    assert receipt["notification"]["session_id"] == "session-local"
+    assert receipt["notification"]["id"] == duplicate["notification"]["id"]
+    assert record.progress_protocol_version is None

@@ -133,6 +133,8 @@ class DeliveryState(StrEnum):
 
 
 class InteractionChoice(BaseModel):
+    """Provider-neutral choice. IDs are stable; labels should be 1–5 words."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, max_length=200)
@@ -160,6 +162,7 @@ class InteractionRequest(BaseModel):
     kind: InteractionKind
     state: InteractionState = InteractionState.OUTSTANDING
     prompt: str = Field(min_length=1, max_length=32_000)
+    details: str | None = Field(default=None, max_length=16_000)
     response_schema: dict[str, Any] | None = None
     choices: list[InteractionChoice] = Field(default_factory=list, max_length=100)
     allow_freeform: bool = False
@@ -173,12 +176,15 @@ class InteractionRequest(BaseModel):
     response_principal: str | None = None
     response: Any = None
     response_summary: str | None = Field(default=None, max_length=1000)
+    continuation_prompt_id: str | None = None
     delivery_attempts: int = Field(default=0, ge=0)
     delivered_at: datetime | None = None
     delivery_error: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def validate_input_contract(self) -> InteractionRequest:
+        if len({choice.id for choice in self.choices}) != len(self.choices):
+            raise ValueError("choice IDs must be unique within a request")
         if (
             not self.choices
             and not self.allow_freeform
@@ -320,6 +326,7 @@ class InteractionResponse(BaseModel):
 
     idempotency_key: str = Field(min_length=1, max_length=300)
     choice_id: str | None = Field(default=None, max_length=200)
+    choice_ids: list[str] | None = Field(default=None, min_length=1, max_length=100)
     value: Any = None
     fields: dict[str, Any] | None = None
     cancel: bool = False
@@ -330,6 +337,7 @@ class InteractionResponse(BaseModel):
         supplied = sum(
             [
                 self.choice_id is not None,
+                self.choice_ids is not None,
                 self.value is not None,
                 self.fields is not None,
                 self.cancel,
@@ -338,7 +346,7 @@ class InteractionResponse(BaseModel):
         )
         if supplied != 1:
             raise ValueError(
-                "provide exactly one of choice_id, value, fields, cancel, or retry"
+                "provide exactly one of choice_id, choice_ids, value, fields, cancel, or retry"
             )
         if len(self.model_dump_json().encode()) > MAX_RESPONSE_BYTES:
             raise ValueError("interaction response exceeds 64 KB")
