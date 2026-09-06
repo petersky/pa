@@ -47,6 +47,7 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
     if resolved:
         command = str(resolved)
     child_env = sanitize_provider_environment(os.environ, spec.env)
+    child_env = {k: v for k, v in child_env.items() if k not in spec.excluded_env}
     child_env, _github_auth_source = inject_agent_github_environment(
         child_env, get_settings()
     )

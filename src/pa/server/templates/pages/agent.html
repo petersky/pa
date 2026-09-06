@@ -118,6 +118,9 @@
 </div>
 <dialog class="agent-new-session-dialog" data-agent-new-dialog aria-labelledby="agent-new-session-title">
   <form method="dialog" data-agent-new-form>
+    <label><input type="checkbox" name="linked_context" data-agent-new-linked>
+      Link to the current standalone session and close its idle native context</label>
+    <p class="muted small">Explicit new context and separate workspace; no hidden continuity or concurrent runtime. For a card dispatch, use the card's Dispatch → linked attempt action after the previous dispatch is terminal.</p>
     <header>
       <div>
         <h2 id="agent-new-session-title">New agent session</h2>
@@ -129,6 +132,10 @@
       <span>Title</span>
       <input name="title" value="Chat" autocomplete="off">
     </label>
+    {% with selection_purpose='new-session', selection_surface='chat.default' %}
+    {% include 'partials/execution-preferences.html' %}
+    {% endwith %}
+    <fieldset hidden disabled data-legacy-new-selection>
     <label>
       <span>Provider</span>
       <select name="provider" data-agent-new-provider>
@@ -155,6 +162,7 @@
       </span>
       <small class="muted" id="agent-new-model-help">Inherited from the selected provider when unchanged.</small>
     </label>
+    </fieldset>
     <label>
       <span>Mode</span>
       <select name="mode_id" data-agent-new-mode aria-describedby="agent-new-mode-help">
@@ -162,6 +170,7 @@
       </select>
       <small class="muted" id="agent-new-mode-help">Inherited from the selected provider when unchanged.</small>
     </label>
+    <fieldset hidden disabled data-legacy-new-selection>
     <label>
       <span>Effort</span>
       <select name="effort" data-agent-new-effort>
@@ -173,6 +182,7 @@
       </select>
     </label>
     <div class="agent-new-related stack" data-agent-new-related hidden></div>
+    </fieldset>
     <label>
       <span>Working directory</span>
       <input name="cwd" placeholder="Instance default" autocomplete="off">

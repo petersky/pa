@@ -629,6 +629,7 @@ class CardProjection:
         if "project_id" not in card_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
         for col, decl in (
+            ("execution_preferences", "TEXT NOT NULL DEFAULT '{}'"),
             ("summary", "TEXT NOT NULL DEFAULT ''"),
             ("summary_source", "TEXT NOT NULL DEFAULT 'fallback'"),
             ("summary_updated_at", "TEXT"),
@@ -2268,6 +2269,7 @@ class CardProjection:
             ],
             preferred_instance=p.get("preferred_instance"),
             preferred_capabilities=p.get("preferred_capabilities", []),
+            execution_preferences=p.get("execution_preferences") or {},
             lease_holder_instance=p.get("lease_holder_instance"),
             lease_holder_principal=p.get("lease_holder_principal"),
             lease_expires_at=_coerce_datetime(p.get("lease_expires_at")),
@@ -2412,6 +2414,10 @@ class CardProjection:
                 card.summary_source = CardSummarySource(value)
             elif key == "summary_status":
                 card.summary_status = CardSummaryStatus(value)
+            elif key == "execution_preferences":
+                from pa.execution.selection import ExecutionPreferences
+
+                card.execution_preferences = ExecutionPreferences.model_validate(value or {})
             elif hasattr(card, key):
                 setattr(card, key, value)
         if "lease_expires_at" in payload:
@@ -2526,8 +2532,9 @@ class CardProjection:
                  lane, parent_id, project_id, tags, attachments, visibility,
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
-                 created_by_principal, created_by_instance, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 created_by_principal, created_by_instance, created_at, updated_at,
+                 execution_preferences)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -2577,6 +2584,7 @@ class CardProjection:
                     card.created_by_instance,
                     card.created_at.isoformat(),
                     card.updated_at.isoformat(),
+                    card.execution_preferences.model_dump_json(),
                 ),
             )
 
@@ -2612,6 +2620,7 @@ class CardProjection:
             tags=data.tags,
             preferred_instance=data.preferred_instance,
             preferred_capabilities=data.preferred_capabilities,
+            execution_preferences=data.execution_preferences,
             created_by_principal=principal_id,
             created_by_instance=instance_id,
         )
@@ -2885,7 +2894,7 @@ class CardProjection:
             summary, summary_source, summary_status,
             summary_updated_at, summary_stale, lane, parent_id, project_id, tags,
             visibility, owner_principal, preferred_instance,
-            preferred_capabilities, lease_holder_instance,
+            preferred_capabilities, execution_preferences, lease_holder_instance,
             lease_holder_principal, lease_expires_at,
             created_by_principal, created_by_instance,
             created_at, updated_at
@@ -3453,8 +3462,12 @@ class CardProjection:
                 )
                 and hasattr(card, key)
             ):
+                if key == "execution_preferences":
+                    from pa.execution.selection import ExecutionPreferences
+
+                    value = ExecutionPreferences.model_validate(value or {})
                 setattr(card, key, value)
-        card.updated_at = now
+            card.updated_at = now
         self._upsert_card(card)
         return card
 
@@ -6148,6 +6161,9 @@ class CardProjection:
             owner_principal=row["owner_principal"],
             preferred_instance=row["preferred_instance"],
             preferred_capabilities=json.loads(row["preferred_capabilities"]),
+            execution_preferences=json.loads(row["execution_preferences"])
+            if "execution_preferences" in keys
+            else {},
             lease_holder_instance=row["lease_holder_instance"],
             lease_holder_principal=row["lease_holder_principal"],
             lease_expires_at=datetime.fromisoformat(row["lease_expires_at"])

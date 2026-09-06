@@ -17,6 +17,7 @@ from pa.instance.agent_session import (
     _prompt_authority,
 )
 from pa.instance.quiesce import QueuedPrompt, QuiesceSnapshot, SessionSnapshot
+from tests.test_execution_selection import candidate
 
 
 class _TranscriptStore:
@@ -255,6 +256,14 @@ class AgentSessionLiveEventTests(unittest.TestCase):
 
             async def run():
                 with (
+                    patch(
+                        "pa.execution.selection_service.SelectionService.local_catalog",
+                        new=AsyncMock(
+                            return_value=[
+                                candidate(instance_id=manager.settings.instance_id)
+                            ]
+                        ),
+                    ),
                     patch(
                         "pa.instance.agent_session.resolve_agent_provider",
                         return_value=resolved,

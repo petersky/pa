@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from pa.core.io import atomic_write_json
+from pa.execution.selection import ExecutionPreferences
 
 
 class AppearanceMode(StrEnum):
@@ -24,6 +25,7 @@ class SurfaceAgentPrefs(BaseModel):
     mode_id: str | None = None
     effort: str | None = None
     config: dict = Field(default_factory=dict)
+    execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
 
 
 class UserPreferences(BaseModel):

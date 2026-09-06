@@ -1783,6 +1783,15 @@ _ENVIRONMENT_ONLY_DEFINITIONS = (
         rationale="Short-lived input to the authenticated fleet join workflow; never persist it as general configuration.",
     ),
     _env_only(
+        "execution_connection_key",
+        "PA_EXECUTION_CONNECTION_KEY",
+        "Credential for one explicitly selected backend connection.",
+        "Internal runtime",
+        100,
+        secret=True,
+        rationale="Injected only into the selected provider process; never persist as general configuration or evidence.",
+    ),
+    _env_only(
         "execution_context",
         "PA_EXECUTION_CONTEXT",
         "Signed agent execution provenance.",

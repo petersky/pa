@@ -942,8 +942,23 @@ def _card_agent_context(request: Request, card) -> dict:
             "observed_at": providers.get("observed_at"),
             "providers": providers.get("value") or [],
         }
+    from pa.execution.selection_service import status_candidates
+
+    execution_catalog = [
+        c.model_dump(mode="json")
+        for instance_id, snapshot in dispatch_inventory.items()
+        for c in status_candidates(
+            instance_id,
+            snapshot["providers"],
+            observed_at=snapshot["observed_at"],
+            freshness=snapshot["state"]
+            if snapshot["state"] in {"fresh", "stale"}
+            else "unknown",
+        )
+    ]
     return {
         "card": card,
+        "execution_catalog": execution_catalog,
         "related_sessions": related_sessions,
         "session_views": session_views,
         "current_session_view": current_view,
@@ -2686,6 +2701,7 @@ async def create_card_modal_ui(
     tags: str = Form(""),
     preferred_instance: str = Form(""),
     preferred_capabilities: str = Form(""),
+    execution_preferences: str = Form("{}"),
     auto_enrich: bool = Form(True),
     link_urls: list[str] | None = Form(None),
     link_labels: list[str] | None = Form(None),
@@ -2717,7 +2733,19 @@ async def create_card_modal_ui(
     attachments: list[dict[str, str | int | Path]] = []
     settings = request.app.state.ctx.settings
     principal = get_principal_id(request)
+    from pa.execution.selection import ExecutionPreferences
+
+    try:
+        parsed_execution_preferences = ExecutionPreferences.model_validate_json(
+            execution_preferences
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Execution preferences must be valid pa execution-preference v1 JSON; refresh incompatible selections.",
+        ) from exc
     create_data = CardCreate(
+        execution_preferences=parsed_execution_preferences,
         realm_id=realm,
         kind=kind,
         title=cleaned_title,
@@ -3634,6 +3662,7 @@ class ItemsModule(Module):
             project_id: str | None = None,
             tags: list[str] | None = None,
             auto_enrich: bool = True,
+            execution_preferences: dict | None = None,
         ) -> dict:
             """Create a canonical card. Use lane: inbox, active, waiting, or done."""
             key = idempotency_key.strip()
@@ -3652,6 +3681,11 @@ class ItemsModule(Module):
                     "project_id": project_id,
                     "tags": tags or [],
                     "auto_enrich": auto_enrich,
+                    **(
+                        {"execution_preferences": execution_preferences}
+                        if execution_preferences is not None
+                        else {}
+                    ),
                     **({"kind": kind} if kind is not None else {}),
                 },
                 headers={"Idempotency-Key": key},
@@ -3670,6 +3704,7 @@ class ItemsModule(Module):
             tags: list[str] | None = None,
             expected_version: str | None = None,
             field_intent: list[str] | None = None,
+            execution_preferences: dict | None = None,
         ) -> dict | None:
             """Update a canonical card. Omitted fields remain unchanged."""
             key = idempotency_key.strip()
@@ -3684,6 +3719,7 @@ class ItemsModule(Module):
                     "parent_id": parent_id,
                     "project_id": project_id,
                     "tags": tags,
+                    "execution_preferences": execution_preferences,
                 }.items()
                 if value is not None
             }

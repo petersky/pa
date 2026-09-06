@@ -715,6 +715,8 @@
       if (!self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
       const snap = {
         session: history.session,
+        execution_selection: history.execution_selection,
+        selection_history_only: true,
         presentation: history.presentation || {},
         transcript: history.events || [],
         transcript_page: history.page || {},
@@ -872,6 +874,8 @@
   AgentChatWidget.prototype._historySnapshot = function (history) {
     return {
       session: history.session,
+      execution_selection: history.execution_selection,
+      selection_history_only: true,
       presentation: history.presentation || {},
       transcript: history.events || [],
       transcript_page: history.page || {},
@@ -1716,6 +1720,7 @@
     this.renderModelsModes(snap);
     this.renderConfigOptions(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
+    if (window.PAExecutionSelection) window.PAExecutionSelection.renderSession(this, snap);
     if (this.commandCatalogSession !== this.sessionId) this.refreshCommandCatalog();
     if (this.els.permissions) {
       this.els.permissions.innerHTML = "";
@@ -1732,6 +1737,7 @@
     this.lastSnapshot = snap;
     this.renderModelsModes(snap);
     this.renderConfigOptions(snap);
+    if (window.PAExecutionSelection) window.PAExecutionSelection.renderSession(this, snap);
   };
 
   AgentChatWidget.prototype._eventKey = function (event) {
@@ -4973,6 +4979,20 @@
 
   function prepareNewSessionDialog(dialog, widget) {
     const form = dialog.querySelector("[data-agent-new-form]");
+    const selectionControls = dialog.querySelector("[data-execution-preferences]");
+    if (selectionControls) {
+      if (form) form.reset();
+      if (selectionControls._selection) selectionControls._selection.reset();
+      const active = widget && widget._acw && widget._acw.lastSnapshot;
+      dialog._executionBoundarySource = active && active.session;
+      dialog._executionBoundaryKey = crypto.randomUUID();
+      const linked = dialog.querySelector("[data-agent-new-linked]");
+      if (linked) linked.disabled = !active || !active.session || !!active.session.dispatch_id;
+      const modes = active && active.modes && (active.modes.availableModes || active.modes.available_modes);
+      populateSelect(dialog.querySelector("[data-agent-new-mode]"), modes || [], ["id", "modeId", "mode_id"], "Inherit permission mode");
+      setNewSessionBusy(dialog, false);
+      return Promise.resolve(); // Selection controls read cached catalogs, never probe per dropdown.
+    }
     const provider = dialog.querySelector("[data-agent-new-provider]");
     const snap = widget && widget._acw && widget._acw.lastSnapshot;
     const activeProvider = snap && snap.session && snap.session.agent_name;
@@ -5209,13 +5229,21 @@
         if (dialog.getAttribute("aria-busy") === "true") return;
         const data = new FormData(form);
         const body = {};
+        if (data.get("linked_context") && dialog._executionBoundarySource) {
+          const source = dialog._executionBoundarySource;
+          body.context_source_session_id = source.id;
+          body.card_id = source.card_id;
+          body.project_id = source.project_id;
+          body.label = "execution-boundary:" + source.id + ":" + dialog._executionBoundaryKey;
+        }
+        if (data.get("execution_preferences")) body.execution_preferences = JSON.parse(data.get("execution_preferences"));
         ["title", "provider", "model_provider", "model_id", "mode_id", "effort", "cwd"].forEach(function (key) {
           const value = String(data.get(key) || "").trim();
           if (value) body[key] = value;
         });
         body.config = {};
         dialog.querySelectorAll("[data-agent-new-config]").forEach(function (select) {
-          if (select.value) body.config[select.dataset.agentNewConfig] = select.value;
+          if (select.value && !select.closest("fieldset[disabled]")) body.config[select.dataset.agentNewConfig] = select.value;
         });
         if (!Object.keys(body.config).length) delete body.config;
         const submit = dialog.querySelector("[data-agent-new-submit]");

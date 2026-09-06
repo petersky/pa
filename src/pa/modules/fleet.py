@@ -388,6 +388,14 @@ def _peer_has_exact_release(settings, channel: str, release) -> bool:
     return False
 
 
+from pa.execution.selection import (
+    ExecutionPreferences,
+    TaskAssessment,
+    legacy_preferences,
+)
+from pa.execution.selection_service import service_for as selection_service_for
+
+
 class RemoteAgentStartBody(BaseModel):
     """Start a standalone or card-linked session on a fleet instance."""
 
@@ -397,6 +405,15 @@ class RemoteAgentStartBody(BaseModel):
     title: str | None = None
     message: str = ""
     provider: str | None = None
+    model_provider: str | None = None
+    execution_preferences: ExecutionPreferences = Field(
+        default_factory=ExecutionPreferences
+    )
+    task_assessment: TaskAssessment | None = None
+    expected_card_version: datetime | None = None
+    # Replaced by authority-side resolution; client receipts are never trusted.
+    execution_selection: dict[str, Any] | None = None
+    context_source_session_id: str | None = None
     model_id: str | None = None
     mode_id: str | None = Field(
         default=None,
@@ -435,6 +452,10 @@ class RemoteAgentStartBody(BaseModel):
 
     @model_validator(mode="after")
     def require_concurrent_reason(self) -> RemoteAgentStartBody:
+        if self.context_source_session_id and (
+            self.resume_session_id or self.allow_concurrent
+        ):
+            raise ValueError("A context boundary is a new non-concurrent attempt, not an in-place resume")
         if self.allow_concurrent and not str(self.concurrent_reason or "").strip():
             raise ValueError("concurrent_reason is required when allow_concurrent is true")
         return self
@@ -639,6 +660,9 @@ class FollowupActionExecutionBody(BaseModel):
 
 
 class DispatchMaterializeBody(BaseModel):
+    context_source_session_id: str | None = None
+    execution_selection: dict[str, Any] | None = None
+    model_provider: str | None = None
     dispatch_id: str
     mutation_id: str
     card: dict[str, Any] | None = None
@@ -1775,6 +1799,9 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         goal_provenance=body.goal_provenance,
         request_payload={
             "provenance_version": body.provenance_version,
+            "context_source_session_id": body.context_source_session_id,
+            "execution_selection": body.execution_selection,
+            "model_provider": body.model_provider,
             "progress_versions": list(body.progress_versions),
             "provider": body.provider,
             "model_id": body.model_id,
@@ -6837,6 +6864,11 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "provider": record.request_payload.get("provider"),
         "model_id": record.request_payload.get("model_id"),
         "mode_id": record.request_payload.get("mode_id"),
+        "model_provider": record.request_payload.get("model_provider"),
+        "execution_selection": record.request_payload.get("execution_selection"),
+        "context_source_session_id": record.request_payload.get(
+            "context_source_session_id"
+        ),
         "execution_contract": record.request_payload.get("execution_contract"),
         "session_id": record.resume_session_id if record.resume_requested else None,
         "progress_versions": SUPPORTED_PROGRESS_VERSIONS,
@@ -6959,6 +6991,7 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         "card_id": record.card_id,
         "project_id": record.project_id,
         "provider": payload.get("provider"),
+        "model_provider": payload.get("model_provider"),
         "model_id": payload.get("model_id"),
         "mode_id": payload.get("mode_id"),
         "effort": payload.get("effort"),
@@ -7015,11 +7048,30 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
     )
     requested_configuration = SessionConfigurationRequest.from_values(
         model_id=payload.get("model_id"),
+        model_provider=payload.get("model_provider"),
         mode_id=payload.get("mode_id"),
         reasoning=payload.get("effort"),
         config=payload.get("config") or {},
     )
     confirmed_configuration: dict[str, Any] = {}
+    selection_receipt = payload.get("execution_selection")
+    if selection_receipt:
+        from pa.execution.selection import receipt_in_lineage
+        from pa.execution.selection_service import selected_configuration
+
+        target_config = session.get("config_json") or {}
+        target_receipt = target_config.get("execution_selection") or {}
+        if not receipt_in_lineage(target_config, selection_receipt.get("decision_id")):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "selection_peer_contract_unavailable",
+                    "message": "Target did not retain the authority's selection receipt. Upgrade/reconcile the peer before sending this prompt; no implicit reselection is allowed.",
+                    "session_id": session_id,
+                    "recoverable": True,
+                },
+            )
+        requested_configuration = selected_configuration(target_receipt, requested_configuration)
     if not requested_configuration.empty:
         configuration = snapshot.get("configuration")
         if not isinstance(configuration, dict):
@@ -7028,7 +7080,22 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
             )
             configuration = dict((session_config or {}).get("configuration") or {})
         confirmed_configuration = dict(configuration)
-        effective = dict(configuration.get("effective") or {})
+        from pa.acp.configuration import confirmed_session_configuration
+
+        native_config = {
+            **(session.get("config_json") or {}),
+            "configuration": configuration,
+        }
+        normalized = confirmed_session_configuration(
+            native_config,
+            model_id=session.get("model_id"),
+            mode_id=session.get("mode_id"),
+        )
+        effective = {**dict(configuration.get("effective") or {}), **normalized}
+        effective["config"] = {
+            **dict((configuration.get("effective") or {}).get("config") or {}),
+            **normalized.get("values", {}),
+        }
         mismatches: list[str] = []
         if configuration.get("state") != "ready":
             mismatches.append(f"state={configuration.get('state')!r}")
@@ -7361,6 +7428,10 @@ async def _resolve_policy_placement(
     project_id: str | None,
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
+    if body.expected_card_version is not None and (
+        card is None or card.updated_at != body.expected_card_version
+    ):
+        raise PlacementError("stale_card_preferences", "Card changed since preview. Refresh the preview before dispatching.", recoverable=True)
     requested_provider = (body.provider or "").strip().lower() or None
     requested_model_id = body.model_id
     requested_mode_id = body.mode_id
@@ -7460,7 +7531,8 @@ async def _resolve_policy_placement(
     decision = await _offload_request(
         request,
         "fleet.placement_resolve",
-        placement.resolve,
+        selection_service_for(ctx).joint,
+        placement,
         PlacementRequest(
             realm_id=realm_id,
             fleet_id=ctx.settings.fleet_id,
@@ -7511,7 +7583,30 @@ async def _resolve_policy_placement(
             capacity_override=body.capacity_override,
         ),
         candidates,
+        principal=get_principal_id(request),
+        realm=realm_id,
+        surface="execution",
+        card=card,
+        project_config=project.tool_config if project else None,
+        overrides=body.execution_preferences,
+        legacy=legacy_preferences(
+            provider=body.provider,
+            model_provider=body.model_provider,
+            model_id=body.model_id,
+            effort=body.effort,
+            config=body.config,
+        ),
+        assessment=body.task_assessment,
     )
+    body.execution_selection = decision.execution_selection
+    chosen_selection = decision.execution_selection["selected"]
+    body.provider = chosen_selection["harness"]
+    body.model_provider = chosen_selection.get("model_provider")
+    body.model_id = chosen_selection.get("model")
+    body.effort = chosen_selection.get("reasoning")
+    # All model/native fields have been consumed by the resolver. Re-injecting
+    # legacy aliases here would override an explicit Automatic selection.
+    body.config = chosen_selection.get("options", {})
     decision.eligible_candidates = [
         {
             **item,
@@ -10599,6 +10694,11 @@ async def start_remote_agent_work(
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error from exc
     body.provider = placement_body.provider
+    body.model_id = placement_body.model_id
+    body.model_provider = placement_body.model_provider
+    body.effort = placement_body.effort
+    body.config = placement_body.config
+    body.execution_selection = placement_body.execution_selection
     _bind_effective_goal_dispatch_provider(body, ctx.settings.agent_provider)
     _apply_dispatch_mode_default(body)
     return await _admit_remote_agent_work(
@@ -11074,6 +11174,17 @@ async def _admit_remote_agent_work(
                 "plan": plan.model_dump(mode="json"),
                 "recoverable": True,
             },
+        )
+    if body.execution_selection:
+        receipt = body.execution_selection
+        selection_context = receipt.get("context") or {}
+        await _offload_request(
+            request,
+            "selection.receipt_write",
+            selection_service_for(ctx).store.save_decision,
+            receipt,
+            selection_context.get("realm", realm_id),
+            selection_context.get("principal", get_principal_id(request)),
         )
     record = DispatchRecord(
         dispatch_id=(
@@ -15208,6 +15319,10 @@ class FleetModule(Module):
             provider: str | None = None,
             model_id: str | None = None,
             required_capabilities: list[str] | None = None,
+            execution_preferences: dict | None = None,
+            task_assessment: dict | None = None,
+            expected_card_version: str | None = None,
+            context_source_session_id: str | None = None,
         ) -> dict:
             """Resolve and explain candidates without admitting a dispatch."""
             if instance_id and group_id:
@@ -15225,6 +15340,16 @@ class FleetModule(Module):
                     "provider": provider,
                     "model_id": model_id,
                     "required_capabilities": required_capabilities or [],
+                    **{
+                        key: value
+                        for key, value in {
+                            "execution_preferences": execution_preferences,
+                            "task_assessment": task_assessment,
+                            "expected_card_version": expected_card_version,
+                            "context_source_session_id": context_source_session_id,
+                        }.items()
+                        if value is not None
+                    },
                     "execution_contract": {
                         "version": 1,
                         "profile": workload_profile,
@@ -15265,6 +15390,11 @@ class FleetModule(Module):
             authority_instance_id: str | None = None,
             provider: str | None = None,
             model_id: str | None = None,
+            model_provider: str | None = None,
+            execution_preferences: dict | None = None,
+            task_assessment: dict | None = None,
+            expected_card_version: str | None = None,
+            context_source_session_id: str | None = None,
             mode_id: str | None = None,
             collaboration_mode: CollaborationMode | None = None,
             collaboration_risk: str = "low",
@@ -15301,6 +15431,17 @@ class FleetModule(Module):
                     "message": message,
                     "provider": provider,
                     "model_id": model_id,
+                    **{
+                        k: v
+                        for k, v in {
+                            "model_provider": model_provider,
+                            "execution_preferences": execution_preferences,
+                            "task_assessment": task_assessment,
+                            "expected_card_version": expected_card_version,
+                            "context_source_session_id": context_source_session_id,
+                        }.items()
+                        if v is not None
+                    },
                     "mode_id": mode_id,
                     "collaboration_mode": (
                         collaboration_mode.value
@@ -15337,6 +15478,11 @@ class FleetModule(Module):
             authority_instance_id: str | None = None,
             provider: str | None = None,
             model_id: str | None = None,
+            model_provider: str | None = None,
+            execution_preferences: dict | None = None,
+            task_assessment: dict | None = None,
+            expected_card_version: str | None = None,
+            context_source_session_id: str | None = None,
             mode_id: str | None = None,
             collaboration_mode: CollaborationMode | None = None,
             collaboration_risk: str = "low",
@@ -15364,6 +15510,17 @@ class FleetModule(Module):
                 "message": message,
                 "provider": provider,
                 "model_id": model_id,
+                **{
+                    k: v
+                    for k, v in {
+                        "model_provider": model_provider,
+                        "execution_preferences": execution_preferences,
+                        "task_assessment": task_assessment,
+                        "expected_card_version": expected_card_version,
+                        "context_source_session_id": context_source_session_id,
+                    }.items()
+                    if v is not None
+                },
                 "mode_id": mode_id,
                 "collaboration_mode": (
                     collaboration_mode.value

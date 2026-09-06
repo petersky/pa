@@ -161,6 +161,8 @@
       </section>
 
       <section class="card-detail-section" aria-labelledby="card-details-title">
+        {% set selection_purpose = 'edit' %}
+        {% include 'partials/execution-preferences.html' %}
         <h3 id="card-details-title">Description</h3>
         <div class="inline-edit-field" data-inline-edit-field>
           <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit description">

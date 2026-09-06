@@ -1,0 +1,28 @@
+<details class="execution-preferences panel-inset new-card-field-span-2"
+         data-execution-preferences data-selection-purpose="{{ selection_purpose | default('create') }}"
+         data-selection-surface="{{ selection_surface | default('execution') }}"
+         data-selection-card="{{ card.id if card is defined else '' }}"
+         data-selection-realm="{{ card.realm_id if card is defined else realm | default('') }}"
+         data-selection-version="{{ card.updated_at.isoformat() if card is defined else '' }}">
+  <summary>{{ 'One-run execution preferences' if selection_purpose | default('create') in ['dispatch', 'new-session'] else 'Execution defaults (optional)' }}</summary>
+  <p class="muted small">Inherit follows card → project → user → installation defaults. Automatic asks policy to choose. Required pins must match; preferred values may use an explained alternative. Permissions and collaboration mode are separate.</p>
+  <script type="application/json" data-selection-initial>{{ (card.execution_preferences.model_dump(mode='json') if card is defined and selection_purpose | default('create') != 'dispatch' else {}) | tojson }}</script>
+  {% if execution_catalog is defined %}<script type="application/json" data-selection-catalog>{{ execution_catalog | tojson }}</script>{% endif %}
+  <input type="hidden" name="execution_preferences" value="{}">
+  <div data-selection-fields></div>
+  <details class="execution-selection-advanced">
+    <summary>Required constraints and task assessment</summary>
+    <p class="muted small">These are additional hard restrictions, not permission grants. Unknown tool, context, modality or cost evidence cannot satisfy a required constraint. Project and administrator restrictions still win.</p>
+    <div data-selection-constraints></div>
+    <label>Task assessment (optional JSON)<textarea data-selection-task rows="3" aria-label="Task assessment JSON" placeholder='{"role":"reviewer","complexity":"complex","risk":"high","objective":"quality"}'></textarea></label>
+    <small class="muted">Leave empty to inherit or use bounded task inference. Rules use native capabilities; reasoning levels are never translated between providers.</small>
+  </details>
+  <p class="muted small" data-selection-notice role="status" aria-live="polite">Loading cached capability evidence…</p>
+  <button type="button" class="ghost small" data-selection-refresh>Refresh local capabilities</button>
+  {% if selection_purpose | default('create') != 'dispatch' %}<button type="button" class="ghost small" data-selection-preview>Preview selection</button>{% endif %}
+  <details class="execution-selection-receipt" data-selection-preview-output hidden><summary>Why this selection?</summary><p data-selection-explanation></p><details><summary>Full receipt and alternatives</summary><pre></pre></details></details>
+  {% if selection_purpose | default('create') in ['edit', 'dispatch'] %}
+  <button type="button" class="small" data-selection-save>Save card defaults</button>
+  <small class="muted">Separate from dispatch; existing attempts remain unchanged.</small>
+  {% endif %}
+</details>

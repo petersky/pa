@@ -342,6 +342,20 @@ def compose_session_prompt(
         realm_id=realm,
     )
     prompts = list(seed_prompts or [])
+    boundary = (session.config_json or {}).get("execution_context_boundary_from")
+    if boundary:
+        prompts.append(
+            PROMPTS.render(
+                "agent.context.execution_boundary",
+                {
+                    "source_session_id": boundary["source_session_id"],
+                    "boundary_id": boundary["id"],
+                    "saved_excerpt": boundary.get("saved_excerpt")
+                    or "(No saved textual context is available.)",
+                },
+                provider=provider,
+            )
+        )
     if project:
         prompts.append(
             PROMPTS.render(

@@ -22,6 +22,7 @@ from pa.prompts import (
 )
 
 EXPECTED_PROMPT_KEYS = {
+    "agent.context.execution_boundary",
     "card.reconciliation.disposition",
     "agent.context.browser",
     "agent.context.card",

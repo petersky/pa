@@ -97,6 +97,8 @@
       <input type="text" name="preferred_capabilities"
              placeholder="gpu, browser, macos (comma-separated)">
     </label>
+    {% set selection_purpose = 'create' %}
+    {% include 'partials/execution-preferences.html' %}
     <label class="new-card-field-span-2">
       <span><input type="checkbox" name="auto_enrich" value="true" checked> Auto-enrich this card</span>
       <small class="muted">Use an ACP session to suggest missing details and routing metadata.</small>

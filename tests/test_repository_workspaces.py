@@ -14,7 +14,9 @@ import pytest
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.providers.base import AgentProviderSpec
 from pa.config import Settings
-from pa.domain.models import AgentSession, ProjectRepository, Repository
+from pa.domain.models import AgentSession, Card, ProjectRepository, Repository
+from pa.execution.selection import ExecutionCandidate
+from pa.execution.selection_store import SelectionStore
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.instance.quiesce import QuiesceSnapshot, SessionSnapshot
 from pa.repository.workspace import (
@@ -32,6 +34,23 @@ def git(path: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
         text=True,
         capture_output=True,
         check=check,
+    )
+
+
+def cache_workspace_test_provider(settings: Settings) -> None:
+    """Keep workspace tests independent of installed host provider catalogs."""
+    candidate = ExecutionCandidate(
+        instance_id=settings.instance_id,
+        harness="codex",
+        connection="default",
+        readiness="ready",
+        catalog_source="workspace_test_fixture",
+        catalog_version="1",
+        observed_at=datetime.now(UTC),
+        freshness="fresh",
+    )
+    SelectionStore(settings.data_dir).save_catalog(
+        settings.instance_id, [candidate.model_dump(mode="json")]
     )
 
 
@@ -56,6 +75,7 @@ def manager_for(
     repository = Repository(id="repo-1", url=str(remote), name="PA")
     project = SimpleNamespace(tool_config={})
     store = MagicMock()
+    store.get_card.return_value = None
     store.get_project.return_value = project
     store.list_project_repositories.return_value = [
         (
@@ -784,7 +804,9 @@ def test_agent_session_provisions_before_provider_start_and_persists_context(
 ) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     settings = workspace_manager.settings
+    cache_workspace_test_provider(settings)
     store = workspace_manager.store
+    store.get_card.return_value = Card(id="card-1", title="Provisioned", project_id="project-1")
     manager = AgentSessionManager(settings, store)
     spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
     resolved = SimpleNamespace(provider_id="codex", spec=spec, source="instance")
@@ -822,6 +844,8 @@ def test_agent_full_access_mode_is_applied_before_provider_and_mcp_startup(
     tmp_path: Path,
 ) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
+    cache_workspace_test_provider(workspace_manager.settings)
+    workspace_manager.store.get_card.return_value = Card(id="card-1", title="Full access", project_id="project-1")
     manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
     spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
     resolved = SimpleNamespace(provider_id="codex", spec=spec, source="override")
@@ -871,7 +895,9 @@ def test_remote_provider_environment_keeps_full_ids_while_slugs_stay_short(
     colliding_card_id = "45cd58e9-1dd7-44b9-9e07-ffffffffffff"
     repository_id = "66666666-6666-4666-8666-666666666666"
     workspace_manager.settings.instance_id = target_id
+    cache_workspace_test_provider(workspace_manager.settings)
     repository.id = repository_id
+    workspace_manager.store.get_card.return_value = Card(id=card_id, title="Remote", project_id="project-1", realm_id="engineering")
     manager = AgentSessionManager(workspace_manager.settings, workspace_manager.store)
     spec = AgentProviderSpec(id="codex", display_name="Codex", command="codex-acp")
     resolved = SimpleNamespace(provider_id="codex", spec=spec, source="instance")
@@ -1045,7 +1071,9 @@ def test_unmaterialized_project_links_record_blocked_state(tmp_path: Path) -> No
 def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     settings = workspace_manager.settings
+    cache_workspace_test_provider(settings)
     store = workspace_manager.store
+    store.get_card.return_value = Card(id="card-1", title="Retry provisioning", project_id="project-1")
     bad = Repository(
         id="repo-bad", url="https://user:secret@github.com/org/private.git"
     )
@@ -1083,9 +1111,17 @@ def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) ->
 
 def test_project_session_uses_project_realm_and_requires_repository(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     settings = workspace_manager.settings
+    cache_workspace_test_provider(settings)
+    # This test exercises workspace admission, not the developer's installed
+    # harnesses. Fail if it accidentally falls back to host discovery again.
+    monkeypatch.setattr(
+        "pa.acp.providers.resolve.list_provider_summaries_bounded",
+        AsyncMock(side_effect=AssertionError("unexpected host provider discovery")),
+    )
     store = workspace_manager.store
     project = SimpleNamespace(realm_id="shared", tool_config={}, repos=[])
     store.get_project.return_value = project
