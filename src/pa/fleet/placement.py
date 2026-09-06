@@ -126,6 +126,7 @@ class PlacementRequest(BaseModel):
 
 
 class PlacementDecision(BaseModel):
+    execution_selection: dict[str, Any] | None = None
     policy: str
     chosen_instance_id: str
     chosen_instance_name: str

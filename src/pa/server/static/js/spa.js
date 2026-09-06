@@ -1065,8 +1065,10 @@
     var profile = form.elements.execution_profile.value;
     var payload = {
       card_id: detail.dataset.cardId,
-      provider: form.elements.provider ? form.elements.provider.value.trim() || null : null,
-      model_id: form.elements.model_id && form.elements.model_id.value !== "None" ? form.elements.model_id.value.trim() || null : null,
+      execution_preferences: form.elements.execution_preferences ? JSON.parse(form.elements.execution_preferences.value || "{}") : {},
+      expected_card_version: (form.querySelector("[data-execution-preferences]") || {dataset: {}}).dataset.selectionVersion || null,
+      provider: !form.elements.execution_preferences && form.elements.provider ? form.elements.provider.value.trim() || null : null,
+      model_id: !form.elements.execution_preferences && form.elements.model_id && form.elements.model_id.value !== "None" ? form.elements.model_id.value.trim() || null : null,
       execution_contract: {
         version: 1,
         profile: profile,
@@ -1074,6 +1076,12 @@
         requirements: {},
       },
     };
+    var contextSource = form.elements.context_source_session_id;
+    if (contextSource && contextSource.checked) {
+      payload.context_source_session_id = contextSource.value;
+      target = "instance:" + contextSource.dataset.contextSourceInstance;
+      form.elements.dispatch_target.value = target;
+    }
     if (target.indexOf("policy:") === 0) {
       payload.placement_policy = target.slice(7);
       if (form.elements.worker_group && form.elements.worker_group.value) {
@@ -1106,6 +1114,18 @@
     explanation.className = "muted";
     explanation.textContent = decision.tie_breaking_reason || "Placement preview resolved.";
     region.appendChild(explanation);
+    var selection = decision.execution_selection;
+    if (selection) {
+      var requested = document.createElement("p");
+      var tuple = selection.selected || {};
+      requested.textContent = "Requested: " + [tuple.harness, tuple.connection, tuple.model_provider, tuple.model || "provider default (actual model unknown)", tuple.reasoning || "native default"].filter(Boolean).join(" · ") + ". Pending provider confirmation.";
+      var why = document.createElement("details");
+      var whyTitle = document.createElement("summary"); whyTitle.textContent = "Why this selection?";
+      var whyText = document.createElement("p"); whyText.textContent = selection.explanation + " Tradeoffs: " + (selection.tradeoffs || []).join(", ");
+      var audit = document.createElement("pre"); audit.className = "execution-selection-receipt";
+      audit.textContent = JSON.stringify(selection, null, 2);
+      why.append(whyTitle, whyText, audit); region.append(requested, why);
+    }
     var eligible = Array.isArray(decision.eligible_candidates) ? decision.eligible_candidates : [];
     var rejected = Array.isArray(decision.rejected_candidates) ? decision.rejected_candidates : [];
     var summary = document.createElement("p");
@@ -1977,7 +1997,7 @@
 
   document.body.addEventListener("change", function (event) {
     if (event.target && ["dispatch_target", "worker_group", "execution_profile",
-      "provider", "model_id", "participation_override",
+      "provider", "model_id", "execution_preferences", "participation_override",
       "participation_override_reason"].indexOf(event.target.name) !== -1) {
       var dispatchForm = event.target.closest("[data-card-dispatch-form]");
       if (event.target.name === "dispatch_target" || event.target.name === "provider") {

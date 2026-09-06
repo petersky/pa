@@ -35,8 +35,10 @@ from pa.acp.configuration import (
     find_option,
     find_option_by_id,
     normalized_session_config_json,
+    confirmed_session_configuration,
     option_current_value,
     option_id,
+    option_values,
     parse_model_selector,
     state_current_value,
     validate_option_value,
@@ -1035,6 +1037,7 @@ class AgentConnection:
             spec.env,
             self.extra_env,
         )
+        child_env = {k: v for k, v in child_env.items() if k not in spec.excluded_env}
         child_env, _github_auth_source = inject_agent_github_environment(
             child_env, self.settings
         )
@@ -1568,8 +1571,20 @@ class AgentConnection:
             )
             desired = previous_request.merged(requested) if merge else requested
             requested_dict = desired.as_dict()
+            native = confirmed_session_configuration(
+                {**config, "options": _to_plain(self.config_options) or []}
+            )
+            consistent = all(
+                value is None or native.get(field) == value
+                for field, value in (
+                    ("model_id", desired.model_id),
+                    ("reasoning", desired.reasoning),
+                    ("mode_id", desired.mode_id),
+                )
+            )
             if (
                 not force
+                and consistent
                 and previous.get("state") == "ready"
                 and previous.get("requested") == requested_dict
             ):
@@ -1581,6 +1596,7 @@ class AgentConnection:
                 if isinstance(item, dict)
             ]
             working_options = copy.deepcopy(options)
+            fresh_native_options = False
             working_models = copy.deepcopy(self.models)
             working_modes = copy.deepcopy(self.modes)
             set_config_option = getattr(self._conn, "set_config_option", None)
@@ -1619,7 +1635,9 @@ class AgentConnection:
                     )
                 if not existing:
                     bound_options[oid] = (value, setting)
-                    if option_current_value(option) == value:
+                    # A preceding model change can reset otherwise unchanged
+                    # native settings. Reapply them in this same locked attempt.
+                    if option_current_value(option) == value and not actions:
                         strategies[setting] = f"config:{oid}:unchanged"
                         return
                     actions.append((setting, "config", oid, value))
@@ -1633,7 +1651,14 @@ class AgentConnection:
                         collection_names=("availableModels", "available_models"),
                         id_names=("modelId", "model_id", "id"),
                     )
-                    if self.models is not None and callable(set_model):
+                    model_option = find_option(options, "model")
+                    if (
+                        config_supported
+                        and model_option is not None
+                        and desired.model_id in option_values(model_option)
+                    ):
+                        bind_option("model", model_option, desired.model_id)
+                    elif self.models is not None and callable(set_model):
                         provider_model_id = desired.model_id
                         combined = (
                             f"{desired.model_id}[{desired.reasoning}]"
@@ -1777,6 +1802,11 @@ class AgentConnection:
                         for item in response_options
                         if isinstance(item, dict)
                     ]
+                    # Even a rejected setting can return a new effective model
+                    # after an earlier action succeeded. Preserve that response,
+                    # never present a fictional rollback to the old options.
+                    working_options = verified_options
+                    fresh_native_options = True
                     verified = find_option_by_id(verified_options, target)
                     effective_value = (
                         option_current_value(verified) if verified is not None else None
@@ -1794,7 +1824,26 @@ class AgentConnection:
                             f"confirm {setting}={value!r}; effective value was "
                             f"{effective_value!r}.{hint}"
                         )
-                    working_options = verified_options
+
+                # ConfigOptions are the provider's presentation truth (#399).
+                # A dedicated setter acknowledgement must not fabricate a
+                # conflicting effective model or hide stale native options.
+                confirmed_model_option = find_option(working_options, "model")
+                confirmed_reasoning_option = find_option(working_options, "reasoning")
+                if desired.model_id and confirmed_model_option is not None:
+                    native_model, _ = parse_model_selector(
+                        str(option_current_value(confirmed_model_option) or "")
+                    )
+                    if native_model != desired.model_id:
+                        raise ACPConfigurationError(
+                            "Provider model acknowledgement conflicts with configOptions. Refresh provider configuration before continuing; the requested model is not confirmed."
+                        )
+                if desired.reasoning and confirmed_reasoning_option is not None:
+                    if (
+                        option_current_value(confirmed_reasoning_option)
+                        != desired.reasoning
+                    ):
+                        raise ACPConfigurationError("Provider reasoning acknowledgement conflicts with configOptions. The requested reasoning is not confirmed.")
 
                 effective_values = {
                     oid: option_current_value(option)
@@ -1838,7 +1887,8 @@ class AgentConnection:
                     "model_id": effective_model,
                     "mode_id": effective_mode,
                     "reasoning": effective_reasoning,
-                    "model_provider": desired.model_provider,
+                    "model_provider": None,
+                    "configured_model_provider": desired.model_provider,
                     "config": effective_values,
                 }
                 config = dict(self.session.config_json or {})
@@ -1874,15 +1924,31 @@ class AgentConnection:
                 await self._offload(
                     "sqlite.agent_session_save", self.store.save_session, self.session
                 )
+                from pa.execution.selection_audit import record_configuration
+
+                await self._offload("selection.configuration_receipt", record_configuration, self.settings, self.session)
                 return effective
             except Exception as exc:
                 message = str(exc)
                 if not isinstance(exc, ACPConfigurationError):
                     message = (
                         "ACP configuration compatibility error: the provider failed while "
-                        f"applying requested session settings: {exc}"
+                        "applying requested session settings. Inspect redacted provider diagnostics."
                     )
                 failed_config = dict(self.session.config_json or {})
+                if fresh_native_options:
+                    self.config_options = working_options
+                    failed_config["options"] = working_options
+                    failed_config["values"] = {
+                        oid: option_current_value(option)
+                        for option in working_options
+                        if (oid := option_id(option)) is not None
+                    }
+                    confirmed = confirmed_session_configuration(failed_config)
+                    if confirmed.get("model_id"):
+                        self.session.model_id = confirmed["model_id"]
+                    if confirmed.get("mode_id"):
+                        self.session.mode_id = confirmed["mode_id"]
                 failed_config["configuration"] = {
                     "state": "failed",
                     "attempt": attempt,
@@ -1898,6 +1964,9 @@ class AgentConnection:
                 await self._offload(
                     "sqlite.agent_session_save", self.store.save_session, self.session
                 )
+                from pa.execution.selection_audit import record_configuration
+
+                await self._offload("selection.configuration_failure", record_configuration, self.settings, self.session)
                 if isinstance(exc, ACPConfigurationError):
                     raise
                 raise ACPConfigurationError(message) from exc

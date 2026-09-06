@@ -460,6 +460,7 @@ class AgentChatSseTests(unittest.TestCase):
 
     def test_new_session_applies_provider_and_initial_options(self) -> None:
         runtime = MagicMock()
+        runtime.session.config_json = {}  # Legacy runtime without a selection receipt.
         runtime.connection.config_options = [
             {"id": "reasoningEffort", "name": "Reasoning effort"}
         ]
@@ -572,6 +573,7 @@ class AgentChatSseTests(unittest.TestCase):
 
         runtime = MagicMock()
         runtime.session.agent_name = "cursor"
+        runtime.session.config_json = {}
         runtime.connection.config_options = []
         runtime.set_model = AsyncMock()
         runtime.set_mode = AsyncMock()
@@ -615,6 +617,7 @@ class AgentChatSseTests(unittest.TestCase):
 
         runtime = MagicMock()
         runtime.session.agent_name = "cursor"
+        runtime.session.config_json = {}
         runtime.connection.config_options = []
         runtime.set_model = AsyncMock()
         runtime.set_mode = AsyncMock()
@@ -657,6 +660,7 @@ class AgentChatSseTests(unittest.TestCase):
 
     def test_labeled_session_is_cleaned_up_when_initial_options_fail(self) -> None:
         runtime = MagicMock()
+        runtime.session.config_json = {}
         runtime.session_id = "sess-labeled"
         runtime.set_model = AsyncMock(side_effect=RuntimeError("invalid model"))
         runtime.close = AsyncMock()

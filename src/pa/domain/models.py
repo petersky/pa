@@ -4,6 +4,7 @@ from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
+from pa.execution.selection import ExecutionPreferences
 
 from pa.fleet.capacity import (
     MAX_DISPATCH_QUEUE_CAPACITY,
@@ -398,6 +399,7 @@ class CardAttachment(BaseModel):
 
 
 class Card(BaseModel):
+    execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
     kind: CardKind = CardKind.TASK
@@ -443,6 +445,7 @@ class Card(BaseModel):
 
 
 class CardCreate(BaseModel):
+    execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     realm_id: str = "default"
     kind: CardKind = CardKind.TASK
     title: str
@@ -469,6 +472,7 @@ class CardCreate(BaseModel):
 
 
 class CardUpdate(BaseModel):
+    execution_preferences: ExecutionPreferences | None = None
     kind: CardKind | None = None
     title: str | None = None
     body: str | None = None

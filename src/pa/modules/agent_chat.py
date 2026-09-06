@@ -23,7 +23,7 @@ from pa.acp.configuration import (
     normalized_session_config_json,
 )
 from pa.acp.sandbox_health import sandbox_health_registry
-from pa.auth.middleware import get_principal_id
+from pa.auth.middleware import get_principal_id, require_user
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.instance_identity import current_instance_name
@@ -265,7 +265,20 @@ def _runtime_or_404(request: Request, session_id: str):
     return runtime
 
 
+from pa.execution.selection import (
+    ExecutionPreferences,
+    TaskAssessment,
+    SelectionError,
+    validate_reuse,
+)
+from pa.modules.execution_selection import (
+    SettingsBody as ExecutionSettingsBody,
+    CancelSettingsBody,
+)
+
+
 class CreateSessionBody(BaseModel):
+    context_source_session_id: str | None = None
     label: str | None = None
     title: str | None = None
     cwd: str | None = None
@@ -273,6 +286,10 @@ class CreateSessionBody(BaseModel):
     project_id: str | None = None
     attach_default: bool = False
     provider: str | None = None
+    execution_preferences: ExecutionPreferences = Field(
+        default_factory=ExecutionPreferences
+    )
+    task_assessment: TaskAssessment | None = None
     surface: str | None = None
     model_provider: str | None = None
     model_id: str | None = None
@@ -457,6 +474,10 @@ class SessionPinBody(BaseModel):
 
 class ContinueSessionBody(BaseModel):
     provider: str | None = None
+    execution_preferences: ExecutionPreferences = Field(
+        default_factory=ExecutionPreferences
+    )
+    idempotency_key: str = Field(default="lost-context", min_length=1, max_length=200)
 
 
 class RestartHandoffBody(BaseModel):
@@ -785,7 +806,14 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
         if defaults_provider.strip().lower() == requested_provider.strip().lower():
             new_session_defaults = surface_defaults
     try:
-        new_session_configuration = _configuration_request(body, new_session_defaults)
+        # Only permission/mode inheritance stays here. The common selection
+        # resolver owns model/backend/reasoning/native option precedence.
+        authority_defaults = (
+            SurfaceAgentPrefs(mode_id=new_session_defaults.mode_id)
+            if new_session_defaults
+            else None
+        )
+        new_session_configuration = _configuration_request(body, authority_defaults)
     except ACPConfigurationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     dispatch_session_kwargs: dict[str, Any] = {}
@@ -817,6 +845,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 or {"verified": True, "attachments": []},
                 "materialization_plan": dispatch_record.materialization_plan,
             },
+            "execution_selection": dispatch_record.request_payload.get("execution_selection"),
         }
     try:
         if dispatch_record:
@@ -846,6 +875,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         title=body.title,
                         cwd=body.cwd,
                         **dispatch_session_kwargs,
+                        execution_preferences=body.execution_preferences,
+                        task_assessment=body.task_assessment,
                         card_id=body.card_id,
                         project_id=body.project_id,
                         surface=surface,
@@ -871,6 +902,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         title=body.title or stored.title,
                         cwd=body.cwd or stored.cwd,
                         **dispatch_session_kwargs,
+                        execution_preferences=body.execution_preferences,
+                        task_assessment=body.task_assessment,
                         card_id=body.card_id or stored.card_id,
                         project_id=body.project_id or stored.project_id,
                         existing=stored,
@@ -898,10 +931,15 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             else:
                 # A materialized fresh dispatch never consults label lookup.
                 runtime = await mgr.create_session(
+                    context_source_session_id=dispatch_record.request_payload.get(
+                        "context_source_session_id"
+                    ),
                     label=body.label,
                     title=body.title,
                     cwd=body.cwd,
                     **dispatch_session_kwargs,
+                    execution_preferences=body.execution_preferences,
+                    task_assessment=body.task_assessment,
                     card_id=body.card_id,
                     project_id=body.project_id,
                     surface=surface,
@@ -925,6 +963,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 principal_id=principal_id,
                 cwd=body.cwd,
                 provider_override=body.provider,
+                execution_preferences=body.execution_preferences,
+                task_assessment=body.task_assessment,
                 initial_configuration=(
                     new_session_configuration
                     if new_logical_session
@@ -964,6 +1004,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             resume_external_id=stored.external_session_id,
                             surface=surface,
                             provider_override=body.provider,
+                            execution_preferences=body.execution_preferences,
+                            task_assessment=body.task_assessment,
                             project_tool_config=project_tool_config,
                             initial_configuration=(
                                 explicit_configuration
@@ -975,6 +1017,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         created_runtime = True
                     else:
                         runtime = await mgr.create_session(
+                            context_source_session_id=body.context_source_session_id,
                             label=body.label,
                             title=body.title,
                             cwd=body.cwd,
@@ -983,6 +1026,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                             project_id=body.project_id,
                             surface=surface,
                             provider_override=body.provider,
+                            execution_preferences=body.execution_preferences,
+                            task_assessment=body.task_assessment,
                             project_tool_config=project_tool_config,
                             initial_configuration=new_session_configuration,
                             purpose=body.purpose,
@@ -998,6 +1043,7 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                     runtime = existing
         else:
             runtime = await mgr.create_session(
+                context_source_session_id=body.context_source_session_id,
                 label=body.label,
                 title=body.title,
                 cwd=body.cwd,
@@ -1006,6 +1052,8 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 project_id=body.project_id,
                 surface=surface,
                 provider_override=body.provider,
+                execution_preferences=body.execution_preferences,
+                task_assessment=body.task_assessment,
                 project_tool_config=project_tool_config,
                 initial_configuration=new_session_configuration,
                 purpose=body.purpose,
@@ -1050,7 +1098,11 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             else None
         )
         try:
-            await _apply_initial_options(runtime, body, initial_defaults)
+            selection = (runtime.session.config_json or {}).get("execution_selection")
+            if selection:
+                validate_reuse(selection, requested=body.execution_preferences)
+            else:
+                await _apply_initial_options(runtime, body, initial_defaults)
         except Exception:
             if created_runtime:
                 try:
@@ -1065,6 +1117,15 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
             raise
     except HTTPException:
         raise
+    except SelectionError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "execution_selection": exc.receipt,
+            },
+        ) from exc
     except Exception as exc:
         from pa.acp.errors import classify_acp_failure
 
@@ -2069,8 +2130,14 @@ async def get_agent_session_history(
             "config_json": normalized_config,
         }
     )
+    from pa.execution.selection import selection_presentation
     payload = {
         "session": session_payload,
+        "execution_selection": selection_presentation(
+            session.config_json or {},
+            model_id=session.model_id,
+            mode_id=session.mode_id,
+        ),
         "instance": {
             "id": settings.instance_id,
             "name": settings.instance_name,
@@ -3100,6 +3167,32 @@ async def session_cancel(request: Request, session_id: str) -> dict:
     return {"ok": True, "queue_paused": runtime.queue_paused}
 
 
+# Keep remote-agent proxy paths thin aliases of the authoritative selection API.
+@router.get("/sessions/{session_id}/execution-catalog")
+async def session_execution_catalog(request: Request, session_id: str):
+    from pa.modules.execution_selection import session_catalog
+
+    return await session_catalog(request, session_id)
+
+
+@router.post("/sessions/{session_id}/execution-settings")
+async def session_execution_settings(
+    request: Request, session_id: str, body: ExecutionSettingsBody
+):
+    from pa.modules.execution_selection import session_settings
+
+    return await session_settings(request, session_id, body)
+
+
+@router.post("/sessions/{session_id}/execution-settings/cancel")
+async def session_execution_settings_cancel(
+    request: Request, session_id: str, body: CancelSettingsBody
+):
+    from pa.modules.execution_selection import cancel_session_settings
+
+    return await cancel_session_settings(request, session_id, body)
+
+
 @router.post("/sessions/{session_id}/archive")
 async def session_archive(request: Request, session_id: str) -> dict:
     mgr = _require_session_traffic_ready(request)
@@ -3175,6 +3268,7 @@ async def continue_session(
     body: ContinueSessionBody | None = None,
 ) -> dict:
     """Explicitly cross a lost provider-context boundary into a linked chat."""
+    require_user(request)
     mgr = _require_session_traffic_ready(request)
     source = await _offload(
         mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
@@ -3186,61 +3280,54 @@ async def continue_session(
             status_code=409,
             detail="A new linked chat is offered only when provider context is unavailable",
         )
-    events = await _offload(
-        mgr,
-        "sqlite.transcript_read",
-        mgr.store.list_transcript_events_before,
-        session_id,
-        limit=100,
-    )
-    excerpts: list[str] = []
-    for event in events:
-        if event.event_type not in {"user_message", "agent_message", "agent_message_chunk"}:
-            continue
-        payload = dict(event.payload or {})
-        text = payload.get("message") or payload.get("text") or payload.get("content")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        role = "User" if event.event_type == "user_message" else "Assistant"
-        excerpts.append(f"{role}: {text.strip()}")
-    saved_context = "\n\n".join(excerpts[-12:])[-8000:]
-    boundary_id = str(uuid4())
-    runtime = await mgr.create_session(
-        label=f"continued:{session_id}:{boundary_id}",
-        title=f"Continue: {source.title or source.label or 'conversation'}",
-        principal_id=source.principal_id,
-        card_id=source.card_id,
-        project_id=source.project_id,
-        provider_override=body.provider if body else None,
-        purpose="chat",
-        control_mode="human",
-        initiating_workflow={
-            "kind": "context_rebuild",
-            "source_session_id": session_id,
-            "context_boundary_id": boundary_id,
-        },
-    )
-    runtime._append_transcript(
-        "context_boundary",
-        {
-            "source_session_id": session_id,
-            "reason": "provider_context_unavailable",
-            "boundary_id": boundary_id,
-        },
-    )
+    body = body or ContinueSessionBody()
+    try:
+        runtime = await mgr.create_session(
+            context_source_session_id=session_id,
+            label=f"continued:{session_id}:{body.idempotency_key}",
+            title=f"Continue: {source.title or source.label or 'conversation'}",
+            principal_id=get_principal_id(request),
+            card_id=source.card_id,
+            project_id=source.project_id,
+            realm_id=source.realm_id,
+            provider_override=body.provider,
+            execution_preferences=body.execution_preferences,
+            purpose="chat",
+            control_mode="human",
+            initiating_workflow={
+                "kind": "context_rebuild",
+                "source_session_id": session_id,
+            },
+        )
+    except SelectionError as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    boundary = runtime.session.config_json["execution_context_boundary_from"]
     prompt = (
         "Continue this saved conversation across an explicit provider context "
         "boundary. Do not claim hidden continuity with the former provider."
     )
-    if saved_context:
-        prompt += f"\n\nSaved transcript excerpts:\n\n{saved_context}"
-    await runtime.prompt(prompt, source="ui:context-rebuild", wait=False)
-    old_config = dict(source.config_json or {})
-    linked = list(old_config.get("linked_chats") or [])
-    linked.append({"session_id": runtime.session_id, "boundary_id": boundary_id})
-    old_config["linked_chats"] = linked[-20:]
-    source.config_json = old_config
-    await _offload(mgr, "sqlite.agent_session_save", mgr.store.save_session, source)
+    # The bounded saved excerpt is supplied by the shared context builder. Persist
+    # this marker together with enqueue's durable queue checkpoint before draining;
+    # HTTP replay must not send another turn after the first has completed.
+    if not runtime.session.config_json.get("execution_context_continuation_queued"):
+        previous = dict(runtime.session.config_json)
+        runtime.session.config_json = {
+            **previous,
+            "execution_context_continuation_queued": boundary["id"],
+        }
+        try:
+            runtime.enqueue(
+                prompt,
+                prompt_id="context-boundary:" + boundary["id"],
+                source="ui:context-rebuild",
+                _defer_drain=True,
+            )
+        except Exception:
+            runtime.session.config_json = previous
+            raise
+        runtime._start_drain()
     return await _offload(mgr, "agent.session_snapshot", runtime.snapshot)
 
 
@@ -3719,10 +3806,17 @@ class AgentChatModule(Module):
         return "Multi-session agent chat REST and SSE APIs"
 
     def api_routers(self):
-        return [("/api", router, ["agent"])]
+        from pa.modules.execution_selection import router as selection_router
+
+        return [("/api", router, ["agent"]), ("/api", selection_router, ["execution"])]
 
     def register_mcp(self, mcp, ctx) -> None:
         from pa.mcp.local_api import request_local_pa
+        from pa.modules.execution_selection import (
+            register_mcp as register_selection_mcp,
+        )
+
+        register_selection_mcp(mcp, ctx)
 
         @mcp.tool()
         def list_agent_session_liveness(limit: int = 100) -> dict:

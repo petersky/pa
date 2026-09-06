@@ -829,7 +829,27 @@ class CardSummaryService:
             summary_last_attempted_at=attempted_at,
             summary_authority_instance_id=self.settings.instance_id,
         )
+        selection = None
+        summary_schema_valid = False
+        from pa.execution.selection_audit import summary_response, record_summary
+
+        response_evidence = {}
+        response_token = summary_response.set(response_evidence)
+        selection_started = time.monotonic()
         try:
+            from dataclasses import replace
+            from pa.execution.selection_jobs import summary_selection
+
+            selection = await asyncio.to_thread(
+                summary_selection,
+                self.ctx,
+                card,
+                configuration,
+                input_hash=input_hash,
+                prompt_version=PROMPT_VERSION,
+                force=force,
+            )
+            configuration = replace(configuration, model=selection["selected"]["model"])
             async with self._semaphore:
                 if self._provider_call is not None:
                     summary = await self._provider_call(card.title, card.body)
@@ -838,6 +858,7 @@ class CardSummaryService:
                         card.title, card.body, configuration
                     )
             summary = sanitize_summary(summary)
+            summary_schema_valid = True
         except Exception as exc:  # noqa: BLE001 - provider boundary is classified below
             failure = self._classify_failure(exc, configuration)
             logger.warning(
@@ -865,6 +886,20 @@ class CardSummaryService:
                 ),
             )
             return
+        finally:
+            summary_response.reset(response_token)
+            if selection:
+                await asyncio.to_thread(
+                    record_summary,
+                    self.ctx,
+                    card,
+                    selection,
+                    attempt=attempt_number,
+                    completed=summary_schema_valid,
+                    latency_ms=(time.monotonic() - selection_started) * 1000,
+                    confirmation=response_evidence,
+                    attempted_at=attempted_at,
+                )
 
         current = self.ctx.store.get_card(card_id, realm_id=realm_id)
         if not self._matches_attempt(current, input_hash, attempted_at):
@@ -1134,7 +1169,11 @@ class CardSummaryService:
             json=payload,
         )
         response.raise_for_status()
-        return parse_anthropic_summary(response.json())
+        response_payload = response.json()
+        from pa.execution.selection_audit import observe_summary
+
+        observe_summary(response_payload)
+        return parse_anthropic_summary(response_payload)
 
     async def _call_chat_completions(
         self,
@@ -1207,12 +1246,19 @@ class CardSummaryService:
                     "legacy_function_call": False,
                 },
             ) from exc
+        from pa.execution.selection_audit import observe_summary
+
+        observe_summary(response_payload)
         return parse_chat_completion_summary(response_payload)
 
     @staticmethod
     def _classify_failure(
         exc: Exception, configuration: SummaryConfiguration | None = None
     ) -> SummaryProviderError:
+        from pa.execution.selection import SelectionError
+
+        if isinstance(exc, SelectionError):
+            return SummaryProviderError(SummaryFailureCode.INVALID_REQUEST, str(exc), retryable=False)
         if isinstance(exc, SummaryProviderError):
             return exc
         if isinstance(

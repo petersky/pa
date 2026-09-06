@@ -25,6 +25,74 @@ card_app = typer.Typer(help="Card execution and durable dispatch")
 DEFAULT_MESSAGE = "Execute this card completely."
 
 
+@card_app.command("create")
+def create(
+    title: str,
+    body: str = "",
+    project_id: str | None = None,
+    selection_json: str = "{}",
+    auto_enrich: bool = True,
+    idempotency_key: str = typer.Option(..., help="Stable card creation key"),
+) -> None:
+    """Create a simple card with optional durable execution preferences."""
+
+    def execute():
+        from pa.cli.execution import preferences
+
+        result = _request(
+            get_settings(),
+            "POST",
+            "/api/cards",
+            body={
+                "title": title,
+                "body": body,
+                "project_id": project_id,
+                "auto_enrich": auto_enrich,
+                "execution_preferences": preferences(selection_json),
+            },
+            headers={"Idempotency-Key": idempotency_key},
+        )
+        typer.echo(json.dumps(result, indent=2))
+
+    _run(execute)
+
+
+@card_app.command("execution-defaults")
+def execution_defaults(card_id: str, selection_json: str | None = None) -> None:
+    """Read inherited defaults, or explicitly save card defaults separately from dispatch."""
+
+    def execute():
+        settings = get_settings()
+        if selection_json is None:
+            result = _request(
+                settings, "GET", "/api/execution/defaults", params={"card_id": card_id}
+            )
+        else:
+            from pa.execution.selection import ExecutionPreferences
+
+            try:
+                preferences = ExecutionPreferences.model_validate_json(
+                    selection_json
+                ).model_dump(mode="json")
+            except ValueError as exc:
+                raise CardCommandError(f"Invalid execution preferences: {exc}") from exc
+            card = _request(settings, "GET", f"/api/cards/{card_id}")
+            result = _request(
+                settings,
+                "PATCH",
+                f"/api/cards/{card_id}",
+                body={
+                    "execution_preferences": preferences,
+                    "updated_at": card["updated_at"],
+                    "field_intent": ["execution_preferences"],
+                },
+                headers={"Idempotency-Key": str(uuid4())},
+            )
+        typer.echo(json.dumps(result, indent=2))
+
+    _run(execute)
+
+
 class CardCommandError(RuntimeError):
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
@@ -278,6 +346,26 @@ def dispatch_card(
     ] = None,
     mode: Annotated[str | None, typer.Option("--mode", help="Provider mode ID")] = None,
     effort: Annotated[str | None, typer.Option(help="Reasoning effort")] = None,
+    selection_json: Annotated[
+        str | None,
+        typer.Option(
+            "--selection-json",
+            help="Versioned execution preferences JSON: inherit/automatic/required/preferred",
+        ),
+    ] = None,
+    context_source_session_id: Annotated[
+        str | None,
+        typer.Option(
+            help="Terminal prior session on this named instance; explicitly creates a linked new context"
+        ),
+    ] = None,
+    preview: Annotated[
+        bool,
+        typer.Option(
+            "--preview",
+            help="Resolve and explain without dispatching or saving defaults",
+        ),
+    ] = False,
     profile: Annotated[
         str | None,
         typer.Option(
@@ -336,6 +424,7 @@ def dispatch_card(
             "mode_id": mode,
             "effort": effort,
             "message": message.strip(),
+            "context_source_session_id": context_source_session_id,
         }
         if profile is not None:
             body["execution_contract"] = {
@@ -346,7 +435,30 @@ def dispatch_card(
             }
         if priority:
             body["priority"] = priority
+        if selection_json is not None:
+            from pa.execution.selection import ExecutionPreferences
+
+            try:
+                body["execution_preferences"] = (
+                    ExecutionPreferences.model_validate_json(selection_json).model_dump(
+                        mode="json"
+                    )
+                )
+            except ValueError as exc:
+                raise CardCommandError(f"Invalid execution preferences: {exc}") from exc
+        body["expected_card_version"] = card.get("updated_at")
         body = {name: value for name, value in body.items() if value is not None}
+        if preview:
+            body["target_instance_id"] = target["instance_id"]
+            result = _request(
+                settings,
+                "POST",
+                "/api/fleet/placement/preview",
+                body=body,
+                timeout_seconds=30.0,
+            )
+            typer.echo(json.dumps(result, indent=2))
+            return
         if not body["message"]:
             raise CardCommandError("Initial instruction cannot be empty.")
         result = _request(

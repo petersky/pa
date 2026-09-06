@@ -5323,3 +5323,22 @@ a.ghost:hover {
   .goal-form-grid, .goal-portfolio dl { grid-template-columns: 1fr; }
   .goal-actions button { min-height: 2.75rem; }
 }
+/* Shared card-create/edit and one-run execution intent controls. */
+.execution-preferences { min-width: 0; max-width: 100%; }
+.execution-selection-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; margin-block: .75rem; }
+.execution-preferences { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.execution-preferences > *, .execution-selection-row > * { min-width: 0; max-width: 100%; }
+[data-card-dispatch-form] { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+[data-card-dispatch-form] > * { min-width: 0; max-width: 100%; }
+[data-card-dispatch-form] > .execution-preferences { grid-column: 1 / -1; }
+[data-card-dispatch-form] > [hidden] { display: none; }
+.execution-selection-row > small { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.execution-selection-row select { width: 100%; min-width: 0; max-width: 100%; }
+.execution-selection-receipt { max-height: 22rem; white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; }
+.execution-selection-receipt pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font-size: .8rem; }
+.execution-selection-advanced textarea { width: 100%; min-width: 0; max-width: 100%; }
+[data-selection-constraints], [data-native-fields] { display: grid; gap: .5rem; min-width: 0; }
+[data-native-fields] select { width: 100%; min-width: 0; }
+.agent-chat-widget > .execution-selection-receipt { flex: 0 1 auto; min-height: 2rem; max-height: min(22rem, 45vh); padding: .4rem .75rem; font-size: .85rem; white-space: normal; }
+.agent-chat-widget > .execution-selection-receipt[open] { min-height: min(12rem, 30vh); }
+@media (max-width: 540px) { .execution-selection-row { grid-template-columns: minmax(0, 1fr); } }

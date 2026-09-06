@@ -644,7 +644,7 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
         self.assertEqual(normalized["type"], "agent_thought_chunk")
         self.assertEqual(normalized["text"], "hmm")
 
-    def test_dedicated_setters_are_preferred_when_advertised(self) -> None:
+    def test_dedicated_acknowledgement_cannot_override_conflicting_config_options(self) -> None:
         class DedicatedClient:
             def __init__(self) -> None:
                 self.calls: list[tuple[str, str]] = []
@@ -677,17 +677,19 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
                     }
                 ],
             )
-            effective = asyncio.run(
-                connection.configure(
-                    SessionConfigurationRequest.from_values(
-                        model_id="gpt-next", mode_id="code"
+            with self.assertRaisesRegex(
+                ACPConfigurationError, "conflicts with configOptions"
+            ):
+                asyncio.run(
+                    connection.configure(
+                        SessionConfigurationRequest.from_values(
+                            model_id="gpt-next", mode_id="code"
+                        )
                     )
                 )
-            )
 
         self.assertEqual(client.calls, [("model", "gpt-next"), ("mode", "code")])
-        self.assertEqual(effective["model_id"], "gpt-next")
-        self.assertEqual(effective["mode_id"], "code")
+        self.assertEqual(connection.session.config_json["configuration"]["state"], "failed")
 
     def test_dedicated_model_accepts_advertised_combined_effort_selector(self) -> None:
         class CombinedModelClient:
@@ -728,6 +730,68 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
             connection.session.config_json["configuration"]["strategies"],
             {"model": "dedicated:set_session_model:combined"},
         )
+
+    def test_stale_dedicated_astra_receipt_requires_fresh_native_option_readback(
+        self,
+    ) -> None:
+        options = [
+            {
+                "id": "model",
+                "type": "select",
+                "currentValue": "gpt-5.6-sol",
+                "options": [{"value": "gpt-5.6-sol"}, {"value": "gpt-6-astra"}],
+            },
+            {
+                "id": "reasoning_effort",
+                "type": "select",
+                "currentValue": "high",
+                "options": [{"value": "high"}, {"value": "xhigh"}],
+            },
+        ]
+
+        class NativeClient:
+            calls = []
+
+            async def set_config_option(self, **kwargs):
+                self.calls.append((kwargs["config_id"], kwargs["value"]))
+                for option in options:
+                    if option["id"] == kwargs["config_id"]:
+                        option["currentValue"] = kwargs["value"]
+                return {"configOptions": options}
+
+        requested = SessionConfigurationRequest.from_values(
+            model_id="gpt-6-astra", reasoning="xhigh"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            client = NativeClient()
+            connection, _ = self._connection(
+                tmp,
+                client,
+                options=options,
+                models={
+                    "currentModelId": "gpt-6-astra[xhigh]",
+                    "availableModels": [{"modelId": "gpt-6-astra[xhigh]"}],
+                },
+            )
+            connection.session.config_json["configuration"] = {
+                "state": "ready",
+                "attempt": 4,
+                "requested": requested.as_dict(),
+                "effective": {"model_id": "gpt-6-astra", "reasoning": "xhigh"},
+                "strategies": {"model": "dedicated:set_session_model:combined"},
+            }
+            effective = asyncio.run(connection.configure(requested))
+            assert client.calls == [
+                ("model", "gpt-6-astra"),
+                ("reasoning_effort", "xhigh"),
+            ]
+            assert effective["model_id"] == "gpt-6-astra"
+            assert effective["reasoning"] == "xhigh"
+            assert connection.session.config_json["configuration"]["attempt"] == 5
+            assert (
+                connection.session.config_json["configuration"]["strategies"]["model"]
+                == "config:model"
+            )
 
     def test_absent_support_fails_with_actionable_compatibility_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -782,7 +846,7 @@ class AgentConfigurationCompatibilityTests(unittest.TestCase):
                 options=options,
             )
             with self.assertRaisesRegex(
-                ACPConfigurationError, "provider rejected reasoning"
+                ACPConfigurationError, "Inspect redacted provider diagnostics"
             ):
                 asyncio.run(connection.configure(requested))
             failed = connection.session.config_json["configuration"]

@@ -460,6 +460,8 @@ class ExecutorDispatcher:
         try:
             if watch.originating_session_id:
                 runtime = self.agent.get(watch.originating_session_id)
+                if runtime is not None and getattr(runtime, "_closed", False) is True:
+                    runtime = None
                 session = await self._offload(
                     "sqlite.agent_session_read",
                     self.domain_store.get_session,
@@ -528,15 +530,47 @@ class ExecutorDispatcher:
                     if watch.project_id
                     else None
                 )
+                selection_kwargs = {}
+                original_selection = (
+                    (session.config_json or {}).get("execution_selection")
+                    if session
+                    else None
+                )
+                if original_selection:
+                    from pa.execution.selection_service import SelectionService
+
+                    selection_service = getattr(
+                        self.agent, "_selection_service", None
+                    ) or SelectionService(self.settings, self.domain_store, self.agent)
+                    selection_kwargs["execution_selection"] = await self._offload(
+                        "selection.supervisor_recovery",
+                        selection_service.linked_fallback,
+                        original_selection,
+                        realm=watch.realm_id,
+                        key=f"pr-supervisor:{event_key}",
+                        prompt=prompt,
+                    )
+                else:
+                    # A missing/legacy receipt has no durable compatible fallback
+                    # allowance. Do not manufacture one from today's defaults.
+                    raise RuntimeError("Original execution selection/fallback authorization is unavailable; an operator must authorize a linked attempt")
                 runtime = await self.agent.create_session(
-                    label=f"card:{watch.card_id}",
+                    context_source_session_id=session.id if session else None,
+                    label=f"pr-supervisor:{watch.id}:{event_key}",
                     title=f"PR #{watch.pr_number} executor",
                     cwd=watch.executor_cwd,
-                    principal_id="user:local",
+                    principal_id=session.principal_id if session else "user:local",
                     card_id=watch.card_id,
                     project_id=watch.project_id,
                     project_tool_config=project.tool_config if project else None,
                     surface="execution",
+                    initiating_workflow={
+                        "kind": "pr_supervisor_linked_recovery",
+                        "source_session_id": watch.originating_session_id,
+                        "event_key": event_key,
+                        "context_boundary": True,
+                    },
+                    **selection_kwargs,
                 )
                 delivery = "fallback"
             dispatch_state = f"{delivery}_queued"

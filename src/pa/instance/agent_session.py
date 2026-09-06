@@ -1107,6 +1107,9 @@ class AgentSessionRuntime:
                 "load": bool(self.connection._load_supported),
             }
             self.session.config_json = config
+            from pa.execution.selection_audit import bind_confirmed_defaults
+
+            bind_confirmed_defaults(self.session)
             await self._save_session_preserving_external_browser_async()
         self._queue_paused = queue_paused
         if queued_prompts:
@@ -1303,9 +1306,21 @@ class AgentSessionRuntime:
                     "error",
                     {"message": str(exc), "queued_prompt_id": item.id},
                 )
-                self._queue.insert(0, item)
+                if not any(queued.id == item.id for queued in self._queue):
+                    self._queue.insert(0, item)
                 break
         self._flush_transcript()
+
+    def _require_execution_context_active(self):
+        if getattr(self, "_execution_boundary_reserved", False) or (
+            self.session.config_json or {}
+        ).get("execution_context_boundary"):
+            from pa.execution.selection import SelectionError
+
+            raise SelectionError(
+                "context_boundary_fenced",
+                "This source is reserved for a linked attempt; inspect its context-boundary target instead of submitting another prompt",
+            )
 
     def enqueue(
         self,
@@ -1324,6 +1339,7 @@ class AgentSessionRuntime:
         acceptance_result: str | None = None,
         _defer_drain: bool = False,
     ) -> QueuedPrompt:
+        self._require_execution_context_active()
         cwd = self._validated_cwd(cwd)
         requested_images = [image.public_dict() for image in (images or [])]
         if prompt_id:
@@ -1442,6 +1458,7 @@ class AgentSessionRuntime:
         _from_queue: bool = False,
         wait: bool = True,
     ) -> str:
+        self._require_execution_context_active()
         cwd = self._validated_cwd(cwd)
         if self.manager.quiescing or self._closed:
             if _from_queue:
@@ -1602,7 +1619,43 @@ class AgentSessionRuntime:
         except Exception:
             logger.exception("Could not renew workspace lease for %s", self.session_id)
         async with self._prompt_lock:
+            self._require_execution_context_active()
             collaboration = getattr(self.manager, "collaboration_service", None)
+            from pa.execution.selection_settings import apply_pending
+
+            await apply_pending(self)
+            from pa.execution.selection_audit import begin_prompt
+            from pa.execution.selection import SelectionError
+
+            try:
+                selection_attempt = await self._offload(
+                    "selection.prompt_identity", begin_prompt, self, item
+                )
+            except SelectionError as exc:
+                block = {
+                    "id": "prompt:" + item.id,
+                    "code": exc.code,
+                    "message": str(exc),
+                    "prompt_id": item.id,
+                    "observed_at": datetime.now(UTC).isoformat(),
+                }
+                self.session.config_json = {
+                    **(self.session.config_json or {}),
+                    "execution_selection_block": block,
+                }
+                if not any(queued.id == item.id for queued in self._queue):
+                    self._queue.insert(0, item)
+                await self._checkpoint_runtime_async(lifecycle="selection_blocked")
+                from pa.execution.selection_interactions import settings_blocked
+
+                try:
+                    await settings_blocked(self, block)
+                except Exception as delivery_error:
+                    logger.warning(
+                        "Selection block notification unavailable (%s); durable session block retained",
+                        type(delivery_error).__name__,
+                    )
+                raise
             if collaboration is not None:
                 # This is the exact between-turn boundary. Revalidate and apply
                 # a durable pending transition before the next prompt is built.
@@ -1716,6 +1769,10 @@ class AgentSessionRuntime:
                 self._finish_turn_state()
                 raise
             stall_task = asyncio.create_task(self._watch_turn_waiting(item))
+            import time
+
+            selection_started = time.monotonic()
+            protocol_completed, selection_stop_reason = False, None
             try:
                 try:
                     stop_reason = await self.connection.prompt(
@@ -1726,6 +1783,7 @@ class AgentSessionRuntime:
                         project_id=item.project_id,
                         cwd=item.cwd,
                     )
+                    protocol_completed, selection_stop_reason = True, stop_reason
                 except Exception as exc:
                     from pa.acp.errors import classify_acp_failure, format_acp_error
 
@@ -1897,6 +1955,25 @@ class AgentSessionRuntime:
                 except asyncio.CancelledError:
                     pass
                 self._finish_turn_state()
+                if selection_attempt:
+                    try:
+                        from pa.execution.selection_audit import finish_prompt
+
+                        await self._offload(
+                            "selection.prompt_outcome",
+                            finish_prompt,
+                            self,
+                            selection_attempt,
+                            completed=protocol_completed,
+                            latency_ms=(time.monotonic() - selection_started) * 1000,
+                            stop_reason=selection_stop_reason,
+                        )
+                    except Exception:
+                        # Never replay a successfully executed prompt solely
+                        # because optional feedback persistence failed.
+                        logger.exception(
+                            "Could not persist execution-selection outcome evidence"
+                        )
 
     async def _surface_final_input_fallback(
         self, final_text: str, item: QueuedPrompt
@@ -2276,6 +2353,19 @@ class AgentSessionRuntime:
     async def set_model(self, model_id: str) -> None:
         if not self.connection:
             raise RuntimeError("Session not connected")
+        if (self.session.config_json or {}).get("execution_selection"):
+            from pa.execution.selection import legacy_preferences
+            from pa.execution.selection_settings import request_settings
+
+            await request_settings(
+                self,
+                legacy_preferences(model_id=model_id),
+                principal=self.session.principal_id or "user:local",
+                key=str(uuid4()),
+                expected_version=self.session.updated_at,
+                defer=False,
+            )
+            return
         await self.connection.set_model(model_id)
         self.session = self.connection.session or self.session
         self._append_transcript("model_changed", {"model_id": model_id})
@@ -2285,6 +2375,34 @@ class AgentSessionRuntime:
     async def configure(self, requested: SessionConfigurationRequest) -> dict[str, Any]:
         if not self.connection:
             raise RuntimeError("Session not connected")
+        if (self.session.config_json or {}).get("execution_selection") and (
+            requested.model_id
+            or requested.model_provider
+            or requested.reasoning
+            or requested.config
+        ):
+            from pa.execution.selection import SelectionError, legacy_preferences
+            from pa.execution.selection_settings import request_settings
+
+            if requested.mode_id and requested.mode_id != self.session.mode_id:
+                raise SelectionError(
+                    "separate_permission_action",
+                    "Change permission mode through its separate authority action before requesting model settings.",
+                )
+            await request_settings(
+                self,
+                legacy_preferences(
+                    model_id=requested.model_id,
+                    model_provider=requested.model_provider,
+                    effort=requested.reasoning,
+                    config=requested.config,
+                ),
+                principal=self.session.principal_id or "user:local",
+                key=str(uuid4()),
+                expected_version=self.session.updated_at,
+                defer=False,
+            )
+            return dict((self.session.config_json.get("configuration") or {}).get("effective") or {})
         if self.prompting:
             raise RuntimeError(
                 "Wait for the current turn to finish before changing session configuration"
@@ -2312,6 +2430,23 @@ class AgentSessionRuntime:
     async def set_config(self, config_id: str, value: str | bool) -> None:
         if not self.connection:
             raise RuntimeError("Session not connected")
+        if (self.session.config_json or {}).get("execution_selection"):
+            from pa.acp.configuration import find_option, option_id
+
+            mode_option = find_option(self.connection.config_options or [], "mode")
+            if not mode_option or option_id(mode_option) != config_id:
+                from pa.execution.selection import legacy_preferences
+                from pa.execution.selection_settings import request_settings
+
+                await request_settings(
+                    self,
+                    legacy_preferences(config={config_id: value}),
+                    principal=self.session.principal_id or "user:local",
+                    key=str(uuid4()),
+                    expected_version=self.session.updated_at,
+                    defer=False,
+                )
+                return
         await self.connection.set_config(config_id, value)
         self.session = self.connection.session or self.session
         self._append_transcript(
@@ -2340,6 +2475,7 @@ class AgentSessionRuntime:
         configuration = dict(
             ((self.session.config_json or {}).get("configuration") or {})
         )
+        from pa.execution.selection import selection_presentation
         snapshot = {
             "session": self.session.model_dump(mode="json"),
             "presentation": build_session_presentation(
@@ -2363,6 +2499,11 @@ class AgentSessionRuntime:
             "modes": conn.modes if conn else None,
             "config_options": conn.config_options if conn else None,
             "configuration": configuration,
+            "execution_selection": selection_presentation(
+                self.session.config_json or {},
+                model_id=self.session.model_id,
+                mode_id=self.session.mode_id,
+            ),
             "pa_mcp": conn.pa_mcp_health if conn else None,
             "metrics": self.session.metrics_json,
             "turn_started_at": self._turn_started_at.isoformat()
@@ -4622,13 +4763,35 @@ class AgentSessionManager:
         project_tool_config: dict | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
         execution_context_seed: dict[str, Any] | None = None,
-        purpose: Literal["chat", "automated_run", "one_shot_job", "unknown"] | None = None,
+        execution_preferences: Any | None = None,
+        execution_selection: dict[str, Any] | None = None,
+        task_assessment: Any | None = None,
+        purpose: Literal["chat", "automated_run", "one_shot_job", "unknown"]
+        | None = None,
         initiating_workflow: dict[str, Any] | None = None,
         control_mode: Literal["automation", "human"] | None = None,
         startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
         require_restore: bool = False,
+        context_source_session_id: str | None = None,
+        _linked_boundary: dict | None = None,
     ) -> AgentSessionRuntime:
+        if context_source_session_id:
+            from pa.execution.selection_boundary import create_linked_session
+
+            options = dict(locals())
+            for key in (
+                "self",
+                "context_source_session_id",
+                "_linked_boundary",
+                "create_linked_session",
+            ):
+                options.pop(key, None)
+            return await create_linked_session(self, context_source_session_id, options)
+        if existing and (existing.config_json or {}).get("execution_context_boundary"):
+            from pa.execution.selection import SelectionError
+
+            raise SelectionError("context_boundary_fenced", "This source has a durable linked attempt; resume that target, not the superseded native context")
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
         if not _startup_recovery and not self._startup_complete:
@@ -4647,6 +4810,213 @@ class AgentSessionManager:
             else None
         )
         surface_key = surface or surface_for_label(label, project_id=project_id)
+        # This is the final common admission gate for PA-owned ACP sessions.
+        # A durable attempt is reused before looking at mutable defaults/catalogs.
+        from pa.execution.selection import (
+            ExecutionPreferences,
+            SelectionConstraints,
+            SelectionError,
+            legacy_preferences,
+            validate_reuse,
+        )
+        from pa.execution.selection_service import (
+            SelectionService,
+            selected_configuration,
+        )
+
+        selection_service = getattr(self, "_selection_service", None)
+        if selection_service is None:
+            selection_service = self._selection_service = SelectionService(
+                self.settings, self.store, self
+            )
+        prefs = ExecutionPreferences.model_validate(execution_preferences or {})
+        receipt = (
+            (existing.config_json or {}).get("execution_selection")
+            if existing
+            else execution_selection
+        )
+        explicit = initial_configuration or SessionConfigurationRequest()
+        source_card_id = card_id or (initiating_workflow or {}).get("card_id")
+        selection_card = None
+        if source_card_id and not existing:
+            selection_card = await self._offload(
+                "selection.card_read",
+                self.store.get_card,
+                source_card_id,
+                realm_id=realm_id or self.settings.primary_realm,
+            )
+            if not selection_card:
+                raise SelectionError(
+                    "selection_card_unavailable",
+                    "Sync the originating card and its policy before starting this execution.",
+                )
+        if receipt:
+            from pa.execution.selection import validate_attempt_request
+
+            lineage = (
+                existing.config_json if existing else {"execution_selection": receipt}
+            )
+            validate_attempt_request(lineage, prefs)
+            validate_attempt_request(
+                lineage,
+                legacy_preferences(
+                    provider=provider_override,
+                    model_id=explicit.model_id,
+                    model_provider=explicit.model_provider,
+                    effort=explicit.reasoning,
+                    config=explicit.config,
+                ),
+            )
+            if receipt["selected"]["instance_id"] != self.settings.instance_id:
+                raise SelectionError(
+                    "selection_instance_mismatch",
+                    "The selected tuple belongs to another instance; do not reroute an existing attempt.",
+                )
+            provider_override = receipt["selected"]["harness"]
+            initial_configuration = selected_configuration(
+                receipt,
+                explicit,
+                native_binding=(existing.config_json or {}).get(
+                    "execution_native_binding"
+                )
+                if existing
+                else None,
+            )
+            if existing:
+                await self._offload(
+                    "selection.attempt_authority",
+                    selection_service.revalidate_attempt,
+                    receipt,
+                    realm=existing.realm_id,
+                    principal=effective_principal_id,
+                    surface=surface_key,
+                )
+            if not existing:
+                from pa.execution.selection import Preference, SelectionConstraints
+
+                owner = receipt.get("context") or {}
+                if (
+                    owner.get("realm") != (realm_id or self.settings.primary_realm)
+                    or owner.get("principal")
+                    != (effective_principal_id or "user:local")
+                    or owner.get("card_id") != source_card_id
+                ):
+                    raise SelectionError(
+                        "selection_receipt_scope_mismatch",
+                        "The authority receipt belongs to another realm, principal, or card; obtain a matching admission receipt.",
+                    )
+                selected = receipt["selected"]
+                fixed = ExecutionPreferences(
+                    **{
+                        key: Preference(intent="required", value=selected[key])
+                        for key in (
+                            "harness",
+                            "connection",
+                            "model_provider",
+                            "model",
+                            "reasoning",
+                        )
+                        if selected.get(key) is not None
+                    },
+                    options={
+                        k: Preference(intent="required", value=v)
+                        for k, v in selected.get("options", {}).items()
+                    },
+                )
+                await self._offload(
+                    "selection.target_revalidation",
+                    selection_service.resolve,
+                    candidates=await selection_service.local_catalog(refresh=True),
+                    principal=effective_principal_id,
+                    realm=realm_id or self.settings.primary_realm,
+                    surface=surface_key,
+                    overrides=fixed,
+                    card=selection_card,
+                    project_config=project_tool_config,
+                    constraints=[
+                        SelectionConstraints.model_validate(c)
+                        for c in [
+                            *receipt.get("constraints", []),
+                            *(
+                                (
+                                    (_linked_boundary["source"].config_json or {}).get(
+                                        "execution_selection"
+                                    )
+                                    or {}
+                                ).get("constraints", [])
+                                if _linked_boundary
+                                else []
+                            ),
+                        ]
+                    ],
+                )
+                await self._offload(
+                    "selection.target_receipt",
+                    selection_service.store.save_decision,
+                    receipt,
+                    owner.get("realm", realm_id or self.settings.primary_realm),
+                    owner.get("principal", effective_principal_id or "user:local"),
+                )
+        elif existing:
+            # Legacy resumptions have no policy receipt. Preserve native identity
+            # and settings, documenting that migration did not resolve a new tuple.
+            if provider_override and provider_override != existing.agent_name:
+                raise SelectionError(
+                    "context_boundary_required",
+                    "Changing harness requires a linked new attempt, not an in-place resume.",
+                )
+        else:
+            if (
+                project_tool_config is None
+                and selection_card
+                and selection_card.project_id
+            ):
+                selection_project = await self._offload(
+                    "selection.project_read",
+                    self.store.get_project,
+                    selection_card.project_id,
+                )
+                project_tool_config = (
+                    selection_project.tool_config if selection_project else None
+                )
+            candidates = await selection_service.local_catalog(refresh=True)
+            receipt = await self._offload(
+                "selection.resolve",
+                selection_service.resolve,
+                candidates=candidates,
+                principal=effective_principal_id,
+                realm=realm_id or self.settings.primary_realm,
+                surface=surface_key,
+                card=selection_card,
+                project_config=project_tool_config,
+                overrides=prefs,
+                assessment=task_assessment,
+                constraints=[
+                    SelectionConstraints.model_validate(c)
+                    for c in (
+                        (_linked_boundary["source"].config_json or {}).get(
+                            "execution_selection"
+                        )
+                        or {}
+                    ).get("constraints", [])
+                ]
+                if _linked_boundary
+                else (),
+                legacy=legacy_preferences(
+                    provider=provider_override,
+                    model_id=explicit.model_id,
+                    model_provider=explicit.model_provider,
+                    effort=explicit.reasoning,
+                    config=explicit.config,
+                ),
+                persist=True,
+            )
+            provider_override = receipt["selected"]["harness"]
+            initial_configuration = selected_configuration(receipt, explicit)
+        if _linked_boundary:
+            from pa.execution.selection_boundary import fence_source
+
+            await fence_source(self, _linked_boundary, receipt)
         ctx = AgentInvocationContext(
             surface=surface_key,
             principal_id=effective_principal_id,
@@ -4720,12 +5090,25 @@ class AgentSessionManager:
             if initial_configuration is not None
             else None
         )
+        named_connection = bool(
+            receipt and receipt["selected"].get("connection_revision")
+        )
+        if named_connection:
+            from pa.execution.selection_connections import apply_selected_connection
+
+            resolved_spec = await self._offload(
+                "selection.connection_overlay",
+                apply_selected_connection,
+                resolved_spec,
+                receipt["selected"],
+                self.settings.data_dir,
+            )
         if provider_id == "codex" and requested_mode:
             # codex-acp chooses its sandbox before ACP initialize/session-new.
             # Applying the mode later is too late and can silently start a
             # workspace-write provider for an agent-full-access dispatch.
             resolved_spec.env["INITIAL_AGENT_MODE"] = requested_mode
-        if provider_id == "openinterpreter":
+        if provider_id == "openinterpreter" and not named_connection:
             from pa.acp.errors import ProviderStartError
             from pa.acp.providers.openinterpreter import (
                 _spawn_args,
@@ -4838,6 +5221,15 @@ class AgentSessionManager:
             startup_trace.attach(session)
         if requested_mode:
             session.mode_id = requested_mode
+        if receipt:
+            session.config_json = {
+                **(session.config_json or {}),
+                "execution_selection": receipt,
+            }
+        if _linked_boundary:
+            session.config_json["execution_context_boundary_from"] = {
+                k: v for k, v in _linked_boundary["receipt"].items() if k != "selection"
+            }
         if execution_context_seed:
             config = dict(session.config_json or {})
             execution = dict(config.get("execution_context") or {})
@@ -4953,6 +5345,8 @@ class AgentSessionManager:
         agent_env: dict[str, str] | None = None,
         provider_override: str | None = None,
         initial_configuration: SessionConfigurationRequest | None = None,
+        execution_preferences: Any | None = None,
+        task_assessment: Any | None = None,
         startup_trace: SessionStartupTrace | None = None,
         _startup_recovery: bool = False,
     ) -> AgentSessionRuntime:
@@ -4996,9 +5390,7 @@ class AgentSessionManager:
                     ),
                     agent_env=agent_env,
                     existing=(
-                        existing
-                        if existing and existing.status != "closed"
-                        else None
+                        existing if existing and existing.status != "closed" else None
                     ),
                     resume_external_id=(
                         existing.external_session_id
@@ -5008,6 +5400,8 @@ class AgentSessionManager:
                     surface=SURFACE_CHAT_DEFAULT,
                     provider_override=provider_override,
                     initial_configuration=initial_configuration,
+                    execution_preferences=execution_preferences,
+                    task_assessment=task_assessment,
                     startup_trace=startup_trace,
                     _startup_recovery=_startup_recovery,
                 )

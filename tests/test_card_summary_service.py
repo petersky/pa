@@ -242,13 +242,21 @@ async def _completed_task_cannot_forget_its_running_replacement() -> None:
         await first_started.wait()
 
         replacement_enqueued: list[bool] = []
+        first_task = service._tasks[key]
+        # Completion includes durable selection/attempt evidence. Do not assume
+        # it finishes in the same event-loop tick as the provider response.
+        original_forget = service._forget_task
+
+        def forget_and_replace(k, done):
+            if done is first_task:
+                replacement_enqueued.append(
+                    service.enqueue(card.id, card.realm_id, force=True)
+                )
+            original_forget(k, done)
+
+        service._forget_task = forget_and_replace
         release_first.set()
-        asyncio.get_running_loop().call_soon(
-            lambda: replacement_enqueued.append(
-                service.enqueue(card.id, card.realm_id, force=True)
-            )
-        )
-        await replacement_started.wait()
+        await asyncio.wait_for(replacement_started.wait(), timeout=10)
         await asyncio.sleep(0)
 
         assert replacement_enqueued == [True]

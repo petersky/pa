@@ -23,7 +23,7 @@
         <option value="{{ group.id }}">{{ group.name }} — {{ group.summary }}</option>
         {% endfor %}
       </select>
-      <div class="card-dispatch-provider-grid">
+      <div class="card-dispatch-provider-grid" hidden>
         <label for="card-dispatch-provider-{{ card.id }}">Provider
           <select id="card-dispatch-provider-{{ card.id }}" name="provider" data-dispatch-provider aria-describedby="card-dispatch-provider-help-{{ card.id }}">
             <option value="">Automatic — any eligible authenticated provider</option>
@@ -35,7 +35,15 @@
           </select>
         </label>
       </div>
-      <p class="muted small" id="card-dispatch-provider-help-{{ card.id }}" data-dispatch-provider-help aria-live="polite">Loading normalized provider inventory…</p>
+      <p hidden id="card-dispatch-provider-help-{{ card.id }}" data-dispatch-provider-help></p>
+      {% set selection_purpose = 'dispatch' %}
+      {% include 'partials/execution-preferences.html' %}
+      {% if latest_dispatch and latest_dispatch.session_id %}
+      <label><input type="checkbox" name="context_source_session_id" value="{{ latest_dispatch.session_id }}"
+                    data-context-source-instance="{{ latest_dispatch.target_instance_id }}">
+        Start a linked attempt from the previous session</label>
+      <p class="muted small">Explicit new native context, not a resume. The previous dispatch must be terminal with no active or queued prompts. Its transcript and worktree are retained; the new attempt gets its own workspace.</p>
+      {% endif %}
       <script type="application/json" data-card-dispatch-inventory>{{ dispatch_inventory | tojson }}</script>
       <label for="card-dispatch-target-{{ card.id }}">Placement policy or named instance</label>
       <div class="card-dispatch-controls">

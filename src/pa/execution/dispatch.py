@@ -328,6 +328,7 @@ class DispatchRecord(BaseModel):
             },
         )
         data["can_retry"] = self.state in {"failed", "cancelled"} and self.recoverable
+        data["execution_selection"] = self.request_payload.get("execution_selection")
         data["can_cancel"] = self.state in {
             "waiting_capacity",
             "blocked",

@@ -209,6 +209,7 @@ async def enrich_card(
         runtime = await manager.create_session(
             session_id=session_id,
             label=f"card-enrichment:{card.id}",
+            surface="card_enrichment",
             title=f"Enrich: {card.title[:80]}",
             principal_id=card.created_by_principal,
             purpose="one_shot_job",

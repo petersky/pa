@@ -249,7 +249,9 @@ def list_provider_summaries(
                     evidence,
                 )
             )
-    return out
+    from pa.execution.selection_catalog import enrich_provider_catalogs
+
+    return enrich_provider_catalogs(out, manager, data_dir)
 
 
 async def list_provider_summaries_bounded(
@@ -292,4 +294,18 @@ async def list_provider_summaries_bounded(
             )
         return _apply_session_evidence(result, evidence)
 
-    return list(await asyncio.gather(*(one(provider) for provider in list_providers())))
+    from pa.execution.selection_catalog import enrich_provider_catalogs
+
+    statuses = list(
+        await asyncio.gather(*(one(provider) for provider in list_providers()))
+    )
+    if async_runtime is not None:
+        return await async_runtime.run_blocking(
+            "selection.catalog_enrichment",
+            enrich_provider_catalogs,
+            statuses,
+            manager,
+            data_dir,
+            timeout=timeout,
+        )
+    return await asyncio.to_thread(enrich_provider_catalogs, statuses, manager, data_dir)

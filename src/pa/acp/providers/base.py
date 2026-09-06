@@ -23,6 +23,8 @@ class AgentProviderSpec(BaseModel):
     command: str
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    # Invocation-scoped exclusions, used for named backend account isolation.
+    excluded_env: list[str] = Field(default_factory=list)
     docs_key: str = ""
     install_method: str = "path"  # path | npm | npx
     npm_package: str | None = None
