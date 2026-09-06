@@ -123,7 +123,9 @@
         function change() {
           var next = {intent: intent.value};
           if (["required", "preferred"].includes(next.intent)) {
-            if (!value.value) { value.disabled = false; value.required = true; value.focus(); return; }
+            if (!value.value || ["inherit", "automatic"].includes(value.value)) {
+              value.value = ""; value.disabled = false; value.required = true; value.focus(); return;
+            }
             next.value = JSON.parse(value.value);
           }
           if (name.indexOf("options.") === 0) {
@@ -150,7 +152,7 @@
           output.dispatchEvent(new Event("change", {bubbles: true}));
         }
         intent.addEventListener("change", change); value.addEventListener("change", change);
-        if (chat && ["harness", "model"].includes(name) && pref.intent !== "preferred") {
+        if (chat && ["harness", "model"].includes(name)) {
           label.textContent = name === "harness" ? "Agent" : "Model";
           value.setAttribute("aria-label", label.textContent);
           value.options[0].textContent = "Use inherited default";
@@ -161,9 +163,14 @@
           value.required = true;
           value.removeEventListener("change", change);
           value.addEventListener("change", function () {
-            intent.value = ["inherit", "automatic"].includes(value.value) ? value.value : "required";
+            intent.value = ["inherit", "automatic"].includes(value.value)
+              ? value.value : intent.value === "preferred" ? "preferred" : "required";
             change();
           });
+          const policyLabel = document.createElement("label");
+          policyLabel.textContent = label.textContent + " preference";
+          policyLabel.append(intent);
+          advanced.append(policyLabel);
         } else label.append(intent);
         row.append(label, value, source);
         (chat && !["harness", "model"].includes(name) ? advanced : container).append(row);
