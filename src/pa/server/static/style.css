@@ -2584,20 +2584,20 @@ code {
   overflow-wrap: anywhere;
 }
 
-.acw-bubble p { margin: 0 0 0.4rem; }
-.acw-bubble p:last-child { margin-bottom: 0; }
-.acw-bubble ul,
-.acw-bubble ol { margin: 0.35rem 0; padding-inline-start: 1.4rem; }
-.acw-bubble li + li { margin-top: 0.15rem; }
-.acw-bubble code {
+:is(.acw-bubble, .acw-progress-update) p { margin: 0 0 0.4rem; }
+:is(.acw-bubble, .acw-progress-update) p:last-child { margin-bottom: 0; }
+:is(.acw-bubble, .acw-progress-update) ul,
+:is(.acw-bubble, .acw-progress-update) ol { margin: 0.35rem 0; padding-inline-start: 1.4rem; }
+:is(.acw-bubble, .acw-progress-update) li + li { margin-top: 0.15rem; }
+:is(.acw-bubble, .acw-progress-update) code {
   overflow-wrap: break-word;
   font-size: 0.8rem;
   padding: 0.1em 0.3em;
   border-radius: 4px;
   background: color-mix(in srgb, var(--pa-text) 10%, transparent);
 }
-.acw-bubble a { color: inherit; text-decoration: underline; }
-.acw-bubble pre {
+:is(.acw-bubble, .acw-progress-update) a { color: inherit; text-decoration: underline; }
+:is(.acw-bubble, .acw-progress-update) pre {
   margin: 0.35rem 0;
   padding: 0.55rem 0.65rem;
   overflow: auto;
@@ -2610,7 +2610,7 @@ code {
   overflow-wrap: anywhere;
 }
 
-.acw-bubble pre code {
+:is(.acw-bubble, .acw-progress-update) pre code {
   overflow-wrap: inherit;
   padding: 0;
   background: transparent;
@@ -2728,6 +2728,13 @@ code {
   padding: 0.35rem 0.45rem;
   border-left: 2px solid var(--pa-accent);
   color: var(--pa-text-muted);
+  line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.acw-progress-update[data-raw-text="1"] {
   white-space: pre-wrap;
 }
 
