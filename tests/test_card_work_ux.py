@@ -361,6 +361,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 detail = client.get(f"/partials/cards/{card.id}/detail")
                 fragment = client.get(f"/partials/cards/{card.id}/progress")
             assert detail.status_code == fragment.status_code == 200
+            assert f'id="card-primary-action-{card.id}" hx-swap-oob="outerHTML"' in fragment.text
+            assert 'hx-swap-oob="outerHTML"' not in detail.text
             for html in (detail.text, fragment.text):
                 assert 'data-work-state="working"' in html
                 assert 'data-progress-state="live"' in html

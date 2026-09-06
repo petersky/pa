@@ -3310,6 +3310,7 @@ def card_detail_progress_partial(
         "partials/card-progress.html",
         {
             "card": card,
+            "refresh_actions": True,
             "current_progress": _latest_card_progress(request, card.id),
             "work_presentation": _work_presentation_for_card(request, card),
         },

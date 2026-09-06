@@ -37,3 +37,5 @@
     {% endif %}
   </div>
 </div>
+
+{% if refresh_actions | default(false) %}{% include "partials/card-primary-action.html" %}{% endif %}
