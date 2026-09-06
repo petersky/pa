@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -13,14 +15,40 @@ def utcnow() -> datetime:
 
 
 def _normalized_repository_name(value: str) -> str:
-    normalized = value.strip().strip("/")
-    github_prefix = "https://github.com/"
-    if normalized.casefold().startswith(github_prefix):
-        normalized = normalized[len(github_prefix) :]
+    """Extract a GitHub owner/name without changing durable repository identity."""
+    normalized = value.strip()
+    error = "repository must be owner/name or a supported GitHub HTTPS/SSH URL"
+    # Reject URL decorations and whitespace before parsing: urlsplit otherwise
+    # silently removes embedded tabs/newlines, creating unintended aliases.
+    if re.search(r"\s|[?#]", normalized):
+        raise ValueError(error)
+    if "://" in normalized:
+        parsed = urlsplit(normalized)
+        default_port = {"https": 443, "ssh": 22}.get(parsed.scheme)
+        if (
+            default_port is None
+            or parsed.hostname != "github.com"
+            or parsed.port not in (None, default_port)
+            or parsed.password is not None
+            or (parsed.scheme == "https" and parsed.username is not None)
+            or not parsed.path.startswith("/")
+        ):
+            raise ValueError(error)
+        normalized = parsed.path[1:]
+    elif ":" in normalized:
+        scp = re.fullmatch(
+            r"(?:[^@/:\s]+@)?github\.com:(.+)", normalized, flags=re.IGNORECASE
+        )
+        if not scp:
+            raise ValueError(error)
+        normalized = scp.group(1)
+    normalized = normalized.removesuffix("/")
     if normalized.casefold().endswith(".git"):
         normalized = normalized[:-4]
-    if len(normalized.split("/")) != 2:
-        raise ValueError("repository must be owner/name")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+", normalized):
+        raise ValueError(error)
+    if normalized.split("/")[1] in {".", ".."}:
+        raise ValueError(error)
     return normalized
 
 
