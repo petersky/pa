@@ -46,7 +46,7 @@ def test_agent_sidebar_loads_and_selects_durable_history() -> None:
 
     assert 'const path = "/sessions?view="' in script
     assert '"&selected_session_id=" + encodeURIComponent(activeId)' in script
-    assert '"/history/" + encodeURIComponent(sessionId) + "?limit=" + INITIAL_VISIBLE_EVENTS' in script
+    assert '"/history/" + encodeURIComponent(sessionId) + "?message_boundaries=true&limit=" + TRANSCRIPT_PAGE_LIMIT' in script
     assert "LIVE_SNAPSHOT_TIMEOUT_MS" in script
     assert "filterSessionList" in script
     assert 'li.dataset.sessionLive !== "false"' in script

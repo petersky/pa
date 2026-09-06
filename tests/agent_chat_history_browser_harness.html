@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en" data-pa-instance-id="isolated-history-fixture" data-pa-principal-id="fixture-user">
+<meta charset="utf-8">
+<title>Isolated chat history regression fixture</title>
+<link rel="stylesheet" href="/src/pa/server/static/style.css">
+<script>window.EventSource = class { constructor(){this.readyState=1} addEventListener(){} close(){this.readyState=2} };</script>
+<script src="/src/pa/server/static/js/agent-chat-drafts.js" defer></script>
+<script src="/src/pa/server/static/js/agent-chat-draft-widget.js" defer></script>
+<script src="/src/pa/server/static/js/agent-chat.js" defer></script>
+<style>body{padding:20px} .agent-chat-widget{display:block;max-width:1000px}.acw-messages{height:460px;overflow:auto;border:1px solid #888}.checks{white-space:pre-wrap} textarea{width:100%}</style>
+<main class="page-agent">
+<h1>Isolated chat history fixture</h1>
+<p>396 chunks · 1,957 characters · final phase · final=false · 3,442 durable events</p>
+<button id="run-checks">Run transition checks</button>
+<button id="fail-older">Fail next older request</button>
+<button id="delay-older">Delay next older request</button>
+<button id="switch">Switch away and back</button>
+<a href="/README.md">Navigate away</a>
+<pre id="checks" class="checks" aria-live="polite">Loading fixture…</pre>
+<section data-agent-chat data-session-id="history-fixture" data-provider="codex" class="agent-chat-widget">
+<div data-acw-status></div>
+<div class="acw-messages" data-acw-messages>
+<button data-acw-load-older hidden>Load older messages</button><p data-acw-load-older-status hidden></p>
+<p data-acw-placeholder></p>
+<button data-acw-load-newer hidden>Load newer messages</button><p data-acw-load-newer-status hidden></p>
+</div>
+<form data-acw-form><textarea aria-label="Fixture reply" data-acw-input></textarea><button data-acw-send>Send</button><button type="button" data-acw-clear-draft>Clear draft</button><span data-acw-draft-status></span></form>
+<div data-acw-tool-activity><p data-acw-tool-empty>No tools</p></div>
+</section>
+</main>
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+ const widget = document.querySelector('[data-agent-chat]')._acw;
+ const report = document.querySelector('#checks');
+ const originalApi = widget.api.bind(widget);
+ let nextFailure=false, nextDelay=false;
+ widget.api = (path, opts) => {
+   if(path.includes('before_seq') && nextFailure){nextFailure=false;return Promise.reject(new Error('Fixture timeout'));}
+   if(path.includes('before_seq') && nextDelay){nextDelay=false;return new Promise(resolve=>setTimeout(resolve,400)).then(()=>originalApi(path,opts));}
+   return originalApi(path,opts);
+ };
+ const text = () => Array.from(widget.els.messages.querySelectorAll('.acw-bubble-agent')).map(x=>x.dataset.markdown||'');
+ const waitFor = async fn => {for(let n=0;n<150;n++){if(fn())return;await new Promise(r=>setTimeout(r,50));}throw new Error('Fixture condition timed out');};
+ const check = (condition,label) => {if(!condition)throw new Error(label); report.textContent += '\nPASS '+label;};
+ let expected;
+ const verify = async()=>{
+   expected=(await fetch('/fixture-expected').then(r=>r.json())).final;
+   await waitFor(()=>text().includes(expected));
+   report.textContent='PASS initial final equals persisted expected text character-for-character (1957 characters)';
+   check(!widget.els.loadOlder.hidden,'older control visible');
+   check(!widget.els.input.disabled,'completed turn composer writable');
+ };
+ verify().catch(e=>report.textContent='FAIL '+e.message);
+ document.querySelector('#fail-older').onclick=()=>{nextFailure=true;widget.loadOlderTranscript();};
+ document.querySelector('#delay-older').onclick=()=>{nextDelay=true;widget.loadOlderTranscript();};
+ const switchBack = async()=>{
+   widget.switchSession('other-fixture',true);
+   await waitFor(()=>widget.sessionId==='other-fixture' && !widget.ownerResolutionPending && widget.composerEnabled);
+   widget.switchSession('history-fixture',true);
+   await waitFor(()=>widget.sessionId==='history-fixture' && !widget.ownerResolutionPending && widget.composerEnabled);
+   check(text().includes(expected),'real session switch restores exact final');
+ };
+ document.querySelector('#switch').onclick=()=>switchBack().catch(e=>report.textContent+='\nFAIL '+e.message);
+ document.querySelector('#run-checks').onclick=async()=>{try{
+   report.textContent='Checking transitions…';
+   await switchBack();
+   widget.els.input.value='Preserve this fixture draft';widget.drafts.changed();widget.drafts.flush({force:true});
+   const before=text().join('\n'), cursor=widget.olderCursor;
+   nextFailure=true;widget.loadOlderTranscript();await waitFor(()=>!widget.loadingOlder);
+   check(text().join('\n')===before && widget.olderCursor===cursor,'failed older request preserves visible text and cursor');
+   check(!widget.els.loadOlder.hidden && !!widget.olderError,'failed older request remains retryable');
+   widget._stashSessionDomCache();widget.renderTranscript([]);widget._restoreSessionDomCache('history-fixture');
+   check(text().includes(expected),'cache reconstruction keeps exact final');
+   widget.handleEvent({seq:3443,type:'provider_released',payload:{}});
+   widget.handleEvent({seq:3444,type:'turn_completed',payload:{}});
+   check(!widget.els.input.disabled && widget.els.input.value==='Preserve this fixture draft','turn completion and provider release retain writable composer and draft');
+   widget.drafts.onSnapshot({session:{status:'closed'}});
+   check(widget.els.input.value==='Preserve this fixture draft','closed snapshot retains draft');
+   nextDelay=true;widget.loadOlderTranscript();
+   widget.handleEvent({seq:3445,type:'agent_message_chunk',payload:{message_id:'late',phase:'final',content_mode:'delta',text:'Late.A'}});
+   await waitFor(()=>!widget.loadingOlder);
+   check(text().includes(expected) && text().includes('Late.A'),'delayed older request preserves live arrival');
+   widget.handleEvent({seq:3445,type:'agent_message_chunk',payload:{message_id:'late',phase:'final',content_mode:'delta',text:'duplicate'}});
+   check(text().includes('Late.A'),'duplicate SSE does not alter final');
+   widget.handleEvent({seq:3446,type:'agent_message_chunk',payload:{message_id:'late',phase:'final',content_mode:'snapshot',text:'Replacement.B'}});
+   check(text().includes('Replacement.B'),'snapshot replaces delta body exactly');
+   const foundCommentary = new Set();
+   while(widget.hasOlder){const old=widget.olderCursor;widget.loadOlderTranscript();await waitFor(()=>!widget.loadingOlder);if(widget.olderError)throw new Error(widget.olderError);if(widget.olderCursor===old)throw new Error('Cursor stalled');for(let group=0;group<6;group++){if(text().some(value=>value.startsWith('Progress '+group+':0.')))foundCommentary.add(group);}}
+   check(widget.els.loadOlder.hidden,'older control disappears only at exhaustion');
+   check(foundCommentary.size===6,'all six commentary groups reachable in browser pages');
+   while(widget.hasNewer){const old=widget.newerCursor;widget.loadNewerTranscript();await waitFor(()=>!widget.loadingNewer);if(widget.newerError)throw new Error(widget.newerError);if(widget.newerCursor===old)throw new Error('Forward cursor stalled');}
+   check(text().includes(expected),'forward paging restores the complete final');
+   const rowEvents=[];
+   for(let index=0;index<650;index++){
+     rowEvents.push({seq:index*2+1,type:'agent_message_chunk',payload:{message_id:'row-'+index,phase:'final',content_mode:'delta',text:'Message '+index}});
+     rowEvents.push({seq:index*2+2,type:'turn_completed',payload:{}});
+   }
+   widget.hasNewer=false;
+   widget.renderTranscript(rowEvents);
+   check(!text().includes('Message 0') && text().length===600,'DOM window remains bounded');
+   widget.prependTranscript(rowEvents.slice(0,100));
+   check(text().includes('Message 0') && widget.hasNewer,'older paging restores DOM-evicted rows');
+   widget.renderTranscript(widget.transcriptEvents.concat(rowEvents.filter(e=>e.seq>widget.newerCursor)));
+   check(text().includes('Message 649'),'forward paging restores DOM-evicted newer rows');
+   report.textContent+='\nDONE';
+ }catch(e){report.textContent+='\nFAIL '+e.message;}};
+});
+</script>
+</html>

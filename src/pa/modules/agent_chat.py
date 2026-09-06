@@ -2118,6 +2118,7 @@ async def get_agent_session_history(
     after_seq: int | None = None,
     before_seq: int | None = None,
     limit: int = TRANSCRIPT_WINDOW_LIMIT,
+    message_boundaries: bool = False,
 ) -> dict:
     """Return durable metadata and transcript events for a live or closed session."""
     if after_seq is not None and before_seq is not None:
@@ -2181,6 +2182,22 @@ async def get_agent_session_history(
             "has_newer": before_seq is not None,
             "limit": page_limit,
         }
+    if message_boundaries:
+        from pa.acp.transcript_page import complete_page
+
+        try:
+            events, oldest, newest, older, newer = await _offload(
+                mgr, "sqlite.transcript_message_page", complete_page,
+                mgr.store, session_id, events, forward=after_seq is not None,
+                timeout=3.0,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        page.update(
+            oldest_seq=oldest, newest_seq=newest,
+            next_before_seq=oldest if older else None,
+            has_older=older, has_newer=newer, message_boundaries=True,
+        )
     query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
     session_payload = session.model_dump(mode="json")

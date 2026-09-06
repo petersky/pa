@@ -337,10 +337,6 @@
     const session = snapshot.session || snapshot;
     this.cardId = session.card_id || this.widget.cardId || null;
     this.projectId = session.project_id || null;
-    if (session.status === "closed") {
-      this.clear(true, "Draft cleared because this session ended.");
-      return;
-    }
     if (!this.submissionId || !this.restoringSubmission) return;
     const promptId = this.submissionId;
     const accepted = (snapshot.transcript || []).some(function (event) {
