@@ -1111,9 +1111,17 @@ def test_agent_session_records_retryable_provisioning_failure(tmp_path: Path) ->
 
 def test_project_session_uses_project_realm_and_requires_repository(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace_manager, _, _ = manager_for(tmp_path)
     settings = workspace_manager.settings
+    cache_workspace_test_provider(settings)
+    # This test exercises workspace admission, not the developer's installed
+    # harnesses. Fail if it accidentally falls back to host discovery again.
+    monkeypatch.setattr(
+        "pa.acp.providers.resolve.list_provider_summaries_bounded",
+        AsyncMock(side_effect=AssertionError("unexpected host provider discovery")),
+    )
     store = workspace_manager.store
     project = SimpleNamespace(realm_id="shared", tool_config={}, repos=[])
     store.get_project.return_value = project

@@ -242,6 +242,11 @@ This checklist is maintained until complete; unchecked items are not a completio
   Focused combined selection/lifecycle tests, isolated boot, wheel/sdist build,
   packaged MCP stdio smoke, new Python Ruff checks, JS syntax and diff checks passed.
   No timing threshold was weakened; exact-head CI remains a mandatory merge gate.
+- [x] Final clean-environment full regression: 2,336 tests and 854 subtests passed
+  in 627.22s (one existing mocked-peer coroutine warning). Linux CI exposed one
+  project-realm workspace test that omitted its cached Codex capability fixture;
+  the fixture is now explicit and a guard rejects accidental host discovery.
+  Workspace and native-selection runtime suites passed after that test-only fix.
 - [x] Final combined-code 390px create/dispatch: card
   `a1e1bd4f-f5c4-4fac-bd92-f9d57c81dd5b` retained low, one-run xhigh was confirmed
   at `2026-09-06T00:29:39.288842+00:00` on session
