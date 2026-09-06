@@ -137,7 +137,7 @@ def test_dispatch_turn_completion_does_not_invent_workflow_success() -> None:
     )
     view = build_session_presentation(run, dispatch=unsettled, now=NOW)
     assert view["workflow"]["state"] == "active"
-    assert view["display_status"] == "Running"
+    assert view["display_status"] == "Limited information"
 
     settled = SimpleNamespace(
         state="completed",
@@ -388,3 +388,26 @@ def test_completed_prompt_receipt_is_not_replayed_during_recovery(tmp_path) -> N
     snapshot = manager._snapshot_from_persisted(store.get_session(durable.id))
     assert snapshot.in_flight is None
     assert snapshot.queued_prompts == []
+
+
+@pytest.mark.parametrize("age", [1, 60, 10000])
+def test_restart_label_requires_current_restart_evidence(age):
+    chat = session(status="quiesced", updated_at=NOW - timedelta(minutes=age))
+    assert build_session_presentation(chat, now=NOW)["display_status"] == "Ready"
+    assert build_session_presentation(chat, quiescing=True, now=NOW)["display_status"] == "PA is restarting"
+    interrupted = chat.model_copy(update={"config_json": {"durable_runtime": {
+        "in_flight": {"id": "unfinished"}, "lifecycle": "recoverable_interrupted"
+    }}})
+    assert build_session_presentation(interrupted, now=NOW)["display_status"] == "Restoring your work"
+    assert build_session_presentation(interrupted, startup_complete=False, now=NOW)["display_status"] == "PA is restarting"
+
+
+def test_historical_active_workflow_does_not_claim_running_or_success():
+    run = session(status="closed", purpose="automated_run", control_mode="automation",
+                  workflow_state="active", updated_at=NOW - timedelta(weeks=8))
+    view = build_session_presentation(run, now=NOW)
+    assert view["display_status"] == "Limited information"
+    assert view["workflow"]["state"] == "active"
+    assert view["next_automatic_action"] is None
+    waiting = run.model_copy(update={"initiating_workflow": {"next_expected_event": "PR review"}})
+    assert build_session_presentation(waiting, now=NOW)["display_status"] == "Waiting"

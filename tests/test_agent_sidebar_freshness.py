@@ -143,6 +143,63 @@ class AgentSidebarFreshnessTests(unittest.TestCase):
             ROOT / "agent-chat.js",
         )
 
+    def test_loading_is_not_terminal_and_timeout_does_not_depend_on_abort(self):
+        self._run_node(
+            """
+            (async () => {
+              const Widget = window.PAAgentChat.AgentChatWidget;
+              const widget = Object.create(Widget.prototype);
+              widget.els = { input: {}, attach: {}, fileInput: {} };
+              widget._syncSubmissionControls = noop;
+              widget.setComposerEnabled(false);
+              assert.strictEqual(widget.els.input.disabled, true);
+              assert.ok(!widget.els.input.placeholder.includes('ended'));
+              widget.setComposerEnabled(false, 'Session ended.');
+              assert.strictEqual(widget.els.input.placeholder, 'Session ended.');
+              widget.api = () => new Promise(() => {});
+              const keepAlive = setTimeout(noop, 1000);
+              await assert.rejects(widget.apiWithTimeout('/history/ready', 10),
+                error => error.timeout && error.code === 'request_timeout');
+              clearTimeout(keepAlive);
+              widget.setComposerEnabled(true);
+              assert.strictEqual(widget.els.input.disabled, false);
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """,
+            ROOT / 'agent-chat.js',
+        )
+
+    def test_ready_history_recovers_same_conversation_and_enables_composer(self):
+        self._run_node(
+            """
+            (async () => {
+              const widget = Object.create(window.PAAgentChat.AgentChatWidget.prototype);
+              Object.assign(widget, {
+                subscriptionGeneration: 0, els: {},
+                root: {dataset: {}, closest: () => null},
+                _setRecoveryControl: noop, showRecoveryActions: noop,
+                renderSessionActions: noop, setPlaceholder: noop,
+                setComposerEnabled(value) {this.enabled = value;},
+                resolveSessionRoute: async () => ({state: 'recoverable', recoverable: true}),
+                apiWithTimeout: async () => ({session: {id: 'ready'}, presentation: {
+                  purpose: 'chat', permitted_actions: ['prompt', 'recover']}}),
+                _applyDurableHistory: (_id, history) => history,
+                recoverSession: async function (id, generation) {
+                  assert.strictEqual(id, 'ready');
+                  assert.strictEqual(generation, this.subscriptionGeneration);
+                  this.sessionClosed = false;
+                  this.setComposerEnabled(true);
+                },
+              });
+              await widget.openSession('ready', '');
+              assert.strictEqual(widget.sessionId, 'ready');
+              assert.strictEqual(widget.ownerResolutionPending, false);
+              assert.strictEqual(widget.enabled, true);
+              assert.strictEqual(widget.sessionClosed, false);
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """,
+            ROOT / 'agent-chat.js',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -818,7 +818,7 @@ setImmediate(function () {
             {"cursor", "codex", "openinterpreter"},
         )
 
-    def test_agent_page_defaults_to_collapsed_sessions_and_mobile_safe_composer(
+    def test_agent_page_defaults_to_visible_sessions_and_mobile_safe_composer(
         self,
     ) -> None:
         root = Path(__file__).parents[1] / "src" / "pa" / "server"
@@ -830,9 +830,9 @@ setImmediate(function () {
         script = (root / "static" / "js" / "agent-chat.js").read_text()
         style = (root / "static" / "style.css").read_text()
 
-        self.assertIn("page-agent is-sidebar-collapsed", page)
-        self.assertIn('aria-expanded="false">Show sessions', widget)
-        self.assertIn('saved === null ? true : saved === "1"', script)
+        self.assertNotIn("page-agent is-sidebar-collapsed", page)
+        self.assertIn('aria-expanded="true">Hide sessions', widget)
+        self.assertIn('collapsed = saved === "1"', script)
         self.assertIn('classList.toggle("is-sidebar-collapsed", collapsed)', script)
         self.assertIn("viewport-fit=cover", shell)
         self.assertIn("height: 100dvh", style)

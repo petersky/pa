@@ -545,10 +545,19 @@
   AgentChatWidget.prototype.apiWithTimeout = function (path, timeoutMs, opts) {
     opts = opts || {};
     const controller = new AbortController();
-    const timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
+    const deadline = new Promise(function (_resolve, reject) {
+      controller._deadlineTimer = setTimeout(function () {
+        controller.abort();
+        const error = new Error("Request exceeded its " + timeoutMs + "ms latency budget.");
+        error.code = "request_timeout";
+        error.timeout = true;
+        reject(error);
+      }, timeoutMs);
+    });
+    const timeoutId = controller._deadlineTimer;
     if (timeoutId && typeof timeoutId.unref === "function") timeoutId.unref();
     const requestOpts = Object.assign({}, opts, { signal: controller.signal });
-    return this.api(path, requestOpts)
+    return Promise.race([this.api(path, requestOpts), deadline])
       .catch(function (error) {
         if (error && error.name === "AbortError") {
           const timeoutError = new Error(
@@ -1164,7 +1173,7 @@
     const loadDurableHistory = function () {
       if (!durableHistory) {
         durableHistory = self.apiWithTimeout(
-          "/history/" + encodeURIComponent(sessionId),
+          "/history/" + encodeURIComponent(sessionId) + "?limit=" + INITIAL_VISIBLE_EVENTS,
           LIVE_SNAPSHOT_TIMEOUT_MS
         ).then(function (history) {
           return self._applyDurableHistory(sessionId, history, generation);
@@ -1223,6 +1232,7 @@
           return self._loadLiveSnapshot(sessionId, generation);
         }
         return loadDurableHistory().then(function (history) {
+          if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
           self.sessionClosed = true;
           self.setComposerEnabled(false);
           self.showRecoveryActions({
@@ -1298,7 +1308,8 @@
     ) {
       return this.openSession(targetSessionId, this.ownerInstanceId, { replace: true });
     }
-    this.setPlaceholder("Recovering provider thread…");
+    this.setComposerEnabled(false);
+    this.setPlaceholder("Preparing this conversation…");
     return this.api("/sessions/" + encodeURIComponent(targetSessionId) + "/recover", {
       method: "POST",
       body: "{}",
@@ -1666,7 +1677,8 @@
     this.sessionClosed = session.status === "closed";
     if (!this.sessionClosed) this.sessionRecoverable = false;
     if (this.drafts) this.drafts.onSnapshot(snap);
-    this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
+    this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked,
+      this.sessionClosed ? "This session has ended. Select another conversation." : undefined);
     this.renderSessionActions();
     const handoffs = snap.restart_handoffs || [];
     const handoff = handoffs.length ? handoffs[handoffs.length - 1] : null;
@@ -2392,6 +2404,8 @@
         this.addBubble("system", payload.reason || "Command finished.", created, { system: true, forceVisible: true });
         break;
       case "session_closed":
+        // A past provider closure is history, not current conversation state.
+        if (replay) break;
         if (this.drafts) this.drafts.clear(true, "Draft cleared because this session ended.");
         this.markSessionEnded("Session ended. Start or select another session to send more prompts.");
         refreshSessionList(null);
@@ -3368,7 +3382,7 @@
     if (this.els.browserToggle) this.els.browserToggle.disabled = this.turnActive;
   };
 
-  AgentChatWidget.prototype.setComposerEnabled = function (enabled) {
+  AgentChatWidget.prototype.setComposerEnabled = function (enabled, disabledMessage) {
     this.composerEnabled = !!enabled;
     const controls = [
       this.els.input,
@@ -3382,7 +3396,7 @@
     if (this.els.input) {
       this.els.input.placeholder = enabled
         ? "Message the agent, type / for commands, or drop images here…"
-        : "This session has ended. Start or select another session.";
+        : disabledMessage || "Preparing conversation…";
     }
   };
 
@@ -3565,7 +3579,7 @@
     this.closePending = false;
     this.setTurnActive(false);
     this.setStatus("offline");
-    this.setComposerEnabled(false);
+    this.setComposerEnabled(false, endedMessage);
     this.closeSSE("session-ended");
     this.renderSessionActions();
     this.addBubble("system", endedMessage, new Date().toISOString(), {
@@ -4318,7 +4332,7 @@
               escapeHtml(s.updated_at || "") + '">' + escapeHtml(sessionTimestamp(s.updated_at)) +
               "</time></span>" +
             '<span class="muted small"><b>Provider attempts</b> ' +
-              escapeHtml(s.provider_attempts || 0) +
+              escapeHtml(s.provider_attempts == null ? "See session diagnostics" : s.provider_attempts) +
               (s.closure_reason ? " · <b>Closure reason</b> " + escapeHtml(s.closure_reason) : "") +
               "</span>" +
             '<a class="text-btn small" href="/knowledge?session=' + encodeURIComponent(s.id) +
@@ -5257,7 +5271,21 @@
           .then(function (snap) {
             const sid = (snap.session && snap.session.id) || snap.id;
             dialog.close();
-            refreshSessionList(sid);
+            const list = document.querySelector("[data-agent-session-list]");
+            if (list && sid) {
+              const record = sessionRecordFromSnapshot(snap, { id: sid });
+              record.presentation = snap.presentation || {};
+              const holder = document.createElement("ul");
+              // Render through the same escaping and action code as refreshed rows.
+              list.appendChild(holder);
+              renderSessionList(holder, [record], true, sid);
+              const row = holder.firstElementChild;
+              if (row) list.prepend(row);
+              holder.remove();
+              list.querySelectorAll("[data-agent-session-empty], [data-agent-session-state]").forEach(function (node) { node.remove(); });
+              list.setAttribute("aria-busy", "false");
+            }
+            refreshSessionList(sid, true);
             const widget = document.querySelector("[data-agent-chat]");
             if (widget && widget._acw && sid) widget._acw.switchSession(sid);
           })
@@ -5270,7 +5298,7 @@
           .finally(function () {
             if (submit) {
               submit.disabled = false;
-              submit.textContent = "Start session";
+              submit.textContent = "Start chat";
             }
           });
       });
@@ -5363,10 +5391,10 @@
         toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
         try { localStorage.setItem("pa-agent-sidebar-collapsed", collapsed ? "1" : "0"); } catch (_) {}
       });
-      let collapsed = true;
+      let collapsed = false;
       try {
         const saved = localStorage.getItem("pa-agent-sidebar-collapsed");
-        collapsed = saved === null ? true : saved === "1";
+        collapsed = saved === "1";
       } catch (_) {}
       const layout = toggle.closest(".page-agent") || document.querySelector(".page-agent");
       if (layout) layout.classList.toggle("is-sidebar-collapsed", collapsed);

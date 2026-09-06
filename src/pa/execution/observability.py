@@ -181,6 +181,8 @@ def build_session_observability(
     instance_name: str,
     reconciliation: dict[str, Any] | None = None,
     now: datetime | None = None,
+    quiescing: bool = False,
+    startup_complete: bool = True,
     quiet_seconds: int = DEFAULT_QUIET_SECONDS,
     stalled_seconds: int = DEFAULT_STALLED_SECONDS,
 ) -> dict[str, Any]:
@@ -288,7 +290,7 @@ def build_session_observability(
     durable_obligations = bool(durable_in_flight or durable_queue)
     if session.status == "closed":
         classification = "completed_idle"
-    elif session.status == "quiesced":
+    elif quiescing or (session.status == "quiesced" and not startup_complete):
         classification = "restarting"
     elif session.status in {"failed", "configuration_failed", "provisioning_failed"}:
         classification = "failed_closed"
@@ -354,12 +356,12 @@ def build_session_observability(
         else "closed"
         if session.status == "closed"
         else "restarting"
-        if session.status == "quiesced"
+        if quiescing or (session.status == "quiesced" and not startup_complete)
         else "failed"
         if "failed" in session.status
         else "idle"
     )
-    presentation = build_session_presentation(session, runtime=runtime, now=now)
+    presentation = build_session_presentation(session, runtime=runtime, quiescing=quiescing, startup_complete=startup_complete, now=now)
     return {
         "schema_version": SESSION_OBSERVABILITY_VERSION,
         "capabilities": [SESSION_OBSERVABILITY_CAPABILITY],

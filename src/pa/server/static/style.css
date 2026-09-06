@@ -3524,7 +3524,9 @@ code {
 }
 
 .agent-new-session-dialog {
-  width: min(32rem, calc(100vw - 2rem));
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
   padding: 0;
   border: 1px solid var(--pa-border);
   border-radius: 10px;
@@ -3576,6 +3578,11 @@ code {
 .agent-session-runtime, .agent-session-config { overflow-wrap: anywhere; }
 
 .agent-new-session-dialog .form-actions {
+  position: sticky;
+  bottom: -1rem;
+  padding: 0.75rem 0;
+  background: var(--pa-surface-raised);
+  z-index: 1;
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;

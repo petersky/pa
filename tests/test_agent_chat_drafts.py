@@ -131,7 +131,7 @@ class AgentChatDraftContractTests(unittest.TestCase):
 
         self.assertIn("this.drafts.onSnapshot(snap)", apply_snapshot)
         self.assertIn(
-            "this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked)",
+            "this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked,",
             apply_snapshot,
         )
         self.assertLess(

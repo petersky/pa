@@ -187,7 +187,8 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
     def test_save_merges_external_browser_with_in_memory_options(self):
         runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
         persisted = SimpleNamespace(
-            config_json={"browser": {"attached": True, "width": 1920}}
+            config_json={"browser": {"attached": True, "width": 1920}},
+            archived_at="archived", archive_reason="user_archive", pinned_at="pinned",
         )
         runtime.session = SimpleNamespace(
             id="session-1",
@@ -205,6 +206,9 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(runtime.session.config_json["browser"]["width"], 1920)
         self.assertEqual(runtime.session.config_json["options"], ["new"])
+        self.assertEqual(runtime.session.archived_at, "archived")
+        self.assertEqual(runtime.session.archive_reason, "user_archive")
+        self.assertEqual(runtime.session.pinned_at, "pinned")
         runtime.store.save_session.assert_called_once_with(runtime.session)
 
 

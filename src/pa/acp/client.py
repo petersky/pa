@@ -2001,7 +2001,9 @@ class AgentConnection:
         if self.session and self.session.status not in {"closed", "quiesced"}:
             self.session.status = "disconnected"
             await self._offload(
-                "sqlite.agent_session_save", self.store.save_session, self.session
+                "sqlite.agent_session_disconnect",
+                self.store.mark_session_disconnected,
+                self.session.id,
             )
         await self._drain_wire_logs()
 

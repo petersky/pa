@@ -85,6 +85,14 @@
     function render() {
       var container = root.querySelector("[data-selection-fields]");
       container.replaceChildren();
+      var chat = root.dataset.selectionPurpose === "new-session";
+      var advanced;
+      if (chat) {
+        advanced = document.createElement("details");
+        var summary = document.createElement("summary");
+        summary.textContent = "Advanced agent policy and native options";
+        advanced.append(summary);
+      }
       var optionIds = new Set(Object.keys(state.prefs.options || {}));
       Object.keys(state.inherited).filter(function (id) {return id.indexOf("options.") === 0;}).forEach(function (id) {optionIds.add(id.slice(8));});
       state.candidates.forEach(function (c) {Object.keys(c.options || {}).forEach(function (id) {optionIds.add(id);});});
@@ -107,10 +115,17 @@
         var source = document.createElement("small"); source.className = "muted";
         var inherited = state.inherited[name] || {};
         source.textContent = "Inherited: " + (state.sources[name] || "automatic policy") + (inherited.value !== undefined && inherited.value !== null ? " · " + String(inherited.value) : " · automatic") + (!vals.length ? " · capability unknown" : "");
+        if (chat && ["harness", "model"].includes(name)) {
+          source.textContent = inherited.value != null
+            ? "Default: " + inherited.value
+            : "Chosen automatically from available models.";
+        }
         function change() {
           var next = {intent: intent.value};
           if (["required", "preferred"].includes(next.intent)) {
-            if (!value.value) { value.disabled = false; value.required = true; value.focus(); return; }
+            if (!value.value || ["inherit", "automatic"].includes(value.value)) {
+              value.value = ""; value.disabled = false; value.required = true; value.focus(); return;
+            }
             next.value = JSON.parse(value.value);
           }
           if (name.indexOf("options.") === 0) {
@@ -137,8 +152,30 @@
           output.dispatchEvent(new Event("change", {bubbles: true}));
         }
         intent.addEventListener("change", change); value.addEventListener("change", change);
-        label.append(intent); row.append(label, value, source); container.append(row);
+        if (chat && ["harness", "model"].includes(name)) {
+          label.textContent = name === "harness" ? "Agent" : "Model";
+          value.setAttribute("aria-label", label.textContent);
+          value.options[0].textContent = "Use inherited default";
+          value.options[0].value = "inherit";
+          value.add(new Option("Choose automatically", "automatic"), 1);
+          value.value = ["inherit", "automatic"].includes(pref.intent) ? pref.intent : JSON.stringify(pref.value);
+          value.disabled = false;
+          value.required = true;
+          value.removeEventListener("change", change);
+          value.addEventListener("change", function () {
+            intent.value = ["inherit", "automatic"].includes(value.value)
+              ? value.value : intent.value === "preferred" ? "preferred" : "required";
+            change();
+          });
+          const policyLabel = document.createElement("label");
+          policyLabel.textContent = label.textContent + " preference";
+          policyLabel.append(intent);
+          advanced.append(policyLabel);
+        } else label.append(intent);
+        row.append(label, value, source);
+        (chat && !["harness", "model"].includes(name) ? advanced : container).append(row);
       });
+      if (advanced) container.append(advanced);
       sync();
     }
     function loadDefaults() {
@@ -164,7 +201,7 @@
       api("/api/execution/catalog/refresh", "POST", {}).then(function (data) {
         var local = data.instance_id;
         state.candidates = state.candidates.filter(function (c) {return c.instance_id !== local;}).concat(data.candidates);
-        catalogPromise = Promise.resolve(data); render(); noticeText("Local catalog refreshed. Remote catalog refresh is owned by fleet discovery; unknown values remain unknown.");
+        catalogPromise = Promise.resolve(data); render(); noticeText(root.dataset.selectionPurpose === "new-session" ? "Available choices updated." : "Local catalog refreshed. Remote catalog refresh is owned by fleet discovery; unknown values remain unknown.");
       }).catch(function (e) {noticeText(e.message);});
     });
     var save = root.querySelector("[data-selection-save]");
@@ -191,6 +228,25 @@
       if (event.target.name === "dispatch_target") render();
     });
     var preview = root.querySelector("[data-selection-preview]");
+    var previewGeneration = 0;
+    var effectiveSummary = root.querySelector("[data-selection-effective]");
+    state.preview = async function () {
+      if (!effectiveSummary) return;
+      var generation = ++previewGeneration;
+      effectiveSummary.textContent = "Resolving agent and model…";
+      try {
+        var result = await scopedApi("/api/execution/preview", "POST", {
+          surface: root.dataset.selectionSurface || "execution", execution_preferences: state.prefs
+        });
+        if (generation !== previewGeneration) return;
+        var selected = result.selected || {};
+        effectiveSummary.textContent = "Selected: " + (selected.harness || "unavailable") + " · " +
+          (selected.model || "provider default (model confirmed after start)") + ". Confirmed when the chat starts.";
+      } catch (error) {
+        if (generation === previewGeneration) effectiveSummary.textContent = "Selection unavailable: " + error.message;
+      }
+    };
+    output.addEventListener("change", function () { if (effectiveSummary) state.preview(); });
     if (preview) preview.addEventListener("click", async function () {
       if (form && !form.reportValidity()) return;
       preview.disabled = true;
@@ -219,6 +275,7 @@
       root.querySelectorAll("[data-selection-constraint]").forEach(function (input) {input.value = "";});
       if (taskInput) {taskInput.value = ""; taskInput.setCustomValidity("");}
       render();
+      state.preview();
     };
     loadDefaults(); render();
   }

@@ -152,7 +152,10 @@ def _observability(
         instance_id=settings.instance_id,
         instance_name=settings.instance_name,
         reconciliation=_session_reconciliation(request, session.id),
+        quiescing=mgr.quiescing,
+        startup_complete=mgr.startup_complete,
     )
+    result["presentation"] = _presentation(request, session, runtime)
     snapshot = session.origin_instance_name
     current = current_instance_name(
         request.app.state.ctx,
@@ -1451,9 +1454,28 @@ def list_agent_sessions(
     }
     sessions = {session.id: session for session in mgr.store.list_sessions()}
     sessions.update({session_id: runtime.session for session_id, runtime in runtimes.items()})
+    # Filter durable metadata before reading transcripts, cards and dispatches.
+    # Chats must not pay the inspection cost of every historical automated run.
+    candidates = list(sessions.values())
+    if view == "chats":
+        candidates = [s for s in candidates if s.purpose == "chat" and bool(s.archived_at) == archived]
+    elif view == "activity":
+        candidates = [s for s in candidates if s.purpose in {"automated_run", "one_shot_job"}]
+    elif view == "active":
+        candidates = [s for s in candidates if s.status != "closed"]
     items = [
-        _session_list_item(request, session, runtime=runtimes.get(session.id))
-        for session in sessions.values()
+        {
+            "id": session.id,
+            "status": session.status,
+            "purpose": session.purpose,
+            "archived_at": session.archived_at,
+            "pinned_at": session.pinned_at,
+            "human_activity_at": session.human_activity_at,
+            "updated_at": session.updated_at,
+            "presentation": _presentation(request, session, runtimes.get(session.id))
+            if view == "activity" else None,
+        }
+        for session in candidates
     ]
     if view == "active":
         items = [item for item in items if item["status"] != "closed"]
@@ -1522,7 +1544,13 @@ def list_agent_sessions(
         )
         if selected is not None:
             bounded[-1] = selected
-    return bounded
+    return [
+        _session_list_item(
+            request, sessions[item["id"]], runtime=runtimes.get(item["id"]),
+            include_diagnostics=False,
+        )
+        for item in bounded
+    ]
 
 
 @router.get("/session-events/capabilities")
@@ -1787,6 +1815,7 @@ def _session_list_item(
     session: AgentSession,
     *,
     runtime: AgentSessionRuntime | None = None,
+    include_diagnostics: bool = True,
 ) -> dict:
     config, confirmed = normalized_session_config_json(
         session.config_json,
@@ -1802,10 +1831,12 @@ def _session_list_item(
     durable = config.get("durable_runtime", {})
     queued = durable.get("queued_prompts") or []
     associated_cards = request.app.state.ctx.store.list_cards_for_session(session.id)
+    # Sidebar rows need durable metadata, not decompressed transcript bodies.
+    # Full diagnostics remain available on the session/history endpoints.
     events = request.app.state.ctx.store.list_transcript_events_before(
         session.id, limit=1001
-    )
-    observability = _observability(request, session, events=events)
+    ) if include_diagnostics else []
+    observability = _observability(request, session, events=events) if include_diagnostics else None
     closure = next(
         (event for event in reversed(events) if event.event_type == "session_closed"),
         None,
@@ -1871,7 +1902,7 @@ def _session_list_item(
         "provider_attempts": sum(
             event.event_type in {"session_started", "session_admission_failed"}
             for event in events
-        ),
+        ) if include_diagnostics else None,
         "closure_reason": (closure.payload or {}).get("reason") if closure else None,
         "pa_mcp": runtime.connection.pa_mcp_health
         if runtime and runtime.connection

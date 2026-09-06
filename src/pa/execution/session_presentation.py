@@ -178,7 +178,7 @@ def build_session_presentation(
             or "Correct the provider or workspace configuration, then retry.",
             None,
         )
-    elif quiescing or status == "quiesced" or (not startup_complete and obligations):
+    elif quiescing or (not startup_complete and (obligations or status == "quiesced")):
         display_status, explanation, next_action = (
             "PA is restarting",
             "The durable session is preserved and intentional pauses will remain paused.",
@@ -238,12 +238,12 @@ def build_session_presentation(
         next_event = workflow_outcome.get("next_expected_event") or initiating_workflow.get(
             "next_expected_event"
         )
-        display_status = "Running" if workflow_state == "active" else "Waiting"
+        display_status = "Waiting" if next_event or live else "Limited information"
         explanation = str(
             next_event
-            or "The workflow remains active between provider turns."
+            or "No live turn or scheduled next event is confirmed. Inspect the dispatch and workflow outcome before deciding whether work is complete."
         )
-        next_action = "wait_for_workflow" if not live else None
+        next_action = "wait_for_workflow" if next_event else None
     else:
         display_status, explanation, next_action = (
             "Limited information",
