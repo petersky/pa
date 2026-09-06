@@ -102,6 +102,30 @@ def test_missing_runtime_for_active_run_is_workflow_waiting_not_healthy_or_idle(
     assert result["transport"]["connected"] is False
 
 
+def test_retry_resets_completion_and_command_receipts_do_not_create_turns() -> None:
+    events = [
+        event(1, "queue_enqueued", {"id": "same", "position": 0}, 30),
+        event(2, "error", {"queued_prompt_id": "same"}, 25),
+        event(3, "command_result", {"id": "not-a-prompt"}, 20),
+        event(4, "queue_enqueued", {"id": "same", "position": 0}, 15),
+        event(5, "queue_dequeued", {"id": "same"}, 10),
+        event(6, "prompt_blocked", {"queued_prompt_id": "same", "reason": "approval required"}, 5),
+    ]
+    result = build_session_observability(
+        session(config_json={"durable_runtime": {"lifecycle": "admission_blocked", "queued_prompts": [{"id": "same", "source": "ui"}]}}),
+        runtime=None,
+        events=events,
+        instance_id="monica",
+        instance_name="Monica",
+        now=NOW,
+    )
+    assert [turn["id"] for turn in result["turns"]] == ["same"]
+    assert result["turns"][0]["state"] == "blocked"
+    assert result["turns"][0]["completed_at"] is None
+    assert result["turn"]["state"] == "blocked"
+    assert result["presentation"]["turn"]["state"] == "blocked"
+
+
 def test_diagnostics_redact_prompts_and_raw_tool_data() -> None:
     events = [
         event(

@@ -239,6 +239,11 @@ async def request_peer(
                 )
                 break
             except (httpx.TransportError, TimeoutError) as exc:
+                if isinstance(exc, httpx.PoolTimeout):
+                    # Local client-pool contention says nothing about peer
+                    # health.  Let the caller use its bounded isolated retry
+                    # without poisoning the endpoint circuit.
+                    raise
                 if is_http2_cancel(exc):
                     typed = FleetTransportError(
                         operation=method,

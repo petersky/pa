@@ -101,6 +101,20 @@ class PromptAcceptanceStatusTests(unittest.IsolatedAsyncioTestCase):
             ),
             None,
         ]
+        store.get_prompt_lifecycle.side_effect = [
+            TranscriptEvent(
+                session_id="session-1",
+                seq=3,
+                event_type="queue_enqueued",
+                payload={"id": "browser-prompt-1", "action": "append"},
+            ),
+            TranscriptEvent(
+                session_id="session-1",
+                seq=5,
+                event_type="user_message",
+                payload={"id": "browser-prompt-2"},
+            ),
+        ]
         manager = MagicMock()
         manager.store = store
         manager.get.return_value = None
@@ -131,7 +145,7 @@ class PromptAcceptanceStatusTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(queued["status"], "queued")
         self.assertTrue(queued["accepted"])
         self.assertTrue(queued["duplicate_safe"])
-        self.assertEqual(accepted["status"], "accepted")
+        self.assertEqual(accepted["status"], "executing")
         self.assertEqual(missing["status"], "not_accepted")
         self.assertFalse(missing["accepted"])
         self.assertTrue(missing["duplicate_safe"])
@@ -142,6 +156,54 @@ class PromptAcceptanceStatusTests(unittest.IsolatedAsyncioTestCase):
             await get_prompt_acceptance_status(request, "session-1", "short")
         self.assertEqual(raised.exception.status_code, 400)
         self.assertEqual(raised.exception.detail["code"], "invalid_client_prompt_id")
+
+    async def test_prompt_status_distinguishes_pre_provider_block_from_failure(self) -> None:
+        store = MagicMock()
+        store.get_session.return_value = AgentSession(
+            id="session-1", agent_name="codex", principal_id="user:local"
+        )
+        store.get_prompt_acceptance.return_value = TranscriptEvent(
+            session_id="session-1",
+            seq=1,
+            event_type="queue_enqueued",
+            payload={"id": "browser-blocked-1", "action": "run"},
+        )
+        store.get_prompt_lifecycle.return_value = TranscriptEvent(
+            session_id="session-1",
+            seq=3,
+            event_type="prompt_blocked",
+            payload={
+                "queued_prompt_id": "browser-blocked-1",
+                "reason": "Trusted user approval is required.",
+                "before_provider_delivery": True,
+            },
+        )
+        manager = MagicMock(store=store)
+        manager.get.return_value = None
+        request = MagicMock()
+        request.app.state.ctx.settings = SimpleNamespace(
+            auth_required=False, instance_id="local"
+        )
+        request.state.user = None
+        request.state.instance_authenticated = False
+
+        async def offload(_mgr, _name, fn, *args, **kwargs):
+            return fn(*args)
+
+        with patch("pa.modules.agent_chat._manager", return_value=manager), patch(
+            "pa.modules.agent_chat._offload", side_effect=offload
+        ), patch("pa.modules.agent_chat.get_principal_id", return_value="user:local"):
+            result = await get_prompt_acceptance_status(
+                request, "session-1", "browser-blocked-1"
+            )
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("approval", result["message"])
+        self.assertTrue(result["durably_pending"])
+        self.assertEqual(
+            result["next_automatic_action"], "resolve_pending_interaction"
+        )
 
 
 class AgentChatPromptRecoveryJsTests(unittest.TestCase):

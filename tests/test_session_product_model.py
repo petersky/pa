@@ -53,12 +53,28 @@ def test_presentation_contract_keeps_connection_turn_and_workflow_separate() -> 
         }
     )
     queued_view = build_session_presentation(queued, runtime=None, now=NOW)
-    assert queued_view["display_status"] == "Queued"
+    assert queued_view["display_status"] == "Restoring your work"
     assert queued_view["queue"] == {
         "count": 1,
-        "reason": "waiting_for_provider_capacity",
+        "reason": "waiting_for_recovery",
     }
     assert queued_view["connection"]["state"] == "disconnected"
+
+    disconnected_runtime = SimpleNamespace(
+        _closed=False,
+        connected=False,
+        prompting=True,
+        _queue=[],
+        _in_flight=SimpleNamespace(id="prompt-1"),
+        _pending_permissions={},
+        _pending_elicitations={},
+    )
+    disconnected_view = build_session_presentation(
+        queued, runtime=disconnected_runtime, now=NOW
+    )
+    assert disconnected_view["display_status"] == "Restoring your work"
+    assert disconnected_view["connection"]["state"] == "disconnected"
+    assert disconnected_view["turn"]["state"] == "queued"
 
 
 def test_presentation_reports_takeover_interactions_and_job_outcomes() -> None:
@@ -104,6 +120,35 @@ def test_presentation_reports_takeover_interactions_and_job_outcomes() -> None:
     failed = build_session_presentation(failed_job, now=NOW)
     assert failed["display_status"] == "Validation failed"
     assert failed["explanation"] == "The result did not validate."
+
+
+def test_dispatch_turn_completion_does_not_invent_workflow_success() -> None:
+    run = session(
+        purpose="automated_run",
+        control_mode="automation",
+        workflow_state="active",
+    )
+    unsettled = SimpleNamespace(
+        state="completed",
+        acknowledged_at=None,
+        reconciliation_state="pending",
+        followup_turns=[],
+        evaluated_outcome={},
+    )
+    view = build_session_presentation(run, dispatch=unsettled, now=NOW)
+    assert view["workflow"]["state"] == "active"
+    assert view["display_status"] == "Running"
+
+    settled = SimpleNamespace(
+        state="completed",
+        acknowledged_at=NOW,
+        reconciliation_state="completed",
+        followup_turns=[],
+        evaluated_outcome="attempt_succeeded",
+    )
+    assert build_session_presentation(run, dispatch=settled, now=NOW)["workflow"]["state"] == "active"
+    job = run.model_copy(update={"purpose": "one_shot_job"})
+    assert build_session_presentation(job, dispatch=settled, now=NOW)["workflow"]["state"] == "succeeded"
 
 
 @pytest.mark.asyncio
@@ -176,20 +221,36 @@ def test_idle_expiry_migration_reopens_chat_but_explicit_close_archives(tmp_path
     projection = CardProjection(database)
     idle = session(id="idle-chat", status="idle")
     explicit = session(id="explicit-chat", status="idle")
+    later_explicit = session(id="later-explicit-chat", status="idle")
     projection.save_session(idle)
     projection.save_session(explicit)
+    projection.save_session(later_explicit)
     projection.close_session(idle.id, reason="auto:idle_retention_expired")
     projection.close_session(explicit.id, reason="user_close")
+    projection.close_session(later_explicit.id, reason="auto:idle_retention_expired")
+    reopened = projection.get_session(later_explicit.id)
+    reopened.status = "available"
+    projection.save_session(reopened)
+    projection.close_session(later_explicit.id, reason="user_close")
+    incorrectly_reopened = projection.get_session(later_explicit.id)
+    incorrectly_reopened.status = "available"
+    incorrectly_reopened.archived_at = None
+    incorrectly_reopened.archive_reason = None
+    projection.save_session(incorrectly_reopened)
 
     migrated = CardProjection(database)
     restored_idle = migrated.get_session(idle.id)
     archived_explicit = migrated.get_session(explicit.id)
+    archived_after_idle = migrated.get_session(later_explicit.id)
     assert restored_idle is not None
     assert restored_idle.status == "available"
     assert restored_idle.archived_at is None
     assert archived_explicit is not None
     assert archived_explicit.status == "closed"
     assert archived_explicit.archived_at is not None
+    assert archived_after_idle is not None
+    assert archived_after_idle.status == "closed"
+    assert archived_after_idle.archived_at is not None
 
 
 @pytest.mark.asyncio

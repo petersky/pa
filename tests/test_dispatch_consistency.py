@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 from fastapi import HTTPException
 
 from pa.config import Settings
@@ -22,6 +23,7 @@ from pa.domain.models import (
     FleetInstance,
 )
 from pa.execution.dispatch import (
+    CapacityAdmission,
     CompletionOutbox,
     DispatchCompareConflict,
     DispatchEvent,
@@ -30,6 +32,56 @@ from pa.execution.dispatch import (
     DispatchWorker,
     GoalDispatchProvenance,
 )
+
+
+def test_nonlive_running_history_does_not_consume_fresh_execution_capacity(tmp_path: Path) -> None:
+    ledger = DispatchStore(tmp_path)
+    for index in range(5):
+        ledger.put(
+            DispatchRecord(
+                dispatch_id=f"historical-{index}",
+                mutation_id=f"mutation-{index}",
+                authority_instance_id="target",
+                authority_url="http://target",
+                target_instance_id="target",
+                state="running",
+                capacity_provider="codex",
+            )
+        )
+    observed_at = datetime.now(UTC)
+    candidate = DispatchRecord(
+        dispatch_id="candidate",
+        mutation_id="candidate-mutation",
+        authority_instance_id="target",
+        authority_url="http://target",
+        target_instance_id="target",
+        capacity_provider="codex",
+    )
+    capacity = CapacityAdmission(
+        limit=8,
+        source="configured_global",
+        provider="codex",
+        observed_active=3,
+        observed_global_active=3,
+        observed_at=observed_at,
+    )
+    execution_full, *_rest = ledger._constraint_counts_locked(candidate, capacity)
+    assert execution_full is False
+    ledger.put(
+        DispatchRecord(
+            dispatch_id="new-running",
+            mutation_id="new-running-mutation",
+            authority_instance_id="target",
+            authority_url="http://target",
+            target_instance_id="target",
+            state="running",
+            capacity_provider="codex",
+            updated_at=observed_at + timedelta(seconds=1),
+        )
+    )
+    tight_capacity = capacity.model_copy(update={"limit": 4, "global_limit": 4})
+    execution_full, *_rest = ledger._constraint_counts_locked(candidate, tight_capacity)
+    assert execution_full is True
 from pa.execution.progress import CompletionReportV1
 from pa.execution.reconciliation import CompletionReconciler
 from pa.goals.materialization import (
@@ -54,6 +106,7 @@ from pa.modules.fleet import (
     _expected_goal_dispatch_execution_identity,
     _goal_materialization_stage_provenance,
     _merge_dispatch_followup_operation,
+    _peer_dispatch_json,
     _peer_terminal_repair_evidence,
     _process_remote_dispatch,
     _release_terminal_repair_fence_if_uncommitted,
@@ -80,6 +133,42 @@ TARGET_ID = "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf"
 DISPATCH_ONE = "33333333-3333-4333-8333-333333333333"
 MUTATION_ONE = "44444444-4444-4444-8444-444444444444"
 CARD_ONE = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_materialization_pool_timeout_uses_one_isolated_retry(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, instance_id="authority", sync_token="secret")
+    fleet = MagicMock()
+    fleet.list_instances.return_value = [
+        FleetInstance(instance_id="target", name="target", url="http://target")
+    ]
+    shared = MagicMock()
+    shared.request = AsyncMock(side_effect=httpx.PoolTimeout("shared pool exhausted"))
+    request = request_for(
+        settings,
+        MagicMock(),
+        {"fleet_registry": fleet, "dispatch_http_client": shared},
+    )
+    isolated = MagicMock()
+    isolated.request = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={"dispatch_id": "dispatch-1", "resolvable": True},
+            request=httpx.Request("POST", "http://target/api/fleet/dispatch/materialize"),
+        )
+    )
+    client_cm = MagicMock()
+    client_cm.__aenter__ = AsyncMock(return_value=isolated)
+    client_cm.__aexit__ = AsyncMock(return_value=None)
+    with patch("pa.modules.fleet.httpx.AsyncClient", return_value=client_cm):
+        result = await _peer_dispatch_json(
+            request,
+            "target",
+            {"mutation_id": "mutation-1"},
+        )
+    assert result["dispatch_id"] == "dispatch-1"
+    shared.request.assert_awaited_once()
+    isolated.request.assert_awaited_once()
 
 
 def request_for(settings: Settings, store: MagicMock, services: dict | None = None):

@@ -215,6 +215,64 @@ def test_assigned_restart_handoff_tool_uses_identity_free_bound_route() -> None:
     assert "session_id" not in call.kwargs["json"]
 
 
+def test_assigned_restart_preview_can_show_editable_or_empty_continuation() -> None:
+    delegate = FakeMcp()
+    restricted = ToolAllowlistProxy(delegate, ASSIGNED_SERVICE_TOOL_ALLOWLIST)
+    store = MagicMock()
+    store.list_restart_handoffs.return_value = []
+    ctx = SimpleNamespace(settings=SimpleNamespace(), store=store)
+    with patch.dict(
+        os.environ,
+        {ASSIGNED_SERVICE_SESSION_ENV: "session-bound"},
+        clear=True,
+    ):
+        FleetModule().register_mcp(restricted, ctx)
+        with_prompt = delegate.functions["preview_agent_restart_handoff"](
+            continuation_prompt="  continue after restart  "
+        )
+        without_prompt = delegate.functions["preview_agent_restart_handoff"]()
+
+    assert with_prompt["operation"] == "service_restart_preview"
+    assert with_prompt["continuation_prompt"] == "continue after restart"
+    assert with_prompt["will_send_continuation"] is True
+    assert without_prompt["continuation_prompt"] is None
+    assert without_prompt["will_send_continuation"] is False
+
+
+def test_assigned_pending_restart_continuation_can_be_removed() -> None:
+    delegate = FakeMcp()
+    restricted = ToolAllowlistProxy(delegate, ASSIGNED_SERVICE_TOOL_ALLOWLIST)
+    settings = SimpleNamespace()
+    local_api = MagicMock(return_value={"continuation_prompt": ""})
+    with (
+        patch.dict(
+            os.environ,
+            {
+                ASSIGNED_SERVICE_MODE_ENV: "1",
+                ASSIGNED_SERVICE_SESSION_ENV: "session-bound",
+            },
+            clear=True,
+        ),
+        patch("pa.mcp.local_api.request_local_pa", local_api),
+    ):
+        FleetModule().register_mcp(restricted, SimpleNamespace(settings=settings))
+        result = delegate.functions["edit_agent_restart_handoff"](
+            handoff_id="handoff-1", continuation_prompt=""
+        )
+
+    assert result == {"continuation_prompt": ""}
+    call = local_api.call_args
+    assert call.args == (
+        settings,
+        "POST",
+        "/api/goal-assigned-session/restart-handoff/edit",
+    )
+    assert call.kwargs["json"] == {
+        "handoff_id": "handoff-1",
+        "continuation_prompt": "",
+    }
+
+
 def test_assigned_local_api_derives_exact_capability_without_owner_token() -> None:
     dispatch_id = "dispatch-bound"
     session_id = "session-bound"

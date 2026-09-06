@@ -296,6 +296,33 @@ class TranscriptStorage:
                 return event
         return None
 
+    def find_prompt_lifecycle(
+        self, session_id: str, prompt_id: str
+    ) -> TranscriptEvent | None:
+        """Return the newest bounded lifecycle evidence for one prompt id."""
+        types = (
+            "queue_enqueued",
+            "queue_dequeued",
+            "user_message",
+            "prompt_blocked",
+            "turn_completed",
+            "error",
+            "connection_lost",
+        )
+        with self._conn() as conn:
+            marks = ",".join("?" for _ in types)
+            rows = conn.execute(
+                f"SELECT * FROM transcript_events WHERE session_id=? "
+                f"AND event_type IN ({marks}) ORDER BY seq DESC LIMIT 1000",
+                [session_id, *types],
+            ).fetchall()
+        for row in rows:
+            event = self._event(row)
+            payload = event.payload or {}
+            if payload.get("id") == prompt_id or payload.get("queued_prompt_id") == prompt_id:
+                return event
+        return None
+
     def prune(self, session_ids: list[str], *, keep_audit: bool = True) -> int:
         if not session_ids: return 0
         changed = 0

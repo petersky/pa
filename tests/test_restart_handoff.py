@@ -29,6 +29,8 @@ from pa.modules.agent_chat import (
 )
 from pa.modules.fleet import (
     AssignedRestartHandoffBody,
+    AssignedRestartHandoffEditBody,
+    edit_assigned_restart_handoff,
     request_assigned_restart_handoff,
 )
 from pa.modules.items import operation_outcome_api
@@ -444,6 +446,33 @@ def test_assigned_restart_handoff_derives_exact_durable_session() -> None:
     )
 
 
+def test_assigned_restart_handoff_edit_derives_exact_durable_session() -> None:
+    manager = SimpleNamespace(edit_restart_handoff=AsyncMock())
+    manager.edit_restart_handoff.return_value = RestartHandoff(
+        id="handoff-1",
+        session_id="durable-session",
+        idempotency_key="assigned-key",
+        continuation_prompt="",
+        continuation_prompt_id="assigned-prompt",
+    )
+    request = MagicMock()
+    request.app.state.ctx.require_service.return_value = manager
+    body = AssignedRestartHandoffEditBody(
+        handoff_id="handoff-1", continuation_prompt=""
+    )
+    record = SimpleNamespace(session_id="durable-session")
+
+    with patch("pa.modules.fleet._assigned_local_dispatch", return_value=record):
+        result = asyncio.run(edit_assigned_restart_handoff(request, body))
+
+    assert result["continuation_prompt"] == ""
+    manager.edit_restart_handoff.assert_awaited_once_with(
+        session_id="durable-session",
+        handoff_id="handoff-1",
+        continuation_prompt="",
+    )
+
+
 def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) -> None:
     store = CardProjection(tmp_path / "pa.db")
     session = store.save_session(AgentSession(id="s", agent_name="codex", status="quiesced"))
@@ -471,6 +500,52 @@ def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) ->
         _defer_drain=True,
     )
     assert store.get_restart_handoff(receipt.id).status == "continuation_queued"
+
+
+def test_restart_without_continuation_does_not_recover_or_enqueue(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="no-prompt", agent_name="codex", status="quiesced"))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager._execute_restart_handoff = AsyncMock()
+    receipt = asyncio.run(
+        manager.request_restart_handoff(
+            session_id=session.id, continuation_prompt="", idempotency_key="no-prompt"
+        )
+    )
+    store.update_restart_handoff(receipt.id, status="restarting")
+    manager.recover_session = AsyncMock()
+
+    asyncio.run(manager._resume_restart_handoffs())
+
+    manager.recover_session.assert_not_awaited()
+    persisted = store.get_restart_handoff(receipt.id)
+    assert persisted.status == "restart_completed"
+    assert persisted.continuation_prompt == ""
+
+
+def test_pending_restart_continuation_can_be_edited_or_removed(tmp_path: Path) -> None:
+    store = CardProjection(tmp_path / "pa.db")
+    store.save_session(AgentSession(id="edit", agent_name="codex"))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager._execute_restart_handoff = AsyncMock()
+    receipt = asyncio.run(
+        manager.request_restart_handoff(
+            session_id="edit", continuation_prompt="first", idempotency_key="edit"
+        )
+    )
+    edited = asyncio.run(
+        manager.edit_restart_handoff(
+            session_id="edit", handoff_id=receipt.id, continuation_prompt=""
+        )
+    )
+    assert edited.continuation_prompt == ""
+    store.update_restart_handoff(receipt.id, status="quiescing")
+    with pytest.raises(ValueError, match="before PA begins quiescing"):
+        asyncio.run(
+            manager.edit_restart_handoff(
+                session_id="edit", handoff_id=receipt.id, continuation_prompt="too late"
+            )
+        )
 
 
 def test_long_turn_handoff_waits_for_turn_and_startup_fence_before_restart(

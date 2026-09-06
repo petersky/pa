@@ -216,7 +216,7 @@ class ChatWidgetTemplateTests(unittest.TestCase):
         self.assertIn("data-acw-toggle-system", html)
         self.assertIn("data-acw-toggle-raw", html)
         self.assertIn("data-acw-recover", html)
-        self.assertIn("Restart session", html)
+        self.assertIn("Resume session", html)
         self.assertIn("data-acw-end", html)
         self.assertIn("data-acw-stop", html)
         self.assertIn("disabled>Stop", html)

@@ -112,6 +112,7 @@ class PolicyDecision(BaseModel):
 class TransitionStatus(StrEnum):
     APPROVED_APPLIED = "approved_applied"
     APPROVED_PENDING = "approved_pending_next_turn"
+    APPROVAL_REQUIRED = "approval_required"
     REJECTED = "rejected"
     UNSUPPORTED = "unsupported"
     STALE = "stale"
@@ -148,6 +149,8 @@ class ModeTransitionResult(BaseModel):
     duplicate: bool = False
     policy_decision_id: str | None = None
     authority_version: str | None = None
+    approval_notification_id: str | None = None
+    approved_by: str | None = None
     applied_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

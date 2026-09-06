@@ -632,6 +632,17 @@ class NotificationService:
         interaction = notification.interaction
         if not interaction:
             return
+        if interaction.protocol_method == "pa/collaboration_mode_approval":
+            collaboration = self.ctx.services.get("collaboration")
+            if collaboration is None:
+                collaboration = self.ctx.services.get("collaboration_service")
+            handler = getattr(collaboration, "handle_mode_approval", None)
+            if not callable(handler):
+                raise RuntimeError("Collaboration approval service is unavailable")
+            result = handler(notification, response)
+            if inspect.isawaitable(result):
+                await result
+            return
         if interaction.continuation_mode == "none":
             return
         manager = self.ctx.services.get("instance_agent")

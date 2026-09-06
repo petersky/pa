@@ -4,6 +4,7 @@ import inspect
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.collaboration.commands import (
@@ -40,9 +41,12 @@ from pa.collaboration.store import (
 def _current_mode(session: Any) -> CollaborationMode:
     config = dict(getattr(session, "config_json", {}) or {})
     collaboration = dict(config.get("collaboration") or {})
-    value = collaboration.get("current_mode")
+    # ``values`` is the provider-confirmed configuration projection.  The
+    # collaboration block is PA's policy/audit metadata and may lag a direct,
+    # authenticated user configuration change across a restart.
+    value = dict(config.get("values") or {}).get("collaboration_mode")
     if value is None:
-        value = dict(config.get("values") or {}).get("collaboration_mode")
+        value = collaboration.get("current_mode")
     try:
         return CollaborationMode(str(value).lower())
     except ValueError, TypeError:
@@ -232,7 +236,7 @@ class CollaborationService:
                 )
         return None, None, authority_version
 
-    async def _notify(self, kind: str, session: Any, result: Any) -> None:
+    async def _notify(self, kind: str, session: Any, result: Any) -> Any | None:
         if not self.notifier:
             return
         result_payload = (
@@ -252,6 +256,10 @@ class CollaborationService:
             # that module is not installed on every instance yet.
             try:
                 from pa.domain.notifications import (
+                    InteractionChoice,
+                    InteractionKind,
+                    InteractionRequest,
+                    NotificationAction,
                     NotificationCreate,
                     NotificationPriority,
                     NotificationSeverity,
@@ -260,6 +268,7 @@ class CollaborationService:
                 )
 
                 titles = {
+                    "collaboration_mode_approval": "Approve collaboration-mode change",
                     "collaboration_mode_pending": "Collaboration-mode change pending",
                     "collaboration_mode_applied": "Collaboration mode changed",
                     "collaboration_mode_rejected": "Collaboration-mode change not applied",
@@ -272,8 +281,14 @@ class CollaborationService:
                     else str(result_payload)
                 )
                 principal = session.principal_id or None
-                create(
+                approval = kind == "collaboration_mode_approval"
+                notice = create(
                     NotificationCreate(
+                        id=(
+                            result_payload.get("approval_notification_id")
+                            if approval
+                            else None
+                        ),
                         realm_id=session.realm_id,
                         visibility=(
                             NotificationVisibility.PRINCIPAL
@@ -281,17 +296,21 @@ class CollaborationService:
                             else NotificationVisibility.REALM
                         ),
                         principal_id=principal,
-                        type=NotificationType.GENERAL,
+                        type=(
+                            NotificationType.INTERACTION
+                            if approval
+                            else NotificationType.GENERAL
+                        ),
                         severity=(
                             NotificationSeverity.WARNING
-                            if kind.endswith(("rejected", "escalation"))
+                            if approval or kind.endswith(("rejected", "escalation"))
                             else NotificationSeverity.SUCCESS
                             if kind.endswith("applied")
                             else NotificationSeverity.INFO
                         ),
                         priority=(
                             NotificationPriority.HIGH
-                            if kind.endswith("escalation")
+                            if approval or kind.endswith("escalation")
                             else NotificationPriority.NORMAL
                         ),
                         title=titles.get(kind, "Collaboration workflow update"),
@@ -303,6 +322,46 @@ class CollaborationService:
                         project_id=session.project_id,
                         owner_instance_id=self.settings.instance_id,
                         capability="pa.collaboration-mode.v1",
+                        actions=(
+                            [
+                                NotificationAction(
+                                    id="respond",
+                                    kind="respond",
+                                    label="Review decision",
+                                    enabled=True,
+                                )
+                            ]
+                            if approval
+                            else []
+                        ),
+                        interaction=(
+                            InteractionRequest(
+                                request_id=str(result_payload.get("request_id")),
+                                kind=InteractionKind.APPROVAL,
+                                prompt=(
+                                    f"Approve changing this session from Plan to {result_payload.get('requested_mode', 'default')}? "
+                                    f"{reason}"
+                                )[:8000],
+                                choices=[
+                                    InteractionChoice(
+                                        id="approve",
+                                        label="Approve and continue",
+                                        value="approve",
+                                    ),
+                                    InteractionChoice(
+                                        id="decline",
+                                        label="Keep Plan mode",
+                                        value="decline",
+                                    ),
+                                ],
+                                allow_cancel=False,
+                                protocol_method="pa/collaboration_mode_approval",
+                                protocol_request_id=str(result_payload.get("request_id")),
+                                continuation_mode="protocol",
+                            )
+                            if approval
+                            else None
+                        ),
                         deduplication_key=(
                             f"collaboration:{kind}:"
                             f"{result_payload.get('request_id') or result_payload.get('id') or request_fingerprint(payload)}"
@@ -313,9 +372,13 @@ class CollaborationService:
                     principal_id=principal or "system:collaboration",
                     instance_id=self.settings.instance_id,
                 )
-                return
-            except ImportError, TypeError, ValueError:
+                return notice
+            except (ImportError, TypeError, ValueError):
                 # Older peers may expose a different notification surface.
+                if kind == "collaboration_mode_approval":
+                    # Approval-required work must never degrade into a passive
+                    # general notification with no way for the user to answer.
+                    raise
                 pass
         for name in ("publish", "emit", "create_notification", "notify"):
             call = getattr(self.notifier, name, None)
@@ -328,6 +391,36 @@ class CollaborationService:
             except TypeError:
                 continue
             return
+
+    def _needs_user_approval(
+        self,
+        policy: CollaborationPolicy | None,
+        current: CollaborationMode,
+        request: ModeTransitionRequest,
+    ) -> bool:
+        return bool(
+            policy is not None
+            and current == CollaborationMode.PLAN
+            and request.requested_mode == CollaborationMode.DEFAULT
+            and policy.lifecycle.require_user_approval
+            and request.actor == "agent"
+        )
+
+    def _record_pending_approval(self, session: Any, result: Any) -> None:
+        config = dict(session.config_json or {})
+        durable = dict(config.get("durable_runtime") or {})
+        durable["pending_interaction"] = {
+            "kind": "approval",
+            "count": 1,
+            "request_ids": [result.request_id],
+            "notification_id": result.approval_notification_id,
+            "action": "Approve or decline the requested collaboration-mode change.",
+        }
+        config["durable_runtime"] = durable
+        session.config_json = config
+        save = getattr(self.domain_store, "save_session", None)
+        if callable(save):
+            save(session)
 
     def _result(
         self,
@@ -364,17 +457,6 @@ class CollaborationService:
         allowed, reason = transition_allowed(policy, current, request.requested_mode)
         if not allowed:
             return allowed, reason
-        if (
-            policy is not None
-            and current == CollaborationMode.PLAN
-            and request.requested_mode == CollaborationMode.DEFAULT
-            and policy.lifecycle.require_user_approval
-            and request.actor == "agent"
-        ):
-            return (
-                False,
-                f"Policy {policy.id} requires durable user approval before leaving Plan mode; the agent may not self-approve implementation.",
-            )
         return allowed, reason
 
     async def request_transition(
@@ -387,7 +469,13 @@ class CollaborationService:
                 raise IdempotencyConflict(
                     "mode-transition idempotency key was reused for a different request"
                 )
-            return prior[2].model_copy(update={"duplicate": True})
+            duplicate = prior[2].model_copy(update={"duplicate": True})
+            if duplicate.status == TransitionStatus.APPROVAL_REQUIRED:
+                await self._notify(
+                    "collaboration_mode_approval", session, duplicate
+                )
+                self._record_pending_approval(session, duplicate)
+            return duplicate
 
         current = _current_mode(session)
         stale, reason, authority_version = self._validate_provenance(session, request)
@@ -434,6 +522,32 @@ class CollaborationService:
             dispatch_id=session.dispatch_id,
             card_id=session.card_id,
         )
+        if allowed and self._needs_user_approval(policy, current, request):
+            result = self._result(
+                request,
+                TransitionStatus.APPROVAL_REQUIRED,
+                current,
+                (
+                    f"Policy {policy.id} requires trusted user approval before "
+                    "leaving Plan mode. The original request and pending work are preserved."
+                ),
+                authority_version=authority_version,
+                policy_decision_id=decision.id,
+                pending=True,
+            )
+            result.approval_notification_id = str(
+                uuid5(
+                    NAMESPACE_URL,
+                    f"pa-collaboration-approval:{session.id}:{result.request_id}",
+                )
+            )
+            # Persist the request before publishing the actionable interaction;
+            # an immediate response must always find its correlated request.
+            self.store.save_mode_request(request, result)
+            await self._notify("collaboration_mode_approval", session, result)
+            self._record_pending_approval(session, result)
+            self.store.update_mode_result(request, result)
+            return result
         if not allowed:
             result = self._result(
                 request,
@@ -560,6 +674,8 @@ class CollaborationService:
         if not pending:
             return None
         request, prior = pending
+        if prior.status == TransitionStatus.APPROVAL_REQUIRED:
+            return prior
         stale, reason, authority_version = self._validate_provenance(
             runtime.session, request
         )
@@ -595,6 +711,134 @@ class CollaborationService:
                     runtime, request, decision, authority_version
                 )
         self.store.update_mode_result(request, result)
+        return result
+
+    async def handle_mode_approval(self, notification: Any, response: Any) -> None:
+        """Consume one authenticated notification decision and resume exactly once."""
+        if not notification.interaction or not notification.session_id:
+            raise RuntimeError("Collaboration approval is missing session provenance")
+        pending = self.store.pending_mode_request(notification.session_id)
+        if not pending:
+            return
+        request, prior = pending
+        if (
+            prior.status != TransitionStatus.APPROVAL_REQUIRED
+            or prior.request_id != notification.interaction.protocol_request_id
+            or prior.approval_notification_id != notification.id
+        ):
+            raise RuntimeError("Collaboration approval no longer matches pending work")
+        principal = str(notification.interaction.response_principal or "")
+        if not principal or principal.startswith(("agent", "system:")):
+            raise RuntimeError("Collaboration approval requires an authenticated user")
+        approved = response.choice_id == "approve" and not response.cancel
+        runtime = self.manager.get(notification.session_id) if self.manager else None
+        if not approved:
+            result = prior.model_copy(
+                update={
+                    "status": TransitionStatus.REJECTED,
+                    "reason": "The user declined the collaboration-mode change.",
+                    "pending": False,
+                    "approved_by": principal,
+                }
+            )
+            self.store.update_mode_result(request, result)
+        else:
+            if not runtime or not runtime.connected or runtime.prompting:
+                result = prior.model_copy(
+                    update={
+                        "status": TransitionStatus.APPROVED_PENDING,
+                        "reason": "Trusted user approval is recorded; PA will apply it at the next turn boundary.",
+                        "pending": True,
+                        "approved_by": principal,
+                    }
+                )
+            else:
+                decision = self.store.latest_decision(
+                    session_id=notification.session_id,
+                    dispatch_id=runtime.session.dispatch_id,
+                )
+                result = await self._apply(
+                    runtime, request, decision, prior.authority_version
+                )
+                result.approved_by = principal
+            self.store.update_mode_result(request, result)
+            if (
+                result.status == TransitionStatus.APPROVED_PENDING
+                and self.manager is not None
+                and (not runtime or not runtime.connected)
+            ):
+                try:
+                    runtime = await self.manager.recover_session(
+                        notification.session_id
+                    )
+                    if runtime.connected and not runtime.prompting:
+                        applied = await self.apply_pending(runtime)
+                        if applied is not None:
+                            result = applied.model_copy(update={"approved_by": principal})
+                            self.store.update_mode_result(request, result)
+                except Exception:
+                    # Approval is already durable. The normal recovery
+                    # coordinator will retry without replaying the prompt.
+                    runtime = None
+        get_session = getattr(self.domain_store, "get_session", None)
+        session = (
+            runtime.session
+            if runtime
+            else get_session(notification.session_id)
+            if callable(get_session)
+            else None
+        )
+        if session is not None:
+            config = dict(session.config_json or {})
+            durable = dict(config.get("durable_runtime") or {})
+            pending_interaction = dict(durable.get("pending_interaction") or {})
+            if pending_interaction.get("notification_id") == notification.id:
+                durable.pop("pending_interaction", None)
+                config["durable_runtime"] = durable
+                session.config_json = config
+                save = getattr(self.domain_store, "save_session", None)
+                if callable(save):
+                    save(session)
+        if runtime and result.status == TransitionStatus.APPROVED_APPLIED:
+            start_drain = getattr(runtime, "_start_drain", None)
+            if callable(start_drain):
+                start_drain()
+
+    async def reconcile_provider_mode(
+        self, session: Any, confirmed_mode: str
+    ) -> ModeTransitionResult | None:
+        """Settle stale PA approval state from authenticated provider evidence."""
+        try:
+            mode = CollaborationMode(confirmed_mode)
+        except ValueError:
+            return None
+        pending = self.store.pending_mode_request(session.id)
+        if not pending:
+            return None
+        request, prior = pending
+        if request.requested_mode != mode:
+            return None
+        result = prior.model_copy(
+            update={
+                "status": TransitionStatus.APPROVED_APPLIED,
+                "effective_mode": mode,
+                "reason": (
+                    "The provider confirmed the requested mode through its "
+                    "authenticated configuration channel; no repeated approval is required."
+                ),
+                "pending": False,
+                "applied_at": datetime.now(UTC),
+            }
+        )
+        self.store.update_mode_result(request, result)
+        config = dict(session.config_json or {})
+        durable = dict(config.get("durable_runtime") or {})
+        pending_interaction = dict(durable.get("pending_interaction") or {})
+        if pending_interaction.get("notification_id") == prior.approval_notification_id:
+            durable.pop("pending_interaction", None)
+            config["durable_runtime"] = durable
+            session.config_json = config
+        await self._notify("collaboration_mode_applied", session, result)
         return result
 
     async def prepare_turn(self, runtime: Any) -> ModeTransitionResult | None:
@@ -656,6 +900,37 @@ class CollaborationService:
                 + (" and expiry" if expired else "")
                 + f"; fallback is {lifecycle.unavailable_user_fallback.value}."
             )
+            if (
+                lifecycle.require_user_approval
+                and lifecycle.unavailable_user_fallback.value == "escalate"
+            ):
+                card = (
+                    self.domain_store.get_card(
+                        session.card_id, realm_id=session.realm_id
+                    )
+                    if session.card_id
+                    else None
+                )
+                approval = await self.request_transition(
+                    session,
+                    ModeTransitionRequest(
+                        requested_mode=CollaborationMode.DEFAULT,
+                        purpose=reason,
+                        intended_next_action=(
+                            "Continue the original accepted prompt exactly once after approval."
+                        ),
+                        session_id=session.id,
+                        dispatch_id=session.dispatch_id,
+                        card_id=session.card_id,
+                        authority_instance_id=session.authority_instance_id
+                        or self.settings.instance_id,
+                        authority_version=card.updated_at.isoformat() if card else None,
+                        idempotency_key=f"plan-lifecycle:{session.id}:{turns}:approval",
+                        actor="agent",
+                    ),
+                )
+                if approval.status == TransitionStatus.APPROVAL_REQUIRED:
+                    raise RuntimeError(approval.reason)
             await self._notify(
                 "collaboration_plan_escalation",
                 session,
@@ -816,6 +1091,8 @@ class CollaborationService:
                             TransitionStatus.APPROVED_APPLIED,
                             TransitionStatus.APPROVED_PENDING,
                         }
+                        else CommandResultStatus.FORWARDED
+                        if mode_result.status == TransitionStatus.APPROVAL_REQUIRED
                         else CommandResultStatus.UNSUPPORTED
                         if mode_result.status == TransitionStatus.UNSUPPORTED
                         else CommandResultStatus.STALE

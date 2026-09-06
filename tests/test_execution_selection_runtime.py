@@ -127,16 +127,16 @@ def test_unsolicited_native_drift_blocks_and_durably_retains_original_prompt(wir
     runtime = manager.get(created.json()["session"]["id"])
 
     async def run():
-        from pa.execution.selection import SelectionError
-
         config = runtime.session.config_json
         next(o for o in config["options"] if o["id"] == "reasoning_effort")[
             "currentValue"
         ] = "low"
-        with pytest.raises(SelectionError, match="no longer confirms"):
+        assert (
             await runtime.prompt(
                 "unchanged prompt payload", prompt_id="same-original-prompt", wait=True
             )
+            == "blocked"
+        )
         assert runtime._queue[0].id == "same-original-prompt"
         durable = manager.store.get_session(runtime.session.id)
         assert (
@@ -169,19 +169,19 @@ def test_automatic_native_defaults_bind_after_confirmation_and_cannot_drift(wire
     runtime = manager.get(snap["session"]["id"])
 
     async def run():
-        from pa.execution.selection import SelectionError
-
         next(
             o
             for o in runtime.session.config_json["options"]
             if o["id"] == "reasoning_effort"
         )["currentValue"] = "xhigh"
-        with pytest.raises(SelectionError, match="no longer confirms"):
+        assert (
             await runtime.prompt(
                 "preserve automatic native default",
                 prompt_id="auto-bound-prompt",
                 wait=True,
             )
+            == "blocked"
+        )
         assert runtime._queue[0].id == "auto-bound-prompt"
 
     client.portal.call(run)
