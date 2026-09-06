@@ -15,6 +15,7 @@ from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.providers.base import AgentProviderSpec
 from pa.config import Settings
 from pa.domain.models import AgentSession, Card, ProjectRepository, Repository
+from pa.domain.projection import CardProjection
 from pa.execution.selection import ExecutionCandidate
 from pa.execution.selection_store import SelectionStore
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
@@ -94,6 +95,73 @@ def manager_for(
     manager = WorkspaceManager(settings, store)
     linked = LinkedRepository(repository=repository, branch="main")
     return manager, repository, linked
+
+
+@pytest.mark.parametrize("url", [
+    "git@github.com:pa-test/admission.git",
+    "ssh://git@github.com/pa-test/admission.git",
+    "https://github.com/pa-test/admission.git",
+])
+@pytest.mark.parametrize("concurrent_binding", [False, True])
+def test_fresh_repository_admission_preserves_binding_cas(
+    tmp_path: Path, monkeypatch, url: str, concurrent_binding: bool,
+) -> None:
+    # Exercise real Git provisioning and SQLite admission without network access.
+    remote = make_remote(tmp_path)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.{remote}.insteadOf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", url)
+    settings = Settings(data_dir=tmp_path / "data", workspace_root=tmp_path / "workspace")
+    settings.data_dir.mkdir()
+    store = CardProjection(settings.data_dir / "pa.db")
+    repository = Repository(id="repo-1", name="Admission", url=url)
+    project = SimpleNamespace(realm_id="default", tool_config={})
+    monkeypatch.setattr(store, "get_project", lambda *a, **kw: project)
+    monkeypatch.setattr(store, "list_project_repositories", lambda *a, **kw: [
+        (repository, ProjectRepository(project_id="project-1", repository_id="repo-1", branch="main"))
+    ])
+    session = store.save_session(AgentSession(
+        id="fresh", agent_name="codex", card_id="card-1", project_id="project-1",
+        origin_instance_id=settings.instance_id,
+        config_json={"execution_context": {"materialization_plan": {"profile": "repository"}}},
+    ))
+    manager = AgentSessionManager(settings, store)
+    provision = manager.workspace_manager.provision_project
+    competing = {"version": 1, "execution_card_id": "different-card"}
+
+    def provision_and_observe(**kwargs):
+        # The intervening provisioning-status save must not publish a seed that
+        # invalidates the expected empty binding captured at admission entry.
+        assert store.get_session(session.id).execution_binding == {}
+        workspace = provision(**kwargs)
+        if concurrent_binding:
+            store.set_session_execution_binding(
+                session.id, competing, reason="workspace_binding_initialized", expected_binding={},
+            )
+        return workspace
+
+    monkeypatch.setattr(manager.workspace_manager, "provision_project", provision_and_observe)
+    if concurrent_binding:
+        with pytest.raises(WorkspaceProvisioningError, match="changed before audited transition"):
+            asyncio.run(manager._prepare_workspace(session, requested_cwd=None, provider_id="codex"))
+        assert store.get_session(session.id).execution_binding == competing
+    else:
+        asyncio.run(manager._prepare_workspace(session, requested_cwd=None, provider_id="codex"))
+        binding = store.get_session(session.id).execution_binding
+        lease, = manager.workspace_manager.list()
+        assert lease.state == "ready"
+        assert lease.fencing_token > 0
+        assert binding["repository_ids"] == [repository.id]
+        assert binding["lease_ids"] == [lease.id]
+        assert binding["worktree_paths"] == [lease.worktree_path]
+        assert binding["branch"] == lease.branch
+        assert binding["base_sha"] == lease.base_sha
+        assert binding["cwd"] == lease.worktree_path
+        assert binding["execution_card_id"] == "card-1"
+    history = store.list_session_execution_binding_history(session.id)
+    assert len(history) == 1
+    assert history[0]["prior_binding"] == {}
+    assert history[0]["reason"] == "workspace_binding_initialized"
 
 
 def test_provisions_cached_fenced_worktree_and_provider_context(tmp_path: Path) -> None:

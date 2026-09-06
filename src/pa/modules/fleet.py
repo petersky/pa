@@ -15433,6 +15433,7 @@ class FleetModule(Module):
             collaboration_unattended: bool = False,
             effort: str | None = None,
             allow_concurrent: bool = False,
+            concurrent_reason: str | None = None,
             capacity_override: bool = False,
             capacity_override_reason: str | None = None,
             participation_override: bool = False,
@@ -15484,6 +15485,7 @@ class FleetModule(Module):
                     "collaboration_unattended": collaboration_unattended,
                     "effort": effort,
                     "allow_concurrent": allow_concurrent,
+                    "concurrent_reason": concurrent_reason,
                     "capacity_override": capacity_override,
                     "capacity_override_reason": capacity_override_reason,
                     "participation_override": participation_override,
@@ -15523,6 +15525,7 @@ class FleetModule(Module):
             cwd: str | None = None,
             config: dict[str, str | bool] | None = None,
             allow_concurrent: bool = False,
+            concurrent_reason: str | None = None,
             capacity_override: bool = False,
             capacity_override_reason: str | None = None,
             participation_override: bool = False,
@@ -15576,6 +15579,8 @@ class FleetModule(Module):
                 )
             if allow_concurrent:
                 payload["allow_concurrent"] = True
+            if concurrent_reason is not None:
+                payload["concurrent_reason"] = concurrent_reason
             if capacity_override:
                 payload["capacity_override"] = True
                 payload["capacity_override_reason"] = capacity_override_reason

@@ -178,6 +178,34 @@ class FleetMcpTests(unittest.TestCase):
             "session-live",
         )
 
+    def test_concurrent_dispatch_reason_reaches_http_validation(self) -> None:
+        from pydantic import ValidationError
+        from pa.modules.fleet import FleetDispatchBody, RemoteAgentStartBody
+
+        for name, body_type in (
+            ("dispatch_card", FleetDispatchBody),
+            ("dispatch_card_to_instance", RemoteAgentStartBody),
+        ):
+            with self.subTest(tool=name):
+                tool = self.mcp.functions[name]
+                self.assertIn("concurrent_reason", inspect.signature(tool).parameters)
+                kwargs = dict(card_id="card-1", instance_id="target",
+                              idempotency_key="parallel-work", allow_concurrent=True,
+                              concurrent_reason="Independent repair in a separate leased worktree")
+                tool(**kwargs)
+                payload = self.local_api.call_args.kwargs["json"]
+                body = body_type.model_validate(payload)
+                self.assertEqual(body.concurrent_reason, kwargs["concurrent_reason"])
+                self.assertTrue(body.allow_concurrent)
+
+                tool(**{**kwargs, "concurrent_reason": " "})
+                with self.assertRaisesRegex(ValidationError, "concurrent_reason"):
+                    body_type.model_validate(self.local_api.call_args.kwargs["json"])
+
+                tool(**kwargs, context_source_session_id="source-session")
+                with self.assertRaisesRegex(ValidationError, "context boundary"):
+                    body_type.model_validate(self.local_api.call_args.kwargs["json"])
+
     def test_preview_preserves_legacy_and_invalid_profiles_for_typed_api_handling(
         self,
     ) -> None:
