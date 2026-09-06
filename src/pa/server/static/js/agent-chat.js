@@ -267,6 +267,8 @@
     this.subscriptionGeneration = 0;
     this.routeAbortController = null;
     this.lastSeq = 0;
+    this.liveGapTarget = 0;
+    this.liveGapLoading = false;
     this.transcriptEvents = [];
     this.seenEvents = {};
     this.hasOlder = false;
@@ -556,6 +558,10 @@
     });
     const timeoutId = controller._deadlineTimer;
     if (timeoutId && typeof timeoutId.unref === "function") timeoutId.unref();
+    if (opts.signal) {
+      if (opts.signal.aborted) controller.abort();
+      else opts.signal.addEventListener("abort", function () { controller.abort(); }, { once: true });
+    }
     const requestOpts = Object.assign({}, opts, { signal: controller.signal });
     return Promise.race([this.api(path, requestOpts), deadline])
       .catch(function (error) {
@@ -689,6 +695,8 @@
     this.apiBase = this.defaultApiBase || "/api/agent";
     this.root.dataset.apiBase = this.apiBase;
     this.lastSeq = 0;
+    this.liveGapTarget = 0;
+    this.liveGapLoading = false;
     this.sessionClosed = true;
     this.sessionRecoverable = false;
     this.durableHistoryAvailable = false;
@@ -720,7 +728,8 @@
       return Promise.resolve(null);
     }
     const self = this;
-    return this.api("/history/" + encodeURIComponent(sessionId)).then(function (history) {
+    return this.apiWithTimeout("/history/" + encodeURIComponent(sessionId) +
+      "?message_boundaries=true&limit=" + TRANSCRIPT_PAGE_LIMIT, LIVE_SNAPSHOT_TIMEOUT_MS).then(function (history) {
       if (!self._isCurrentSessionRequest(sessionId, requestGeneration)) return null;
       const snap = {
         session: history.session,
@@ -945,24 +954,20 @@
       messages.push(child.cloneNode(true));
     });
     if (!messages.length && !this.transcriptEvents.length) return;
-    const tools = [];
-    if (this.els.toolActivity) {
-      Array.from(this.els.toolActivity.children).forEach(function (child) {
-        if (child.hasAttribute("data-acw-tool-empty")) return;
-        tools.push(child.cloneNode(true));
-      });
-    }
     sessionDomCache.set(key, {
       capturedAt: Date.now(),
       lastSeq: this.lastSeq,
-      transcriptEvents: this.transcriptEvents.slice(),
+      transcriptEvents: this._compactEvents(this.transcriptEvents),
+      olderError: this.olderError,
+      newerError: this.newerError,
       hasOlder: this.hasOlder,
       olderCursor: this.olderCursor,
       hasNewer: this.hasNewer,
       newerCursor: this.newerCursor,
       providerId: this.providerId,
-      messagesHtml: messages.map(function (node) { return node.outerHTML; }).join(""),
-      toolsHtml: tools.map(function (node) { return node.outerHTML; }).join(""),
+      unsequencedHtml: messages.filter(function (node) {
+        return !node.dataset.sourceSeq;
+      }).map(function (node) { return node.outerHTML; }).join(""),
       scrollTop: this.els.messages.scrollTop,
       nearBottom: this.isNearBottom(),
     });
@@ -982,46 +987,36 @@
     this.transcriptEvents = (entry.transcriptEvents || []).slice();
     this.lastSeq = entry.lastSeq || 0;
     this.hasOlder = !!entry.hasOlder;
+    this.olderError = entry.olderError || "";
+    this.newerError = entry.newerError || "";
     this.olderCursor = entry.olderCursor || null;
     this.hasNewer = !!entry.hasNewer;
     this.newerCursor = entry.newerCursor || null;
     this.providerId = entry.providerId || this.providerId;
-    this._rebuildSeenEvents();
-    if (this.els.messages) {
-      Array.from(this.els.messages.children).forEach(function (child) {
-        if (
-          !child.hasAttribute("data-acw-placeholder") &&
-          !child.hasAttribute("data-acw-load-older") &&
-          !child.hasAttribute("data-acw-load-older-status") &&
-          !child.hasAttribute("data-acw-load-newer") &&
-          !child.hasAttribute("data-acw-load-newer-status")
-        ) child.remove();
-      });
-      if (entry.messagesHtml) {
-        const holder = document.createElement("div");
-        holder.innerHTML = entry.messagesHtml;
-        while (holder.firstChild) this.els.messages.appendChild(holder.firstChild);
-        this.clearPlaceholder();
+    this.renderTranscript(this.transcriptEvents, { scrollBottom: !!entry.nearBottom });
+    if (entry.unsequencedHtml && this.els.messages) {
+      const holder = document.createElement("div");
+      holder.innerHTML = entry.unsequencedHtml;
+      while (holder.firstChild) {
+        const row = holder.firstChild;
+        const user = row.querySelector(".acw-bubble-user");
+        if (user && this._isDuplicateUserBubble(user.dataset.markdown || "")) row.remove();
+        else this.els.messages.appendChild(row);
       }
       this.messageRowCount = this.els.messages.querySelectorAll(".acw-msg").length;
-      if (entry.nearBottom) this.scrollToBottom();
-      else this.els.messages.scrollTop = entry.scrollTop || 0;
     }
-    if (this.els.toolActivity && entry.toolsHtml) {
-      Array.from(this.els.toolActivity.children).forEach(function (child) {
-        if (!child.hasAttribute("data-acw-tool-empty")) child.remove();
-      });
-      const holder = document.createElement("div");
-      holder.innerHTML = entry.toolsHtml;
-      while (holder.firstChild) this.els.toolActivity.appendChild(holder.firstChild);
-      if (this.els.toolEmpty) this.els.toolEmpty.hidden = true;
-      this.activityCount = this.els.toolActivity.querySelectorAll(
-        ".acw-tool,.acw-progress-update,.acw-explanation"
-      ).length;
-    }
+    if (!entry.nearBottom && this.els.messages) this.els.messages.scrollTop = entry.scrollTop || 0;
     this.updateOlderControl();
     this.updateNewerControl();
-    return true;
+    return this.transcriptEvents.length > 0 && !this.olderError;
+  };
+
+  AgentChatWidget.prototype._validateHistoryPage = function (history) {
+    if (!history || !Array.isArray(history.events) || !history.page ||
+        typeof history.page.has_older !== "boolean" || typeof history.page.has_newer !== "boolean") {
+      throw new Error("History response is incomplete. Retry loading messages.");
+    }
+    return history;
   };
 
   AgentChatWidget.prototype._paintRecentHistory = function (history, generation) {
@@ -1033,21 +1028,23 @@
     ) {
       return null;
     }
-    const events = history && history.events || [];
-    const page = history && history.page || {};
-    let paint = events.slice();
-    let truncated = false;
-    if (paint.length > INITIAL_VISIBLE_EVENTS) {
-      paint = paint.slice(paint.length - INITIAL_VISIBLE_EVENTS);
-      truncated = true;
-    }
-    this.hasOlder = !!(page.has_older || truncated);
+    this._validateHistoryPage(history);
+    const events = history.events;
+    const page = history.page;
+    const paint = events.slice();
+    this.hasOlder = !!page.has_older;
+    this.olderError = "";
     this.olderCursor = page.next_before_seq || page.oldest_seq ||
       (paint.length ? paint[0].seq : null);
     this.hasNewer = !!page.has_newer;
     this.newerCursor = page.newest_seq ||
       (paint.length ? paint[paint.length - 1].seq : null);
-    this.renderTranscript(paint, { scrollBottom: true, recentFirst: true });
+    if (history && history.session) this.providerId = history.session.agent_name || this.providerId;
+    // A delayed history response must include live arrivals already painted.
+    const arrivals = this.transcriptEvents.filter(function (event) {
+      return event.seq > (page.newest_seq || 0);
+    });
+    this.renderTranscript(paint.concat(arrivals), { scrollBottom: true, recentFirst: true });
     if (paint.length) {
       this.lastSeq = paint.reduce(function (max, event) {
         return event.seq && event.seq > max ? event.seq : max;
@@ -1063,10 +1060,16 @@
     const self = this;
     return this.apiWithTimeout(
       "/history/" + encodeURIComponent(sessionId) +
-        "?limit=" + Math.min(TRANSCRIPT_PAGE_LIMIT, INITIAL_VISIBLE_EVENTS),
+        "?message_boundaries=true&limit=" + TRANSCRIPT_PAGE_LIMIT,
       LIVE_SNAPSHOT_TIMEOUT_MS
     ).then(function (history) {
       return self._paintRecentHistory(history, generation);
+    }).catch(function (error) {
+      if (self._isCurrentSessionRequest(sessionId, generation)) {
+        self.olderError = "History is temporarily unavailable. Retry loading messages.";
+        self.updateOlderControl();
+      }
+      throw error;
     });
   };
 
@@ -1084,13 +1087,11 @@
       ),
     ]).then(function (results) {
       if (self.destroyed || generation !== self.subscriptionGeneration) return null;
-      const history = results[0];
       const snap = results[1];
       if (self.liveStateRetryId) clearTimeout(self.liveStateRetryId);
       self.liveStateRetryId = null;
       self.liveStateRetryCount = 0;
       self.showRecoveryActions({});
-      if (history) self._paintRecentHistory(history, generation);
       self.applySnapshot(snap);
       self.connectSSE();
       self.refreshBrowserState();
@@ -1160,7 +1161,7 @@
     }
     this._setRecoveryControl(false);
     this.showRecoveryActions({});
-    this.sessionClosed = true;
+    this.sessionClosed = false;
     this.ownerResolutionPending = true;
     this.renderSessionActions({ terminal: true, recoverable: false });
     this.setComposerEnabled(false);
@@ -1173,7 +1174,7 @@
     const loadDurableHistory = function () {
       if (!durableHistory) {
         durableHistory = self.apiWithTimeout(
-          "/history/" + encodeURIComponent(sessionId) + "?limit=" + INITIAL_VISIBLE_EVENTS,
+          "/history/" + encodeURIComponent(sessionId) + "?message_boundaries=true&limit=" + TRANSCRIPT_PAGE_LIMIT,
           LIVE_SNAPSHOT_TIMEOUT_MS
         ).then(function (history) {
           return self._applyDurableHistory(sessionId, history, generation);
@@ -1800,7 +1801,28 @@
     }
   };
 
+  AgentChatWidget.prototype._compactEvents = function (events) {
+    const result = [];
+    events.forEach(function (event) {
+      const previous = result[result.length - 1];
+      const payload = event.payload || {};
+      if (previous && payload.content_mode &&
+          (event.type === "agent_message_chunk" || event.type === "agent_thought_chunk") &&
+          previous.type === event.type && previous.payload.content_mode &&
+          previous.payload.message_id === payload.message_id && previous.payload.phase === payload.phase) {
+        const replacement = ["snapshot", "replace", "replacement", "accumulated"].indexOf(payload.content_mode) !== -1;
+        result[result.length - 1] = Object.assign({}, event, { payload: Object.assign({}, payload, {
+          text: (replacement ? "" : previous.payload.text || "") + (payload.text || ""),
+          content_mode: "snapshot",
+          source_first_seq: previous.payload.source_first_seq || previous.seq,
+        }) });
+      } else result.push(event);
+    });
+    return result;
+  };
+
   AgentChatWidget.prototype._boundedEvents = function (events, keepOldest) {
+    events = this._compactEvents(events);
     if (events.length <= MAX_RETAINED_EVENTS) return events;
     if (keepOldest) {
       this.hasNewer = true;
@@ -1833,14 +1855,40 @@
       const row = this.streaming[key] && this.streaming[key].row;
       if (row) activeRows[key] = row;
     }, this);
+    let firstRemovedSeq = null;
     while (rows.length > MAX_MESSAGE_ROWS) {
       const candidates = keepOldest ? rows.slice().reverse() : rows;
       const row = candidates.find(function (candidate) {
         return Object.keys(activeRows).every(function (key) { return activeRows[key] !== candidate; });
       });
       if (!row) break;
+      const sourceSeq = Number(row.dataset && row.dataset.sourceSeq);
+      if (sourceSeq) firstRemovedSeq = Math.min(firstRemovedSeq || sourceSeq, sourceSeq);
       row.remove();
       rows = rows.filter(function (candidate) { return candidate !== row; });
+    }
+    if (this.messageRowCount > rows.length && rows.length) {
+      if (keepOldest) {
+        this.hasNewer = true;
+        if (firstRemovedSeq) {
+          this.transcriptEvents = this.transcriptEvents.filter(function (event) {
+            return (event.payload.source_first_seq || event.seq) < firstRemovedSeq;
+          });
+          this.newerCursor = this.transcriptEvents.reduce(function (seq, event) {
+            return Math.max(seq, event.seq || 0);
+          }, 0);
+        }
+        this.updateNewerControl();
+      } else {
+        this.hasOlder = true;
+        this.olderCursor = Number(rows[0].dataset && rows[0].dataset.sourceSeq) || this.olderCursor;
+        const oldest = this.olderCursor;
+        if (oldest) this.transcriptEvents = this.transcriptEvents.filter(function (event) {
+          return (event.payload.source_first_seq || event.seq) >= oldest;
+        });
+        this.updateOlderControl();
+      }
+      this._rebuildSeenEvents();
     }
     this.messageRowCount = rows.length;
     if (!keepOldest) {
@@ -1891,31 +1939,7 @@
       page.push(normalized);
     });
     page.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
-    if (!page.length) return 0;
-
-    const existingChildren = Array.from(this.els.messages.children);
-    const existingSet = new Set(existingChildren);
-    const anchor = existingChildren.find(function (child) {
-      return !child.hasAttribute("data-acw-placeholder") &&
-        !child.hasAttribute("data-acw-load-older") &&
-        !child.hasAttribute("data-acw-load-older-status") &&
-        !child.hasAttribute("data-acw-load-newer") &&
-        !child.hasAttribute("data-acw-load-newer-status");
-    }) || null;
-    page.forEach(function (event) { self.handleEvent(event, true, false); });
-    const inserted = Array.from(this.els.messages.children).filter(function (child) {
-      return !existingSet.has(child);
-    });
-    const fragment = document.createDocumentFragment();
-    inserted.forEach(function (child) { fragment.appendChild(child); });
-    if (anchor) this.els.messages.insertBefore(fragment, anchor);
-    else this.els.messages.appendChild(fragment);
-    this.transcriptEvents = this._boundedEvents(page.concat(this.transcriptEvents).sort(function (a, b) {
-      return (a.seq || 0) - (b.seq || 0);
-    }), true);
-    this._rebuildSeenEvents();
-    this._pruneMessageRows(true);
-    this.clearPlaceholder();
+    this.renderTranscript(page.concat(this.transcriptEvents), { keepOldest: true });
     return page.length;
   };
 
@@ -1974,7 +1998,10 @@
     const oldest = this.olderCursor || this.transcriptEvents.reduce(function (result, event) {
       return event.seq && (!result || event.seq < result) ? event.seq : result;
     }, 0);
-    if (!oldest) return;
+    if (!oldest) {
+      this._loadRecentHistory(this.sessionId, this.subscriptionGeneration).catch(function () {});
+      return;
+    }
     const self = this;
     const requestSessionId = this.sessionId;
     const requestGeneration = this.subscriptionGeneration;
@@ -1983,23 +2010,21 @@
     const controller = new AbortController();
     this.olderAbortController = controller;
     const requestStarted = performance.now();
-    const status = this.els.status && this.els.status.dataset.state;
-    const wasPrompting = this.prompting;
-    const startedAt = this.turnStartedAt && new Date(this.turnStartedAt).toISOString();
     this.loadingOlder = true;
     this.olderError = "";
     this.updateOlderControl();
-    this.api(
+    this.apiWithTimeout(
       "/history/" + encodeURIComponent(this.sessionId) +
-      "?before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
-      { signal: controller.signal }
+      "?message_boundaries=true&before_seq=" + oldest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
+      LIVE_SNAPSHOT_TIMEOUT_MS, { signal: controller.signal }
     ).then(function (data) {
       if (
         self.destroyed || controller.signal.aborted ||
         self.sessionId !== requestSessionId || self.sessionId !== requestedSession ||
         self.subscriptionGeneration !== requestGeneration || self.apiBase !== requestedApiBase
       ) return;
-      const pageEvents = data && data.events || [];
+      self._validateHistoryPage(data);
+      const pageEvents = data.events;
       self.hasOlder = !!(data && data.page && data.page.has_older);
       self.olderCursor = data && data.page && (
         data.page.next_before_seq || data.page.oldest_seq
@@ -2014,8 +2039,6 @@
       self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
         return event.seq && event.seq > result ? event.seq : result;
       }, 0) || null;
-      self.setTurnActive(wasPrompting, startedAt);
-      if (status) self.setStatus(status);
       self.els.messages.scrollTop = anchoredScrollTop(
         oldTop,
         oldHeight,
@@ -2054,6 +2077,11 @@
   };
 
   AgentChatWidget.prototype.loadNewerTranscript = function () {
+    if (this.liveGapTarget > this.lastSeq) {
+      this.newerError = "";
+      this._repairLiveGap();
+      return;
+    }
     if (this.loadingNewer || (!this.hasNewer && !this.newerError) || !this.sessionId || !this.els.messages) return;
     const newest = this.newerCursor || this.transcriptEvents.reduce(function (result, event) {
       return event.seq && event.seq > result ? event.seq : result;
@@ -2067,12 +2095,14 @@
     this.loadingNewer = true;
     this.newerError = "";
     this.updateNewerControl();
-    this.api(
+    this.apiWithTimeout(
       "/history/" + encodeURIComponent(this.sessionId) +
-      "?after_seq=" + newest + "&limit=" + TRANSCRIPT_PAGE_LIMIT
+      "?message_boundaries=true&after_seq=" + newest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
+      LIVE_SNAPSHOT_TIMEOUT_MS
     ).then(function (data) {
       if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
-      const pageEvents = data && data.events || [];
+      self._validateHistoryPage(data);
+      const pageEvents = data.events;
       self.hasNewer = !!(data && data.page && data.page.has_newer);
       self.renderTranscript(self.transcriptEvents.concat(pageEvents), { scrollBottom: false });
       self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
@@ -2133,7 +2163,10 @@
         const code = apiErrorCode(err);
         if (code === "session_not_live" || code === "session_deleted") {
           self.resolveSessionNotLive(err, self.esSessionId, generation);
-        } else if (err.status === 404) self.markSessionEnded("This session is no longer running.");
+        } else {
+          self.setStatus("offline");
+          self._setRecoveryControl(true, "Retry live state");
+        }
       });
     };
 
@@ -2266,36 +2299,50 @@
     if (this.root && this.root._acw === this) this.root._acw = null;
   };
 
-  AgentChatWidget.prototype.handleEvent = function (event, replay, record) {
+  AgentChatWidget.prototype._repairLiveGap = function () {
+    if (this.liveGapLoading || this.destroyed || !this.sessionId) return;
+    const self = this, sessionId = this.sessionId, generation = this.subscriptionGeneration;
+    const after = this.lastSeq || 0;
+    this.liveGapLoading = true;
+    this.apiWithTimeout("/history/" + encodeURIComponent(sessionId) +
+      "?message_boundaries=true&after_seq=" + after + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
+      LIVE_SNAPSHOT_TIMEOUT_MS).then(function (history) {
+        if (!self._isCurrentSessionRequest(sessionId, generation)) return;
+        const events = history.events || [];
+        events.forEach(function (event) { self.handleEvent(event, false, true, true); });
+        if (self.lastSeq <= after) throw new Error("Waiting for durable stream history.");
+        self.newerError = "";
+      }).catch(function (error) {
+        if (!self._isCurrentSessionRequest(sessionId, generation)) return;
+        self.newerError = "Live messages are waiting for history. Retry loading newer messages.";
+        self.updateNewerControl();
+      }).finally(function () {
+        if (!self._isCurrentSessionRequest(sessionId, generation)) return;
+        self.liveGapLoading = false;
+        if (!self.newerError && self.lastSeq < self.liveGapTarget) self._repairLiveGap();
+      });
+  };
+
+  AgentChatWidget.prototype.handleEvent = function (event, replay, record, ordered) {
     if (!event) return;
     event = this._normalizeEvent(event);
     const seq = event.seq || 0;
     // Retired dedupe keys are safe to discard because a live transport must
     // never apply a sequence at or behind the high-water mark again.
     if (!replay && seq && seq <= this.lastSeq) return;
+    if (!replay && !ordered && seq > (this.lastSeq || 0) + 1 && this.sessionId) {
+      this.liveGapTarget = Math.max(this.liveGapTarget || 0, seq);
+      this._repairLiveGap();
+      return;
+    }
     const eventKey = this._eventKey(event);
     if (eventKey && this.seenEvents[eventKey]) return;
-    if (eventKey) this.seenEvents[eventKey] = true;
-    if (record !== false) {
-      this.transcriptEvents.push(event);
-      if (this.transcriptEvents.length > MAX_RETAINED_EVENTS) {
-        // When the user is browsing an older durable page, retain that window
-        // and let forward paging retrieve live arrivals from durable storage.
-        // Active stream/tool UI state is maintained independently below.
-        const evicted = this.hasNewer
-          ? this.transcriptEvents.pop()
-          : this.transcriptEvents.shift();
-        const evictedKey = this._eventKey(evicted);
-        if (evictedKey) delete this.seenEvents[evictedKey];
-        this.hasOlder = true;
-      }
-    }
     const shouldFollow = !replay && this.isNearBottom();
     const self = this;
-    if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
     const type = event.type || event.event_type;
     const payload = event.payload || {};
     const created = event.created_at;
+    this.renderingEvent = event;
 
     switch (type) {
       case "user_message":
@@ -2318,11 +2365,11 @@
       case "agent_message_chunk":
         if (this._isCodexProvider()) {
           // Codex commentary/narrative belongs in the main chat transcript.
-          this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
+          this.appendStream("agent", (payload.message_id ? payload.message_id + "::" + (payload.phase || "") : "agent"), payload.text || "", created, payload.content_mode);
         } else if (payload.phase === "commentary") {
-          this.appendActivityProgress(payload.message_id || "progress", payload.text || "", created);
+          this.appendActivityProgress(payload.message_id || "progress", payload.text || "", created, payload.content_mode);
         } else {
-          this.appendStream("agent", payload.message_id || "agent", payload.text || "", created);
+          this.appendStream("agent", (payload.message_id ? payload.message_id + "::" + (payload.phase || "") : "agent"), payload.text || "", created, payload.content_mode);
         }
         break;
       case "card_disposition":
@@ -2332,15 +2379,15 @@
         if (this._isCodexProvider()) {
           // Codex thought/explanation headings belong in Tool activity and
           // become the nesting parent for subsequent tool rows.
-          this.appendExplanationHeading(payload.message_id || "thought", payload.text || "", created);
+          this.appendExplanationHeading(payload.message_id || "thought", payload.text || "", created, payload.content_mode);
         } else if (this.showThinking) {
-          this.appendStream("thought", payload.message_id || "thought", payload.text || "", created);
+          this.appendStream("thought", payload.message_id || "thought", payload.text || "", created, payload.content_mode);
         }
         break;
       case "tool_call":
         // Cursor reuses a null messageId for the whole turn, so without this
         // post-tool text is appended onto the pre-tool bubble ("needed.Monica").
-        this.finalizeStreams(created);
+        this.finalizeStreams(created, true);
         this.upsertTool(payload, created);
         break;
       case "tool_call_update":
@@ -2358,27 +2405,27 @@
       case "turn_completed":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setTurnActive(false);
+        if (!replay) this.setTurnActive(false);
         if (payload.usage) this.renderMetrics({ last_usage: payload.usage });
         break;
       case "queue_enqueued":
         if (this.drafts && typeof this.drafts.observeAcceptance === "function") {
           this.drafts.observeAcceptance(payload.id, true);
         }
-        this.refreshQueue();
+        if (!replay) this.refreshQueue();
         break;
       case "queue_dequeued":
       case "queue_removed":
       case "queue_reordered":
       case "queue_paused":
       case "queue_resumed":
-        this.refreshQueue();
+        if (!replay) this.refreshQueue();
         break;
       case "cancelled":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setTurnActive(false);
-        this.queuePaused = !!payload.pause_queue;
+        if (!replay) this.setTurnActive(false);
+        if (!replay) this.queuePaused = !!payload.pause_queue;
         break;
       case "usage_update":
         if (payload.usage) this.renderMetrics({ usage: payload.usage });
@@ -2406,7 +2453,6 @@
       case "session_closed":
         // A past provider closure is history, not current conversation state.
         if (replay) break;
-        if (this.drafts) this.drafts.clear(true, "Draft cleared because this session ended.");
         this.markSessionEnded("Session ended. Start or select another session to send more prompts.");
         refreshSessionList(null);
         break;
@@ -2417,18 +2463,18 @@
       case "connection_lost":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setTurnActive(false);
-        this.setStatus("offline");
+        if (!replay) this.setTurnActive(false);
+        if (!replay) this.setStatus("offline");
         this.addBubble("system", payload.message || "Connection to the agent was lost. You may want to retry the prompt.", created, { forceVisible: true });
         break;
       case "turn_waiting":
-        if (!this.turnActive) this.setTurnActive(true, created);
+        if (!replay && !this.turnActive) this.setTurnActive(true, created);
         this.addBubble("system", payload.message || "Waiting for the agent…", created, { system: true, forceVisible: true });
         break;
       case "prompt_failed":
         this.finalizeStreams(created);
         this.finalizeActivity();
-        this.setTurnActive(false);
+        if (!replay) this.setTurnActive(false);
         this.addBubble("system", payload.error || payload.message || "The prompt failed.", created, { system: true, forceVisible: true });
         break;
       case "error":
@@ -2437,7 +2483,53 @@
       default:
         break;
     }
-    this._pruneMessageRows(!!this.hasNewer);
+    this.renderingEvent = null;
+    if (eventKey) this.seenEvents[eventKey] = true;
+    if (record !== false) {
+      if (type === "agent_message_chunk" && payload.content_mode && payload.message_id) {
+        const stream = this.streaming["agent:" + payload.message_id + "::" + (payload.phase || "")];
+        if (stream) {
+          let firstSeq = stream.firstSeq || seq;
+          for (let index = this.transcriptEvents.length - 1; index >= 0; index -= 1) {
+            const previous = this.transcriptEvents[index];
+            if (previous.type === "turn_completed" || previous.type === "user_message") break;
+            if (previous.type === type && previous.payload.message_id === payload.message_id && previous.payload.phase === payload.phase) {
+              firstSeq = previous.payload.source_first_seq || previous.seq;
+              this.transcriptEvents.splice(index, 1);
+              delete this.seenEvents[this._eventKey(previous)];
+              break;
+            }
+          }
+          event = Object.assign({}, event, { payload: Object.assign({}, payload, {
+            text: stream.text, content_mode: "snapshot", source_first_seq: firstSeq,
+          }) });
+        }
+      }
+      const previous = this.transcriptEvents[this.transcriptEvents.length - 1];
+      const tail = this._compactEvents(previous ? [previous, event] : [event]);
+      if (previous && tail.length === 1) {
+        this.transcriptEvents.pop();
+        const previousKey = this._eventKey(previous);
+        if (previousKey) delete this.seenEvents[previousKey];
+      }
+      this.transcriptEvents.push(tail[tail.length - 1]);
+      if (this.transcriptEvents.length > MAX_RETAINED_EVENTS) {
+        // When the user is browsing an older durable page, retain that window
+        // and let forward paging retrieve live arrivals from durable storage.
+        // Active stream/tool UI state is maintained independently below.
+        const evicted = this.hasNewer
+          ? this.transcriptEvents.pop()
+          : this.transcriptEvents.shift();
+        const evictedKey = this._eventKey(evicted);
+        if (evictedKey) delete this.seenEvents[evictedKey];
+        this.hasOlder = true;
+        this.olderCursor = this.transcriptEvents.length
+          ? this.transcriptEvents[0].payload.source_first_seq || this.transcriptEvents[0].seq : null;
+        this.updateOlderControl();
+      }
+    }
+    if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
+    if (!replay) this._pruneMessageRows(!!this.hasNewer);
     if (!replay && shouldFollow) this.scrollToBottom();
   };
 
@@ -2446,6 +2538,7 @@
     this.clearPlaceholder();
     const row = document.createElement("div");
     row.className = "acw-msg acw-msg-" + role + (opts.system ? " is-system" : "");
+    if (this.renderingEvent) row.dataset.sourceSeq = this.renderingEvent.payload.source_first_seq || this.renderingEvent.seq;
     if (opts.system && !this.showSystem) row.hidden = true;
     const bubble = document.createElement("div");
     bubble.className = "acw-bubble acw-bubble-" + role;
@@ -2606,18 +2699,25 @@
     });
   };
 
-  AgentChatWidget.prototype.appendStream = function (role, key, chunk, ts) {
+  AgentChatWidget.prototype.appendStream = function (role, key, chunk, ts, contentMode) {
     this.clearPlaceholder();
     const id = role + ":" + key;
     let stream = this.streaming[id];
     if (!stream) {
       const created = this.addBubble(role === "thought" ? "thought" : "agent", "", ts);
       if (role === "thought") created.row.classList.add("acw-msg-thought");
-      stream = { text: "", bubble: created.bubble, row: created.row };
+      stream = { text: "", bubble: created.bubble, row: created.row,
+        firstSeq: this.renderingEvent && (this.renderingEvent.payload.source_first_seq || this.renderingEvent.seq) };
       this.streaming[id] = stream;
     }
     const next = chunk || "";
-    stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (["snapshot", "replace", "replacement", "accumulated"].indexOf(contentMode) !== -1) {
+      stream.text = next;
+    } else if (contentMode) {
+      stream.text += next;
+    } else {
+      stream.text += streamChunkSeparator(stream.text, next) + next;
+    }
     if (stream.text.length > MAX_STREAM_CHARS) {
       stream.text = "[… earlier streamed text is available in durable history …]\n" +
         stream.text.slice(-MAX_STREAM_CHARS);
@@ -2626,7 +2726,7 @@
     this.renderMarkdownBubble(stream.bubble);
   };
 
-  AgentChatWidget.prototype.finalizeStreams = function (ts) {
+  AgentChatWidget.prototype.finalizeStreams = function (ts, anonymousOnly) {
     const self = this;
     Object.keys(this.streaming).forEach(function (id) {
       const stream = self.streaming[id];
@@ -2638,7 +2738,10 @@
         stream.row.appendChild(time);
       }
     });
-    this.streaming = {};
+    if (anonymousOnly) {
+      delete this.streaming["agent:agent"];
+      delete this.streaming["thought:thought"];
+    } else this.streaming = {};
   };
 
   AgentChatWidget.prototype._isCodexProvider = function () {
@@ -2646,7 +2749,7 @@
     return provider === "codex";
   };
 
-  AgentChatWidget.prototype.appendExplanationHeading = function (key, chunk, ts) {
+  AgentChatWidget.prototype.appendExplanationHeading = function (key, chunk, ts, contentMode) {
     this.clearPlaceholder();
     const shouldFollow = this.toolActivityIsNearBottom();
     const activity = this.ensureActivity();
@@ -2672,7 +2775,8 @@
       this.activeExplanation = stream;
     }
     const next = chunk || "";
-    stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (["snapshot", "replace", "replacement", "accumulated"].indexOf(contentMode) !== -1) stream.text = next;
+    else stream.text += (contentMode ? "" : streamChunkSeparator(stream.text, next)) + next;
     if (stream.text.length > MAX_STREAM_CHARS) {
       stream.text = "[… earlier explanation is available in durable history …]\n" +
         stream.text.slice(-MAX_STREAM_CHARS);
@@ -2711,7 +2815,7 @@
     if (shouldFollow && container) container.scrollTop = container.scrollHeight;
   };
 
-  AgentChatWidget.prototype.appendActivityProgress = function (key, chunk) {
+  AgentChatWidget.prototype.appendActivityProgress = function (key, chunk, ts, contentMode) {
     this.clearPlaceholder();
     const shouldFollow = this.toolActivityIsNearBottom();
     const activity = this.ensureActivity();
@@ -2726,7 +2830,8 @@
       this.bumpActivityCount(activity);
     }
     const next = chunk || "";
-    stream.text += streamChunkSeparator(stream.text, next) + next;
+    if (["snapshot", "replace", "replacement", "accumulated"].indexOf(contentMode) !== -1) stream.text = next;
+    else stream.text += (contentMode ? "" : streamChunkSeparator(stream.text, next)) + next;
     if (stream.text.length > MAX_STREAM_CHARS) {
       stream.text = "[… earlier progress is available in durable history …]\n" +
         stream.text.slice(-MAX_STREAM_CHARS);
@@ -3264,6 +3369,8 @@
     if (this.olderAbortController) this.olderAbortController.abort();
     this.olderAbortController = null;
     this.lastSeq = 0;
+    this.liveGapTarget = 0;
+    this.liveGapLoading = false;
     this.transcriptEvents = [];
     this.seenEvents = {};
     this.hasOlder = false;
@@ -3301,6 +3408,8 @@
     this.sessionId = "";
     this.root.dataset.sessionId = "";
     this.lastSeq = 0;
+    this.liveGapTarget = 0;
+    this.liveGapLoading = false;
     this.transcriptEvents = [];
     this.seenEvents = {};
     this.hasOlder = false;
@@ -3936,7 +4045,6 @@
     this.renderSessionActions();
     this.api("/sessions/" + targetSessionId + "/archive", { method: "POST", body: "{}" }).then(function (result) {
       if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
-      if (self.drafts) self.drafts.clear(true, "Draft cleared because this conversation was archived.");
       self.markSessionEnded("Conversation archived. Its history remains available under Archived.");
       const recovery = result && result.recovery || {};
       self.showRecoveryActions({

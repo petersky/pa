@@ -33,7 +33,7 @@ class AgentChatStreamJoinTests(unittest.TestCase):
             re.compile(
                 r'case\s+"tool_call":\s*'
                 r"(?:\/\/[^\n]*\n\s*)*"
-                r"this\.finalizeStreams\(created\);",
+                r"this\.finalizeStreams\(created, true\);",
                 re.MULTILINE,
             ),
         )
