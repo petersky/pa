@@ -4635,6 +4635,15 @@ class CardProjection:
                 )
         return session
 
+    def mark_session_disconnected(self, session_id: str) -> None:
+        """Record transport teardown without overwriting newer conversation metadata."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE agent_sessions SET status='disconnected' "
+                "WHERE id=? AND status NOT IN ('closed', 'quiesced')",
+                (session_id,),
+            )
+
     @staticmethod
     def _binding_materialization_is_compatible(
         prior: dict, binding: dict

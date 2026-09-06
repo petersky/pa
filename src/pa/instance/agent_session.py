@@ -75,6 +75,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+class WorkspaceBindingMismatch(WorkspaceProvisioningError):
+    """Recovery found a different workspace; the original fence remains binding."""
+
+    remedy = (
+        "Recovery found a workspace that differs from this session's original binding. "
+        "Inspect the original repository, branch, base commit and lease before retrying. "
+        "Restore that exact workspace through PA; do not replace the binding. If it "
+        "cannot be restored, preserve this conversation and explicitly start a new "
+        "linked attempt after the original dispatch is terminal."
+    )
+
+
 _RETRY_SECONDS = 30
 _RECOVERY_BASE_SECONDS = 5
 _RECOVERY_MAX_SECONDS = 300
@@ -258,6 +270,12 @@ class AgentSessionRuntime:
 
     def _save_session_preserving_external_browser(self) -> None:
         persisted = self.store.get_session(self.session_id)
+        if persisted:
+            # These fields are owned by conversation actions, not provider turns.
+            # A runtime may predate an archive/pin operation or provider teardown.
+            self.session.archived_at = persisted.archived_at
+            self.session.archive_reason = persisted.archive_reason
+            self.session.pinned_at = persisted.pinned_at
         persisted_browser = dict(
             ((persisted.config_json or {}).get("browser") or {}) if persisted else {}
         )
@@ -3427,21 +3445,27 @@ class AgentSessionManager:
                     timeout=120.0,
                 )
             context = workspace.execution_context(self.settings, provider_id)
-            final_binding = dict(binding)
-            if not final_binding.get("cwd"):
-                repos = list(context.get("repositories") or [])
-                final_binding = {
-                    **final_binding,
-                    "repository_ids": [r.get("repository_id") for r in repos],
-                    "execution_card_id": execution_card_id,
-                    "execution_project_id": execution_project_id,
-                    "worktree_paths": [r.get("worktree_path") for r in repos],
-                    "lease_ids": [r.get("lease_id") for r in repos],
-                    "branch": repos[0].get("branch") if repos else None,
-                    "base_sha": repos[0].get("base_sha") if repos else None,
-                    "cwd": workspace.cwd,
-                    "origin_instance_id": session.origin_instance_id,
-                }
+            repos = list(context.get("repositories") or [])
+            materialized = {
+                "repository_ids": [r.get("repository_id") for r in repos],
+                "worktree_paths": [r.get("worktree_path") for r in repos],
+                "lease_ids": [r.get("lease_id") for r in repos],
+                "branch": repos[0].get("branch") if repos else None,
+                "base_sha": repos[0].get("base_sha") if repos else None,
+                "cwd": workspace.cwd,
+            }
+            mismatches = [
+                key for key, value in materialized.items()
+                if key in binding and binding[key] != value
+            ]
+            if mismatches:
+                raise WorkspaceBindingMismatch(
+                    "Original execution binding differs in: " + ", ".join(mismatches)
+                    + ". " + WorkspaceBindingMismatch.remedy
+                )
+            # Only add missing materialization facts. Existing provenance is never
+            # rewritten, including a base SHA retained when an unusable cwd was removed.
+            final_binding = {**binding, **materialized}
             if final_binding != persisted_binding:
                 await self._offload(
                     "sqlite.execution_binding_materialize",
@@ -3486,12 +3510,16 @@ class AgentSessionManager:
             )
             return context_environment(context)
         except Exception as exc:
+            binding_blocked = isinstance(exc, WorkspaceBindingMismatch)
             project_blocked = bool(execution_project_id and _project_recovery_block(exc))
+            workspace_blocked = project_blocked or binding_blocked
             session.status = (
-                RECOVERY_BLOCKED_STATUS if project_blocked else "provisioning_failed"
+                RECOVERY_BLOCKED_STATUS if workspace_blocked else "provisioning_failed"
             )
             config = dict(session.config_json or {})
-            if session.dispatch_id:
+            if binding_blocked:
+                pass  # Preserve original context as evidence for exact-workspace repair.
+            elif session.dispatch_id:
                 config["execution_context"] = {
                     "authority_instance": authority_instance,
                     "provenance": provenance,
@@ -3499,18 +3527,22 @@ class AgentSessionManager:
             else:
                 config.pop("execution_context", None)
             config["provisioning"] = {
-                "state": "blocked" if project_blocked else "failed",
+                "state": "blocked" if workspace_blocked else "failed",
                 "stage": "workspace",
-                "retryable": not project_blocked,
-                "manual_retry": project_blocked,
-                "automatic_retry": not project_blocked,
+                "retryable": not workspace_blocked,
+                "manual_retry": workspace_blocked,
+                "automatic_retry": not workspace_blocked,
                 "error_code": (
-                    "project_unavailable_on_instance"
+                    "workspace_binding_mismatch"
+                    if binding_blocked
+                    else "project_unavailable_on_instance"
                     if project_blocked
                     else "workspace_provisioning_failed"
                 ),
                 "action": (
-                    "Sync the project and repository links to this instance, or "
+                    WorkspaceBindingMismatch.remedy
+                    if binding_blocked
+                    else "Sync the project and repository links to this instance, or "
                     "link its checkout; then retry this session. Close the session "
                     "if it is no longer needed."
                     if project_blocked
@@ -3753,13 +3785,12 @@ class AgentSessionManager:
         session.archive_reason = reason
         session.status = "available"
         session.updated_at = now
+        await self._offload(
+            "sqlite.agent_session_save", self.store.save_session, session
+        )
         if runtime and not runtime._closed:
             runtime.session = session
             await self.release_session_process(session_id, reason=reason)
-        else:
-            await self._offload(
-                "sqlite.agent_session_save", self.store.save_session, session
-            )
         return session
 
     async def unarchive_session(self, session_id: str) -> AgentSession:
@@ -4578,8 +4609,12 @@ class AgentSessionManager:
         previous_recovery = dict(session.recovery_json or {})
         attempts = int(previous_recovery.get("attempts") or 0) + 1
         code = str(classified.get("code") or "recovery_failed")
+        binding_blocked = isinstance(exc, WorkspaceBindingMismatch)
+        if binding_blocked:
+            code = "workspace_binding_mismatch"
         actionable = (
-            not bool(classified.get("recoverable", True))
+            binding_blocked
+            or not bool(classified.get("recoverable", True))
             or "auth" in code
             or "credential" in code
             or "config" in code
@@ -4619,7 +4654,9 @@ class AgentSessionManager:
             _RECOVERY_MAX_SECONDS,
             _RECOVERY_BASE_SECONDS * (2 ** max(0, attempts - 1)),
         )
-        if session.project_id and _project_recovery_block(exc):
+        if binding_blocked:
+            remedy = WorkspaceBindingMismatch.remedy
+        elif session.project_id and _project_recovery_block(exc):
             remedy = self._recovery_action(session)
         elif context_lost:
             remedy = (

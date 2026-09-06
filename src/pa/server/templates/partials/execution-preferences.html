@@ -1,11 +1,13 @@
-<details class="execution-preferences panel-inset new-card-field-span-2"
+<details {% if selection_open | default(false) %}open{% endif %} class="execution-preferences panel-inset new-card-field-span-2"
          data-execution-preferences data-selection-purpose="{{ selection_purpose | default('create') }}"
          data-selection-surface="{{ selection_surface | default('execution') }}"
          data-selection-card="{{ card.id if card is defined else '' }}"
          data-selection-realm="{{ card.realm_id if card is defined else realm | default('') }}"
          data-selection-version="{{ card.updated_at.isoformat() if card is defined else '' }}">
-  <summary>{{ 'One-run execution preferences' if selection_purpose | default('create') in ['dispatch', 'new-session'] else 'Execution defaults (optional)' }}</summary>
-  <p class="muted small">Inherit follows card → project → user → installation defaults. Automatic asks policy to choose. Required pins must match; preferred values may use an explained alternative. Permissions and collaboration mode are separate.</p>
+  <summary>{{ 'Agent and model' if selection_purpose | default('create') == 'new-session' else ('One-run execution preferences' if selection_purpose | default('create') == 'dispatch' else 'Execution defaults (optional)') }}</summary>
+  {% if selection_purpose | default('create') == 'new-session' %}<p data-selection-effective role="status" aria-live="polite">Agent and model follow your defaults.</p>{% endif %}
+  <details><summary>How selection works</summary>
+  <p class="muted small">Inherit follows card → project → user → installation defaults. Automatic asks policy to choose. Required pins must match; preferred values may use an explained alternative. Permissions and collaboration mode are separate.</p></details>
   <script type="application/json" data-selection-initial>{{ (card.execution_preferences.model_dump(mode='json') if card is defined and selection_purpose | default('create') != 'dispatch' else {}) | tojson }}</script>
   {% if execution_catalog is defined %}<script type="application/json" data-selection-catalog>{{ execution_catalog | tojson }}</script>{% endif %}
   <input type="hidden" name="execution_preferences" value="{}">

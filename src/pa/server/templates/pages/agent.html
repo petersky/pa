@@ -118,13 +118,10 @@
 </div>
 <dialog class="agent-new-session-dialog" data-agent-new-dialog aria-labelledby="agent-new-session-title">
   <form method="dialog" data-agent-new-form>
-    <label><input type="checkbox" name="linked_context" data-agent-new-linked>
-      Link to the current standalone session and close its idle native context</label>
-    <p class="muted small">Explicit new context and separate workspace; no hidden continuity or concurrent runtime. For a card dispatch, use the card's Dispatch → linked attempt action after the previous dispatch is terminal.</p>
     <header>
       <div>
-        <h2 id="agent-new-session-title">New agent session</h2>
-        <p class="muted">Choose the runtime before PA starts the session.</p>
+        <h2 id="agent-new-session-title">New chat</h2>
+        <p class="muted">Start a conversation with the agent and model below.</p>
       </div>
       <button type="button" class="ghost" data-agent-new-cancel aria-label="Close">×</button>
     </header>
@@ -132,7 +129,7 @@
       <span>Title</span>
       <input name="title" value="Chat" autocomplete="off">
     </label>
-    {% with selection_purpose='new-session', selection_surface='chat.default' %}
+    {% with selection_purpose='new-session', selection_surface='chat.default', selection_open=true %}
     {% include 'partials/execution-preferences.html' %}
     {% endwith %}
     <fieldset hidden disabled data-legacy-new-selection>
@@ -163,6 +160,7 @@
       <small class="muted" id="agent-new-model-help">Inherited from the selected provider when unchanged.</small>
     </label>
     </fieldset>
+    <details class="agent-new-advanced"><summary>Permissions and working directory</summary>
     <label>
       <span>Mode</span>
       <select name="mode_id" data-agent-new-mode aria-describedby="agent-new-mode-help">
@@ -187,11 +185,17 @@
       <span>Working directory</span>
       <input name="cwd" placeholder="Instance default" autocomplete="off">
     </label>
+    </details>
+    <details class="agent-new-linking"><summary>Link an existing conversation</summary>
+    <label><input type="checkbox" name="linked_context" data-agent-new-linked>
+      Link to the current standalone session and close its idle native context</label>
+    <p class="muted small">Explicit new context and separate workspace; no hidden continuity or concurrent runtime. For a card dispatch, use the card's Dispatch → linked attempt action after the previous dispatch is terminal.</p>
+    </details>
     <p class="muted" data-agent-new-status hidden role="status" aria-live="polite">Loading session options…</p>
     <p class="agent-new-session-error" data-agent-new-error role="alert" aria-live="assertive" hidden></p>
     <div class="form-actions">
       <button type="button" class="ghost" data-agent-new-cancel>Cancel</button>
-      <button type="submit" class="primary" data-agent-new-submit>Start session</button>
+      <button type="submit" class="primary" data-agent-new-submit>Start chat</button>
     </div>
   </form>
 </dialog>
@@ -280,5 +284,5 @@
 {% endset %}
 
 <div class="page-boundary" hx-history="false" data-pa-history-private>
-  {{ page_layout(left=left, main=main, class='page-agent is-sidebar-collapsed') }}
+  {{ page_layout(left=left, main=main, class='page-agent') }}
 </div>
