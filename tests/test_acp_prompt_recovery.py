@@ -588,11 +588,13 @@ Object.assign(widget, {
   _paintRecentHistory: Widget.prototype._paintRecentHistory,
   renderTranscript: function (events, options) {
     this.transcriptEvents = events.slice();
+    const messages = this.els.messages;
+    messages.children = [];
     this.lastSeq = events.reduce(function (max, event) {
       return event.seq > max ? event.seq : max;
     }, 0);
     events.forEach(function (event) {
-      const row = { className: "acw-msg", dataset: { seq: String(event.seq) }, outerHTML: "<div class='acw-msg'></div>", hasAttribute: function () { return false; }, cloneNode: function () { return this; } };
+      const row = { className: "acw-msg", dataset: { sourceSeq: String(event.seq) }, outerHTML: "<div class='acw-msg'></div>", hasAttribute: function () { return false; }, cloneNode: function () { return this; } };
       messages.children.push(row);
     });
     this.messageRowCount = messages.children.length;
@@ -605,10 +607,10 @@ for (let i = 1; i <= 200; i += 1) {
 }
 widget._paintRecentHistory({
   events,
-  page: { has_older: true, oldest_seq: 1, newest_seq: 200, next_before_seq: 81 },
+  page: { has_older: true, has_newer: false, oldest_seq: 1, newest_seq: 200, next_before_seq: 1 },
   session: { agent_name: "codex" },
 }, 1);
-assert.ok(widget.transcriptEvents.length <= window.PAAgentChat.INITIAL_VISIBLE_EVENTS);
+assert.strictEqual(widget.transcriptEvents.length, 200, 'complete derived page is not sliced mid-message');
 assert.strictEqual(widget.lastSeq, 200);
 assert.strictEqual(widget.hasOlder, true);
 widget._stashSessionDomCache();
@@ -637,10 +639,14 @@ Object.assign(restored, {
   _eventKey: Widget.prototype._eventKey,
   _cacheKey: Widget.prototype._cacheKey,
   _restoreSessionDomCache: Widget.prototype._restoreSessionDomCache,
+  renderTranscript: widget.renderTranscript,
 });
 assert.strictEqual(restored._restoreSessionDomCache("session-cache"), true);
 assert.strictEqual(restored.lastSeq, 200);
 assert.ok(restored.transcriptEvents.length > 0);
+assert.strictEqual(restored.els.messages.children.length, 200);
+assert.throws(() => restored._paintRecentHistory({events: [], page: {}}, 1), /incomplete/);
+assert.strictEqual(restored.transcriptEvents.length, 200, 'incomplete history cannot erase cached messages');
 """
         self._run_node(program, script)
 

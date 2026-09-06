@@ -600,7 +600,7 @@ setImmediate(function () {
   assert.strictEqual(widget.els.loadOlder.textContent, "Retry loading older messages");
   widget.api = function () {
     return Promise.resolve({ events: [{ seq: 10 }, { seq: 20 }], page: {
-      has_older: false, oldest_seq: 10, next_before_seq: null
+      has_older: false, has_newer: true, oldest_seq: 10, next_before_seq: null
     } });
   };
   widget.transcriptEvents.push({ seq: 32 }); // concurrent SSE arrival
@@ -624,7 +624,7 @@ setImmediate(function () {
     @unittest.skipUnless(
         shutil.which("node"), "node is required for chat UI behavior tests"
     )
-    def test_older_paging_is_incremental_busy_deduplicated_and_stale_safe(
+    def test_older_paging_is_bounded_busy_deduplicated_and_stale_safe(
         self,
     ) -> None:
         script_path = (
@@ -641,7 +641,8 @@ const fs = require("fs");
 const vm = require("vm");
 const assert = require("assert");
 function node(name, attrs) {
-  return { name, attrs: attrs || {}, hasAttribute: function (key) { return !!this.attrs[key]; } };
+  return { name, attrs: attrs || {}, hasAttribute: function (key) { return !!this.attrs[key]; },
+    remove: function () { messages.children = messages.children.filter(child => child !== this); } };
 }
 global.window = {};
 global.document = {
@@ -682,6 +683,7 @@ widget.seenEvents = {}; widget.lastSeq = 10001;
 widget.transcriptEvents = Array.from({ length: 10000 }, function (_, index) { return { seq: index + 251 }; });
 const activeTimer = { interval: 123 };
 widget.toolTimers = { active: activeTimer };
+widget.resetArtifacts = function () {};
 widget.clearPlaceholder = function () {};
 widget.setTurnActive = function () {}; widget.setStatus = function () {};
 widget.handleEvent = function (event) {
@@ -704,14 +706,15 @@ assert.strictEqual(widget.els.loadOlderStatus.hidden, false);
 assert.strictEqual(widget.els.loadOlderLabel.textContent, "Loading older messages…");
 const page = Array.from({ length: 250 }, function (_, index) { return { seq: index + 1, type: "tool_call" }; });
 page.push({ seq: 251, type: "tool_call" }); // duplicate with retained transcript
-resolveRequest({ events: page, page: { has_older: false, oldest_seq: 1 }, diagnostics: { payload_bytes: 1234 } });
+resolveRequest({ events: page, page: { has_older: false, has_newer: true, oldest_seq: 1 }, diagnostics: { payload_bytes: 1234 } });
 setImmediate(function () {
   assert.strictEqual(widget.transcriptEvents.length, 2000, "durable paging honors the browser retention bound");
   assert.strictEqual(widget.transcriptEvents[0].seq, 1);
   assert.strictEqual(widget.transcriptEvents[249].seq, 250);
   assert.strictEqual(widget.els.messages.children[252].name, "event-250");
-  assert.strictEqual(widget.els.messages.children[253], existing, "existing DOM node is preserved");
-  assert.strictEqual(widget.toolTimers.active, activeTimer, "active tool timer is preserved");
+  assert.strictEqual(widget.els.messages.children[253].name, "event-251", "retained history is reconstructed without duplicating the overlap");
+  assert.strictEqual(widget.els.messages.children.length, 2003, "only the bounded event window is replayed");
+  assert.strictEqual(widget.toolTimers.active, undefined, "obsolete timer is retired before replay");
   assert.strictEqual(widget.els.historySpinner.hidden, true);
 
   widget.hasOlder = true; widget.olderCursor = 1; widget.loadingOlder = false;
