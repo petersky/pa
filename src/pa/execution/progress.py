@@ -527,9 +527,9 @@ def progress_freshness(
     elif dispatch_state == "failed":
         state = "failed"
     elif protocol_version is None:
-        state = "disconnected"
+        state = "unsupported"
     elif last_activity_at is None:
-        state = "delayed"
+        state = "unavailable"
     else:
         age = max(0, int((current - last_activity_at).total_seconds()))
         if age <= PROGRESS_LIVE_SECONDS:
@@ -539,7 +539,7 @@ def progress_freshness(
         else:
             state = "stale"
     if last_error and state not in {"completed", "failed"}:
-        state = "disconnected"
+        state = "delivery_error"
     age_seconds = (
         max(0, int((current - last_activity_at).total_seconds()))
         if last_activity_at

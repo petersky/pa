@@ -286,6 +286,8 @@ def _card_summary(card: Any) -> str:
         return summary
     if status == "disabled":
         return "Summary generation is disabled."
+    if status == "failed":
+        return "Summary generation failed; description is available."
     if status in {"pending", "stale"} or stale:
         return "Summary pending."
     return "No current execution signal."
@@ -312,8 +314,11 @@ def _session_facts(session: dict[str, Any] | None) -> dict[str, Any]:
         or session.get("live")
         and state not in {"idle", "completed", "failed"}
     )
+    if session.get("connection_state") in {"disconnected", "unavailable"}:
+        active = False
     quiet = bool(
         not active
+        and session.get("connection_state") not in {"disconnected", "unavailable"}
         and (
             state in QUIET_SESSION_STATES
             or classification == "completed_idle"
@@ -323,6 +328,7 @@ def _session_facts(session: dict[str, Any] | None) -> dict[str, Any]:
     failed = classification == "failed_closed" or state in {"failed", "error"}
     return {
         "active": active,
+        "pending": not failed and (turn_state == "queued" or state in {"queued", "deferred"}),
         "quiet": quiet,
         "failed": failed,
         "state": state,
@@ -351,6 +357,8 @@ def present_work_item(
     A Waiting lane is metadata only and never creates attention by itself.
     """
     dispatch = dispatch or {}
+    if session and dispatch.get("session_id") and (session.get("id") or session.get("session_id")) not in {None, dispatch["session_id"]}:
+        session = None
     progress = dispatch.get("progress") or {}
     latest = progress.get("latest") or {}
     freshness = progress.get("freshness") or {}
@@ -377,6 +385,20 @@ def present_work_item(
         or _value(card, "updated_at")
     )
     freshness_state = str(freshness.get("state") or "unavailable")
+    checkpoint_state = freshness_state
+    reporting = progress.get("reporting") or ("structured" if progress.get("schema_version") else "lifecycle_only")
+    connection = (session or {}).get("connection_state") or (
+        "connected" if (session or {}).get("connected") else "unavailable"
+    )
+    if connection == "connected" or session_facts["active"]:
+        freshness_state = "live"
+        timestamp = (session or {}).get("observed_at")
+    elif session is not None:
+        freshness_state = connection
+        timestamp = (session or {}).get("observed_at")
+    elif freshness_state in {"unsupported", "unavailable", "disconnected", "delivery_error"}:
+        freshness_state = "unavailable"
+        timestamp = None
     card_href = f"/?realm={realm_id}&card={card_id}" if card_id else "/work"
     agent_href = (
         f"/agent?session={session_id}" + (f"&instance={target_id}" if target_id else "")
@@ -395,7 +417,10 @@ def present_work_item(
     action_explanation = "No operator action is available from current evidence."
     attention_code: str | None = None
 
-    operator_prompt = _operator_prompt(latest)
+    interaction = ((session or {}).get("presentation") or {}).get("pending_interaction") or {}
+    operator_prompt = _text(interaction.get("action")) or (
+        _operator_prompt(latest) if state not in TERMINAL_DISPATCH_STATES else None
+    )
     blockers = [text for item in latest.get("blockers") or [] if (text := _text(item))]
     delivery = dispatch.get("completion_outbox") or {}
     delivery_class = str(delivery.get("classification") or "")
@@ -438,7 +463,7 @@ def present_work_item(
         group = "motion"
         state_code = "working"
         state_label = "Working"
-        summary = tool_name or latest_summary or "Agent turn is active."
+        summary = tool_name or (latest_summary if state not in TERMINAL_DISPATCH_STATES and latest_phase not in {"completed", "turn_ended"} else None) or "Agent turn is active."
         reason = "A current agent turn or tool is running."
         tone = "active"
         priority = 90
@@ -446,6 +471,20 @@ def present_work_item(
         action_explanation = (
             "No operator action needed; autonomous work is progressing."
         )
+    elif session_facts["pending"]:
+        group = "motion"
+        state_code = "session_queued"
+        state_label = "Agent work queued"
+        summary = "Work is queued in the linked execution session."
+        reason = (
+            "The queued work will run when the session is ready."
+            if connection == "connected"
+            else "The queued work is awaiting session recovery; no live turn is confirmed."
+        )
+        tone = "active"
+        priority = 85
+        action = _action("open_agent", "Open agent", href=agent_href)
+        action_explanation = "Inspect the existing session before starting another execution."
     elif review:
         _watch, review_reason, review_url = review
         group = "attention"
@@ -541,10 +580,10 @@ def present_work_item(
         priority = 80
         action = _action("open_card", "Open card", href=card_href)
         action_explanation = "No operator action needed; startup is in progress."
-    elif freshness_state in STALE_PROGRESS_STATES and state in ACTIVE_DISPATCH_STATES:
+    elif (checkpoint_state in {"stale", "stalled"} or connection == "disconnected") and state in ACTIVE_DISPATCH_STATES:
         group = "attention"
         state_code = "progress_stale"
-        state_label = "Progress overdue"
+        state_label = "Runtime disconnected" if connection == "disconnected" else "Progress overdue"
         summary = latest_summary or "No current progress checkpoint is available."
         reason = "Active work has no current runtime signal; inspect before deciding whether to retry."
         tone = "warning"
@@ -560,8 +599,8 @@ def present_work_item(
             if session_facts["quiet"]
             else DISPATCH_LABELS.get(state, "In motion")
         )
-        summary = latest_summary or "The agent runtime is connected and awaiting work."
-        reason = "The execution remains current; no operator-owned blocker is recorded."
+        summary = latest_summary or ("The agent runtime is connected and awaiting work." if connection == "connected" else "Dispatch is active; current runtime evidence is unavailable.")
+        reason = "No operator-owned blocker is recorded; missing telemetry does not authorize another dispatch."
         tone = "active"
         priority = 70
         action = (
@@ -569,7 +608,7 @@ def present_work_item(
             if session_id
             else _action("open_card", "Open card", href=card_href)
         )
-        action_explanation = "No operator action needed; the runtime is available."
+        action_explanation = "Inspect the linked execution before considering another dispatch."
     elif state in {"completed", "acknowledged"} or lane == "done":
         group = "outcome"
         state_code = "completed"
@@ -624,6 +663,24 @@ def present_work_item(
         "reason": reason,
         "tone": tone,
         "freshness": freshness_state,
+        "connection": connection,
+        "signal_label": "Runtime observed" if (session or {}).get("observed_at") else "Checkpoint" if timestamp else "Runtime signal",
+        "execution_label": "Latest execution" if state in TERMINAL_DISPATCH_STATES and not session_facts["active"] else "Execution",
+        "checkpoint_state": checkpoint_state,
+        "reporting": reporting,
+        "reporting_label": (
+            "No execution is linked." if not dispatch_id and not session_id
+            else "Structured progress unsupported (legacy reporting)." if reporting == "lifecycle_only"
+            else "No retained checkpoint; earlier checkpoints were compacted." if not latest and progress.get("compacted_ranges")
+            else "Awaiting the first structured checkpoint." if not latest
+            else "Checkpoint overdue." if checkpoint_state in {"stale", "stalled"}
+            else "Structured checkpoint available."
+        ),
+        "checkpoint_at": (latest.get("occurred_at") or latest.get("last_activity_at")),
+        "active_prompt_id": (session or {}).get("active_prompt_id"),
+        "provider": (session or {}).get("provider"),
+        "model": (session or {}).get("model"),
+        "can_dispatch": not (state in ACTIVE_DISPATCH_STATES or session_facts["active"] or session_facts["pending"]),
         "freshness_label": FRESHNESS_LABELS.get(
             freshness_state,
             freshness_state.replace("_", " ").capitalize(),
@@ -647,8 +704,74 @@ def present_work_item(
             reason,
             f"Target {presentation['target_instance_name']}",
             f"{presentation['freshness_label']}, {presentation['relative_time']}",
+            presentation["reporting_label"],
             action.get("label"),
         )
         if part
     )
     return presentation
+
+
+def present_reconciliation(
+    record: dict[str, Any],
+    *,
+    active_turn: bool = False,
+    active_prompt_id: str | None = None,
+    historical: bool = False,
+) -> dict[str, Any]:
+    """Describe automated extraction separately from its immutable diagnostics."""
+    state = str(record.get("state") or "not_requested")
+    resolved = state in {"resolved", "not_required", "already_satisfied", "completed"}
+    automatic = state in {"prompted", "pending"} or bool(record.get("next_retry_at"))
+    if historical:
+        label = "Earlier completion check"
+        detail = (
+            "This check belongs to an earlier execution outcome. Its diagnostics "
+            "are preserved; current execution is shown above."
+        )
+        next_action = "None for this historical record"
+    elif resolved:
+        label = "Reconciliation resolved"
+        detail = (
+            "A valid completion outcome is recorded. Delivery and card state are "
+            "shown separately. No user action is needed for extraction."
+        )
+        next_action = "None"
+    elif state == "prompted" and active_prompt_id and active_prompt_id == record.get("prompt_id"):
+        label = "Automatic completion check running"
+        detail = (
+            "PA is extracting the completion outcome in the linked session. "
+            "No user action is needed."
+        )
+        next_action = "Finish the current completion check"
+    elif automatic:
+        label = (
+            "Automatic completion check queued"
+            if state == "prompted" else "Automatic completion check pending"
+        )
+        detail = (
+            "The current agent turn is running. PA will process the queued "
+            "completion check when its turn is reached. "
+            if active_turn else "PA will extract the completion outcome automatically. "
+        )
+        detail += "No user action is needed."
+        next_action = (
+            "Wait for the queued check" if state == "prompted"
+            else "Retry automatically at the recorded time" if record.get("next_retry_at")
+            else "Run the automatic completion check"
+        )
+    else:
+        label = "Completion check needs attention"
+        detail = (
+            "PA could not reconcile the completion outcome automatically. Inspect "
+            "the linked session and diagnostics before retrying the completion check."
+        )
+        next_action = "Inspect completion check"
+    return {
+        **record,
+        "label": label,
+        "detail": detail,
+        "needs_attention": not historical and not resolved and not automatic,
+        "next_action": next_action,
+        "active_turn": active_turn,
+    }

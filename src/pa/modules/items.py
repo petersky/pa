@@ -538,7 +538,8 @@ def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
     from pa.execution.session_presentation import build_session_presentation
 
     agent = ctx.services.get("instance_agent")
-    runtime = agent.get(session.id) if agent and hasattr(agent, "get") else None
+    local = not session.origin_instance_id or session.origin_instance_id == ctx.settings.instance_id
+    runtime = agent.get(session.id) if local and agent and hasattr(agent, "get") else None
     presentation = build_session_presentation(
         session,
         runtime=runtime,
@@ -560,6 +561,12 @@ def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
         state = "available"
     return {
         "id": session.id,
+        "instance_id": session.origin_instance_id or ctx.settings.instance_id,
+        "provider": session.agent_name,
+        "model": (session.config_json or {}).get("model"),
+        "observed_at": presentation["observed_at"] if runtime else None,
+        "active_prompt_id": getattr(getattr(runtime, "_in_flight", None), "id", None),
+        "connection_state": presentation["connection"]["state"] if local else "unavailable",
         "session_state": state,
         "state": state,
         "connected": presentation["connection"]["state"] == "connected",
@@ -613,12 +620,18 @@ def _presentation_context_for_cards(
     for card in cards:
         record = dispatches.get(card.id)
         public = canonicalize_dispatch_public(ctx, record) if record else None
+        # Associations include coordinators and older sessions. The dispatch's
+        # exact execution identity must own both runtime evidence and its link.
+        execution_session = (
+            store.get_session(record.session_id) if record and record.session_id
+            else None if record else sessions.get(card.id)
+        )
         if record:
             progress[card.id] = _progress_from_dispatch(ctx, record)
         presentations[card.id] = present_work_item(
             card,
             dispatch=public,
-            session=_session_presentation_signal(ctx, sessions.get(card.id)),
+            session=_session_presentation_signal(ctx, execution_session),
             watches=watches.get(card.id, ()),
             target_instance_name=(
                 public.get("target_instance_name") if public else None
@@ -717,6 +730,22 @@ def _card_summary_context(request: Request, card) -> dict:
         ),
         None,
     )
+    from pa.core.ui.work_presentation import present_reconciliation
+
+    work = _work_presentation_for_card(request, card)
+    reconciliations = []
+    if dispatch_store:
+        for record in dispatch_store.list(card_id=card.id, limit=20, deep=False):
+            if record.reconciliation_state == "not_requested":
+                continue
+            reconciliations.append(present_reconciliation(
+                record.public_dict()["card_reconciliation"] | {
+                    "dispatch_id": record.dispatch_id, "session_id": record.session_id,
+                },
+                active_turn=work["state"] == "working" and work["session_id"] == record.session_id,
+                active_prompt_id=work.get("active_prompt_id"),
+                historical=record.dispatch_id != work["dispatch_id"] or (record.state in {"completed", "acknowledged", "cancelled", "failed"} and record.reconciliation_state not in {"resolved", "not_required", "already_satisfied", "completed"}),
+            ))
     return {
         "card": card,
         "summary_diagnostics": summary_service.diagnostics(),
@@ -729,22 +758,8 @@ def _card_summary_context(request: Request, card) -> dict:
         "children": store.list_cards(realm_id=realm_id, parent_id=card.id),
         "critical_watch": critical_watch,
         "current_progress": _latest_card_progress(request, card.id),
-        "work_presentation": _work_presentation_for_card(request, card),
-        "card_reconciliations": (
-            [
-                record.public_dict()["card_reconciliation"]
-                | {
-                    "dispatch_id": record.dispatch_id,
-                    "session_id": record.session_id,
-                }
-                for record in dispatch_store.list(
-                    card_id=card.id, limit=1000, deep=False
-                )
-                if record.reconciliation_state != "not_requested"
-            ]
-            if dispatch_store
-            else []
-        ),
+        "work_presentation": work,
+        "card_reconciliations": reconciliations,
         "lanes": list(CardLane),
         "projects": store.list_projects(realm_id=realm_id),
         "csrf_token": token_for_request(request),

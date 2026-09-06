@@ -10,16 +10,18 @@
      hx-swap="outerHTML">
   <div class="card-work-state-heading">
     <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
-    <time datetime="{{ presentation.occurred_at or card.updated_at.isoformat() }}"
+    {% if presentation.occurred_at %}<time datetime="{{ presentation.occurred_at }}"
           title="{{ presentation.absolute_time }}">
-      {{ presentation.freshness_label }} · {{ presentation.relative_time }}
-    </time>
+      {{ presentation.signal_label }} · {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+    </time>{% else %}<span class="muted">{{ presentation.freshness_label }} · Time unavailable</span>{% endif %}
   </div>
   <strong>{{ presentation.summary }}</strong>
   <p class="muted small">{{ presentation.reason }}</p>
+  <p class="muted small">{{ presentation.reporting_label }}</p>
   <div class="card-work-state-context muted small">
-    <span>Target {{ presentation.target_instance_name }}</span>
-    {% if presentation.session_id %}<span>Session {{ presentation.session_id[:8] }}</span>{% endif %}
+    <span>{{ presentation.execution_label ~ ' instance' if presentation.session_id else 'Dispatch target' }} {{ presentation.target_instance_name }}</span>
+    {% if presentation.provider %}<span>{{ presentation.execution_label }} agent {{ presentation.provider }}{% if presentation.model %} · {{ presentation.model }}{% endif %}</span>{% endif %}
+    {% if presentation.session_id %}<a href="{{ presentation.action.href if presentation.action.kind == 'open_agent' else '/agent?session=' ~ presentation.session_id }}">Linked session {{ presentation.session_id[:8] }}</a>{% endif %}
   </div>
   <div class="card-work-state-action">
     {% if action.kind == 'retry' %}

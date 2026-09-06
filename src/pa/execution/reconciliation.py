@@ -248,12 +248,18 @@ class CompletionReconciler:
         )
         payload_error = str(payload.get("card_disposition_error") or "")[:1000] or None
         error = payload_error or parse_error
-        is_followup = payload.get(
-            "prompt_source"
-        ) == f"{RECONCILIATION_SOURCE_PREFIX}{record.dispatch_id}" or (
-            record.reconciliation_prompt_id
-            and payload.get("queued_prompt_id") == record.reconciliation_prompt_id
+        prompt_id = payload.get("queued_prompt_id")
+        is_followup = (
+            prompt_id == record.reconciliation_prompt_id
+            if record.reconciliation_prompt_id
+            else payload.get("prompt_source") == f"{RECONCILIATION_SOURCE_PREFIX}{record.dispatch_id}"
         )
+        if prompt_id and prompt_id in record.reconciliation_prompt_ids and not is_followup:
+            # A replay of an earlier extraction must not consume or resolve the
+            # current recovery attempt merely because both have the same source.
+            return True
+        if record.reconciliation_state == "prompted" and not is_followup:
+            return False
         if disposition:
             payload["card_disposition"] = disposition.model_dump(mode="json")
             payload.pop("card_disposition_error", None)
@@ -318,6 +324,8 @@ class CompletionReconciler:
 
         record.completion_payload = payload
         record.card_disposition_error = error
+        if error and error not in record.reconciliation_parse_errors:
+            record.reconciliation_parse_errors.append(error)
         record.reconciliation_state = "pending"
         record.reconciliation_reason = self._missing_disposition_reason(
             "The completed card turn omitted a valid pa.card-disposition/v1 payload",

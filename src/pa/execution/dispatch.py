@@ -522,7 +522,7 @@ class DispatchRecord(BaseModel):
             "freshness": progress_freshness(
                 last_activity_at=last_activity,
                 dispatch_state=data["effective_state"],
-                last_error=self.last_error or progress_delivery_error,
+                last_error=progress_delivery_error,
                 protocol_version=self.progress_protocol_version,
             ),
             "delivery_error": progress_delivery_error,

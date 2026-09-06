@@ -72,7 +72,7 @@ async def _semantic_summary_uses_full_input_and_persists_provenance() -> None:
         assert ready.summary_source.value == "agent"
         assert (
             ready.summary_input_hash
-            and ready.summary_prompt_version == "card-summary-v2"
+            and ready.summary_prompt_version == "card-summary-v3"
         )
         assert not ready.summary.startswith(body[:40])
 
@@ -175,9 +175,9 @@ def test_connection_transport_and_response_failure_classification() -> None:
         (wrapped(ssl.SSLError("private certificate")), "tls_failure"),
         (httpx.ConnectError("private endpoint"), "connection_failed"),
         (httpx.ReadTimeout("private timeout"), "timeout"),
-        (ValueError("secret schema detail"), "schema_violation"),
+        (ValueError("secret schema detail"), "internal_adapter_error"),
         (json.JSONDecodeError("secret malformed payload", "private", 0), "malformed_json"),
-        (KeyError("private envelope"), "invalid_response"),
+        (KeyError("private envelope"), "internal_adapter_error"),
     ]
     for error, code in cases:
         failure = CardSummaryService._classify_failure(error)
@@ -886,7 +886,7 @@ def test_response_shape_diagnostics_do_not_expose_raw_provider_content(
                     {"function": {"name": SUBMIT_SUMMARY_TOOL, "arguments": "{}"}},
                 ],
             },
-            "schema_violation",
+            "invalid_envelope",
         ),
     ],
 )
@@ -1160,3 +1160,65 @@ def test_replaced_key_invalidates_cached_configuration() -> None:
         assert second_key == "second-key"
         assert "first-key" not in str(service.diagnostics())
         assert "second-key" not in str(service.diagnostics())
+
+
+@pytest.mark.parametrize(("value", "code"), [
+    ("x" * 601, "summary_too_long"), ("One. Two. Three. Four.", "summary_sentence_count"),
+    ("1. Enumerated output", "summary_enumeration"), ("", "empty_output"),
+    ("<think>private reasoning", "summary_content_violation"),
+])
+def test_summary_content_failures_have_safe_specific_retryable_reasons(value, code):
+    with pytest.raises(SummaryProviderError) as error:
+        sanitize_summary(value)
+    assert error.value.code == code
+    assert error.value.retryable
+    assert error.value.invocation_succeeded
+    assert "private reasoning" not in error.value.public_message
+
+
+@pytest.mark.parametrize("payload", [None, [], {"choices": []}, {"choices": [None]}])
+def test_invalid_envelope_is_distinct_from_internal_errors(payload):
+    with pytest.raises(SummaryProviderError) as error:
+        parse_chat_completion_summary(payload)
+    assert error.value.code == "invalid_envelope"
+    assert error.value.retryable
+
+
+def test_truncation_is_rejected_even_if_partial_summary_is_parseable():
+    for parse, payload in [
+        (parse_chat_completion_summary, {"choices": [{"finish_reason": "length", "message": {"content": '{"summary":"Partial but valid."}'}}]}),
+        (parse_anthropic_summary, {"stop_reason": "max_tokens", "content": [{"type": "text", "text": '{"summary":"Partial but valid."}'}]}),
+    ]:
+        with pytest.raises(SummaryProviderError) as error:
+            parse(payload)
+        assert error.value.code == "output_truncated"
+        assert error.value.retryable
+
+
+@pytest.mark.parametrize("eventual_success", [False, True])
+def test_output_retry_budget_preserves_previous_summary(tmp_path, eventual_success):
+    async def run():
+        calls = 0
+        async def provider(*args):
+            nonlocal calls
+            calls += 1
+            return "A corrected summary." if eventual_success and calls == 2 else "x" * 601
+        ctx, _ = context(str(tmp_path), provider)
+        card = ctx.store.create_card(CardCreate(title="Retry", summary="Previous valid summary.", summary_source="agent"))
+        service = CardSummaryService(ctx, provider_call=provider)
+        await service.generate(card.id, card.realm_id)
+        pending = ctx.store.get_card(card.id)
+        assert pending.summary_status.value == "pending"
+        assert pending.summary == "Previous valid summary."
+        assert pending.summary_failure_code == "summary_too_long"
+        await service.generate(card.id, card.realm_id)
+        assert calls == 1  # deadline is enforced even for direct callers
+        ctx.store.update_card(card.id, CardUpdate(summary_next_attempt_at=datetime.now(UTC) - timedelta(seconds=1)))
+        await service.generate(card.id, card.realm_id)
+        await service.generate(card.id, card.realm_id)
+        final = ctx.store.get_card(card.id)
+        assert calls == 2
+        assert final.summary_status.value == ("ready" if eventual_success else "failed")
+        assert final.summary == ("A corrected summary." if eventual_success else "Previous valid summary.")
+        assert final.summary_next_attempt_at is None
+    asyncio.run(run())

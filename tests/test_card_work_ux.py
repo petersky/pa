@@ -340,6 +340,50 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         reset_settings()
         self.tmp.cleanup()
 
+    def test_detail_and_refresh_use_exact_executor_and_typed_related_groups(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from pa.execution.dispatch import DispatchRecord
+        with TestClient(self.app) as client:
+            store = self.app.state.ctx.store
+            parent = store.create_card(CardCreate(title="Parent work"))
+            card = store.create_card(CardCreate(title="Summary failure", body="Description remains available", parent_id=parent.id))
+            child = store.create_card(CardCreate(title="Notification child", parent_id=card.id))
+            store.update_card(card.id, CardUpdate(summary_status="failed", summary_stale=True, summary_failure_code="schema_violation"))
+            executor = store.save_session(AgentSession(id="exact-worker", card_id=card.id, agent_name="codex", origin_instance_id="ux-test"))
+            store.save_session(AgentSession(id="coordinator", card_id=card.id, agent_name="other"))
+            self.app.state.ctx.services["dispatch_store"].put(DispatchRecord(
+                dispatch_id="detail-dispatch", mutation_id="detail-mutation", card_id=card.id,
+                session_id=executor.id, target_instance_id="ux-test", authority_instance_id="ux-test", authority_url="http://testserver", state="running"))
+            runtime = SimpleNamespace(connected=True, prompting=True, _in_flight=None, _queue=[], _closed=False)
+            agent = SimpleNamespace(get=lambda sid: runtime if sid == executor.id else None)
+            with patch.dict(self.app.state.ctx.services, instance_agent=agent):
+                detail = client.get(f"/partials/cards/{card.id}/detail")
+                fragment = client.get(f"/partials/cards/{card.id}/progress")
+            assert detail.status_code == fragment.status_code == 200
+            for html in (detail.text, fragment.text):
+                assert 'data-work-state="working"' in html
+                assert 'data-progress-state="live"' in html
+                assert "Structured progress unsupported" in html
+                assert "Disconnected" not in html
+                assert "Execution agent codex" in html
+                assert "session=exact-worker" in html
+                assert "coordinator" not in html
+                assert "data-card-dispatch-open" not in html
+            assert "Summary generation failed; description is available." in detail.text
+            assert "Summary needs review" not in detail.text
+            assert "<dt>Card assignee</dt><dd>Unassigned</dd>" in detail.text
+            assert "<h4>Child cards</h4>" in detail.text
+            assert "<h4>Parent card</h4>" in detail.text
+            assert f"card={child.id}" in detail.text
+            assigned = store.get_card(card.id).model_copy(update={"owner_principal": "person:alex"})
+            original_get = store.get_card
+            with patch.object(store, "get_card", side_effect=lambda cid, **kw: assigned if cid == card.id else original_get(cid, **kw)), patch.object(store, "update_card") as update:
+                detail = client.get(f"/partials/cards/{card.id}/detail")
+                assert "<dt>Card assignee</dt><dd>person:alex</dd>" in detail.text
+                update.assert_not_called()
+                assert assigned.owner_principal == "person:alex"
+
     def test_home_and_collection_views_use_summaries_without_right_rails(self) -> None:
         with TestClient(self.app) as client:
             card = self.app.state.ctx.store.create_card(
@@ -843,7 +887,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             )
 
             self.assertEqual(saved.status_code, 200, saved.text)
-            self.assertIn("Summary needs review", saved.text)
+            self.assertIn("Previous summary; it may be out of date.", saved.text)
             updated = self.app.state.ctx.store.get_card(card.id)
             assert updated is not None
             self.assertEqual(updated.summary_source, CardSummarySource.MANUAL)

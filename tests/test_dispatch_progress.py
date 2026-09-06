@@ -269,7 +269,7 @@ class ProgressStoreTests(unittest.TestCase):
         legacy = record().model_copy(update={"progress_protocol_version": None})
         public = legacy.public_dict()
         self.assertEqual(public["progress"]["reporting"], "lifecycle_only")
-        self.assertEqual(public["progress"]["freshness"]["state"], "disconnected")
+        self.assertEqual(public["progress"]["freshness"]["state"], "unsupported")
 
     def test_startup_failure_does_not_populate_completion_outbox_error(self) -> None:
         failed = record().model_copy(
@@ -617,7 +617,7 @@ class ProgressDerivationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 target.get(DISPATCH).public_dict()["progress"]["freshness"]["state"],
-                "disconnected",
+                "delivery_error",
             )
             await service._send(target_record, payload)
             self.assertIsNotNone(target.get(DISPATCH).progress_events[0].delivered_at)

@@ -382,3 +382,83 @@ def test_startup_dispatch_failure_does_not_surface_as_delivery_failed() -> None:
 
     assert result["attention_code"] != "delivery_failure"
     assert result["state_label"] != "Delivery failed"
+
+
+@pytest.mark.parametrize("schema,compacted", [(None, []), (1, []), (1, [[1, 7]])])
+def test_connected_turn_without_checkpoint_has_independent_truth(schema, compacted):
+    value = dispatch("running", progress={"schema_version": schema, "latest": None,
+        "freshness": {"state": "disconnected"}, "compacted_ranges": compacted})
+    result = present(dispatch_value=value, session={"id": "session-1", "connected": True,
+        "connection_state": "connected", "state": "working", "observed_at": NOW.isoformat()})
+    assert result["state"] == "working"
+    assert result["freshness"] == "live"
+    assert result["occurred_at"] == NOW.isoformat()
+    assert "Disconnected" not in result["accessible_label"]
+    assert "overdue" not in result["accessible_label"].lower()
+    assert not result["can_dispatch"]
+    assert ("unsupported" if schema is None else "compacted" if compacted else "first structured") in result["reporting_label"]
+
+
+def test_mismatched_session_cannot_claim_runtime_or_executor():
+    value = dispatch("running", progress={"schema_version": None})
+    result = present(dispatch_value=value, session={"id": "coordinator", "state": "working", "connected": True, "provider": "wrong"})
+    assert result["session_id"] == "session-1"
+    assert result["provider"] is None
+    assert result["freshness"] == "unavailable"
+    assert not result["can_dispatch"]
+
+
+@pytest.mark.parametrize("connection", ["disconnected", "unavailable"])
+def test_missing_or_remote_runtime_does_not_claim_live_ownership(connection):
+    result = present(dispatch_value=dispatch("running", progress={"schema_version": None}),
+        session={"id": "session-1", "state": "available", "connection_state": connection})
+    assert result["freshness"] == connection
+    assert result["occurred_at"] is None
+    assert "runtime is connected" not in result["summary"]
+    assert not result["can_dispatch"]
+
+
+def test_active_followup_does_not_reuse_historical_completed_summary_or_time():
+    result = present(dispatch_value=dispatch("completed", phase="completed", summary="Old completion"),
+        session={"id": "session-1", "state": "working", "connected": True, "observed_at": NOW.isoformat()})
+    assert result["summary"] == "Agent turn is active."
+    assert result["occurred_at"] == NOW.isoformat()
+    assert result["freshness"] == "live"
+
+
+@pytest.mark.parametrize("state,needs_attention", [("prompted", False), ("pending", False), ("resolved", False), ("failed", True)])
+def test_reconciliation_prose_keeps_parse_history_out_of_current_state(state, needs_attention):
+    from pa.core.ui.work_presentation import present_reconciliation
+    record = {"state": state, "disposition_error": "exact JSON parse error", "prompt_id": "attempt-2"}
+    result = present_reconciliation(record, active_turn=True)
+    assert result["needs_attention"] is needs_attention
+    assert "JSON" not in result["detail"]
+    assert result["disposition_error"] == record["disposition_error"]
+    assert result["prompt_id"] == "attempt-2"
+
+
+def test_stale_remote_busy_state_is_not_current_turn_evidence():
+    result = present(dispatch_value=dispatch("running", freshness="stale"),
+        session={"id": "session-1", "state": "busy", "connection_state": "unavailable", "turn": {"state": "running"}})
+    assert result["state"] == "progress_stale"
+    assert result["freshness"] == "unavailable"
+
+
+def test_reconciliation_running_prompt_and_historical_followup_are_distinct():
+    from pa.core.ui.work_presentation import present_reconciliation
+    record = {"state": "prompted", "prompt_id": "recovery-2"}
+    running = present_reconciliation(record, active_turn=True, active_prompt_id="recovery-2")
+    assert running["label"] == "Automatic completion check running"
+    historical = present_reconciliation(record, active_turn=True, active_prompt_id="new-followup", historical=True)
+    assert historical["label"] == "Earlier completion check"
+    assert not historical["needs_attention"]
+    assert historical["next_action"] == "None for this historical record"
+
+
+def test_queued_followup_after_terminal_dispatch_prevents_duplicate_start():
+    result = present(dispatch_value=dispatch("completed", phase="completed"),
+        session={"id": "session-1", "state": "queued", "turn": {"state": "queued"}, "connection_state": "disconnected"})
+    assert result["state"] == "session_queued"
+    assert not result["can_dispatch"]
+    assert result["action"]["kind"] == "open_agent"
+    assert "no live turn is confirmed" in result["reason"]
