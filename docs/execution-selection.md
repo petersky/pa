@@ -235,8 +235,20 @@ This checklist is maintained until complete; unchecked items are not a completio
   worker/card ownership; old-column projection migration and CLI/MCP forwarding:
   `tests/test_execution_selection_runtime.py`, `tests/test_execution_selection_surfaces.py`,
   `tests/test_execution_selection_settings.py`, `tests/test_execution_selection_jobs.py`.
-- [ ] Full repository regression suite, isolated boot smoke, build, final diff
-  review and wide/narrow browser evidence at the exact final commit.
+- [x] Combined lifecycle integration on `24ee47876acc862a30d57579733ec900807eb419`:
+  2,335 tests and 854 subtests passed; one existing mixed-load peak-lag test failed
+  (50.379ms against 40ms), then all 19 responsiveness tests passed unchanged on
+  isolated rerun. Earlier full feature runs passed 2,313 and 2,318 tests.
+  Focused combined selection/lifecycle tests, isolated boot, wheel/sdist build,
+  packaged MCP stdio smoke, new Python Ruff checks, JS syntax and diff checks passed.
+  No timing threshold was weakened; exact-head CI remains a mandatory merge gate.
+- [x] Final combined-code 390px create/dispatch: card
+  `a1e1bd4f-f5c4-4fac-bd92-f9d57c81dd5b` retained low, one-run xhigh was confirmed
+  at `2026-09-06T00:29:39.288842+00:00` on session
+  `0d4d5a95-7b0f-466c-bdea-418516e59b14`, dispatch
+  `4b639a50-2aef-4f1f-8c8f-3e812cb848d0`. A later stale-card submit failed without
+  creating another runtime. Historical receipts are readable at 390px and 1280px
+  and distinguish last-confirmed values from live state. Test fixtures are tool-free.
 - [ ] Scoped commit/push, ready PR with exact requirement/evidence checklist,
   durable PA watch, stable-green exact head, independent review/CI/mergeability
   revalidation, merge and matching merge-commit evidence on the card.
