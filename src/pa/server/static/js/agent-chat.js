@@ -1677,7 +1677,8 @@
     this.sessionClosed = session.status === "closed";
     if (!this.sessionClosed) this.sessionRecoverable = false;
     if (this.drafts) this.drafts.onSnapshot(snap);
-    this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked);
+    this.setComposerEnabled(!this.sessionClosed && !recoveryBlocked,
+      this.sessionClosed ? "This session has ended. Select another conversation." : undefined);
     this.renderSessionActions();
     const handoffs = snap.restart_handoffs || [];
     const handoff = handoffs.length ? handoffs[handoffs.length - 1] : null;
@@ -3381,7 +3382,7 @@
     if (this.els.browserToggle) this.els.browserToggle.disabled = this.turnActive;
   };
 
-  AgentChatWidget.prototype.setComposerEnabled = function (enabled) {
+  AgentChatWidget.prototype.setComposerEnabled = function (enabled, disabledMessage) {
     this.composerEnabled = !!enabled;
     const controls = [
       this.els.input,
@@ -3395,7 +3396,7 @@
     if (this.els.input) {
       this.els.input.placeholder = enabled
         ? "Message the agent, type / for commands, or drop images here…"
-        : "Preparing conversation…";
+        : disabledMessage || "Preparing conversation…";
     }
   };
 
@@ -3578,7 +3579,7 @@
     this.closePending = false;
     this.setTurnActive(false);
     this.setStatus("offline");
-    this.setComposerEnabled(false);
+    this.setComposerEnabled(false, endedMessage);
     this.closeSSE("session-ended");
     this.renderSessionActions();
     this.addBubble("system", endedMessage, new Date().toISOString(), {

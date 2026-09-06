@@ -154,6 +154,8 @@ class AgentSidebarFreshnessTests(unittest.TestCase):
               widget.setComposerEnabled(false);
               assert.strictEqual(widget.els.input.disabled, true);
               assert.ok(!widget.els.input.placeholder.includes('ended'));
+              widget.setComposerEnabled(false, 'Session ended.');
+              assert.strictEqual(widget.els.input.placeholder, 'Session ended.');
               widget.api = () => new Promise(() => {});
               const keepAlive = setTimeout(noop, 1000);
               await assert.rejects(widget.apiWithTimeout('/history/ready', 10),
