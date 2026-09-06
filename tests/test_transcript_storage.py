@@ -9,12 +9,55 @@ import unittest
 import zlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
+from types import SimpleNamespace
 
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.domain.projection import CardProjection
 
 
 class TranscriptStorageTests(unittest.TestCase):
+    def test_status_never_starts_diagnostics_and_reports_snapshot_age(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            with patch.object(store.transcripts, "metrics", side_effect=AssertionError("status started scan")):
+                status = store.transcript_storage_status()
+                self.assertEqual(status["measurement_state"], "not_measured")
+                self.assertIsNone(status["missing_objects"])
+            measured = store.transcript_storage_metrics()
+            with patch.object(store, "_conn", side_effect=AssertionError("status read SQLite")), patch.object(
+                store.transcripts, "metrics", side_effect=AssertionError("status rescanned")
+            ):
+                self.assertEqual(store.transcript_storage_status(), measured)
+                status = store.transcript_storage_status()
+                status["integrity"] = "caller change"
+                self.assertEqual(store.transcript_storage_status()["integrity"], "ok")
+                self.assertIsNotNone(status["measured_at"])
+                from pa.modules.instance import _runtime_status_snapshot
+                from pa.instance.maintenance import InstanceMaintenanceService
+                from pa.config import Settings
+
+                ctx = SimpleNamespace(
+                    store=store, services={},
+                    require_service=lambda _: SimpleNamespace(snapshot=lambda: {}),
+                )
+                self.assertEqual(_runtime_status_snapshot(ctx)["transcript_storage"], measured)
+                maintenance = InstanceMaintenanceService(Settings(data_dir=Path(tmp)), store, {})
+                self.assertEqual(maintenance.snapshot()["transcript_storage"], measured)
+
+    def test_recovery_catalog_excludes_historical_rows_before_hydration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            for index in range(20):
+                store.save_session(AgentSession(id=f"closed-{index}", agent_name="codex", status="closed"))
+            store.save_session(AgentSession(id="archived", agent_name="codex", archived_at=datetime.now(UTC)))
+            store.save_session(AgentSession(id="recoverable", agent_name="codex", status="idle"))
+            with patch.object(store, "_row_to_session", wraps=store._row_to_session) as hydrate:
+                sessions = store.list_sessions(exclude_statuses=("closed",), include_archived=False)
+            self.assertEqual([session.id for session in sessions], ["recoverable"])
+            self.assertEqual(hydrate.call_count, 1)
+            self.assertEqual(len(store.list_sessions()), 22)
+
     def test_large_payload_is_redacted_deduplicated_and_verified(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = CardProjection(Path(tmp) / "pa.db")

@@ -107,6 +107,10 @@ class PRSupervisorStore:
                     retired_at TEXT,
                     UNIQUE(realm_id, repository, pr_number)
                 );
+                CREATE INDEX IF NOT EXISTS idx_pr_watches_completion
+                    ON pr_watches(updated_at, id)
+                    WHERE status='merged' AND card_id IS NOT NULL
+                      AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done';
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_due
                     ON pr_watches(status, next_poll_at);
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_card
@@ -409,6 +413,20 @@ class PRSupervisorStore:
         query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
+        return [self._row_to_watch(row) for row in rows]
+
+    def list_card_completion_due(self, *, now: datetime | None = None, limit: int = 100) -> list[PRWatch]:
+        """Hydrate only a bounded batch of merged cards due for bookkeeping."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM pr_watches
+                   WHERE status='merged' AND card_id IS NOT NULL
+                     AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
+                     AND (json_extract(state_json, '$.card_completion_retry.next_retry_at') IS NULL
+                          OR json_extract(state_json, '$.card_completion_retry.next_retry_at') <= ?)
+                   ORDER BY updated_at, id LIMIT ?""",
+                ((now or utcnow()).isoformat(), max(1, min(int(limit), 100))),
+            ).fetchall()
         return [self._row_to_watch(row) for row in rows]
 
     def list_watch_page(

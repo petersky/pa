@@ -264,6 +264,7 @@
     this.sseReconnectCount = 0;
     this.externalEventTransport = false;
     this.destroyed = false;
+    // Selection/request lifetime is independent of EventSource lifetime.
     this.subscriptionGeneration = 0;
     this.routeAbortController = null;
     this.lastSeq = 0;
@@ -678,6 +679,7 @@
   };
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
+    this.subscriptionGeneration += 1;
     this.closeSSE("session-cleared");
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     this.liveStateRetryId = null;
@@ -1106,6 +1108,7 @@
         ? Promise.resolve(null)
         : self._loadRecentHistory(sessionId, generation).catch(function () { return null; });
       return historyFallback.then(function () {
+        if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
         self.setPlaceholder(
           "Live controls are temporarily unavailable. Durable history is shown when available; PA will retry automatically."
         );
@@ -1146,6 +1149,7 @@
     const self = this;
     options = options || {};
     const generation = ++this.subscriptionGeneration;
+    this.closeSSE("session-selected");
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
     this.liveStateRetryId = null;
     this.liveStateRetryCount = 0;
@@ -1200,6 +1204,7 @@
         self._writeSessionUrl(!!options.replace);
         if (route.state === "owner_unreachable") {
           return loadDurableHistory().catch(function () { return null; }).then(function () {
+            if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
             self.setStatus("offline");
             self.setComposerEnabled(false);
             self.setPlaceholder(
@@ -1277,6 +1282,7 @@
           return self._loadLiveSnapshot(sessionId, generation);
         }
         return loadDurableHistory().catch(function () { return null; }).then(function () {
+          if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
           self.ownerResolutionPending = false;
           self.sessionRoute = { state: "owner_unreachable" };
           self.setPlaceholder(
@@ -2150,7 +2156,7 @@
       readyState: es.readyState,
     });
     es.onopen = function () {
-      if (self.es !== es || self.destroyed) {
+      if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) {
         es.close();
         return;
       }
@@ -2171,6 +2177,7 @@
     };
 
     function onAny(ev) {
+      if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) return;
       try {
         const data = JSON.parse(ev.data);
         self.handleEvent(data, false);
@@ -2216,7 +2223,7 @@
     // Do not also set es.onmessage — that would double-dispatch default
     // "message" events (addEventListener("message") is already registered).
     es.onerror = function () {
-      if (self.es !== es || self.destroyed) return;
+      if (self.es !== es || self.destroyed || generation !== self.subscriptionGeneration) return;
       self.sseReconnectCount += 1;
       console.debug("[PA agent SSE] reconnect", {
         sessionId: self.esSessionId,
@@ -2250,7 +2257,6 @@
   };
 
   AgentChatWidget.prototype.closeSSE = function (reason) {
-    this.subscriptionGeneration += 1;
     const es = this.es;
     if (!es) return;
     console.debug("[PA agent SSE] close", {
@@ -3395,6 +3401,7 @@
   AgentChatWidget.prototype.setApiBase = function (apiBase, instanceId) {
     const next = String(apiBase || "/api/agent").replace(/\/$/, "");
     if (next === this.apiBase) return;
+    this.subscriptionGeneration += 1;
     this.closeSSE("api-base-changed");
     if (this.olderAbortController) this.olderAbortController.abort();
     this.olderAbortController = null;
@@ -3688,6 +3695,7 @@
   };
 
   AgentChatWidget.prototype.markSessionEnded = function (message) {
+    this.subscriptionGeneration += 1;
     const endedMessage = message || "Session ended.";
     this.sessionClosed = true;
     this.closePending = false;

@@ -138,6 +138,65 @@ class MutationReceiptCrashTests(unittest.TestCase):
             }
         )
 
+    def test_merge_catch_up_excludes_completed_receipt_ancestry(self) -> None:
+        key = "merge-startup-receipt"
+        origin, origin_head, _ = self._put_conflict_origin(self.log, key)
+        outcome = self._conflict_outcome(origin, origin_head, origin_head)
+        current = self._put_raw_commit(self.log, [outcome], parents=[origin_head])
+        self.log.advance_ref("default", current, expected_head=None)
+        self.projection.rebuild_from_log("default")
+        receipt = self.projection.get_operation_outcome(key)
+
+        # The second branch reaches the incomplete receipt without passing
+        # through the projection head that already completed it.
+        card = CardEvent(
+            type=EventType.CARD_CREATED, realm_id="default", card_id="new-card",
+            author_principal="user:test", author_instance="instance",
+            payload={"id": "new-card", "title": "New branch"},
+        )
+        branch = self._put_raw_commit(self.log, [card], parents=[origin_head])
+        update = card.model_copy(update={
+            "id": "merged-update", "type": EventType.CARD_UPDATED,
+            "payload": {"title": "Merged"},
+        })
+        target = self._put_raw_commit(self.log, [update], parents=[current, branch])
+        self.log.advance_ref("default", target, expected_head=current)
+        # Reproduce the old stop={current} traversal without weakening validators.
+        with patch.object(self.log, "_ancestors", return_value={current}):
+            with self.assertRaises(MutationOperationConflict):
+                self.projection.catch_up_projection("default", target)
+        self.assertEqual(self.projection.get_projection_head("default"), current)
+        with patch.object(self.projection, "apply_event", wraps=self.projection.apply_event) as apply:
+            result = self.projection.catch_up_projection("default", target)
+        self.assertEqual(result["commits_applied"], 2)
+        self.assertEqual([call.args[0].id for call in apply.call_args_list], [card.id, update.id])
+        self.assertEqual(self.projection.get_card("new-card").title, "Merged")
+        self.assertEqual(self.projection.get_operation_outcome(key), receipt)
+        self.assertEqual(self.projection.get_projection_head("default"), target)
+        self.assertEqual(self.log.get_commit(target).parent_hashes, [current, branch])
+        restarted = CardProjection(self.root / "pa.db", self.log)
+        self.assertEqual(restarted.catch_up_projection("default", target)["commits_applied"], 0)
+        self.assertEqual(restarted.get_operation_outcome(key), receipt)
+
+    def test_merge_catch_up_rolls_back_new_effects_when_event_is_missing(self) -> None:
+        origin, current, _ = self._put_conflict_origin(self.log, "atomic-startup")
+        self.log.advance_ref("default", current, expected_head=None)
+        self.projection.rebuild_from_log("default")
+        card = CardEvent(
+            type=EventType.CARD_CREATED, realm_id="default", card_id="rolled-back",
+            author_principal="user:test", author_instance="instance",
+            payload={"id": "rolled-back", "title": "Must roll back"},
+        )
+        branch = self._put_raw_commit(self.log, [card], parents=[current])
+        target = self._put_raw_commit(self.log, [], parents=[current, branch])
+        commit = self.log.get_commit(target).model_copy(update={"event_hashes": ["missing"]})
+        get_commit = self.log.get_commit
+        with patch.object(self.log, "get_commit", side_effect=lambda h: commit if h == target else get_commit(h)):
+            with self.assertRaisesRegex(ValueError, "missing event object"):
+                self.projection.catch_up_projection("default", target)
+        self.assertIsNone(self.projection.get_card("rolled-back"))
+        self.assertEqual(self.projection.get_projection_head("default"), current)
+
     def test_create_recovers_after_crash_between_append_and_receipt(self) -> None:
         key = "create-after-append"
         fingerprint = "create-fingerprint"
