@@ -967,7 +967,9 @@ class ProjectsModule(Module):
         )
 
     def api_routers(self):
-        return [("/api", router, ["projects"])]
+        from pa.modules.github_repositories import router as github_router
+
+        return [("/api", router, ["projects"]), ("/api", github_router, ["projects"])]
 
     def ui_routers(self):
         return [ui_router]
