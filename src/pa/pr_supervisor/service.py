@@ -2467,17 +2467,31 @@ class PRSupervisor:
 
     async def _reconcile_merged_cards(self) -> None:
         watches = await self._offload(
-            "sqlite.pr_supervisor_watch_read",
-            self.store.list_watches,
-            include_retired=True,
+            "sqlite.pr_supervisor_completion_due_read",
+            self.store.list_card_completion_due,
         )
         for watch in watches:
-            if (
-                watch.status == PRWatchStatus.MERGED
-                and watch.card_id
-                and watch.state.get("card_lane") != "done"
-            ):
-                await self._complete_merged_card(watch)
+            await self._complete_merged_card(watch)
+
+    @staticmethod
+    def _card_completion_retry(watch: PRWatch, reason: str) -> dict[str, Any]:
+        previous = watch.state.get("card_completion_retry") or {}
+        attempts = min(int(previous.get("attempts", 0)) + 1, 32)
+        delay = min(3600, 60 * 2 ** min(attempts - 1, 6))
+        return {
+            "attempts": attempts,
+            "next_retry_at": (utcnow() + timedelta(seconds=delay)).isoformat(),
+            "reason": reason[:1000],
+        }
+
+    async def _defer_card_completion(self, watch: PRWatch, reason: str) -> None:
+        state = dict(watch.state)
+        state["card_completion_retry"] = self._card_completion_retry(watch, reason)
+        deferred = await self._offload(
+            "sqlite.pr_supervisor_watch_write", self.store.set_terminal,
+            watch.id, PRWatchStatus.MERGED, state=state,
+        )
+        await self._replicate(deferred)
 
     async def _complete_merged_card(self, watch: PRWatch | None) -> None:
         if not watch or not watch.card_id or watch.state.get("card_lane") == "done":
@@ -2489,6 +2503,7 @@ class PRSupervisor:
             realm_id=watch.realm_id,
         )
         if not card:
+            await self._defer_card_completion(watch, "linked card is missing")
             await self._audit(
                 watch,
                 "card_completion_failed",
@@ -2525,6 +2540,7 @@ class PRSupervisor:
                     instance_id=self.settings.instance_id,
                 )
         except Exception as exc:  # noqa: BLE001
+            await self._defer_card_completion(watch, str(exc))
             await self._audit(
                 watch,
                 "card_completion_failed",
@@ -2538,6 +2554,10 @@ class PRSupervisor:
             )
             return
         state = dict(watch.state)
+        if decision.applied_lane == CardLane.DONE:
+            state.pop("card_completion_retry", None)
+        else:
+            state["card_completion_retry"] = self._card_completion_retry(watch, decision.reason)
         state["card_lane"] = decision.applied_lane.value
         state["card_disposition"] = {
             "contract": "pa.card-disposition/v1",

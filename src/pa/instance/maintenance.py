@@ -113,8 +113,8 @@ class InstanceMaintenanceService:
             "last_error": self.last_error,
             "last_result": self.last_result,
             "transcript_storage": (
-                self.store.transcript_storage_metrics()
-                if hasattr(self.store, "transcript_storage_metrics")
+                self.store.transcript_storage_status()
+                if hasattr(self.store, "transcript_storage_status")
                 else None
             ),
         }

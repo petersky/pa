@@ -58,11 +58,16 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.strictEqual(g.lastSeq,12);assert.deepStrictEqual(texts(g),['AB']);
  g.handleEvent({seq:11,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'A'}});
  assert.deepStrictEqual(texts(g),['AB']);
- // An obsolete in-flight gap request must not lock out a new subscription.
+ // Transport replacement preserves valid history; a new selection cancels it.
  const reconnect=make();reconnect.lastSeq=10;
  const pending=[];reconnect.api=()=>new Promise(resolve=>pending.push(resolve));
  reconnect.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'B'}});
+ const selectedGeneration=reconnect.subscriptionGeneration;
  reconnect.closeSSE('fixture-reconnect');
+ assert.strictEqual(reconnect.subscriptionGeneration,selectedGeneration,'transport preserves selection generation');
+ reconnect.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'B'}});
+ assert.strictEqual(pending.length,1,'transport replacement coalesces valid gap history');
+ reconnect.subscriptionGeneration += 1; // openSession establishes a new selection lifetime.
  reconnect.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'B'}});
  assert.strictEqual(pending.length,2,'new generation can repair its missing events');
  pending[0]({events:[{seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'snapshot',text:'obsolete'}}]});

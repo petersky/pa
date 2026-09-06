@@ -3125,7 +3125,8 @@ class AgentSessionManager:
             return
         now = now or datetime.now(UTC)
         sessions = await self._offload(
-            "agent.recovery_sessions", self.store.list_sessions, timeout=30.0
+            "agent.recovery_sessions", self.store.list_sessions,
+            exclude_statuses=("closed",), include_archived=False, timeout=30.0
         )
         due: list[AgentSession] = []
         for session in sessions:
