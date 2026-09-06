@@ -494,7 +494,7 @@ codex.handleEvent({
   payload: { message_id: "t1", text: "Inspect files" },
 });
 assert.ok(codex.activeExplanation);
-assert.strictEqual(codex.activeExplanation.el.textContent, "Inspect files");
+assert.strictEqual(codex.activeExplanation.el.dataset.markdown, "Inspect files");
 codex.handleEvent({
   seq: 3, type: "tool_call",
   payload: { tool_call_id: "tool-1", title: "Read", status: "in_progress" },

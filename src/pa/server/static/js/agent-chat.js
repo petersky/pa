@@ -2586,6 +2586,7 @@
 
   AgentChatWidget.prototype.renderMarkdownBubble = function (bubble) {
     const content = bubble.dataset.markdown || "";
+    bubble.dataset.rawText = this.rawText ? "1" : "0";
     // Preserve attachment gallery across innerHTML replacement.
     const gallery = bubble.querySelector(".acw-message-images");
     if (gallery) gallery.remove();
@@ -2600,7 +2601,7 @@
 
   AgentChatWidget.prototype.rerenderMarkdownBubbles = function () {
     const self = this;
-    this.root.querySelectorAll(".acw-bubble-user, .acw-bubble-agent, .acw-bubble-thought").forEach(function (bubble) {
+    this.root.querySelectorAll(".acw-bubble-user, .acw-bubble-agent, .acw-bubble-thought, .acw-progress-update").forEach(function (bubble) {
       self.renderMarkdownBubble(bubble);
     });
   };
@@ -2676,7 +2677,8 @@
       stream.text = "[… earlier explanation is available in durable history …]\n" +
         stream.text.slice(-MAX_STREAM_CHARS);
     }
-    stream.el.textContent = stream.text;
+    stream.el.dataset.markdown = stream.text;
+    this.renderMarkdownBubble(stream.el);
     this._pruneActivityRows();
     this.followToolActivity(shouldFollow);
   };
@@ -2729,7 +2731,8 @@
       stream.text = "[… earlier progress is available in durable history …]\n" +
         stream.text.slice(-MAX_STREAM_CHARS);
     }
-    stream.el.textContent = stream.text;
+    stream.el.dataset.markdown = stream.text;
+    this.renderMarkdownBubble(stream.el);
     this._pruneActivityRows();
     this.followToolActivity(shouldFollow);
   };
