@@ -2300,10 +2300,12 @@
   };
 
   AgentChatWidget.prototype._repairLiveGap = function () {
-    if (this.liveGapLoading || this.destroyed || !this.sessionId) return;
+    if ((this.liveGapLoading && this.liveGapGeneration === this.subscriptionGeneration) ||
+        this.destroyed || !this.sessionId) return;
     const self = this, sessionId = this.sessionId, generation = this.subscriptionGeneration;
     const after = this.lastSeq || 0;
     this.liveGapLoading = true;
+    this.liveGapGeneration = generation;
     this.apiWithTimeout("/history/" + encodeURIComponent(sessionId) +
       "?message_boundaries=true&after_seq=" + after + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
       LIVE_SNAPSHOT_TIMEOUT_MS).then(function (history) {

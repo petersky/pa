@@ -58,6 +58,20 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.strictEqual(g.lastSeq,12);assert.deepStrictEqual(texts(g),['AB']);
  g.handleEvent({seq:11,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'A'}});
  assert.deepStrictEqual(texts(g),['AB']);
+ // An obsolete in-flight gap request must not lock out a new subscription.
+ const reconnect=make();reconnect.lastSeq=10;
+ const pending=[];reconnect.api=()=>new Promise(resolve=>pending.push(resolve));
+ reconnect.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'B'}});
+ reconnect.closeSSE('fixture-reconnect');
+ reconnect.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'B'}});
+ assert.strictEqual(pending.length,2,'new generation can repair its missing events');
+ pending[0]({events:[{seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'snapshot',text:'obsolete'}}]});
+ await new Promise(r=>setTimeout(r,10));
+ assert.strictEqual(reconnect.lastSeq,10);
+ assert.strictEqual(reconnect.liveGapLoading,true,'stale response cannot clear current request');
+ pending[1]({events:[{seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'snapshot',text:'AB'}}]});
+ await new Promise(r=>setTimeout(r,10));
+ assert.deepStrictEqual(texts(reconnect),['AB']);
  // A failed earlier page must not consume its cursor or mutate visible history.
  const before=texts(w).join('\n');w.hasOlder=true;w.olderCursor=1000;w.api=()=>Promise.reject(new Error('fixture failure'));
  w.loadOlderTranscript();await new Promise(r=>setTimeout(r,10));
