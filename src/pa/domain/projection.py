@@ -4522,9 +4522,11 @@ class CardProjection:
     def delete_item(self, item_id: str, **kwargs) -> bool:
         return self.delete_card(item_id, **kwargs)
 
-    def save_session(self, session: AgentSession) -> AgentSession:
+    def save_session(
+        self, session: AgentSession, *, expected_connection_id: str | None = None
+    ) -> AgentSession:
         with self._conn() as conn:
-            conn.execute(
+            saved = conn.execute(
                 """
                 INSERT INTO agent_sessions
                 (id, agent_name, external_session_id, origin_instance_id, origin_instance_name,
@@ -4572,6 +4574,9 @@ class CardProjection:
                       ELSE excluded.execution_binding_json END,
                     created_at=excluded.created_at,
                     updated_at=excluded.updated_at
+                WHERE ? IS NULL OR COALESCE(
+                    json_extract(agent_sessions.config_json, '$.provider_connection_id'), ''
+                )=?
                 """,
                 (
                     session.id,
@@ -4610,8 +4615,12 @@ class CardProjection:
                     json.dumps(session.execution_binding or {}),
                     session.created_at.isoformat(),
                     session.updated_at.isoformat(),
+                    expected_connection_id,
+                    expected_connection_id,
                 ),
             )
+            if saved.rowcount == 0:
+                return session
             if session.card_id or session.item_id:
                 self._archive_retired_session_card(
                     conn, session.id, session.card_id or session.item_id
@@ -4635,13 +4644,16 @@ class CardProjection:
                 )
         return session
 
-    def mark_session_disconnected(self, session_id: str) -> None:
+    def mark_session_disconnected(
+        self, session_id: str, *, expected_connection_id: str | None = None
+    ) -> None:
         """Record transport teardown without overwriting newer conversation metadata."""
         with self._conn() as conn:
             conn.execute(
                 "UPDATE agent_sessions SET status='disconnected' "
-                "WHERE id=? AND status NOT IN ('closed', 'quiesced')",
-                (session_id,),
+                "WHERE id=? AND status NOT IN ('closed', 'quiesced') "
+                "AND COALESCE(json_extract(config_json, '$.provider_connection_id'), '')=?",
+                (session_id, expected_connection_id or ""),
             )
 
     @staticmethod

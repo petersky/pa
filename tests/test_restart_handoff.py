@@ -36,6 +36,21 @@ from pa.modules.fleet import (
 from pa.modules.items import operation_outcome_api
 
 
+
+def _queued_runtime(session):
+    runtime = MagicMock(session=session, connected=True, _closed=False)
+    runtime._queue = []
+    runtime._in_flight = None
+
+    def enqueue(message, *, prompt_id, source, **kwargs):
+        item = QueuedPrompt(id=prompt_id, message=message, source=source)
+        runtime._queue.append(item)
+        return item
+
+    runtime.enqueue.side_effect = enqueue
+    return runtime
+
+
 def test_execution_binding_survives_primary_card_change(tmp_path: Path) -> None:
     store = CardProjection(tmp_path / "pa.db")
     first = store.create_card(CardCreate(title="A"))
@@ -484,8 +499,7 @@ def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) ->
         )
     )
     store.update_restart_handoff(receipt.id, status="restarting")
-    runtime = MagicMock(session=session)
-    runtime.enqueue = MagicMock()
+    runtime = _queued_runtime(session)
     manager.recover_session = AsyncMock(return_value=runtime)
 
     asyncio.run(manager._resume_restart_handoffs())
@@ -556,7 +570,7 @@ def test_long_turn_handoff_waits_for_turn_and_startup_fence_before_restart(
         session = store.save_session(AgentSession(id="long", agent_name="codex"))
         manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
         manager.begin_startup()
-        runtime = MagicMock(session=session)
+        runtime = _queued_runtime(session)
         runtime.prompting = True
         runtime._drain_transcripts = AsyncMock()
         manager.get = MagicMock(return_value=runtime)
@@ -610,7 +624,7 @@ def test_startup_replay_runs_only_after_traffic_admission_is_ready(
     )
     manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
     manager.begin_startup()
-    runtime = MagicMock(session=session)
+    runtime = _queued_runtime(session)
     manager.recover_session = AsyncMock(return_value=runtime)
 
     with pytest.raises(AgentStartupNotReady, match="recovery is still in progress"):
@@ -707,6 +721,7 @@ def test_restart_replay_appends_continuation_after_durable_queue(tmp_path: Path)
     )
     store.update_restart_handoff(receipt.id, status="restarting")
     runtime = AgentSessionRuntime(manager, session)
+    runtime.connection = MagicMock(connected=True)
     runtime._queue_paused = True
     runtime._queue = [
         QueuedPrompt(id="first", session_id=session.id, message="already queued first"),
@@ -858,9 +873,12 @@ def test_failed_handoff_retry_recovers_exact_session_and_queues_once(
     assert failed.error == "exact workspace blocker"
     manager.create_session.assert_not_called()
 
-    runtime = MagicMock(session=session)
-    runtime.enqueue = MagicMock()
-    manager.recover_session = AsyncMock(return_value=runtime)
+    runtime = _queued_runtime(session)
+    async def recover(*args, **kwargs):
+        manager._runtimes[session.id] = runtime
+        return runtime
+
+    manager.recover_session = AsyncMock(side_effect=recover)
     first = asyncio.run(
         manager.retry_restart_handoff(session_id=session.id, handoff_id=receipt.id)
     )
@@ -871,7 +889,7 @@ def test_failed_handoff_retry_recovers_exact_session_and_queues_once(
     assert first.status == "continuation_queued"
     assert repeated.status == "continuation_queued"
     manager.recover_session.assert_awaited_once_with(
-        session.id, _startup_recovery=True
+        session.id, _startup_recovery=True, _defer_drain=True
     )
     runtime.enqueue.assert_called_once_with(
         "deterministic continuation",
@@ -942,3 +960,127 @@ def test_handoff_retry_route_is_owned_and_restart_session_rearms_latest_failure(
     manager.retry_restart_handoff.assert_awaited_once_with(
         session_id=session.id, handoff_id=receipt.id
     )
+
+
+def test_explicit_recovery_passes_durable_work_to_provider_start(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        store = CardProjection(tmp_path / "pa.db")
+        queued = QueuedPrompt(id="original-queue-id", message="retain me", source="card-reconciliation:d")
+        session = store.save_session(AgentSession(
+            id="queue-recovery", agent_name="codex", external_session_id="original-provider",
+            status="quiesced", config_json={"durable_runtime": {
+                "queued_prompts": [queued.model_dump(mode="json")], "queue_paused": True,
+            }},
+        ))
+        manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+        manager._prepare_workspace = AsyncMock(return_value={})
+        with patch.object(AgentSessionRuntime, "start", new=AsyncMock()) as start:
+            runtime = await manager.recover_session(session.id)
+        args = start.await_args.kwargs
+        assert args["resume_external_id"] == "original-provider"
+        assert args["require_restore"] is True
+        assert args["queue_paused"] is True
+        assert [(p.id, p.message, p.source) for p in args["queued_prompts"]] == [
+            (queued.id, queued.message, queued.source)
+        ]
+        assert runtime.session.id == session.id
+    asyncio.run(scenario())
+
+
+def test_queued_handoff_recovers_missing_runtime_without_reenqueuing(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        store = CardProjection(tmp_path / "pa.db")
+        session = store.save_session(AgentSession(id="queued-recovery", agent_name="codex"))
+        receipt = store.create_restart_handoff(RestartHandoff(
+            session_id=session.id, idempotency_key="queued", continuation_prompt="continue",
+            continuation_prompt_id="original-continuation", status="continuation_queued",
+        ))
+        manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+        runtime = _queued_runtime(session)
+        runtime._queue = [QueuedPrompt(id=receipt.continuation_prompt_id, message="continue")]
+        async def recover(*args, **kwargs):
+            manager._runtimes[session.id] = runtime
+            return runtime
+        manager.recover_session = AsyncMock(side_effect=recover)
+        await asyncio.gather(manager._resume_restart_handoffs(), manager._resume_restart_handoffs())
+        manager.recover_session.assert_awaited_once_with(session.id, _startup_recovery=True, _defer_drain=True)
+        runtime.enqueue.assert_not_called()
+        assert runtime._start_drain.called
+        assert store.get_restart_handoff(receipt.id).status == "continuation_queued"
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("receipt_status", ["resuming", "continuation_queued"])
+def test_completed_continuation_repairs_receipt_without_provider_replay(tmp_path: Path, receipt_status: str) -> None:
+    from pa.domain.models import TranscriptEvent
+
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="completed-continuation", agent_name="codex"))
+    receipt = store.create_restart_handoff(RestartHandoff(
+        session_id=session.id, idempotency_key="completed", continuation_prompt="continue",
+        continuation_prompt_id="already-done", status=receipt_status,
+    ))
+    store.append_transcript_events([TranscriptEvent(
+        session_id=session.id, seq=1, event_type="turn_completed",
+        payload={"queued_prompt_id": "already-done", "stop_reason": "end_turn"},
+    )])
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    manager.recover_session = AsyncMock()
+    asyncio.run(manager._resume_restart_handoffs())
+    manager.recover_session.assert_not_awaited()
+    delivered = store.get_restart_handoff(receipt.id)
+    assert delivered.status == "continuation_delivered"
+    assert delivered.delivered_at is not None
+
+
+def test_interrupted_restart_continuation_preserves_receipt_correlation(tmp_path: Path) -> None:
+    from pa.instance.quiesce import SessionSnapshot
+
+    session = AgentSession(id="interrupted", agent_name="codex")
+    prompt = QueuedPrompt(id="stable-id", message="continue", source="restart-handoff:receipt")
+    queue = AgentSessionManager._recovery_queue(
+        SessionSnapshot(session_id=session.id, in_flight=prompt), session, {},
+    )
+    assert [(p.id, p.source, p.message) for p in queue] == [(prompt.id, prompt.source, prompt.message)]
+
+
+@pytest.mark.parametrize("present", [True, False])
+def test_queued_receipt_requires_matching_work_not_just_connection(tmp_path, present):
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="queue-proof", agent_name="codex"))
+    receipt = store.create_restart_handoff(RestartHandoff(
+        session_id=session.id, idempotency_key="queue-proof", continuation_prompt="continue",
+        continuation_prompt_id="original", status="continuation_queued",
+    ))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    runtime = _queued_runtime(session)
+    if present:
+        runtime._queue = [QueuedPrompt(id="original", message="continue")]
+    manager._runtimes[session.id] = runtime
+    asyncio.run(manager._resume_restart_handoffs())
+    runtime.enqueue.assert_not_called()
+    result = store.get_restart_handoff(receipt.id)
+    assert result.status == ("continuation_queued" if present else "failed")
+    if not present:
+        assert "no matching" in result.error
+        assert result.continuation_prompt_id == "original"
+
+
+def test_crash_between_queue_checkpoint_and_receipt_does_not_reenqueue(tmp_path):
+    store = CardProjection(tmp_path / "pa.db")
+    session = store.save_session(AgentSession(id="checkpoint-gap", agent_name="codex"))
+    receipt = store.create_restart_handoff(RestartHandoff(
+        session_id=session.id, idempotency_key="gap", continuation_prompt="continue",
+        continuation_prompt_id="original", status="resuming",
+    ))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    runtime = _queued_runtime(session)
+    runtime._queue = [QueuedPrompt(id="original", message="continue")]
+    manager.recover_session = AsyncMock(return_value=runtime)
+    asyncio.run(manager._resume_restart_handoffs())
+    runtime.enqueue.assert_not_called()
+    runtime._start_drain.assert_called_once()
+    manager.recover_session.assert_awaited_once_with(
+        session.id, _startup_recovery=True, _defer_drain=True,
+    )
+    assert store.get_restart_handoff(receipt.id).status == "continuation_queued"

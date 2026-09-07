@@ -37,6 +37,7 @@ from pa.execution.observability import (
 )
 from pa.execution.session_presentation import build_session_presentation
 from pa.instance.agent_session import (
+    SessionAdmissionInProgress,
     RECOVERY_BLOCKED_STATUS,
     TRANSCRIPT_WINDOW_LIMIT,
     AgentSessionManager,
@@ -2267,6 +2268,15 @@ async def recover_session(
         runtime = await mgr.recover_session(
             session_id, provider_override=body.provider if body else None
         )
+    except SessionAdmissionInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_admission_in_progress",
+                "message": str(exc),
+                "recoverable": True,
+            },
+        ) from exc
     except AgentStartupNotReady:
         _require_session_traffic_ready(request)
         raise RuntimeError("unreachable startup gate")

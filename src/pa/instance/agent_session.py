@@ -9,6 +9,7 @@ import os
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal
@@ -108,6 +109,40 @@ PromptAction = Literal["append", "prepend", "interrupt"]
 
 class PromptAdmissionBlocked(RuntimeError):
     """A durable prompt was accepted but policy blocked provider delivery."""
+
+
+class SessionAdmissionInProgress(RuntimeError):
+    """Another local task owns startup for this exact session."""
+
+
+def _fenced_session_admission(method):
+    """Keep recovery from treating an unpublished provider as an abandoned one."""
+    signature = inspect.signature(method)
+
+    @wraps(method)
+    async def admitted(self, *args, **kwargs):
+        arguments = signature.bind(self, *args, **kwargs).arguments
+        existing = arguments.get("existing")
+        snapshot = arguments.get("snap")
+        session_id = (
+            existing.id if existing is not None
+            else snapshot.session_id if snapshot is not None
+            else arguments.get("session_id")
+        ) or str(uuid4())
+        if snapshot is None and existing is None:
+            kwargs["session_id"] = session_id
+        if session_id in self._admitting_sessions:
+            raise SessionAdmissionInProgress("Exact session admission is already in progress")
+        current = self.get(session_id)
+        if current and not current._closed and current.connected:
+            raise SessionAdmissionInProgress("Exact session already has a live runtime")
+        self._admitting_sessions.add(session_id)
+        try:
+            return await method(self, *args, **kwargs)
+        finally:
+            self._admitting_sessions.discard(session_id)
+
+    return admitted
 
 _AUTOMATIC_PROMPT_PREFIXES = (
     "card-enrichment:",
@@ -271,6 +306,12 @@ class AgentSessionRuntime:
     def _save_session_preserving_external_browser(self) -> None:
         persisted = self.store.get_session(self.session_id)
         if persisted:
+            current_connection = (persisted.config_json or {}).get("provider_connection_id")
+            own_connection = (self.session.config_json or {}).get("provider_connection_id")
+            if current_connection and current_connection != own_connection:
+                # A superseded runtime may finish flushing after its replacement
+                # starts. Preserve the current owner's queue and lifecycle.
+                return
             # These fields are owned by conversation actions, not provider turns.
             # A runtime may predate an archive/pin operation or provider teardown.
             self.session.archived_at = persisted.archived_at
@@ -283,7 +324,10 @@ class AgentSessionRuntime:
             config = dict(self.session.config_json or {})
             config["browser"] = persisted_browser
             self.session.config_json = config
-        self.store.save_session(self.session)
+        self.store.save_session(
+            self.session,
+            expected_connection_id=(self.session.config_json or {}).get("provider_connection_id") or "",
+        )
 
     async def _save_session_preserving_external_browser_async(self) -> None:
         await self._offload(
@@ -1054,6 +1098,7 @@ class AgentSessionRuntime:
         queue_paused: bool = False,
         provider_spec=None,
         initial_configuration: SessionConfigurationRequest | None = None,
+        _defer_drain: bool = False,
     ) -> AgentSession:
         if self.manager._should_abort_admission():
             raise RuntimeError("Agent is quiescing")
@@ -1191,7 +1236,8 @@ class AgentSessionRuntime:
         self._flush_transcript()
         await self._drain_transcripts()
         await self._drain_transcripts()
-        self._start_drain()
+        if not _defer_drain:
+            self._start_drain()
         return self.session
 
     async def set_browser_attached(
@@ -2856,6 +2902,7 @@ class AgentSessionManager:
         self._recovery_coordinator_task: asyncio.Task[None] | None = None
         self._recovery_wake = asyncio.Event()
         self._recovery_tasks: dict[str, asyncio.Task[None]] = {}
+        self._admitting_sessions: set[str] = set()
         self._recovery_metrics: dict[str, int] = {
             "attempted": 0,
             "succeeded": 0,
@@ -3130,6 +3177,8 @@ class AgentSessionManager:
         )
         due: list[AgentSession] = []
         for session in sessions:
+            if session.id in self._admitting_sessions:
+                continue
             if session.archived_at or session.status == "closed":
                 continue
             if session.control_mode == "human" and session.purpose == "automated_run":
@@ -3172,6 +3221,8 @@ class AgentSessionManager:
             )
 
     async def _coordinate_recovery(self, session_id: str) -> None:
+        if session_id in self._admitting_sessions:
+            return
         self._recovery_metrics["attempted"] += 1
         runtime = self.get(session_id)
         if runtime and not runtime.connected and not runtime.prompting:
@@ -3188,6 +3239,8 @@ class AgentSessionManager:
                     self._runtimes.pop(session_id, None)
         try:
             recovered = await self.recover_session(session_id)
+        except SessionAdmissionInProgress:
+            return
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -4444,6 +4497,10 @@ class AgentSessionManager:
             )
 
     async def _resume_restart_handoffs(self) -> None:
+        async with self.label_lock("restart-handoff-replay"):
+            await self._resume_pending_restart_handoffs()
+
+    async def _resume_pending_restart_handoffs(self) -> None:
         pending = await self._offload(
             "sqlite.restart_handoffs_pending", self.store.list_restart_handoffs,
             statuses=(
@@ -4456,11 +4513,22 @@ class AgentSessionManager:
                 if handoff.id not in self._restart_handoff_tasks:
                     self._schedule_restart_handoff(handoff.id)
                 continue
-            if handoff.status == "continuation_queued":
-                # enqueue() checkpoints the durable queue before this receipt is
-                # advanced. Recovery restores that queue; never append it again.
-                continue
             try:
+                completed = await self._offload(
+                    "sqlite.restart_handoff_completion",
+                    self.store.find_prompt_completion,
+                    handoff.session_id,
+                    handoff.continuation_prompt_id,
+                )
+                if completed is not None:
+                    # The provider turn may have completed before the process
+                    # could advance the receipt. Never replay completed work.
+                    await self._offload(
+                        "sqlite.restart_handoff_delivered",
+                        self.store.update_restart_handoff,
+                        handoff.id, status="continuation_delivered", delivered=True,
+                    )
+                    continue
                 if not handoff.continuation_prompt.strip():
                     await self._offload(
                         "sqlite.restart_handoff_no_continuation",
@@ -4470,23 +4538,56 @@ class AgentSessionManager:
                         delivered=True,
                     )
                     continue
-                await self._offload(
-                    "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
-                    handoff.id, status="resuming"
-                )
-                runtime = self.get(handoff.session_id)
-                if runtime is None:
-                    runtime = await self.recover_session(
-                        handoff.session_id, _startup_recovery=True
+                if handoff.status != "continuation_queued":
+                    await self._offload(
+                        "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
+                        handoff.id, status="resuming"
                     )
-                runtime.enqueue(
-                    handoff.continuation_prompt,
-                    prompt_id=handoff.continuation_prompt_id,
-                    source=f"restart-handoff:{handoff.id}",
-                    card_id=handoff.card_id,
-                    project_id=handoff.project_id,
-                    _defer_drain=True,
+                runtime = self.get(handoff.session_id)
+                if runtime is None or runtime._closed or not runtime.connected:
+                    runtime = await self.recover_session(
+                        handoff.session_id, _startup_recovery=True, _defer_drain=True
+                    )
+                accepted = list(runtime._queue)
+                if runtime._in_flight is not None:
+                    accepted.append(runtime._in_flight)
+                already_accepted = any(
+                    item.id == handoff.continuation_prompt_id for item in accepted
                 )
+                # A recovered queue must remain paused until this receipt is
+                # reconciled. Otherwise it can finish during provider startup
+                # and a resuming receipt would enqueue the same work again.
+                completed = await self._offload(
+                    "sqlite.restart_handoff_completion",
+                    self.store.find_prompt_completion,
+                    handoff.session_id, handoff.continuation_prompt_id,
+                )
+                if completed is not None:
+                    await self._offload(
+                        "sqlite.restart_handoff_delivered", self.store.update_restart_handoff,
+                        handoff.id, status="continuation_delivered", delivered=True,
+                    )
+                    runtime._start_drain()
+                    continue
+                if handoff.status == "continuation_queued":
+                    # Recovery restores the checkpointed queue. A queued receipt
+                    # is not proof that its provider runtime is still alive.
+                    if not already_accepted:
+                        raise AgentSessionRecoveryError(
+                            "Restart receipt has no matching queued, in-flight, or "
+                            "completed prompt; inspect the preserved prompt lifecycle"
+                        )
+                    runtime._start_drain()
+                    continue
+                if not already_accepted:
+                    runtime.enqueue(
+                        handoff.continuation_prompt,
+                        prompt_id=handoff.continuation_prompt_id,
+                        source=f"restart-handoff:{handoff.id}",
+                        card_id=handoff.card_id,
+                        project_id=handoff.project_id,
+                        _defer_drain=True,
+                    )
                 await self._offload(
                     "sqlite.restart_handoff_queued", self.store.update_restart_handoff,
                     handoff.id, status="continuation_queued"
@@ -4524,7 +4625,7 @@ class AgentSessionManager:
         )
         if handoff.status == "requested":
             self._schedule_restart_handoff(handoff.id)
-        elif handoff.status == "resuming":
+        elif handoff.status in {"resuming", "continuation_queued"}:
             await self._resume_restart_handoffs()
             handoff = await self._offload(
                 "sqlite.restart_handoff_read",
@@ -4750,6 +4851,39 @@ class AgentSessionManager:
             self._last_error = None
             return recovered
 
+    @staticmethod
+    def _recovery_queue(
+        snap: SessionSnapshot, session: AgentSession, workspace_env: dict[str, str]
+    ) -> list[QueuedPrompt]:
+        """Restore accepted work with its stable ids and restart correlation."""
+        queued = list(snap.queued_prompts)
+        interrupted = snap.in_flight
+        # Version-1 snapshots briefly encoded an interrupted turn as the first
+        # queued item. Preserve recovery semantics when reading those files.
+        if interrupted is None and queued and queued[0].source == "in_flight":
+            interrupted = queued.pop(0)
+        if interrupted:
+            if interrupted.source != "recovery" and not interrupted.source.startswith("restart-handoff:"):
+                from pa.prompts import PROMPTS
+
+                recovery = PROMPTS.render(
+                    "session.recovery.resume", provider=session.agent_name
+                )
+                interrupted = interrupted.model_copy(
+                    update={
+                        "message": f"{recovery.text}\n\n{interrupted.message}",
+                        "source": "recovery",
+                    }
+                )
+            queued.insert(0, interrupted)
+        for item in queued:
+            item.cwd = session.cwd
+            merged_env = dict(item.agent_env or {})
+            merged_env.update(workspace_env)
+            item.agent_env = merged_env
+        return queued
+
+    @_fenced_session_admission
     async def _resume_from_snapshot(
         self, snap: SessionSnapshot, full: QuiesceSnapshot
     ) -> AgentSessionRuntime | None:
@@ -4838,33 +4972,10 @@ class AgentSessionManager:
         if self._should_abort_recovery():
             await runtime.close()
             raise RuntimeError("Agent is quiescing")
-        queued = list(snap.queued_prompts)
-        interrupted = snap.in_flight
-        # Version-1 snapshots briefly encoded an interrupted turn as the first
-        # queued item. Preserve recovery semantics when reading those files.
-        if interrupted is None and queued and queued[0].source == "in_flight":
-            interrupted = queued.pop(0)
-        if interrupted:
-            if interrupted.source != "recovery":
-                from pa.prompts import PROMPTS
-
-                recovery = PROMPTS.render(
-                    "session.recovery.resume", provider=session.agent_name
-                )
-                interrupted = interrupted.model_copy(
-                    update={
-                        "message": f"{recovery.text}\n\n{interrupted.message}",
-                        "source": "recovery",
-                    }
-                )
-            queued.insert(0, interrupted)
-        for item in queued:
-            item.cwd = session.cwd
-            merged_env = dict(item.agent_env or {})
-            merged_env.update(workspace_env)
-            item.agent_env = merged_env
+        queued = self._recovery_queue(snap, session, workspace_env)
         await runtime.start(
             resume_external_id=snap.external_session_id,
+            require_restore=bool(snap.external_session_id),
             queued_prompts=queued,
             queue_paused=snap.queue_paused,
             provider_spec=provider_spec,
@@ -4914,6 +5025,7 @@ class AgentSessionManager:
             logger.exception("Agent reconnect failed")
             return False
 
+    @_fenced_session_admission
     async def create_session(
         self,
         *,
@@ -4948,6 +5060,7 @@ class AgentSessionManager:
         require_restore: bool = False,
         context_source_session_id: str | None = None,
         _linked_boundary: dict | None = None,
+        _defer_drain: bool = False,
     ) -> AgentSessionRuntime:
         if context_source_session_id:
             from pa.execution.selection_boundary import create_linked_session
@@ -4965,6 +5078,13 @@ class AgentSessionManager:
             from pa.execution.selection import SelectionError
 
             raise SelectionError("context_boundary_fenced", "This source has a durable linked attempt; resume that target, not the superseded native context")
+        # Capture accepted work before startup checkpoints an empty runtime.
+        recovery_snapshot = (
+            await self._offload(
+                "agent.recovery_snapshot", self._snapshot_from_persisted, existing
+            )
+            if existing is not None else None
+        )
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent disabled")
         if not _startup_recovery and not self._startup_complete:
@@ -5439,6 +5559,13 @@ class AgentSessionManager:
             }
             if require_restore:
                 start_kwargs["require_restore"] = True
+            if _defer_drain:
+                start_kwargs["_defer_drain"] = True
+            if recovery_snapshot is not None:
+                start_kwargs["queued_prompts"] = self._recovery_queue(
+                    recovery_snapshot, session, workspace_env
+                )
+                start_kwargs["queue_paused"] = recovery_snapshot.queue_paused
             if initial_configuration is not None:
                 start_kwargs["initial_configuration"] = initial_configuration
             await runtime.start(**start_kwargs)
@@ -5603,6 +5730,7 @@ class AgentSessionManager:
         *,
         provider_override: str | None = None,
         _startup_recovery: bool = False,
+        _defer_drain: bool = False,
     ) -> AgentSessionRuntime:
         """Reconnect one durable PA session without creating a second PA identity."""
         if not _startup_recovery:
@@ -5610,8 +5738,17 @@ class AgentSessionManager:
         async with self.label_lock(f"recover:{session_id}"):
             self._require_not_terminal_repair_fenced(session_id)
             runtime = self.get(session_id)
-            if runtime and not runtime._closed:
+            if runtime and not runtime._closed and runtime.connected:
                 return runtime
+            if runtime and not runtime._closed:
+                connection = runtime.connection
+                runtime.connection = None
+                runtime._closed = True
+                if connection:
+                    await connection.disconnect()
+                with self._runtime_lifecycle_lock:
+                    if self._runtimes.get(session_id) is runtime:
+                        self._runtimes.pop(session_id, None)
             session = await self._offload(
                 "sqlite.agent_session_read", self.store.get_session, session_id
             )
@@ -5668,6 +5805,8 @@ class AgentSessionManager:
                 resume_external_id=session.external_session_id,
                 provider_override=provider_override,
                 require_restore=bool(session.external_session_id),
+                _startup_recovery=_startup_recovery,
+                _defer_drain=_defer_drain,
             )
 
     def enqueue_prompt(

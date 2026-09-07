@@ -26,19 +26,34 @@ ASSIGNED_SERVICE_TOOL_ALLOWLIST = frozenset(
     }
 )
 
+# Restart tools route according to the authenticated bridge mode. The remaining
+# assigned tools require Goal governance and cannot serve ordinary card workers.
+ASSIGNED_SERVICE_ONLY_TOOLS = ASSIGNED_SERVICE_TOOL_ALLOWLIST - {
+    "preview_agent_restart_handoff",
+    "edit_agent_restart_handoff",
+    "request_agent_restart_handoff",
+}
+
 
 class ToolAllowlistProxy:
     """Expose only explicitly named tools while modules register normally."""
 
-    def __init__(self, delegate: Any, allowed: frozenset[str]) -> None:
+    def __init__(
+        self, delegate: Any, allowed: frozenset[str] | None,
+        *, excluded: frozenset[str] = frozenset(),
+    ) -> None:
         self._delegate = delegate
         self._allowed = allowed
+        self._excluded = excluded
 
     def tool(self, *args, **kwargs) -> Callable:
         register = self._delegate.tool(*args, **kwargs)
 
         def allowlisted(fn: Callable) -> Callable:
-            if fn.__name__ in self._allowed:
+            if (
+                (self._allowed is None or fn.__name__ in self._allowed)
+                and fn.__name__ not in self._excluded
+            ):
                 return register(fn)
             return fn
 
@@ -73,7 +88,7 @@ def _get_mcp():
         registration_target = (
             ToolAllowlistProxy(mcp, ASSIGNED_SERVICE_TOOL_ALLOWLIST)
             if assigned_service_mcp_mode()
-            else mcp
+            else ToolAllowlistProxy(mcp, None, excluded=ASSIGNED_SERVICE_ONLY_TOOLS)
         )
         kernel.register_mcp(registration_target)
     return mcp

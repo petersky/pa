@@ -697,6 +697,7 @@ class AgentConnection:
         self._client: PAClient | None = None
         self._wire: WireJsonlLogger | None = None
         self.session: AgentSession | None = None
+        self._connection_id: str | None = None
         self.session_cwd: str | None = None
         self._resume_supported: bool = False
         self._load_supported: bool = False
@@ -1294,6 +1295,8 @@ class AgentConnection:
 
         self._apply_session_meta(session_meta)
         config = dict(self.session.config_json or {})
+        self._connection_id = str(uuid4())
+        config["provider_connection_id"] = self._connection_id
         config["auxiliary_mcp"] = {
             "policy": "current instance configuration is reapplied on resume",
             "effective": self.auxiliary_mcp_provenance,
@@ -2004,6 +2007,7 @@ class AgentConnection:
                 "sqlite.agent_session_disconnect",
                 self.store.mark_session_disconnected,
                 self.session.id,
+                expected_connection_id=self._connection_id,
             )
         await self._drain_wire_logs()
 

@@ -501,3 +501,19 @@ def test_generic_provider_goal_progress_contract_is_unchanged() -> None:
         "X-PA-Goal-Fencing-Token": "9",
     }
     assert "goal_run_credential" not in call.kwargs
+
+
+@pytest.mark.asyncio
+async def test_ordinary_mcp_does_not_advertise_goal_only_capabilities() -> None:
+    from pa.mcp.server import ASSIGNED_SERVICE_ONLY_TOOLS
+
+    mcp = MCPServer("ordinary-card-worker")
+    ordinary = ToolAllowlistProxy(mcp, None, excluded=ASSIGNED_SERVICE_ONLY_TOOLS)
+    ctx = SimpleNamespace(settings=SimpleNamespace(), services={}, require_service=lambda _: MagicMock())
+    FleetModule().register_mcp(ordinary, ctx)
+    GoalsModule().register_mcp(ordinary, ctx)
+    AgentProvidersModule().register_mcp(ordinary, ctx)
+
+    names = {tool.name for tool in await mcp.list_tools()}
+    assert names.isdisjoint(ASSIGNED_SERVICE_ONLY_TOOLS)
+    assert {"get_dispatch", "report_dispatch_progress", "request_agent_restart_handoff", "agent_provider_install"} <= names
