@@ -260,6 +260,7 @@ class Kernel:
                 max_workers=settings.blocking_workers,
                 max_queue=settings.blocking_queue_limit,
                 default_timeout=settings.blocking_default_timeout,
+                operation_budgets=settings.blocking_operation_budgets,
                 slow_call_seconds=settings.blocking_slow_call_seconds,
                 lag_interval_seconds=settings.event_loop_probe_interval,
             )

@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import os
+from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -235,6 +236,36 @@ def _session_dir(data_dir: Path, session_id: str) -> Path:
     return path
 
 
+def _live_event_size(event: dict[str, Any]) -> int:
+    """Conservative byte bound without serializing provider payloads on-loop."""
+    pending: list[Any] = [event]
+    size = 0
+    visited = 0
+    while pending:
+        value = pending.pop()
+        visited += 1
+        if visited > 4096 or size > 2 * 1024 * 1024:
+            return 2 * 1024 * 1024 + 1
+        if isinstance(value, str):
+            size += len(value) * 4 + 16
+        elif isinstance(value, dict):
+            if len(value) > 4096:
+                return 2 * 1024 * 1024 + 1
+            pending.extend(value.keys())
+            pending.extend(value.values())
+            size += 64
+        elif isinstance(value, (list, tuple)):
+            if len(value) > 4096:
+                return 2 * 1024 * 1024 + 1
+            pending.extend(value)
+            size += 64
+        elif value is None or isinstance(value, (bool, int, float)):
+            size += 64
+        else:
+            return 2 * 1024 * 1024 + 1
+    return size
+
+
 class AgentSessionRuntime:
     """Owns one ACP subprocess + connection for a single PA session."""
 
@@ -270,6 +301,9 @@ class AgentSessionRuntime:
         self._in_flight: QueuedPrompt | None = None
         self._drain_task: asyncio.Task[None] | None = None
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
+        self._recent_live_events: deque[dict[str, Any]] = deque()
+        self._recent_live_bytes = 0
+        self._recent_live_sizes: deque[int] = deque()
         self._pending_permissions: dict[str, asyncio.Future[Any]] = {}
         self._permission_requests: dict[str, dict[str, Any]] = {}
         self._permission_notification_ids: dict[str, str] = {}
@@ -301,6 +335,7 @@ class AgentSessionRuntime:
             return await async_runtime.run_blocking(
                 operation, call, *args, timeout=timeout, **kwargs
             )
+        kwargs.pop("wait_for_completion", None)
         return await asyncio.to_thread(call, *args, **kwargs)
 
     def _save_session_preserving_external_browser(self) -> None:
@@ -450,6 +485,13 @@ class AgentSessionRuntime:
             "payload": payload,
             "created_at": te.created_at.isoformat(),
         }
+        size = _live_event_size(event)
+        self._recent_live_events.append(event)
+        self._recent_live_sizes.append(size)
+        self._recent_live_bytes += size
+        while len(self._recent_live_events) > 2048 or self._recent_live_bytes > 2 * 1024 * 1024:
+            self._recent_live_events.popleft()
+            self._recent_live_bytes -= self._recent_live_sizes.popleft()
         self._emit_live(event)
         return event
 
@@ -505,12 +547,12 @@ class AgentSessionRuntime:
                             "sqlite.transcript_append",
                             self.store.append_transcript_events,
                             batch,
-                            timeout=30.0,
+                            # A timed-out thread still owns this batch. Await
+                            # its actual result instead of starting concurrent
+                            # retries of the same write every 30 seconds.
+                            wait_for_completion=True,
                         )
                         break
-                    except asyncio.CancelledError:
-                        self._transcript_buffer = batch + self._transcript_buffer
-                        raise
                     except AsyncRuntimeClosed:
                         # Shutdown has closed the thread pool. Retrying would
                         # spin forever, block queue.join(), and hang stop().
@@ -528,11 +570,18 @@ class AgentSessionRuntime:
                         )
                         await asyncio.sleep(delay)
                         delay = min(delay * 2, 2.0)
+            except asyncio.CancelledError:
+                # Cancellation can also arrive during retry backoff. Keep the
+                # whole batch, including its immutable IDs, available to drain.
+                self._transcript_buffer = batch + self._transcript_buffer
+                raise
             finally:
                 self._transcript_queue.task_done()
             self._flush_transcript()
 
-    async def _drain_transcripts(self, *, timeout: float = 10.0) -> None:
+    async def _drain_transcripts(
+        self, *, timeout: float = 10.0, raise_on_timeout: bool = False
+    ) -> None:
         self._flush_transcript()
         if not getattr(self, "async_runtime", None):
             return
@@ -545,6 +594,13 @@ class AgentSessionRuntime:
             logger.error(
                 "Timed out draining transcript for session %s", self.session_id
             )
+            if raise_on_timeout:
+                raise TimeoutError(
+                    f"Transcript drain timed out: session={self.session_id} "
+                    f"queued_batches={self._transcript_queue.qsize()} "
+                    f"buffered_events={len(self._transcript_buffer)} "
+                    f"writer_active={bool(self._transcript_writer_task and not self._transcript_writer_task.done())}"
+                ) from None
 
     async def _reconcile_confirmed_collaboration(self, mode: Any) -> None:
         if mode not in {"default", "plan"}:
@@ -2945,6 +3001,7 @@ class AgentSessionManager:
             return await self.async_runtime.run_blocking(
                 operation, call, *args, timeout=timeout, **kwargs
             )
+        kwargs.pop("wait_for_completion", None)
         return await asyncio.to_thread(call, *args, **kwargs)
 
     async def record_card_disposition_status(
@@ -3156,6 +3213,7 @@ class AgentSessionManager:
     async def _recovery_loop(self) -> None:
         while self._accepting and not self._quiescing:
             try:
+                await self._recover_unscheduled_restart_handoffs()
                 await self._recovery_once()
             except asyncio.CancelledError:
                 raise
@@ -3166,6 +3224,16 @@ class AgentSessionManager:
                 await asyncio.wait_for(self._recovery_wake.wait(), timeout=5.0)
             except TimeoutError:
                 pass
+
+    async def _recover_unscheduled_restart_handoffs(self) -> None:
+        if not self._startup_complete:
+            return
+        pending = await self._offload(
+            "sqlite.restart_handoffs_watchdog", self.store.list_restart_handoffs,
+            statuses=("requested", "waiting_for_turn_end"),
+        )
+        for receipt in pending:
+            self._schedule_restart_handoff(receipt.id)
 
     async def _recovery_once(self, *, now: datetime | None = None) -> None:
         if not self._startup_complete or self._should_abort_recovery():
@@ -4400,9 +4468,19 @@ class AgentSessionManager:
             instance_id=self.settings.instance_id,
             execution_binding=dict(session.execution_binding or {}),
         )
-        handoff = await self._offload(
-            "sqlite.restart_handoff_create", self.store.create_restart_handoff, handoff
-        )
+        def committed(receipt):
+            if receipt.status == "requested":
+                self._schedule_restart_handoff(receipt.id)
+
+        if self.async_runtime:
+            handoff = await self.async_runtime.run_blocking(
+                "sqlite.restart_handoff_create", self.store.create_restart_handoff,
+                handoff, on_commit=committed,
+            )
+        else:
+            handoff = await self._offload(
+                "sqlite.restart_handoff_create", self.store.create_restart_handoff, handoff
+            )
         if handoff.status == "failed":
             return await self.retry_restart_handoff(
                 session_id=session_id, handoff_id=handoff.id
@@ -4469,7 +4547,7 @@ class AgentSessionManager:
                 await asyncio.sleep(_QUIESCE_POLL_SECONDS)
             if runtime:
                 runtime._flush_transcript()
-                await runtime._drain_transcripts()
+                await runtime._drain_transcripts(raise_on_timeout=True)
             stage = "quiescing"
             await self._offload(
                 "sqlite.restart_handoff_quiescing", self.store.update_restart_handoff,
@@ -4492,7 +4570,7 @@ class AgentSessionManager:
             logger.exception("Deferred restart handoff %s failed", handoff_id)
             await self._offload(
                 "sqlite.restart_handoff_failed", self.store.update_restart_handoff,
-                handoff_id, status="failed", error=str(exc)[:1000],
+                handoff_id, status="failed", error=(str(exc) or type(exc).__name__)[:1000],
                 failure_stage=stage,
             )
 
@@ -6055,9 +6133,27 @@ class AgentSessionManager:
                     await _emit(
                         "timeout", done=True, error="Timed out waiting for ACP turn"
                     )
-                    raise TimeoutError(
-                        "Timed out waiting for active ACP session to finish"
-                    )
+                    blockers = []
+                    for rt in self._runtimes.values():
+                        if not rt.prompting:
+                            continue
+                        last_tool = next((event for event in reversed(
+                            getattr(rt, "_recent_live_events", ())
+                        ) if event.get("type") in {"tool_call", "tool_call_update"}), {})
+                        tool = last_tool.get("payload") or {}
+                        blockers.append(
+                            f"session={rt.session_id} queued={len(rt._queue)} "
+                            f"prompt={getattr(getattr(rt, '_in_flight', None), 'id', None)} "
+                            f"tool={sanitize_text(str(tool.get('title') or tool.get('tool_call_id') or 'unknown'), limit=120)} "
+                            f"tool_status={tool.get('status', 'unknown')} "
+                            f"transcript_batches={rt._transcript_queue.qsize() if hasattr(rt, '_transcript_queue') else 'unknown'}"
+                        )
+                    if self.async_runtime:
+                        blockers.extend(
+                            f"operation={item['operation']} phase={item['phase']} lock_wait_ms={item['lock_wait_ms']}"
+                            for item in self.async_runtime.snapshot().get("active_operations", [])
+                        )
+                    raise TimeoutError("Quiesce deadline: " + "; ".join(blockers))
                 await _emit("waiting")
                 await asyncio.sleep(_QUIESCE_POLL_SECONDS)
 
@@ -6075,7 +6171,7 @@ class AgentSessionManager:
                     runtime.session,
                 )
                 runtime._flush_transcript()
-                await runtime._drain_transcripts()
+                await runtime._drain_transcripts(raise_on_timeout=True)
                 if runtime.connection:
                     remaining = max(0.1, deadline - asyncio.get_running_loop().time())
                     disconnects.append(
@@ -6095,7 +6191,7 @@ class AgentSessionManager:
                 save_quiesce_snapshot,
                 self.settings.data_dir,
                 snapshot,
-                timeout=30.0,
+                wait_for_completion=True,
             )
             self._runtimes.clear()
             committed = True
@@ -6120,7 +6216,7 @@ class AgentSessionManager:
                 if asyncio.iscoroutine(result):
                     await result
             return snapshot
-        except Exception:
+        except BaseException:
             _restore_admission_if_needed()
             raise
 

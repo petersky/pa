@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from pa.core.operation_budget import default_operation_budgets, validate_operation_budgets
 from pa.domain.instance_config import (
     config_path,
     ensure_session_secret,
@@ -211,6 +212,13 @@ class Settings(BaseSettings):
     blocking_workers: int = Field(default=8, ge=1, le=64)
     blocking_queue_limit: int = Field(default=64, ge=0, le=4096)
     blocking_default_timeout: float = Field(default=30.0, gt=0, le=3600)
+    blocking_operation_budgets: dict[str, dict[str, float]] = Field(default_factory=default_operation_budgets)
+
+    @field_validator("blocking_operation_budgets")
+    @classmethod
+    def _validate_operation_budgets(cls, value):
+        return validate_operation_budgets(value)
+
     blocking_slow_call_seconds: float = Field(default=0.5, gt=0, le=60)
     event_loop_probe_interval: float = Field(default=0.1, gt=0, le=10)
 

@@ -58,6 +58,20 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.strictEqual(g.lastSeq,12);assert.deepStrictEqual(texts(g),['AB']);
  g.handleEvent({seq:11,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'delta',text:'A'}});
  assert.deepStrictEqual(texts(g),['AB']);
+ // The final can be live before a contended durable write becomes readable.
+ // Keep that exact final, retry the missing predecessor automatically, and do
+ // not require either another event or a user refresh to complete the bubble.
+ const delayed=make();delayed.lastSeq=10;let historyReads=0;
+ delayed.api=()=>Promise.resolve({events:++historyReads===1?[]:[
+   {seq:11,type:'agent_message_chunk',payload:{message_id:'late-write',content_mode:'delta',text:'Progress.'}}
+ ]});
+ delayed.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'late-write',content_mode:'delta',text:'Final.'}});
+ await new Promise(r=>setTimeout(r,2150));
+ assert.strictEqual(historyReads,2,'a late write is retried automatically');
+ assert.strictEqual(delayed.lastSeq,12,'retained final advances the contiguous cursor');
+ assert.deepStrictEqual(texts(delayed),['Progress.Final.'],'exact live text survives history lag');
+ delayed.handleEvent({seq:12,type:'agent_message_chunk',payload:{message_id:'late-write',content_mode:'delta',text:'Final.'}});
+ assert.deepStrictEqual(texts(delayed),['Progress.Final.'],'replayed final is not duplicated');
  // Transport replacement preserves valid history; a new selection cancels it.
  const reconnect=make();reconnect.lastSeq=10;
  const pending=[];reconnect.api=()=>new Promise(resolve=>pending.push(resolve));

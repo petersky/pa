@@ -17,6 +17,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import ValidationError
 
+from pa.core.operation_budget import measured_lock, report_work_progress
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -120,7 +121,7 @@ def serialized_mutation(method: Callable[..., T]) -> Callable[..., T]:
 
     @wraps(method)
     def wrapped(self: CardProjection, *args, **kwargs):
-        with self._mutation_lock:
+        with measured_lock(self._mutation_lock):
             return method(self, *args, **kwargs)
 
     return wrapped
@@ -250,6 +251,7 @@ class CardProjection:
         conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.row_factory = sqlite3.Row
+        conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
         self._connection_local.connection = conn
         try:
             yield conn
@@ -264,7 +266,7 @@ class CardProjection:
     @contextmanager
     def mutation(self) -> Iterator[None]:
         """Serialize a complete event-log and projection mutation."""
-        with self._mutation_lock:
+        with measured_lock(self._mutation_lock):
             yield
 
     def _init_db(self) -> None:
@@ -1789,7 +1791,7 @@ class CardProjection:
             if record["state"] == "succeeded" and record.get("result_json"):
                 return self._operation_outcome(idempotency_key, record)
 
-        with self._mutation_lock:
+        with measured_lock(self._mutation_lock):
             return self._get_operation_outcome_repair(
                 idempotency_key, realm_id=realm_id
             )
@@ -4691,7 +4693,7 @@ class CardProjection:
             raise ValueError("Unsupported execution binding transition reason")
         normalized = dict(binding or {})
         changed_at = datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id=?", (session_id,)
             ).fetchone()
@@ -4789,7 +4791,7 @@ class CardProjection:
     ) -> AgentSession:
         """Associate a durable session and card without discarding older links."""
         linked_at = datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             session_row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -4854,7 +4856,7 @@ class CardProjection:
     ) -> AgentSession:
         """Retire one association while preserving its durable audit history."""
         updated_at = datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             session_row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -4974,7 +4976,7 @@ class CardProjection:
 
     def create_restart_handoff(self, handoff: RestartHandoff) -> RestartHandoff:
         """Insert once and serialize each session's nonterminal restart lifecycle."""
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             existing = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE session_id=? AND idempotency_key=?",
                 (handoff.session_id, handoff.idempotency_key),
@@ -5073,7 +5075,7 @@ class CardProjection:
         failure_stage: str | None = None,
     ) -> RestartHandoff | None:
         now = datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             conn.execute(
                 """UPDATE agent_restart_handoffs SET status=?, error=?, failure_stage=?, updated_at=?,
                    attempts=attempts+?, delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
@@ -5099,7 +5101,7 @@ class CardProjection:
     ) -> RestartHandoff:
         """Edit or remove continuation only before service quiescing begins."""
         now = datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
                 (handoff_id, session_id),
@@ -5125,7 +5127,7 @@ class CardProjection:
     ) -> RestartHandoff:
         """Re-arm one failed receipt without changing its continuation identity."""
         now = datetime.now(UTC)
-        with self._mutation_lock, self._conn() as conn:
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
                 (handoff_id, session_id),
@@ -5529,6 +5531,9 @@ class CardProjection:
                 ],
             )
         return events
+
+    def transcript_lifecycle_summary(self, session_id: str) -> dict:
+        return self.transcripts.recent_lifecycle_summary(session_id)
 
     def list_transcript_events(
         self,

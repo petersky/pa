@@ -9,6 +9,7 @@ cancelled calls charged to that pool until the underlying thread really exits.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import functools
 import logging
 import math
@@ -17,6 +18,8 @@ from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import Any, Awaitable, Callable, TypeVar
+
+from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,9 @@ class OperationMetrics:
     max_active: int = 0
     max_queued: int = 0
     total_queue_ms: float = 0.0
+    total_wait_ms: float = 0.0
+    max_wait_ms: float = 0.0
+    total_lock_wait_ms: float = 0.0
     total_runtime_ms: float = 0.0
     max_runtime_ms: float = 0.0
 
@@ -77,11 +83,13 @@ class AsyncRuntime:
         default_timeout: float = 30.0,
         slow_call_seconds: float = 0.5,
         lag_interval_seconds: float = 0.1,
+        operation_budgets: dict[str, dict[str, float]] | None = None,
     ) -> None:
         if max_workers < 1:
             raise ValueError("max_workers must be positive")
         if max_queue < 0:
             raise ValueError("max_queue cannot be negative")
+        self.operation_budgets = {key: OperationBudget(**value) for key, value in (operation_budgets or {}).items()}
         self.max_workers = max_workers
         self.max_queue = max_queue
         self.default_timeout = default_timeout
@@ -97,6 +105,9 @@ class AsyncRuntime:
             OperationMetrics
         )
         self._pending: set[asyncio.Future[Any]] = set()
+        self._owned: dict[str, asyncio.Task[Any]] = {}
+        self._accepting_owned = True
+        self._active_evidence: dict[asyncio.Future[Any], tuple[str, OperationDeadline]] = {}
         self._active = 0
         self._queued = 0
         self._closing = False
@@ -121,10 +132,14 @@ class AsyncRuntime:
         self._lag_max_ms = 0.0
 
     async def close(self, *, drain_timeout: float = 5.0) -> None:
-        self._closing = True
+        self._accepting_owned = False
         if self._lag_task and not self._lag_task.done():
             self._lag_task.cancel()
             await asyncio.gather(self._lag_task, return_exceptions=True)
+        owned = set(self._owned.values())
+        if owned:
+            await asyncio.wait(owned, timeout=max(0.0, drain_timeout))
+        self._closing = True
         pending = set(self._pending)
         if pending:
             await asyncio.wait(pending, timeout=max(0.0, drain_timeout))
@@ -140,6 +155,8 @@ class AsyncRuntime:
         /,
         *args: Any,
         timeout: float | None = None,
+        on_commit: Callable[[T], None] | None = None,
+        wait_for_completion: bool = False,
         **kwargs: Any,
     ) -> T:
         """Run one legacy call without blocking the event loop.
@@ -156,6 +173,10 @@ class AsyncRuntime:
         deadline_at = (
             None if effective_timeout is None else queued_at + effective_timeout
         )
+        policy = self.operation_budgets.get(operation) if timeout is None else None
+        evidence = OperationDeadline(policy, time.monotonic()) if policy else None
+        if evidence:
+            deadline_at = loop.time() + max(0, evidence.expires_at() - time.monotonic())
         metrics = self._operations[operation]
         async with self._admission_lock:
             if self._closing:
@@ -182,15 +203,23 @@ class AsyncRuntime:
                 self._queued -= 1
                 metrics.queued -= 1
                 metrics.timed_out += 1
+                waited_ms = (loop.time() - queued_at) * 1000
+                metrics.total_queue_ms += waited_ms
+                metrics.total_wait_ms += waited_ms
+                metrics.max_wait_ms = max(metrics.max_wait_ms, waited_ms)
             raise BlockingOperationTimeout(
                 f"blocking operation {operation!r} exceeded "
-                f"{effective_timeout:.3f}s while waiting for capacity"
+                f"{(policy.queue_seconds if policy else effective_timeout):.3f}s while waiting for capacity"
             ) from exc
         except asyncio.CancelledError:
             async with self._admission_lock:
                 self._queued -= 1
                 metrics.queued -= 1
                 metrics.cancelled += 1
+                waited_ms = (loop.time() - queued_at) * 1000
+                metrics.total_queue_ms += waited_ms
+                metrics.total_wait_ms += waited_ms
+                metrics.max_wait_ms = max(metrics.max_wait_ms, waited_ms)
             raise
 
         started_at = loop.time()
@@ -203,32 +232,103 @@ class AsyncRuntime:
             metrics.max_active = max(metrics.max_active, metrics.active)
             metrics.total_queue_ms += (started_at - queued_at) * 1000
 
-        bound = functools.partial(call, *args, **kwargs)
+        if evidence:
+            evidence.execution_started(time.monotonic())
+        def invoke():
+            token = current_operation.set(evidence)
+            try:
+                return call(*args, **kwargs)
+            finally:
+                current_operation.reset(token)
+        context = contextvars.copy_context()
+        bound = functools.partial(context.run, invoke)
         try:
             future = loop.run_in_executor(self._executor, bound)
         except BaseException:
             self._finish_submission(operation, None, runtime_started_at)
             raise
         self._pending.add(future)
+        if evidence:
+            self._active_evidence[future] = (operation, evidence)
         future.add_done_callback(
-            lambda done: self._finish_submission(operation, done, runtime_started_at)
+            lambda done: self._finish_submission(operation, done, runtime_started_at, evidence)
         )
+        if on_commit is not None:
+            def committed(done):
+                # The executor owns this callback, independently of the HTTP or
+                # MCP waiter. A late successful write must still schedule work.
+                if not done.cancelled() and done.exception() is None:
+                    try:
+                        on_commit(done.result())
+                    except Exception:
+                        logger.exception("Post-commit scheduling failed operation=%s", operation)
+            future.add_done_callback(committed)
 
         try:
-            if deadline_at is None:
+            if deadline_at is None or wait_for_completion:
                 return await asyncio.shield(future)
+            if evidence:
+                while not future.done():
+                    remaining = evidence.expires_at() - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError(f"{operation}: {evidence.phase} deadline expired")
+                    await asyncio.wait({future}, timeout=min(remaining, 1.0))
+                return future.result()
             remaining = max(0.0, deadline_at - loop.time())
             async with asyncio.timeout(remaining):
                 return await asyncio.shield(future)
         except TimeoutError as exc:
+            if future.done() and not future.cancelled():
+                return future.result()  # The operation itself failed; this is not a wait timeout.
             metrics.timed_out += 1
             raise BlockingOperationTimeout(
                 f"blocking operation {operation!r} exceeded "
-                f"{effective_timeout:.3f}s"
+                f"{effective_timeout:.3f}s" if evidence is None else
+                f"blocking operation {operation!r} wait expired in {evidence.phase}; "
+                "underlying execution continues until its authoritative result"
             ) from exc
         except asyncio.CancelledError:
             metrics.cancelled += 1
             raise
+        finally:
+            waited_ms = (loop.time() - queued_at) * 1000
+            metrics.total_wait_ms += waited_ms
+            metrics.max_wait_ms = max(metrics.max_wait_ms, waited_ms)
+
+    async def run_owned(
+        self, key: str, factory: Callable[[], Awaitable[T]], *, wait_timeout: float = 120.0
+    ) -> T:
+        """Keep an admitted mutation and its post-commit work alive after disconnect.
+
+        The operation's own durable idempotency check remains authoritative; this
+        registry coalesces concurrent waits and owns the task until it finishes.
+        """
+        task = self._owned.get(key)
+        if task is None:
+            if not self._accepting_owned:
+                raise AsyncRuntimeClosed("async runtime is closing")
+            if len(self._owned) >= self.max_workers + self.max_queue:
+                raise BlockingQueueFull("owned mutation capacity unavailable")
+            task = asyncio.create_task(factory(), name="pa-owned-mutation")
+            self._owned[key] = task
+
+            def finished(done):
+                if self._owned.get(key) is done:
+                    self._owned.pop(key, None)
+                if not done.cancelled():
+                    done.exception()  # Retrieve failures even when every waiter left.
+
+            task.add_done_callback(finished)
+        try:
+            async with asyncio.timeout(wait_timeout):
+                return await asyncio.shield(task)
+        except TimeoutError as exc:
+            if task.done():
+                return task.result()
+            raise BlockingOperationTimeout(
+                "Mutation is still pending; the client wait expired. "
+                "Recover the authoritative result using the same idempotency key."
+            ) from exc
 
     async def observe(
         self,
@@ -274,10 +374,14 @@ class AsyncRuntime:
         operation: str,
         future: asyncio.Future[Any] | None,
         started_at: float,
+        evidence: OperationDeadline | None = None,
     ) -> None:
         metrics = self._operations[operation]
+        if evidence:
+            metrics.total_lock_wait_ms += evidence.lock_wait_seconds * 1000
         if future is not None:
             self._pending.discard(future)
+            self._active_evidence.pop(future, None)
         self._active -= 1
         metrics.active -= 1
         self._slots.release()
@@ -369,5 +473,14 @@ class AsyncRuntime:
                 "max_ms": round(self._request_max_ms, 3),
                 "slow": list(self._request_slow),
             },
+            "owned_mutations": {"pending": len(self._owned)},
+            "active_operations": [
+                {"operation": name, "phase": evidence.phase,
+                 "elapsed_ms": round((time.monotonic() - evidence.accepted_at) * 1000, 3),
+                 "lock_wait_ms": round((evidence.lock_wait_seconds + (
+                     time.monotonic() - evidence.lock_started if evidence.lock_started is not None else 0
+                 )) * 1000, 3)}
+                for name, evidence in list(self._active_evidence.values())
+            ],
             "operations": operations,
         }

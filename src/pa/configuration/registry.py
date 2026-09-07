@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
+from pa.core.operation_budget import default_operation_budgets
+
 SettingKind = Literal[
     "str",
     "optional_str",
@@ -1431,6 +1433,13 @@ _DEFINITIONS = (
         "Bounds slow compatibility operations.",
         apply="restart",
         validator="range_exclusive_min:0:3600",
+    ),
+    _s(
+        "blocking_operation_budgets", "dict_json", default_operation_budgets(),
+        "Per-operation queue, idle, lock-wait, and absolute deadlines.",
+        "Performance", 35,
+        "Validated work extends idle waits; heartbeats cannot extend operation lifetimes.",
+        apply="restart",
     ),
     _s(
         "blocking_slow_call_seconds",

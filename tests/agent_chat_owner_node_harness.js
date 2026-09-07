@@ -40,5 +40,10 @@ const make=()=>{
  const destroyed=make(),route=deferred();destroyed.resolveSessionRoute=()=>route.promise;
  const pending=destroyed.openSession('gone','');destroyed.destroyed=true;destroyed.closeSSE('destroy');route.resolve({live:true});await pending;
  assert.equal(destroyed.loaded,undefined);
+ const moving=make();moving.sessionId='owned';moving.useExternalEventTransport(true);
+ moving.apiBase='/api/fleet/instances/remote/agent';moving.connectSSE();
+ assert.equal(moving.externalEventTransport,false,'local multiplex cannot own remote session traffic');
+ assert.equal(moving.esApiBase,moving.apiBase,'owner switch establishes the remote transport');
+ moving.closeSSE('fixture-complete');
  console.log('PASS delayed owner success/failure, reconnect, switching, stale history fallback, destruction');
 })().catch(e=>{console.error(e);process.exitCode=1;});
