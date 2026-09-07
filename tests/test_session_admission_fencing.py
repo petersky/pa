@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from pa.acp.client import AgentConnection
 from pa.config import Settings
@@ -148,3 +149,21 @@ def test_historical_success_does_not_hide_queued_followup(connected):
     assert result["display_status"] == ("Queued" if connected else "Restoring your work")
     assert result["workflow"]["state"] == "succeeded"
     assert result["turn"]["state"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_recovery_protocol_reports_owned_admission_as_retryable_conflict(tmp_path):
+    from pa.modules.agent_chat import recover_session
+
+    manager = MagicMock()
+    manager.store.get_session.return_value = AgentSession(id="starting", agent_name="codex")
+    manager.recover_session = AsyncMock(side_effect=SessionAdmissionInProgress("Admission in progress"))
+    request = MagicMock()
+    request.app.state.ctx.settings.auth_required = False
+    with patch("pa.modules.agent_chat._require_session_traffic_ready", return_value=manager), patch(
+        "pa.modules.agent_chat.get_principal_id", return_value="owner"
+    ), pytest.raises(HTTPException) as response:
+        await recover_session(request, "starting")
+    assert response.value.status_code == 409
+    assert response.value.detail["code"] == "session_admission_in_progress"
+    assert response.value.detail["recoverable"] is True
