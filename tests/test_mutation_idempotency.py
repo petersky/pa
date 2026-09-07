@@ -792,7 +792,7 @@ class MutationHttpIdempotencyTests(unittest.TestCase):
                 )
                 started = time.monotonic()
                 with (
-                    patch("pa.modules.items.enrich_card", new=blocked_enrichment),
+                    patch("pa.domain.card_enrichment.enrich_card", new=blocked_enrichment),
                     patch.object(
                         summary_service,
                         "disable_if_unconfigured",

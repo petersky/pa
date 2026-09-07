@@ -98,6 +98,17 @@ class SummaryConfiguration:
         }
 
 
+@dataclass(frozen=True)
+class StructuredCardRequest:
+    """A tool-free derived job using the summary provider's transport."""
+
+    messages: list[dict[str, str]]
+    schema: dict[str, object]
+    parse: Callable[[object], str]
+    tool_name: str = "submit_card_enrichment"
+    max_tokens: int = 2048
+
+
 class SummaryProviderError(RuntimeError):
     def __init__(
         self,
@@ -212,7 +223,7 @@ def _message_text(content: object) -> str:
     return ""
 
 
-def _content_tool_candidates(content: object) -> list[object]:
+def _content_tool_candidates(content: object, tool_name: str = SUBMIT_SUMMARY_TOOL) -> list[object]:
     """Extract tool arguments from OpenAI-compatible content blocks."""
     if not isinstance(content, list):
         return []
@@ -221,9 +232,9 @@ def _content_tool_candidates(content: object) -> list[object]:
         if not isinstance(item, dict):
             continue
         function = item.get("function")
-        if isinstance(function, dict) and function.get("name") == SUBMIT_SUMMARY_TOOL:
+        if isinstance(function, dict) and function.get("name") == tool_name:
             candidates.append(function.get("arguments"))
-        elif item.get("name") == SUBMIT_SUMMARY_TOOL and item.get("type") in {
+        elif item.get("name") == tool_name and item.get("type") in {
             "tool_call",
             "function_call",
             "tool_use",
@@ -322,7 +333,9 @@ def _response_shape(payload: object) -> dict[str, object]:
     }
 
 
-def parse_chat_completion_summary(payload: dict) -> str:
+def parse_chat_completion_summary(payload: dict, *, structured=None) -> str:
+    tool_name = structured.tool_name if structured else SUBMIT_SUMMARY_TOOL
+    parse = structured.parse if structured else lambda value: sanitize_summary(_parse_summary_object(value))
     shape = _response_shape(payload)
     try:
         if not isinstance(payload, dict) or not isinstance(payload.get("choices"), list) or len(payload["choices"]) != 1:
@@ -337,23 +350,23 @@ def parse_chat_completion_summary(payload: dict) -> str:
         tool_candidates: list[object] = []
         for call in message.get("tool_calls") or []:
             function = call.get("function") if isinstance(call, dict) else None
-            if isinstance(function, dict) and function.get("name") == SUBMIT_SUMMARY_TOOL:
+            if isinstance(function, dict) and function.get("name") == tool_name:
                 tool_candidates.append(function.get("arguments"))
         legacy_call = message.get("function_call")
         if (
             isinstance(legacy_call, dict)
-            and legacy_call.get("name") == SUBMIT_SUMMARY_TOOL
+            and legacy_call.get("name") == tool_name
         ):
             tool_candidates.append(legacy_call.get("arguments"))
-        tool_candidates.extend(_content_tool_candidates(message.get("content")))
+        tool_candidates.extend(_content_tool_candidates(message.get("content"), tool_name))
         if len(tool_candidates) > 1:
             raise TypeError("provider returned multiple summary tool outputs")
         if tool_candidates:
-            return sanitize_summary(_parse_summary_object(tool_candidates[0]))
+            return parse(tool_candidates[0])
 
         parsed = message.get("parsed")
         if parsed not in (None, ""):
-            return sanitize_summary(_parse_summary_object(parsed))
+            return parse(parsed)
 
         content = _message_text(message.get("content")).strip()
         if not content and isinstance(payload["choices"][0].get("text"), str):
@@ -365,13 +378,13 @@ def parse_chat_completion_summary(payload: dict) -> str:
                 retryable=True,
             )
         try:
-            return sanitize_summary(_parse_summary_object(content))
+            return parse(content)
         except SummaryProviderError as exc:
             # Some supported OpenAI-compatible models return the requested value as
             # plain message text. It is normalized into PA's schema before the same
             # bounded final validation; JSON-looking text must still satisfy it.
             stripped = re.sub(r"^\s*<think>[\s\S]*?</think>\s*", "", content, count=1)
-            if exc.code == SummaryFailureCode.MALFORMED_JSON and not re.match(
+            if not structured and exc.code == SummaryFailureCode.MALFORMED_JSON and not re.match(
                 r"^\s*(?:```|[\[{])", stripped
             ):
                 return sanitize_summary(stripped)
@@ -394,7 +407,8 @@ def parse_chat_completion_summary(payload: dict) -> str:
         ) from exc
 
 
-def parse_anthropic_summary(payload: dict) -> str:
+def parse_anthropic_summary(payload: dict, *, structured=None) -> str:
+    tool_name = structured.tool_name if structured else SUBMIT_SUMMARY_TOOL
     shape = {"payload_object": isinstance(payload, dict)}
     try:
         if not isinstance(payload, dict) or not isinstance(payload.get("content"), list):
@@ -404,12 +418,14 @@ def parse_anthropic_summary(payload: dict) -> str:
             raise SummaryProviderError(SummaryFailureCode.TRUNCATED, "The provider exhausted its output token limit.", retryable=True)
         candidates = [block.get("input") for block in payload["content"]
                       if isinstance(block, dict) and block.get("type") == "tool_use"
-                      and block.get("name") == SUBMIT_SUMMARY_TOOL]
+                      and block.get("name") == tool_name]
         if not candidates:
             candidates = [block.get("text") for block in payload["content"]
                           if isinstance(block, dict) and block.get("type") == "text"]
         if len(candidates) != 1:
             raise TypeError("expected one summary result")
+        if structured:
+            return structured.parse(candidates[0])
         return sanitize_summary(_parse_summary_object(candidates[0]))
     except SummaryProviderError as exc:
         exc.invocation_succeeded = True
@@ -468,6 +484,7 @@ class CardSummaryService:
         self._provider_call = provider_call
         self._random_value = random_value
         self._tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
+        self._enrichment_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
         self._worker_task: asyncio.Task[None] | None = None
         self._semaphore = asyncio.Semaphore(self.settings.card_summary_max_concurrency)
         self._resolved_configuration: SummaryConfiguration | None = None
@@ -996,16 +1013,77 @@ class CardSummaryService:
         )
 
     async def _call_provider(
-        self, title: str, body: str, configuration: SummaryConfiguration
+        self, title: str, body: str, configuration: SummaryConfiguration,
+        *, structured: StructuredCardRequest | None = None,
     ) -> str:
         timeout = httpx.Timeout(self.settings.card_summary_timeout_seconds)
         transport = summary_transport(configuration.provider)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if transport == "anthropic":
-                return await self._call_anthropic(client, title, body, configuration)
+                return await self._call_anthropic(client, title, body, configuration, structured=structured)
             return await self._call_chat_completions(
-                client, title, body, configuration, minimax=transport == "minimax"
+                client, title, body, configuration, minimax=transport == "minimax", structured=structured
             )
+
+    async def suggest_card_fields(self, card, structured: StructuredCardRequest) -> str | None:
+        """Use summary credentials, selection, concurrency and bounded retries."""
+        from dataclasses import replace
+        from pa.execution.selection_jobs import summary_selection
+        from pa.execution.selection_audit import summary_response, record_summary
+
+        configuration = await self._configuration()
+        if not configuration.enabled:
+            return None
+        input_hash = hashlib.sha256(json.dumps(structured.messages, sort_keys=True).encode()).hexdigest()
+        selection = await asyncio.to_thread(
+            summary_selection, self.ctx, card, configuration,
+            input_hash=input_hash, prompt_version="card-enrichment-v1", surface="card_enrichment",
+        )
+        configuration = replace(configuration, model=selection["selected"]["model"])
+        for attempt in range(1, self.settings.card_summary_max_retries + 2):
+            evidence = {}
+            token = summary_response.set(evidence)
+            started = time.monotonic()
+            attempted_at = datetime.now(UTC)
+            completed = False
+            try:
+                async with self._semaphore:
+                    result = await self._call_provider(card.title, card.body, configuration, structured=structured)
+                completed = True
+                return result
+            except Exception as exc:
+                failure = self._classify_failure(exc, configuration)
+                if not failure.retryable or attempt > self.settings.card_summary_max_retries:
+                    raise failure from exc
+            finally:
+                summary_response.reset(token)
+                await asyncio.to_thread(
+                    record_summary, self.ctx, card, selection, attempt=attempt,
+                    completed=completed, latency_ms=(time.monotonic() - started) * 1000,
+                    confirmation=evidence, attempted_at=attempted_at,
+                )
+            await asyncio.sleep(self._retry_delay(attempt))
+        return None
+
+    def enqueue_enrichment(self, card, explicit_fields: set[str]) -> bool:
+        from pa.domain.card_enrichment import enrich_card
+
+        key = (card.realm_id, card.id)
+        task = self._enrichment_tasks.get(key)
+        if task and not task.done():
+            return False
+        task = asyncio.create_task(
+            enrich_card(self.ctx, card.id, card.realm_id, explicit_fields, initial_card=card),
+            name=f"card-enrichment:{card.id}",
+        )
+        self._enrichment_tasks[key] = task
+
+        def forget(done):
+            if self._enrichment_tasks.get(key) is done:
+                self._enrichment_tasks.pop(key, None)
+
+        task.add_done_callback(forget)
+        return True
 
     async def test_connection(
         self,
@@ -1193,6 +1271,7 @@ class CardSummaryService:
         title: str,
         body: str,
         configuration: SummaryConfiguration,
+        *, structured: StructuredCardRequest | None = None,
     ) -> str:
         messages = summary_messages(title, body)
         payload = {
@@ -1212,6 +1291,14 @@ class CardSummaryService:
             ],
             "tool_choice": {"type": "tool", "name": SUBMIT_SUMMARY_TOOL},
         }
+        if structured:
+            payload.update(
+                system=structured.messages[0]["content"],
+                messages=structured.messages[1:],
+                max_tokens=structured.max_tokens,
+                tools=[{"name": structured.tool_name, "description": "Submit missing card fields.", "input_schema": structured.schema}],
+                tool_choice={"type": "tool", "name": structured.tool_name},
+            )
         response = await client.post(
             anthropic_messages_url(configuration.base_url or self._resolved_base_url()),
             headers={
@@ -1231,7 +1318,7 @@ class CardSummaryService:
         from pa.execution.selection_audit import observe_summary
 
         observe_summary(response_payload)
-        return parse_anthropic_summary(response_payload)
+        return parse_anthropic_summary(response_payload, structured=structured)
 
     async def _call_chat_completions(
         self,
@@ -1241,6 +1328,7 @@ class CardSummaryService:
         configuration: SummaryConfiguration,
         *,
         minimax: bool,
+        structured: StructuredCardRequest | None = None,
     ) -> str:
         payload: dict[str, object] = {
             "model": configuration.model,
@@ -1280,6 +1368,18 @@ class CardSummaryService:
                 }
             ]
             payload["tool_choice"] = "auto"
+        if structured:
+            payload["messages"] = structured.messages
+            payload["max_completion_tokens"] = structured.max_tokens
+            if minimax:
+                payload["tools"] = [{"type": "function", "function": {
+                    "name": structured.tool_name, "description": "Submit missing card fields.",
+                    "parameters": structured.schema,
+                }}]
+            else:
+                payload["response_format"] = {"type": "json_schema", "json_schema": {
+                    "name": "card_enrichment", "strict": True, "schema": structured.schema,
+                }}
         url = chat_completions_url(configuration.base_url or self._resolved_base_url())
         headers = {"Authorization": f"Bearer {configuration.api_key}"}
         response = await client.post(url, headers=headers, json=payload)
@@ -1307,7 +1407,7 @@ class CardSummaryService:
         from pa.execution.selection_audit import observe_summary
 
         observe_summary(response_payload)
-        return parse_chat_completion_summary(response_payload)
+        return parse_chat_completion_summary(response_payload, structured=structured)
 
     @staticmethod
     def _classify_failure(
@@ -1557,7 +1657,7 @@ class CardSummaryService:
     async def close(self) -> None:
         if self._worker_task and not self._worker_task.done():
             self._worker_task.cancel()
-        tasks = [task for task in self._tasks.values() if not task.done()]
+        tasks = [task for task in (*self._tasks.values(), *self._enrichment_tasks.values()) if not task.done()]
         for task in tasks:
             task.cancel()
         pending = [*tasks]

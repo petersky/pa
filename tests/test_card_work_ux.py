@@ -607,6 +607,27 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("Drop files here", response.text)
         self.assertIn('type="checkbox" name="auto_enrich"', response.text)
 
+    def test_new_card_modal_description_only_and_unchecked_opt_out(self):
+        from unittest.mock import AsyncMock, patch
+        with TestClient(self.app) as client:
+            page = client.get("/")
+            token = re.search(r'<meta name="csrf-token" content="([^"]+)"', page.text).group(1)
+            with patch("pa.modules.items._schedule_card_enrichment", new_callable=AsyncMock) as enrich:
+                response = client.post("/partials/cards/new", headers={"X-CSRF-Token": token},
+                                       data={"body": "Investigate deployment failures", "summary": "Manual"})
+                self.assertEqual(response.status_code, 201, response.text)
+                enrich.assert_not_called()
+                self.assertEqual(self.app.state.ctx.store.get_card(response.json()["id"]).body,
+                                 "Investigate deployment failures")
+                response = client.post("/partials/cards/new", headers={"X-CSRF-Token": token},
+                                       data={"body": "Investigate failures", "summary": "Manual", "auto_enrich": "true"})
+                self.assertEqual(response.status_code, 201, response.text)
+                enrich.assert_awaited_once()
+                protected = enrich.await_args.args[2]
+                self.assertNotIn("title", protected)
+                self.assertNotIn("kind", protected)
+                self.assertIn("body", protected)
+
     def test_new_card_modal_creates_links_and_file_attachments(self) -> None:
         with TestClient(self.app) as client:
             project = self.app.state.ctx.store.create_project(

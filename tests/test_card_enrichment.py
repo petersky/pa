@@ -5,15 +5,23 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from pa.domain.card_enrichment import (
-    _close_enrichment_session,
+    enrich_card,
+    enrichment_request,
     advertised_capability_catalog,
     build_enrichment_update,
     explicit_enrichment_fields,
 )
-from pa.domain.models import AgentSession, CardCreate, CardKind
+from pa.domain.models import (
+    CardCreate,
+    CardKind,
+    CardUpdate,
+    ProjectCreate,
+    RepositoryCreate,
+    ProjectRepo,
+)
 from pa.domain.projection import CardProjection
 
 
@@ -148,38 +156,147 @@ class CardEnrichmentTest(unittest.TestCase):
         self.assertFalse(disabled.auto_enrich)
         self.assertNotIn("auto_enrich", disabled.model_dump())
 
+    def test_enrichment_cannot_create_governed_goal(self):
+        update = build_enrichment_update(
+            '{"kind":"goal"}', explicit_fields=set(), project_ids=[]
+        )
+        self.assertFalse(update.model_fields_set)
+
+    def test_empty_card_is_rejected_but_description_only_is_allowed(self):
+        with self.assertRaises(ValueError):
+            CardCreate(title="  ", body="  ")
+        self.assertEqual(CardCreate(body="User intent").title, "")
+
 
 class CardEnrichmentLifecycleTest(unittest.IsolatedAsyncioTestCase):
-    async def test_startup_orphan_is_durably_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            store = CardProjection(Path(tmp) / "pa.db")
-            session = store.save_session(
-                AgentSession(
-                    id="enrichment-orphan",
-                    agent_name="codex",
-                    label="card-enrichment:card-1",
-                    status="disconnected",
-                )
+    async def asyncSetUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        from pa.sync.event_log import EventLog
+        from pa.sync.object_store import ObjectStore
+
+        root = Path(self.tmp.name)
+        self.store = CardProjection(
+            root / "pa.db",
+            EventLog(ObjectStore(root / "objects"), root / "refs", "local"),
+        )
+        self.service = SimpleNamespace(suggest_card_fields=AsyncMock(), enqueue=Mock())
+        self.ctx = SimpleNamespace(
+            store=self.store,
+            settings=SimpleNamespace(instance_id="local", capabilities=["browser"]),
+            services={},
+            require_service=lambda name: self.service,
+        )
+
+    async def test_description_only_generates_title_and_preserves_body(self):
+        data = CardCreate(body="Investigate why deploys intermittently fail")
+        card = self.store.create_card(data)
+        self.service.suggest_card_fields.return_value = json.dumps(
+            {
+                "title": "Stabilize deployments",
+                "description": "overwrite",
+                "kind": "concern",
+                "tags": ["deploy"],
+                "preferred_capabilities": ["browser", "invented"],
+            }
+        )
+        await enrich_card(
+            self.ctx, card.id, card.realm_id, explicit_enrichment_fields(data)
+        )
+        result = self.store.get_card(card.id)
+        self.assertEqual(result.title, "Stabilize deployments")
+        self.assertEqual(result.body, data.body)
+        self.assertEqual(result.kind, CardKind.CONCERN)
+        self.assertEqual(result.preferred_capabilities, ["browser"])
+        self.service.enqueue.assert_called_once_with(card.id, card.realm_id)
+
+    async def test_edits_during_generation_are_preserved(self):
+        data = CardCreate(title="Original")
+        card = self.store.create_card(data)
+
+        async def provider(*args):
+            self.store.update_card(
+                card.id, CardUpdate(body="User details", tags=["user"], kind="project")
             )
-            manager = SimpleNamespace(
-                store=store,
-                _runtimes={},
-                reconcile_closed_sessions=AsyncMock(),
+            return '{"description":"Agent details","tags":["agent"],"kind":"concern","title":"Wrong"}'
+
+        self.service.suggest_card_fields.side_effect = provider
+        await enrich_card(
+            self.ctx, card.id, card.realm_id, explicit_enrichment_fields(data)
+        )
+        result = self.store.get_card(card.id)
+        self.assertEqual(
+            (result.title, result.body, result.tags, result.kind),
+            ("Original", "User details", ["user"], CardKind.PROJECT),
+        )
+
+    async def test_failure_leaves_created_card_intact(self):
+        card = self.store.create_card(CardCreate(title="Keep me"))
+        self.service.suggest_card_fields.side_effect = RuntimeError("provider failed")
+        await enrich_card(self.ctx, card.id, card.realm_id, {"title"})
+        self.assertEqual(self.store.get_card(card.id), card)
+
+    async def test_prompt_contains_field_explanations_and_project_repositories(self):
+        project = self.store.create_project(
+            ProjectCreate(
+                title="PA",
+                description="Personal assistant",
+                tags=["python"],
+                repos=[ProjectRepo(url="https://example.test/legacy")],
             )
+        )
+        repo = self.store.create_repository(
+            RepositoryCreate(name="Core", url="https://example.test/core")
+        )
+        self.store.link_project_repository(project.id, repo.id)
+        card = self.store.create_card(CardCreate(title="Fix PA", tags=["bug"]))
+        request, projects, caps = enrichment_request(self.ctx, card, {"title", "tags"})
+        context = json.loads(request.messages[1]["content"])
+        self.assertEqual(context["projects"][0]["description"], "Personal assistant")
+        self.assertEqual(
+            {r["url"] for r in context["projects"][0]["repositories"]},
+            {"https://example.test/core", "https://example.test/legacy"},
+        )
+        self.assertIn("task: actionable work", request.messages[0]["content"])
+        self.assertIn("untrusted data", request.messages[0]["content"])
+        self.assertNotIn("title", request.schema["properties"])
+        self.assertNotIn("tags", request.schema["properties"])
+        self.assertEqual(caps, ["browser"])
 
-            async def offload(_operation, call, *args, **kwargs):
-                return call(*args, **kwargs)
+    async def test_no_request_when_all_fields_provided(self):
+        data = CardCreate(
+            title="Title",
+            body="Body",
+            kind="task",
+            project_id="chosen",
+            tags=["t"],
+            preferred_capabilities=["browser"],
+        )
+        card = self.store.create_card(data)
+        await enrich_card(
+            self.ctx, card.id, card.realm_id, explicit_enrichment_fields(data)
+        )
+        self.service.suggest_card_fields.assert_not_called()
 
-            manager._offload = offload
+    async def test_version_conflict_does_not_overwrite_intervening_edit(self):
+        data = CardCreate(title="Title")
+        card = self.store.create_card(data)
+        self.service.suggest_card_fields.return_value = '{"description":"Agent"}'
+        original_update = self.store.update_card
+        raced = False
 
-            await _close_enrichment_session(manager, session.id, None)
+        def update(*args, **kwargs):
+            nonlocal raced
+            if not raced:
+                raced = True
+                original_update(card.id, CardUpdate(body="User"))
+            return original_update(*args, **kwargs)
 
-            self.assertEqual(store.get_session(session.id).status, "closed")
-            self.assertEqual(
-                store.list_transcript_events(session.id)[0].event_type,
-                "session_closed",
-            )
-            manager.reconcile_closed_sessions.assert_awaited_once_with([session.id])
+        self.store.update_card = update
+        await enrich_card(
+            self.ctx, card.id, card.realm_id, explicit_enrichment_fields(data)
+        )
+        self.assertEqual(self.store.get_card(card.id).body, "User")
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ DEFAULT_MESSAGE = "Execute this card completely."
 
 @card_app.command("create")
 def create(
-    title: str,
+    title: Annotated[str, typer.Argument()] = "",
     body: str = "",
     project_id: str | None = None,
     selection_json: str = "{}",
