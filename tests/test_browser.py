@@ -209,7 +209,9 @@ class BrowserSessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.session.archived_at, "archived")
         self.assertEqual(runtime.session.archive_reason, "user_archive")
         self.assertEqual(runtime.session.pinned_at, "pinned")
-        runtime.store.save_session.assert_called_once_with(runtime.session)
+        runtime.store.save_session.assert_called_once_with(
+            runtime.session, expected_connection_id=""
+        )
 
 
 class BrowserDiagnosticTests(unittest.IsolatedAsyncioTestCase):
