@@ -13,10 +13,13 @@ from pydantic import BaseModel, Field
 from pa.auth.middleware import get_principal_id, require_user
 from pa.domain.models import RepositoryCreate
 from pa.domain.projection import MutationOperationConflict, MutationOperationInProgress
+from pa.modules.github_scope import router as scope_router
 from pa.pr_supervisor.github import GitHubAPIError, GitHubClient, GitHubCredentials
 from pa.repository.github import GitHubRepositories, validate_name
 
 router = APIRouter(prefix="/github")
+
+router.include_router(scope_router)
 
 
 async def _service(request: Request) -> GitHubRepositories:

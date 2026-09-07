@@ -25,6 +25,7 @@ _SETTINGS_SECTIONS = {
     "appearance",
     "agent",
     "mcp-servers",
+    "github",
     "prompts",
     "telemetry",
     "configuration",

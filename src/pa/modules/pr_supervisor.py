@@ -1248,6 +1248,44 @@ class PRSupervisorModule(Module):
             )
 
         @mcp.tool()
+        def github_supervision_scope() -> dict[str, Any]:
+            """Read this instance's repository scope and CAS revision without credentials."""
+            return request_local_pa(ctx.settings, "GET", "/api/github/supervision-scope")
+
+        @mcp.tool()
+        def preview_github_supervision_scope(
+            allowed_repositories: list[str], expected_revision: str,
+        ) -> dict[str, Any]:
+            """Validate access and return exact structured operator confirmation choices.
+
+            During a dispatch, pass operator_input unchanged to report_dispatch_progress.
+            Await its correlated response before calling update. Never auto-submit a choice.
+            """
+            return request_local_pa(ctx.settings, "POST", "/api/github/supervision-scope/preview",
+                json={"allowed_repositories": allowed_repositories, "expected_revision": expected_revision})
+
+        @mcp.tool()
+        def update_github_supervision_scope(
+            allowed_repositories: list[str], expected_revision: str, idempotency_key: str,
+            confirmed_additions: list[str], confirmation_id: str,
+        ) -> dict[str, Any]:
+            """Apply the operator's exact confirmed scope using CAS, audit and replay protection.
+
+            Use only the correlated apply_scope response from the preview interaction;
+            preserve confirmation_id. Keep/cancel never authorizes this update.
+            This never accepts or returns tokens, and never permits an empty wildcard list.
+            """
+            return request_local_pa(ctx.settings, "PUT", "/api/github/supervision-scope",
+                json={"allowed_repositories": allowed_repositories, "expected_revision": expected_revision,
+                      "idempotency_key": idempotency_key, "confirmed_additions": confirmed_additions,
+                      "confirmation_id": confirmation_id})
+
+        @mcp.tool()
+        def github_supervision_scope_audit() -> dict[str, Any]:
+            """Read local repository scope changes and confirmation provenance without secrets."""
+            return request_local_pa(ctx.settings, "GET", "/api/github/supervision-scope/audit")
+
+        @mcp.tool()
         def github_integration_capability() -> dict[str, Any]:
             """Report local GitHub authentication/webhook capability without secrets."""
             capabilities = request_local_pa(
