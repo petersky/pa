@@ -15,12 +15,19 @@ from pa.execution.selection_service import service_for
 
 
 def summary_selection(
-    ctx, card, configuration, *, input_hash: str, prompt_version: str, force=False
+    ctx,
+    card,
+    configuration,
+    *,
+    input_hash: str,
+    prompt_version: str,
+    force=False,
+    surface: str = "card_summary",
 ):
     service = service_for(ctx)
     principal = card.created_by_principal or "user:local"
     binding = digest(
-        [card.realm_id, principal, "card_summary", card.id, input_hash, prompt_version]
+        [card.realm_id, principal, surface, card.id, input_hash, prompt_version]
     )
     prior = service.store.binding(binding, card.realm_id, principal)
     routing = digest(
@@ -34,7 +41,7 @@ def summary_selection(
     if prior and not force:
         validate_reuse(prior)
         service.revalidate_attempt(
-            prior, realm=card.realm_id, principal=principal, surface="card_summary"
+            prior, realm=card.realm_id, principal=principal, surface=surface
         )
         if prior["selected"]["connection"] != routing:
             raise SelectionError(
@@ -69,11 +76,11 @@ def summary_selection(
         candidates=[candidate],
         principal=principal,
         realm=card.realm_id,
-        surface="card_summary",
+        surface=surface,
         card=card,
         project_config=project.tool_config if project else None,
         assessment=TaskAssessment(
-            role="card_summary", complexity="routine", scope="focused", objective="cost"
+            role=surface, complexity="routine", scope="focused", objective="cost"
         ),
     )
     receipt["prompt_identity"] = {

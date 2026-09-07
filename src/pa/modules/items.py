@@ -55,7 +55,7 @@ from pa.core.ui.instance_identity import (
 )
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.core.ui.work_presentation import present_work_item
-from pa.domain.card_enrichment import enrich_card, explicit_enrichment_fields
+from pa.domain.card_enrichment import explicit_enrichment_fields
 from pa.domain.models import (
     CardAttachment,
     CardCreate,
@@ -786,11 +786,7 @@ def _schedule_card_summary(
 
 async def _schedule_card_enrichment(ctx, card, explicit_fields: set[str]) -> None:
     """Detach optional enrichment from the response-owned callback."""
-    task = asyncio.create_task(
-        enrich_card(ctx, card.id, card.realm_id, explicit_fields),
-        name=f"card-enrichment:{card.id}",
-    )
-    task.add_done_callback(_log_card_post_response_failure)
+    ctx.require_service("card_summary_service").enqueue_enrichment(card, explicit_fields)
 
 
 def _log_card_post_response_failure(task: asyncio.Task) -> None:
@@ -2045,7 +2041,10 @@ def create_card_api(
 ) -> dict:
     store = get_store()
     settings = request.app.state.ctx.settings
-    payload = data.model_dump(mode="json") | {"auto_enrich": data.auto_enrich}
+    payload = data.model_dump(mode="json") | {
+        "auto_enrich": data.auto_enrich,
+        "enrichment_protected_fields": sorted(explicit_enrichment_fields(data)),
+    }
     key, fingerprint, replay = _begin_operation(
         request, operation="card.create", realm_id=data.realm_id, payload=payload
     )
@@ -2706,10 +2705,10 @@ def new_card_form(request: Request) -> HTMLResponse:
 async def create_card_modal_ui(
     request: Request,
     background_tasks: BackgroundTasks,
-    title: str = Form(...),
+    title: str = Form(""),
     body: str = Form(""),
     summary: str = Form(""),
-    kind: CardKind = Form(CardKind.TASK),
+    kind: str = Form(""),
     lane: CardLane = Form(CardLane.INBOX),
     project_id: str = Form(""),
     parent_id: str = Form(""),
@@ -2717,7 +2716,7 @@ async def create_card_modal_ui(
     preferred_instance: str = Form(""),
     preferred_capabilities: str = Form(""),
     execution_preferences: str = Form("{}"),
-    auto_enrich: bool = Form(True),
+    auto_enrich: bool = Form(False),
     link_urls: list[str] | None = Form(None),
     link_labels: list[str] | None = Form(None),
     file_tokens: list[str] | None = Form(None),
@@ -2725,9 +2724,13 @@ async def create_card_modal_ui(
 ) -> JSONResponse:
     realm = _active_realm(request)
     cleaned_title = title.strip()
-    if not cleaned_title:
-        raise HTTPException(status_code=422, detail="Title is required")
-    if kind is CardKind.GOAL:
+    if not cleaned_title and not body.strip():
+        raise HTTPException(status_code=422, detail="Provide a title or description")
+    try:
+        selected_kind = CardKind(kind) if kind else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid card kind") from exc
+    if selected_kind is CardKind.GOAL:
         raise HTTPException(
             status_code=422,
             detail="Goals must be created from the governed Goals workspace.",
@@ -2762,7 +2765,7 @@ async def create_card_modal_ui(
     create_data = CardCreate(
         execution_preferences=parsed_execution_preferences,
         realm_id=realm,
-        kind=kind,
+        **({"kind": selected_kind} if selected_kind is not None else {}),
         title=cleaned_title,
         body=_compose_card_body(
             body,
@@ -2790,10 +2793,9 @@ async def create_card_modal_ui(
         card = _schedule_card_summary(request, background_tasks, card)
     if auto_enrich:
         background_tasks.add_task(
-            enrich_card,
+            _schedule_card_enrichment,
             request.app.state.ctx,
-            card.id,
-            card.realm_id,
+            card,
             explicit_enrichment_fields(create_data),
         )
     try:
@@ -3010,16 +3012,18 @@ def card_attachment(
 def create_card_ui(
     request: Request,
     background_tasks: BackgroundTasks,
-    kind: CardKind = Form(CardKind.TASK),
-    title: str = Form(...),
+    kind: CardKind | None = Form(None),
+    title: str = Form(""),
     body: str = Form(""),
     lane: CardLane = Form(CardLane.INBOX),
     auto_enrich: bool = Form(True),
 ) -> RedirectResponse:
     realm = _active_realm(request)
+    if not title.strip() and not body.strip():
+        raise HTTPException(status_code=422, detail="Provide a title or description")
     data = CardCreate(
         realm_id=realm,
-        kind=kind,
+        **({"kind": kind} if kind is not None else {}),
         title=title,
         body=body,
         lane=lane,
@@ -3032,10 +3036,9 @@ def create_card_ui(
     )
     if auto_enrich:
         background_tasks.add_task(
-            enrich_card,
+            _schedule_card_enrichment,
             request.app.state.ctx,
-            card.id,
-            card.realm_id,
+            card,
             explicit_enrichment_fields(data),
         )
     return RedirectResponse(url=f"/work?realm={realm}", status_code=303)
@@ -3668,8 +3671,8 @@ class ItemsModule(Module):
 
         @mcp.tool()
         def create_card(
-            title: str,
             idempotency_key: str,
+            title: str = "",
             kind: CardKind | None = None,
             body: str = "",
             lane: CardLane = CardLane.INBOX,

@@ -448,7 +448,7 @@ class CardCreate(BaseModel):
     execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     realm_id: str = "default"
     kind: CardKind = CardKind.TASK
-    title: str
+    title: str = ""
     body: str = ""
     summary: str = ""
     summary_source: CardSummarySource | None = None
@@ -464,6 +464,12 @@ class CardCreate(BaseModel):
     preferred_instance: str | None = None
     preferred_capabilities: list[str] = Field(default_factory=list)
     auto_enrich: bool = Field(default=True, exclude=True)
+
+    @model_validator(mode="after")
+    def require_intent(self):
+        if not self.title.strip() and not self.body.strip():
+            raise ValueError("Provide a title or description")
+        return self
 
     @model_validator(mode="before")
     @classmethod

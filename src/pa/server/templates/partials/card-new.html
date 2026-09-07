@@ -16,15 +16,17 @@
   <div class="new-card-fields">
     <label class="new-card-field-span-2">
       <span>Title</span>
-      <input type="text" name="title" required autofocus
+      <input type="text" name="title" autofocus
              placeholder="What needs attention?">
+      <small>Provide a title or description. Auto-enrichment can fill in the other.</small>
     </label>
 
     <label>
       <span>Kind</span>
-      <select name="kind" required>
+      <select name="kind">
+        <option value="" selected>Choose automatically</option>
         {% for kind in kinds %}
-        <option value="{{ kind.value }}" {% if kind.value == 'task' %}selected{% endif %}>
+        <option value="{{ kind.value }}">
           {{ kind.value | capitalize }}
         </option>
         {% endfor %}
@@ -101,7 +103,7 @@
     {% include 'partials/execution-preferences.html' %}
     <label class="new-card-field-span-2">
       <span><input type="checkbox" name="auto_enrich" value="true" checked> Auto-enrich this card</span>
-      <small class="muted">Use an ACP session to suggest missing details and routing metadata.</small>
+      <small class="muted">Fill missing details using the summary automation. Uncheck to skip; supplied values are preserved.</small>
     </label>
   </div>
 
