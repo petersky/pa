@@ -269,6 +269,9 @@
     this.routeAbortController = null;
     this.lastSeq = 0;
     this.liveGapTarget = 0;
+    this.livePendingEvents = {};
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
     this.liveGapLoading = false;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -698,6 +701,9 @@
     this.root.dataset.apiBase = this.apiBase;
     this.lastSeq = 0;
     this.liveGapTarget = 0;
+    this.livePendingEvents = {};
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
     this.liveGapLoading = false;
     this.sessionClosed = true;
     this.sessionRecoverable = false;
@@ -1691,7 +1697,7 @@
     const handoff = handoffs.length ? handoffs[handoffs.length - 1] : null;
     if (handoff && this.els.sessionActionStatus) {
       const labels = {
-        requested: "Restart requested.",
+        requested: "Restart saved; execution has not started yet.",
         waiting_for_turn_end: "Restart requested; waiting for this turn to end and flush.",
         quiescing: "Turn ended; PA is quiescing sessions.",
         restarting: "PA is restarting.",
@@ -2084,6 +2090,7 @@
 
   AgentChatWidget.prototype.loadNewerTranscript = function () {
     if (this.liveGapTarget > this.lastSeq) {
+      this.liveGapRetryCount = 0;
       this.newerError = "";
       this._repairLiveGap();
       return;
@@ -2131,6 +2138,12 @@
   AgentChatWidget.prototype.connectSSE = function () {
     const self = this;
     if (this.destroyed || !this.sessionId) return;
+    if (this.apiBase === "/api/agent" && sessionListFreshness && sessionListFreshness.source && localSessionWidget() === this) {
+      this.externalEventTransport = true;
+      this.externalTransportApiBase = this.apiBase;
+    }
+    if (this.externalEventTransport && this.externalTransportApiBase &&
+        this.externalTransportApiBase !== this.apiBase) this.externalEventTransport = false;
     if (this.externalEventTransport) {
       this.closeSSE("external-multiplex");
       return;
@@ -2252,6 +2265,7 @@
 
   AgentChatWidget.prototype.useExternalEventTransport = function (enabled) {
     this.externalEventTransport = !!enabled;
+    this.externalTransportApiBase = enabled ? this.apiBase : "";
     if (this.externalEventTransport) this.closeSSE("external-multiplex");
     else if (this.sessionId) this.connectSSE();
   };
@@ -2289,6 +2303,8 @@
     this.liveStateRetryId = null;
     if (this.submissionReconcileId) clearTimeout(this.submissionReconcileId);
     this.submissionReconcileId = null;
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
     Object.keys(this.toolTimers).forEach(function (key) {
       const timer = this.toolTimers[key];
       if (timer && timer.interval) clearInterval(timer.interval);
@@ -2310,6 +2326,7 @@
         this.destroyed || !this.sessionId) return;
     const self = this, sessionId = this.sessionId, generation = this.subscriptionGeneration;
     const after = this.lastSeq || 0;
+    this.liveGapRetryCount = (this.liveGapRetryCount || 0) + 1;
     this.liveGapLoading = true;
     this.liveGapGeneration = generation;
     this.apiWithTimeout("/history/" + encodeURIComponent(sessionId) +
@@ -2318,12 +2335,29 @@
         if (!self._isCurrentSessionRequest(sessionId, generation)) return;
         const events = history.events || [];
         events.forEach(function (event) { self.handleEvent(event, false, true, true); });
+        const pending = self.livePendingEvents || {};
+        Object.keys(pending).map(Number).sort(function(a,b){return a-b;}).forEach(function(seq) {
+          if (seq <= self.lastSeq) delete pending[seq];
+          else if (seq === self.lastSeq + 1) {
+            self.handleEvent(pending[seq], false, true, true);
+            delete pending[seq];
+          }
+        });
         if (self.lastSeq <= after) throw new Error("Waiting for durable stream history.");
         self.newerError = "";
+        self.liveGapRetryCount = 0;
       }).catch(function (error) {
         if (!self._isCurrentSessionRequest(sessionId, generation)) return;
-        self.newerError = "Live messages are waiting for history. Retry loading newer messages.";
+        self.newerError = "Live messages are waiting for history. Retrying…";
         self.updateNewerControl();
+        if (self.liveGapRetryCount >= 30) {
+          self.newerError = "Live recovery is still pending. Retry loading newer messages.";
+          self.updateNewerControl();
+        }
+        if (self.liveGapRetryCount < 30 && !self.liveGapRetryTimer) self.liveGapRetryTimer = setTimeout(function () {
+          self.liveGapRetryTimer = null;
+          if (self._isCurrentSessionRequest(sessionId, generation)) self._repairLiveGap();
+        }, 2000);
       }).finally(function () {
         if (!self._isCurrentSessionRequest(sessionId, generation)) return;
         self.liveGapLoading = false;
@@ -2340,6 +2374,9 @@
     if (!replay && seq && seq <= this.lastSeq) return;
     if (!replay && !ordered && seq > (this.lastSeq || 0) + 1 && this.sessionId) {
       this.liveGapTarget = Math.max(this.liveGapTarget || 0, seq);
+      this.livePendingEvents = this.livePendingEvents || {};
+      // Bound memory during a long partition; older overflow remains durable.
+      if (Object.keys(this.livePendingEvents).length < 2048) this.livePendingEvents[seq] = event;
       this._repairLiveGap();
       return;
     }
@@ -3378,6 +3415,9 @@
     this.olderAbortController = null;
     this.lastSeq = 0;
     this.liveGapTarget = 0;
+    this.livePendingEvents = {};
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
     this.liveGapLoading = false;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -3418,6 +3458,9 @@
     this.root.dataset.sessionId = "";
     this.lastSeq = 0;
     this.liveGapTarget = 0;
+    this.livePendingEvents = {};
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
     this.liveGapLoading = false;
     this.transcriptEvents = [];
     this.seenEvents = {};
@@ -4192,7 +4235,7 @@
   const SESSION_MULTIPLEX_EVENTS = [
     "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
     "tool_call", "tool_call_update", "plan", "usage_update", "card_disposition",
-    "available_commands_update", "command_result", "browser_attachment_changed",
+    "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
     "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
     "queue_paused", "queue_resumed", "session_started", "session_closed",
@@ -4233,6 +4276,7 @@
     if (state.refreshTimer) clearTimeout(state.refreshTimer);
     if (state.pollTimer) clearTimeout(state.pollTimer);
     if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+    if (state.watchdogTimer) clearTimeout(state.watchdogTimer);
     if (state.source) state.source.close();
     if (reason && window.console && console.debug) {
       console.debug("Agent session list freshness stopped", { reason: reason });
@@ -4266,29 +4310,53 @@
       return;
     }
     const generation = state.generation;
-    const source = new EventSource("/api/agent/session-events?client_id=agent-sidebar");
+    const cursors = Object.assign({}, state.cursors);
+    const selected = localSessionWidget();
+    if (selected && selected.sessionId) cursors[selected.sessionId] = selected.lastSeq || 0;
+    const source = new EventSource("/api/agent/session-events?client_id=agent-sidebar&after=" +
+      encodeURIComponent(JSON.stringify(cursors)));
+
     state.source = source;
+    function observedTraffic() {
+      if (state !== sessionListFreshness || generation !== state.generation || state.source !== source) return;
+      if (state.watchdogTimer) clearTimeout(state.watchdogTimer);
+      state.watchdogTimer = setTimeout(function () {
+        if (state === sessionListFreshness && state.source === source && source.onerror) source.onerror();
+      }, 45000);
+    }
+    observedTraffic();
+    source.addEventListener("heartbeat", observedTraffic);
     useSessionListTransportForChat(true);
     source.addEventListener("ready", function () {
-      if (state !== sessionListFreshness || generation !== state.generation) return;
+      if (state !== sessionListFreshness || generation !== state.generation || state.source !== source) return;
+      observedTraffic();
       state.reconnects = 0;
       scheduleSessionListEventRefresh(state);
     });
     SESSION_MULTIPLEX_EVENTS.forEach(function (type) {
       source.addEventListener(type, function (event) {
-        if (state !== sessionListFreshness || generation !== state.generation) return;
+        if (state !== sessionListFreshness || generation !== state.generation || state.source !== source) return;
+        observedTraffic();
         let data = null;
         try { data = JSON.parse(event.data || "{}"); } catch (_error) { data = null; }
+        if (data && data.session_id && data.seq) state.cursors[data.session_id] = data.seq;
         const widget = localSessionWidget();
         if (data && widget && data.session_id === widget.sessionId) {
-          widget.handleEvent(data, false);
+          if (type === "stream_recovery") {
+            widget.liveGapTarget = Math.max(widget.liveGapTarget || 0,
+              Number((data.payload || {}).target_seq) || 0);
+            widget._repairLiveGap();
+          }
+          else widget.handleEvent(data, false);
         }
         if (SESSION_LIST_REFRESH_EVENT_SET[type]) scheduleSessionListEventRefresh(state);
       });
     });
     source.onerror = function () {
-      if (state !== sessionListFreshness || generation !== state.generation) return;
+      if (state !== sessionListFreshness || generation !== state.generation || state.source !== source) return;
       if (state.source === source) state.source = null;
+      if (state.watchdogTimer) clearTimeout(state.watchdogTimer);
+      state.watchdogTimer = null;
       source.close();
       useSessionListTransportForChat(false);
       scheduleSessionListEventRefresh(state);
@@ -4316,6 +4384,7 @@
       pollTimer: null,
       reconnectTimer: null,
       reconnects: 0,
+      cursors: {},
       generation: 1,
     };
     connectSessionListFreshness(sessionListFreshness);

@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
+from pa.core.async_runtime import AsyncRuntime
 from pa.acp.configuration import (
     ACPConfigurationError,
     SessionConfigurationRequest,
@@ -89,12 +90,18 @@ async def _runtime_offload(
 ):
     if isinstance(runtime, AgentSessionRuntime):
         return await runtime._offload(operation, call, *args, timeout=timeout, **kwargs)
+    kwargs.pop("wait_for_completion", None)
     return await asyncio.to_thread(call, *args, **kwargs)
 
 
-async def _drain_runtime_transcripts(runtime) -> None:
+async def _drain_runtime_transcripts(runtime, *, wait_for_completion: bool = False) -> None:
     if isinstance(runtime, AgentSessionRuntime):
-        await runtime._drain_transcripts()
+        if wait_for_completion:
+            # An owned submission keeps the admission lock until its accepted
+            # prompt is durable. Its HTTP waiter has a separate bounded timeout.
+            await runtime._drain_transcripts(timeout=None)
+        else:
+            await runtime._drain_transcripts()
 
 
 def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
@@ -1625,41 +1632,71 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
         if reconnect_attempt > 0:
             sse_connections.increment("reconnecting")
 
-        async def durable_events(
-            runtime: AgentSessionRuntime, after_seq: int
-        ) -> list[dict[str, Any]]:
-            runtime._flush_transcript()
-            await _drain_runtime_transcripts(runtime)
-            events: list[dict[str, Any]] = []
-            cursor = after_seq
-            while True:
-                page = await _runtime_offload(
-                    runtime,
-                    "sqlite.transcript_read",
-                    runtime.store.list_transcript_events,
-                    runtime.session_id,
-                    after_seq=cursor,
-                    limit=TRANSCRIPT_WINDOW_LIMIT,
-                )
-                if not page:
-                    break
-                for item in page:
-                    if item.seq <= cursor:
+        output: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
+        pumps: dict[str, asyncio.Task[None]] = {}
+
+        async def replay(runtime, after_seq, through_seq):
+            # The live ring bridges persistence/lock delays. Never make every
+            # session wait for one transcript writer or drain a moving history.
+            recent = list(getattr(runtime, "_recent_live_events", ()))
+            recent = [event for event in recent if after_seq < event["seq"] <= through_seq]
+            if recent and recent[0]["seq"] == after_seq + 1:
+                return recent
+            page = await _runtime_offload(
+                runtime, "sqlite.transcript_read", runtime.store.list_transcript_events,
+                runtime.session_id, after_seq=after_seq, limit=TRANSCRIPT_WINDOW_LIMIT,
+            )
+            return [{"id": item.id, "seq": item.seq, "type": item.event_type,
+                     "session_id": item.session_id, "payload": item.payload,
+                     "created_at": item.created_at.isoformat()}
+                    for item in page if item.seq <= through_seq]
+
+        async def pump(runtime, queue, cursor, catch_up):
+            session_id = runtime.session_id
+            target = int(getattr(runtime, "_seq", 0) or 0)
+            # Compatibility runtimes may not expose a live watermark.
+            if catch_up and not target:
+                target = 2**63 - 1
+            try:
+                while True:
+                    if catch_up:
+                        while cursor < target:
+                            events = await replay(runtime, cursor, target)
+                            if not events:
+                                break
+                            for event in events:
+                                cursor = max(cursor, event["seq"])
+                                await output.put(event)
+                            if len(events) < TRANSCRIPT_WINDOW_LIMIT:
+                                break
+                        if cursor < target and target != 2**63 - 1:
+                            await output.put({
+                                "type": "stream_recovery", "session_id": session_id,
+                                "payload": {"after_seq": cursor, "target_seq": target},
+                            })
+                        catch_up = False
+                    event = await queue.get()
+                    seq = int(event.get("seq") or 0)
+                    if seq and seq <= cursor:
                         continue
-                    events.append(
-                        {
-                            "id": item.id,
-                            "seq": item.seq,
-                            "type": item.event_type,
-                            "session_id": item.session_id,
-                            "payload": item.payload,
-                            "created_at": item.created_at.isoformat(),
-                        }
-                    )
-                    cursor = item.seq
-                if len(page) < TRANSCRIPT_WINDOW_LIMIT:
-                    break
-            return events
+                    if seq > cursor + 1:
+                        # Replay only the missing interval. The consumer retains
+                        # the live event if a late durable write leaves a gap.
+                        while cursor < seq - 1:
+                            retained = await replay(runtime, cursor, seq - 1)
+                            if not retained:
+                                break
+                            for item in retained:
+                                cursor = max(cursor, item["seq"])
+                                await output.put(item)
+                    cursor = max(cursor, seq)
+                    await output.put(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Session stream replay failed session=%s", session_id)
+                await output.put({"type": "stream_recovery", "session_id": session_id,
+                                  "payload": {"after_seq": cursor}})
 
         try:
             yield (
@@ -1686,8 +1723,11 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
                 }
                 for session_id in list(subscriptions):
                     runtime, queue = subscriptions[session_id]
-                    if live.get(session_id) is runtime:
+                    if live.get(session_id) is runtime and not pumps[session_id].done():
                         continue
+                    retired = pumps.pop(session_id)
+                    retired.cancel()
+                    await asyncio.gather(retired, return_exceptions=True)
                     runtime.unsubscribe(queue)
                     del subscriptions[session_id]
                 for session_id, runtime in live.items():
@@ -1695,70 +1735,23 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
                         continue
                     queue = runtime.subscribe()
                     subscriptions[session_id] = (runtime, queue)
-                    if session_id not in cursors:
-                        # A runtime added after this browser transport opened has
-                        # no client replay contract yet. Begin at its current
-                        # authoritative cursor; the queued subscription preserves
-                        # anything emitted after this point.
-                        cursors[session_id] = int(getattr(runtime, "_seq", 0) or 0)
-                    for event in await durable_events(
-                        runtime, cursors.get(session_id, 0)
-                    ):
-                        seq = int(event.get("seq") or 0)
-                        cursors[session_id] = max(cursors.get(session_id, 0), seq)
-                        yield _multiplex_sse(event)
-
-                pending = {
-                    asyncio.create_task(queue.get()): (session_id, runtime)
-                    for session_id, (runtime, queue) in subscriptions.items()
-                }
-                if not pending:
-                    if await wait_for_shutdown(1.0):
-                        break
-                    continue
-                stopping, waited = await wait_for_shutdown_or(
-                    asyncio.wait(
-                        pending, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                    cursor = cursors.get(session_id, int(getattr(runtime, "_seq", 0) or 0))
+                    pumps[session_id] = asyncio.create_task(
+                        pump(runtime, queue, cursor, session_id in cursors),
+                        name=f"pa-sse-replay-{session_id}",
                     )
-                )
-                if stopping or waited is None:
-                    for task in pending:
-                        if not task.done():
-                            task.cancel()
-                    if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
+                try:
+                    stopping, event = await wait_for_shutdown_or(
+                        asyncio.wait_for(output.get(), timeout=1.0)
+                    )
+                except TimeoutError:
+                    yield 'event: heartbeat\ndata: {}\n\n'
+                    continue
+                if stopping:
                     break
-                done, waiting = waited
-                for task in waiting:
-                    task.cancel()
-                if waiting:
-                    await asyncio.gather(*waiting, return_exceptions=True)
-                if not done:
-                    continue
-                ready: list[tuple[str, AgentSessionRuntime, dict[str, Any]]] = []
-                for task in done:
-                    session_id, runtime = pending[task]
-                    ready.append((session_id, runtime, task.result()))
-                ready.sort(
-                    key=lambda item: (
-                        str(item[2].get("created_at") or ""),
-                        item[0],
-                        int(item[2].get("seq") or 0),
-                    )
-                )
-                for session_id, runtime, event in ready:
-                    seq = int(event.get("seq") or 0)
-                    cursor = cursors.get(session_id, 0)
-                    if seq and seq <= cursor:
-                        continue
-                    if seq and seq > cursor + 1:
-                        for retained in await durable_events(runtime, cursor):
-                            retained_seq = int(retained.get("seq") or 0)
-                            if retained_seq >= seq:
-                                break
-                            cursors[session_id] = retained_seq
-                            yield _multiplex_sse(retained)
-                    cursors[session_id] = max(cursors.get(session_id, 0), seq)
+                if event is not None:
+                    session_id = event["session_id"]
+                    cursors[session_id] = max(cursors.get(session_id, 0), int(event.get("seq") or 0))
                     yield _multiplex_sse(event)
         except asyncio.CancelledError:
             outcome = "cancelled"
@@ -1768,6 +1761,9 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
             logger.exception("Multiplexed agent activity stream failed")
             raise
         finally:
+            for task in pumps.values():
+                task.cancel()
+            await asyncio.gather(*pumps.values(), return_exceptions=True)
             for runtime, queue in subscriptions.values():
                 runtime.unsubscribe(queue)
             sse_connections.close(connection_id, outcome)
@@ -1786,7 +1782,7 @@ async def multiplexed_session_events(request: Request) -> StreamingResponse:
 def _multiplex_sse(data: dict[str, Any]) -> str:
     session_id = str(data.get("session_id") or "")
     seq = int(data.get("seq") or 0)
-    lines = [f"id: {session_id}:{seq}"]
+    lines = [f"id: {session_id}:{seq}"] if seq else []
     lines.append(f"event: {data.get('type') or 'message'}")
     lines.append(f"data: {json.dumps(data, default=str)}")
     return "\n".join(lines) + "\n\n"
@@ -2780,6 +2776,7 @@ async def _record_web_intake(
         runtime,
         "intake.web_prompt",
         service.ingest_web_prompt,
+        wait_for_completion=True,
         principal_id=principal_id,
         session_id=session_id,
         message=message,
@@ -2858,7 +2855,7 @@ async def _submit_client_prompt(
             wait=False,
         )
         runtime._flush_transcript()
-        await _drain_runtime_transcripts(runtime)
+        await _drain_runtime_transcripts(runtime, wait_for_completion=True)
         accepted = await _runtime_offload(
             runtime,
             "sqlite.prompt_acceptance_read",
@@ -2893,6 +2890,30 @@ async def _submit_client_prompt(
 
 @router.post("/sessions/{session_id}/prompt")
 async def session_prompt(request: Request, session_id: str, body: PromptBody) -> dict:
+    # Own the whole intake -> admission -> publication chain. Retrying an exact
+    # prompt uses its durable identity; a disconnected HTTP caller is only a waiter.
+    executor = request.app.state.ctx.services.get("async_runtime")
+    if not isinstance(executor, AsyncRuntime):
+        return await _session_prompt_owned(request, session_id, body)
+    import hashlib
+    fingerprint = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+    identity = body.client_prompt_id or body.idempotency_key or (
+        f"dispatch:{body.dispatch_id}" if body.dispatch_id else str(uuid4())
+    )
+    # Validate the header even when joining an already admitted caller's task.
+    header_key = request.headers.get("Idempotency-Key", "")
+    if body.client_prompt_id and isinstance(header_key, str) and header_key.strip() and header_key.strip() != body.client_prompt_id:
+        raise HTTPException(status_code=409, detail={
+            "code": "client_prompt_id_header_mismatch",
+            "message": "Idempotency-Key must match client_prompt_id.", "recoverable": False,
+        })
+    key = f"prompt:{get_principal_id(request)}:{session_id}:{identity}:{fingerprint}"
+    return await executor.run_owned(
+        key, lambda: _session_prompt_owned(request, session_id, body)
+    )
+
+
+async def _session_prompt_owned(request: Request, session_id: str, body: PromptBody) -> dict:
     message = body.message.strip()
     if not message and not body.images:
         raise HTTPException(status_code=400, detail="message or image required")
@@ -3128,11 +3149,19 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
                             "recoverable": False,
                         },
                     )
-                return {
-                    **dict(prior.get("response") or {}),
-                    "duplicate": True,
-                    "intake": intake,
-                }
+                if prior.get("response"):
+                    return {
+                        **dict(prior["response"]),
+                        "duplicate": True,
+                        "intake": intake,
+                    }
+                if prior.get("state") in {"failed", "cancelled", "interrupted"}:
+                    raise HTTPException(status_code=409, detail={
+                        "code": "followup_replay_terminal",
+                        "previous_error": prior.get("error"), "recoverable": False,
+                    })
+                # Reservation/pending/ambiguous records are not acceptance
+                # receipts. The owned task coalesces an in-flight exact retry.
         elif dispatch_record.prompt_ack:
             ack = dispatch_record.prompt_ack
             return {
@@ -3180,7 +3209,7 @@ async def session_prompt(request: Request, session_id: str, body: PromptBody) ->
         wait=False,
     )
     runtime._flush_transcript()
-    await _drain_runtime_transcripts(runtime)
+    await _drain_runtime_transcripts(runtime, wait_for_completion=True)
     accepted = [
         event
         for event in await _runtime_offload(

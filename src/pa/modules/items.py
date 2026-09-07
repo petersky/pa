@@ -2143,6 +2143,25 @@ def operation_outcome_api(
     operation, record = dispatch
     if record.realm_id != realm_id:
         return outcome
+    if operation == "dispatch.followup":
+        followup = record.followup_operations[idempotency_key]
+        state = followup.get("state") or "pending"
+        return {
+            "idempotency_key": idempotency_key,
+            "operation": operation,
+            "status": state,
+            "durable": True,
+            "recovery_state": "durable_followup_operation_found",
+            "result": {
+                "dispatch_id": record.dispatch_id,
+                "session_id": record.session_id,
+                "card_id": record.card_id,
+                "state": state,
+                "prompt_id": followup.get("prompt_id"),
+                "error": followup.get("error"),
+                "response": followup.get("response"),
+            },
+        }
     return {
         "idempotency_key": idempotency_key,
         "operation": operation,

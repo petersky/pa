@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from pa.core.operation_budget import measured_lock, report_work_progress
 from pa.domain.models import TranscriptEvent
 
 SCHEMA_VERSION = 1
@@ -87,6 +88,7 @@ class TranscriptStorage:
     def _conn(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA synchronous=NORMAL")
         try:
@@ -184,7 +186,7 @@ class TranscriptStorage:
 
     def append(self, events: list[TranscriptEvent]) -> list[tuple[TranscriptEvent, dict]]:
         mirrors: list[tuple[TranscriptEvent, dict]] = []
-        with self._lock, self._conn() as conn:
+        with measured_lock(self._lock), self._conn() as conn:
             cold_batch_counts: dict[str, int] = {}
             existing: dict[tuple[str, int], str | None] = {}
             for session_id in {event.session_id for event in events}:
@@ -228,6 +230,24 @@ class TranscriptStorage:
                 if count > 1:
                     conn.execute("UPDATE transcript_objects SET ref_count=ref_count+? WHERE hash=?", (count - 1, digest))
         return mirrors
+
+    def recent_lifecycle_summary(self, session_id: str, *, limit: int = 100) -> dict:
+        """Sidebar metadata without hydrating compressed transcript bodies."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """SELECT event_type, hot_payload FROM (
+                    SELECT event_type, hot_payload, seq FROM transcript_events
+                    WHERE session_id=? ORDER BY seq DESC LIMIT ?
+                ) WHERE event_type IN ('session_started','session_admission_failed','session_closed')
+                ORDER BY seq DESC""",
+                (session_id, min(MAX_PAGE_SIZE, max(1, limit))),
+            ).fetchall()
+        closure = next((json.loads(row["hot_payload"]) for row in rows
+                        if row["event_type"] == "session_closed"), {})
+        return {
+            "provider_attempts": sum(row["event_type"] != "session_closed" for row in rows),
+            "closure_reason": closure.get("reason"),
+        }
 
     @staticmethod
     def _preview(payload: Any) -> Any:
@@ -342,7 +362,7 @@ class TranscriptStorage:
     def prune(self, session_ids: list[str], *, keep_audit: bool = True) -> int:
         if not session_ids: return 0
         changed = 0
-        with self._lock, self._conn() as conn:
+        with measured_lock(self._lock), self._conn() as conn:
             for session_id in session_ids:
                 if keep_audit:
                     marks = ",".join("?" for _ in _AUDIT_TYPES)

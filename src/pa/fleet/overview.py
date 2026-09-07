@@ -245,6 +245,8 @@ class FleetOverviewCache:
         self._lock = RLock()
         self._data: dict[str, dict[str, Any]] = {}
         self._revision = 0
+        self._persist_lock = Lock()
+        self._persisted_revision = 0
         try:
             payload = json.loads(self.path.read_text())
             if isinstance(payload, dict):
@@ -252,6 +254,21 @@ class FleetOverviewCache:
                 self._revision = int(payload.get("revision") or 0)
         except OSError, ValueError, TypeError:
             pass
+        self._persisted_revision = self._revision
+
+    def _persist(self) -> None:
+        # Disk/fsync latency must not hold the lock used by live overview reads.
+        # Concurrent dimension updates coalesce into the newest durable snapshot.
+        import copy
+        with self._persist_lock:
+            with self._lock:
+                if self._persisted_revision >= self._revision:
+                    return
+                revision = self._revision
+                payload = {"version": 2, "revision": revision, "updated_at": _now(),
+                           "instances": copy.deepcopy(self._data)}
+            atomic_write_json(self.path, payload)
+            self._persisted_revision = revision
 
     def get(self, instance_id: str, dimension: str) -> dict[str, Any] | None:
         with self._lock:
@@ -297,16 +314,8 @@ class FleetOverviewCache:
                 }
             current[dimension] = value
             self._revision += 1
-            atomic_write_json(
-                self.path,
-                {
-                    "version": 2,
-                    "revision": self._revision,
-                    "updated_at": _now(),
-                    "instances": self._data,
-                },
-            )
-            return True
+        self._persist()
+        return True
 
     def invalidate_all(self, *dimensions: str) -> None:
         """Invalidate a dimension after a local mutation without guessing instance IDs."""
@@ -320,15 +329,8 @@ class FleetOverviewCache:
                     self._data.pop(instance_id, None)
             if changed:
                 self._revision += 1
-                atomic_write_json(
-                    self.path,
-                    {
-                        "version": 2,
-                        "revision": self._revision,
-                        "updated_at": _now(),
-                        "instances": self._data,
-                    },
-                )
+        if changed:
+            self._persist()
 
     def invalidate(self, instance_id: str, *dimensions: str) -> None:
         """Drop fields made obsolete by a successful fleet mutation."""
@@ -342,16 +344,9 @@ class FleetOverviewCache:
             if not current:
                 self._data.pop(instance_id, None)
             if changed:
-                atomic_write_json(
-                    self.path,
-                    {
-                        "version": 2,
-                        "revision": self._revision + 1,
-                        "updated_at": _now(),
-                        "instances": self._data,
-                    },
-                )
                 self._revision += 1
+        if changed:
+            self._persist()
 
 
 _caches: dict[str, FleetOverviewCache] = {}

@@ -13349,6 +13349,19 @@ def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
 async def prompt_dispatch_session(
     request: Request, dispatch_id: str, body: DispatchFollowupBody
 ) -> dict[str, Any]:
+    executor = request.app.state.ctx.services.get("async_runtime")
+    if not isinstance(executor, AsyncRuntime):
+        return await _prompt_dispatch_session_owned(request, dispatch_id, body)
+    fingerprint = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+    return await executor.run_owned(
+        f"followup:{get_principal_id(request)}:{dispatch_id}:{fingerprint}",
+        lambda: _prompt_dispatch_session_owned(request, dispatch_id, body),
+    )
+
+
+async def _prompt_dispatch_session_owned(
+    request: Request, dispatch_id: str, body: DispatchFollowupBody
+) -> dict[str, Any]:
     record = _dispatch_store(request).get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
@@ -13472,7 +13485,7 @@ async def prompt_dispatch_session(
         )
         operation["state"] = (
             "delivery_ambiguous"
-            if operation.get("goal_provenance") and ambiguous_delivery
+            if ambiguous_delivery
             else "failed_pending_release"
             if operation.get("goal_provenance")
             else "failed"

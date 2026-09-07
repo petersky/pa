@@ -302,7 +302,10 @@ def _agent_context(request: Request) -> dict:
     from pa.execution.session_presentation import build_session_presentation
 
     dispatch_store = ctx.services.get("dispatch_store")
-    for session in all_sessions:
+    # Only the selected view is rendered. Reading 100 transcript bodies for
+    # every retained automation session made a warm Chats page proportional to
+    # the entire installation's history (including cold tool payloads).
+    for session in sessions:
         elapsed = max(0, int((now - session.created_at).total_seconds()))
         if elapsed >= 3600:
             elapsed_label = f"{elapsed // 3600}h {(elapsed % 3600) // 60}m"
@@ -341,15 +344,7 @@ def _agent_context(request: Request) -> dict:
         metrics = dict(session.metrics_json or {})
         usage = dict(metrics.get("last_usage") or metrics.get("usage") or {})
         associated_cards = ctx.store.list_cards_for_session(session.id)
-        recent_events = ctx.store.list_transcript_events_before(session.id, limit=100)
-        closure = next(
-            (
-                event
-                for event in reversed(recent_events)
-                if event.event_type == "session_closed"
-            ),
-            None,
-        )
+        lifecycle = ctx.store.transcript_lifecycle_summary(session.id)
         session_details[session.id] = {
             "card": cards.get(session.card_id),
             "cards": associated_cards,
@@ -364,11 +359,8 @@ def _agent_context(request: Request) -> dict:
             "turns": metrics.get("turns"),
             "total_tokens": usage.get("total_tokens") or usage.get("totalTokens"),
             "presentation": presentation,
-            "provider_attempts": sum(
-                event.event_type in {"session_started", "session_admission_failed"}
-                for event in recent_events
-            ),
-            "closure_reason": (closure.payload or {}).get("reason") if closure else None,
+            "provider_attempts": lifecycle["provider_attempts"],
+            "closure_reason": lifecycle["closure_reason"],
             "activity_group": (
                 cards[session.card_id].title
                 if session.card_id in cards
