@@ -285,7 +285,10 @@ def build_session_observability(
     protocol_age = _age_ms(now, protocol_at)
     progress_age = _age_ms(now, progress_at)
     connected = bool(runtime and runtime.connected)
-    busy = bool(current_turn and current_turn["state"] in {"starting", "running"})
+    # A durable admission is evidence of unfinished work, not a live turn.
+    busy = bool(
+        connected and current_turn and current_turn["state"] in {"starting", "running"}
+    )
 
     durable_obligations = bool(durable_in_flight or durable_queue)
     if session.status == "closed":
@@ -407,7 +410,9 @@ def build_session_observability(
                     "queued_prompt"
                     if current_turn and current_turn["state"] == "queued"
                     else None,
-                    "recent_sanitized_progress" if progress_at else None,
+                    "recent_sanitized_progress"
+                    if progress_age is not None and progress_age < quiet_seconds * 1000
+                    else None,
                 )
                 if evidence
             ],

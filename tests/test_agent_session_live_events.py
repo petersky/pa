@@ -489,6 +489,8 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             start.assert_awaited_once_with(
                 resume_external_id="cursor-session",
                 provider_spec=cursor_spec,
+                queued_prompts=[],
+                queue_paused=False,
             )
 
     def test_non_resumable_default_snapshot_uses_configured_provider(self) -> None:
@@ -536,6 +538,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             store.save_session.assert_called_with(runtime.session)
             start.assert_awaited_once_with(
                 resume_external_id=None,
+                require_restore=False,
                 queued_prompts=[],
                 queue_paused=False,
                 provider_spec=resolved.spec,
@@ -828,7 +831,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertEqual(durable["queued_prompts"][0]["id"], item.id)
             self.assertEqual(durable["queued_prompts"][0]["card_id"], "card-1")
             self.assertEqual(durable["queued_prompts"][0]["project_id"], "project-1")
-            store.save_session.assert_called_with(session)
+            store.save_session.assert_called_with(session, expected_connection_id="")
 
     def test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot(
         self,

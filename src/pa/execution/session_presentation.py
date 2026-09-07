@@ -184,7 +184,12 @@ def build_session_presentation(
             "The durable session is preserved and intentional pauses will remain paused.",
             "restore_after_restart" if obligations else None,
         )
-    elif purpose in {"automated_run", "one_shot_job"} and workflow_state in _TERMINAL_WORKFLOW_STATES:
+    elif (
+        purpose in {"automated_run", "one_shot_job"}
+        and workflow_state in _TERMINAL_WORKFLOW_STATES
+        and not obligations
+        and not prompting
+    ):
         labels = {
             "succeeded": "Completed",
             "failed": "Failed",
@@ -209,7 +214,7 @@ def build_session_presentation(
         explanation = "The provider is working on the current turn."
         next_action = "finish_current_turn"
     elif connected and queue:
-        display_status = "Queued" if purpose == "chat" else "Running"
+        display_status = "Queued"
         explanation = {
             "automation_paused_for_takeover": "Automatic prompts are held until control returns to automation.",
             "waiting_for_current_response": "Prompts are waiting for the current response.",

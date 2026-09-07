@@ -158,3 +158,19 @@ def test_diagnostics_redact_prompts_and_raw_tool_data() -> None:
         "kind": "test",
         "status": "running",
     }
+
+
+def test_stale_durable_admission_without_runtime_never_reports_busy() -> None:
+    result = build_session_observability(
+        session(status="closed", config_json={"durable_runtime": {
+            "in_flight": {"id": "old-prompt", "message": "old work"},
+        }}),
+        runtime=None,
+        events=[event(1, "user_message", {"id": "old-prompt"}, 7200),
+                event(2, "agent_message_chunk", {}, 7000)],
+        instance_id="monica", instance_name="Monica", now=NOW,
+    )
+    assert result["session_state"] == "closed"
+    assert result["activity"]["phase"] != "running"
+    assert "turn_in_flight" not in result["liveness"]["evidence"]
+    assert "recent_sanitized_progress" not in result["liveness"]["evidence"]
