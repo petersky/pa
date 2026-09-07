@@ -354,7 +354,8 @@ async def test_transcript_batch_survives_cancellation_during_retry_backoff():
 
 
 @pytest.mark.asyncio
-async def test_real_prompt_route_finishes_delayed_intake_after_http_cancel(tmp_path):
+@pytest.mark.parametrize("delayed_stage", ["intake", "transcript"])
+async def test_real_prompt_route_finishes_delayed_commit_after_http_cancel(tmp_path, delayed_stage):
     from pa.instance.agent_session import AgentSessionRuntime
     from pa.modules.agent_chat import PromptBody, session_prompt
 
@@ -367,10 +368,29 @@ async def test_real_prompt_route_finishes_delayed_intake_after_http_cancel(tmp_p
     started, release = threading.Event(), threading.Event()
 
     def ingest(**kwargs):
-        started.set()
-        assert release.wait(2)
+        if delayed_stage == "intake":
+            started.set()
+            assert release.wait(2)
         return SimpleNamespace(id="intake", correlation_id="correlation", security=SimpleNamespace(
             disposition=SimpleNamespace(value="accepted")))
+
+    append = store.append_transcript_events
+
+    def append_delayed(batch):
+        if delayed_stage == "transcript":
+            started.set()
+            assert release.wait(2)
+        return append(batch)
+
+    store.append_transcript_events = append_delayed
+    drain = runtime._drain_transcripts
+
+    async def short_default_drain(**kwargs):
+        # Shorten only the old default drain deadline; owned acknowledgements
+        # must explicitly retain the write beyond this deadline.
+        await drain(timeout=kwargs.get("timeout", 0.01))
+
+    runtime._drain_transcripts = short_default_drain
 
     async def admit(message, **kwargs):
         runtime._append_transcript("user_message", {"message": message, "id": kwargs["prompt_id"], "images": []})
@@ -403,3 +423,26 @@ async def test_real_prompt_route_finishes_delayed_intake_after_http_cancel(tmp_p
     finally:
         release.set()
         await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_ungoverned_followup_response_timeout_remains_recoverable(tmp_path):
+    from pa.execution.dispatch import DispatchRecord, DispatchStore
+    from pa.modules.fleet import DispatchFollowupBody, prompt_dispatch_session
+    from tests.test_dispatch_consistency import request_for
+
+    ledger = DispatchStore(tmp_path)
+    record = DispatchRecord(dispatch_id="dispatch", mutation_id="mutation",
+        authority_instance_id="authority", authority_url="http://authority",
+        target_instance_id="target", session_id="session", state="running")
+    ledger.put(record)
+    request = request_for(Settings(data_dir=tmp_path, instance_id="authority"),
+                          MagicMock(), {"dispatch_store": ledger})
+    request.state.instance_authenticated = True
+    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=TimeoutError("response lost"))):
+        with pytest.raises(TimeoutError):
+            await prompt_dispatch_session(request, "dispatch", DispatchFollowupBody(
+                message="Exact continuation", idempotency_key="same-key"))
+    outcome = ledger.get("dispatch").followup_operations["same-key"]
+    assert outcome["state"] == "delivery_ambiguous"
+    assert outcome["error"]["recoverable"] is True

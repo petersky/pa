@@ -13485,7 +13485,7 @@ async def _prompt_dispatch_session_owned(
         )
         operation["state"] = (
             "delivery_ambiguous"
-            if operation.get("goal_provenance") and ambiguous_delivery
+            if ambiguous_delivery
             else "failed_pending_release"
             if operation.get("goal_provenance")
             else "failed"

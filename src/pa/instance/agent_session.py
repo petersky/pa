@@ -580,7 +580,7 @@ class AgentSessionRuntime:
             self._flush_transcript()
 
     async def _drain_transcripts(
-        self, *, timeout: float = 10.0, raise_on_timeout: bool = False
+        self, *, timeout: float | None = 10.0, raise_on_timeout: bool = False
     ) -> None:
         self._flush_transcript()
         if not getattr(self, "async_runtime", None):

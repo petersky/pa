@@ -94,9 +94,14 @@ async def _runtime_offload(
     return await asyncio.to_thread(call, *args, **kwargs)
 
 
-async def _drain_runtime_transcripts(runtime) -> None:
+async def _drain_runtime_transcripts(runtime, *, wait_for_completion: bool = False) -> None:
     if isinstance(runtime, AgentSessionRuntime):
-        await runtime._drain_transcripts()
+        if wait_for_completion:
+            # An owned submission keeps the admission lock until its accepted
+            # prompt is durable. Its HTTP waiter has a separate bounded timeout.
+            await runtime._drain_transcripts(timeout=None)
+        else:
+            await runtime._drain_transcripts()
 
 
 def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
@@ -2850,7 +2855,7 @@ async def _submit_client_prompt(
             wait=False,
         )
         runtime._flush_transcript()
-        await _drain_runtime_transcripts(runtime)
+        await _drain_runtime_transcripts(runtime, wait_for_completion=True)
         accepted = await _runtime_offload(
             runtime,
             "sqlite.prompt_acceptance_read",
@@ -3144,11 +3149,19 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
                             "recoverable": False,
                         },
                     )
-                return {
-                    **dict(prior.get("response") or {}),
-                    "duplicate": True,
-                    "intake": intake,
-                }
+                if prior.get("response"):
+                    return {
+                        **dict(prior["response"]),
+                        "duplicate": True,
+                        "intake": intake,
+                    }
+                if prior.get("state") in {"failed", "cancelled", "interrupted"}:
+                    raise HTTPException(status_code=409, detail={
+                        "code": "followup_replay_terminal",
+                        "previous_error": prior.get("error"), "recoverable": False,
+                    })
+                # Reservation/pending/ambiguous records are not acceptance
+                # receipts. The owned task coalesces an in-flight exact retry.
         elif dispatch_record.prompt_ack:
             ack = dispatch_record.prompt_ack
             return {
@@ -3196,7 +3209,7 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
         wait=False,
     )
     runtime._flush_transcript()
-    await _drain_runtime_transcripts(runtime)
+    await _drain_runtime_transcripts(runtime, wait_for_completion=True)
     accepted = [
         event
         for event in await _runtime_offload(
