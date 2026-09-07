@@ -10,6 +10,18 @@ from pathlib import Path
 
 
 class AgentChatSseLifecycleTests(unittest.TestCase):
+    def test_owner_request_survives_transport_replacement(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for lifecycle regression")
+        root = Path(__file__).parents[1]
+        result = subprocess.run(
+            [node, str(root / "tests/agent_chat_owner_node_harness.js"),
+             str(root / "src/pa/server/static/js/agent-chat.js")],
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_empty_chat_status_follows_authoritative_lifecycle(self) -> None:
         node = shutil.which("node")
         if not node:
@@ -463,6 +475,7 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
             Object.assign(widget, {{
               destroyed: false,
               subscriptionGeneration: 7,
+              sessionId: "session-1",
               transcriptEvents: [{{ seq: 41, type: "agent_message_chunk" }}],
               sessionRoute: {{ state: "live" }},
               apiWithTimeout: () => Promise.reject(new Error("slow")),

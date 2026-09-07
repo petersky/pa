@@ -112,6 +112,8 @@ class TranscriptStorage:
                 );
                 CREATE INDEX IF NOT EXISTS idx_transcript_events_session_seq
                     ON transcript_events(session_id, seq);
+                CREATE INDEX IF NOT EXISTS idx_transcript_events_session_type_seq
+                    ON transcript_events(session_id, event_type, seq);
                 CREATE TABLE IF NOT EXISTS transcript_objects (
                     hash TEXT PRIMARY KEY,
                     codec TEXT NOT NULL,
@@ -293,6 +295,20 @@ class TranscriptStorage:
         for row in rows:
             event = self._event(row)
             if event.payload.get("id") == prompt_id:
+                return event
+        return None
+
+    def find_prompt_completion(self, session_id: str, prompt_id: str) -> TranscriptEvent | None:
+        """Read bounded completion evidence before hydrating a turn's messages."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM transcript_events WHERE session_id=? "
+                "AND event_type='turn_completed' ORDER BY seq DESC LIMIT 1000",
+                (session_id,),
+            ).fetchall()
+        for row in rows:
+            event = self._event(row)
+            if event.payload.get("queued_prompt_id") == prompt_id:
                 return event
         return None
 

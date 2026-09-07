@@ -4938,8 +4938,11 @@ class CardProjection:
         label: str | None = None,
         statuses: tuple[str, ...] | list[str] | None = None,
         exclude_statuses: tuple[str, ...] | list[str] | None = None,
+        include_archived: bool = True,
     ) -> list[AgentSession]:
         query = "SELECT * FROM agent_sessions WHERE 1=1"
+        if not include_archived:
+            query += " AND archived_at IS NULL"
         params: list[str] = []
         if label is not None:
             query += " AND label = ?"
@@ -5482,6 +5485,9 @@ class CardProjection:
         self.append_transcript_events([audit_event])
         return session, prior_status
 
+    def find_prompt_completion(self, session_id: str, prompt_id: str) -> TranscriptEvent | None:
+        return self.transcripts.find_prompt_completion(session_id, prompt_id)
+
     def next_transcript_seq(self, session_id: str) -> int:
         return self.transcripts.next_seq(session_id)
 
@@ -5843,7 +5849,19 @@ class CardProjection:
         metrics["migration_examined"] = int(operation.get("examined", 0))
         metrics["migration_changed"] = int(operation.get("changed", 0))
         metrics["migration_error"] = operation.get("error")
+        metrics["measured_at"] = datetime.now(UTC).isoformat()
+        metrics["measurement_state"] = "measured"
+        # Publish only a complete diagnostic result. Status readers never start
+        # integrity checks or object/file scans, even on a cold cache.
+        self._transcript_metrics_snapshot = dict(metrics)
         return metrics
+
+    def transcript_storage_status(self) -> dict[str, object]:
+        """Last maintenance/explicit diagnostic result, with honest freshness."""
+        return dict(getattr(self, "_transcript_metrics_snapshot", {
+            "measurement_state": "not_measured", "measured_at": None,
+            "integrity": "not_checked", "missing_objects": None,
+        }))
 
     def _migrate_legacy_transcripts(self, *, batch_size: int = 500) -> None:
         """Resume an idempotent legacy canary and verify each canonical hash.
@@ -6038,10 +6056,14 @@ class CardProjection:
                 "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
             }
 
+        # A merge's other parents can reach ancestors of the current head
+        # without passing through that head. Exclude the complete projected
+        # ancestry, or old effects and completed operation receipts are replayed.
+        projected = self.event_log._ancestors(current)
         applied = 0
         with self._conn():
             for commit_hash, commit in self.event_log._iter_commits_parent_first(
-                target_head, stop={current}
+                target_head, stop=projected
             ):
                 for event_hash in commit.event_hashes:
                     event = self.event_log.get_event(event_hash)

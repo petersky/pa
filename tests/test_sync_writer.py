@@ -72,6 +72,8 @@ class EventLogWriterSafetyTests(unittest.TestCase):
             with patch.object(log, "get_commit", side_effect=history.get), patch.object(
                 log, "get_event", side_effect=lambda value: tail_event if value == "tail-event" else None
             ), patch.object(log, "is_ancestor", return_value=True), patch.object(
+                log, "_ancestors", return_value=set(history) - {"commit-5000"}
+            ), patch.object(
                 log,
                 "_iter_commits_parent_first",
                 return_value=iter([("commit-5000", history["commit-5000"])]),

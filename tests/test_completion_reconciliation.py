@@ -7,7 +7,7 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from pa.acp.client import normalize_session_update
 from pa.acp.final_message import assemble_final_assistant_message
@@ -75,6 +75,34 @@ class FakeSupervisor:
 
 
 class CompletionReconciliationTests(unittest.TestCase):
+    def test_pending_prompt_does_not_hydrate_transcript_history(self) -> None:
+        from pa.domain.projection import CardProjection
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            store.append_transcript_events([
+                TranscriptEvent(session_id="s", seq=index + 1, event_type="agent_message_chunk", payload={"text": "x"})
+                for index in range(1200)
+            ])
+            reconciler = CompletionReconciler(
+                DispatchStore(Path(tmp)), SimpleNamespace(store=store),
+                FakeOutbox(), store, lambda: None,
+            )
+            record = DispatchRecord(
+                dispatch_id="d", mutation_id="m", card_id="c", session_id="s",
+                authority_instance_id="a", authority_url="http://authority", target_instance_id="a",
+            )
+            with patch.object(store, "list_transcript_events_before", side_effect=AssertionError("hydrated pending turn")):
+                for _ in range(3):
+                    self.assertIsNone(asyncio.run(reconciler._recover_transcript_completion(record, prompt_id="pending", source=None)))
+            # Completed evidence may be cold; it must still be found by canonical payload.
+            store.append_transcript_events([TranscriptEvent(
+                session_id="s", seq=1201, event_type="turn_completed",
+                payload={"queued_prompt_id": "pending", "large": "x" * 5000},
+            )])
+            self.assertEqual(store.find_prompt_completion("s", "pending").seq, 1201)
+            self.assertIsNone(store.find_prompt_completion("s", "other"))
+
     def make_fixture(
         self,
         root: Path,

@@ -2321,6 +2321,29 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         update = self.domain.update_card.call_args
         self.assertEqual(update.args[1].lane, CardLane.DONE)
 
+    async def test_missing_merged_card_has_durable_backoff_and_can_recover(self) -> None:
+        service = await self.make_service([])
+        self.domain.get_card.return_value = None
+        self.store.set_terminal("watch-1", PRWatchStatus.MERGED)
+        with patch.object(self.store, "list_watches", side_effect=AssertionError("historical scan")):
+            await service._reconcile_merged_cards()
+            await service._reconcile_merged_cards()
+        self.assertEqual(self.domain.get_card.call_count, 1)
+        current = self.store.get_watch("watch-1")
+        self.assertNotEqual(current.state.get("card_lane"), "done")
+        retry = current.state["card_completion_retry"]
+        self.assertEqual(retry["attempts"], 1)
+        self.assertEqual(self.store.list_card_completion_due(), [])
+        reopened = PRSupervisorStore(self.store.db_path)
+        self.assertEqual(reopened.list_card_completion_due(), [])
+        due = reopened.list_card_completion_due(now=utcnow() + timedelta(seconds=61))
+        self.assertEqual([item.id for item in due], ["watch-1"])
+        self.domain.get_card.return_value = Card(id="card-1", title="restored", lane=CardLane.DONE)
+        await service._complete_merged_card(due[0])
+        self.assertEqual(self.store.get_watch("watch-1").state["card_lane"], "done")
+        self.assertNotIn("card_completion_retry", self.store.get_watch("watch-1").state)
+        self.assertEqual(reopened.list_card_completion_due(now=utcnow() + timedelta(days=1)), [])
+
     async def test_legacy_done_card_is_not_reopened_when_merge_evidence_is_old(
         self,
     ) -> None:
@@ -3333,12 +3356,86 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             )
             self.assertEqual(unsigned.status_code, 401)
 
+    def test_repository_transport_provenance_requires_one_durable_identity(self) -> None:
+        app = Kernel.boot(settings=self.settings).build_app()
+        headers = {"Authorization": "Bearer fleet-secret"}
+        session_id = "45cd58e9-1dd7-44b9-9e07-2ae58d12e685"
+        with TestClient(app) as client:
+            repositories = []
+            for url, accepted in (
+                ("https://github.com/owner/repo", True),
+                ("git@github.com:owner/repo.git", True),
+                ("ssh://git@github.com/owner/repo.git", True),
+                ("ssh://git@gitlab.com/owner/repo.git", False),
+            ):
+                with self.subTest(url=url):
+                    repository = app.state.ctx.store.create_repository(
+                        RepositoryCreate(url=url),
+                        instance_id=self.settings.instance_id,
+                    )
+                    repositories.append(repository)
+                    session = AgentSession(
+                        id=session_id,
+                        agent_name="codex",
+                        origin_instance_id=self.settings.instance_id,
+                        principal_id="user:local",
+                        status="closed",
+                        config_json={
+                            "execution_context": {
+                                "repositories": [{"repository_id": repository.id}]
+                            }
+                        },
+                    )
+                    app.state.ctx.store.save_session(session)
+                    response = client.post(
+                        "/api/pr-supervisor/watches",
+                        headers=headers,
+                        json={
+                            "repository": "OWNER/REPO",
+                            "pr_number": 100 + len(repositories),
+                            "originating_session_id": session_id,
+                        },
+                    )
+                    if accepted:
+                        self.assertEqual(response.status_code, 201, response.text)
+                        self.assertEqual(response.json()["repository_id"], repository.id)
+                    else:
+                        self.assertEqual(response.status_code, 422, response.text)
+                        self.assertEqual(
+                            response.json()["detail"]["code"],
+                            "repository_not_in_session_context",
+                        )
+                    self.assertEqual(
+                        app.state.ctx.store.get_session(session_id).config_json,
+                        session.config_json,
+                    )
+
+            # Equivalent HTTPS and SSH names must not pick between distinct IDs.
+            session.config_json["execution_context"]["repositories"] = [
+                {"repository_id": repository.id} for repository in repositories[:2]
+            ]
+            self.assertNotEqual(repositories[0].id, repositories[1].id)
+            app.state.ctx.store.save_session(session)
+            ambiguous = client.post(
+                "/api/pr-supervisor/watches",
+                headers=headers,
+                json={
+                    "repository": "owner/repo",
+                    "pr_number": 200,
+                    "originating_session_id": session_id,
+                },
+            )
+            self.assertEqual(ambiguous.status_code, 422, ambiguous.text)
+            self.assertEqual(
+                ambiguous.json()["detail"]["code"], "ambiguous_repository_provenance"
+            )
+
     def test_canonical_ingestion_rejects_slugs_forgery_and_audits_repair(self) -> None:
         app = Kernel.boot(settings=self.settings).build_app()
         headers = {"Authorization": "Bearer fleet-secret"}
         with TestClient(app) as client:
             repository = app.state.ctx.store.create_repository(
-                RepositoryCreate(url="https://github.com/owner/repo"),
+                RepositoryCreate(url="ssh://github.com/owner/repo"),
                 instance_id=self.settings.instance_id,
             )
             project = app.state.ctx.store.create_project(
@@ -3454,6 +3551,23 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                 cross_realm.json()["detail"]["code"], "provenance_realm_mismatch"
             )
 
+            for unrelated_repository in ("owner/other", "other/repo"):
+                mismatch = client.post(
+                    "/api/pr-supervisor/watches",
+                    headers=headers,
+                    json={
+                        "repository": unrelated_repository,
+                        "pr_number": 18,
+                        "originating_session_id": session_id,
+                    },
+                )
+                self.assertEqual(mismatch.status_code, 422, mismatch.text)
+                self.assertEqual(
+                    mismatch.json()["detail"]["code"],
+                    "repository_not_in_session_context",
+                )
+
+            original_session = app.state.ctx.store.get_session(session_id)
             created = client.post(
                 "/api/pr-supervisor/watches",
                 headers=headers,
@@ -3480,6 +3594,14 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
             self.assertEqual(durable["policy"]["required_checks"], ["canonical-ci"])
             self.assertEqual(durable["policy_source"], f"project:{project.id}")
             self.assertNotEqual(durable["policy_revision"], "default-v1")
+            self.assertEqual(
+                app.state.ctx.store.get_repository(repository.id).url,
+                "ssh://github.com/owner/repo",
+            )
+            self.assertEqual(
+                app.state.ctx.store.get_session(session_id).config_json,
+                original_session.config_json,
+            )
 
             remote_session_id = "88888888-8888-4888-8888-888888888888"
             dispatch_id = "99999999-9999-4999-8999-999999999999"

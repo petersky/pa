@@ -453,6 +453,14 @@ class CompletionReconciler:
         )
         if not transcript_reader or not record.session_id or not prompt_id:
             return None
+        completion_reader = getattr(self.agent.store, "find_prompt_completion", None)
+        if completion_reader:
+            completion = await self._offload(
+                "reconciliation.completion_evidence_read",
+                completion_reader, record.session_id, prompt_id,
+            )
+            if completion is None:
+                return None
         events = await self._offload(
             "reconciliation.transcript_read",
             transcript_reader,

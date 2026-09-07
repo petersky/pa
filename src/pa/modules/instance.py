@@ -282,8 +282,8 @@ def _runtime_status_snapshot(ctx) -> dict:
     dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store and hasattr(dispatch_store, "storage_metrics"):
         snapshot["dispatch_storage"] = dispatch_store.storage_metrics()
-    if hasattr(ctx.store, "transcript_storage_metrics"):
-        snapshot["transcript_storage"] = ctx.store.transcript_storage_metrics()
+    if hasattr(ctx.store, "transcript_storage_status"):
+        snapshot["transcript_storage"] = ctx.store.transcript_storage_status()
     provider_gate = ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-pa-instance-id="fixture">
+<meta charset="utf-8"><title>Owner loading lifecycle regression</title>
+<script>
+window.EventSource = class {
+  static CLOSED = 2;
+  constructor(url) { this.url=url; this.readyState=1; this.listeners={}; }
+  addEventListener(name, fn) { this.listeners[name]=fn; }
+  close() { this.readyState=2; }
+};
+const nativeFetch=window.fetch.bind(window);
+window.fetch = async (url, options) => {
+  const path=String(url);
+  if (!path.includes('/api/')) return nativeFetch(url,options);
+  if(path.includes('session-route')) {
+    await new Promise(r=>setTimeout(r,250));
+    return new Response(JSON.stringify({state:'live',live:true,api_base:'/api/agent'}));
+  }
+  if(path.includes('/history/')) return new Response(JSON.stringify({events:[],page:{has_older:false,has_newer:false}}));
+  if(path.includes('/sessions/')) return new Response(JSON.stringify({session:{id:path.split('/').pop(),status:'idle',purpose:'chat',config_json:{}},connected:true,prompting:false,queue:[]}));
+  return new Response(JSON.stringify([]));
+};
+</script>
+<script src="/src/pa/server/static/js/session-recovery.js" defer></script>
+<script src="/src/pa/server/static/js/agent-chat.js" defer></script>
+<main class="page-agent"><h1>Owner loading lifecycle regression</h1>
+<pre id="checks" role="status">Waiting for initial mount…</pre>
+<aside data-agent-session-view="chats"><ul data-agent-session-list data-agent-enabled="true"></ul></aside>
+<section data-agent-chat data-session-id="initial" data-provider="codex">
+<div data-acw-status></div><div data-acw-messages><p data-acw-placeholder></p></div>
+<form data-acw-form><textarea data-acw-input aria-label="Message"></textarea><button data-acw-send>Send</button></form>
+</section></main>
+<script>
+window.addEventListener('DOMContentLoaded',async()=>{
+ const report=document.querySelector('#checks'), widget=document.querySelector('[data-agent-chat]')._acw;
+ const wait=async(fn)=>{for(let n=0;n<100;n++){if(fn())return;await new Promise(r=>setTimeout(r,20));}throw Error('condition timed out');};
+ const check=(value,label)=>{if(!value)throw Error(label);report.textContent+='\nPASS '+label;};
+ try {
+  report.textContent='Running actual widget/sidebar mount';
+  check(widget.ownerResolutionPending && widget.externalEventTransport,'sidebar starts while owner response is pending');
+  await wait(()=>!widget.ownerResolutionPending && widget.composerEnabled);
+  check(widget.sessionId==='initial','first entry becomes writable without reselection');
+  const generation=widget.subscriptionGeneration;
+  window.PAAgentChat.stopSessionListFreshness('fixture-reconnect');
+  window.PAAgentChat.startSessionListFreshness();
+  check(widget.subscriptionGeneration===generation,'sidebar reconnect preserves selection');
+  widget.switchSession('away',true);widget.switchSession('initial',true);
+  await wait(()=>!widget.ownerResolutionPending && widget.composerEnabled);
+  check(widget.sessionId==='initial','rapid switch ignores stale owner result');
+  history.pushState({},'', '?session=away');window.dispatchEvent(new PopStateEvent('popstate'));
+  await wait(()=>widget.sessionId==='away' && !widget.ownerResolutionPending && widget.composerEnabled);
+  history.back();
+  await wait(()=>widget.sessionId==='initial' && !widget.ownerResolutionPending && widget.composerEnabled);
+  check(true,'back navigation loads selected session');
+  history.forward();
+  await wait(()=>widget.sessionId==='away' && !widget.ownerResolutionPending && widget.composerEnabled);
+  check(true,'forward navigation loads selected session');
+  report.textContent+='\nALL CHECKS PASSED';
+ } catch(e) {report.textContent+='\nFAIL '+e.stack;}
+});
+</script></html>
