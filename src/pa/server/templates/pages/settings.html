@@ -9,6 +9,7 @@
     ('appearance', 'Appearance'),
     ('agent', 'Agent defaults'),
     ('mcp-servers', 'MCP Servers'),
+    ('github', 'GitHub supervision'),
     ('prompts', 'Prompts'),
     ('telemetry', 'Telemetry'),
     ('configuration', 'Configuration'),
@@ -25,6 +26,27 @@
     <p>Configure this PA instance, its agent behavior, connected tools, and operational safeguards.</p>
   </div>
 </header>
+<section class="hidden stack" data-section="github" hidden>
+  <div class="panel">
+    <div class="panel-header"><h2>GitHub supervision scope</h2></div>
+    <p class="muted">Choose which repositories <strong>{{ settings.instance_name }}</strong> may supervise using its existing GitHub credential. Changes apply immediately.</p>
+    <form class="stack" id="pa-github-scope-form">
+      <p id="pa-github-scope-current" aria-live="polite"></p>
+      <label for="pa-github-scope-repositories">Allowed repositories (one per line)</label>
+      <textarea id="pa-github-scope-repositories" rows="5" spellcheck="false" placeholder="owner/repository" required></textarea>
+      <p class="muted small">Enter owner/name or a GitHub HTTPS/SSH URL. At least one repository is required. Saving an empty list is prohibited because it would enable unrestricted supervision.</p>
+      <div class="button-row"><button type="submit">Validate and review scope</button><button type="button" class="secondary" id="pa-github-scope-reload">Reload current scope</button></div>
+      <div id="pa-github-scope-review" class="stack" hidden>
+        <p id="pa-github-scope-question"></p>
+        <pre id="pa-github-scope-diff"></pre>
+        <div class="button-row"><button type="button" id="pa-github-scope-apply">Apply exact scope</button><button type="button" class="secondary" id="pa-github-scope-keep">Keep current scope</button></div>
+      </div>
+      <p id="pa-github-scope-status" aria-live="polite"></p>
+    </form>
+  </div>
+</section>
+<script src="/static/js/github-scope.js" defer></script>
+
 <section class="hidden stack" data-section="mcp-servers" hidden>
   <div class="panel">
     <div class="panel-header"><h2>Auxiliary MCP servers</h2></div>
