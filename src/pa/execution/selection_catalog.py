@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -183,6 +184,51 @@ def candidates_from_advertisement(
             )
         )
     return candidates
+
+
+async def discover_missing_catalogs(statuses: list[dict], settings) -> list[dict]:
+    """Fill absent default-account advertisements using bounded ACP handshakes."""
+    from pa.acp.providers.probe import probe_acp_catalog
+    from pa.acp.providers.resolve import AgentInvocationContext, resolve_agent_provider
+    from pa.execution.selection_service import status_candidates
+
+    async def one(status):
+        candidates = status_candidates("discovery", [status])
+        if not any(
+            c.connection == "default" and c.readiness == "ready" for c in candidates
+        ):
+            return status
+        if any(c.connection == "default" and c.model for c in candidates):
+            return status
+        try:
+            resolved = await asyncio.wait_for(
+                asyncio.to_thread(
+                    resolve_agent_provider,
+                    settings,
+                    AgentInvocationContext(
+                        surface="execution", provider_override=status["id"]
+                    ),
+                ),
+                timeout=2,
+            )
+            # The probe owns its deadline and cancellation-safe child cleanup.
+            catalog = await probe_acp_catalog(resolved.spec)
+            if catalog.get("ok"):
+                status = dict(status)
+                status["execution_catalogs"] = [
+                    *(status.get("execution_catalogs") or []),
+                    {
+                        **catalog,
+                        "connection": "default",
+                        "source": "acp_discovery_session",
+                    },
+                ]
+        except Exception:
+            # Optional discovery must not expose credential-bearing exceptions.
+            pass
+        return status
+
+    return list(await asyncio.gather(*(one(s) for s in statuses)))
 
 
 def enrich_provider_catalogs(

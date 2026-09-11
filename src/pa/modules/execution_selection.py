@@ -46,23 +46,35 @@ def _error(exc):
 @router.get("/catalog")
 async def catalog(request: Request):
     ctx, service, _, _ = _context(request)
-    candidates = await service.local_catalog()
+    candidates = await service.local_catalog(refresh=True)
+    return _catalog_response(ctx, candidates)
+
+
+def _catalog_response(ctx, candidates):
     return {
         "contract": "pa.execution-catalog/v1",
         "instance_id": ctx.settings.instance_id,
         "candidates": [c.model_dump(mode="json") for c in candidates],
         "empty_reason": None
         if candidates
-        else "Discovery has not run; explicitly refresh the catalog.",
+        else "Discovery returned no available choices. Check provider status and refresh.",
         "refresh_interval_seconds": 60,
     }
 
 
 @router.post("/catalog/refresh")
 async def refresh_catalog(request: Request):
-    _, service, _, _ = _context(request)
-    await service.local_catalog(refresh=True)
-    return await catalog(request)
+    ctx, service, _, _ = _context(request)
+    generation = service.catalog_generation
+    candidates = await service.local_catalog(force=True)
+    response = _catalog_response(ctx, candidates)
+    response["refresh"] = {
+        "state": "refreshed"
+        if service.catalog_generation != generation
+        else "rate_limited",
+        "retry_after_seconds": 3,
+    }
+    return response
 
 
 class PreviewBody(BaseModel):
@@ -167,7 +179,7 @@ async def preview(request: Request, body: PreviewBody):
         if project_id
         else None
     )
-    candidates = await service.local_catalog()
+    candidates = await service.local_catalog(refresh=True)
     try:
         return await asyncio.to_thread(
             service.resolve,

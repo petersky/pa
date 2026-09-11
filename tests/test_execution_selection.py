@@ -101,7 +101,7 @@ def candidate(**values):
                 "readiness": "ready",
                 "catalog_source": "fixture",
                 "catalog_version": "1",
-                "observed_at": NOW,
+                "observed_at": datetime.now(UTC),
                 "freshness": "fresh",
             },
             **values,

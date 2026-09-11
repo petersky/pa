@@ -61,7 +61,7 @@ accounts are not the same candidate. Missing actual model identity stays
 `provider_default` or `unknown`; configured backend routing is not a native model
 provider confirmation.
 
-Read-only catalog calls use cached evidence. Explicit/admission refresh is
+Modal/catalog, preview, and admission calls automatically refresh expired evidence. Automatic refresh is
 coalesced (60-second minimum interval); entries older than 300 seconds are stale.
 Named discovery has an eight-second bound, a 256 KiB response limit, at most 500
 backend model IDs, and no redirects. ACP initialization and backend authentication
@@ -212,7 +212,7 @@ This checklist is maintained until complete; unchecked items are not a completio
 - [x] Codex/OpenAI, Cursor account Grok, OpenInterpreter/MiniMax native fixtures,
   transport incompatibility, failed auth/initialize, named revision/credential
   rotation and process-local overlays: `tests/test_execution_selection_connections.py`.
-- [x] Card create/edit/preview and stale card revision; no render-time probes;
+- [x] Card create/edit/preview and stale card revision; coalesced automatic discovery;
   policy CAS and narrow controls' markup: `tests/test_execution_selection_api.py`.
 - [x] Deferred/cancel/conflict behavior and preserved confirmation contract:
   `tests/test_execution_selection_settings.py`, `tests/test_acp_client.py`.
@@ -257,3 +257,11 @@ This checklist is maintained until complete; unchecked items are not a completio
 - [ ] Scoped commit/push, ready PR with exact requirement/evidence checklist,
   durable PA watch, stable-green exact head, independent review/CI/mergeability
   revalidation, merge and matching merge-commit evidence on the card.
+
+### New-chat discovery recovery
+
+Automatic local discovery reuses evidence for 60 seconds and coalesces concurrent requests. A user refresh bypasses that cache, including a cached failed cold discovery, with a separate three-second manual rate bound and an explicit `rate_limited` response. Candidate timestamps expire independently after five minutes, including between catalog retrieval and selection.
+
+Authenticated adapters that expose models only through ACP `session/new` use a temporary discovery session with no prompt or MCP tools. Discovery honors the same command/argument overrides as admission. Its eight-second protocol deadline includes cancellation-safe ownership of bounded transport cleanup and a kill/reap fallback; failed discovery never proves an explicit model or native setting.
+
+Rejected selections retain their constraints and preferences and include rejection codes plus a recovery action. A current successful preview or a changed preference clears an obsolete Start chat error; a failed preview retains it.

@@ -1390,7 +1390,7 @@ class AcpProviderTests(unittest.TestCase):
             )
         )
         context = MagicMock()
-        context.__aenter__ = AsyncMock(return_value=(connection, object()))
+        context.__aenter__ = AsyncMock(return_value=(connection, SimpleNamespace(returncode=0)))
         context.__aexit__ = AsyncMock(return_value=None)
         captured: dict = {}
 

@@ -598,9 +598,14 @@ def resolve_selection(
                 tradeoffs.append("unverified_provider_start")
             else:
                 reasons.append("readiness_" + candidate.readiness)
-        if candidate.freshness != "fresh":
+        freshness = (
+            "stale"
+            if (now - candidate.observed_at).total_seconds() > 300
+            else candidate.freshness
+        )
+        if freshness != "fresh":
             (tradeoffs if policy.allow_stale_catalog else reasons).append(
-                "catalog_" + candidate.freshness
+                "catalog_" + freshness
             )
         if candidate.capacity_available is False:
             tradeoffs.append("waiting_for_capacity")
@@ -690,7 +695,7 @@ def resolve_selection(
                 "source": candidate.catalog_source,
                 "version": candidate.catalog_version,
                 "observed_at": candidate.observed_at.isoformat(),
-                "freshness": candidate.freshness,
+                "freshness": freshness,
             },
             "health": {
                 "state": candidate.readiness,
@@ -717,9 +722,27 @@ def resolve_selection(
             eligible.append(alternative)
     if not eligible:
         receipt["state"] = "rejected"
+        rejections = sorted(
+            {
+                reason
+                for alternative in receipt["alternatives"]
+                for reason in alternative["rejections"]
+            }
+        )
+        receipt["recovery"] = {
+            "rejections": rejections,
+            "action": "refresh_catalog",
+            "message": "Refresh available choices and retry. If a requested model or native setting is still unverified, check the provider connection. Explicit preferences and hard constraints have been preserved.",
+        }
         raise SelectionError(
             "no_compatible_execution",
-            "No eligible execution matches the requested settings and hard constraints. Inspect rejections; refresh discovery or change explicit preferences.",
+            "No eligible execution matches the requested settings and hard constraints. "
+            + (
+                "Reasons: " + ", ".join(rejections) + ". "
+                if rejections
+                else "No provider choices were discovered. "
+            )
+            + receipt["recovery"]["message"],
             receipt,
         )
     winner = min(eligible, key=lambda c: (-c["score"], c["candidate_key"]))

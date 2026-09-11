@@ -4,6 +4,12 @@
   var fields = ["harness", "connection", "model_provider", "model", "reasoning"];
   var names = {harness: "Agent harness", connection: "Configured connection / account", model_provider: "Backend provider", model: "Model", reasoning: "Native reasoning"};
   var catalogPromise;
+  function loadCatalog() {
+    if (!catalogPromise) {
+      catalogPromise = api("/api/execution/catalog").finally(function () {catalogPromise = null;});
+    }
+    return catalogPromise;
+  }
   function api(path, method, body) {
     var cookie = document.cookie.split("; ").find(function (c) {return c.indexOf("pa_csrf=") === 0;});
     var headers = {"Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID()};
@@ -25,6 +31,11 @@
     var output = root.querySelector('input[name="execution_preferences"]');
     var notice = root.querySelector("[data-selection-notice]");
     var form = root.closest("form");
+    function clearStartError() {
+      var error = form && form.querySelector("[data-agent-new-error]");
+      if (error) {error.textContent = ""; error.hidden = true;}
+    }
+    if (form) form.addEventListener("change", clearStartError);
     function scopedApi(path, method, body) {
       if (root.dataset.selectionRealm) path += (path.includes("?") ? "&" : "?") + "realm=" + encodeURIComponent(root.dataset.selectionRealm);
       return api(path, method, body);
@@ -201,7 +212,10 @@
       api("/api/execution/catalog/refresh", "POST", {}).then(function (data) {
         var local = data.instance_id;
         state.candidates = state.candidates.filter(function (c) {return c.instance_id !== local;}).concat(data.candidates);
-        catalogPromise = Promise.resolve(data); render(); noticeText(root.dataset.selectionPurpose === "new-session" ? "Available choices updated." : "Local catalog refreshed. Remote catalog refresh is owned by fleet discovery; unknown values remain unknown.");
+        render(); state.preview();
+        noticeText(data.refresh && data.refresh.state === "rate_limited"
+          ? "Using the recent discovery result. Wait " + data.refresh.retry_after_seconds + " seconds before retrying refresh."
+          : "Discovery completed. Choices may remain unavailable; see selection details below.");
       }).catch(function (e) {noticeText(e.message);});
     });
     var save = root.querySelector("[data-selection-save]");
@@ -239,6 +253,7 @@
           surface: root.dataset.selectionSurface || "execution", execution_preferences: state.prefs
         });
         if (generation !== previewGeneration) return;
+        clearStartError();
         var selected = result.selected || {};
         effectiveSummary.textContent = "Selected: " + (selected.harness || "unavailable") + " · " +
           (selected.model || "provider default (model confirmed after start)") + ". Confirmed when the chat starts.";
@@ -246,7 +261,7 @@
         if (generation === previewGeneration) effectiveSummary.textContent = "Selection unavailable: " + error.message;
       }
     };
-    output.addEventListener("change", function () { if (effectiveSummary) state.preview(); });
+    output.addEventListener("change", function () { clearStartError(); if (effectiveSummary) state.preview(); });
     if (preview) preview.addEventListener("click", async function () {
       if (form && !form.reportValidity()) return;
       preview.disabled = true;
@@ -255,6 +270,7 @@
         var result = await scopedApi("/api/execution/preview", "POST", {card_id: root.dataset.selectionCard || null,
           project_id: project && project.value || null, surface: root.dataset.selectionSurface || "execution",
           replace_card_preferences: root.dataset.selectionPurpose === "edit", execution_preferences: state.prefs});
+        clearStartError();
         var panel = root.querySelector("[data-selection-preview-output]"); panel.hidden = false; panel.open = true;
         var explanation = panel.querySelector("[data-selection-explanation]");
         if (explanation) explanation.textContent = [result.selected.instance_id, result.selected.harness, result.selected.connection,
@@ -266,11 +282,13 @@
       } catch (e) {noticeText(e.message);} finally {preview.disabled = false;}
     });
     var embedded = readScript(root, "[data-selection-catalog]", []);
-    if (!catalogPromise) catalogPromise = api("/api/execution/catalog");
-    catalogPromise.then(function (data) {state.candidates = embedded.concat(data.candidates || []); render();
-      noticeText(state.candidates.length ? "Cached evidence loaded; supported choices depend on the complete tuple. Provider confirmation happens after admission." : "No cached capability catalog. Automatic still uses admission-time discovery; refresh to choose explicit values.");
+    loadCatalog().then(function (data) {state.candidates = embedded.concat(data.candidates || []); render();
+      noticeText(state.candidates.length ? "Available choices checked; supported settings depend on the complete tuple. Provider confirmation happens after admission." : "No capability choices were discovered. Check provider status, then refresh.");
     }).catch(function (e) {noticeText(e.message); render();});
     state.reset = function () {
+      loadCatalog().then(function (data) {
+        state.candidates = embedded.concat(data.candidates || []); render(); state.preview();
+      }).catch(function (e) {noticeText(e.message);});
       state.prefs = {};
       root.querySelectorAll("[data-selection-constraint]").forEach(function (input) {input.value = "";});
       if (taskInput) {taskInput.value = ""; taskInput.setCustomValidity("");}

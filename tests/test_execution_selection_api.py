@@ -98,7 +98,7 @@ def test_create_edit_preview_roundtrip_and_stale_defaults(selection_app):
     )
 
 
-def test_catalog_render_does_not_probe_and_refresh_is_coalesced(selection_app):
+def test_automatic_catalog_reuses_fresh_evidence(selection_app):
     client, _app, _service = selection_app
     with patch(
         "pa.acp.providers.resolve.list_provider_summaries_bounded",
@@ -106,10 +106,6 @@ def test_catalog_render_does_not_probe_and_refresh_is_coalesced(selection_app):
     ):
         for _ in range(3):
             assert client.get("/api/execution/catalog").status_code == 200
-            assert (
-                client.post("/api/execution/catalog/refresh", json={}).status_code
-                == 200
-            )
 
 
 def test_card_project_policy_cannot_be_replaced_by_callers(selection_app):
@@ -164,6 +160,7 @@ def test_receipt_attempt_pagination_is_owned_and_complete(selection_app):
         service.store.record_attempt(f"a-{index}", key, {"index": index})
     first = client.get(f"/api/execution/decisions/{key}").json()
     from pa.execution.selection import validate_reuse
+
     assert validate_reuse(first["decision"])["decision_id"] == key
     assert first["attempts_page"] == {
         "offset": 0,
