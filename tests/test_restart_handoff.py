@@ -1322,3 +1322,27 @@ def test_restart_continuation_does_not_reactivate_taken_over_automated_run(tmp_p
         runtime._run_prompt.assert_not_called()
         assert store.get_restart_handoff(receipt.id).status == 'restarting'
     asyncio.run(scenario())
+
+
+def test_admission_in_progress_keeps_same_receipt_retryable(tmp_path):
+    async def scenario():
+        from pa.instance.agent_session import SessionAdmissionInProgress
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        manager.get = MagicMock(return_value=None)
+        manager.recover_session = AsyncMock(side_effect=SessionAdmissionInProgress('exact session admission owned'))
+        await manager._resume_restart_handoffs()
+        pending = store.get_restart_handoff(receipt.id)
+        assert pending.status == 'resuming'
+        assert pending.error is None
+        assert pending.continuation_prompt_id == receipt.continuation_prompt_id
+        manager.recover_session.side_effect = None
+        manager.recover_session.return_value = runtime
+        manager._startup_complete = True
+        await manager._recover_unscheduled_restart_handoffs()
+        await runtime._drain_task
+        delivered = store.get_restart_handoff(receipt.id)
+        assert delivered.id == receipt.id
+        assert delivered.status == 'continuation_delivered'
+        runtime._run_prompt.assert_awaited_once()
+        assert runtime._run_prompt.call_args.args[0].id == receipt.continuation_prompt_id
+    asyncio.run(scenario())

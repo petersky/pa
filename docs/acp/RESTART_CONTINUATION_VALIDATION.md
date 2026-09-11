@@ -93,3 +93,24 @@ reattachment. These fixture limitations do not constitute production acceptance.
 No production receipt, queue, provider, installation, or restart was modified.
 Root owns exact-head review, release activation, and production acceptance.
 The card must remain Waiting after source merge until that acceptance succeeds.
+
+## Repeatable root-audit coverage
+
+Run `uv run python -m tests.restart_browser_validation` with port 8097 free.
+The harness submits a human prompt using PA browser type/click, requests an
+isolated restart receipt, relaunches the fixture, and checks automatic delivery
+before reattaching the browser for inspection. It asserts the same provider
+thread, two provider starts across two generations, exactly one continuation
+message/completion, human control, and an empty queue. It records its HTTP calls
+and browser screenshot under `.dev/restart-validation/automated-browser-*`.
+
+Retry live state refreshes live discovery; Resume session calls `/recover`;
+`/queue/resume` is a separate queue control. The harness invokes none of these
+manual recovery controls to deliver the continuation.
+
+`test_admission_in_progress_keeps_same_receipt_retryable` verifies an admission
+race leaves the exact receipt `resuming`, then the watchdog delivers the same
+prompt once. The existing dispatch follow-up fixture uses the harmless phrase
+“Bearer credentials”: its acceptance test explicitly requires `[REDACTED_AUTH]`
+in stored text while concurrent retries retain one accepted prompt identity.
+The restart and follow-up suites pass together (89 tests).
