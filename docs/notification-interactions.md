@@ -102,6 +102,9 @@ ambiguous. Resolve that ambiguity through the owning operation; never re-report 
 duplicate question as a repair. Concurrent response handling is serialized with
 transfer. All local notification saves compare versions; metadata/coalescing
 writers reload on contention rather than erasing a transfer or recorded response.
+Response-stage saves merge concurrent read/acknowledgement/coalescing metadata
+only, so those updates cannot strand a recorded answer between delivery stages.
+Changes to the interaction, routing, resolution or delivery state remain conflicts.
 
 Deploy this capability through the normal release process before using it. All
 writers handling these notifications must understand the new routing receipt;

@@ -408,3 +408,98 @@ def test_delivery_revalidates_successor_without_overwriting_recorded_response(re
         assert not r.runtime._queue
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("stage", ["answered", "delivery_pending", "delivered", "failed"])
+@pytest.mark.parametrize("writer", ["read", "acknowledge", "coalesce"])
+def test_response_stage_merges_only_concurrent_metadata(recovery, stage, writer):
+    r = recovery
+
+    async def exercise():
+        await transfer(r)
+        save = r.service._save_async
+        changed = False
+
+        async def intercept(item, **kwargs):
+            nonlocal changed
+            if item.interaction.state.value == stage and not changed:
+                changed = True
+                if writer == "coalesce":
+                    await asyncio.to_thread(r.service.create, r.data, principal_id="user:local")
+                else:
+                    mutation = r.service.mark_read if writer == "read" else r.service.acknowledge
+                    await asyncio.to_thread(mutation, r.notice, principal_id="user:local", idempotency_key=f"metadata-{stage}")
+            return await save(item, **kwargs)
+
+        with patch.object(r.service, "_save_async", side_effect=intercept):
+            if stage == "failed":
+                async def fail_delivery(*args):
+                    raise RuntimeError("Temporary target outage")
+                with patch.object(r.service, "_deliver", side_effect=fail_delivery):
+                    with pytest.raises(NotificationConflict) as error:
+                        await respond(r)
+                assert error.value.code == "delivery_failed"
+                stored = r.store.get_notification(r.notice.id)
+                assert stored.interaction.state == InteractionState.FAILED
+                assert stored.interaction.response["choice_id"] == "approve"
+                result = await respond(r, key="retry-after-outage", retry=True)
+            else:
+                result = await respond(r)
+        assert changed
+        assert result.interaction.state == InteractionState.DELIVERED
+        assert result.interaction.response["choice_id"] == "approve"
+        assert len(r.runtime._queue) == 1
+        assert (await respond(r)).interaction.state == InteractionState.DELIVERED
+        stored = r.store.get_notification(r.notice.id)
+        assert stored.continuation_transfer is not None
+        if writer == "read":
+            assert stored.read_at is not None
+        elif writer == "acknowledge":
+            assert stored.acknowledged_at is not None
+        else:
+            assert stored.coalesced_count == 2
+
+    asyncio.run(exercise())
+
+
+def test_response_stage_does_not_merge_a_semantic_conflict(recovery):
+    r = recovery
+
+    async def exercise():
+        await transfer(r)
+        save = r.service._save_async
+
+        async def intercept(item, **kwargs):
+            if item.interaction.state == InteractionState.DELIVERY_PENDING:
+                r.service.supersede(r.notice, principal_id="user:local", idempotency_key="supersede")
+            return await save(item, **kwargs)
+
+        with patch.object(r.service, "_save_async", side_effect=intercept):
+            with pytest.raises(NotificationConflict) as error:
+                await respond(r)
+        assert error.value.code == "notification_version_conflict"
+        result = r.store.get_notification(r.notice.id)
+        assert result.interaction.state == InteractionState.SUPERSEDED
+        assert result.interaction.response["choice_id"] == "approve"
+        assert result.continuation_transfer is not None
+        assert not r.runtime._queue
+
+    asyncio.run(exercise())
+
+
+def test_late_provider_handler_cannot_take_over_a_transferred_response(recovery):
+    r = recovery
+    calls = []
+
+    async def exercise():
+        await transfer(r)
+        r.service.register_delivery_handler(r.notice.id, calls.append)
+        with pytest.raises(NotificationConflict):
+            await respond(r)
+        assert not calls
+        assert not r.runtime._queue
+        result = r.store.get_notification(r.notice.id)
+        assert result.interaction.state == InteractionState.FAILED
+        assert result.interaction.response["choice_id"] == "approve"
+
+    asyncio.run(exercise())

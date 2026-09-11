@@ -72,18 +72,42 @@ class NotificationService:
         self._delivery_handlers.pop(notification_id, None)
 
     async def _save_async(
-        self, notification: Notification, *, principal_id: str
+        self, notification: Notification, *, principal_id: str,
+        previous: Notification | None = None,
     ) -> None:
-        try:
-            await asyncio.to_thread(
-                self.store.save_notification,
-                notification,
-                principal_id=principal_id,
-                instance_id=self.ctx.settings.instance_id,
-                expected_version=notification.version - 1,
-            )
-        except NotificationVersionConflict as exc:
-            raise NotificationConflict("notification_version_conflict", str(exc)) from exc
+        # Response stages may overlap read/ack/coalescing writes. Merge only
+        # those metadata fields: never rebase a changed answer, route, contract,
+        # expiry, resolution, or delivery state. Transfers retain strict CAS.
+        metadata = {"read_at", "acknowledged_at", "coalesced_count"}
+        excluded = metadata | {"version", "updated_at", "idempotency_keys"}
+        for _ in range(8):
+            try:
+                await asyncio.to_thread(
+                    self.store.save_notification,
+                    notification,
+                    principal_id=principal_id,
+                    instance_id=self.ctx.settings.instance_id,
+                    expected_version=notification.version - 1,
+                )
+                return
+            except NotificationVersionConflict as exc:
+                latest = await asyncio.to_thread(
+                    self.store.get_notification, notification.id,
+                    realm_id=notification.realm_id,
+                )
+                if (
+                    previous is None or latest is None
+                    or latest.model_dump(exclude=excluded) != previous.model_dump(exclude=excluded)
+                ):
+                    raise NotificationConflict("notification_version_conflict", str(exc)) from exc
+                new_keys = [key for key in notification.idempotency_keys if key not in previous.idempotency_keys]
+                for field in metadata:
+                    setattr(notification, field, getattr(latest, field))
+                notification.idempotency_keys = list(dict.fromkeys([*latest.idempotency_keys, *new_keys]))[-128:]
+                notification.version = latest.version + 1
+                notification.updated_at = datetime.now(UTC)
+                previous = latest
+        raise NotificationConflict("notification_version_conflict", "Notification is changing; retry the recorded response delivery")
 
     async def _deliver_expiry(self, notification: Notification) -> None:
         handler = self._delivery_handlers.get(notification.id)
@@ -749,6 +773,7 @@ class NotificationService:
                     "Retry the same response because the previous delivery may have partially succeeded",
                     notification=current,
                 )
+            previous = current.model_copy(deep=True)
             if interaction.continuation_mode == "prompt" and not interaction.continuation_prompt_id:
                 interaction.continuation_prompt_id = f"notification-response:{current.id}:{interaction.request_id}"
             now = datetime.now(UTC)
@@ -775,14 +800,16 @@ class NotificationService:
             ]
             current.version += 1
             current.updated_at = now
-            await self._save_async(current, principal_id=principal_id)
+            await self._save_async(current, principal_id=principal_id, previous=previous)
             self._publish(current)
             if not delivery_response.cancel:
+                previous = current.model_copy(deep=True)
                 interaction.state = InteractionState.DELIVERY_PENDING
                 current.version += 1
                 current.updated_at = datetime.now(UTC)
-                await self._save_async(current, principal_id="system:delivery")
+                await self._save_async(current, principal_id="system:delivery", previous=previous)
                 self._publish(current)
+            previous = current.model_copy(deep=True)
             try:
                 await self._deliver(current, delivery_response)
             except Exception as exc:
@@ -797,7 +824,7 @@ class NotificationService:
                 current.delivery_updated_at = datetime.now(UTC)
                 current.version += 1
                 current.updated_at = datetime.now(UTC)
-                await self._save_async(current, principal_id="system:delivery")
+                await self._save_async(current, principal_id="system:delivery", previous=previous)
                 self._publish(current)
                 raise NotificationConflict(
                     "delivery_failed", interaction.delivery_error, notification=current
@@ -815,7 +842,7 @@ class NotificationService:
             current.resolved_at = current.resolved_at or interaction.delivered_at
             current.version += 1
             current.updated_at = interaction.delivered_at
-            await self._save_async(current, principal_id="system:delivery")
+            await self._save_async(current, principal_id="system:delivery", previous=previous)
             self._publish(current)
             return current
 
@@ -823,6 +850,14 @@ class NotificationService:
         self, notification: Notification, response: InteractionResponse
     ) -> None:
         handler = self._delivery_handlers.get(notification.id)
+        if notification.continuation_transfer and (
+            handler is not None
+            or notification.interaction is None
+            or notification.interaction.kind != InteractionKind.MCP_OPERATOR_INPUT
+            or notification.interaction.protocol_method != "pa/report_dispatch_progress.operator_input"
+            or notification.interaction.continuation_mode != "prompt"
+        ):
+            raise RuntimeError("Transferred continuations cannot deliver provider-owned requests")
         if handler:
             result = handler(response)
             if inspect.isawaitable(result):
