@@ -40,6 +40,7 @@ from pa.modules.items import operation_outcome_api
 def _queued_runtime(session):
     runtime = MagicMock(session=session, connected=True, _closed=False)
     runtime._queue = []
+    runtime._queue_paused = False
     runtime._in_flight = None
 
     def enqueue(message, *, prompt_id, source, **kwargs):
@@ -1010,7 +1011,7 @@ def test_queued_handoff_recovers_missing_runtime_without_reenqueuing(tmp_path: P
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("receipt_status", ["resuming", "continuation_queued"])
+@pytest.mark.parametrize("receipt_status", ["resuming", "continuation_queued", "failed"])
 def test_completed_continuation_repairs_receipt_without_provider_replay(tmp_path: Path, receipt_status: str) -> None:
     from pa.domain.models import TranscriptEvent
 
@@ -1019,6 +1020,7 @@ def test_completed_continuation_repairs_receipt_without_provider_replay(tmp_path
     receipt = store.create_restart_handoff(RestartHandoff(
         session_id=session.id, idempotency_key="completed", continuation_prompt="continue",
         continuation_prompt_id="already-done", status=receipt_status,
+        failure_stage="resuming" if receipt_status == "failed" else None,
     ))
     store.append_transcript_events([TranscriptEvent(
         session_id=session.id, seq=1, event_type="turn_completed",
@@ -1084,3 +1086,239 @@ def test_crash_between_queue_checkpoint_and_receipt_does_not_reenqueue(tmp_path)
         session.id, _startup_recovery=True, _defer_drain=True,
     )
     assert store.get_restart_handoff(receipt.id).status == "continuation_queued"
+
+
+def _human_handoff(tmp_path):
+    store = CardProjection(tmp_path / 'pa.db')
+    session = store.save_session(AgentSession(
+        id='human-chat', agent_name='codex', purpose='chat', control_mode='human',
+        status='quiesced', external_session_id='exact-provider-thread',
+    ))
+    receipt = store.create_restart_handoff(RestartHandoff(
+        session_id=session.id, idempotency_key='authorized-restart',
+        continuation_prompt='Continue the authorized task',
+        continuation_prompt_id='stable-continuation', status='restarting',
+    ))
+    manager = AgentSessionManager(Settings(data_dir=tmp_path), store)
+    runtime = AgentSessionRuntime(manager, session)
+    runtime.connection = MagicMock(cancel=AsyncMock())
+    runtime._checkpoint_runtime = MagicMock()
+    runtime._checkpoint_runtime_async = AsyncMock()
+    runtime._append_transcript = MagicMock()
+    runtime._flush_transcript = MagicMock()
+    runtime._drain_transcripts = AsyncMock()
+    runtime._run_prompt = AsyncMock()
+    manager.get = MagicMock(return_value=runtime)
+    return store, manager, runtime, receipt
+
+
+def test_human_authorized_restart_drains_once_and_holds_other_automation(tmp_path):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        runtime.enqueue('unrelated automation', source='evaluation:other')
+        await manager._resume_restart_handoffs()
+        assert runtime._drain_task is not None
+        await runtime._drain_task
+        await manager._resume_restart_handoffs()
+        runtime._run_prompt.assert_awaited_once()
+        assert runtime._run_prompt.call_args.args[0].id == receipt.continuation_prompt_id
+        assert [item.message for item in runtime._queue] == ['unrelated automation']
+        assert runtime.session.control_mode == 'human'
+        assert runtime.session.external_session_id == 'exact-provider-thread'
+        assert store.get_restart_handoff(receipt.id).status == 'continuation_delivered'
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('mismatch', ['receipt', 'session', 'prompt', 'message', 'binding', 'status', 'images', 'cwd', 'environment', 'principal', 'interrupt'])
+def test_restart_source_is_not_authorization(tmp_path, mismatch):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        item = QueuedPrompt(id=receipt.continuation_prompt_id,
+                            message=receipt.continuation_prompt,
+                            session_id=runtime.session_id,
+                            source='restart-handoff:' + receipt.id)
+        if mismatch == 'receipt': item.source = 'restart-handoff:invented'
+        elif mismatch == 'session': runtime.session.id = 'another-session'
+        elif mismatch == 'prompt': item.id = 'different-prompt'
+        elif mismatch == 'message': item.message = 'different instructions'
+        elif mismatch == 'binding': runtime.session.execution_binding = {'cwd': '/other'}
+        elif mismatch == 'status': store.update_restart_handoff(receipt.id, status='failed')
+        elif mismatch == 'cwd': item.cwd = '/other'
+        elif mismatch == 'environment': item.agent_env = {'EXTRA': 'unauthorized'}
+        elif mismatch == 'principal': item.principal_id = 'other-user'
+        elif mismatch == 'interrupt': item.publication_fence = True
+        elif mismatch == 'images':
+            from pa.instance.quiesce import ImageAttachment
+            item.images = [ImageAttachment(name='extra', mime_type='image/png', data='aGk=')]
+        runtime._queue = [item]
+        runtime._start_drain()
+        assert runtime._drain_task is None
+        runtime._run_prompt.assert_not_called()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('pause', ['pause', 'cancel'])
+def test_restart_continuation_respects_operator_pause_and_cancel(tmp_path, pause):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        if pause == 'cancel': await runtime.cancel()
+        else: runtime.pause_queue()
+        await manager._resume_restart_handoffs()
+        runtime._run_prompt.assert_not_called()
+        assert store.get_restart_handoff(receipt.id).status == 'continuation_queued'
+        assert runtime._queue_paused
+        runtime.resume_queue()
+        await manager._resume_restart_handoffs()
+        await runtime._drain_task
+        runtime._run_prompt.assert_awaited_once()
+        assert runtime.session.control_mode == 'human'
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('pause_after_queue', [False, True])
+def test_restart_continuation_waits_for_existing_user_turn(tmp_path, pause_after_queue):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        entered, release = asyncio.Event(), asyncio.Event()
+        delivered = []
+        async def run(item):
+            delivered.append(item.id)
+            if item.id == 'user-turn':
+                runtime._in_flight = item
+                entered.set()
+                await release.wait()
+                runtime._in_flight = None
+        runtime._run_prompt.side_effect = run
+        runtime.enqueue('user instructions', source='ui', prompt_id='user-turn')
+        await entered.wait()
+        await manager._resume_restart_handoffs()
+        assert delivered == ['user-turn']
+        assert runtime._queue[0].id == receipt.continuation_prompt_id
+        if pause_after_queue:
+            await runtime.cancel()
+        release.set()
+        await runtime._drain_task
+        if pause_after_queue:
+            assert delivered == ['user-turn']
+            assert store.get_restart_handoff(receipt.id).status == 'continuation_queued'
+            runtime.resume_queue()
+            await runtime._drain_task
+        assert delivered == ['user-turn', receipt.continuation_prompt_id]
+        assert runtime.session.control_mode == 'human'
+    asyncio.run(scenario())
+
+
+def test_owner_not_ready_handoff_retries_same_receipt_with_bounded_backoff(tmp_path):
+    async def scenario():
+        from datetime import UTC, datetime, timedelta
+        from pa.acp.mcp_config import OwnerChannelError
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        manager.get = MagicMock(return_value=None)
+        manager.recover_session = AsyncMock(side_effect=OwnerChannelError(
+            'api_not_ready', 'unix', 'Wait for startup'))
+        await manager._resume_restart_handoffs()
+        failed = store.get_restart_handoff(receipt.id)
+        assert failed.status == 'failed' and failed.failure_stage == 'resuming'
+        assert store.get_session(runtime.session_id).recovery_json['attempts'] == 1
+        await manager._resume_restart_handoffs()
+        assert manager.recover_session.await_count == 1
+        session = store.get_session(runtime.session_id)
+        session.recovery_json['next_retry_at'] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+        store.save_session(session)
+        manager.recover_session.side_effect = None
+        manager.recover_session.return_value = runtime
+        manager._startup_complete = True
+        await manager._recover_unscheduled_restart_handoffs()
+        await runtime._drain_task
+        assert manager.recover_session.await_count == 2
+        assert store.get_restart_handoff(receipt.id).status == 'continuation_delivered'
+        runtime._run_prompt.assert_awaited_once()
+        assert runtime._run_prompt.call_args.args[0].id == receipt.continuation_prompt_id
+    asyncio.run(scenario())
+
+
+def test_transient_handoff_recovery_exhausts_without_manual_rearm(tmp_path):
+    async def scenario():
+        from datetime import UTC, datetime, timedelta
+        from pa.acp.mcp_config import OwnerChannelError
+        from pa.instance.agent_session import _RECOVERY_MAX_ATTEMPTS
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        manager.get = MagicMock(return_value=None)
+        manager.recover_session = AsyncMock(side_effect=OwnerChannelError('api_not_ready', 'unix', 'Wait'))
+        for attempt in range(_RECOVERY_MAX_ATTEMPTS):
+            await manager._resume_restart_handoffs()
+            session = store.get_session(runtime.session_id)
+            assert session.recovery_json['attempts'] == attempt + 1
+            if not session.recovery_json['blocked']:
+                session.recovery_json['next_retry_at'] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+                store.save_session(session)
+        await manager._resume_restart_handoffs()
+        assert manager.recover_session.await_count == _RECOVERY_MAX_ATTEMPTS
+        assert store.get_session(runtime.session_id).recovery_json['exhausted']
+        assert store.get_restart_handoff(receipt.id).status == 'failed'
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('reason', ['authentication_rejected', 'instance_mismatch', 'api_incompatible'])
+def test_nontransient_owner_failure_does_not_retry_automatically(tmp_path, reason):
+    async def scenario():
+        from pa.acp.mcp_config import OwnerChannelError
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        manager.get = MagicMock(return_value=None)
+        manager.recover_session = AsyncMock(side_effect=OwnerChannelError(reason, 'unix', 'Correct configuration'))
+        await manager._resume_restart_handoffs()
+        await manager._resume_restart_handoffs()
+        manager.recover_session.assert_awaited_once()
+        assert store.get_restart_handoff(receipt.id).status == 'failed'
+    asyncio.run(scenario())
+
+
+def test_concurrent_replay_coalesces_recovery_and_preserves_prompt_identity(tmp_path):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        manager.get = MagicMock(return_value=None)
+        async def recover(*args, **kwargs):
+            await asyncio.sleep(0)
+            manager.get.return_value = runtime
+            return runtime
+        manager.recover_session = AsyncMock(side_effect=recover)
+        await asyncio.gather(manager._resume_restart_handoffs(), manager._resume_restart_handoffs())
+        await runtime._drain_task
+        manager.recover_session.assert_awaited_once_with(runtime.session_id, _startup_recovery=True, _defer_drain=True)
+        runtime._run_prompt.assert_awaited_once()
+        assert store.get_restart_handoff(receipt.id).continuation_prompt_id == receipt.continuation_prompt_id
+    asyncio.run(scenario())
+
+
+def test_watchdog_during_dequeue_admission_gap_does_not_fail_receipt(tmp_path):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def admission(item):
+            entered.set()
+            await release.wait()
+        runtime._run_prompt.side_effect = admission
+        await manager._resume_restart_handoffs()
+        await entered.wait()
+        assert runtime._in_flight is None and not runtime._queue
+        await manager._resume_restart_handoffs()
+        assert store.get_restart_handoff(receipt.id).status == 'continuation_queued'
+        release.set()
+        await runtime._drain_task
+        assert store.get_restart_handoff(receipt.id).status == 'continuation_delivered'
+        runtime._run_prompt.assert_awaited_once()
+    asyncio.run(scenario())
+
+
+def test_restart_continuation_does_not_reactivate_taken_over_automated_run(tmp_path):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        runtime.session.purpose = 'automated_run'
+        store.save_session(runtime.session)
+        manager.recover_session = AsyncMock()
+        await manager._resume_restart_handoffs()
+        manager.recover_session.assert_not_called()
+        runtime._run_prompt.assert_not_called()
+        assert store.get_restart_handoff(receipt.id).status == 'restarting'
+    asyncio.run(scenario())

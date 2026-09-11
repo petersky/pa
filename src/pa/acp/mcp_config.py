@@ -293,7 +293,7 @@ def _get_ready(endpoint: OwnerEndpoint, token: str, instance_id: str, timeout: f
     transport = httpx.HTTPTransport(uds=endpoint.uds) if endpoint.uds else None
     with httpx.Client(transport=transport) as client:
         return client.get(
-            f"{endpoint.url}/api/ready",
+            f"{endpoint.url}/api/owner-ready",
             headers={
                 "Authorization": f"Bearer {token}",
                 "X-PA-MCP-Instance-ID": instance_id,

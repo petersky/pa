@@ -519,3 +519,14 @@ class CodexOwnerSandboxConfigTests(unittest.TestCase):
                 config["permissions"]["pa-owner"]["network"]["unix_sockets"][str(socket)],
                 "allow",
             )
+
+
+def test_owner_probe_uses_dependency_ready_route():
+    from pa.acp.mcp_config import OwnerEndpoint, _get_ready
+    with patch('pa.acp.mcp_config.httpx.Client') as client:
+        _get_ready(OwnerEndpoint('http://pa-owner', 'unix', '/owner.sock'), 'token', 'instance', 1)
+        call = client.return_value.__enter__.return_value.get.call_args
+        assert call.args == ('http://pa-owner/api/owner-ready',)
+        assert call.kwargs['headers'] == {
+            'Authorization': 'Bearer token', 'X-PA-MCP-Instance-ID': 'instance'
+        }

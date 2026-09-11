@@ -1,8 +1,8 @@
 """Admission gate for local PA startup.
 
-``/api/health`` is process liveness. ``/api/ready`` is the operator and owner-channel
-admission gate: required services, warmed OpenAPI paths, finished ACP startup, and
-completed local sync projection repair. Peer/network convergence stays background.
+``/api/health`` is process liveness. ``/api/owner-ready`` checks API dependencies
+needed by provider startup; ``/api/ready`` additionally waits for ACP startup.
+Peer/network convergence stays background.
 """
 
 from __future__ import annotations
@@ -42,8 +42,13 @@ def warm_ready_contract(app: FastAPI) -> None:
     app.state.ready_openapi_warmed = True
 
 
-def evaluate_ready(app: FastAPI, ctx: Any, settings: Settings) -> dict[str, Any] | None:
-    """Return a 503 detail payload when admission is not yet complete."""
+def evaluate_owner_ready(app: FastAPI, ctx: Any) -> dict[str, Any] | None:
+    """Check the API dependencies needed to start a provider.
+
+    Provider startup itself and the result of its last owner probe cannot be
+    dependencies: either would prevent a recovered provider from probing us.
+    Authentication and instance identity remain enforced by API middleware.
+    """
     services = ctx.services
     missing_services = sorted(REQUIRED_READY_SERVICES - services.keys())
     if missing_services:
@@ -57,11 +62,6 @@ def evaluate_ready(app: FastAPI, ctx: Any, settings: Settings) -> dict[str, Any]
     if missing_routes:
         return {"status": "starting", "missing_routes": missing_routes}
 
-    lifecycle = dict(services.get("agent_lifecycle") or {})
-    phase = str(lifecycle.get("phase") or "")
-    if phase not in READY_LIFECYCLE_PHASES:
-        return {"status": "starting", "lifecycle": phase or "unknown"}
-
     if "event_log" in services and not services.get("sync_startup_repaired"):
         recovery = services.get("sync_recovery")
         return {
@@ -73,6 +73,18 @@ def evaluate_ready(app: FastAPI, ctx: Any, settings: Settings) -> dict[str, Any]
             ),
             **({"recovery": recovery.public()} if recovery else {}),
         }
+    return None
+
+
+def evaluate_ready(app: FastAPI, ctx: Any, settings: Settings) -> dict[str, Any] | None:
+    """Return a 503 detail payload when operator admission is incomplete."""
+    blocked = evaluate_owner_ready(app, ctx)
+    if blocked:
+        return blocked
+    lifecycle = dict(ctx.services.get("agent_lifecycle") or {})
+    phase = str(lifecycle.get("phase") or "")
+    if phase not in READY_LIFECYCLE_PHASES:
+        return {"status": "starting", "lifecycle": phase or "unknown"}
 
     owner = owner_channel_health(settings)
     owner_state = str(owner.get("state") or "")

@@ -254,7 +254,9 @@ def build_session_observability(
                 "stop_reason": None,
             }
         )
-    current_turn = next(
+    in_flight_id = getattr(getattr(runtime, "_in_flight", None), "id", None)
+    current_turn = next((turn for turn in turns if turn["id"] == in_flight_id), None)
+    current_turn = current_turn or next(
         (
             turn
             for turn in reversed(turns)
@@ -388,6 +390,7 @@ def build_session_observability(
         "queue": {
             "length": len(queue),
             "paused": queue_paused,
+            "reason": presentation["queue"]["reason"],
             "prompt_ids": [
                 str(item.get("id"))
                 if isinstance(item, dict)

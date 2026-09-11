@@ -223,6 +223,18 @@ async def health(request: Request = None) -> dict:
     return {"status": "ok"}
 
 
+@router.get("/owner-ready")
+async def owner_ready(request: Request) -> dict:
+    """API dependency readiness for authenticated provider owner probes."""
+    from pa.server.readiness import evaluate_owner_ready
+
+    ctx = request.app.state.ctx
+    blocked = evaluate_owner_ready(request.app, ctx)
+    if blocked:
+        raise HTTPException(status_code=503, detail=blocked)
+    return {"status": "ready", "instance_id": ctx.settings.instance_id}
+
+
 @router.get("/ready")
 async def ready(request: Request) -> dict:
     """Admission gate: warmed routes, local init, ACP startup. Not liveness."""
