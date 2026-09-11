@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 
 from pa.acp.configuration import SessionConfigurationRequest
@@ -192,31 +193,52 @@ class SelectionService:
         self.manager = manager
         self.store = SelectionStore(settings.data_dir)
         self._refresh_lock = asyncio.Lock()
+        self.catalog_generation = 0
+        self._last_forced_refresh = float("-inf")
 
-    async def local_catalog(self, *, refresh=False) -> list[ExecutionCandidate]:
+    async def local_catalog(
+        self, *, refresh=False, force=False
+    ) -> list[ExecutionCandidate]:
+        generation = self.catalog_generation
         scope = self.settings.instance_id
         rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
         age = (datetime.now(UTC) - stamp).total_seconds() if stamp else None
-        if refresh and (age is None or age > 60):
+        if force or (refresh and (age is None or age > 60)):
             async with self._refresh_lock:
                 rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
                 age = (datetime.now(UTC) - stamp).total_seconds() if stamp else None
-                if age is None or age > 60:
+                force_due = force and time.monotonic() - self._last_forced_refresh >= 3
+                if generation == self.catalog_generation and (
+                    force_due if force else age is None or age > 60
+                ):
+                    if force:
+                        self._last_forced_refresh = time.monotonic()
                     from pa.acp.providers.resolve import list_provider_summaries_bounded
 
                     statuses = await list_provider_summaries_bounded(
                         self.settings.data_dir, manager=self.manager
                     )
+                    # An authenticated adapter may expose models only at
+                    # session/new. Discover them without submitting a prompt.
+                    from pa.execution.selection_catalog import discover_missing_catalogs
+
+                    statuses = await discover_missing_catalogs(statuses, self.settings)
                     candidates = status_candidates(scope, statuses)
                     rows = [c.model_dump(mode="json") for c in candidates]
                     await asyncio.to_thread(self.store.save_catalog, scope, rows)
                     stamp = datetime.now(UTC)
+                    self.catalog_generation += 1
         rows = await asyncio.to_thread(self._current_connection_rows, rows)
         candidates = [ExecutionCandidate.model_validate(row) for row in rows]
-        if not stamp or (datetime.now(UTC) - stamp).total_seconds() > 300:
-            candidates = [
-                c.model_copy(update={"freshness": "stale"}) for c in candidates
-            ]
+        now = datetime.now(UTC)
+        candidates = [
+            c.model_copy(update={"freshness": "stale"})
+            if not stamp
+            or (now - stamp).total_seconds() > 300
+            or (now - c.observed_at).total_seconds() > 300
+            else c
+            for c in candidates
+        ]
         return candidates
 
     def _current_connection_rows(self, rows):

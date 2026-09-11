@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import tempfile
 from typing import Any
 
 from pa.acp.environment import (
@@ -32,15 +33,47 @@ def probe_acp_initialize(
         }
 
 
-async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, Any]:
+async def probe_acp_catalog(spec: AgentProviderSpec, *, timeout: float = 8.0):
+    """Read a temporary session's advertisement; never prompt or attach tools."""
+    with tempfile.TemporaryDirectory(prefix="pa-catalog-") as cwd:
+        try:
+            async with asyncio.timeout(timeout):
+                return await _probe_async(spec, timeout=timeout, catalog_cwd=cwd)
+        except Exception:
+            return {"ok": False, "provider_id": spec.id}
+
+
+async def _probe_async(
+    spec: AgentProviderSpec, *, timeout: float, catalog_cwd: str | None = None
+) -> dict[str, Any]:
     from acp import PROTOCOL_VERSION
 
-    from pa.acp.client import PAClient
+    from pa.acp.client import (
+        PAClient,
+        extract_models_modes_config,
+        permission_cancelled,
+    )
     from pa.acp.transport import spawn_agent
     from pa.packaging.paths import resolve_executable
 
     class _ProbeStore:
         """Minimal stand-in; probe never persists sessions."""
+
+    class ProbeClient(PAClient):
+        async def request_permission(self, **kwargs):
+            return permission_cancelled()
+
+        async def read_text_file(self, **kwargs):
+            raise PermissionError("Discovery does not expose filesystem access")
+
+        async def write_text_file(self, **kwargs):
+            raise PermissionError("Discovery does not expose filesystem access")
+
+        async def session_update(self, **kwargs):
+            pass
+
+        async def ext_method(self, method, params):
+            raise PermissionError("Discovery does not expose client extensions")
 
     command = spec.command
     resolved = resolve_executable(command)
@@ -51,15 +84,19 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
     child_env, _github_auth_source = inject_agent_github_environment(
         child_env, get_settings()
     )
-    client = PAClient(store=_ProbeStore())  # type: ignore[arg-type]
+    client = ProbeClient(store=_ProbeStore())  # type: ignore[arg-type]
     ctx = spawn_agent(
         client,
         command,
         *list(spec.args or []),
         env=child_env,
+        cwd=catalog_cwd,
+        transport_kwargs={"shutdown_timeout": 0.25} if catalog_cwd else None,
     )
+    entry = asyncio.create_task(ctx.__aenter__())
+    proc = None
     try:
-        conn, _proc = await asyncio.wait_for(ctx.__aenter__(), timeout=timeout)
+        conn, proc = await asyncio.wait_for(asyncio.shield(entry), timeout=timeout)
         init = await asyncio.wait_for(
             conn.initialize(protocol_version=PROTOCOL_VERSION),
             timeout=timeout,
@@ -68,6 +105,9 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
             init, "agentCapabilities", None
         )
         auth = getattr(init, "auth_methods", None) or getattr(init, "authMethods", None)
+        if catalog_cwd:
+            session = await conn.new_session(cwd=catalog_cwd, mcp_servers=[])
+            return {"ok": True, **extract_models_modes_config(session)}
         return {
             "ok": True,
             "provider_id": spec.id,
@@ -78,10 +118,35 @@ async def _probe_async(spec: AgentProviderSpec, *, timeout: float) -> dict[str, 
             "args": list(spec.args),
         }
     finally:
-        try:
-            await ctx.__aexit__(None, None, None)
-        except Exception:
-            pass
+
+        async def reap():
+            nonlocal proc
+            try:
+                if proc is None:
+                    _, proc = await asyncio.wait_for(entry, timeout=2)
+                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=2)
+            except Exception:
+                pass
+            finally:
+                if proc is not None and proc.returncode is None:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    await asyncio.wait_for(proc.wait(), timeout=1)
+
+        # Caller cancellation/deadlines must never cancel transport shutdown.
+        # Keep ownership until the bounded cleanup has reaped the child.
+        cleanup = asyncio.create_task(reap())
+        cancelled = False
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                cancelled = True
+        cleanup.result()
+        if cancelled:
+            raise asyncio.CancelledError
 
 
 def _plain(value: Any) -> Any:
