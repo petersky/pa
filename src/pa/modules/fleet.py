@@ -9543,6 +9543,15 @@ def _merge_dispatch_followup_operation(
                 status_code=409,
                 detail={"code": "idempotency_conflict", "recoverable": False},
             )
+        if existing:
+            if (existing.get("prompt_id") and source.get("prompt_id")
+                    and existing["prompt_id"] != source["prompt_id"]):
+                raise HTTPException(409, detail={"code": "followup_receipt_conflict"})
+            # A stale authority snapshot must never erase the target's durable
+            # identity or its one-shot admission claim.
+            for field in ("prompt_id", "target_admission_started"):
+                if existing.get(field):
+                    source[field] = existing[field]
         if existing and existing.get("response"):
             existing_response = dict(existing.get("response") or {})
             source_response = dict(source.get("response") or {})
@@ -13368,6 +13377,56 @@ def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
         )
 
 
+async def reconcile_followup_acceptance(
+    request: Request, record: DispatchRecord, key: str,
+) -> dict | None:
+    """Recover only a receipt proved by the target's exact durable prompt ID."""
+    from pa.execution.followup import followup_receipt
+
+    operation = record.followup_operations.get(key) or {}
+    prompt_id = operation.get("prompt_id")
+    if not prompt_id or not record.session_id:
+        return None
+    try:
+        receipt = await _peer_agent_json(
+            request, record.target_instance_id, "GET",
+            f"sessions/{record.session_id}/prompts/{prompt_id}", timeout=10.0,
+        )
+    except Exception:
+        return None
+    if (not isinstance(receipt, dict) or receipt.get("accepted") is not True
+            or receipt.get("prompt_id") != prompt_id
+            or receipt.get("session_id") != record.session_id
+            or receipt.get("accepted_event") not in {"queue_enqueued", "user_message"}):
+        return None
+    # The action describes admission, whereas status may already be completed.
+    # Older targets cannot supply this field; let a same-key target POST recover
+    # its original receipt instead of manufacturing its queued/started flags.
+    if "accepted_action" not in receipt:
+        return None
+    response = followup_receipt(
+        record, prompt_id, receipt["accepted_event"], receipt["accepted_action"],
+        duplicate=True,
+    )
+    response["authority_instance_id"] = record.authority_instance_id
+    operation.update({"response": response, "state": "accepted_pending_release"
+                      if operation.get("goal_provenance") else "accepted"})
+    operation.pop("error", None)
+    ledger = _dispatch_store(request)
+    await _offload_request(
+        request, "dispatch.followup_reconcile", _merge_dispatch_followup_operation,
+        ledger, record, key,
+    )
+    if operation.get("goal_provenance"):
+        await _offload_request(
+            request, "goal.dispatch_followup_release_accepted",
+            _release_goal_dispatch_followup, request.app.state.ctx, ledger, record,
+            idempotency_key=key, outcome="followup-accepted", applied=True,
+            final_state="accepted",
+        )
+    return response
+
+
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/prompt")
 async def prompt_dispatch_session(
     request: Request, dispatch_id: str, body: DispatchFollowupBody
@@ -13429,6 +13488,9 @@ async def _prompt_dispatch_session_owned(
             )
         if prior.get("response"):
             return {**dict(prior.get("response") or {}), "duplicate": True}
+        recovered = await reconcile_followup_acceptance(request, record, key)
+        if recovered:
+            return recovered
         if prior.get("state") in {"failed", "cancelled", "interrupted"}:
             error = dict(prior.get("error") or {})
             raise HTTPException(
@@ -13441,6 +13503,13 @@ async def _prompt_dispatch_session_owned(
             )
 
     ledger = _dispatch_store(request)
+    from pa.execution.followup import bind_followup_prompt
+
+    record, _ = await _offload_request(
+        request, "dispatch.followup_bind", bind_followup_prompt,
+        ledger, record, key, fingerprint,
+    )
+    prompt_id = record.followup_operations[key]["prompt_id"]
     followup_provenance: GoalDispatchProvenance | None = None
     try:
         followup_provenance = await _offload_request(
@@ -13499,6 +13568,9 @@ async def _prompt_dispatch_session_owned(
             },
         )
     except Exception as exc:
+        recovered = await reconcile_followup_acceptance(request, record, key)
+        if recovered:
+            return recovered
         operation = record.followup_operations.setdefault(
             key,
             {"fingerprint": fingerprint},
@@ -13550,7 +13622,9 @@ async def _prompt_dispatch_session_owned(
                 final_state="failed",
             )
         raise
-    if not isinstance(result, dict) or not result.get("accepted"):
+    if (not isinstance(result, dict) or not result.get("accepted")
+            or result.get("prompt_id") != prompt_id
+            or result.get("session_id") != record.session_id):
         error = HTTPException(
             status_code=502,
             detail={
@@ -13562,9 +13636,7 @@ async def _prompt_dispatch_session_owned(
         operation = record.followup_operations.setdefault(
             key, {"fingerprint": fingerprint}
         )
-        operation["state"] = (
-            "failed_pending_release" if operation.get("goal_provenance") else "failed"
-        )
+        operation["state"] = "delivery_ambiguous"
         operation["error"] = {**error.detail, "status_code": error.status_code}
         await _offload_request(
             request,
@@ -13574,19 +13646,6 @@ async def _prompt_dispatch_session_owned(
             record,
             key,
         )
-        if operation.get("goal_provenance"):
-            await _offload_request(
-                request,
-                "goal.dispatch_followup_release_failed",
-                _release_goal_dispatch_followup,
-                request.app.state.ctx,
-                ledger,
-                record,
-                idempotency_key=key,
-                outcome="followup-not-acknowledged",
-                applied=False,
-                final_state="failed",
-            )
         raise error
     public = {
         key: result.get(key)

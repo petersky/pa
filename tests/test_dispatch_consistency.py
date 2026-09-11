@@ -507,7 +507,12 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             }
             with patch(
                 "pa.modules.fleet._peer_agent_json",
-                AsyncMock(return_value=acknowledged),
+                AsyncMock(side_effect=lambda *args, **kwargs: {
+                    **acknowledged,
+                    "prompt_id": ledger.get("dispatch-1").followup_operations[
+                        kwargs["body"]["idempotency_key"]
+                    ]["prompt_id"],
+                }),
             ) as peer:
                 first = await prompt_dispatch_session(
                     request,
@@ -686,7 +691,12 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             }
             with patch(
                 "pa.modules.fleet._peer_agent_json",
-                AsyncMock(return_value=acknowledged),
+                AsyncMock(side_effect=lambda *args, **kwargs: {
+                    **acknowledged,
+                    "prompt_id": ledger.get("dispatch-1").followup_operations[
+                        kwargs["body"]["idempotency_key"]
+                    ]["prompt_id"],
+                }),
             ):
                 result = await prompt_dispatch_session(
                     request,

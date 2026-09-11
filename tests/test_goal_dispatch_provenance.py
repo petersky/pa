@@ -1421,7 +1421,12 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 patch("pa.modules.fleet.require_user"),
                 patch(
                     "pa.modules.fleet._peer_agent_json",
-                    AsyncMock(return_value=acknowledged),
+                    AsyncMock(side_effect=lambda *args, **kwargs: {
+                        **acknowledged,
+                        "prompt_id": ledger.get(record.dispatch_id).followup_operations[
+                            kwargs["body"]["idempotency_key"]
+                        ]["prompt_id"],
+                    }),
                 ) as peer,
             ):
                 first = asyncio.run(

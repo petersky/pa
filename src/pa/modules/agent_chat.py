@@ -2492,6 +2492,7 @@ async def get_prompt_acceptance_status(
         "queued": queued,
         "status": status,
         "accepted_event": accepted.event_type,
+        "accepted_action": accepted.payload.get("action"),
         "seq": accepted.seq,
         "duplicate_safe": True,
         "durably_pending": status in {"queued", "blocked", "failed"},
@@ -2888,6 +2889,87 @@ async def _submit_client_prompt(
         }
 
 
+async def _submit_dispatch_followup(
+    request: Request, session_id: str, body: PromptBody,
+    runtime: AgentSessionRuntime, message: str, record, ledger, fingerprint: str,
+) -> dict:
+    from pa.execution.followup import bind_followup_prompt, followup_receipt
+    from pa.modules.fleet import _merge_dispatch_followup_operation
+
+    key = body.idempotency_key
+    async with runtime._prompt_admission_lock:
+        record, _ = await _runtime_offload(
+            runtime, "dispatch.followup_bind", bind_followup_prompt,
+            ledger, record, key, fingerprint, wait_for_completion=True,
+        )
+        operation = record.followup_operations[key]
+        prompt_id = operation["prompt_id"]
+        # Drain any earlier admission whose acknowledgement was lost before
+        # deciding whether this exact prompt already has durable acceptance.
+        runtime._flush_transcript()
+        await _drain_runtime_transcripts(runtime, wait_for_completion=True)
+        accepted = await _runtime_offload(
+            runtime, "sqlite.prompt_acceptance_read",
+            runtime.store.get_prompt_acceptance, session_id, prompt_id,
+        )
+        duplicate = accepted is not None
+        admission_error = None
+        if accepted is None:
+            if operation.get("state") in {"failed", "cancelled", "interrupted"}:
+                raise HTTPException(409, detail={
+                    "code": "followup_replay_terminal", "recoverable": False,
+                    "previous_error": operation.get("error"),
+                })
+            record, claimed = await _runtime_offload(
+                runtime, "dispatch.followup_claim", bind_followup_prompt,
+                ledger, record, key, fingerprint, claim_admission=True,
+                wait_for_completion=True,
+            )
+            if claimed:
+                try:
+                    await runtime.prompt(
+                        message, images=body.images, item_id=body.card_id,
+                        principal_id=get_principal_id(request), project_id=body.project_id,
+                        action=body.action, prompt_id=prompt_id,
+                        source=f"dispatch:{record.dispatch_id}", wait=False,
+                    )
+                except Exception as exc:
+                    admission_error = exc
+                runtime._flush_transcript()
+                await _drain_runtime_transcripts(runtime, wait_for_completion=True)
+                accepted = await _runtime_offload(
+                    runtime, "sqlite.prompt_acceptance_read",
+                    runtime.store.get_prompt_acceptance, session_id, prompt_id,
+                )
+            if accepted is None:
+                raise HTTPException(503, detail={
+                    "code": "prompt_not_persisted", "prompt_id": prompt_id,
+                    "message": "No durable acceptance for the bound prompt yet; reconcile this identity before further admission.",
+                    "recoverable": True,
+                }) from admission_error
+        response = followup_receipt(
+            record, prompt_id, accepted.event_type,
+            accepted.payload.get("action"), duplicate=duplicate,
+        )
+        operation = record.followup_operations[key]
+        operation.update({
+            "state": "accepted_target", "response": response,
+            "goal_provenance": body.goal_provenance.model_dump(mode="json")
+            if body.goal_provenance else None,
+        })
+        operation.pop("error", None)
+        record = await _runtime_offload(
+            runtime, "dispatch.followup_ack", _merge_dispatch_followup_operation,
+            ledger, record, key, wait_for_completion=True,
+        )
+        await _runtime_offload(
+            runtime, "dispatch.followup_started", ledger.record_followup_started,
+            record, idempotency_key=key, prompt_id=prompt_id,
+            event_id=accepted.id, event_seq=accepted.seq, wait_for_completion=True,
+        )
+        return {**response, "queue": [item.public_dict() for item in runtime._queue]}
+
+
 @router.post("/sessions/{session_id}/prompt")
 async def session_prompt(request: Request, session_id: str, body: PromptBody) -> dict:
     # Own the whole intake -> admission -> publication chain. Retrying an exact
@@ -3122,7 +3204,7 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
             )
         followup_fingerprint = hashlib.sha256(
             json.dumps(
-                {"message": message, "action": body.action},
+                {"message": body.message, "action": body.action},
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode()
@@ -3155,13 +3237,20 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
                         "duplicate": True,
                         "intake": intake,
                     }
-                if prior.get("state") in {"failed", "cancelled", "interrupted"}:
+                if not prior.get("prompt_id") and prior.get("state") in {
+                    "failed", "cancelled", "interrupted",
+                }:
                     raise HTTPException(status_code=409, detail={
                         "code": "followup_replay_terminal",
                         "previous_error": prior.get("error"), "recoverable": False,
                     })
-                # Reservation/pending/ambiguous records are not acceptance
-                # receipts. The owned task coalesces an in-flight exact retry.
+            response = await _submit_dispatch_followup(
+                request, session_id, body, runtime, message, dispatch_record,
+                dispatch_store, followup_fingerprint,
+            )
+            if intake:
+                response["intake"] = intake
+            return response
         elif dispatch_record.prompt_ack:
             ack = dispatch_record.prompt_ack
             return {
@@ -3180,6 +3269,7 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
     before_seq = runtime._seq
+    prompt_id = str(uuid4())
     logger.info(
         "Agent prompt submission received",
         extra={
@@ -3207,23 +3297,15 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
             else "ui"
         ),
         wait=False,
+        prompt_id=prompt_id,
     )
     runtime._flush_transcript()
     await _drain_runtime_transcripts(runtime, wait_for_completion=True)
-    accepted = [
-        event
-        for event in await _runtime_offload(
-            runtime,
-            "sqlite.transcript_read",
-            runtime.store.list_transcript_events,
-            session_id,
-            after_seq=before_seq,
-            limit=20,
-        )
-        if event.event_type in {"queue_enqueued", "user_message"}
-        and event.payload.get("message") == message
-    ]
-    if body.dispatch_id and not accepted:
+    accepted_event = await _runtime_offload(
+        runtime, "sqlite.prompt_acceptance_read",
+        runtime.store.get_prompt_acceptance, session_id, prompt_id,
+    )
+    if body.dispatch_id and not accepted_event:
         raise HTTPException(
             status_code=503,
             detail={
@@ -3232,7 +3314,6 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
                 "recoverable": True,
             },
         )
-    accepted_event = accepted[0] if accepted else None
     logger.info(
         "Agent prompt submission processed",
         extra={
@@ -3267,62 +3348,23 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
             "event_type": accepted_event.event_type,
             "prompt_id": accepted_event.payload.get("id"),
         }
-        if body.idempotency_key:
-            dispatch_record.followup_operations[body.idempotency_key] = {
-                "fingerprint": followup_fingerprint,
-                "goal_provenance": (
-                    body.goal_provenance.model_dump(mode="json")
-                    if body.goal_provenance
-                    else None
-                ),
-                "state": "accepted_target",
-                "response": {
-                    key: response.get(key)
-                    for key in (
-                        "stop_reason",
-                        "queued",
-                        "started",
-                        "accepted",
-                        "accepted_event",
-                        "prompt_id",
-                        "dispatch_id",
-                        "session_id",
-                        "duplicate",
-                    )
-                },
-            }
-            message_text = "Follow-up durably accepted by linked remote session."
-        else:
-            dispatch_record.prompt_acknowledged_at = accepted_event.created_at
-            dispatch_record.prompt_ack = ack
-            message_text = "Prompt durably accepted by linked remote session."
-        if body.idempotency_key:
-            await _runtime_offload(
-                runtime,
-                "dispatch.followup_ack",
-                dispatch_store.record_followup_started,
-                dispatch_record,
-                idempotency_key=body.idempotency_key,
-                prompt_id=accepted_event.payload.get("id"),
-                event_id=accepted_event.id,
-                event_seq=accepted_event.seq,
-            )
-        else:
-            await _runtime_offload(
-                runtime,
-                "dispatch.prompt_ack",
-                dispatch_store.transition,
-                dispatch_record,
-                "running",
-                message_text,
-                detail={
-                    "session_id": session_id,
-                    "event_id": accepted_event.id,
-                    "event_seq": accepted_event.seq,
-                    "event_type": accepted_event.event_type,
-                    "followup": False,
-                },
-            )
+        dispatch_record.prompt_acknowledged_at = accepted_event.created_at
+        dispatch_record.prompt_ack = ack
+        await _runtime_offload(
+            runtime,
+            "dispatch.prompt_ack",
+            dispatch_store.transition,
+            dispatch_record,
+            "running",
+            "Prompt durably accepted by linked remote session.",
+            detail={
+                "session_id": session_id,
+                "event_id": accepted_event.id,
+                "event_seq": accepted_event.seq,
+                "event_type": accepted_event.event_type,
+                "followup": False,
+            },
+        )
     if intake:
         response["intake"] = intake
     return response
