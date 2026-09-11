@@ -818,7 +818,7 @@ def test_legacy_mismatch_recovers_using_existing_workspace_fence(tmp_path: Path)
 
     manager.workspace_manager.provision_project.assert_called_once_with(
         project_id="old-project", session_id="legacy", card_id="old-card",
-        realm_id="default", provider_id="codex",
+        realm_id="default", provider_id="codex", allow_concurrent=True,
     )
     persisted = store.get_session("legacy")
     assert persisted.card_id == "new-card"
