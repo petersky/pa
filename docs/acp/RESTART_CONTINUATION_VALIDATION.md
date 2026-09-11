@@ -114,3 +114,25 @@ prompt once. The existing dispatch follow-up fixture uses the harmless phrase
 “Bearer credentials”: its acceptance test explicitly requires `[REDACTED_AUTH]`
 in stored text while concurrent retries retain one accepted prompt identity.
 The restart and follow-up suites pass together (89 tests).
+
+## Root review: off-loop receipt authorization
+
+Receipt lookup no longer runs in `_prompt_eligible`, `_start_drain`, or
+presentation. Those paths inspect derived in-memory receipt evidence only.
+A source label can schedule asynchronous verification but cannot authorize
+provider delivery. Drain loads receipts through `_offload`, then checks the
+current queue/pause state; execution reloads the exact receipt after admission
+configuration and immediately before establishing the in-flight turn.
+
+Cached evidence is invalidated before refresh, when starting a drain, on
+pause/cancel/control changes, and when delivery finishes. Every eligibility
+check still compares exact content, source/receipt identity, session and
+execution context. A revocation-during-admission regression proves a previously
+cached grant cannot start a provider turn.
+
+The delayed-store regression holds receipt lookup in a worker thread while
+checking four event-loop heartbeat ticks and a live metadata snapshot. The
+previous head fails: `_start_drain` blocks about 1.1 seconds. Updated source
+passes the responsiveness and revocation tests, 174 related tests, and the
+repeatable browser lifecycle (session `7624da6c-799d-4bb8-9876-7d9325388d3e`,
+receipt `35644ed6-7199-5302-a6fd-70ead13b5543`).

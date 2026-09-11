@@ -300,6 +300,7 @@ class AgentSessionRuntime:
         self._queue_paused = False
         self._in_flight: QueuedPrompt | None = None
         self._draining_prompt: QueuedPrompt | None = None
+        self._restart_receipts: dict[str, RestartHandoff] = {}
         self._drain_task: asyncio.Task[None] | None = None
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._recent_live_events: deque[dict[str, Any]] = deque()
@@ -1396,12 +1397,13 @@ class AgentSessionRuntime:
         return state
 
     def _restart_continuation_receipt(self, item: QueuedPrompt) -> RestartHandoff | None:
-        """Resolve authority from durable content, never from the source label alone."""
+        """Validate cached evidence; delivery callers must refresh it off-loop first."""
         if not item.source.startswith("restart-handoff:"):
             return None
-        receipt = self.store.get_restart_handoff(item.source.split(":", 1)[1])
+        receipt = self._restart_receipts.get(item.id)
         if (
             receipt is None
+            or item.source != f"restart-handoff:{receipt.id}"
             or receipt.session_id != self.session_id
             or receipt.continuation_prompt_id != item.id
             or receipt.continuation_prompt != item.message
@@ -1421,6 +1423,24 @@ class AgentSessionRuntime:
             return None
         return receipt
 
+    async def _refresh_restart_receipt(self, item: QueuedPrompt) -> None:
+        # Cached evidence is only a presentation hint. Invalidate before yielding
+        # and reload off-loop both before dequeue and at the execution boundary.
+        self._restart_receipts.pop(item.id, None)
+        if not item.source.startswith("restart-handoff:"):
+            return
+        receipt = await self._offload(
+            "sqlite.restart_continuation_authorization",
+            self.store.get_restart_handoff,
+            item.source.split(":", 1)[1],
+        )
+        if receipt is not None:
+            self._restart_receipts[item.id] = receipt
+
+    def _needs_restart_validation(self, item: QueuedPrompt) -> bool:
+        # This schedules validation only; it is never permission to deliver.
+        return self.session.purpose == "chat" and item.source.startswith("restart-handoff:")
+
     def _prompt_eligible(self, item: QueuedPrompt) -> bool:
         return (
             self.session.control_mode != "human"
@@ -1436,11 +1456,13 @@ class AgentSessionRuntime:
             return
         if self._queue_paused or not self._queue:
             return
-        if not any(self._prompt_eligible(item) for item in self._queue):
+        if not any(self._prompt_eligible(item) or self._needs_restart_validation(item)
+                   for item in self._queue):
             return
         self._drain_task = asyncio.create_task(self._drain_queue())
 
     async def _drain_queue(self) -> None:
+        self._restart_receipts.clear()
         while (
             self._queue
             and not self._queue_paused
@@ -1448,6 +1470,15 @@ class AgentSessionRuntime:
             and self.connected
         ):
             if self.manager.quiescing:
+                break
+            try:
+                for candidate in tuple(self._queue):
+                    if candidate.source.startswith("restart-handoff:"):
+                        await self._refresh_restart_receipt(candidate)
+            except Exception:
+                logger.exception("Restart receipt authorization unavailable for %s", self.session_id)
+                break
+            if self._queue_paused or self._closed or not self.connected or self.manager.quiescing:
                 break
             eligible_index = next(
                 (
@@ -1489,6 +1520,7 @@ class AgentSessionRuntime:
             )
             try:
                 await self._run_prompt(item)
+                await self._refresh_restart_receipt(item)
                 receipt = self._restart_continuation_receipt(item)
                 if receipt is not None:
                     await self._offload(
@@ -1531,6 +1563,7 @@ class AgentSessionRuntime:
                 )
                 break
             finally:
+                self._restart_receipts.pop(item.id, None)
                 self._draining_prompt = None
         self._flush_transcript()
 
@@ -1717,7 +1750,7 @@ class AgentSessionRuntime:
         if (
             not self._queue_paused
             and not _defer_drain
-            and self._prompt_eligible(item)
+            and (self._prompt_eligible(item) or self._needs_restart_validation(item))
         ):
             self._start_drain()
         return item
@@ -2004,6 +2037,7 @@ class AgentSessionRuntime:
                     await collaboration.prepare_turn(self)
                 except Exception as exc:
                     raise PromptAdmissionBlocked(str(exc)) from exc
+            await self._refresh_restart_receipt(item)
             if _is_automatic_source(item.source) and (
                 self._queue_paused or not self._prompt_eligible(item)
             ):
@@ -2547,6 +2581,7 @@ class AgentSessionRuntime:
         self.manager.request_recovery(self.session_id)
 
     async def cancel(self, *, pause_queue: bool = True) -> None:
+        self._restart_receipts.clear()
         if pause_queue:
             self._queue_paused = True
         if self.connection:
@@ -2560,6 +2595,7 @@ class AgentSessionRuntime:
         await self._drain_transcripts()
 
     def pause_queue(self) -> None:
+        self._restart_receipts.clear()
         self._queue_paused = True
         self._append_transcript("queue_paused", {})
         self._checkpoint_runtime(lifecycle="paused")
@@ -2576,6 +2612,7 @@ class AgentSessionRuntime:
         """Persist takeover before changing which durable prompts may drain."""
         if mode == self.session.control_mode:
             return
+        self._restart_receipts.clear()
         self.session.control_mode = mode
         self.session.updated_at = datetime.now(UTC)
         self._append_transcript(

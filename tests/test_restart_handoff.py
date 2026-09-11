@@ -1153,7 +1153,8 @@ def test_restart_source_is_not_authorization(tmp_path, mismatch):
             item.images = [ImageAttachment(name='extra', mime_type='image/png', data='aGk=')]
         runtime._queue = [item]
         runtime._start_drain()
-        assert runtime._drain_task is None
+        if runtime._drain_task:
+            await runtime._drain_task
         runtime._run_prompt.assert_not_called()
     asyncio.run(scenario())
 
@@ -1345,4 +1346,78 @@ def test_admission_in_progress_keeps_same_receipt_retryable(tmp_path):
         assert delivered.status == 'continuation_delivered'
         runtime._run_prompt.assert_awaited_once()
         assert runtime._run_prompt.call_args.args[0].id == receipt.continuation_prompt_id
+    asyncio.run(scenario())
+
+
+def test_delayed_receipt_read_keeps_heartbeat_and_snapshot_responsive(tmp_path):
+    async def scenario():
+        import threading
+        import time
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
+                        source='restart-handoff:' + receipt.id, _defer_drain=True)
+        entered, release = threading.Event(), threading.Event()
+        original = store.get_restart_handoff
+        threads = []
+        def delayed(handoff_id):
+            threads.append(threading.get_ident())
+            entered.set()
+            assert release.wait(2), 'test release deadline exceeded'
+            return original(handoff_id)
+        timer = threading.Timer(1, release.set)
+        timer.start()
+        try:
+            with patch.object(store, 'get_restart_handoff', side_effect=delayed):
+                started = time.monotonic()
+                runtime._start_drain()
+                assert time.monotonic() - started < .2
+                for _ in range(100):
+                    if entered.is_set(): break
+                    await asyncio.sleep(.005)
+                assert entered.is_set() and not release.is_set()
+                ticks = []
+                async def heartbeat():
+                    for _ in range(4):
+                        await asyncio.sleep(.01)
+                        ticks.append(time.monotonic())
+                pulse = asyncio.create_task(heartbeat())
+                started = time.monotonic()
+                snapshot = runtime.snapshot(include_transcript=False)
+                assert time.monotonic() - started < .2
+                assert snapshot['queue'][0]['id'] == receipt.continuation_prompt_id
+                await asyncio.wait_for(pulse, timeout=.2)
+                assert len(ticks) == 4 and not release.is_set()
+                assert all(t != threading.get_ident() for t in threads)
+                runtime._run_prompt.assert_not_called()
+                release.set()
+                await runtime._drain_task
+                runtime._run_prompt.assert_awaited_once()
+        finally:
+            release.set()
+            timer.cancel()
+    asyncio.run(scenario())
+
+
+def test_cached_receipt_is_revalidated_at_execution_after_revocation(tmp_path):
+    async def scenario():
+        from pa.instance.agent_session import PromptAdmissionBlocked
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        item = runtime.enqueue(receipt.continuation_prompt,
+                               prompt_id=receipt.continuation_prompt_id,
+                               source='restart-handoff:' + receipt.id, _defer_drain=True)
+        await runtime._refresh_restart_receipt(item)
+        assert runtime._prompt_eligible(item)
+        async def revoke(_runtime):
+            store.update_restart_handoff(receipt.id, status='failed')
+        manager.collaboration_service = SimpleNamespace(prepare_turn=revoke)
+        with patch('pa.execution.selection_settings.apply_pending', AsyncMock()), patch(
+            'pa.execution.selection_audit.begin_prompt', return_value=None
+        ):
+            with pytest.raises(PromptAdmissionBlocked, match='authorization changed'):
+                await AgentSessionRuntime._run_prompt(runtime, item)
+        assert not runtime._prompt_eligible(item)
+        assert runtime._in_flight is None
+        runtime.connection.prompt.assert_not_called()
     asyncio.run(scenario())
