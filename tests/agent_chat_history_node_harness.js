@@ -13,12 +13,18 @@ class Element {
 }
 const document={createElement:tag=>new Element(tag),createTextNode:text=>({textContent:text}),body:{addEventListener:noop},addEventListener:noop,querySelector:()=>null,querySelectorAll:()=>[]};
 const window={addEventListener:noop};
-vm.runInNewContext(fs.readFileSync('src/pa/server/static/js/agent-chat.js','utf8'), {window,document,console,URL,AbortController,setTimeout,clearTimeout,setInterval,clearInterval,performance});
+let virtualTimers = null, nextTimer = 0;
+const schedule = (callback, delay) => {
+ if (!virtualTimers) return setTimeout(callback, delay);
+ const id = ++nextTimer; virtualTimers.set(id, callback); return id;
+};
+const cancelTimer = id => virtualTimers ? virtualTimers.delete(id) : clearTimeout(id);
+vm.runInNewContext(fs.readFileSync('src/pa/server/static/js/agent-chat.js','utf8'), {window,document,console,URL,AbortController,setTimeout:schedule,clearTimeout:cancelTimer,setInterval,clearInterval,performance});
 const Widget=window.PAAgentChat.AgentChatWidget;
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
 function make(){
  const w=Object.create(Widget.prototype), messages=new Element();
- Object.assign(w,{els:{messages,loadOlder:new Element('button'),loadNewer:new Element('button')},root:new Element(),sessionId:'s',apiBase:'/api/agent',subscriptionGeneration:1,transcriptEvents:[],seenEvents:{},lastSeq:0,streaming:{},activityStreams:{},toolTimers:{},plans:[],providerId:'codex',messageRowCount:0,rawText:true,resetArtifacts:noop,clearPlaceholder:noop,setPlaceholder:noop,isNearBottom:()=>true,scrollToBottom:noop,finalizeActivity:noop,upsertTool:noop,setTurnActive(active){this.prompting=active},setStatus:noop,renderQueue:noop,renderMetrics:noop});
+ Object.assign(w,{els:{messages,loadOlder:new Element('button'),loadNewer:new Element('button'),loadNewerStatus:new Element(),input:{value:'UNSENT gap draft'}},root:new Element(),sessionId:'s',apiBase:'/api/agent',subscriptionGeneration:1,transcriptEvents:[],seenEvents:{},lastSeq:0,streaming:{},activityStreams:{},toolTimers:{},plans:[],providerId:'codex',messageRowCount:0,rawText:true,resetArtifacts:noop,clearPlaceholder:noop,setPlaceholder:noop,isNearBottom:()=>true,scrollToBottom:noop,finalizeActivity:noop,upsertTool:noop,setTurnActive(active){this.prompting=active},setStatus:noop,renderQueue:noop,renderMetrics:noop});
  return w;
 }
 const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dataset.markdown);
@@ -91,6 +97,92 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  pending[1]({events:[{seq:12,type:'agent_message_chunk',payload:{message_id:'gap',content_mode:'snapshot',text:'AB'}}]});
  await new Promise(r=>setTimeout(r,10));
  assert.deepStrictEqual(texts(reconnect),['AB']);
+ // Recovery races use controlled timers and deferred HTTP, with real DOM controls.
+ virtualTimers = new Map();
+ const settle = () => new Promise(resolve => setImmediate(resolve));
+ const chunk = (seq, text) => ({seq,type:'agent_message_chunk',payload:{message_id:'race',content_mode:'delta',text}});
+ const warning = widget => {
+   widget.newerError='Live messages are waiting for history. Retrying…';
+   widget.updateNewerControl();
+   assert.strictEqual(widget.els.loadNewerStatus.hidden,false);
+   assert.strictEqual(widget.els.loadNewer.hidden,false);
+ };
+ const cleared = widget => {
+   assert.strictEqual(widget.newerError,'');
+   assert.strictEqual(widget.els.loadNewerStatus.textContent,'');
+   assert.strictEqual(widget.els.loadNewerStatus.hidden,true);
+   assert.strictEqual(widget.els.loadNewer.hidden,true);
+   assert.strictEqual(widget.liveGapRetryTimer,null);
+   assert.strictEqual(widget.liveGapRetryCount,0);
+   assert.strictEqual(widget.els.input.value,'UNSENT gap draft');
+ };
+ const satisfied=make();satisfied.lastSeq=21;satisfied.liveGapTarget=21;
+ let unnecessaryReads=0;satisfied.apiWithTimeout=()=>{unnecessaryReads++;return Promise.resolve({events:[]})};
+ warning(satisfied);satisfied.liveGapRetryTimer=schedule(()=>satisfied._repairLiveGap(),2000);
+ const obsoleteTimer=virtualTimers.get(satisfied.liveGapRetryTimer);
+ satisfied._repairLiveGap();cleared(satisfied);
+ obsoleteTimer();await settle();cleared(satisfied);
+ assert.strictEqual(unnecessaryReads,0,'already satisfied and delayed retries do not fetch history');
+ assert.strictEqual(virtualTimers.size,0,'resolved recovery cancels obsolete timers');
+ // An empty or failed response arriving after SSE catchup cannot resurrect the warning.
+ for(const failure of [false,true]){
+   const race=make();race.lastSeq=10;let resolve,reject;
+   race.apiWithTimeout=()=>new Promise((a,b)=>{resolve=a;reject=b});
+   race.handleEvent(chunk(12,'B'));warning(race);
+   race.liveGapRetryTimer=schedule(()=>race._repairLiveGap(),2000);
+   race.handleEvent(chunk(11,'A'));race.handleEvent(chunk(12,'B'));
+   cleared(race);assert.deepStrictEqual(texts(race),['AB']);
+   if(failure)reject(new Error('late network failure'));else resolve({events:[],page:{has_newer:false}});
+   await settle();cleared(race);assert.strictEqual(race.liveGapLoading,false);
+   race.handleEvent(chunk(12,'B'));assert.deepStrictEqual(texts(race),['AB']);
+ }
+ // A real empty history still retries, retains the final, and removes the rendered
+ // warning only after the missing predecessor is available.
+ const genuine=make();genuine.lastSeq=10;let reads=0;
+ genuine.apiWithTimeout=()=>Promise.resolve({events:++reads===1?[]:[chunk(11,'A')]});
+ genuine.handleEvent(chunk(12,'B'));await settle();
+ assert.strictEqual(genuine.els.loadNewerStatus.hidden,false);
+ assert.strictEqual(genuine.els.loadNewer.hidden,false);
+ assert.strictEqual(genuine.livePendingEvents[12].payload.text,'B');
+ assert.strictEqual(genuine.els.input.value,'UNSENT gap draft');
+ const retryId=genuine.liveGapRetryTimer, retry=virtualTimers.get(retryId);
+ virtualTimers.delete(retryId);retry();await settle();
+ assert.strictEqual(reads,2);cleared(genuine);assert.deepStrictEqual(texts(genuine),['AB']);
+ // Stale owner/session/destroyed responses and timers cannot alter current state.
+ for(const change of ['owner','session','destroyed']){
+   const stale=make();stale.lastSeq=10;let finish;
+   stale.apiWithTimeout=()=>new Promise(resolve=>{finish=resolve});
+   stale.handleEvent(chunk(12,'old'));
+   if(change==='owner')stale.apiBase='/api/fleet/new/agent';
+   if(change==='session'){stale.sessionId='other';stale.subscriptionGeneration++;}
+   if(change==='destroyed')stale.destroyed=true;
+   warning(stale);stale.liveGapRetryTimer=12345;stale.liveGapLoading=true;
+   finish({events:[chunk(11,'stale'),chunk(12,'old')]});await settle();
+   assert.strictEqual(stale.lastSeq,10);assert.deepStrictEqual(texts(stale),[]);
+   assert.strictEqual(stale.liveGapRetryTimer,12345);assert.strictEqual(stale.liveGapLoading,true);
+   assert.strictEqual(stale.els.loadNewerStatus.hidden,false);
+ }
+ // A queued callback from an obsolete owner cannot erase the new retry timer.
+ const timerOwner=make();timerOwner.lastSeq=10;
+ timerOwner.apiWithTimeout=()=>Promise.resolve({events:[]});
+ timerOwner.handleEvent(chunk(12,'B'));await settle();
+ const oldTimer=timerOwner.liveGapRetryTimer, oldCallback=virtualTimers.get(oldTimer);
+ timerOwner.apiBase='/api/fleet/new/agent';timerOwner._repairLiveGap();await settle();
+ const newTimer=timerOwner.liveGapRetryTimer;
+ assert.notStrictEqual(newTimer,oldTimer);oldCallback();
+ assert.strictEqual(timerOwner.liveGapRetryTimer,newTimer);
+ assert.ok(virtualTimers.has(newTimer),'old owner callback preserves new owner retry');
+ timerOwner.handleEvent(chunk(11,'A'));timerOwner.handleEvent(chunk(12,'B'));cleared(timerOwner);
+ // New gaps raised during an older read remain recoverable after its empty response.
+ const advanced=make();advanced.lastSeq=10;const responses=[];
+ advanced.apiWithTimeout=()=>new Promise(resolve=>responses.push(resolve));
+ advanced.handleEvent(chunk(12,'B'));advanced.handleEvent(chunk(11,'A'));advanced.handleEvent(chunk(12,'B'));
+ advanced.handleEvent(chunk(14,'D'));responses[0]({events:[]});await settle();
+ assert.strictEqual(responses.length,2,'new target survives earlier catchup completion');
+ responses[1]({events:[chunk(13,'C')]});await settle();
+ cleared(advanced);assert.deepStrictEqual(texts(advanced),['ABCD']);
+ assert.strictEqual(virtualTimers.size,0);
+ virtualTimers=null;
  // A failed earlier page must not consume its cursor or mutate visible history.
  const before=texts(w).join('\n');w.hasOlder=true;w.olderCursor=1000;w.api=()=>Promise.reject(new Error('fixture failure'));
  w.loadOlderTranscript();await new Promise(r=>setTimeout(r,10));
