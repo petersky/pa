@@ -841,7 +841,7 @@ def _local_repositories(ctx: Any) -> dict[str, Any]:
     manager = ctx.services.get("instance_agent")
     workspace_manager = getattr(manager, "workspace_manager", None)
     leases = (
-        [item.model_dump(mode="json") for item in workspace_manager.list()]
+        workspace_manager.admission_workspaces()
         if workspace_manager
         else []
     )

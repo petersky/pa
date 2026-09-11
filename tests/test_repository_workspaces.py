@@ -1390,3 +1390,206 @@ def test_execution_surface_reuses_live_and_persisted_card_session(
         )
     manager.create_session.assert_not_awaited()
     assert session.project_id == "project-1"
+
+
+def retained_closed_workspace(tmp_path):
+    manager, repository, linked = manager_for(tmp_path)
+    manager.live_runtime = lambda session_id: False
+    manager.store.list_session_statuses.return_value = {"original": "closed"}
+    original = manager.provision_repository(
+        linked, project_id="project-1", card_id="card-1", session_id="original",
+    )
+    manager.expire_session("original", now=datetime.now(UTC) - timedelta(seconds=1))
+    return manager, repository, linked, manager.get(repository.id, "original")
+
+
+def successor_record(key="successor"):
+    from pa.execution.dispatch import DispatchRecord
+    return DispatchRecord(
+        mutation_id=key, idempotency_key=key, request_fingerprint=key,
+        card_id="card-1", authority_instance_id="instance-1",
+        authority_url="http://authority.test", target_instance_id="instance-1",
+    )
+
+
+def test_closed_expired_workspace_admits_and_preserves_history(tmp_path):
+    from pa.execution.dispatch import DispatchStore
+    manager, repository, linked, original = retained_closed_workspace(tmp_path)
+    ledger = DispatchStore(tmp_path / "dispatch")
+    record = successor_record()
+    admitted, duplicate = manager.admit_dispatch(ledger, record)
+    assert not duplicate
+    successor = manager.provision_repository(
+        linked, project_id="project-1", card_id="card-1", session_id="successor",
+        allow_concurrent=False,
+    )
+    assert successor.worktree_path != original.worktree_path
+    assert Path(original.worktree_path).is_dir()
+    assert manager.get(repository.id, "original") == original
+    replay, duplicate = manager.admit_dispatch(ledger, record)
+    assert duplicate and replay.dispatch_id == admitted.dispatch_id
+    with pytest.raises(WorkspaceProvisioningError):
+        manager.renew_session("original")
+    assert manager.get(repository.id, "original") == original
+
+
+@pytest.mark.parametrize("race", ["renew", "live", "provisioning"])
+@pytest.mark.parametrize("boundary", ["admit", "provision"])
+def test_successor_rechecks_owner_after_placement(tmp_path, race, boundary):
+    from pa.execution.dispatch import DispatchStore
+    from pa.repository.workspace import workspace_blocks_admission
+    manager, repository, linked, original = retained_closed_workspace(tmp_path)
+    ledger = DispatchStore(tmp_path / "dispatch")
+    assert not workspace_blocks_admission(manager.admission_workspaces()[0])
+    if boundary == "provision":
+        manager.admit_dispatch(ledger, successor_record())
+    if race == "renew":
+        manager.renew_session("original")
+    elif race == "live":
+        manager.live_runtime = lambda session_id: session_id == "original"
+    else:
+        original.state = "provisioning"
+        manager._save(original)
+    with pytest.raises(WorkspaceProvisioningError):
+        if boundary == "admit":
+            manager.admit_dispatch(ledger, successor_record())
+        else:
+            manager.provision_repository(
+                linked, project_id="project-1", card_id="card-1",
+                session_id="successor", allow_concurrent=False,
+            )
+    assert manager.get(repository.id, "successor") is None
+    assert Path(original.worktree_path).is_dir()
+
+
+def test_simultaneous_successor_admission_keeps_atomic_dispatch_fence(tmp_path):
+    from pa.execution.dispatch import ConcurrentCardDispatch, DispatchStore
+    manager, _, _, _ = retained_closed_workspace(tmp_path)
+    ledger = DispatchStore(tmp_path / "dispatch")
+    def admit(key):
+        try:
+            return manager.admit_dispatch(ledger, successor_record(key))[0]
+        except ConcurrentCardDispatch:
+            return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(admit, ["one", "two"]))
+    assert sum(result is not None for result in results) == 1
+
+
+def test_provision_and_renew_share_card_admission_lock(tmp_path):
+    from threading import Event
+    manager, repository, linked, original = retained_closed_workspace(tmp_path)
+    entered, release, renewing = Event(), Event(), Event()
+    ensure_cache = manager._ensure_cache
+    def hold_provision(*args):
+        entered.set()
+        assert release.wait(10)
+        return ensure_cache(*args)
+    manager._ensure_cache = hold_provision
+    def renew():
+        renewing.set()
+        return manager.renew_session("original")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        provision = pool.submit(manager.provision_repository, linked,
+            project_id="project-1", card_id="card-1", session_id="successor",
+            allow_concurrent=False)
+        assert entered.wait(10)
+        renewal = pool.submit(renew)
+        assert renewing.wait(10)
+        assert not renewal.done()
+        release.set()
+        assert provision.result().state == "ready"
+        with pytest.raises(WorkspaceProvisioningError):
+            renewal.result()
+    assert manager.get(repository.id, "original") == original
+
+
+def test_unpublished_provider_admission_still_fences_expired_owner(tmp_path):
+    manager, _, _, _ = retained_closed_workspace(tmp_path)
+    runtime_manager = AgentSessionManager(manager.settings, manager.store)
+    workspace_manager = runtime_manager.workspace_manager
+    from pa.repository.workspace import workspace_blocks_admission
+    assert not workspace_blocks_admission(workspace_manager.admission_workspaces()[0])
+    runtime_manager._admitting_sessions.add("original")
+    assert workspace_blocks_admission(workspace_manager.admission_workspaces()[0])
+    with pytest.raises(WorkspaceProvisioningError):
+        with workspace_manager.admission_guard(card_id="card-1", session_id="successor"):
+            pytest.fail("Unpublished provider must remain fenced")
+
+
+@pytest.mark.parametrize("allow_concurrent", [False, True])
+def test_workspace_uses_dispatch_policy_before_session_is_bound(tmp_path, allow_concurrent):
+    from pa.execution.dispatch import DispatchStore
+    manager, _, linked, _ = retained_closed_workspace(tmp_path)
+    manager.store.get_session.return_value = None
+    ledger = DispatchStore(tmp_path / "dispatch")
+    record = successor_record()
+    record.allow_concurrent = allow_concurrent
+    ledger.admit(record)
+    assert ledger.get(record.dispatch_id).session_id is None
+    runtime_manager = AgentSessionManager(manager.settings, manager.store, dispatch_store=ledger)
+    from threading import get_ident
+    event_loop_thread = get_ident()
+    lookup_threads = []
+    original_get = ledger.get
+    def tracked_get(dispatch_id):
+        lookup_threads.append(get_ident())
+        return original_get(dispatch_id)
+    ledger.get = tracked_get
+    session = AgentSession(
+        id="successor", agent_name="codex", card_id="card-1", project_id="project-1",
+        dispatch_id=record.dispatch_id,
+        execution_binding={"version": 1, "execution_card_id": "card-1", "execution_project_id": "project-1"},
+        config_json={"execution_context": {"materialization_plan": {"profile": "repository"}}},
+    )
+    provision = MagicMock(side_effect=WorkspaceProvisioningError("test boundary"))
+    runtime_manager.workspace_manager.provision_project = provision
+    with pytest.raises(WorkspaceProvisioningError, match="test boundary"):
+        asyncio.run(runtime_manager._prepare_workspace(session, requested_cwd=None, provider_id="codex"))
+    assert provision.call_args.kwargs["allow_concurrent"] is allow_concurrent
+    assert lookup_threads and event_loop_thread not in lookup_threads
+
+
+@pytest.mark.parametrize("scope", ["target", "authority"])
+@pytest.mark.parametrize("conflict", [False, True])
+def test_duplicate_waiting_for_card_lock_survives_first_provision(tmp_path, scope, conflict):
+    from contextlib import contextmanager
+    from threading import Event, current_thread
+    from pa.execution.dispatch import DispatchIdempotencyConflict, DispatchStore
+
+    manager, _, linked, _ = retained_closed_workspace(tmp_path)
+    ledger = DispatchStore(tmp_path / "dispatch")
+    waiting, release = Event(), Event()
+    original_lock = manager._repository_lock
+
+    @contextmanager
+    def delayed_lock(key):
+        if key.startswith("admission-") and current_thread().name.startswith("delayed"):
+            waiting.set()
+            assert release.wait(10)
+        with original_lock(key):
+            yield
+
+    manager._repository_lock = delayed_lock
+    first_record = successor_record()
+    second_record = first_record.model_copy(deep=True)
+    if conflict:
+        second_record.request_fingerprint = "different-payload"
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="delayed") as pool:
+        second = pool.submit(manager.admit_dispatch, ledger, second_record, idempotency_scope=scope)
+        assert waiting.wait(10)
+        try:
+            first, duplicate = manager.admit_dispatch(ledger, first_record, idempotency_scope=scope)
+            assert not duplicate
+            manager.provision_repository(
+                linked, project_id="project-1", card_id="card-1",
+                session_id="successor", allow_concurrent=False,
+            )
+        finally:
+            release.set()
+        if conflict:
+            with pytest.raises(DispatchIdempotencyConflict):
+                second.result()
+        else:
+            replay, duplicate = second.result()
+            assert duplicate and replay.dispatch_id == first.dispatch_id

@@ -2971,6 +2971,10 @@ class AgentSessionManager:
         self.async_runtime: AsyncRuntime | None = None
         self.browser = BrowserManager(settings.data_dir)
         self.workspace_manager = WorkspaceManager(settings, store)
+        self.workspace_manager.live_runtime = lambda session_id: (
+            session_id in self._admitting_sessions
+            or ((runtime := self.get(session_id)) is not None and not runtime._closed)
+        )
         self.completion_handler: (
             Callable[[str, dict[str, Any]], Awaitable[Any] | Any] | None
         ) = None
@@ -3475,6 +3479,15 @@ class AgentSessionManager:
                 )
                 session.execution_binding = dict(binding)
                 persisted_binding = dict(session.execution_binding or {})
+        dispatch = (
+            await self._offload(
+                "dispatch.workspace_admission_read", self.dispatch_store.get, session.dispatch_id
+            )
+            if self.dispatch_store is not None and session.dispatch_id else None
+        )
+        allow_concurrent_workspace = (
+            bool(dispatch and dispatch.allow_concurrent) if session.dispatch_id else True
+        )
         session.status = "provisioning"
         config = dict(session.config_json or {})
         config["provisioning"] = {
@@ -3502,6 +3515,7 @@ class AgentSessionManager:
                     workspace = await self._offload(
                         "workspace.project_provision",
                         self.workspace_manager.provision_project,
+                        allow_concurrent=allow_concurrent_workspace,
                         project_id=execution_project_id,
                         session_id=session.id,
                         card_id=execution_card_id,
@@ -3515,6 +3529,7 @@ class AgentSessionManager:
                     workspace = await self._offload(
                         "workspace.contract_provision",
                         self.workspace_manager.provision_contract,
+                        allow_concurrent=allow_concurrent_workspace,
                         repositories=list(
                             materialization_plan.get("repositories") or []
                         ),
@@ -3540,6 +3555,7 @@ class AgentSessionManager:
                 workspace = await self._offload(
                     "workspace.project_provision",
                     self.workspace_manager.provision_project,
+                    allow_concurrent=allow_concurrent_workspace,
                     project_id=execution_project_id,
                     session_id=session.id,
                     card_id=execution_card_id,

@@ -17,7 +17,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterator, Literal
@@ -27,6 +27,30 @@ from pydantic import BaseModel, Field, field_validator
 
 from pa.config import Settings
 from pa.domain.models import Repository
+
+
+def workspace_blocks_admission(
+    workspace: dict[str, Any], *, now: datetime | None = None
+) -> bool:
+    """Fail closed unless retained ownership is authoritatively terminal and expired."""
+    if workspace.get("live_runtime") is True:
+        return True
+    if workspace.get("state") == "provisioning":
+        return True
+    if workspace.get("state") != "ready":
+        return False
+    if (
+        workspace.get("session_status") != "closed"
+        or workspace.get("live_runtime") is not False
+    ):
+        return True
+    try:
+        expiry = datetime.fromisoformat(str(workspace.get("expires_at")))
+        if expiry.tzinfo is None:
+            return True
+        return expiry > (now or datetime.now(UTC))
+    except (TypeError, ValueError):
+        return True
 
 
 class WorkspaceProvisioningError(RuntimeError):
@@ -236,6 +260,7 @@ class WorkspaceManager:
         self.dependency_root = self.root / "dependencies"
         self.lock_root = self.root / ".locks"
         self.db_path = self.root / "workspace_leases.db"
+        self.live_runtime: Callable[[str], bool | None] = lambda session_id: None
         self._pr_watch_provider: Callable[..., list[Any]] | None = None
         for path in (
             self.cache_root,
@@ -247,6 +272,67 @@ class WorkspaceManager:
             path.mkdir(parents=True, exist_ok=True)
             self._assert_managed_path(path)
         self._init_db()
+
+    def admission_workspaces(self, *, card_id: str | None = None) -> list[dict[str, Any]]:
+        statuses = self.store.list_session_statuses()
+        return [
+            {
+                **lease.model_dump(mode="json"),
+                "session_status": statuses.get(lease.session_id),
+                "live_runtime": self.live_runtime(lease.session_id),
+            }
+            for lease in self.list(card_id=card_id)
+        ]
+
+    def _check_admission(self, *, card_id: str | None, session_id: str | None) -> None:
+        if not card_id:
+            return
+        for workspace in self.admission_workspaces(card_id=card_id):
+            if (
+                workspace["session_id"] != session_id
+                and workspace_blocks_admission(workspace)
+            ):
+                raise WorkspaceProvisioningError(
+                    "Card already has a live worktree lease; resume its owner or explicitly allow concurrent dispatch"
+                )
+
+    @contextmanager
+    def admission_guard(
+        self, *, card_id: str | None, session_id: str | None,
+        allow_concurrent: bool = False,
+    ) -> Iterator[None]:
+        """Serialize dispatch admission, provisioning and renewal for one card."""
+        if not card_id:
+            yield
+            return
+        with self._repository_lock("admission-" + self._entity_key(card_id)):
+            if not allow_concurrent:
+                self._check_admission(card_id=card_id, session_id=session_id)
+            yield
+
+    def admit_dispatch(self, ledger: Any, record: Any, **kwargs: Any) -> Any:
+        """Recheck local ownership while the durable dispatch reservation is committed."""
+        with self.admission_guard(
+            card_id=record.card_id, session_id=record.resume_session_id,
+            allow_concurrent=True,
+        ):
+            # Check replay inside the card lock, before rejecting workspaces.
+            # An identical request may have admitted and provisioned while this
+            # caller waited for the lock. The ledger owns fingerprint conflicts.
+            existing = (
+                ledger.by_idempotency(record.target_instance_id, record.idempotency_key)
+                if kwargs.get("idempotency_scope") == "target"
+                else ledger.by_authority_idempotency(
+                    record.authority_instance_id, record.idempotency_key
+                )
+            )
+            if existing is not None and existing.state != "admission_pending":
+                return ledger.admit(record, **kwargs)
+            if not record.allow_concurrent:
+                self._check_admission(
+                    card_id=record.card_id, session_id=record.resume_session_id,
+                )
+            return ledger.admit(record, **kwargs)
 
     def _assert_managed_path(self, path: Path) -> Path:
         resolved = path.expanduser().resolve()
@@ -552,6 +638,7 @@ class WorkspaceManager:
         card_id: str | None,
         realm_id: str,
         provider_id: str,
+        allow_concurrent: bool = True,
     ) -> ProvisionedWorkspace | None:
         linked = self.linked_repositories(project_id, realm_id=realm_id)
         if not linked:
@@ -562,6 +649,7 @@ class WorkspaceManager:
                 project_id=project_id,
                 session_id=session_id,
                 card_id=card_id,
+                allow_concurrent=allow_concurrent,
             )
             for linked_repository in linked
         ]
@@ -598,6 +686,7 @@ class WorkspaceManager:
         project_id: str | None,
         realm_id: str,
         provider_id: str,
+        allow_concurrent: bool = True,
     ) -> ProvisionedWorkspace:
         linked: list[LinkedRepository] = []
         for requirement in repositories:
@@ -620,7 +709,8 @@ class WorkspaceManager:
             )
         leases = [
             self.provision_repository(
-                item, project_id=project_id, session_id=session_id, card_id=card_id
+                item, project_id=project_id, session_id=session_id, card_id=card_id,
+                allow_concurrent=allow_concurrent,
             )
             for item in linked
         ]
@@ -708,6 +798,7 @@ class WorkspaceManager:
         project_id: str | None,
         session_id: str,
         card_id: str | None,
+        allow_concurrent: bool = True,
     ) -> WorkspaceLease:
         repository = linked.repository
         identity, clone_url = canonical_repository_identity(repository.url)
@@ -722,7 +813,15 @@ class WorkspaceManager:
         self._assert_managed_path(dependency_cache)
         dependency_cache.mkdir(parents=True, exist_ok=True)
         branch = f"pa/{card_key}-{session_key}-{repo_key[-8:]}"
-        with self._repository_lock(repo_key):
+        # Low-level callers can request independent worktrees; dispatch callers
+        # must pass their durable concurrent-admission policy explicitly.
+        with (
+            self.admission_guard(
+                card_id=card_id, session_id=session_id,
+                allow_concurrent=allow_concurrent,
+            ),
+            self._repository_lock(repo_key),
+        ):
             return self._provision_repository_locked(
                 linked,
                 identity=identity,
@@ -1164,14 +1263,34 @@ class WorkspaceManager:
             return cursor.rowcount
 
     def renew_session(self, session_id: str) -> int:
-        now = datetime.now(UTC)
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """UPDATE workspace_leases SET updated_at=?, expires_at=?
-                   WHERE session_id=? AND state!='cleaned'""",
-                (now.isoformat(), (now + self.LEASE_TTL).isoformat(), session_id),
-            )
-            return cursor.rowcount
+        leases = [lease for lease in self.list() if lease.session_id == session_id]
+        with ExitStack() as stack:
+            card_ids = sorted({lease.card_id for lease in leases if lease.card_id})
+            for card_id in card_ids:
+                stack.enter_context(
+                    self.admission_guard(
+                        card_id=card_id, session_id=session_id, allow_concurrent=True,
+                    )
+                )
+            # Read closure only after acquiring the same locks used by admission.
+            if self.store.list_session_statuses().get(session_id) == "closed":
+                for card_id in card_ids:
+                    for workspace in self.admission_workspaces(card_id=card_id):
+                        if (
+                            workspace["session_id"] != session_id
+                            and workspace_blocks_admission(workspace)
+                        ):
+                            raise WorkspaceProvisioningError(
+                                "Closed workspace owner cannot renew past a successor"
+                            )
+            now = datetime.now(UTC)
+            with self._connect() as conn:
+                cursor = conn.execute(
+                    """UPDATE workspace_leases SET updated_at=?, expires_at=?
+                       WHERE session_id=? AND state!='cleaned'""",
+                    (now.isoformat(), (now + self.LEASE_TTL).isoformat(), session_id),
+                )
+                return cursor.rowcount
 
     def fence_session(self, session_id: str, *, stage: str, error: str) -> int:
         """Fence leases after provider admission fails, retaining them for retry/audit."""
