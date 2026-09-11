@@ -2167,7 +2167,9 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                             },
                         },
                     },
+                    {"protocols": ["pa.dispatch-prompt.v1"]},
                     HTTPException(status_code=503, detail="provider unavailable"),
+                    {"accepted": False},
                 ]
             )
 

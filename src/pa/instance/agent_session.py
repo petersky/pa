@@ -1706,8 +1706,12 @@ class AgentSessionRuntime:
             )
         if accepted is None:
             raise RuntimeError("Dispatch prompt acceptance is not durable yet")
-        item.admission_pending = False
         await self._checkpoint_runtime_async(lifecycle="queued")
+        # Keep the fence through the awaited checkpoint: failure or cancellation
+        # must leave the item recoverable, and another drain must not deliver it
+        # while this handoff is in flight. Recovery of the persisted pending item
+        # rechecks this same receipt; the next runtime checkpoint saves release.
+        item.admission_pending = False
         return accepted
 
     async def admit_dispatch_prompt(

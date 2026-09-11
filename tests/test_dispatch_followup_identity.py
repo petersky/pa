@@ -573,3 +573,58 @@ async def test_same_key_replay_resumes_accepted_queue_without_readmission(env):
     schedule.assert_called_once()
     admit.assert_not_awaited()
     assert replay["prompt_id"] == first["prompt_id"] and len(env.runtime._queue) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restore_process", [False, True])
+@pytest.mark.parametrize("checkpoint_written", [False, True])
+async def test_post_acceptance_checkpoint_failure_recovers_same_prompt_once(
+    env, restore_process, checkpoint_written,
+):
+    checkpoint = env.runtime._checkpoint_runtime_async
+
+    async def fail_handoff(*, lifecycle=None):
+        assert lifecycle == "queued"
+        item = env.runtime._queue[0]
+        assert env.store.get_prompt_acceptance(env.record.session_id, item.id)
+        assert item.admission_pending
+        if checkpoint_written:
+            await checkpoint(lifecycle=lifecycle)
+        await asyncio.sleep(0)
+        assert item.admission_pending  # No provider can bypass the awaited fence.
+        raise OSError("queued checkpoint acknowledgement lost")
+
+    with patch.object(env.runtime, "_checkpoint_runtime_async", side_effect=fail_handoff):
+        receipt = await target(env)
+        if env.runtime._drain_task:
+            await env.runtime._drain_task
+    assert receipt["accepted"]
+    prompt_id = receipt["prompt_id"]
+    assert len(env.runtime._queue) == 1
+    assert env.runtime._queue[0].admission_pending
+    accepted = env.store.get_prompt_acceptance(env.record.session_id, prompt_id)
+
+    if restore_process:
+        stored = env.store.get_session(env.record.session_id)
+        snapshot = env.manager._snapshot_from_persisted(stored)
+        runtime = AgentSessionRuntime(env.manager, stored)
+        runtime._queue = snapshot.queued_prompts
+        env.runtime = runtime
+        env.manager._runtimes[stored.id] = runtime
+        assert len(runtime._queue) == 1 and runtime._queue[0].admission_pending
+
+    env.runtime.connection = SimpleNamespace(connected=True)
+    env.manager._quiescing = False
+    with patch("pa.modules.agent_chat._runtime_or_404", return_value=env.runtime), patch.object(
+        env.runtime, "_run_prompt", AsyncMock(),
+    ) as provider, patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock()) as admit:
+        replay = await target(env)  # Cached receipt must resume the pending handoff.
+        await env.runtime._drain_task
+        again = await target(env)
+        provider.assert_awaited_once()
+        assert provider.await_args.args[0].id == prompt_id
+        assert not provider.await_args.args[0].admission_pending
+        admit.assert_not_awaited()
+    assert replay["prompt_id"] == again["prompt_id"] == prompt_id
+    assert not env.runtime._queue
+    assert env.store.get_prompt_acceptance(env.record.session_id, prompt_id).id == accepted.id
