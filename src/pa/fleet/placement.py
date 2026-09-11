@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from pa.core.io import atomic_write_json
+from pa.repository.workspace import workspace_blocks_admission
 from pa.fleet.capacity import (
     DispatchCapacity,
     DispatchQueueCapacity,
@@ -751,7 +752,7 @@ def _evaluate(
             request.card_id
             and not request.allow_concurrent
             and workspace.get("card_id") == request.card_id
-            and workspace.get("state") in {"provisioning", "ready"}
+            and workspace_blocks_admission(workspace)
             and (
                 not request.resume_session_id
                 or workspace.get("session_id") != request.resume_session_id

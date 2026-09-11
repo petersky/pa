@@ -1926,3 +1926,35 @@ def test_capacity_config_api_updates_live_fleet_advertisement() -> None:
         assert instance["dispatch_provider_queue_capacities"] == {"codex": 25}
         assert audit["events"][-1]["idempotency_key"] == "capacity-api-test"
         assert "dispatch_queue_capacity" in audit["events"][-1]["keys"]
+
+
+@pytest.mark.parametrize("changes, admitted", [
+    ({}, True),
+    ({"session_status": "busy"}, False),
+    ({"session_status": None}, False),
+    ({"live_runtime": True}, False),
+    ({"live_runtime": None}, False),
+    ({"state": "provisioning"}, False),
+    ({"expires_at": (datetime.now(UTC) + timedelta(days=1)).isoformat()}, False),
+    ({"expires_at": None}, False),
+    ({"expires_at": "invalid"}, False),
+    ({"expires_at": "2020-01-01T00:00:00"}, False),
+])
+def test_retained_workspace_requires_closed_expired_owner_evidence(tmp_path, changes, admitted):
+    candidate = _candidate("local", local=True, repositories=["repo-1"])
+    workspace = {
+        "card_id": "card-1", "session_id": "closed-original",
+        "repository_id": "repo-1", "state": "ready",
+        "session_status": "closed", "live_runtime": False,
+        "expires_at": "2020-01-01T00:00:00+00:00",
+        **changes,
+    }
+    candidate.repositories["value"]["workspaces"] = [workspace]
+    service = PlacementService(RoundRobinCursorStore(tmp_path))
+    request = _request(PlacementPolicy.BEST_MATCH, repository_ids=["repo-1"])
+    if admitted:
+        assert service.resolve(request, [candidate]).chosen_instance_id == "local"
+    else:
+        with pytest.raises(PlacementError) as error:
+            service.resolve(request, [candidate])
+        assert "workspace_unavailable" in error.value.rejected_candidates[0]["rejection_codes"]

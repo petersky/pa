@@ -22,6 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Re
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from pa.repository.workspace import WorkspaceProvisioningError
 from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.environment import (
     assigned_service_mcp_environment,
@@ -10824,6 +10825,17 @@ async def _existing_named_dispatch(
     }
 
 
+def _admit_with_workspace_guard(ctx, ledger, record, **kwargs):
+    manager = ctx.services.get("instance_agent")
+    workspace_manager = getattr(manager, "workspace_manager", None)
+    if (
+        record.target_instance_id == ctx.settings.instance_id
+        and workspace_manager is not None
+    ):
+        return workspace_manager.admit_dispatch(ledger, record, **kwargs)
+    return ledger.admit(record, **kwargs)
+
+
 async def _admit_remote_agent_work(
     request: Request,
     instance_id: str,
@@ -11300,7 +11312,9 @@ async def _admit_remote_agent_work(
         record, duplicate = await _offload_request(
             request,
             "dispatch.record_write",
-            ledger.admit,
+            _admit_with_workspace_guard,
+            ctx,
+            ledger,
             record,
             idempotency_scope=idempotency_scope,
             capacity=_capacity_admission_from_decision(
@@ -11310,6 +11324,15 @@ async def _admit_remote_agent_work(
                 override_reason=body.capacity_override_reason,
             ),
         )
+    except WorkspaceProvisioningError as exc:
+        error = HTTPException(
+            status_code=409,
+            detail={
+                "code": "workspace_unavailable", "message": str(exc), "recoverable": True,
+            },
+        )
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
     except DispatchIdempotencyConflict as exc:
         error = HTTPException(
             status_code=409,
