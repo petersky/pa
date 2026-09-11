@@ -50,7 +50,9 @@ question. Invoke it on the notification's owning instance as the originating
 principal, with the normal authenticated API/CSRF contract. Use an operator UI
 session or the user bearer credential used by the local MCP bridge. A shared
 fleet/sync bearer cannot transfer a continuation, even with an acting-principal
-header and even when `auth_required` is false:
+header and even when `auth_required` is false. An explicitly invalid bearer is
+also rejected instead of falling back to the open-mode default user or a valid
+UI cookie; requests without a bearer retain normal UI authentication behavior:
 
 ```json
 {

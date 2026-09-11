@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import time
 from contextlib import suppress
@@ -470,6 +471,22 @@ async def transfer_notification_continuation(
             "code": "operator_identity_required",
             "message": "Continuation transfer requires operator credentials, not a shared fleet credential",
         })
+    scheme, _, bearer = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() == "bearer":
+        user = getattr(request.state, "user", None)
+        # Open auth can supply a default user, and a cookie can authenticate
+        # after an invalid bearer. Neither validates an explicitly supplied
+        # bearer for this operator-only mutation.
+        if (
+            not getattr(request.state, "user_authenticated", False)
+            or user is None
+            or not bearer
+            or not hmac.compare_digest(bearer.encode(), user.cli_token.encode())
+        ):
+            raise HTTPException(status_code=401, detail={
+                "code": "invalid_authentication",
+                "message": "The supplied operator bearer credential is invalid",
+            })
     item = _authorized_notice(request, notification_id)
     try:
         result = await _service(request).transfer_continuation(

@@ -681,3 +681,36 @@ def test_closed_successor_without_acceptance_still_rejects_new_delivery(recovery
         assert r.store.get_notification(r.notice.id).interaction.state == InteractionState.FAILED
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("with_cookie", [False, True])
+@pytest.mark.parametrize("authorization", ["Bearer invalid-operator-token", "bearer invalid-operator-token", "Bearer"])
+def test_transfer_rejects_explicit_invalid_bearer_in_open_auth(recovery, with_cookie, authorization):
+    from pa.auth.sessions import SessionManager
+    from pa.auth.users import UserDirectory
+
+    r = recovery
+    settings = r.kernel.ctx.settings
+    settings.auth_required = False
+    settings.sync_token = "test-only-fleet-secret"
+    user = UserDirectory(settings.data_dir).ensure_default_user()
+    app = r.kernel.build_app()
+    app.state.ctx = r.kernel.ctx
+    client = TestClient(app)
+    if with_cookie:
+        client.cookies.set(SessionManager.COOKIE_NAME, SessionManager(settings.session_secret).create_token(user))
+    client.get("/")
+    response = client.post(
+        f"/api/notifications/{r.notice.id}/transfer-continuation",
+        json=r.request.model_dump(), headers={
+            "Authorization": authorization,
+            "X-PA-Acting-Principal": "user:local",
+            "X-CSRF-Token": client.cookies.get("pa_csrf"),
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "invalid_authentication"
+    current = r.store.get_notification(r.notice.id)
+    assert current.version == r.notice.version
+    assert current.continuation_transfer is None
+    assert current.interaction.response is None
