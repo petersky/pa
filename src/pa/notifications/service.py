@@ -546,16 +546,16 @@ class NotificationService:
 
     def _validate_continuation_target(
         self, notification: Notification, transfer: ContinuationTransferRequest,
-        *, principal_id: str,
+        *, principal_id: str, require_recoverable: bool = True,
     ) -> None:
-        """Fail closed on missing or inconsistent local ownership evidence."""
+        """Validate routing identity, then optional gates for a new admission."""
         def reject(message: str) -> None:
             raise NotificationConflict("invalid_continuation_target", message)
 
         local = self.ctx.settings.instance_id
         ledger = self.ctx.services.get("dispatch_store")
         manager = self.ctx.services.get("instance_agent")
-        if not ledger or not manager or notification.owner_instance_id != local:
+        if not ledger or notification.owner_instance_id != local:
             reject("Repair requires the local notification owner and dispatch ledger")
         if (notification.session_id, notification.dispatch_id) != (
             transfer.expected_session_id, transfer.expected_dispatch_id
@@ -593,17 +593,6 @@ class NotificationService:
                 or (notification.principal_id and notification.principal_id != principal_id)
             ):
                 reject("Authority, realm, card, project, principal, or dispatch binding differs")
-        old_record = ledger.get(transfer.expected_dispatch_id)
-        if old_record.state not in TERMINAL_DISPATCH_STATES:
-            reject("Original dispatch is not terminal")
-        old_runtime = manager.get(old.id)
-        if old_runtime is not None and not old_runtime._closed:
-            reject("Original session has a live runtime")
-        if old.status not in {"closed", "recovery_blocked"} or not (
-            not old.external_session_id
-            or (old.recovery_json.get("blocked") and old.recovery_json.get("context_lost"))
-        ):
-            reject("Original session is not demonstrably unrecoverable")
         binding = successor.execution_binding
         expected_binding = {
             "execution_card_id": notification.card_id,
@@ -615,6 +604,24 @@ class NotificationService:
         }
         if any(binding.get(key) != value for key, value in expected_binding.items()):
             reject("Successor immutable execution binding is missing or mismatched")
+        interaction = notification.interaction
+        if interaction.response_principal and interaction.response_principal != principal_id:
+            reject("Recorded response belongs to another principal")
+        if not require_recoverable:
+            return
+        if manager is None:
+            reject("Session manager is unavailable for a new admission")
+        old_record = ledger.get(transfer.expected_dispatch_id)
+        if old_record.state not in TERMINAL_DISPATCH_STATES:
+            reject("Original dispatch is not terminal")
+        old_runtime = manager.get(old.id)
+        if old_runtime is not None and not old_runtime._closed:
+            reject("Original session has a live runtime")
+        if old.status not in {"closed", "recovery_blocked"} or not (
+            not old.external_session_id
+            or (old.recovery_json.get("blocked") and old.recovery_json.get("context_lost"))
+        ):
+            reject("Original session is not demonstrably unrecoverable")
         successor_record = ledger.get(transfer.successor_dispatch_id)
         if successor_record.state not in {"running", "completed"} or not successor_record.recoverable:
             reject("Successor dispatch is not recoverable")
@@ -630,9 +637,6 @@ class NotificationService:
             or (not live and not successor.external_session_id)
         ):
             reject("Successor has no recoverable provider context")
-        interaction = notification.interaction
-        if interaction.response_principal and interaction.response_principal != principal_id:
-            reject("Recorded response belongs to another principal")
         prompt_id = interaction.continuation_prompt_id or (
             f"notification-response:{notification.id}:{interaction.request_id}"
         )
@@ -889,7 +893,8 @@ class NotificationService:
             transfer = notification.continuation_transfer
             if transfer:
                 self._validate_continuation_target(
-                    notification, transfer, principal_id=transfer.actor_principal
+                    notification, transfer, principal_id=transfer.actor_principal,
+                    require_recoverable=False,
                 )
                 destination_session_id = transfer.successor_session_id
             prompt_id = interaction.continuation_prompt_id
@@ -898,6 +903,10 @@ class NotificationService:
                 self.store.get_prompt_acceptance, destination_session_id, prompt_id
             ):
                 return
+            if transfer:
+                self._validate_continuation_target(
+                    notification, transfer, principal_id=transfer.actor_principal
+                )
             runtime = manager.get(destination_session_id)
             if runtime is None:
                 runtime = await manager.recover_session(destination_session_id)

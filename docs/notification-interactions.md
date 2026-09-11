@@ -47,7 +47,10 @@ and includes the notification. This does not upgrade remote transport capability
 one existing MCP `report_dispatch_progress.operator_input` prompt continuation.
 It does not answer, cancel, approve, recover a provider session, or create another
 question. Invoke it on the notification's owning instance as the originating
-principal, with the normal authenticated API/CSRF contract:
+principal, with the normal authenticated API/CSRF contract. Use an operator UI
+session or the user bearer credential used by the local MCP bridge. A shared
+fleet/sync bearer cannot transfer a continuation, even with an acting-principal
+header and even when `auth_required` is false:
 
 ```json
 {
@@ -79,6 +82,14 @@ stable `notification-response:{notification_id}:{request_id}` prompt ID. The
 `pa.interaction-response/v1` envelope continues to identify the **original** request,
 session and dispatch. The successor must apply only the real correlated answer's
 scope, revalidate external state, and report the outcome.
+Public `routing.destination` and the rendered continuation/progress link point to
+the explicit successor. The stored `destination_url`, session and dispatch fields
+continue to describe the original request.
+
+On retry, PA validates routing identity before checking the successor's durable
+admission receipt. An already admitted response can be acknowledged even if the
+successor has since closed or lost recoverability; it is not enqueued or recovered
+again. New admission still requires the full live/recoverable target checks.
 
 This first version deliberately supports one local hop only. Both dispatches and
 sessions must match the same local authority, execution instance, realm, card,

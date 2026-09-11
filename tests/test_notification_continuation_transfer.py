@@ -503,3 +503,181 @@ def test_late_provider_handler_cannot_take_over_a_transferred_response(recovery)
         assert result.interaction.response["choice_id"] == "approve"
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("auth_required", [False, True])
+def test_transfer_rejects_shared_sync_bearer_impersonation(recovery, auth_required):
+    r = recovery
+    r.kernel.ctx.settings.auth_required = auth_required
+    r.kernel.ctx.settings.sync_token = "test-only-fleet-secret"
+    app = r.kernel.build_app()
+    app.state.ctx = r.kernel.ctx
+    client = TestClient(app)
+    client.get("/")
+    response = client.post(
+        f"/api/notifications/{r.notice.id}/transfer-continuation",
+        json=r.request.model_dump(), headers={
+            "Authorization": "Bearer test-only-fleet-secret",
+            "X-PA-Acting-Principal": "user:local",
+            "X-CSRF-Token": client.cookies.get("pa_csrf"),
+        },
+    )
+    assert response.status_code == 403
+    if not auth_required:
+        assert response.json()["detail"]["code"] == "operator_identity_required"
+    current = r.store.get_notification(r.notice.id)
+    assert current.version == r.notice.version
+    assert current.continuation_transfer is None
+    assert current.interaction.response is None
+
+
+@pytest.mark.parametrize("credential", ["ui", "user-bearer"])
+@pytest.mark.parametrize("auth_required", [False, True])
+def test_transfer_uses_actual_ui_or_mcp_user_identity(recovery, credential, auth_required):
+    from pa.auth.sessions import SessionManager
+    from pa.auth.users import UserDirectory
+
+    r = recovery
+    settings = r.kernel.ctx.settings
+    settings.auth_required = auth_required
+    settings.sync_token = "test-only-fleet-secret"
+    user = UserDirectory(settings.data_dir).ensure_default_user()
+    app = r.kernel.build_app()
+    app.state.ctx = r.kernel.ctx
+    client = TestClient(app)
+    headers = {"X-PA-Acting-Principal": "user:forged"}
+    if credential == "ui":
+        client.cookies.set(SessionManager.COOKIE_NAME, SessionManager(settings.session_secret).create_token(user))
+    else:
+        # This is the user credential used by request_local_pa for bound MCP.
+        headers["Authorization"] = "Bearer " + user.cli_token
+    client.get("/", headers=headers)
+    headers["X-CSRF-Token"] = client.cookies.get("pa_csrf")
+    response = client.post(
+        f"/api/notifications/{r.notice.id}/transfer-continuation",
+        json=r.request.model_dump(), headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["continuation_transfer"]["actor_principal"] == "user:local"
+
+
+def test_retry_acknowledges_admitted_response_after_successor_closes(recovery):
+    from unittest.mock import AsyncMock
+
+    r = recovery
+
+    async def exercise():
+        await transfer(r)
+        drain = r.runtime._drain_transcripts
+
+        async def lose_acknowledgement():
+            await drain()
+            raise RuntimeError("Acknowledgement lost after durable admission")
+
+        with patch.object(r.runtime, "enqueue", wraps=r.runtime.enqueue) as enqueue:
+            with patch.object(r.runtime, "_drain_transcripts", side_effect=lose_acknowledgement):
+                with pytest.raises(NotificationConflict) as error:
+                    await respond(r)
+            assert error.value.code == "delivery_failed"
+            recorded = r.store.get_notification(r.notice.id)
+            prompt_id = recorded.interaction.continuation_prompt_id
+            assert r.store.get_prompt_acceptance("successor", prompt_id)
+            successor = r.store.get_session("successor")
+            successor.status = "closed"
+            successor.external_session_id = None
+            successor.recovery_json = {"blocked": True, "context_lost": True}
+            r.store.save_session(successor)
+            r.runtime._closed = True
+            r.records["dispatch-successor"].state = "cancelled"
+            r.records["dispatch-successor"].recoverable = False
+            with patch.object(r.manager, "recover_session", new_callable=AsyncMock) as recover:
+                delivered = await respond(r, key="retry-closed-successor", retry=True)
+                recover.assert_not_called()
+            enqueue.assert_called_once()
+        assert delivered.interaction.state == InteractionState.DELIVERED
+        assert delivered.interaction.response == recorded.interaction.response
+        assert delivered.interaction.continuation_prompt_id == prompt_id
+        assert len(r.runtime._queue) == 1
+        admissions = [event for event in r.store.list_transcript_events("successor")
+                      if event.event_type == "queue_enqueued" and event.payload.get("id") == prompt_id]
+        assert len(admissions) == 1
+        # A receipt does not bypass a changed routing identity.
+        delivered.interaction.state = InteractionState.FAILED
+        delivered.interaction.delivered_at = None
+        delivered.resolved_at = None
+        delivered.version += 1
+        r.store.save_notification(delivered, principal_id="system:test", instance_id="local")
+        successor.principal_id = "user:other"
+        r.store.save_session(successor)
+        with pytest.raises(NotificationConflict):
+            await respond(r, key="retry-invalid-route", retry=True)
+        assert len(r.runtime._queue) == 1
+
+    asyncio.run(exercise())
+
+
+def test_public_routing_and_rendered_progress_link_use_successor(recovery):
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    r = recovery
+    r.notice.destination_url = "/agent?session=old"
+    r.store.save_notification(r.notice, principal_id="user:local", instance_id="local")
+    app = r.kernel.build_app()
+    app.state.ctx = r.kernel.ctx
+    client = TestClient(app)
+    client.get("/")
+    transferred = client.post(
+        f"/api/notifications/{r.notice.id}/transfer-continuation", json=r.request.model_dump(),
+        headers={"X-CSRF-Token": client.cookies.get("pa_csrf")},
+    )
+    assert transferred.status_code == 200
+    assert transferred.json()["routing"]["destination"] == "/agent?session=successor"
+    asyncio.run(respond(r))
+    public = client.get(f"/api/notifications/{r.notice.id}").json()
+    assert public["routing"]["destination"] == "/agent?session=successor"
+    assert public["destination_url"] == "/agent?session=old"
+    assert public["session_id"] == "old"
+    assert public["dispatch_id"] == "dispatch-old"
+    assert public["presentation"]["response_status"]["continuation"] == "Queued"
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is required for the rendered-link regression")
+    harness = r'''
+const assert = require("assert");
+const list = { innerHTML: "", querySelectorAll: () => [], querySelector: () => null };
+const root = { querySelector: (s) => s === "[data-notification-list]" ? list : null };
+global.window = {};
+global.document = {
+  readyState: "loading", addEventListener: () => {},
+  querySelector: (s) => s === "[data-notification-chrome]" ? root : null,
+  createElement: () => ({
+    set textContent(v) { this.text = String(v); },
+    get innerHTML() { return this.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  })
+};
+require(process.argv[1]);
+window.PANotificationsTest.render([JSON.parse(require("fs").readFileSync(0, "utf8"))], false);
+assert.ok(list.innerHTML.includes('<a href="/agent?session=successor">View continuation and progress</a>'));
+assert.ok(!list.innerHTML.includes('<a href="/agent?session=old">View continuation and progress</a>'));
+'''
+    script = Path(__file__).parents[1] / "src/pa/server/static/js/notifications.js"
+    result = subprocess.run([node, "-e", harness, str(script)], input=json.dumps(public), text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_closed_successor_without_acceptance_still_rejects_new_delivery(recovery):
+    r = recovery
+
+    async def exercise():
+        await transfer(r)
+        r.successor.status = "closed"
+        r.store.save_session(r.successor)
+        r.runtime._closed = True
+        with pytest.raises(NotificationConflict):
+            await respond(r)
+        assert not r.runtime._queue
+        assert r.store.get_notification(r.notice.id).interaction.state == InteractionState.FAILED
+
+    asyncio.run(exercise())

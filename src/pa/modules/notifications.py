@@ -5,6 +5,7 @@ import logging
 import time
 from contextlib import suppress
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -72,6 +73,10 @@ def _route_metadata(request: Request, item: Notification) -> dict[str, Any]:
     settings = request.app.state.ctx.settings
     local = not item.owner_instance_id or item.owner_instance_id == settings.instance_id
     destination = item.destination_url or item.source_url
+    if item.continuation_transfer:
+        destination = "/agent?" + urlencode(
+            {"session": item.continuation_transfer.successor_session_id}
+        )
     if not destination and item.card_id:
         destination = f"/work?card={item.card_id}"
     elif not destination and item.session_id:
@@ -456,6 +461,15 @@ async def _proxy_response(
 async def transfer_notification_continuation(
     request: Request, notification_id: str, body: ContinuationTransferRequest
 ) -> dict[str, Any]:
+    # Shared fleet credentials prove an instance, not the operator in an
+    # acting-principal header. Reject them even when user login is disabled.
+    # UI sessions and the user bearer used by the local MCP bridge still use
+    # the normal user identity and realm authorization below.
+    if getattr(request.state, "instance_authenticated", False):
+        raise HTTPException(status_code=403, detail={
+            "code": "operator_identity_required",
+            "message": "Continuation transfer requires operator credentials, not a shared fleet credential",
+        })
     item = _authorized_notice(request, notification_id)
     try:
         result = await _service(request).transfer_continuation(
@@ -465,7 +479,7 @@ async def transfer_notification_continuation(
         raise HTTPException(
             status_code=409, detail={"code": exc.code, "message": str(exc)}
         ) from exc
-    return result.public_dict()
+    return _public_notice(request, result)
 
 
 @router.post("/notifications/{notification_id}/respond")
