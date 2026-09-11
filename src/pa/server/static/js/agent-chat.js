@@ -2322,6 +2322,8 @@
   };
 
   AgentChatWidget.prototype._clearResolvedLiveGap = function () {
+    // Once retired, a late response must not clear an unrelated paging error.
+    if (!this.liveGapTarget) return true;
     if ((this.lastSeq || 0) < (this.liveGapTarget || 0)) return false;
     if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
     this.liveGapRetryTimer = null;

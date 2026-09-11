@@ -173,6 +173,14 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.strictEqual(timerOwner.liveGapRetryTimer,newTimer);
  assert.ok(virtualTimers.has(newTimer),'old owner callback preserves new owner retry');
  timerOwner.handleEvent(chunk(11,'A'));timerOwner.handleEvent(chunk(12,'B'));cleared(timerOwner);
+ // Once live recovery has retired, its late response cannot hide paging failure.
+ const paging=make();paging.lastSeq=10;let finishGap;
+ paging.apiWithTimeout=()=>new Promise(resolve=>{finishGap=resolve});
+ paging.handleEvent(chunk(12,'B'));paging.handleEvent(chunk(11,'A'));paging.handleEvent(chunk(12,'B'));
+ paging.newerError='Could not load newer messages: paging failed';paging.updateNewerControl();
+ finishGap({events:[]});await settle();
+ assert.strictEqual(paging.els.loadNewerStatus.textContent,'Could not load newer messages: paging failed');
+ assert.strictEqual(paging.els.loadNewerStatus.hidden,false);
  // New gaps raised during an older read remain recoverable after its empty response.
  const advanced=make();advanced.lastSeq=10;const responses=[];
  advanced.apiWithTimeout=()=>new Promise(resolve=>responses.push(resolve));

@@ -163,3 +163,10 @@ race harness passed again after the final timer tests. Isolated boot smoke and
 `uv build` passed. The first boot invocation was rejected by Settings because
 its inherited workspace root contained the temporary data directory; rerunning
 with distinct sibling temporary data/workspace paths passed.
+
+A final guard retires cleanup after its live-gap target is cleared, so a late
+response cannot hide a subsequent independent paging error. Its controlled race
+regression passes. The actual browser race was repeated on a fresh isolated
+fixture at port 18082 with this guard: `live-gap-final-warning-v3` observed the
+warning; `live-gap-final-cleared-v3` verified its removal, exact recovered text
+once, and the unchanged unsent draft without refresh.
