@@ -2321,18 +2321,42 @@
     if (this.root && this.root._acw === this) this.root._acw = null;
   };
 
+  AgentChatWidget.prototype._clearResolvedLiveGap = function () {
+    // Once retired, a late response must not clear an unrelated paging error.
+    if (!this.liveGapTarget) return true;
+    if ((this.lastSeq || 0) < (this.liveGapTarget || 0)) return false;
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
+    this.liveGapTarget = 0;
+    this.livePendingEvents = {};
+    this.liveGapRetryCount = 0;
+    this.newerError = "";
+    this.updateNewerControl();
+    return true;
+  };
+
   AgentChatWidget.prototype._repairLiveGap = function () {
-    if ((this.liveGapLoading && this.liveGapGeneration === this.subscriptionGeneration) ||
-        this.destroyed || !this.sessionId) return;
+    if (this.destroyed || !this.sessionId) return;
+    // Live delivery can finish recovery before a retry timer or history read.
+    if (this._clearResolvedLiveGap()) return;
+    if (this.liveGapLoading && this.liveGapGeneration === this.subscriptionGeneration &&
+        this.liveGapApiBase === this.apiBase) return;
+    if (this.liveGapRetryTimer) clearTimeout(this.liveGapRetryTimer);
+    this.liveGapRetryTimer = null;
     const self = this, sessionId = this.sessionId, generation = this.subscriptionGeneration;
+    const apiBase = this.apiBase;
+    const isCurrent = function () {
+      return self._isCurrentSessionRequest(sessionId, generation) && self.apiBase === apiBase;
+    };
     const after = this.lastSeq || 0;
     this.liveGapRetryCount = (this.liveGapRetryCount || 0) + 1;
     this.liveGapLoading = true;
     this.liveGapGeneration = generation;
+    this.liveGapApiBase = apiBase;
     this.apiWithTimeout("/history/" + encodeURIComponent(sessionId) +
       "?message_boundaries=true&after_seq=" + after + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
       LIVE_SNAPSHOT_TIMEOUT_MS).then(function (history) {
-        if (!self._isCurrentSessionRequest(sessionId, generation)) return;
+        if (!isCurrent() || self._clearResolvedLiveGap()) return;
         const events = history.events || [];
         events.forEach(function (event) { self.handleEvent(event, false, true, true); });
         const pending = self.livePendingEvents || {};
@@ -2343,23 +2367,31 @@
             delete pending[seq];
           }
         });
+        if (self._clearResolvedLiveGap()) return;
         if (self.lastSeq <= after) throw new Error("Waiting for durable stream history.");
         self.newerError = "";
         self.liveGapRetryCount = 0;
+        if (self.liveGapRetryTimer) clearTimeout(self.liveGapRetryTimer);
+        self.liveGapRetryTimer = null;
+        self.updateNewerControl();
       }).catch(function (error) {
-        if (!self._isCurrentSessionRequest(sessionId, generation)) return;
+        if (!isCurrent() || self._clearResolvedLiveGap()) return;
         self.newerError = "Live messages are waiting for history. Retrying…";
         self.updateNewerControl();
         if (self.liveGapRetryCount >= 30) {
           self.newerError = "Live recovery is still pending. Retry loading newer messages.";
           self.updateNewerControl();
         }
-        if (self.liveGapRetryCount < 30 && !self.liveGapRetryTimer) self.liveGapRetryTimer = setTimeout(function () {
-          self.liveGapRetryTimer = null;
-          if (self._isCurrentSessionRequest(sessionId, generation)) self._repairLiveGap();
-        }, 2000);
+        if (self.liveGapRetryCount < 30 && !self.liveGapRetryTimer) {
+          const timer = setTimeout(function () {
+            if (!isCurrent() || self.liveGapRetryTimer !== timer) return;
+            self.liveGapRetryTimer = null;
+            self._repairLiveGap();
+          }, 2000);
+          self.liveGapRetryTimer = timer;
+        }
       }).finally(function () {
-        if (!self._isCurrentSessionRequest(sessionId, generation)) return;
+        if (!isCurrent()) return;
         self.liveGapLoading = false;
         if (!self.newerError && self.lastSeq < self.liveGapTarget) self._repairLiveGap();
       });
@@ -2574,6 +2606,7 @@
       }
     }
     if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
+    if (!replay && this.liveGapTarget > 0) this._clearResolvedLiveGap();
     if (!replay) this._pruneMessageRows(!!this.hasNewer);
     if (!replay && shouldFollow) this.scrollToBottom();
   };

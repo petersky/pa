@@ -104,3 +104,69 @@ The isolated boot smoke test and artifact build pass. The existing mixed-load
 responsiveness test exceeded its 20ms probe bound once while another test process
 was running (69.6ms); its complete 19-test module passed when rerun alone. Full CI
 must independently validate the committed head. No timing threshold was loosened.
+
+## Residual live-gap banner — 2026-09-11
+
+Root observed PA 1.4.4 delivering both assistant markers live while retaining
+“Live messages are waiting for history. Retrying…” after contiguous history had
+reached sequence 21. An empty successful `after_seq=21` read is not evidence of a
+missing event when live delivery has already reached the recovery target.
+
+This scoped follow-up clears the visible warning and retry control, pending gap
+metadata, and obsolete retry timer when the target is satisfied. It checks both
+before fetching and after live/history completion, including late HTTP failure.
+Callbacks verify session generation and owner API base; retired timers cannot
+clear a newer owner's timer. Genuine gaps retain their bounded retry behavior.
+
+Execution: macbook `0c7d8ecb-7e45-4579-8fa0-35159492d3f1`, session
+`7895a1ff-4909-43b5-b0a7-a34e0e2d0c52`, dispatch
+`09cae33c-4d9f-4984-a585-cb7a86ef5a25`, card
+`434f6c90-d0fe-462d-89ea-d8a129b15937`. Fresh worktree and branch supplied by
+PA, base `b7bd912ed61bbbc060d58307a994222ad9379352`, verified ready lease fence
+209, owned provider PID 25500 with executor descendant 25513. Exact worktree and
+branch are recorded in checkpoint `live-gap-7895a1ff-workspace-verified-v1`.
+
+The Node history harness uses controlled retry timers and deferred HTTP responses
+for satisfied targets, callbacks after resolution, live catchup preceding empty
+or failed responses, a newer gap during an older read, genuine missing history,
+and stale owner/session/destroyed callbacks. Assertions check rendered warning
+text and button visibility, exact message bodies, deduplication, and unchanged
+draft input. These assertions fail against unpatched main at the stale warning.
+
+To repeat the actual-browser race, start a fresh isolated fixture as above, send
+any tool-free fixture prompt, type an unsent draft, then click **Exercise live gap
+race** once. The wrapper around PA's actual multiplex handler delays a predecessor
+until after a live final. Two empty history responses simulate persistence lag;
+the second completes after live catchup. The fixture must first show the warning,
+then show `Fixture gap: progress.final.` once and remove the warning and retry
+button without navigation or refresh. Its status confirms it observed both states.
+
+PA browser observations on the final source:
+
+- `live-gap-final-warning-v2`: actual warning and retry button visible; normal
+  fixture progress/final already delivered live.
+- `live-gap-final-cleared-v2`: warning/button absent, exact gap text once, composer
+  enabled, and exact `UNSENT live gap draft` preserved. Fixture evidence reports
+  two recovery history reads and one uninterrupted shared-stream connection.
+
+These observations are isolated fixture evidence. No production prompts, service
+data edits, installed-code changes, release, or restart were performed. Root owns
+combined release activation and the existing pending restart receipt; production
+banner recovery remains unaccepted until root validates the deployed build.
+- `live-gap-final-reconnect-proof-v2`: interrupted shared stream replayed the
+  exact retained final once; the resolved warning stayed absent.
+- `live-gap-final-switch-proof-v2`: switching away and back preserved the exact
+  unsent draft and recovered message.
+
+Validation: 85 focused history/stream/SSE/draft/memory tests passed; the updated
+race harness passed again after the final timer tests. Isolated boot smoke and
+`uv build` passed. The first boot invocation was rejected by Settings because
+its inherited workspace root contained the temporary data directory; rerunning
+with distinct sibling temporary data/workspace paths passed.
+
+A final guard retires cleanup after its live-gap target is cleared, so a late
+response cannot hide a subsequent independent paging error. Its controlled race
+regression passes. The actual browser race was repeated on a fresh isolated
+fixture at port 18082 with this guard: `live-gap-final-warning-v3` observed the
+warning; `live-gap-final-cleared-v3` verified its removal, exact recovered text
+once, and the unchanged unsent draft without refresh.
