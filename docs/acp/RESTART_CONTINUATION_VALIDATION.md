@@ -136,3 +136,21 @@ previous head fails: `_start_drain` blocks about 1.1 seconds. Updated source
 passes the responsiveness and revocation tests, 174 related tests, and the
 repeatable browser lifecycle (session `7624da6c-799d-4bb8-9876-7d9325388d3e`,
 receipt `35644ed6-7199-5302-a6fd-70ead13b5543`).
+
+## Root review: preserve queue priority during receipt validation
+
+Drain now scans queue order and loads only the restart candidate that would
+otherwise be selected next. An ordinary eligible prompt ahead of that candidate
+runs before any receipt lookup. A failed lookup holds only that candidate and
+allows other eligible prompts to proceed. After each read the scan restarts,
+rechecking queue membership, priority, pause, connection and current scope;
+execution still independently reloads receipt authorization.
+
+Seven regressions cover slow/failed lookup behind a user prompt, failure ahead
+of a user prompt, and pause, removal, scope change or a new higher-priority user
+prompt during validation. The three priority/failure regressions fail against
+`e4777c5929e3eba8ef754a5da8729dd9f9928cd6` and pass with this correction.
+All 147 related tests and `uv build` pass. The isolated browser lifecycle passed
+again: session `fe7150e0-a370-4352-8532-798240c15817`, receipt
+`aa9f8711-16b9-535b-96ae-1d2672af17cc`, with exact provider identity and one
+automatically delivered continuation. Production acceptance remains root-owned.

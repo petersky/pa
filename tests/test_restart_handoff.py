@@ -1421,3 +1421,90 @@ def test_cached_receipt_is_revalidated_at_execution_after_revocation(tmp_path):
         assert runtime._in_flight is None
         runtime.connection.prompt.assert_not_called()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('failure', [False, True])
+def test_user_ahead_of_restart_receipt_runs_before_slow_or_failed_lookup(tmp_path, failure):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
+                        source='restart-handoff:' + receipt.id, _defer_drain=True)
+        runtime.enqueue('user first', source='ui', prompt_id='user-first',
+                        _defer_drain=True)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = runtime._refresh_restart_receipt
+        async def delayed(item):
+            if item.id == receipt.continuation_prompt_id:
+                entered.set()
+                await release.wait()
+                if failure:
+                    raise RuntimeError('receipt store unavailable')
+            await original(item)
+        with patch.object(runtime, '_refresh_restart_receipt', side_effect=delayed):
+            runtime._start_drain()
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                assert runtime._run_prompt.call_args_list[0].args[0].id == 'user-first'
+            finally:
+                release.set()
+                await runtime._drain_task
+            assert runtime._run_prompt.await_count == (1 if failure else 2)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('change', ['pause', 'remove', 'scope', 'higher_priority'])
+def test_restart_selection_rechecks_queue_after_receipt_read(tmp_path, change):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        item = runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
+                               source='restart-handoff:' + receipt.id, _defer_drain=True)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = runtime._refresh_restart_receipt
+        async def delayed(candidate):
+            entered.set()
+            await release.wait()
+            await original(candidate)
+        with patch.object(runtime, '_refresh_restart_receipt', side_effect=delayed):
+            runtime._start_drain()
+            await asyncio.wait_for(entered.wait(), 2)
+            if change == 'pause':
+                runtime._queue_paused = True
+            elif change == 'remove':
+                runtime._queue.remove(item)
+            elif change == 'scope':
+                runtime.session.cwd = '/changed-scope'
+            else:
+                runtime.enqueue('new user turn', source='ui', prompt_id='new-user',
+                                _defer_drain=True)
+            release.set()
+            await runtime._drain_task
+            if change == 'higher_priority':
+                assert [c.args[0].id for c in runtime._run_prompt.call_args_list] == [
+                    'new-user', receipt.continuation_prompt_id]
+            else:
+                runtime._run_prompt.assert_not_called()
+    asyncio.run(scenario())
+
+
+def test_failed_restart_lookup_does_not_block_later_user_prompt(tmp_path):
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
+                        source='restart-handoff:' + receipt.id, _defer_drain=True)
+        runtime.enqueue('user next', source='ui', prompt_id='user-next',
+                        _defer_drain=True)
+        runtime._queue.sort(key=lambda item: item.source == 'ui')
+        original = runtime._refresh_restart_receipt
+        async def failing(item):
+            if item.id == receipt.continuation_prompt_id:
+                raise RuntimeError('receipt store unavailable')
+            await original(item)
+        with patch.object(runtime, '_refresh_restart_receipt', side_effect=failing):
+            runtime._start_drain()
+            await runtime._drain_task
+        runtime._run_prompt.assert_awaited_once()
+        assert runtime._run_prompt.call_args.args[0].id == 'user-next'
+        assert [item.id for item in runtime._queue] == [receipt.continuation_prompt_id]
+    asyncio.run(scenario())

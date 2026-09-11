@@ -1471,23 +1471,33 @@ class AgentSessionRuntime:
         ):
             if self.manager.quiescing:
                 break
-            try:
-                for candidate in tuple(self._queue):
-                    if candidate.source.startswith("restart-handoff:"):
+            # Inspect queue order before doing I/O. A receipt behind an eligible
+            # user prompt must never delay that prompt. Restart the scan after
+            # each await because priority, membership and scope may have changed.
+            validated: set[str] = set()
+            unavailable: set[str] = set()
+            eligible_index = None
+            while not (self._queue_paused or self._closed or not self.connected
+                       or self.manager.quiescing):
+                candidate = next((candidate for candidate in self._queue
+                                  if candidate.id not in unavailable
+                                  and (self._prompt_eligible(candidate)
+                                       or (self._needs_restart_validation(candidate)
+                                           and candidate.id not in validated))), None)
+                if candidate is None:
+                    break
+                if (candidate.source.startswith("restart-handoff:")
+                        and candidate.id not in validated):
+                    validated.add(candidate.id)
+                    try:
                         await self._refresh_restart_receipt(candidate)
-            except Exception:
-                logger.exception("Restart receipt authorization unavailable for %s", self.session_id)
+                    except Exception:
+                        self._restart_receipts.pop(candidate.id, None)
+                        unavailable.add(candidate.id)
+                        logger.exception("Restart receipt authorization unavailable for %s", candidate.id)
+                    continue
+                eligible_index = self._queue.index(candidate)
                 break
-            if self._queue_paused or self._closed or not self.connected or self.manager.quiescing:
-                break
-            eligible_index = next(
-                (
-                    index
-                    for index, candidate in enumerate(self._queue)
-                    if self._prompt_eligible(candidate)
-                ),
-                None,
-            )
             if eligible_index is None:
                 break
             item = self._queue[eligible_index]
