@@ -2078,6 +2078,31 @@ def create_card_api(
 
 
 @router.get("/operations/{idempotency_key}")
+async def operation_outcome_endpoint(
+    request: Request, idempotency_key: str, realm: str | None = None
+) -> dict:
+    from pa.modules.fleet import _offload_request, reconcile_followup_acceptance
+
+    outcome = await _offload_request(
+        request, "operation.outcome_read", operation_outcome_api,
+        request, idempotency_key, realm,
+    )
+    result = outcome.get("result") or {}
+    if (outcome.get("operation") == "dispatch.followup"
+            and result.get("prompt_id") and not result.get("response")):
+        ledger = request.app.state.ctx.services["dispatch_store"]
+        record = await _offload_request(
+            request, "dispatch.followup_read", ledger.get, result["dispatch_id"],
+        )
+        if record:
+            await reconcile_followup_acceptance(request, record, idempotency_key)
+            outcome = await _offload_request(
+                request, "operation.outcome_read", operation_outcome_api,
+                request, idempotency_key, realm,
+            )
+    return outcome
+
+
 def operation_outcome_api(
     request: Request, idempotency_key: str, realm: str | None = None
 ) -> dict:
@@ -2146,12 +2171,14 @@ def operation_outcome_api(
     if operation == "dispatch.followup":
         followup = record.followup_operations[idempotency_key]
         state = followup.get("state") or "pending"
+        legacy_unknown = not followup.get("prompt_id") and not followup.get("response")
         return {
             "idempotency_key": idempotency_key,
             "operation": operation,
-            "status": state,
+            "status": "legacy_delivery_ambiguous" if legacy_unknown else state,
             "durable": True,
-            "recovery_state": "durable_followup_operation_found",
+            "automatic_retry_safe": not legacy_unknown,
+            "recovery_state": "legacy_identity_unknown" if legacy_unknown else "durable_followup_operation_found",
             "result": {
                 "dispatch_id": record.dispatch_id,
                 "session_id": record.session_id,

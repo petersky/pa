@@ -14,6 +14,7 @@ import pytest
 from fastapi import HTTPException
 
 from pa.config import Settings
+from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL, dispatch_prompt_identity
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -507,7 +508,14 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             }
             with patch(
                 "pa.modules.fleet._peer_agent_json",
-                AsyncMock(return_value=acknowledged),
+                AsyncMock(side_effect=lambda *args, **kwargs: {
+                    "protocols": [PROMPT_IDENTITY_PROTOCOL],
+                } if args[3] == "prompt-capabilities" else {
+                    **acknowledged,
+                    "prompt_id": ledger.get("dispatch-1").followup_operations[
+                        kwargs["body"]["idempotency_key"]
+                    ]["prompt_id"],
+                }),
             ) as peer:
                 first = await prompt_dispatch_session(
                     request,
@@ -525,7 +533,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 )
             self.assertTrue(first["accepted"])
             self.assertTrue(repeated["duplicate"])
-            self.assertEqual(peer.await_count, 1)
+            self.assertEqual(peer.await_count, 2)
             persisted = DispatchStore(Path(tmp)).get("dispatch-1")
             self.assertNotIn("continue", str(persisted.followup_operations))
 
@@ -620,14 +628,15 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             )
 
             def reserve(_ctx, _ledger, current, *, idempotency_key, fingerprint):
-                current.followup_operations[idempotency_key] = {
+                current.followup_operations[idempotency_key].update({
                     "fingerprint": fingerprint,
                     "state": "reservation_applied",
                     "goal_provenance": provenance.model_dump(mode="json"),
-                }
+                })
                 return provenance
 
             with (
+                patch("pa.modules.fleet._require_dispatch_prompt_protocol", AsyncMock()),
                 patch(
                     "pa.modules.fleet._reserve_goal_dispatch_followup",
                     side_effect=reserve,
@@ -686,7 +695,14 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             }
             with patch(
                 "pa.modules.fleet._peer_agent_json",
-                AsyncMock(return_value=acknowledged),
+                AsyncMock(side_effect=lambda *args, **kwargs: {
+                    "protocols": [PROMPT_IDENTITY_PROTOCOL],
+                } if args[3] == "prompt-capabilities" else {
+                    **acknowledged,
+                    "prompt_id": ledger.get("dispatch-1").followup_operations[
+                        kwargs["body"]["idempotency_key"]
+                    ]["prompt_id"],
+                }),
             ):
                 result = await prompt_dispatch_session(
                     request,
@@ -2082,6 +2098,8 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             resume_prompt = asyncio.Event()
 
             async def rejected_after_repair(*_args, **_kwargs):
+                if _args[3] == "prompt-capabilities":
+                    return {"protocols": [PROMPT_IDENTITY_PROTOCOL]}
                 prompt_started.set()
                 await resume_prompt.wait()
                 raise HTTPException(
@@ -4186,10 +4204,10 @@ class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
                 "accepted_event": "queue_enqueued",
                 "session_id": "session-new",
                 "dispatch_id": record.dispatch_id,
-                "prompt_id": "prompt-1",
+                "prompt_id": dispatch_prompt_identity(record.model_copy(update={"session_id": "session-new"}), None),
             }
             peer_agent = AsyncMock(
-                side_effect=[{"session": {"id": "session-new"}}, ack]
+                side_effect=[{"session": {"id": "session-new"}}, {"protocols": [PROMPT_IDENTITY_PROTOCOL]}, ack]
             )
             with (
                 patch(
@@ -4272,6 +4290,7 @@ class DurableDispatchJobTests(unittest.IsolatedAsyncioTestCase):
             peer_agent = AsyncMock(
                 side_effect=[
                     {"session": {"id": "session-new"}},
+                    {"protocols": [PROMPT_IDENTITY_PROTOCOL]},
                     {"started": True, "session_id": "session-new"},
                 ]
             )
@@ -4681,3 +4700,45 @@ class BoundedDrainTests(unittest.IsolatedAsyncioTestCase):
             outbox = CompletionOutbox(DispatchStore(Path(tmp)), "", retry_seconds=60)
             outbox.start()
             await asyncio.wait_for(outbox.close(timeout=0.01), timeout=1.5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old_target", [False, True])
+async def test_initial_dispatch_negotiates_identity_and_reconciles_lost_ack(tmp_path, old_target):
+    fixture = DurableDispatchJobTests()
+    app, ledger, _domain = fixture._job_app(tmp_path)
+    record = fixture._record()
+    ledger.transition(record, "queued", "admitted")
+    deliveries = []
+
+    async def peer(_request, _target, method, path, **kwargs):
+        if path == "sessions":
+            return {"session": {"id": "session-new"}}
+        if path == "prompt-capabilities":
+            if old_target:
+                raise HTTPException(404, detail="Not Found")
+            return {"protocols": [PROMPT_IDENTITY_PROTOCOL]}
+        if method == "POST":
+            assert path == "sessions/session-new/dispatch-prompts"
+            deliveries.append(kwargs["body"])
+            assert ledger.get(record.dispatch_id).initial_prompt_operation["prompt_id"] == kwargs["body"]["dispatch_prompt_id"]
+            raise TimeoutError("ack lost after durable initial acceptance")
+        return {
+            "session_id": "session-new", "prompt_id": deliveries[0]["dispatch_prompt_id"],
+            "accepted": True, "accepted_event": "queue_enqueued", "accepted_action": "append",
+            "status": "completed",
+        }
+
+    with patch("pa.modules.fleet._peer_dispatch_json", AsyncMock(return_value={"resolvable": True})), patch(
+        "pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer),
+    ):
+        if old_target:
+            with pytest.raises(HTTPException) as blocked:
+                await _process_remote_dispatch(app, record)
+            assert blocked.value.detail["code"] == "dispatch_prompt_protocol_unavailable"
+            assert not deliveries
+        else:
+            await _process_remote_dispatch(app, record)
+            assert record.state == "running"
+            assert record.prompt_ack["prompt_id"] == deliveries[0]["dispatch_prompt_id"]
+            assert len(deliveries) == 1

@@ -7233,29 +7233,45 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         record = await _validate_goal_dispatch_record_async(
             ctx, ledger, record, sink="prompt-delivery"
         )
-        delivered = await _peer_agent_json(
-            request,
-            record.target_instance_id,
-            "POST",
-            f"sessions/{session_id}/prompt",
-            body={
-                "message": message,
-                "card_id": record.card_id,
-                "project_id": record.project_id,
-                "dispatch_id": record.dispatch_id,
-                "goal_provenance": (
-                    record.goal_provenance.model_dump(mode="json")
-                    if record.goal_provenance
-                    else None
-                ),
-            },
+        from pa.execution.followup import bind_followup_prompt, prompt_fingerprint
+
+        await _require_dispatch_prompt_protocol(request, record.target_instance_id)
+        bound = await _offload_ctx(
+            ctx, "dispatch.initial_prompt_bind", bind_followup_prompt,
+            ledger, record, None, prompt_fingerprint(message, "append"),
         )
+        record.initial_prompt_operation = dict(bound.initial_prompt_operation)
+        try:
+            delivered = await _peer_agent_json(
+                request,
+                record.target_instance_id,
+                "POST",
+                f"sessions/{session_id}/dispatch-prompts",
+                body={
+                    "message": message,
+                    "card_id": record.card_id,
+                    "project_id": record.project_id,
+                    "dispatch_id": record.dispatch_id,
+                    "dispatch_prompt_id": record.initial_prompt_operation["prompt_id"],
+                    "dispatch_prompt_protocol": record.initial_prompt_operation["admission_protocol"],
+                    "goal_provenance": (
+                        record.goal_provenance.model_dump(mode="json")
+                        if record.goal_provenance
+                        else None
+                    ),
+                },
+            )
+        except Exception:
+            delivered = await reconcile_followup_acceptance(request, record, None)
+            if delivered is None:
+                raise
         prompt_result = delivered if isinstance(delivered, dict) else None
         if not (
             prompt_result
             and prompt_result.get("accepted") is True
             and prompt_result.get("session_id") == session_id
             and prompt_result.get("dispatch_id") == record.dispatch_id
+            and prompt_result.get("prompt_id") == record.initial_prompt_operation["prompt_id"]
             and prompt_result.get("accepted_event")
             in {"queue_enqueued", "user_message"}
         ):
@@ -7268,9 +7284,17 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                     "session_id": session_id,
                 },
             )
-        record.prompt_acknowledged_at = datetime.now(UTC)
-        record.prompt_ack = prompt_result
-        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+        from pa.execution.followup import acknowledge_initial_prompt
+
+        committed = await _offload_ctx(
+            ctx, "dispatch.initial_prompt_ack", acknowledge_initial_prompt,
+            ledger, record, prompt_result,
+        )
+        # Keep the worker's record reference, but advance it to the current
+        # atomic result before subsequent lifecycle writes. The pre-POST copy
+        # lacks the local target's receipt and any concurrent completion.
+        for field in DispatchRecord.model_fields:
+            setattr(record, field, getattr(committed, field))
     elif card:
         raise HTTPException(
             status_code=500,
@@ -9543,6 +9567,15 @@ def _merge_dispatch_followup_operation(
                 status_code=409,
                 detail={"code": "idempotency_conflict", "recoverable": False},
             )
+        if existing:
+            if (existing.get("prompt_id") and source.get("prompt_id")
+                    and existing["prompt_id"] != source["prompt_id"]):
+                raise HTTPException(409, detail={"code": "followup_receipt_conflict"})
+            # A stale authority snapshot must never erase the target's durable
+            # identity or its admission protocol.
+            for field in ("prompt_id", "admission_protocol"):
+                if existing.get(field):
+                    source[field] = existing[field]
         if existing and existing.get("response"):
             existing_response = dict(existing.get("response") or {})
             source_response = dict(source.get("response") or {})
@@ -13368,6 +13401,85 @@ def _require_dispatch_access(request: Request, record: DispatchRecord) -> None:
         )
 
 
+async def _require_dispatch_prompt_protocol(request: Request, instance_id: str) -> None:
+    from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL
+
+    try:
+        capabilities = await _peer_agent_json(
+            request, instance_id, "GET", "prompt-capabilities", timeout=10.0,
+        )
+    except HTTPException as exc:
+        raise HTTPException(409, detail={
+            "code": "dispatch_prompt_protocol_unavailable", "recoverable": True,
+            "message": "Target prompt identity support is unavailable; no prompt was delivered. Upgrade the target and retry the same operation.",
+        }) from exc
+    if (not isinstance(capabilities, dict)
+            or PROMPT_IDENTITY_PROTOCOL not in capabilities.get("protocols", [])):
+        raise HTTPException(409, detail={
+            "code": "dispatch_prompt_protocol_unavailable", "recoverable": True,
+            "message": "Target does not support durable prompt identity; no prompt was delivered. Upgrade it before retrying.",
+        })
+
+
+async def reconcile_followup_acceptance(
+    request: Request, record: DispatchRecord, key: str | None,
+) -> dict | None:
+    """Recover only a receipt proved by the target's exact durable prompt ID."""
+    from pa.execution.followup import followup_receipt
+
+    operation = (record.followup_operations.get(key) if key
+                 else record.initial_prompt_operation) or {}
+    prompt_id = operation.get("prompt_id")
+    if not prompt_id or not record.session_id:
+        return None
+    try:
+        receipt = await _peer_agent_json(
+            request, record.target_instance_id, "GET",
+            f"sessions/{record.session_id}/prompts/{prompt_id}", timeout=10.0,
+        )
+    except Exception:
+        return None
+    if (not isinstance(receipt, dict) or receipt.get("accepted") is not True
+            or receipt.get("prompt_id") != prompt_id
+            or receipt.get("session_id") != record.session_id
+            or receipt.get("accepted_event") not in {"queue_enqueued", "user_message"}):
+        return None
+    # The action describes admission, whereas status may already be completed.
+    # Older targets cannot supply this field; let a same-key target POST recover
+    # its original receipt instead of manufacturing its queued/started flags.
+    if "accepted_action" not in receipt:
+        return None
+    response = followup_receipt(
+        record, prompt_id, receipt["accepted_event"], receipt["accepted_action"],
+        duplicate=True,
+    )
+    response["authority_instance_id"] = record.authority_instance_id
+    operation.update({"response": response, "state": "accepted_pending_release"
+                      if operation.get("goal_provenance") else "accepted"})
+    operation.pop("error", None)
+    ledger = _dispatch_store(request)
+    if key:
+        await _offload_request(
+            request, "dispatch.followup_reconcile", _merge_dispatch_followup_operation,
+            ledger, record, key,
+        )
+    else:
+        from pa.execution.followup import acknowledge_initial_prompt
+
+        await _offload_request(
+            request, "dispatch.initial_prompt_reconcile", acknowledge_initial_prompt,
+            ledger, record, response,
+        )
+    if key and operation.get("goal_provenance"):
+        await _offload_request(
+            request, "goal.dispatch_followup_release_accepted",
+            _release_goal_dispatch_followup, request.app.state.ctx, ledger, record,
+            idempotency_key=key, outcome="followup-accepted", applied=True,
+            final_state="accepted",
+        )
+    return response
+
+
 @router.post("/fleet/dispatch-jobs/{dispatch_id}/prompt")
 async def prompt_dispatch_session(
     request: Request, dispatch_id: str, body: DispatchFollowupBody
@@ -13429,6 +13541,14 @@ async def _prompt_dispatch_session_owned(
             )
         if prior.get("response"):
             return {**dict(prior.get("response") or {}), "duplicate": True}
+        if not prior.get("prompt_id"):
+            raise HTTPException(409, detail={
+                "code": "legacy_followup_identity_unknown", "recoverable": False,
+                "message": "Existing ambiguous operation has no validated prompt mapping; automatic replay is unsafe.",
+            })
+        recovered = await reconcile_followup_acceptance(request, record, key)
+        if recovered:
+            return recovered
         if prior.get("state") in {"failed", "cancelled", "interrupted"}:
             error = dict(prior.get("error") or {})
             raise HTTPException(
@@ -13441,6 +13561,14 @@ async def _prompt_dispatch_session_owned(
             )
 
     ledger = _dispatch_store(request)
+    from pa.execution.followup import bind_followup_prompt
+
+    await _require_dispatch_prompt_protocol(request, record.target_instance_id)
+    record = await _offload_request(
+        request, "dispatch.followup_bind", bind_followup_prompt,
+        ledger, record, key, fingerprint,
+    )
+    prompt_id = record.followup_operations[key]["prompt_id"]
     followup_provenance: GoalDispatchProvenance | None = None
     try:
         followup_provenance = await _offload_request(
@@ -13483,7 +13611,7 @@ async def _prompt_dispatch_session_owned(
             request,
             record.target_instance_id,
             "POST",
-            f"sessions/{record.session_id}/prompt",
+            f"sessions/{record.session_id}/dispatch-prompts",
             body={
                 "message": body.message,
                 "action": body.action,
@@ -13491,6 +13619,8 @@ async def _prompt_dispatch_session_owned(
                 "project_id": record.project_id,
                 "dispatch_id": record.dispatch_id,
                 "idempotency_key": key,
+                "dispatch_prompt_id": prompt_id,
+                "dispatch_prompt_protocol": record.followup_operations[key]["admission_protocol"],
                 "goal_provenance": (
                     followup_provenance.model_dump(mode="json")
                     if followup_provenance
@@ -13499,6 +13629,9 @@ async def _prompt_dispatch_session_owned(
             },
         )
     except Exception as exc:
+        recovered = await reconcile_followup_acceptance(request, record, key)
+        if recovered:
+            return recovered
         operation = record.followup_operations.setdefault(
             key,
             {"fingerprint": fingerprint},
@@ -13506,7 +13639,9 @@ async def _prompt_dispatch_session_owned(
         ambiguous_delivery = (
             not isinstance(exc, HTTPException) or exc.status_code >= 500
         )
+        definite_nonadmission = isinstance(exc, HTTPException) and exc.status_code in {404, 405}
         operation["state"] = (
+            "delivery_not_admitted" if definite_nonadmission else
             "delivery_ambiguous"
             if ambiguous_delivery
             else "failed_pending_release"
@@ -13526,7 +13661,7 @@ async def _prompt_dispatch_session_owned(
                 else str(detail)
             )[:1000],
             "status_code": exc.status_code if isinstance(exc, HTTPException) else 502,
-            "recoverable": ambiguous_delivery,
+            "recoverable": ambiguous_delivery or definite_nonadmission,
         }
         await _offload_request(
             request,
@@ -13536,7 +13671,7 @@ async def _prompt_dispatch_session_owned(
             record,
             key,
         )
-        if operation.get("goal_provenance") and not ambiguous_delivery:
+        if operation.get("goal_provenance") and not ambiguous_delivery and not definite_nonadmission:
             await _offload_request(
                 request,
                 "goal.dispatch_followup_release_failed",
@@ -13550,7 +13685,9 @@ async def _prompt_dispatch_session_owned(
                 final_state="failed",
             )
         raise
-    if not isinstance(result, dict) or not result.get("accepted"):
+    if (not isinstance(result, dict) or not result.get("accepted")
+            or result.get("prompt_id") != prompt_id
+            or result.get("session_id") != record.session_id):
         error = HTTPException(
             status_code=502,
             detail={
@@ -13562,9 +13699,7 @@ async def _prompt_dispatch_session_owned(
         operation = record.followup_operations.setdefault(
             key, {"fingerprint": fingerprint}
         )
-        operation["state"] = (
-            "failed_pending_release" if operation.get("goal_provenance") else "failed"
-        )
+        operation["state"] = "delivery_ambiguous"
         operation["error"] = {**error.detail, "status_code": error.status_code}
         await _offload_request(
             request,
@@ -13574,19 +13709,6 @@ async def _prompt_dispatch_session_owned(
             record,
             key,
         )
-        if operation.get("goal_provenance"):
-            await _offload_request(
-                request,
-                "goal.dispatch_followup_release_failed",
-                _release_goal_dispatch_followup,
-                request.app.state.ctx,
-                ledger,
-                record,
-                idempotency_key=key,
-                outcome="followup-not-acknowledged",
-                applied=False,
-                final_state="failed",
-            )
         raise error
     public = {
         key: result.get(key)

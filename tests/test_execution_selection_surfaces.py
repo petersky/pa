@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from pa.domain.models import CardCreate, CardUpdate
 from pa.domain.projection import CardProjection
+from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL, dispatch_prompt_identity
 from pa.execution.selection import ExecutionPreferences
 from tests.test_execution_selection import candidate, pref, resolve
 
@@ -183,9 +184,11 @@ def test_durable_remote_dispatch_requires_exact_receipt_and_normalized_confirmat
             "accepted_event": "queue_enqueued",
             "session_id": "peer-session",
             "dispatch_id": record.dispatch_id,
-            "prompt_id": "prompt-1",
+            "prompt_id": dispatch_prompt_identity(
+                record.model_copy(update={"session_id": "peer-session"}), None,
+            ),
         }
-        peer = AsyncMock(side_effect=[snapshot, ack])
+        peer = AsyncMock(side_effect=[snapshot, {"protocols": [PROMPT_IDENTITY_PROTOCOL]}, ack])
         with (
             patch(
                 "pa.modules.fleet._peer_dispatch_json",
@@ -196,7 +199,7 @@ def test_durable_remote_dispatch_requires_exact_receipt_and_normalized_confirmat
             if peer_state == "confirmed":
                 await _process_remote_dispatch(app, record)
                 assert record.state == "running"
-                assert peer.await_count == 2
+                assert peer.await_count == 3
             else:
                 with pytest.raises(HTTPException) as error:
                     await _process_remote_dispatch(app, record)

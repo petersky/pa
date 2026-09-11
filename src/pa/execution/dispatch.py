@@ -224,6 +224,7 @@ class DispatchRecord(BaseModel):
     control_operations: dict[str, str] = Field(default_factory=dict)
     terminal_repair_reservation: dict[str, Any] | None = None
     followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    initial_prompt_operation: dict[str, Any] = Field(default_factory=dict)
     prompt_acknowledged_at: datetime | None = None
     prompt_ack: dict[str, Any] | None = None
     knowledge_recorded_at: datetime | None = None
@@ -3890,34 +3891,27 @@ class DispatchStore:
         event_seq: int | None,
     ) -> DispatchRecord:
         """Record follow-up activity without mutating dispatch completion."""
-        if any(
-            item.get("idempotency_key") == idempotency_key
-            for item in record.followup_turns
-        ):
-            return record
-        now = datetime.now(UTC)
-        record.followup_turns.append(
-            {
-                "idempotency_key": idempotency_key,
-                "prompt_id": prompt_id,
-                "event_id": event_id,
-                "event_seq": event_seq,
-                "state": "accepted",
-                "accepted_at": now.isoformat(),
-                "session_id": record.session_id,
-            }
-        )
-        record.followup_turns = record.followup_turns[-100:]
-        return self.transition(
-            record,
-            record.state,
-            "Follow-up turn durably accepted; dispatch completion remains terminal.",
-            detail={
-                "followup": True,
-                "prompt_id": prompt_id,
-                "dispatch_state_retained": record.state,
-            },
-        )
+        def mutate(current: DispatchRecord) -> bool:
+            if any(item.get("idempotency_key") == idempotency_key
+                   for item in current.followup_turns):
+                return False
+            current.followup_turns.append({
+                "idempotency_key": idempotency_key, "prompt_id": prompt_id,
+                "event_id": event_id, "event_seq": event_seq, "state": "accepted",
+                "accepted_at": datetime.now(UTC).isoformat(),
+                "session_id": current.session_id,
+            })
+            current.followup_turns = current.followup_turns[-100:]
+            current.events.append(DispatchEvent(
+                seq=current.events[-1].seq + 1 if current.events else 1,
+                state=current.state,
+                message="Follow-up turn durably accepted; dispatch completion remains terminal.",
+                detail={"followup": True, "prompt_id": prompt_id,
+                        "dispatch_state_retained": current.state},
+            ))
+            return True
+
+        return self.mutate_current(record.dispatch_id, mutate=mutate)
 
     def fail(
         self,

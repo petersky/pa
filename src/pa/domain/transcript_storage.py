@@ -306,58 +306,54 @@ class TranscriptStorage:
         with self._conn() as conn: row = conn.execute("SELECT COALESCE(MAX(seq),0) FROM transcript_events WHERE session_id=?", (session_id,)).fetchone()
         return int(row[0]) + 1
 
+    def _find_prompt_event(
+        self, session_id: str, prompt_id: str, types: tuple[str, ...],
+        *, newest: bool, fields: tuple[str, ...],
+    ) -> TranscriptEvent | None:
+        """Search exact identity through bounded pages, without a history cutoff.
+
+        Legacy/cold payloads do not expose prompt IDs in the hot index. Page by
+        sequence until a match or exhaustion, rather than treating a recent
+        window's absence as proof that a prompt was never accepted.
+        """
+        cursor = None
+        order, comparison = ("DESC", "<") if newest else ("ASC", ">")
+        marks = ",".join("?" for _ in types)
+        while True:
+            params = [session_id, *types]
+            after = ""
+            if cursor is not None:
+                after = f" AND seq {comparison} ?"
+                params.append(cursor)
+            with self._conn() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM transcript_events WHERE session_id=? "
+                    f"AND event_type IN ({marks}){after} ORDER BY seq {order} LIMIT 256",
+                    params,
+                ).fetchall()
+            for row in rows:
+                event = self._event(row)
+                if any(event.payload.get(field) == prompt_id for field in fields):
+                    return event
+            if len(rows) < 256:
+                return None
+            cursor = rows[-1]["seq"]
+
     def find_prompt(self, session_id: str, prompt_id: str, *, queued_only: bool = False) -> TranscriptEvent | None:
         types = ("queue_enqueued",) if queued_only else ("queue_enqueued", "user_message")
-        # Payloads may be cold, so keep this bounded and compare canonical data.
-        with self._conn() as conn:
-            marks = ",".join("?" for _ in types)
-            rows = conn.execute(f"SELECT * FROM transcript_events WHERE session_id=? AND event_type IN ({marks}) ORDER BY seq DESC LIMIT 1000", [session_id, *types]).fetchall()
-        for row in rows:
-            event = self._event(row)
-            if event.payload.get("id") == prompt_id:
-                return event
-        return None
+        # Preserve the original acceptance even after dequeue/execution.
+        return self._find_prompt_event(session_id, prompt_id, types,
+                                       newest=False, fields=("id",))
 
     def find_prompt_completion(self, session_id: str, prompt_id: str) -> TranscriptEvent | None:
-        """Read bounded completion evidence before hydrating a turn's messages."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM transcript_events WHERE session_id=? "
-                "AND event_type='turn_completed' ORDER BY seq DESC LIMIT 1000",
-                (session_id,),
-            ).fetchall()
-        for row in rows:
-            event = self._event(row)
-            if event.payload.get("queued_prompt_id") == prompt_id:
-                return event
-        return None
+        return self._find_prompt_event(session_id, prompt_id, ("turn_completed",),
+                                       newest=True, fields=("queued_prompt_id",))
 
-    def find_prompt_lifecycle(
-        self, session_id: str, prompt_id: str
-    ) -> TranscriptEvent | None:
-        """Return the newest bounded lifecycle evidence for one prompt id."""
-        types = (
-            "queue_enqueued",
-            "queue_dequeued",
-            "user_message",
-            "prompt_blocked",
-            "turn_completed",
-            "error",
-            "connection_lost",
-        )
-        with self._conn() as conn:
-            marks = ",".join("?" for _ in types)
-            rows = conn.execute(
-                f"SELECT * FROM transcript_events WHERE session_id=? "
-                f"AND event_type IN ({marks}) ORDER BY seq DESC LIMIT 1000",
-                [session_id, *types],
-            ).fetchall()
-        for row in rows:
-            event = self._event(row)
-            payload = event.payload or {}
-            if payload.get("id") == prompt_id or payload.get("queued_prompt_id") == prompt_id:
-                return event
-        return None
+    def find_prompt_lifecycle(self, session_id: str, prompt_id: str) -> TranscriptEvent | None:
+        types = ("queue_enqueued", "queue_dequeued", "user_message", "prompt_blocked",
+                 "turn_completed", "error", "connection_lost")
+        return self._find_prompt_event(session_id, prompt_id, types, newest=True,
+                                       fields=("id", "queued_prompt_id"))
 
     def prune(self, session_ids: list[str], *, keep_audit: bool = True) -> int:
         if not session_ids: return 0

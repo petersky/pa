@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from pa.domain.projection import CardProjection
+from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL
 from pa.execution.dispatch import (
     DispatchIdempotencyConflict,
     DispatchRecord,
@@ -1421,7 +1422,14 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 patch("pa.modules.fleet.require_user"),
                 patch(
                     "pa.modules.fleet._peer_agent_json",
-                    AsyncMock(return_value=acknowledged),
+                    AsyncMock(side_effect=lambda *args, **kwargs: {
+                        "protocols": [PROMPT_IDENTITY_PROTOCOL],
+                    } if args[3] == "prompt-capabilities" else {
+                        **acknowledged,
+                        "prompt_id": ledger.get(record.dispatch_id).followup_operations[
+                            kwargs["body"]["idempotency_key"]
+                        ]["prompt_id"],
+                    }),
                 ) as peer,
             ):
                 first = asyncio.run(
@@ -1446,7 +1454,7 @@ class GoalDispatchProvenanceTests(unittest.TestCase):
                 )
             self.assertTrue(first["accepted"])
             self.assertTrue(replay["duplicate"])
-            self.assertEqual(peer.await_count, 1)
+            self.assertEqual(peer.await_count, 2)
             sent = peer.await_args.kwargs["body"]["goal_provenance"]
             self.assertNotEqual(
                 sent["action_reservation_id"],

@@ -1404,12 +1404,14 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 )
                 from pa.modules.fleet import _process_remote_dispatch
+                from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL, dispatch_prompt_identity
 
                 app = MagicMock()
                 app.state.ctx = ctx
                 record = ctx.services["dispatch_store"].get(result["dispatch_id"])
                 peer_agent.side_effect = [
                     {"session": {"id": "remote-session", "title": card.title}},
+                    {"protocols": [PROMPT_IDENTITY_PROTOCOL]},
                     {
                         "started": True,
                         "queued": False,
@@ -1417,6 +1419,9 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
                         "accepted_event": "queue_enqueued",
                         "session_id": "remote-session",
                         "dispatch_id": result["dispatch_id"],
+                        "prompt_id": dispatch_prompt_identity(
+                            record.model_copy(update={"session_id": "remote-session"}), None,
+                        ),
                     },
                 ]
                 await _process_remote_dispatch(app, record)
