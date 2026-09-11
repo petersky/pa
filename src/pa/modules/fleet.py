@@ -7284,9 +7284,17 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
                     "session_id": session_id,
                 },
             )
-        record.prompt_acknowledged_at = datetime.now(UTC)
-        record.prompt_ack = prompt_result
-        await _offload_ctx(ctx, "dispatch.record_write", ledger.put, record)
+        from pa.execution.followup import acknowledge_initial_prompt
+
+        committed = await _offload_ctx(
+            ctx, "dispatch.initial_prompt_ack", acknowledge_initial_prompt,
+            ledger, record, prompt_result,
+        )
+        # Keep the worker's record reference, but advance it to the current
+        # atomic result before subsequent lifecycle writes. The pre-POST copy
+        # lacks the local target's receipt and any concurrent completion.
+        for field in DispatchRecord.model_fields:
+            setattr(record, field, getattr(committed, field))
     elif card:
         raise HTTPException(
             status_code=500,
@@ -9564,7 +9572,7 @@ def _merge_dispatch_followup_operation(
                     and existing["prompt_id"] != source["prompt_id"]):
                 raise HTTPException(409, detail={"code": "followup_receipt_conflict"})
             # A stale authority snapshot must never erase the target's durable
-            # identity or its one-shot admission claim.
+            # identity or its admission protocol.
             for field in ("prompt_id", "admission_protocol"):
                 if existing.get(field):
                     source[field] = existing[field]
@@ -13456,14 +13464,11 @@ async def reconcile_followup_acceptance(
             ledger, record, key,
         )
     else:
-        def acknowledge(current):
-            if current.initial_prompt_operation.get("prompt_id") != prompt_id:
-                raise HTTPException(409, detail={"code": "dispatch_prompt_identity_mismatch"})
-            current.initial_prompt_operation.update(operation)
-            current.prompt_ack = response
+        from pa.execution.followup import acknowledge_initial_prompt
+
         await _offload_request(
-            request, "dispatch.initial_prompt_reconcile", ledger.mutate_current,
-            record.dispatch_id, mutate=acknowledge,
+            request, "dispatch.initial_prompt_reconcile", acknowledge_initial_prompt,
+            ledger, record, response,
         )
     if key and operation.get("goal_provenance"):
         await _offload_request(

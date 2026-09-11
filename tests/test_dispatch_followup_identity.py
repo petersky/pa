@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,7 +18,7 @@ from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.followup import (PROMPT_IDENTITY_PROTOCOL, bind_followup_prompt, dispatch_prompt_identity)
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.modules.agent_chat import (PromptBody, dispatch_prompt_capabilities, get_prompt_acceptance_status, session_prompt)
-from pa.modules.fleet import DispatchFollowupBody, prompt_dispatch_session
+from pa.modules.fleet import DispatchFollowupBody, _process_remote_dispatch, prompt_dispatch_session
 from pa.modules.items import operation_outcome_endpoint
 
 MESSAGE = "Please review how Bearer credentials are handled."
@@ -628,3 +629,61 @@ async def test_post_acceptance_checkpoint_failure_recovers_same_prompt_once(
     assert replay["prompt_id"] == again["prompt_id"] == prompt_id
     assert not env.runtime._queue
     assert env.store.get_prompt_acceptance(env.record.session_id, prompt_id).id == accepted.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lost_ack", [False, True])
+@pytest.mark.parametrize("completed_before_ack", [False, True])
+async def test_initial_authority_to_local_target_preserves_receipt_on_retry(
+    env, lost_ack, completed_before_ack,
+):
+    record = env.ledger.get(env.record.dispatch_id)
+    record.state = "queued"
+    record.request_payload = {"message": MESSAGE}
+    env.ledger.put(record)
+    env.request.app.state.ctx.store = env.store
+    env.request.app.state.ctx.services["fleet_registry"] = MagicMock()
+    bodies = []
+    responses = []
+    target_acks = []
+
+    async def peer(_request, _instance, method, path, **kwargs):
+        if path == "sessions":
+            return {"session": {"id": record.session_id}}
+        if path == "prompt-capabilities":
+            return dispatch_prompt_capabilities()
+        if method == "POST":
+            assert path == f"sessions/{record.session_id}/dispatch-prompts"
+            body = PromptBody(**kwargs["body"])
+            bodies.append(body)
+            response = await session_prompt(env.request, record.session_id, body)
+            responses.append(response)
+            target_acks.append(env.ledger.get(record.dispatch_id).prompt_ack)
+            if completed_before_ack and len(responses) == 1:
+                def complete(current):
+                    current.state = "completed"
+                    current.acknowledged_at = datetime.now(UTC)
+                env.ledger.mutate_current(record.dispatch_id, mutate=complete)
+            if lost_ack and len(responses) == 1:
+                raise TimeoutError("local target accepted before transport loss")
+            return response
+        return await get_prompt_acceptance_status(env.request, record.session_id, path.rsplit("/", 1)[1])
+
+    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer)), patch(
+        "pa.modules.fleet._peer_dispatch_json", AsyncMock(return_value={"resolvable": True}),
+    ):
+        await _process_remote_dispatch(env.request.app, record)
+        committed = env.ledger.get(record.dispatch_id)
+        assert committed.initial_prompt_operation["response"]["accepted_event"] == "queue_enqueued"
+        assert committed.prompt_ack["event_id"] == target_acks[0]["event_id"]
+        if completed_before_ack:
+            assert committed.state == "completed" and committed.acknowledged_at
+        with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock()) as admit:
+            replay = await session_prompt(env.request, record.session_id, bodies[0])
+            # A complete authority retry must also return the original receipt.
+            await _process_remote_dispatch(env.request.app, committed)
+            admit.assert_not_awaited()
+    assert len(env.runtime._queue) == 1
+    assert replay["duplicate"] and replay["accepted_event"] == "queue_enqueued"
+    assert {r["prompt_id"] for r in [replay, *responses]} == {bodies[0].dispatch_prompt_id}
+    assert env.ledger.get(record.dispatch_id).initial_prompt_operation["response"]["queued"]

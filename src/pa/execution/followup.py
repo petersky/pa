@@ -1,6 +1,7 @@
 """Identity and receipt contract for dispatch prompt admission."""
 
 import json
+from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
@@ -89,3 +90,34 @@ def followup_receipt(
         "dispatch_id": record.dispatch_id, "session_id": record.session_id,
         "duplicate": duplicate,
     }
+
+
+def acknowledge_initial_prompt(
+    ledger: DispatchStore, record: DispatchRecord, response: dict,
+) -> DispatchRecord:
+    """Publish authority acceptance without erasing a local target's receipt."""
+    receipt_fields = {
+        "accepted", "accepted_event", "dispatch_id", "prompt_id", "queued",
+        "session_id", "started", "stop_reason",
+    }
+    receipt = {key: value for key, value in response.items()
+               if key in receipt_fields or key in {"duplicate", "authority_instance_id"}}
+
+    def acknowledge(current: DispatchRecord) -> None:
+        operation = current.initial_prompt_operation
+        if (current.session_id != record.session_id
+                or operation.get("prompt_id") != receipt.get("prompt_id")
+                or operation.get("fingerprint") != record.initial_prompt_operation.get("fingerprint")):
+            raise HTTPException(409, detail={"code": "dispatch_prompt_identity_mismatch"})
+        original = operation.get("response") or {}
+        if original and any(original.get(key) != receipt[key]
+                            for key in receipt_fields if key in receipt):
+            raise HTTPException(409, detail={"code": "initial_prompt_receipt_conflict"})
+        operation.update({"response": original or receipt, "state": "accepted"})
+        operation.pop("error", None)
+        # The local target may already have the exact event ID, sequence and
+        # acceptance timestamp. An authority acknowledgement must retain them.
+        current.prompt_ack = {**receipt, **(current.prompt_ack or {})}
+        current.prompt_acknowledged_at = current.prompt_acknowledged_at or datetime.now(UTC)
+
+    return ledger.mutate_current(record.dispatch_id, mutate=acknowledge)
