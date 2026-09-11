@@ -200,6 +200,30 @@ class InteractionRequest(BaseModel):
         return self
 
 
+class ContinuationTransferRequest(BaseModel):
+    """CAS request for one explicit MCP continuation destination repair."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=300)
+    expected_version: int = Field(ge=1)
+    expected_session_id: str = Field(min_length=1, max_length=200)
+    expected_dispatch_id: str = Field(min_length=1, max_length=200)
+    successor_session_id: str = Field(min_length=1, max_length=200)
+    successor_dispatch_id: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class ContinuationTransfer(ContinuationTransferRequest):
+    actor_principal: str
+    authority_instance_id: str
+    transferred_at: datetime
+
+
+class NotificationVersionConflict(RuntimeError):
+    """The authority projection changed before a compared write."""
+
+
 class Notification(BaseModel):
     """One bounded, sync-safe notification projection.
 
@@ -237,6 +261,7 @@ class Notification(BaseModel):
     capability: str | None = Field(default=None, max_length=300)
     actions: list[NotificationAction] = Field(default_factory=list, max_length=20)
     interaction: InteractionRequest | None = None
+    continuation_transfer: ContinuationTransfer | None = None
     deduplication_key: str | None = Field(default=None, max_length=500)
     coalesced_count: int = Field(default=1, ge=1)
     idempotency_keys: list[str] = Field(default_factory=list, max_length=128)

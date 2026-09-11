@@ -57,7 +57,7 @@ from pa.domain.models import (
     lane_from_legacy_status,
 )
 from pa.domain.transcript_storage import TranscriptStorage
-from pa.domain.notifications import Notification
+from pa.domain.notifications import Notification, NotificationVersionConflict
 from pa.fleet.policy import (
     FleetPolicyAuditEvent,
     GroupLifecycle,
@@ -1282,6 +1282,8 @@ class CardProjection:
             payload = json.dumps(notification.model_dump(mode="json"))
             action = "created" if not prior else "updated"
             if prior:
+                if prior.get("continuation_transfer") != current.get("continuation_transfer"):
+                    action = "continuation.transferred"
                 if not prior.get("read_at") and notification.read_at:
                     action = "read"
                 if not prior.get("acknowledged_at") and notification.acknowledged_at:
@@ -3285,7 +3287,12 @@ class CardProjection:
         *,
         principal_id: str,
         instance_id: str,
+        expected_version: int | None = None,
     ) -> Notification:
+        if expected_version is not None:
+            current = self.get_notification(notification.id, realm_id=notification.realm_id)
+            if (current.version if current else 0) != expected_version:
+                raise NotificationVersionConflict("Notification changed before commit")
         if (
             notification.interaction
             and notification.interaction.state.value == "answered"
