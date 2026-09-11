@@ -105,6 +105,17 @@ transfer chains, and ACP native permission/elicitation ownership are unsupported
 Only MCP operator-input requests with the expected prompt-continuation protocol
 are eligible; provider delivery handlers are never moved.
 
+Fresh workspace admission records `dispatch_id`, `realm_id`, and `principal_id`
+alongside card/project/origin and lease facts in the immutable execution binding.
+The existing `workspace_binding_initialized` compare-and-set transition audits
+the complete binding before provider startup. Subsequent admission rejects a
+conflicting dispatch, realm, or principal instead of overwriting that provenance.
+Existing incomplete bindings (including those produced by PA 1.4.5) are not
+backfilled by workspace recovery or this transfer API. Reprovisioning such a
+session does not make it transfer-eligible. Use a freshly admitted successor after
+activation, or a separately supported audited CAS repair that independently
+verifies all durable provenance; do not copy current session fields into history.
+
 An outstanding question remains outstanding. A previously recorded **failed**
 response stays unchanged and is not sent by transfer: use `respond_notification`
 with `retry=true` and a fresh stable retry key afterward. Already delivered,

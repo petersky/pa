@@ -3520,12 +3520,29 @@ class AgentSessionManager:
         requested_cwd: str | None,
         provider_id: str,
         mode_id: str | None = None,
+        fresh_admission: bool = False,
     ) -> dict[str, str]:
         """Provision or recover the durable workspace before spawning a provider."""
         prior_config = dict(session.config_json or {})
         prior_context = dict(prior_config.get("execution_context") or {})
         binding = dict(session.execution_binding or {})
         persisted_binding = dict(binding)
+        dispatch_provenance = {
+            "dispatch_id": session.dispatch_id,
+            "realm_id": session.realm_id,
+            "principal_id": session.principal_id,
+        }
+        # Reject conflicts before provisioning or saving mutable session state.
+        # Missing historical fields are not evidence of their current values.
+        conflicts = [
+            key for key, value in dispatch_provenance.items()
+            if key in binding and binding[key] != value
+        ]
+        if conflicts:
+            raise WorkspaceBindingMismatch(
+                "Original execution binding differs in: " + ", ".join(conflicts)
+                + ". " + WorkspaceBindingMismatch.remedy
+            )
         if not binding:
             # Legacy repair deliberately prefers the durable lease over mutable
             # card associations.  This preserves both records and recovers the
@@ -3575,11 +3592,14 @@ class AgentSessionManager:
                     "origin_instance_id": session.origin_instance_id,
                 }
             else:
+                # Fresh admission persists these facts with the lease in the
+                # audited initialization CAS below, before provider startup.
                 binding = {
                     "version": 1,
                     "execution_card_id": session.card_id,
                     "execution_project_id": session.project_id,
                     "origin_instance_id": session.origin_instance_id,
+                    **(dispatch_provenance if fresh_admission else {}),
                 }
             if leases or legacy_context_repos:
                 await self._offload(
@@ -5855,6 +5875,7 @@ class AgentSessionManager:
                 requested_cwd=cwd or (existing.cwd if existing else None),
                 provider_id=provider_id,
                 mode_id=requested_mode,
+                fresh_admission=existing is None,
             )
         effective_agent_env = dict(agent_env or {})
         effective_agent_env.update(workspace_env)
