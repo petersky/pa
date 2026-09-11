@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import time
 from contextlib import suppress
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -14,6 +16,7 @@ from pa.auth.middleware import get_principal_id, require_user
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.domain.notifications import (
+    ContinuationTransferRequest,
     InteractionResponse,
     InteractionState,
     Notification,
@@ -71,6 +74,10 @@ def _route_metadata(request: Request, item: Notification) -> dict[str, Any]:
     settings = request.app.state.ctx.settings
     local = not item.owner_instance_id or item.owner_instance_id == settings.instance_id
     destination = item.destination_url or item.source_url
+    if item.continuation_transfer:
+        destination = "/agent?" + urlencode(
+            {"session": item.continuation_transfer.successor_session_id}
+        )
     if not destination and item.card_id:
         destination = f"/work?card={item.card_id}"
     elif not destination and item.session_id:
@@ -205,6 +212,8 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
             "prompt": "Submitting queues a continuation in this exact agent session.",
             "none": "Submitting records this decision; it does not resume an agent.",
         }.get(interaction.continuation_mode)
+        if item.continuation_transfer:
+            next_effect = "Submitting queues the correlated response in the explicitly authorized successor session."
         if state == InteractionState.DELIVERED:
             next_effect = "Delivery is acknowledged; inspect continuation progress to see what the agent did."
         if state == InteractionState.FAILED:
@@ -250,8 +259,12 @@ def _public_notice(request: Request, item: Notification) -> dict[str, Any]:
         prompt_id = interaction.continuation_prompt_id
         if interaction.responded_at and interaction.continuation_mode != "none":
             continuation = "Not yet confirmed"
-        if prompt_id and item.session_id and item.owner_instance_id in {None, request.app.state.ctx.settings.instance_id}:
-            event = request.app.state.ctx.store.get_prompt_lifecycle(item.session_id, prompt_id)
+        destination_session_id = (
+            item.continuation_transfer.successor_session_id
+            if item.continuation_transfer else item.session_id
+        )
+        if prompt_id and destination_session_id and item.owner_instance_id in {None, request.app.state.ctx.settings.instance_id}:
+            event = request.app.state.ctx.store.get_prompt_lifecycle(destination_session_id, prompt_id)
             if event:
                 continuation = {
                     "queue_enqueued": "Queued",
@@ -445,6 +458,47 @@ async def _proxy_response(
         ) from exc
 
 
+@router.post("/notifications/{notification_id}/transfer-continuation")
+async def transfer_notification_continuation(
+    request: Request, notification_id: str, body: ContinuationTransferRequest
+) -> dict[str, Any]:
+    # Shared fleet credentials prove an instance, not the operator in an
+    # acting-principal header. Reject them even when user login is disabled.
+    # UI sessions and the user bearer used by the local MCP bridge still use
+    # the normal user identity and realm authorization below.
+    if getattr(request.state, "instance_authenticated", False):
+        raise HTTPException(status_code=403, detail={
+            "code": "operator_identity_required",
+            "message": "Continuation transfer requires operator credentials, not a shared fleet credential",
+        })
+    scheme, _, bearer = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() == "bearer":
+        user = getattr(request.state, "user", None)
+        # Open auth can supply a default user, and a cookie can authenticate
+        # after an invalid bearer. Neither validates an explicitly supplied
+        # bearer for this operator-only mutation.
+        if (
+            not getattr(request.state, "user_authenticated", False)
+            or user is None
+            or not bearer
+            or not hmac.compare_digest(bearer.encode(), user.cli_token.encode())
+        ):
+            raise HTTPException(status_code=401, detail={
+                "code": "invalid_authentication",
+                "message": "The supplied operator bearer credential is invalid",
+            })
+    item = _authorized_notice(request, notification_id)
+    try:
+        result = await _service(request).transfer_continuation(
+            item, body, principal_id=_principal(request), realms=_realms(request)
+        )
+    except NotificationConflict as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    return _public_notice(request, result)
+
+
 @router.post("/notifications/{notification_id}/respond")
 async def respond_notification(
     request: Request, notification_id: str, body: InteractionResponse
@@ -595,6 +649,29 @@ class NotificationsModule(Module):
                 "POST",
                 f"/api/notifications/{notification_id}/resolve",
                 json={"idempotency_key": idempotency_key},
+            )
+
+        @mcp.tool()
+        def transfer_notification_continuation(
+            notification_id: str, idempotency_key: str, expected_version: int,
+            expected_session_id: str, expected_dispatch_id: str,
+            successor_session_id: str, successor_dispatch_id: str, reason: str,
+        ) -> dict:
+            """Audit a one-hop MCP operator-input continuation repair; never answer it.
+
+            Call on the owner with exact current version/origin and an authorized
+            recoverable successor on the same card. Native ACP requests cannot move.
+            A previously recorded response still requires explicit delivery retry.
+            """
+            return request_local_pa(
+                ctx.settings, "POST",
+                f"/api/notifications/{notification_id}/transfer-continuation",
+                json={
+                    "idempotency_key": idempotency_key, "expected_version": expected_version,
+                    "expected_session_id": expected_session_id, "expected_dispatch_id": expected_dispatch_id,
+                    "successor_session_id": successor_session_id, "successor_dispatch_id": successor_dispatch_id,
+                    "reason": reason,
+                },
             )
 
         @mcp.tool()

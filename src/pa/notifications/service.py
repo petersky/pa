@@ -16,13 +16,18 @@ from jsonschema import validate as validate_json_schema
 
 from pa.core.context import AppContext
 from pa.domain.notifications import (
+    ContinuationTransfer,
+    ContinuationTransferRequest,
     DeliveryState,
+    InteractionKind,
     InteractionResponse,
     InteractionState,
     Notification,
     NotificationCreate,
     NotificationVisibility,
+    NotificationVersionConflict,
 )
+from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
 from pa.execution.progress import sanitize_text
 
 DeliveryHandler = Callable[[InteractionResponse], Awaitable[None] | None]
@@ -67,14 +72,42 @@ class NotificationService:
         self._delivery_handlers.pop(notification_id, None)
 
     async def _save_async(
-        self, notification: Notification, *, principal_id: str
+        self, notification: Notification, *, principal_id: str,
+        previous: Notification | None = None,
     ) -> None:
-        await asyncio.to_thread(
-            self.store.save_notification,
-            notification,
-            principal_id=principal_id,
-            instance_id=self.ctx.settings.instance_id,
-        )
+        # Response stages may overlap read/ack/coalescing writes. Merge only
+        # those metadata fields: never rebase a changed answer, route, contract,
+        # expiry, resolution, or delivery state. Transfers retain strict CAS.
+        metadata = {"read_at", "acknowledged_at", "coalesced_count"}
+        excluded = metadata | {"version", "updated_at", "idempotency_keys"}
+        for _ in range(8):
+            try:
+                await asyncio.to_thread(
+                    self.store.save_notification,
+                    notification,
+                    principal_id=principal_id,
+                    instance_id=self.ctx.settings.instance_id,
+                    expected_version=notification.version - 1,
+                )
+                return
+            except NotificationVersionConflict as exc:
+                latest = await asyncio.to_thread(
+                    self.store.get_notification, notification.id,
+                    realm_id=notification.realm_id,
+                )
+                if (
+                    previous is None or latest is None
+                    or latest.model_dump(exclude=excluded) != previous.model_dump(exclude=excluded)
+                ):
+                    raise NotificationConflict("notification_version_conflict", str(exc)) from exc
+                new_keys = [key for key in notification.idempotency_keys if key not in previous.idempotency_keys]
+                for field in metadata:
+                    setattr(notification, field, getattr(latest, field))
+                notification.idempotency_keys = list(dict.fromkeys([*latest.idempotency_keys, *new_keys]))[-128:]
+                notification.version = latest.version + 1
+                notification.updated_at = datetime.now(UTC)
+                previous = latest
+        raise NotificationConflict("notification_version_conflict", "Notification is changing; retry the recorded response delivery")
 
     async def _deliver_expiry(self, notification: Notification) -> None:
         handler = self._delivery_handlers.get(notification.id)
@@ -127,18 +160,29 @@ class NotificationService:
     ) -> Notification:
         instance_id = instance_id or self.ctx.settings.instance_id
         if data.deduplication_key:
-            existing = self.store.find_notification_by_dedup(
-                data.realm_id, data.deduplication_key
-            )
-            if existing:
-                if existing.resolved_at is None:
-                    existing.coalesced_count += 1
-                    existing.updated_at = datetime.now(UTC)
-                    existing.version += 1
+            for _ in range(8):
+                existing = self.store.find_notification_by_dedup(
+                    data.realm_id, data.deduplication_key
+                )
+                if existing is None:
+                    break
+                if existing.resolved_at is not None:
+                    return existing
+                existing.coalesced_count += 1
+                existing.updated_at = datetime.now(UTC)
+                existing.version += 1
+                try:
                     self.store.save_notification(
-                        existing, principal_id=principal_id, instance_id=instance_id
+                        existing, principal_id=principal_id, instance_id=instance_id,
+                        expected_version=existing.version - 1,
                     )
+                except NotificationVersionConflict:
+                    continue
                 return existing
+            else:
+                raise NotificationConflict(
+                    "notification_version_conflict", "Notification is changing; retry coalescing"
+                )
         payload = data.model_dump(exclude={"id"})
         payload.update(
             id=(
@@ -175,7 +219,7 @@ class NotificationService:
         )
         notification = Notification(**payload)
         self.store.save_notification(
-            notification, principal_id=principal_id, instance_id=instance_id
+            notification, principal_id=principal_id, instance_id=instance_id, expected_version=0
         )
         self._publish(notification)
         return notification
@@ -235,31 +279,37 @@ class NotificationService:
     ) -> Notification:
         lock = self._mutation_locks.setdefault(notification.id, threading.RLock())
         with lock:
-            current = self.store.get_notification(
-                notification.id, realm_id=notification.realm_id
-            )
-            if not current:
-                raise KeyError(notification.id)
-            if idempotency_key in current.idempotency_keys:
+            for _ in range(8):
+                current = self.store.get_notification(
+                    notification.id, realm_id=notification.realm_id
+                )
+                if not current:
+                    raise KeyError(notification.id)
+                if idempotency_key in current.idempotency_keys:
+                    return current
+                now = datetime.now(UTC)
+                before = current.model_dump(mode="python")
+                mutation(current, now)
+                if current.model_dump(mode="python") == before:
+                    return current
+                current.idempotency_keys = [
+                    *current.idempotency_keys[-126:],
+                    idempotency_key,
+                ]
+                current.version += 1
+                current.updated_at = now
+                try:
+                    self.store.save_notification(
+                        current,
+                        principal_id=principal_id,
+                        instance_id=self.ctx.settings.instance_id,
+                        expected_version=current.version - 1,
+                    )
+                except NotificationVersionConflict:
+                    continue
+                self._publish(current)
                 return current
-            now = datetime.now(UTC)
-            before = current.model_dump(mode="python")
-            mutation(current, now)
-            if current.model_dump(mode="python") == before:
-                return current
-            current.idempotency_keys = [
-                *current.idempotency_keys[-126:],
-                idempotency_key,
-            ]
-            current.version += 1
-            current.updated_at = now
-            self.store.save_notification(
-                current,
-                principal_id=principal_id,
-                instance_id=self.ctx.settings.instance_id,
-            )
-            self._publish(current)
-            return current
+        raise NotificationConflict("notification_version_conflict", "Notification is changing; retry mutation")
 
     def mark_read(
         self, notification: Notification, *, principal_id: str, idempotency_key: str
@@ -494,6 +544,169 @@ class NotificationService:
             return InteractionResponse(idempotency_key=key, fields=stored)
         return InteractionResponse(idempotency_key=key, value=stored)
 
+    def _validate_continuation_target(
+        self, notification: Notification, transfer: ContinuationTransferRequest,
+        *, principal_id: str, require_recoverable: bool = True,
+    ) -> None:
+        """Validate routing identity, then optional gates for a new admission."""
+        def reject(message: str) -> None:
+            raise NotificationConflict("invalid_continuation_target", message)
+
+        local = self.ctx.settings.instance_id
+        ledger = self.ctx.services.get("dispatch_store")
+        manager = self.ctx.services.get("instance_agent")
+        if not ledger or notification.owner_instance_id != local:
+            reject("Repair requires the local notification owner and dispatch ledger")
+        if (notification.session_id, notification.dispatch_id) != (
+            transfer.expected_session_id, transfer.expected_dispatch_id
+        ):
+            reject("Original session or dispatch does not match")
+        if transfer.successor_session_id == notification.session_id:
+            reject("Successor must be a different session")
+        if not notification.card_id or not notification.project_id:
+            reject("Explicit card and project provenance is required")
+        old = self.store.get_session(transfer.expected_session_id)
+        successor = self.store.get_session(transfer.successor_session_id)
+        for session, dispatch_id in (
+            (old, transfer.expected_dispatch_id),
+            (successor, transfer.successor_dispatch_id),
+        ):
+            record = ledger.get(dispatch_id)
+            if not session or not record:
+                reject("Session or dispatch evidence is missing")
+            if (
+                session.dispatch_id != dispatch_id
+                or session.lifecycle_owner != "dispatch"
+                or record.session_id != session.id
+                or session.origin_instance_id != local
+                or session.authority_instance_id != local
+                or record.authority_instance_id != local
+                or record.target_instance_id != local
+                or session.realm_id != notification.realm_id
+                or record.realm_id != notification.realm_id
+                or session.card_id != notification.card_id
+                or record.card_id != notification.card_id
+                or session.project_id != notification.project_id
+                or record.project_id != notification.project_id
+                or session.principal_id != principal_id
+                or record.principal_id != principal_id
+                or (notification.principal_id and notification.principal_id != principal_id)
+            ):
+                reject("Authority, realm, card, project, principal, or dispatch binding differs")
+        binding = successor.execution_binding
+        expected_binding = {
+            "execution_card_id": notification.card_id,
+            "execution_project_id": notification.project_id,
+            "dispatch_id": transfer.successor_dispatch_id,
+            "realm_id": notification.realm_id,
+            "principal_id": principal_id,
+            "origin_instance_id": local,
+        }
+        if any(binding.get(key) != value for key, value in expected_binding.items()):
+            reject("Successor immutable execution binding is missing or mismatched")
+        interaction = notification.interaction
+        if interaction.response_principal and interaction.response_principal != principal_id:
+            reject("Recorded response belongs to another principal")
+        if not require_recoverable:
+            return
+        if manager is None:
+            reject("Session manager is unavailable for a new admission")
+        old_record = ledger.get(transfer.expected_dispatch_id)
+        if old_record.state not in TERMINAL_DISPATCH_STATES:
+            reject("Original dispatch is not terminal")
+        old_runtime = manager.get(old.id)
+        if old_runtime is not None and not old_runtime._closed:
+            reject("Original session has a live runtime")
+        if old.status not in {"closed", "recovery_blocked"} or not (
+            not old.external_session_id
+            or (old.recovery_json.get("blocked") and old.recovery_json.get("context_lost"))
+        ):
+            reject("Original session is not demonstrably unrecoverable")
+        successor_record = ledger.get(transfer.successor_dispatch_id)
+        if successor_record.state not in {"running", "completed"} or not successor_record.recoverable:
+            reject("Successor dispatch is not recoverable")
+        runtime = manager.get(successor.id)
+        live = runtime is not None and not runtime._closed and runtime.connected
+        if (
+            successor.status in {"closed", "recovery_blocked"}
+            or successor.archived_at is not None
+            or successor.config_json.get("execution_context_boundary")
+            or (runtime is not None and getattr(runtime, "_execution_boundary_reserved", False))
+            or successor.recovery_json.get("blocked")
+            or successor.recovery_json.get("context_lost")
+            or (not live and not successor.external_session_id)
+        ):
+            reject("Successor has no recoverable provider context")
+        prompt_id = interaction.continuation_prompt_id or (
+            f"notification-response:{notification.id}:{interaction.request_id}"
+        )
+        durable = old.config_json.get("durable_runtime") or {}
+        admissions = list(durable.get("queued_prompts") or [])
+        if durable.get("in_flight"):
+            admissions.append(durable["in_flight"])
+        if self.store.get_prompt_acceptance(old.id, prompt_id) or any(
+            item.get("id") == prompt_id for item in admissions
+        ):
+            reject("Original session already admitted this response; delivery is ambiguous")
+
+    async def transfer_continuation(
+        self, notification: Notification, request: ContinuationTransferRequest,
+        *, principal_id: str, realms: set[str],
+    ) -> Notification:
+        """Repair routing once, preserving the original interaction and any answer."""
+        lock = self._locks.setdefault(notification.id, asyncio.Lock())
+        async with lock:
+            current = self.get_authorized(notification.id, principal_id=principal_id, realms=realms)
+            receipt = current.continuation_transfer
+            if receipt:
+                if (
+                    receipt.actor_principal == principal_id
+                    and {key: getattr(receipt, key) for key in type(request).model_fields}
+                    == request.model_dump()
+                ):
+                    return current
+                raise NotificationConflict("continuation_already_transferred", "This notification already has an explicit successor")
+            if request.idempotency_key in current.idempotency_keys:
+                raise NotificationConflict("idempotency_conflict", "Key already used by another notification operation")
+            if current.version != request.expected_version:
+                raise NotificationConflict("notification_version_conflict", "Notification changed; inspect its current state")
+            interaction = current.interaction
+            now = datetime.now(UTC)
+            if (
+                not interaction
+                or interaction.kind != InteractionKind.MCP_OPERATOR_INPUT
+                or interaction.protocol_method != "pa/report_dispatch_progress.operator_input"
+                or interaction.continuation_mode != "prompt"
+                or current.id in self._delivery_handlers
+                or interaction.state not in {InteractionState.OUTSTANDING, InteractionState.FAILED}
+                or current.resolved_at is not None
+                or interaction.delivered_at is not None
+                or (current.expires_at and current.expires_at <= now)
+                or (interaction.deadline and interaction.deadline <= now)
+            ):
+                raise NotificationConflict("continuation_not_transferable", "Only pending MCP operator-input prompt continuations can be repaired")
+            manager = self.ctx.services.get("instance_agent")
+            if manager is None:
+                raise NotificationConflict("invalid_continuation_target", "Session manager is unavailable")
+            from pa.instance.agent_session import SessionAdmissionInProgress
+
+            try:
+                async with manager.continuation_transfer_guard(
+                    request.expected_session_id, request.successor_session_id
+                ):
+                    self._validate_continuation_target(current, request, principal_id=principal_id)
+                    current.continuation_transfer = ContinuationTransfer(
+                        **request.model_dump(), actor_principal=principal_id,
+                        authority_instance_id=self.ctx.settings.instance_id, transferred_at=now,
+                    )
+                    current.version += 1
+                    current.updated_at = now
+                    await self._save_async(current, principal_id=principal_id)
+            except SessionAdmissionInProgress as exc:
+                raise NotificationConflict("session_admission_conflict", str(exc)) from exc
+            self._publish(current)
+            return current
+
     async def respond(
         self,
         notification: Notification,
@@ -510,6 +723,10 @@ class NotificationService:
             )
             if not current:
                 raise KeyError(notification.id)
+            if current.continuation_transfer and principal_id != current.continuation_transfer.actor_principal:
+                raise NotificationConflict("response_principal_mismatch", "Response must belong to the authorized continuation principal")
+            if current.continuation_transfer and response.idempotency_key == current.continuation_transfer.idempotency_key:
+                raise NotificationConflict("idempotency_conflict", "Key already used for continuation transfer")
             if response.idempotency_key in current.idempotency_keys:
                 if not response.retry and current.interaction and self._validated_response(current, response) != current.interaction.response:
                     raise NotificationConflict("idempotency_conflict", "This response key already recorded a different answer", notification=current)
@@ -560,6 +777,7 @@ class NotificationService:
                     "Retry the same response because the previous delivery may have partially succeeded",
                     notification=current,
                 )
+            previous = current.model_copy(deep=True)
             if interaction.continuation_mode == "prompt" and not interaction.continuation_prompt_id:
                 interaction.continuation_prompt_id = f"notification-response:{current.id}:{interaction.request_id}"
             now = datetime.now(UTC)
@@ -586,14 +804,16 @@ class NotificationService:
             ]
             current.version += 1
             current.updated_at = now
-            await self._save_async(current, principal_id=principal_id)
+            await self._save_async(current, principal_id=principal_id, previous=previous)
             self._publish(current)
             if not delivery_response.cancel:
+                previous = current.model_copy(deep=True)
                 interaction.state = InteractionState.DELIVERY_PENDING
                 current.version += 1
                 current.updated_at = datetime.now(UTC)
-                await self._save_async(current, principal_id="system:delivery")
+                await self._save_async(current, principal_id="system:delivery", previous=previous)
                 self._publish(current)
+            previous = current.model_copy(deep=True)
             try:
                 await self._deliver(current, delivery_response)
             except Exception as exc:
@@ -608,7 +828,7 @@ class NotificationService:
                 current.delivery_updated_at = datetime.now(UTC)
                 current.version += 1
                 current.updated_at = datetime.now(UTC)
-                await self._save_async(current, principal_id="system:delivery")
+                await self._save_async(current, principal_id="system:delivery", previous=previous)
                 self._publish(current)
                 raise NotificationConflict(
                     "delivery_failed", interaction.delivery_error, notification=current
@@ -626,7 +846,7 @@ class NotificationService:
             current.resolved_at = current.resolved_at or interaction.delivered_at
             current.version += 1
             current.updated_at = interaction.delivered_at
-            await self._save_async(current, principal_id="system:delivery")
+            await self._save_async(current, principal_id="system:delivery", previous=previous)
             self._publish(current)
             return current
 
@@ -634,6 +854,14 @@ class NotificationService:
         self, notification: Notification, response: InteractionResponse
     ) -> None:
         handler = self._delivery_handlers.get(notification.id)
+        if notification.continuation_transfer and (
+            handler is not None
+            or notification.interaction is None
+            or notification.interaction.kind != InteractionKind.MCP_OPERATOR_INPUT
+            or notification.interaction.protocol_method != "pa/report_dispatch_progress.operator_input"
+            or notification.interaction.continuation_mode != "prompt"
+        ):
+            raise RuntimeError("Transferred continuations cannot deliver provider-owned requests")
         if handler:
             result = handler(response)
             if inspect.isawaitable(result):
@@ -661,15 +889,31 @@ class NotificationService:
             and manager
             and notification.session_id
         ):
+            destination_session_id = notification.session_id
+            transfer = notification.continuation_transfer
+            if transfer:
+                self._validate_continuation_target(
+                    notification, transfer, principal_id=transfer.actor_principal,
+                    require_recoverable=False,
+                )
+                destination_session_id = transfer.successor_session_id
             prompt_id = interaction.continuation_prompt_id
             # A crash after durable queue admission must never enqueue a new turn.
             if prompt_id and await asyncio.to_thread(
-                self.store.get_prompt_acceptance, notification.session_id, prompt_id
+                self.store.get_prompt_acceptance, destination_session_id, prompt_id
             ):
                 return
-            runtime = manager.get(notification.session_id)
+            if transfer:
+                self._validate_continuation_target(
+                    notification, transfer, principal_id=transfer.actor_principal
+                )
+            runtime = manager.get(destination_session_id)
             if runtime is None:
-                runtime = await manager.recover_session(notification.session_id)
+                runtime = await manager.recover_session(destination_session_id)
+            if transfer:
+                self._validate_continuation_target(
+                    notification, transfer, principal_id=transfer.actor_principal
+                )
             envelope = {
                 "schema": "pa.interaction-response/v1",
                 "request_id": interaction.request_id,

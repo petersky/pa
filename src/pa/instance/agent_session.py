@@ -8,7 +8,7 @@ import logging
 import os
 from collections import deque
 from collections.abc import Awaitable, Callable
-from contextlib import nullcontext
+from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -5817,6 +5817,28 @@ class AgentSessionManager:
                 "sqlite.agent_session_save", self.store.save_session, runtime.session
             )
             return runtime
+
+    @asynccontextmanager
+    async def continuation_transfer_guard(self, old_session_id: str, successor_session_id: str):
+        """Exclude provider admission while a notification route is compared/saved.
+
+        This is not a provider permission transfer or a session recovery. The
+        original must have no runtime; an already live successor is permitted.
+        Admission checks and reservation happen without yielding on the manager
+        event loop, as in _fenced_session_admission.
+        """
+        session_ids = {old_session_id, successor_session_id}
+        if session_ids & self._admitting_sessions:
+            raise SessionAdmissionInProgress("Session admission is in progress")
+        with self._runtime_lifecycle_lock:
+            runtime = self.get(old_session_id)
+            if runtime is not None and not runtime._closed:
+                raise SessionAdmissionInProgress("Original session has a live runtime")
+            self._admitting_sessions.update(session_ids)
+        try:
+            yield
+        finally:
+            self._admitting_sessions.difference_update(session_ids)
 
     async def recover_session(
         self,
