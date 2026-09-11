@@ -1,3 +1,3 @@
 """PA — Personal Agent orchestration for humans and agents."""
 
-__version__ = "1.4.4"
+__version__ = "1.4.5"
