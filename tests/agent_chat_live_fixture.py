@@ -29,6 +29,8 @@ def build_fixture(directory: Path):
     app = FastAPI()
     app.state.stream_epoch = 0
     app.state.reconnect_cursors = []
+    app.state.gap_reads = 0
+    app.state.gap_active = False
     store = CardProjection(directory / "fixture.db")
     settings = Settings(data_dir=directory / "data", workspace_root=directory / "workspaces", instance_id="live-fixture", agent_enabled=False)
     manager = AgentSessionManager(settings, store)
@@ -61,11 +63,19 @@ def build_fixture(directory: Path):
         <main class="page-agent"><h1>Isolated live delivery fixture</h1>
         <ul data-agent-session-list data-agent-enabled="true"></ul>''' + widget + '''
         <button id="disconnect" onclick="fetch('/fixture/disconnect',{method:'POST'})">Interrupt stream</button>
+        <button id="gap" onclick="fetch('/fixture/gap',{method:'POST'})">Exercise live gap race</button>
+        <p id="gap-result" role="status"></p>
         <p id="network-result" role="status"></p>
         <p id="result" role="status">Send any fixture prompt. Expected progress and final must appear live.</p>
         </main><script>
         window.addEventListener('DOMContentLoaded',()=>{const p=window.PAAgentChat.AgentChatWidget.prototype;const original=p.applySnapshot;p.applySnapshot=function(s){try{return original.call(this,s);}catch(e){document.querySelector('#result').textContent=e.stack;throw e;}};});
+        let sawGapWarning=false;
         setInterval(()=>{const texts=Array.from(document.querySelectorAll('.acw-bubble-agent')).map(e=>e.dataset.markdown||'');
+        const warning=document.querySelector('[data-acw-load-newer-status]');
+        if(warning&&!warning.hidden&&warning.textContent.includes('waiting for history')) sawGapWarning=true;
+        if(sawGapWarning&&texts.filter(t=>t==='Fixture gap: progress.final.').length===1&&warning.hidden&&
+          document.querySelector('[data-acw-load-newer]').hidden)
+          document.querySelector('#gap-result').textContent='PASS visible gap warning and retry button cleared live; exact text once';
         if(texts.includes('PROGRESS_EXPECTED')&&texts.includes('FINAL_EXPECTED'))
         document.querySelector('#result').textContent='PASS exact progress and final received without refresh';
         if(texts.filter(t=>t==='Fixture reconnect: retained final replayed exactly once.').length===1)
@@ -80,11 +90,22 @@ def build_fixture(directory: Path):
         original = response.body_iterator
 
         async def interruptible():
+            held = None
             try:
                 async for chunk in original:
                     if epoch != app.state.stream_epoch:
                         break
+                    # Fault injection after the actual multiplex handler: expose
+                    # a missing predecessor, then let live SSE beat the retry read.
+                    if '"message_id": "gap-race"' in chunk and 'progress.' in chunk:
+                        held = chunk
+                        continue
                     yield chunk
+                    if held is not None and '"message_id": "gap-race"' in chunk:
+                        await asyncio.sleep(2.5)
+                        yield held
+                        yield chunk
+                        held = None
             finally:
                 await original.aclose()
 
@@ -108,9 +129,32 @@ def build_fixture(directory: Path):
 
     @app.get("/fixture/evidence")
     async def evidence():
-        return {"reconnect_cursors": app.state.reconnect_cursors}
+        return {"reconnect_cursors": app.state.reconnect_cursors, "gap_reads": app.state.gap_reads}
 
-    app.get("/api/agent/history/{session_id}")(get_agent_session_history)
+    @app.post("/fixture/gap")
+    async def gap():
+        app.state.gap_active = True
+        app.state.gap_reads = 0
+        runtime = manager.get("live-fixture")
+        for text in ("Fixture gap: progress.", "final."):
+            runtime._append_transcript("agent_message_chunk", {
+                "message_id": "gap-race", "phase": "final", "content_mode": "delta", "text": text,
+            })
+        runtime._flush_transcript()
+        return {"started": True}
+
+    @app.get("/api/agent/history/{session_id}")
+    async def history(request: Request, session_id: str, after_seq: int | None = None,
+                      before_seq: int | None = None, limit: int = 100,
+                      message_boundaries: bool = False):
+        if app.state.gap_active and session_id == "live-fixture" and after_seq is not None:
+            app.state.gap_reads += 1
+            if app.state.gap_reads <= 2:
+                if app.state.gap_reads == 2:
+                    await asyncio.sleep(2)
+                    app.state.gap_active = False
+                return {"events": [], "page": {"has_newer": False}}
+        return await get_agent_session_history(request, session_id, after_seq, before_seq, limit, message_boundaries)
 
     @app.get("/api/fleet/session-route/{session_id}")
     async def route(session_id: str):
