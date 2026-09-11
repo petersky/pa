@@ -224,6 +224,7 @@ class DispatchRecord(BaseModel):
     control_operations: dict[str, str] = Field(default_factory=dict)
     terminal_repair_reservation: dict[str, Any] | None = None
     followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    initial_prompt_operation: dict[str, Any] = Field(default_factory=dict)
     prompt_acknowledged_at: datetime | None = None
     prompt_ack: dict[str, Any] | None = None
     knowledge_recorded_at: datetime | None = None

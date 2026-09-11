@@ -409,6 +409,8 @@ class PromptBody(BaseModel):
     card_id: str | None = None
     project_id: str | None = None
     dispatch_id: str | None = None
+    dispatch_prompt_id: str | None = None
+    dispatch_prompt_protocol: str | None = None
     client_prompt_id: str | None = Field(
         default=None,
         min_length=8,
@@ -1559,6 +1561,13 @@ def list_agent_sessions(
         )
         for item in bounded
     ]
+
+
+@router.get("/prompt-capabilities")
+def dispatch_prompt_capabilities() -> dict:
+    from pa.execution.followup import PROMPT_IDENTITY_PROTOCOL
+
+    return {"protocols": [PROMPT_IDENTITY_PROTOCOL]}
 
 
 @router.get("/session-events/capabilities")
@@ -2893,19 +2902,26 @@ async def _submit_dispatch_followup(
     request: Request, session_id: str, body: PromptBody,
     runtime: AgentSessionRuntime, message: str, record, ledger, fingerprint: str,
 ) -> dict:
-    from pa.execution.followup import bind_followup_prompt, followup_receipt
+    from pa.execution.followup import (
+        PROMPT_IDENTITY_PROTOCOL, bind_followup_prompt, followup_receipt, prompt_operation,
+    )
     from pa.modules.fleet import _merge_dispatch_followup_operation
 
     key = body.idempotency_key
+    if body.dispatch_prompt_protocol != PROMPT_IDENTITY_PROTOCOL:
+        raise HTTPException(409, detail={
+            "code": "dispatch_prompt_protocol_required", "recoverable": True,
+            "message": "The dispatch authority must negotiate durable prompt identity before delivery.",
+        })
     async with runtime._prompt_admission_lock:
-        record, _ = await _runtime_offload(
-            runtime, "dispatch.followup_bind", bind_followup_prompt,
+        record = await _runtime_offload(
+            runtime, "dispatch.prompt_bind", bind_followup_prompt,
             ledger, record, key, fingerprint, wait_for_completion=True,
         )
-        operation = record.followup_operations[key]
+        operation = prompt_operation(record, key)
         prompt_id = operation["prompt_id"]
-        # Drain any earlier admission whose acknowledgement was lost before
-        # deciding whether this exact prompt already has durable acceptance.
+        if body.dispatch_prompt_id != prompt_id:
+            raise HTTPException(409, detail={"code": "dispatch_prompt_identity_mismatch"})
         runtime._flush_transcript()
         await _drain_runtime_transcripts(runtime, wait_for_completion=True)
         accepted = await _runtime_offload(
@@ -2913,63 +2929,69 @@ async def _submit_dispatch_followup(
             runtime.store.get_prompt_acceptance, session_id, prompt_id,
         )
         duplicate = accepted is not None
+        pending = any(item.id == prompt_id and item.admission_pending for item in runtime._queue)
         admission_error = None
-        if accepted is None:
-            if operation.get("state") in {"failed", "cancelled", "interrupted"}:
-                raise HTTPException(409, detail={
-                    "code": "followup_replay_terminal", "recoverable": False,
-                    "previous_error": operation.get("error"),
-                })
-            record, claimed = await _runtime_offload(
-                runtime, "dispatch.followup_claim", bind_followup_prompt,
-                ledger, record, key, fingerprint, claim_admission=True,
-                wait_for_completion=True,
-            )
-            if claimed:
-                try:
-                    await runtime.prompt(
-                        message, images=body.images, item_id=body.card_id,
-                        principal_id=get_principal_id(request), project_id=body.project_id,
-                        action=body.action, prompt_id=prompt_id,
-                        source=f"dispatch:{record.dispatch_id}", wait=False,
-                    )
-                except Exception as exc:
-                    admission_error = exc
-                runtime._flush_transcript()
-                await _drain_runtime_transcripts(runtime, wait_for_completion=True)
-                accepted = await _runtime_offload(
-                    runtime, "sqlite.prompt_acceptance_read",
-                    runtime.store.get_prompt_acceptance, session_id, prompt_id,
+        if accepted is None or pending:
+            if accepted is None and operation.get("state") in {"failed", "cancelled", "interrupted"}:
+                raise HTTPException(409, detail={"code": "followup_replay_terminal", "recoverable": False})
+            try:
+                await runtime.admit_dispatch_prompt(
+                    message, images=body.images, item_id=body.card_id,
+                    principal_id=get_principal_id(request), project_id=body.project_id,
+                    action=body.action, prompt_id=prompt_id,
+                    source=f"dispatch:{record.dispatch_id}",
                 )
+            except Exception as exc:
+                admission_error = exc
+            runtime._flush_transcript()
+            await _drain_runtime_transcripts(runtime, wait_for_completion=True)
+            accepted = await _runtime_offload(
+                runtime, "sqlite.prompt_acceptance_read",
+                runtime.store.get_prompt_acceptance, session_id, prompt_id,
+            )
             if accepted is None:
                 raise HTTPException(503, detail={
                     "code": "prompt_not_persisted", "prompt_id": prompt_id,
-                    "message": "No durable acceptance for the bound prompt yet; reconcile this identity before further admission.",
+                    "message": "Prompt admission is pending; retry this same operation and identity.",
                     "recoverable": True,
                 }) from admission_error
         response = followup_receipt(
             record, prompt_id, accepted.event_type,
             accepted.payload.get("action"), duplicate=duplicate,
         )
-        operation = record.followup_operations[key]
         operation.update({
             "state": "accepted_target", "response": response,
             "goal_provenance": body.goal_provenance.model_dump(mode="json")
             if body.goal_provenance else None,
         })
         operation.pop("error", None)
-        record = await _runtime_offload(
-            runtime, "dispatch.followup_ack", _merge_dispatch_followup_operation,
-            ledger, record, key, wait_for_completion=True,
-        )
-        await _runtime_offload(
-            runtime, "dispatch.followup_started", ledger.record_followup_started,
-            record, idempotency_key=key, prompt_id=prompt_id,
-            event_id=accepted.id, event_seq=accepted.seq, wait_for_completion=True,
-        )
+        if key:
+            record = await _runtime_offload(
+                runtime, "dispatch.followup_ack", _merge_dispatch_followup_operation,
+                ledger, record, key, wait_for_completion=True,
+            )
+            await _runtime_offload(
+                runtime, "dispatch.followup_started", ledger.record_followup_started,
+                record, idempotency_key=key, prompt_id=prompt_id,
+                event_id=accepted.id, event_seq=accepted.seq, wait_for_completion=True,
+            )
+        else:
+            def acknowledge(current):
+                if current.initial_prompt_operation.get("prompt_id") != prompt_id:
+                    raise HTTPException(409, detail={"code": "dispatch_prompt_identity_mismatch"})
+                current.initial_prompt_operation.update(operation)
+                current.prompt_ack = {**response, "event_type": accepted.event_type,
+                                      "event_id": accepted.id, "event_seq": accepted.seq}
+                current.prompt_acknowledged_at = accepted.created_at
+            await _runtime_offload(
+                runtime, "dispatch.initial_prompt_ack", ledger.mutate_current,
+                record.dispatch_id, mutate=acknowledge, wait_for_completion=True,
+            )
+        runtime._start_drain()
         return {**response, "queue": [item.public_dict() for item in runtime._queue]}
 
 
+@router.post("/sessions/{session_id}/dispatch-prompts")
 @router.post("/sessions/{session_id}/prompt")
 async def session_prompt(request: Request, session_id: str, body: PromptBody) -> dict:
     # Own the whole intake -> admission -> publication chain. Retrying an exact
@@ -3232,6 +3254,8 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
                         },
                     )
                 if prior.get("response"):
+                    if isinstance(runtime, AgentSessionRuntime):
+                        runtime._start_drain()
                     return {
                         **dict(prior["response"]),
                         "duplicate": True,
@@ -3252,6 +3276,14 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
                 response["intake"] = intake
             return response
         elif dispatch_record.prompt_ack:
+            initial = dispatch_record.initial_prompt_operation
+            if initial:
+                if initial.get("fingerprint") != followup_fingerprint:
+                    raise HTTPException(409, detail={"code": "idempotency_conflict"})
+                if initial.get("response"):
+                    if isinstance(runtime, AgentSessionRuntime):
+                        runtime._start_drain()
+                    return {**initial["response"], "duplicate": True}
             ack = dispatch_record.prompt_ack
             return {
                 "stop_reason": "accepted",
@@ -3266,6 +3298,13 @@ async def _session_prompt_owned(request: Request, session_id: str, body: PromptB
                 "queue": [item.public_dict() for item in runtime._queue],
                 "intake": intake,
             }
+        response = await _submit_dispatch_followup(
+            request, session_id, body, runtime, message, dispatch_record,
+            dispatch_store, followup_fingerprint,
+        )
+        if intake:
+            response["intake"] = intake
+        return response
     # Return immediately; transcript/SSE streams the turn. Blocking here made the
     # old HTMX UI look like it only ever received "Turn completed".
     before_seq = runtime._seq

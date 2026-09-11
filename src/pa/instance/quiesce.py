@@ -74,6 +74,9 @@ class QueuedPrompt(BaseModel):
     publication_fence: bool = False
     prompt_audit: list[dict[str, Any]] = Field(default_factory=list)
     acceptance_result: str | None = None
+    # New dispatch admissions cannot reach a provider until this fence clears.
+    admission_pending: bool = False
+    admission_action: str | None = None
 
     @model_validator(mode="after")
     def validate_total_image_size(self) -> QueuedPrompt:
@@ -82,7 +85,7 @@ class QueuedPrompt(BaseModel):
         return self
 
     def public_dict(self) -> dict[str, Any]:
-        data = self.model_dump(mode="json", exclude={"images", "acceptance_result"})
+        data = self.model_dump(mode="json", exclude={"images", "acceptance_result", "admission_pending", "admission_action"})
         data["images"] = [image.public_dict() for image in self.images]
         return data
 

@@ -1425,7 +1425,18 @@ class AgentSessionRuntime:
             )
             if eligible_index is None:
                 break
-            item = self._queue.pop(eligible_index)
+            item = self._queue[eligible_index]
+            if item.admission_pending:
+                try:
+                    async with self._prompt_admission_lock:
+                        await self._finish_prompt_admission(item)
+                except Exception:
+                    logger.exception("Dispatch admission remains pending for %s", item.id)
+                    break
+                # Admission may have yielded while the queue was edited.
+                if item not in self._queue:
+                    continue
+            self._queue.remove(item)
             self._append_transcript(
                 "queue_dequeued",
                 {
@@ -1565,6 +1576,7 @@ class AgentSessionRuntime:
         prompt_id: str | None = None,
         acceptance_result: str | None = None,
         _defer_drain: bool = False,
+        _durable_admission: bool = False,
     ) -> QueuedPrompt:
         self._require_execution_context_active()
         cwd = self._validated_cwd(cwd)
@@ -1619,12 +1631,23 @@ class AgentSessionRuntime:
             publication_fence=action == "interrupt",
             prompt_audit=list(prompt_audit or []),
             acceptance_result=acceptance_result,
+            admission_pending=_durable_admission,
+            admission_action=action if _durable_admission else None,
         )
         if action in {"prepend", "interrupt"}:
             self._queue.insert(0, item)
         else:
             self._queue.append(item)
         self._queue.sort(key=lambda queued: queued.priority)
+        if _durable_admission:
+            # Persist work before publishing acceptance. The per-item fence is
+            # also restored after a crash, so no provider can overtake this save.
+            try:
+                self._checkpoint_runtime(lifecycle="admission_pending")
+            except Exception:
+                self._queue = [queued for queued in self._queue if queued.id != item.id]
+                raise
+            return item
         self._append_transcript(
             "queue_enqueued",
             {
@@ -1660,6 +1683,52 @@ class AgentSessionRuntime:
         ):
             self._start_drain()
         return item
+
+    async def _finish_prompt_admission(self, item: QueuedPrompt) -> TranscriptEvent:
+        """Finish an actual persisted queue admission before provider delivery."""
+        self._require_execution_context_active()
+        accepted = await self._offload(
+            "sqlite.prompt_acceptance_read", self.store.get_prompt_acceptance,
+            self.session_id, item.id, wait_for_completion=True,
+        )
+        if accepted is None:
+            self._append_transcript("queue_enqueued", {
+                "id": item.id, "message": item.message,
+                "images": [image.public_dict() for image in item.images],
+                "action": item.admission_action, "source": item.source,
+                "position": self._queue.index(item) if item in self._queue else 0,
+            })
+            self._flush_transcript()
+            await self._drain_transcripts(timeout=None)
+            accepted = await self._offload(
+                "sqlite.prompt_acceptance_read", self.store.get_prompt_acceptance,
+                self.session_id, item.id, wait_for_completion=True,
+            )
+        if accepted is None:
+            raise RuntimeError("Dispatch prompt acceptance is not durable yet")
+        item.admission_pending = False
+        await self._checkpoint_runtime_async(lifecycle="queued")
+        return accepted
+
+    async def admit_dispatch_prompt(
+        self, message: str, *, prompt_id: str, action: PromptAction = "append",
+        images=None, item_id=None, principal_id=None, project_id=None, source: str,
+    ) -> None:
+        """Recoverably enqueue an identity-bound dispatch under admission lock."""
+        item = next((queued for queued in self._queue if queued.id == prompt_id), None)
+        if item is None:
+            item = await self._offload(
+                "sqlite.dispatch_queue_admit", self.enqueue,
+                message, prompt_id=prompt_id, action=action, images=images,
+                card_id=item_id, principal_id=principal_id, project_id=project_id,
+                source=source, _defer_drain=True, _durable_admission=True,
+                wait_for_completion=True,
+            )
+        if item.admission_pending:
+            await self._finish_prompt_admission(item)
+        if action == "interrupt" and self.prompting:
+            await self.cancel(pause_queue=False)
+        self._start_drain()
 
     def _record_human_activity(self) -> None:
         self.session.human_activity_at = datetime.now(UTC)
@@ -1845,6 +1914,9 @@ class AgentSessionRuntime:
         return merged
 
     async def _run_prompt(self, item: QueuedPrompt) -> str:
+        if item.admission_pending:
+            async with self._prompt_admission_lock:
+                await self._finish_prompt_admission(item)
         if not self.connection:
             raise RuntimeError("Session not connected")
         item.cwd = self._validated_cwd(item.cwd)

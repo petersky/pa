@@ -14,9 +14,9 @@ from pa.config import Settings
 from pa.domain.models import AgentSession
 from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord, DispatchStore
-from pa.execution.followup import bind_followup_prompt
+from pa.execution.followup import (PROMPT_IDENTITY_PROTOCOL, bind_followup_prompt, dispatch_prompt_identity)
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
-from pa.modules.agent_chat import PromptBody, get_prompt_acceptance_status, session_prompt
+from pa.modules.agent_chat import (PromptBody, dispatch_prompt_capabilities, get_prompt_acceptance_status, session_prompt)
 from pa.modules.fleet import DispatchFollowupBody, prompt_dispatch_session
 from pa.modules.items import operation_outcome_endpoint
 
@@ -64,6 +64,8 @@ def env(tmp_path):
 async def target(env, message=MESSAGE):
     return await session_prompt(env.request, env.record.session_id, PromptBody(
         message=message, dispatch_id=env.record.dispatch_id, idempotency_key=KEY,
+        dispatch_prompt_id=dispatch_prompt_identity(env.record, KEY),
+        dispatch_prompt_protocol=PROMPT_IDENTITY_PROTOCOL,
     ))
 
 
@@ -78,17 +80,17 @@ def operation(env):
 
 @pytest.mark.asyncio
 async def test_redacted_acceptance_after_more_than_twenty_events_and_concurrent_retry(env):
-    original = env.runtime.prompt
+    original = env.runtime.admit_dispatch_prompt
 
     async def interleaved(*args, **kwargs):
         bound = operation(env)
         assert bound["prompt_id"] == kwargs["prompt_id"]
-        assert bound["target_admission_started"] is True
+        assert bound["admission_protocol"] == PROMPT_IDENTITY_PROTOCOL
         for i in range(30):
             env.runtime._append_transcript("agent_message", {"message": f"interleaved {i}"})
         return await original(*args, **kwargs)
 
-    with patch.object(env.runtime, "prompt", AsyncMock(side_effect=interleaved)) as prompt:
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock(side_effect=interleaved)) as prompt:
         responses = await asyncio.gather(*(target(env) for _ in range(8)))
     assert prompt.await_count == 1
     assert len(env.runtime._queue) == 1
@@ -104,13 +106,13 @@ async def test_redacted_acceptance_after_more_than_twenty_events_and_concurrent_
 
 @pytest.mark.asyncio
 async def test_enqueue_before_lost_ack_returns_exact_acceptance(env):
-    original = env.runtime.prompt
+    original = env.runtime.admit_dispatch_prompt
 
     async def lost_ack(*args, **kwargs):
         await original(*args, **kwargs)
         raise TimeoutError("acknowledgement lost after enqueue")
 
-    with patch.object(env.runtime, "prompt", AsyncMock(side_effect=lost_ack)) as prompt:
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock(side_effect=lost_ack)) as prompt:
         first = await target(env)
         retry = await target(env)
     assert first["accepted"] and retry["duplicate"]
@@ -133,23 +135,27 @@ async def test_late_persistence_and_restart_retry_never_readmit(env):
     env.runtime._queue.clear()
     env.ledger = DispatchStore(env.ledger.path.parent)
     env.request.app.state.ctx.services["dispatch_store"] = env.ledger
-    with patch.object(env.runtime, "prompt", AsyncMock()) as prompt:
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock()) as prompt:
         receipt = await target(env)
     assert receipt["accepted"] and receipt["prompt_id"] == prompt_id
     prompt.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_genuine_not_accepted_and_retry_are_honest_and_nondoubling(env):
-    with patch.object(env.runtime, "prompt", AsyncMock(side_effect=RuntimeError("admission unavailable"))) as prompt:
-        for _ in range(2):
-            with pytest.raises(HTTPException) as failed:
-                await target(env)
-            assert failed.value.status_code == 503
-        assert prompt.await_count == 1
-    assert not env.runtime._queue
-    assert env.store.get_prompt_acceptance(env.record.session_id, operation(env)["prompt_id"]) is None
-    assert not operation(env).get("response")
+async def test_genuine_not_accepted_failure_can_retry_same_identity(env):
+    original = env.runtime.admit_dispatch_prompt
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock(side_effect=RuntimeError("admission unavailable"))) as prompt:
+        with pytest.raises(HTTPException) as failed:
+            await target(env)
+        assert failed.value.status_code == 503
+        prompt_id = operation(env)["prompt_id"]
+        assert not env.runtime._queue
+        assert env.store.get_prompt_acceptance(env.record.session_id, prompt_id) is None
+        prompt.assert_awaited_once()
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock(wraps=original)) as prompt:
+        retry = await target(env)
+    assert retry["accepted"] and retry["prompt_id"] == prompt_id
+    assert prompt.await_count == len(env.runtime._queue) == 1
 
 
 @pytest.mark.asyncio
@@ -157,13 +163,14 @@ async def test_legacy_ambiguous_without_identity_is_never_replayed(env):
     record = env.ledger.get(env.record.dispatch_id)
     record.followup_operations[KEY] = {"fingerprint": fingerprint(), "state": "delivery_ambiguous"}
     env.ledger.put(record)
-    with patch.object(env.runtime, "prompt", AsyncMock()) as prompt, patch(
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock()) as prompt, patch(
         "pa.modules.fleet._peer_agent_json", AsyncMock(),
     ) as peer:
         for submit in (target, authority):
             with pytest.raises(HTTPException) as failed:
                 await submit(env)
             assert failed.value.detail["code"] == "legacy_followup_identity_unknown"
+            assert failed.value.detail["recoverable"] is False
         prompt.assert_not_awaited()
         peer.assert_not_awaited()
     assert operation(env) == record.followup_operations[KEY]
@@ -194,6 +201,8 @@ async def test_authority_transport_loss_and_completed_exact_prompt_outcome_recon
 
     async def peer(_request, _instance, method, path, **kwargs):
         nonlocal hide_receipt
+        if path == "prompt-capabilities":
+            return dispatch_prompt_capabilities()
         if method == "POST":
             posts.append(path)
             accepted = await target(env)
@@ -228,11 +237,11 @@ async def test_authority_transport_loss_and_completed_exact_prompt_outcome_recon
 async def test_concurrent_fingerprints_claim_one_identity(env):
     results = await asyncio.gather(*(
         asyncio.to_thread(bind_followup_prompt, env.ledger, env.record, KEY, fp,
-                          claim_admission=True)
+                          )
         for fp in (fingerprint(), fingerprint("conflict"))
     ), return_exceptions=True)
     assert sum(isinstance(result, HTTPException) for result in results) == 1
-    assert sum(isinstance(result, tuple) and result[1] for result in results) == 1
+    assert sum(isinstance(result, DispatchRecord) for result in results) == 1
 
 
 @pytest.mark.asyncio
@@ -267,7 +276,7 @@ async def test_cold_exact_acceptance_and_completion_have_no_history_cutoff(env):
     record.followup_operations[KEY].pop("response")
     record.followup_operations[KEY]["state"] = "delivery_ambiguous"
     env.ledger.put(record)
-    with patch.object(env.runtime, "prompt", AsyncMock()) as prompt:
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock()) as prompt:
         retry = await target(env, message)
     prompt.assert_not_awaited()
     assert retry["queued"] == accepted["queued"]
@@ -276,10 +285,14 @@ async def test_cold_exact_acceptance_and_completion_have_no_history_cutoff(env):
 
 @pytest.mark.asyncio
 async def test_wrong_identity_receipt_never_acknowledges_bound_operation(env):
-    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(return_value={
-        "accepted": True, "prompt_id": "another-prompt", "session_id": env.record.session_id,
-        "accepted_event": "queue_enqueued", "accepted_action": "append",
-    })):
+    async def peer(_request, _instance, _method, path, **kwargs):
+        if path == "prompt-capabilities":
+            return dispatch_prompt_capabilities()
+        return {
+            "accepted": True, "prompt_id": "another-prompt", "session_id": env.record.session_id,
+            "accepted_event": "queue_enqueued", "accepted_action": "append",
+        }
+    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer)):
         with pytest.raises(HTTPException) as failed:
             await authority(env)
         assert failed.value.detail["code"] == "followup_not_acknowledged"
@@ -293,18 +306,20 @@ async def test_wrong_identity_receipt_never_acknowledges_bound_operation(env):
 @pytest.mark.asyncio
 async def test_concurrent_authority_delivery_and_retry_admit_one_prompt(env):
     async def peer(_request, _instance, method, path, **kwargs):
+        if path == "prompt-capabilities":
+            return dispatch_prompt_capabilities()
         if method == "GET":
             return await get_prompt_acceptance_status(env.request, env.record.session_id, path.rsplit("/", 1)[1])
         return await target(env)
 
     with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer)), patch.object(
-        env.runtime, "prompt", wraps=env.runtime.prompt,
+        env.runtime, "admit_dispatch_prompt", wraps=env.runtime.admit_dispatch_prompt,
     ) as prompt:
         receipts = await asyncio.gather(*(authority(env) for _ in range(6)))
         retry = await authority(env)
     assert prompt.await_count == len(env.runtime._queue) == 1
     assert {r["prompt_id"] for r in receipts} == {retry["prompt_id"]}
-    assert operation(env)["target_admission_started"] is True
+    assert operation(env)["admission_protocol"] == PROMPT_IDENTITY_PROTOCOL
     assert operation(env)["state"] == "accepted"
 
 
@@ -315,7 +330,7 @@ async def test_disconnected_waiter_and_same_key_retry_share_owned_admission(env)
     executor = AsyncRuntime()
     env.request.app.state.ctx.services["async_runtime"] = executor
     enqueued, release = asyncio.Event(), asyncio.Event()
-    original = env.runtime.prompt
+    original = env.runtime.admit_dispatch_prompt
 
     async def slow_ack(*args, **kwargs):
         result = await original(*args, **kwargs)
@@ -324,7 +339,7 @@ async def test_disconnected_waiter_and_same_key_retry_share_owned_admission(env)
         return result
 
     try:
-        with patch.object(env.runtime, "prompt", AsyncMock(side_effect=slow_ack)) as prompt:
+        with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock(side_effect=slow_ack)) as prompt:
             waiter = asyncio.create_task(target(env))
             await asyncio.wait_for(enqueued.wait(), 5)
             waiter.cancel()
@@ -339,3 +354,222 @@ async def test_disconnected_waiter_and_same_key_retry_share_owned_admission(env)
     finally:
         release.set()
         await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_crash_after_identity_binding_before_enqueue_is_recoverable(env):
+    with patch.object(env.runtime, "admit_dispatch_prompt", AsyncMock(side_effect=SystemExit("crash after bind"))):
+        with pytest.raises(SystemExit):
+            await target(env)
+    prompt_id = operation(env)["prompt_id"]
+    assert not env.runtime._queue
+    env.ledger = DispatchStore(env.ledger.path.parent)
+    env.request.app.state.ctx.services["dispatch_store"] = env.ledger
+    receipt = await target(env)
+    assert receipt["accepted"] and receipt["prompt_id"] == prompt_id
+    assert len(env.runtime._queue) == 1
+
+
+@pytest.mark.asyncio
+async def test_crash_after_persisted_queue_before_acceptance_restores_fence(env):
+    with patch.object(env.runtime, "_finish_prompt_admission", AsyncMock(side_effect=SystemExit("crash before acceptance"))):
+        with pytest.raises(SystemExit):
+            await target(env)
+    prompt_id = operation(env)["prompt_id"]
+    assert env.store.get_prompt_acceptance(env.record.session_id, prompt_id) is None
+    stored = env.store.get_session(env.record.session_id)
+    snapshot = env.manager._snapshot_from_persisted(stored)
+    assert len(snapshot.queued_prompts) == 1
+    assert snapshot.queued_prompts[0].admission_pending
+    runtime = AgentSessionRuntime(env.manager, stored)
+    runtime._queue = snapshot.queued_prompts
+    env.runtime = runtime
+    env.manager._runtimes[stored.id] = runtime
+    with patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime):
+        receipt = await target(env)
+    assert receipt["prompt_id"] == prompt_id and receipt["accepted"]
+    assert len(runtime._queue) == 1 and not runtime._queue[0].admission_pending
+
+
+@pytest.mark.asyncio
+async def test_provider_drain_cannot_execute_before_pending_admission_finishes(env):
+    env.runtime.connection = SimpleNamespace(connected=True)
+    env.manager._quiescing = False
+    queued = env.runtime.enqueue(
+        MESSAGE, source="dispatch:dispatch-identity", prompt_id="fenced-prompt",
+        _durable_admission=True, _defer_drain=True,
+    )
+    with patch.object(env.runtime, "_run_prompt", AsyncMock()) as provider:
+        with patch.object(env.runtime, "_finish_prompt_admission", AsyncMock(side_effect=OSError("storage unavailable"))):
+            await env.runtime._drain_queue()
+        provider.assert_not_awaited()
+        assert queued.admission_pending and env.runtime._queue == [queued]
+        assert env.store.get_prompt_acceptance(env.record.session_id, queued.id) is None
+        await env.runtime._drain_queue()
+        provider.assert_awaited_once_with(queued)
+    assert env.store.get_prompt_acceptance(env.record.session_id, queued.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_old_target_is_rejected_before_delivery_then_same_key_can_retry_after_upgrade(env):
+    posts = []
+    upgraded = False
+
+    async def peer(_request, _instance, method, path, **kwargs):
+        if path == "prompt-capabilities":
+            if not upgraded:
+                raise HTTPException(404, detail="Not Found")
+            return dispatch_prompt_capabilities()
+        if method == "POST":
+            posts.append(path)
+            assert path.endswith("/dispatch-prompts")
+            return await session_prompt(env.request, env.record.session_id, PromptBody(**kwargs["body"]))
+        raise AssertionError(path)
+
+    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer)):
+        with pytest.raises(HTTPException) as blocked:
+            await authority(env)
+        assert blocked.value.detail["code"] == "dispatch_prompt_protocol_unavailable"
+        assert not posts and not env.runtime._queue
+        assert KEY not in env.ledger.get(env.record.dispatch_id).followup_operations
+        upgraded = True
+        accepted = await authority(env)
+        retry = await authority(env)
+    assert accepted["accepted"] and accepted["prompt_id"] == retry["prompt_id"]
+    assert len(posts) == len(env.runtime._queue) == 1
+
+
+@pytest.mark.asyncio
+async def test_operation_outcome_store_and_ledger_work_is_off_event_loop(env):
+    import threading
+
+    main_thread = threading.get_ident()
+    original = env.store.get_operation_outcome
+    lookup_threads = []
+
+    def lookup(*args, **kwargs):
+        lookup_threads.append(threading.get_ident())
+        assert threading.get_ident() != main_thread
+        return original(*args, **kwargs)
+
+    with patch("pa.modules.items.get_store", return_value=env.store), patch.object(
+        env.store, "get_operation_outcome", side_effect=lookup,
+    ):
+        result = await operation_outcome_endpoint(env.request, "absent-operation")
+    assert result["status"] == "not_found" and lookup_threads
+
+
+@pytest.mark.asyncio
+async def test_initial_dispatch_uses_shared_durable_identity_and_redacted_acceptance(env):
+    body = PromptBody(
+        message=MESSAGE, dispatch_id=env.record.dispatch_id,
+        dispatch_prompt_id=dispatch_prompt_identity(env.record, None),
+        dispatch_prompt_protocol=PROMPT_IDENTITY_PROTOCOL,
+    )
+    first, retry = await asyncio.gather(*(
+        session_prompt(env.request, env.record.session_id, body) for _ in range(2)
+    ))
+    assert first["accepted"] and first["prompt_id"] == retry["prompt_id"]
+    assert len(env.runtime._queue) == 1
+    record = env.ledger.get(env.record.dispatch_id)
+    assert record.initial_prompt_operation["prompt_id"] == first["prompt_id"]
+    assert record.prompt_ack["prompt_id"] == first["prompt_id"]
+    event = env.store.get_prompt_acceptance(env.record.session_id, first["prompt_id"])
+    assert "[REDACTED_AUTH]" in event.payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_lost_ack_after_user_message_keeps_same_queued_receipt(env):
+    async def peer(_request, _instance, method, path, **kwargs):
+        if path == "prompt-capabilities":
+            return dispatch_prompt_capabilities()
+        if method == "POST":
+            accepted = await target(env)
+            env.runtime._append_transcript("user_message", {"id": accepted["prompt_id"], "message": MESSAGE})
+            env.runtime._flush_transcript()
+            raise TimeoutError("ack lost after execution started")
+        return await get_prompt_acceptance_status(env.request, env.record.session_id, path.rsplit("/", 1)[1])
+
+    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer)):
+        response = await authority(env)
+    assert response["accepted_event"] == "queue_enqueued" and response["queued"]
+    assert operation(env)["response"]["queued"]
+    assert len(env.runtime._queue) == 1
+
+
+@pytest.mark.asyncio
+async def test_versioned_delivery_cannot_fall_back_to_old_random_id_admission(env):
+    upgraded = False
+    legacy_admissions = []
+
+    async def peer(_request, _instance, method, path, **kwargs):
+        if path == "prompt-capabilities":
+            return dispatch_prompt_capabilities()  # Target downgrades after probe.
+        if method == "POST":
+            if path.endswith("/prompt"):
+                legacy_admissions.append("random-legacy-id")
+                return {"accepted": True, "prompt_id": "random-legacy-id"}
+            if not upgraded:
+                raise HTTPException(404, detail="Not Found")
+            return await target(env)
+        return {"accepted": False}
+
+    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=peer)):
+        with pytest.raises(HTTPException):
+            await authority(env)
+        assert operation(env)["state"] == "delivery_not_admitted"
+        assert operation(env)["error"]["recoverable"]
+        assert not legacy_admissions and not env.runtime._queue
+        upgraded = True
+        receipt = await authority(env)
+    assert receipt["accepted"] and len(env.runtime._queue) == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_outcome_does_not_offer_an_unsupported_recovery(env):
+    record = env.ledger.get(env.record.dispatch_id)
+    record.followup_operations[KEY] = {
+        "state": "delivery_ambiguous", "fingerprint": fingerprint(),
+        "error": {"recoverable": True, "code": "old_prompt_not_persisted"},
+    }
+    env.ledger.put(record)
+    with patch("pa.modules.items.get_store", return_value=env.store), patch(
+        "pa.modules.fleet._peer_agent_json", AsyncMock(),
+    ) as peer:
+        outcome = await operation_outcome_endpoint(env.request, KEY)
+    assert outcome["status"] == "legacy_delivery_ambiguous"
+    assert outcome["recovery_state"] == "legacy_identity_unknown"
+    assert not outcome["automatic_retry_safe"]
+    peer.assert_not_awaited()
+    assert operation(env) == record.followup_operations[KEY]  # Historical evidence untouched.
+
+
+@pytest.mark.asyncio
+async def test_legacy_initial_ambiguous_dispatch_cannot_allocate_new_prompt(env):
+    record = env.ledger.get(env.record.dispatch_id)
+    record.state = "failed"
+    record.error_code = "prompt_not_persisted"
+    env.ledger.put(record)
+    body = PromptBody(
+        message=MESSAGE, dispatch_id=env.record.dispatch_id,
+        dispatch_prompt_id=dispatch_prompt_identity(env.record, None),
+        dispatch_prompt_protocol=PROMPT_IDENTITY_PROTOCOL,
+    )
+    with pytest.raises(HTTPException) as blocked:
+        await session_prompt(env.request, env.record.session_id, body)
+    assert blocked.value.detail["code"] == "legacy_initial_prompt_identity_unknown"
+    assert not blocked.value.detail["recoverable"]
+    assert not env.runtime._queue
+    assert not env.ledger.get(env.record.dispatch_id).initial_prompt_operation
+
+
+@pytest.mark.asyncio
+async def test_same_key_replay_resumes_accepted_queue_without_readmission(env):
+    first = await target(env)
+    with patch.object(env.runtime, "_start_drain") as schedule, patch.object(
+        env.runtime, "admit_dispatch_prompt", AsyncMock(),
+    ) as admit:
+        replay = await target(env)
+    schedule.assert_called_once()
+    admit.assert_not_awaited()
+    assert replay["prompt_id"] == first["prompt_id"] and len(env.runtime._queue) == 1

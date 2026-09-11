@@ -2171,12 +2171,14 @@ def operation_outcome_api(
     if operation == "dispatch.followup":
         followup = record.followup_operations[idempotency_key]
         state = followup.get("state") or "pending"
+        legacy_unknown = not followup.get("prompt_id") and not followup.get("response")
         return {
             "idempotency_key": idempotency_key,
             "operation": operation,
-            "status": state,
+            "status": "legacy_delivery_ambiguous" if legacy_unknown else state,
             "durable": True,
-            "recovery_state": "durable_followup_operation_found",
+            "automatic_retry_safe": not legacy_unknown,
+            "recovery_state": "legacy_identity_unknown" if legacy_unknown else "durable_followup_operation_found",
             "result": {
                 "dispatch_id": record.dispatch_id,
                 "session_id": record.session_id,

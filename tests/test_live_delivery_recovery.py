@@ -439,7 +439,9 @@ async def test_ungoverned_followup_response_timeout_remains_recoverable(tmp_path
     request = request_for(Settings(data_dir=tmp_path, instance_id="authority"),
                           MagicMock(), {"dispatch_store": ledger})
     request.state.instance_authenticated = True
-    with patch("pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=TimeoutError("response lost"))):
+    with patch("pa.modules.fleet._require_dispatch_prompt_protocol", AsyncMock()), patch(
+        "pa.modules.fleet._peer_agent_json", AsyncMock(side_effect=TimeoutError("response lost"))
+    ):
         with pytest.raises(TimeoutError):
             await prompt_dispatch_session(request, "dispatch", DispatchFollowupBody(
                 message="Exact continuation", idempotency_key="same-key"))
