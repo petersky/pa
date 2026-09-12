@@ -79,7 +79,7 @@ sys.addaudithook(audit)
             assert names == ASSIGNED_SERVICE_TOOL_ALLOWLIST
         else:
             assert {'instance_info', 'agent_providers_list', 'preview_agent_restart_handoff'} <= names
-            assert len(names) == 205
+            assert len(names) == 206
         assert {p.name: (p.stat().st_size, p.stat().st_mtime_ns) for p in data.iterdir()} == before
     finally:
         db.rollback()

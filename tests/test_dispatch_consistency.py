@@ -459,6 +459,7 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 instance_url="http://macbook:8080",
             )
             request = request_for(settings, MagicMock(), {})
+            request.app.state.ctx.store.card_completion_capabilities.return_value = set()
             request.state.instance_authenticated = False
             forwarded = {"accepted": True, "dispatch_id": "dispatch-1"}
             with (

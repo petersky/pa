@@ -779,7 +779,7 @@ def _assigned_mcp_environment_for_session(
     if not dispatch_id:
         return None
     record = ledger.get(dispatch_id)
-    if record is None or record.goal_provenance is None:
+    if record is None:
         return None
     provenance = record.goal_provenance
     if (
@@ -787,14 +787,19 @@ def _assigned_mcp_environment_for_session(
         or record.session_id != session.id
         or record.target_instance_id != settings.instance_id
         or record.authority_instance_id != session.authority_instance_id
-        or provenance.authority_instance_id != record.authority_instance_id
-        or provenance.resolved_target_instance_id != record.target_instance_id
-        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
-        or record.acknowledged_at is not None
+        or (provenance is not None and provenance.authority_instance_id != record.authority_instance_id)
+        or (provenance is not None and provenance.resolved_target_instance_id != record.target_instance_id)
+        or (provenance is not None and (
+            record.state in {"failed", "cancelled", "completed", "acknowledged"}
+            or record.acknowledged_at is not None
+        ))
     ):
         raise RuntimeError(
             "governed session does not match its durable assigned dispatch binding"
         )
+    if provenance is None:
+        from pa.acp.environment import COMPLETION_DISPATCH_ENV, COMPLETION_SESSION_ENV
+        return {COMPLETION_DISPATCH_ENV: record.dispatch_id, COMPLETION_SESSION_ENV: session.id}
     return assigned_service_mcp_environment(
         dispatch_id=record.dispatch_id,
         session_id=session.id,
@@ -2599,10 +2604,10 @@ def progress_capabilities(request: Request) -> dict[str, Any]:
     }
 
 
-def _assigned_local_dispatch(request: Request) -> DispatchRecord:
+def _assigned_local_dispatch(request: Request, *, completion: bool = False, require_live: bool = True) -> DispatchRecord:
     """Authenticate one restricted local session capability and derive its dispatch."""
 
-    capability = getattr(request.state, "assigned_session_capability", None) or ""
+    capability = getattr(request.state, "completion_session_capability" if completion else "assigned_session_capability", None) or ""
     session_id = request.headers.get("X-PA-Assigned-Session-ID", "").strip()
     asserted_dispatch_id = request.headers.get(
         "X-PA-Assigned-Dispatch-ID", ""
@@ -2621,6 +2626,7 @@ def _assigned_local_dispatch(request: Request) -> DispatchRecord:
             dispatch_id=record.dispatch_id,
             session_id=session.id,
             target_instance_id=ctx.settings.instance_id,
+            purpose="completion-acceptance" if completion else "assigned-session",
         )
     if (
         not capability
@@ -2632,13 +2638,15 @@ def _assigned_local_dispatch(request: Request) -> DispatchRecord:
         or record.session_id != session.id
         or record.target_instance_id != ctx.settings.instance_id
         or session.authority_instance_id != record.authority_instance_id
-        or session.status in {"closed", "quiesced", "configuration_failed"}
-        or runtime is None
-        or getattr(runtime, "_closed", False)
-        or not getattr(runtime, "connected", False)
-        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
-        or record.acknowledged_at is not None
-        or record.goal_provenance is None
+        or (require_live and (
+            session.status in {"closed", "quiesced", "configuration_failed"}
+            or runtime is None
+            or getattr(runtime, "_closed", False)
+            or not getattr(runtime, "connected", False)
+            or record.state in {"failed", "cancelled", "completed", "acknowledged"}
+            or record.acknowledged_at is not None
+        ))
+        or (record.goal_provenance is not None if completion else record.goal_provenance is None)
     ):
         raise HTTPException(
             status_code=403,

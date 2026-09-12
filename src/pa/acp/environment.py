@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pa.config import Settings
 
+COMPLETION_DISPATCH_ENV = "PA_COMPLETION_DISPATCH_ID"
+COMPLETION_SESSION_ENV = "PA_COMPLETION_SESSION_ID"
+
 ASSIGNED_SERVICE_CREDENTIAL_ENV = "PA_ASSIGNED_SERVICE_CREDENTIAL"
 ASSIGNED_SERVICE_AUTHORITY_URL_ENV = "PA_ASSIGNED_SERVICE_AUTHORITY_URL"
 ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ENV = (
@@ -26,6 +29,7 @@ def assigned_service_session_capability(
     dispatch_id: str,
     session_id: str,
     target_instance_id: str,
+    purpose: str = "assigned-session",
 ) -> str:
     """Derive one restart-stable capability for an exact local dispatch session."""
 
@@ -35,7 +39,7 @@ def assigned_service_session_capability(
     ):
         raise ValueError("assigned service session capability scope is incomplete")
     scope = (
-        f"pa-assigned-session:v1:{dispatch_id}:{session_id}:{target_instance_id}"
+        f"pa-{purpose}:v1:{dispatch_id}:{session_id}:{target_instance_id}"
     )
     digest = hmac.new(secret.encode(), scope.encode(), hashlib.sha256).hexdigest()
     return f"pas1.{digest}"
@@ -61,6 +65,8 @@ def assigned_service_mcp_environment(
 # the service environment (or reintroduce them through per-session overrides).
 PRIVATE_PROVIDER_ENVIRONMENT = frozenset(
     {
+        COMPLETION_DISPATCH_ENV,
+        COMPLETION_SESSION_ENV,
         "PA_ACP_QUIESCE",
         "PA_ACP_RESUME",
         "PA_AGENT_ARGS",

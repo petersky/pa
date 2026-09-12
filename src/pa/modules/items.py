@@ -2352,16 +2352,15 @@ def update_card_api(
 ) -> dict:
     actor_session_id = actor_dispatch_id = None
     actor_principal = get_principal_id(request)
-    if getattr(request.state, "assigned_session_capability", None):
+    bound_completion = getattr(request.state, "completion_session_capability", None) is not None
+    if bound_completion:
         from pa.modules.fleet import _assigned_local_dispatch
-        record = _assigned_local_dispatch(request)
-        allowed = {"completion_acceptance", "expected_version", "lane"}
-        if not data.completion_acceptance or not data.model_fields_set.issubset(allowed) or data.lane not in {None, CardLane.DONE}:
+        record = _assigned_local_dispatch(request, completion=True, require_live=False)
+        if record.card_id != card_id or record.realm_id != (realm or request.app.state.ctx.settings.primary_realm):
             raise HTTPException(status_code=403, detail={"code": "completion_actor_scope_mismatch"})
-        current = request.app.state.ctx.store.get_card(card_id, realm_id=realm or request.app.state.ctx.settings.primary_realm)
-        requirement = current.completion_requirement if current else None
-        if record.card_id == card_id and not (requirement and (requirement.originating_session_id or requirement.originating_dispatch_id)):
-            raise HTTPException(status_code=409, detail={"code": "completion_actor_independence_unconfirmed"})
+        allowed = {"completion_acceptance", "expected_version"}
+        if not data.completion_acceptance or not data.model_fields_set.issubset(allowed):
+            raise HTTPException(status_code=403, detail={"code": "completion_actor_scope_mismatch"})
         actor_session_id, actor_dispatch_id = record.session_id, record.dispatch_id
         actor_principal = record.principal_id
     settings = request.app.state.ctx.settings
@@ -2373,7 +2372,7 @@ def update_card_api(
             data.expected_version.isoformat() if data.expected_version else None
         ),
         "field_intent": data.field_intent,
-        "completion_actor": {"principal": actor_principal, "session_id": actor_session_id, "dispatch_id": actor_dispatch_id},
+        "completion_actor": {"principal": actor_principal, "session_id": actor_session_id, "dispatch_id": actor_dispatch_id, **({"realm_id": realm_id} if bound_completion else {})},
         "completion_acceptance": data.completion_acceptance.model_dump(mode="json") if data.completion_acceptance else None,
     }
     key, fingerprint, replay = _begin_operation(
@@ -2385,6 +2384,12 @@ def update_card_api(
         return replay
     store = get_store()
     try:
+        if bound_completion:
+            _assigned_local_dispatch(request, completion=True)
+            current = store.get_card(card_id, realm_id=realm_id)
+            requirement = current.completion_requirement if current else None
+            if not (requirement and (requirement.originating_session_id or requirement.originating_dispatch_id)):
+                raise CompletionConflict("completion_actor_independence_unconfirmed")
         _require_completion_owner_compatibility(request, card_id, data, realm_id=realm_id)
         card = store.update_card(
             card_id,
@@ -2396,7 +2401,7 @@ def update_card_api(
             instance_id=settings.instance_id,
             idempotency_key=key,
             request_fingerprint=fingerprint,
-            direct_human=_direct_human_card_action(request),
+            direct_human=not bound_completion and _direct_human_card_action(request),
         )
     except CompletionConflict as exc:
         store.fail_operation(key, exc.code)

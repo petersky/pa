@@ -13,6 +13,31 @@ def register_mcp(mcp, ctx: AppContext) -> None:
     from pa.mcp.local_api import request_local_pa
 
     @mcp.tool()
+    def record_card_acceptance(
+        card_id: str, realm: str, expected_version: str,
+        requirement_revision: str, subject_revision: str,
+        milestones: list[str], references: list[str], idempotency_key: str,
+    ) -> dict:
+        """Record acceptance as this live ordinary dispatch/session for its exact card.
+
+        Requires a declared eligible principal and independence from the repair
+        origin. PA stamps actor identity; this tool does not change the card lane.
+        Replay the same arguments and key to recover an existing receipt.
+        """
+        if not idempotency_key.strip():
+            raise ValueError("idempotency_key cannot be empty")
+        return request_local_pa(
+            ctx.settings, "PATCH", f"/api/cards/{quote(card_id, safe='')}",
+            params={"realm": realm}, headers={"Idempotency-Key": idempotency_key},
+            bound_completion=True,
+            json={"expected_version": expected_version, "completion_acceptance": {
+                "requirement_revision": requirement_revision,
+                "subject_revision": subject_revision,
+                "milestones": milestones, "references": references,
+            }},
+        )
+
+    @mcp.tool()
     def list_items(
         kind: ItemKind | None = None, status: ItemStatus | None = None
     ) -> list[dict]:

@@ -27,6 +27,8 @@ from pa.acp.configuration import (
     normalized_session_config_json,
 )
 from pa.acp.environment import (
+    COMPLETION_DISPATCH_ENV,
+    COMPLETION_SESSION_ENV,
     ASSIGNED_SERVICE_DISPATCH_ENV,
     ASSIGNED_SERVICE_MODE_ENV,
     ASSIGNED_SERVICE_SESSION_ENV,
@@ -3249,6 +3251,8 @@ class AgentSessionManager:
                 self.assigned_mcp_environment_resolver(session) or {}
             )
         assigned_names = {
+            COMPLETION_DISPATCH_ENV,
+            COMPLETION_SESSION_ENV,
             ASSIGNED_SERVICE_MODE_ENV,
             ASSIGNED_SERVICE_DISPATCH_ENV,
             ASSIGNED_SERVICE_SESSION_ENV,
@@ -3260,9 +3264,8 @@ class AgentSessionManager:
             )
         mismatched = {
             name
-            for name, value in derived_mcp_environment.items()
-            if name in supplied_mcp_environment
-            and supplied_mcp_environment[name] != value
+            for name in supplied_assignment
+            if supplied_mcp_environment[name] != derived_mcp_environment.get(name)
         }
         if mismatched:
             raise AgentSessionRecoveryError(

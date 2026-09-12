@@ -21,15 +21,15 @@ def actor_request(tmp_path, *, origin=False, bound=True, owners=None, same_card=
     session_id = 'repair-session' if origin else 'verifier-session'
     dispatch_id = 'repair-dispatch' if origin else 'verifier-dispatch'
     session = store.save_session(AgentSession(id=session_id, agent_name='codex', dispatch_id=dispatch_id, authority_instance_id='authority', status='active'))
-    from pa.execution.dispatch import DispatchStore, DispatchRecord, GoalDispatchProvenance
+    from pa.execution.dispatch import DispatchStore, DispatchRecord
     ledger = DispatchStore(tmp_path / 'dispatch')
-    record = ledger.put(DispatchRecord(mutation_id='bound-run', dispatch_id=dispatch_id, session_id=session_id, target_instance_id=settings.instance_id, authority_instance_id='authority', authority_url='http://authority', state='running', principal_id='user:local', card_id=card.id if same_card else 'separate-verifier-card', goal_provenance=GoalDispatchProvenance(goal_id='verification', goal_version=1, policy_revision=1, authority_instance_id='authority', fencing_token=1, action_reservation_id='reservation', actor_principal='user:local')))
+    record = ledger.put(DispatchRecord(mutation_id='bound-run', dispatch_id=dispatch_id, session_id=session_id, target_instance_id=settings.instance_id, authority_instance_id='authority', authority_url='http://authority', state='running', principal_id='user:local', card_id=card.id))
     services = {'dispatch_store': ledger, 'instance_agent': SimpleNamespace(get=lambda key: SimpleNamespace(_closed=False, connected=True))}
     ctx = SimpleNamespace(store=store, settings=settings, services=services, require_service=services.__getitem__)
-    token = assigned_service_session_capability(secret=settings.session_secret, dispatch_id=dispatch_id, session_id=session_id, target_instance_id=settings.instance_id)
+    token = assigned_service_session_capability(secret=settings.session_secret, dispatch_id=dispatch_id, session_id=session_id, target_instance_id=settings.instance_id, purpose="completion-acceptance")
     request = Request({'type': 'http', 'method': 'PATCH', 'path': '/api/cards/'+card.id, 'headers': [(b'idempotency-key', b'accept-once'), (b'x-pa-assigned-session-id',session_id.encode()), (b'x-pa-assigned-dispatch-id',dispatch_id.encode())], 'app': SimpleNamespace(state=SimpleNamespace(ctx=ctx))})
     request.state.principal_id = 'user:local'
-    request.state.assigned_session_capability = token if bound else None
+    request.state.completion_session_capability = token if bound else None
     request.state.user_authenticated = False
     return store, card, request
 
@@ -37,7 +37,7 @@ def actor_request(tmp_path, *, origin=False, bound=True, owners=None, same_card=
 def submit(store, card, request):
     evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision, subject_revision='build-a', milestones=['verified'], actor='forged', actor_session_id='forged', actor_dispatch_id='forged')
     with patch('pa.modules.items.get_store', return_value=store):
-        return update_card_api(request, Response(), card.id, CardUpdate(lane='done', expected_version=card.updated_at, completion_acceptance=evidence), BackgroundTasks(), 'accept-once')
+        return update_card_api(request, Response(), card.id, CardUpdate(expected_version=card.updated_at, completion_acceptance=evidence), BackgroundTasks(), 'accept-once')
 
 
 @pytest.mark.parametrize('same_card', [False, True])
@@ -45,7 +45,8 @@ def test_bound_independent_acceptance_stamps_existing_receipt(tmp_path, same_car
     store, card, request = actor_request(tmp_path, same_card=same_card)
     result = submit(store, card, request)
     receipt = result['completion_evidence'][-1]
-    assert result['lane'] == 'done'
+    assert result['lane'] == 'waiting'
+    assert result['completion_status']['accepted']
     assert receipt['actor'] == 'user:local'
     assert receipt['actor_kind'] == 'bound_session'
     assert receipt['actor_session_id'] == 'verifier-session'
@@ -76,7 +77,7 @@ def test_shared_bearer_or_proxy_header_absence_is_not_human_identity(tmp_path):
 
 def test_unverified_session_claim_cannot_supply_acceptance_identity(tmp_path):
     store, card, request = actor_request(tmp_path)
-    request.state.assigned_session_capability = 'invalid-credential'
+    request.state.completion_session_capability = 'invalid-credential'
     with pytest.raises(HTTPException) as error:
         submit(store, card, request)
     assert error.value.status_code == 403
