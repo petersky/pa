@@ -68,9 +68,23 @@ def restart_observation_fields(receipt, *, session=None, runtime=None) -> dict:
         "continuation_queued": ("accepted", "pending", "unconfirmed", "finish_continuation_turn"),
         "continuation_delivered": ("succeeded", "confirmed", "absent", None),
         "restart_completed": ("succeeded", "confirmed", "absent", None),
-        "failed": ("failed", "unknown", "absent", "inspect_failure"),
+        "failed": ("failed", "unknown", "unconfirmed", "inspect_failure"),
     }.get(status, ("reconciling", "unknown", "unconfirmed", "inspect_legacy_receipt"))
     reason = receipt.reason_code or status
+    # A receipt write can fail after enqueue checkpointed the exact prompt.
+    # Observe residual work independently of attempt failure and pause state.
+    if status not in TERMINAL:
+        prompt_id = receipt.continuation_prompt_id
+        if runtime is not None:
+            running = (getattr(runtime, "_in_flight", None), getattr(runtime, "_draining_prompt", None))
+            if any(item is not None and item.id == prompt_id for item in running):
+                worker = "active"
+            elif any(item.id == prompt_id for item in runtime._queue):
+                worker = "queued"
+        elif session is not None:
+            durable = (session.config_json or {}).get("durable_runtime") or {}
+            if any(item.get("id") == prompt_id for item in durable.get("queued_prompts", [])):
+                worker = "queued"
     if status not in TERMINAL and session is not None:
         durable = (session.config_json or {}).get("durable_runtime") or {}
         paused = runtime._queue_paused if runtime is not None else durable.get("queue_paused")
@@ -83,9 +97,6 @@ def restart_observation_fields(receipt, *, session=None, runtime=None) -> dict:
         elif receipt.execution_binding != session.execution_binding:
             phase, reason, next_action = "waiting", "execution_binding_mismatch", "inspect_session"
         elif runtime is not None and status == "continuation_queued":
-            running = getattr(runtime, "_in_flight", None) or getattr(runtime, "_draining_prompt", None)
-            if running is not None and running.id == receipt.continuation_prompt_id:
-                phase, worker = "running", "active"
-            elif any(item.id == receipt.continuation_prompt_id for item in runtime._queue):
-                worker = "queued"
+            if worker == "active":
+                phase = "running"
     return {"phase": phase, "phase_version": receipt.phase_version, "attempt": receipt.attempts, "reason_code": reason, "next_action": next_action, "effect_state": effect, "worker_state": worker, "domain_stage": status}

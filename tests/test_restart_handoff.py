@@ -1569,3 +1569,48 @@ def test_snapshot_restore_initializes_selection_audit_without_fresh_admission(tm
         assert store.get_session(runtime.session_id).execution_binding == binding
         assert not any(k in binding for k in ('dispatch_id', 'realm_id', 'principal_id'))
     asyncio.run(scenario())
+
+
+def test_enqueue_survives_failed_receipt_phase_write_without_inventing_absence(tmp_path):
+    from pa.instance.restart_lifecycle import restart_observation_fields
+
+    async def scenario():
+        store, manager, runtime, receipt = _human_handoff(tmp_path)
+        # Exercise the actual durable enqueue producer; only the later receipt
+        # write loses its acknowledgement, before deferred drain can start.
+        runtime._checkpoint_runtime = AgentSessionRuntime._checkpoint_runtime.__get__(runtime)
+        original = store.update_restart_handoff
+
+        def fail_queued_write(*args, **kwargs):
+            if kwargs.get('status') == 'continuation_queued':
+                raise OSError('receipt phase write unavailable after enqueue')
+            return original(*args, **kwargs)
+
+        with patch.object(store, 'update_restart_handoff', side_effect=fail_queued_write):
+            await manager._resume_pending_restart_handoffs()
+        failed = store.get_restart_handoff(receipt.id)
+        assert failed.status == 'failed'
+        assert failed.failure_stage == 'resuming'
+        assert failed.error == 'receipt phase write unavailable after enqueue'
+        assert runtime._drain_task is None
+        assert [item.id for item in runtime._queue] == [receipt.continuation_prompt_id]
+        persisted = store.get_session(runtime.session_id)
+        for context in ({'runtime': runtime, 'session': persisted}, {'session': persisted}):
+            observed = restart_observation_fields(failed, **context)
+            assert observed['worker_state'] == 'queued'
+            assert observed['phase'] == 'failed'
+            assert observed['effect_state'] == 'unknown'
+            assert observed['attempt'] == failed.attempts
+        assert restart_observation_fields(failed)['worker_state'] == 'unconfirmed'
+        item = runtime._queue.pop()
+        runtime._draining_prompt = item
+        assert restart_observation_fields(failed, runtime=runtime)['worker_state'] == 'active'
+        runtime._in_flight = item
+        runtime._draining_prompt = None
+        assert restart_observation_fields(failed, runtime=runtime)['worker_state'] == 'active'
+        runtime._in_flight = None
+        assert restart_observation_fields(failed, runtime=runtime)['worker_state'] == 'unconfirmed'
+        # The passive adapter never rewrites the failed attempt or its error.
+        assert store.get_restart_handoff(receipt.id) == failed
+
+    asyncio.run(scenario())
