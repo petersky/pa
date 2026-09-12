@@ -4802,6 +4802,19 @@ class AgentSessionManager:
                 failure_stage=stage, reason_code=restart_reason_code(exc), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
             )
 
+    def _advance_restart_recovery_if_accepting(self, *args, **kwargs):
+        """Order worker-side recovery inference against quiesce admission closure.
+
+        This runs inside the offloaded worker, not before it is queued. Receipt
+        CAS alone cannot fence a different handoff quiescing this same process.
+        Exact completed turns and already accepted queue evidence use their
+        ordinary reconciliation writes instead of this admission check.
+        """
+        with self._runtime_lifecycle_lock:
+            if self._should_abort_admission():
+                raise SessionAdmissionInProgress("Restart recovery admission is closed")
+            return self.store.update_restart_handoff(*args, **kwargs)
+
     async def _resume_restart_handoffs(self, *, replay_only: bool = False) -> None:
         async with self.label_lock("restart-handoff-replay"):
             await self._resume_pending_restart_handoffs(replay_only=replay_only)
@@ -4881,7 +4894,7 @@ class AgentSessionManager:
                 if not handoff.continuation_prompt.strip():
                     handoff = await self._offload(
                         "sqlite.restart_handoff_no_continuation",
-                        self.store.update_restart_handoff,
+                        self._advance_restart_recovery_if_accepting,
                         handoff.id,
                         status="restart_completed",
                         delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
@@ -4889,7 +4902,7 @@ class AgentSessionManager:
                     continue
                 if handoff.status != "continuation_queued":
                     handoff = await self._offload(
-                        "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
+                        "sqlite.restart_handoff_resuming", self._advance_restart_recovery_if_accepting,
                         handoff.id, status="resuming", retry=transient_failure, increment_attempts=transient_failure, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
                     )
                 if self._should_abort_admission():
@@ -6376,8 +6389,9 @@ class AgentSessionManager:
         )
 
     async def stop(self, *, fast: bool = False) -> None:
-        self._accepting = False
-        self._quiescing = True
+        with self._runtime_lifecycle_lock:
+            self._accepting = False
+            self._quiescing = True
         if self._recovery_coordinator_task:
             self._recovery_coordinator_task.cancel()
         for task in list(self._recovery_tasks.values()):
@@ -6416,11 +6430,12 @@ class AgentSessionManager:
         # Admission is transactional until a quiesce snapshot is committed (or a
         # real process shutdown fence is active). A timed-out handoff must not
         # leave Start Session returning agent_draining forever.
-        prior_accepting = self._accepting
-        prior_quiescing = self._quiescing
+        with self._runtime_lifecycle_lock:
+            prior_accepting = self._accepting
+            prior_quiescing = self._quiescing
+            self._quiescing = True
+            self._accepting = False
         committed = False
-        self._quiescing = True
-        self._accepting = False
 
         async def _emit(
             phase: str, *, done: bool = False, error: str | None = None
@@ -6443,8 +6458,9 @@ class AgentSessionManager:
             nonlocal committed
             if committed or is_shutting_down():
                 return
-            self._accepting = prior_accepting
-            self._quiescing = prior_quiescing
+            with self._runtime_lifecycle_lock:
+                self._accepting = prior_accepting
+                self._quiescing = prior_quiescing
 
         try:
             await _emit("quiescing")

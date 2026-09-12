@@ -1698,3 +1698,65 @@ def test_quiesced_replay_preserves_authoritative_completed_turn(tmp_path):
         assert store.get_restart_handoff(handoff.id).status == 'continuation_delivered'
         manager.recover_session.assert_not_called()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('continuation', ['', 'Continue exact work'])
+def test_coordinator_queued_effect_is_fenced_by_distinct_committed_quiesce(tmp_path, continuation):
+    from threading import Event
+
+    async def scenario():
+        store = CardProjection(tmp_path / 'pa.db')
+        manager = AgentSessionManager(Settings(data_dir=tmp_path, instance_id='owner'), store)
+        for session_id in ('old-session', 'trigger-session'):
+            store.save_session(AgentSession(id=session_id, agent_name='codex', status='active'))
+        old = store.create_restart_handoff(RestartHandoff(session_id='old-session',
+            idempotency_key='old-restart', continuation_prompt=continuation,
+            continuation_prompt_id='old-exact-prompt', instance_id='owner'))
+        _advance_restart_fixture(store, old.id, status='restarting')
+        before = store.get_restart_handoff(old.id)
+        trigger = store.create_restart_handoff(RestartHandoff(session_id='trigger-session',
+            idempotency_key='new-restart', continuation_prompt='',
+            continuation_prompt_id='new-exact-prompt', instance_id='owner'))
+        effect_entered = asyncio.Event()
+        release_effect = Event()
+        host_entered = asyncio.Event()
+        release_host = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        original = manager._offload
+        operation_to_hold = ('sqlite.restart_handoff_resuming' if continuation
+                             else 'sqlite.restart_handoff_no_continuation')
+
+        async def barrier(operation, func, *args, **kwargs):
+            if operation == 'sqlite.restart_handoff_read':
+                await effect_entered.wait()
+            if operation == operation_to_hold:
+                # Run the barrier in the actual offloaded worker, after the
+                # event-loop admission check and before the queued mutation.
+                def queued_effect(*call_args, **call_kwargs):
+                    loop.call_soon_threadsafe(effect_entered.set)
+                    assert release_effect.wait(10)
+                    return func(*call_args, **call_kwargs)
+                return await original(operation, queued_effect, *args, **kwargs)
+            if operation == 'service.restart_handoff':
+                assert manager.quiescing and not manager._accepting
+                assert store.get_restart_handoff(trigger.id).status == 'restarting'
+                host_entered.set()
+                await release_host.wait()
+                return None  # The host restart has not been issued.
+            return await original(operation, func, *args, **kwargs)
+
+        manager._offload = barrier
+        manager.recover_session = AsyncMock()
+        sweep = asyncio.create_task(manager._recover_unscheduled_restart_handoffs())
+        try:
+            await asyncio.wait_for(host_entered.wait(), 5)
+            release_effect.set()
+            await asyncio.wait_for(sweep, 5)
+            assert store.get_restart_handoff(old.id) == before
+            manager.recover_session.assert_not_called()
+            assert manager._restart_handoff_tasks
+        finally:
+            release_effect.set()
+            release_host.set()
+            await asyncio.gather(sweep, *list(manager._restart_handoff_tasks.values()))
+    asyncio.run(scenario())
