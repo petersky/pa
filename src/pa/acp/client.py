@@ -346,6 +346,7 @@ class PAClient(Client):
         self._updates: list[Any] = []
         self._mcp_startup_failures: dict[str, str] = {}
         self._mcp_startup_successes: set[str] = set()
+        self._mcp_recovery_calls: dict[tuple[str, str], None] = {}
         self._mcp_startup_events: dict[str, asyncio.Event] = {}
         self.on_mcp_startup: Callable[[str], None] | None = None
 
@@ -451,6 +452,30 @@ class PAClient(Client):
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)
         normalized = normalize_session_update(update)
+        key = str(session_id)
+        call_id = str(normalized.get("tool_call_id") or "")
+        call_key = (key, call_id)
+        raw_input = normalized.get("raw_input")
+        is_pa_call = (
+            isinstance(raw_input, dict) and raw_input.get("server") == "pa"
+            and isinstance(raw_input.get("tool"), str) and bool(raw_input["tool"])
+        )
+        # Recovery must begin after the last hard failure. A completion for an
+        # older in-flight call (or a delayed startup-ready event) is not recovery.
+        if (
+            key in self._mcp_startup_failures
+            and normalized.get("type") == "tool_call"
+            and normalized.get("status") in {"pending", "in_progress"}
+            and call_id and (is_pa_call or call_id == "mcp_startup.pa")
+        ):
+            self._mcp_recovery_calls[call_key] = None
+            if len(self._mcp_recovery_calls) > 256:
+                self._mcp_recovery_calls.pop(next(iter(self._mcp_recovery_calls)))
+        recovery_allowed = (
+            key not in self._mcp_startup_failures or call_key in self._mcp_recovery_calls
+        )
+        if normalized.get("status") in {"completed", "success", "succeeded", "failed"}:
+            self._mcp_recovery_calls.pop(call_key, None)
         if (
             normalized.get("type") in {"tool_call", "tool_call_update"}
             and normalized.get("tool_call_id") == "mcp_startup.pa"
@@ -462,9 +487,12 @@ class PAClient(Client):
                     json.dumps(normalized.get("content") or [], default=str)
                 )
                 if _is_hard_mcp_startup_failure(detail):
+                    self._mcp_recovery_calls = {
+                        k: v for k, v in self._mcp_recovery_calls.items() if k[0] != key
+                    }
                     self._mcp_startup_successes.discard(key)
                     self._mcp_startup_failures[key] = detail[:1000]
-            elif status in {"completed", "success", "succeeded"}:
+            elif status in {"completed", "success", "succeeded"} and recovery_allowed:
                 self._mcp_startup_failures.pop(key, None)
                 self._mcp_startup_successes.add(key)
             event = self._mcp_startup_events.get(key)
@@ -483,6 +511,7 @@ class PAClient(Client):
             and normalized.get("tool_call_id")
             and normalized.get("tool_call_id") != "mcp_startup.pa"
             and normalized.get("status") == "completed"
+            and recovery_allowed
             and isinstance(raw_input, dict)
             and raw_input.get("server") == "pa"
             and isinstance(raw_input.get("tool"), str)

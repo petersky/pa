@@ -54,7 +54,9 @@ sys.addaudithook(audit)
 ''')
     env = {k: v for k, v in os.environ.items() if not k.startswith('PA_')}
     env.update(PA_DATA_DIR=str(data), PA_AGENT_ENABLED='false', PA_INSTANCE_ID='owner-test',
-               PA_LOCAL_API_URL='http://127.0.0.1:1', PYTHONPATH=str(guard), PYTHONDONTWRITEBYTECODE='1')
+               PA_LOCAL_API_URL='http://127.0.0.1:1', PA_LOCAL_API_TOKEN='isolated-test-only-token',
+               PA_WORKSPACE_ROOT=str(tmp_path / 'workspaces'), PA_BROWSER_SESSION_ID='session-test',
+               PYTHONPATH=str(guard), PYTHONDONTWRITEBYTECODE='1')
     if assigned:
         env.update(PA_ASSIGNED_SERVICE_MODE='1', PA_ASSIGNED_SERVICE_SESSION_ID='session-test', PA_ASSIGNED_SERVICE_DISPATCH_ID='dispatch-test')
     command = sys.executable if entrypoint == 'module' else str(Path(sys.executable).parent / 'pa')
@@ -116,6 +118,9 @@ async def test_two_second_silence_then_real_thirty_second_failure_and_recovery(t
     assert '30 seconds' in connection.pa_mcp_health['detail']
     assert connection.pa_mcp_health['retry_state'] == 'provider_startup_failed'
     assert connection.session.status != 'disconnected'
+    await emit(client, 'completed')
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    await emit(client, 'in_progress')
     await emit(client, 'completed')
     assert connection.pa_mcp_health['state'] == 'connected'
     assert connection.pa_mcp_health['provider_context_probe']['classification'] == 'startup_confirmed'
@@ -262,6 +267,7 @@ async def test_mcp_health_is_attached_to_live_ui_event(tmp_path):
     assert payload['pa_mcp']['state'] == 'disconnected'
     assert '30 seconds' in payload['pa_mcp']['detail']
     contract = json.loads((Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_events.json').read_text())
+    await client.session_update('native-current', {**contract['success'], 'sessionUpdate': 'tool_call', 'status': 'in_progress', 'rawOutput': None})
     await client.session_update('native-current', contract['success'])
     assert runtime._append_transcript.call_args.args[1]['pa_mcp']['state'] == 'connected'
 
@@ -308,7 +314,7 @@ async def test_actual_acp_wire_late_startup_failure_and_recovery(tmp_path):
             assert time.monotonic() - started >= 29.5
             assert '30 seconds' in connection.pa_mcp_health['detail']
             await recovered.wait()
-    assert [item['state'] for item in evidence] == ['disconnected', 'connected']
+    assert [item['state'] for item in evidence] == ['disconnected', 'disconnected', 'connected']
     assert list(tmp_path.iterdir()) == []
 
 
@@ -379,6 +385,9 @@ async def test_error_only_adapter_confirms_only_current_session_pa_tool_success(
     await client.session_update('native-current', events['failed'][0])
     assert connection.pa_mcp_health['state'] == 'disconnected'
     await client.session_update('native-current', success)
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    await client.session_update('native-current', {**success, 'sessionUpdate': 'tool_call', 'status': 'in_progress', 'rawOutput': None})
+    await client.session_update('native-current', success)
     assert connection.pa_mcp_health['state'] == 'connected'
     assert 'detail' not in connection.pa_mcp_health
     await old.session_update('native-current', events['failed'][0])
@@ -400,3 +409,23 @@ async def test_provider_path_segments_rejected_before_http(tmp_path, invalid, fi
             with pytest.raises(ValueError, match='Invalid provider or job identifier'):
                 await mcp.functions['agent_provider_login_cancel'](**arguments)
             request.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_completion_started_before_new_failure_cannot_recover(tmp_path):
+    events = json.loads((Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_events.json').read_text())
+    connection = AgentConnection(Settings(data_dir=tmp_path), MagicMock(), agent_name='codex')
+    client = bind(connection)
+    success = events['success']
+    start = {**success, 'sessionUpdate': 'tool_call', 'status': 'in_progress', 'rawOutput': None}
+    await client.session_update('native-current', events['failed'][0])
+    await client.session_update('native-current', start)
+    # A newer failure invalidates the first recovery attempt.
+    await client.session_update('native-current', events['failed'][0])
+    await client.session_update('native-current', success)
+    await emit(client, 'completed')  # No new startup attempt either.
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    fresh = {**start, 'toolCallId': 'fresh-recovery'}
+    await client.session_update('native-current', fresh)
+    await client.session_update('native-current', {**success, 'toolCallId': 'fresh-recovery'})
+    assert connection.pa_mcp_health['state'] == 'connected'

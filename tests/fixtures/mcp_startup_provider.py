@@ -16,7 +16,8 @@ def startup():
     time.sleep(30)
     from pathlib import Path
     contract = json.loads(Path(__file__).with_name('codex_acp_1_11_mcp_events.json').read_text())
-    for update in [*contract['failed'], contract['success']]:
+    start = {**contract['success'], 'sessionUpdate': 'tool_call', 'title': 'mcp.pa.list_items', 'kind': 'other', 'status': 'in_progress', 'rawOutput': None}
+    for update in [*contract['failed'], start, contract['success']]:
         send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {
             'sessionId': 'native-current', 'update': update,
         }})

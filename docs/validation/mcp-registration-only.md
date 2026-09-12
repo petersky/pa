@@ -132,3 +132,30 @@ All runs below clear inherited PA_* and set temporary data and workspace roots:
 
 Review progress correlation: `mcp-repair-pr436-adapter-review-v1` (HTTP 200).
 Root still owns final exact-head approval, merge and release/production acceptance.
+
+## Composer integration and evidence ordering
+
+At `aa097cf2edcbe42b119c5b89e103c8acb1f59a80`, MCP JavaScript regions are
+`renderMcpHealth` line 1613, snapshot health line 1759, and tool call/update
+health lines 2484/2488. Composer submission methods occupy the separate
+3687–4101 region; this follow-up does not edit JavaScript or the composer tree.
+Root chooses merge order. The second PR must rebase on the first actual merge
+and run the combined JS regressions and build before independent acceptance.
+
+The ordering follow-up requires a recovery call/startup attempt to start after
+the latest hard failure before its completion can clear that failure. Every
+new hard failure invalidates in-flight recovery candidates for that session;
+tracking is bounded to 256 candidates. The exact client/native-session fence
+still applies. Regressions cover an old in-flight completion and delayed
+startup-ready event after a newer failure, followed by a fresh successful PA
+call. Healthy initial tool success still confirms usability without a ready
+notification. The isolated wire fixture now sends the real ACP start shape
+(including required title) before recovery completion.
+
+Ordering validation: 95 focused registration/ACP tests passed before the wire
+fixture correction; its isolated 30-second wire rerun then passed. Four actual
+stdio cases (ordinary/assigned, console/module) plus the separate 30-second
+silence/failure/recovery test passed. The stdio children use test-only owner
+credentials/session context and isolated workspace roots. Five focused
+ordering/adapter/live/UI checks and the wheel/sdist build passed. No production
+provider was launched and no production credentials were given to test children.
