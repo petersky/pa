@@ -205,3 +205,6 @@ async def test_declared_integration_only_completes_from_real_merge(tmp_path):
     assert result.lane == CardLane.DONE
     assert result.completion_evidence[0].outcome == "integrated"
     assert result.completion_status["missing"] == []
+    reopened = store.update_card(card.id, CardUpdate(lane="waiting", completion_requirement={"mode": "explicit_acceptance", "milestones": ["integrated", "verified"]}, expected_version=result.updated_at, field_intent=["lane", "completion_requirement"]))
+    assert "integrated" in reopened.completion_status["satisfied"]
+    assert reopened.completion_status["missing"] == ["verified", "acceptance"]

@@ -20,7 +20,9 @@ def completion_state(requirement: Any, evidence: Any = ()) -> dict:
         return {"reason_code": "unsupported_completion_requirement", "missing": ["compatible_owner"], "satisfied": [], "accepted": False}
     revision = requirement.get("revision")
     receipts = [_dict(item) for item in evidence or ()]
-    current = [item for item in receipts if item.get("requirement_revision") == revision and item.get("actor") and item.get("recorded_at")]
+    # Editing acceptance criteria invalidates acceptance, not the immutable
+    # fact that an exact source subject was integrated.
+    current = [item for item in receipts if (item.get("requirement_revision") == revision or item.get("outcome") == "integrated") and item.get("actor") and item.get("recorded_at")]
     integrated = [item for item in current if item.get("outcome") == "integrated"]
     # A receipt accepting build A never certifies a later integrated build B.
     if integrated:

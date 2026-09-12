@@ -553,6 +553,8 @@ def test_card_tools_round_trip_the_union_of_supported_fields() -> None:
             tags=["two"],
             expected_version="version",
             field_intent=["parent_id", "project_id", "tags"],
+            completion_requirement={"schema_version": 1, "mode": "explicit_acceptance"},
+            completion_acceptance={"requirement_revision": "current", "subject_revision": "build-a"},
         )
         update = request.call_args
         assert update.args[1:3] == ("PATCH", "/api/cards/card")
@@ -562,9 +564,12 @@ def test_card_tools_round_trip_the_union_of_supported_fields() -> None:
             "tags": ["two"],
             "updated_at": "version",
             "field_intent": ["parent_id", "project_id", "tags"],
+            "completion_requirement": {"schema_version": 1, "mode": "explicit_acceptance"},
+            "completion_acceptance": {"requirement_revision": "current", "subject_revision": "build-a"},
         }
         assert update.kwargs["headers"] == {
-            "Idempotency-Key": "update-card-round-trip"
+            "Idempotency-Key": "update-card-round-trip",
+            "X-PA-Completion-Producer": "automation",
         }
 
 
