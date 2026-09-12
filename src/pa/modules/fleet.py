@@ -2361,6 +2361,7 @@ def complete_dispatch(
         else None
     )
 
+    reconciliation_condition = None
     if not decision or decision.requested_lane is None:
         outcome = "not_applicable"
         reason = decision.reason if decision else "No card disposition applies."
@@ -2381,15 +2382,34 @@ def complete_dispatch(
             f"{base_lane.value}; requested {requested_lane.value} was not applied."
         )
     else:
-        request.app.state.ctx.store.update_card(
-            card.id,
-            CardUpdate(lane=requested_lane, expected_version=card.updated_at),
-            realm_id=body.realm_id,
-            principal_id="fleet:card-disposition",
-            instance_id=request.app.state.ctx.settings.instance_id,
-        )
-        outcome = "applied"
-        reason = decision.reason
+        from pa.domain.projection import CardVersionConflict
+        from pa.domain.completion import CompletionConflict
+        try:
+            request.app.state.ctx.store.update_card(
+                card.id,
+                CardUpdate(lane=requested_lane, expected_version=card.updated_at),
+                realm_id=body.realm_id,
+                principal_id="fleet:card-disposition",
+                instance_id=request.app.state.ctx.settings.instance_id,
+            )
+            outcome = "applied"
+            reason = decision.reason
+        except (CardVersionConflict, CompletionConflict) as exc:
+            # Transport ACK is already immutable. Preserve it and leave the
+            # newer card for the existing explicit reconciliation owner.
+            outcome = "conflict_requires_resolution"
+            reconciliation_condition = (
+                "stale_card_version" if isinstance(exc, CardVersionConflict) else exc.code
+            )
+            reason = "Completion acknowledged; newer card state requires reconciliation."
+            card = request.app.state.ctx.store.get_card(card.id, realm_id=body.realm_id) or card
+            record.reconciliation_current_card = {
+                "lane": card.lane.value, "updated_at": card.updated_at.isoformat(),
+                "preferred_instance": card.preferred_instance,
+            }
+            record.reconciliation_recovery_action = (
+                "Reconcile the acknowledged dispatch against the current card; do not resend a stale lane write."
+            )
 
     record.card_disposition_status = decision.status if decision else "not_applicable"
     record.card_disposition_reason = reason
@@ -2398,7 +2418,7 @@ def complete_dispatch(
     )
     record.reconciliation_state = outcome
     record.reconciliation_condition = (
-        "operator_resolution" if outcome == "conflict_requires_resolution" else None
+        (reconciliation_condition or "operator_resolution") if outcome == "conflict_requires_resolution" else None
     )
     record.reconciliation_recoverable = outcome == "conflict_requires_resolution"
     record.reconciliation_updated_at = datetime.now(UTC)
@@ -2588,6 +2608,9 @@ def _completion_ack(record: DispatchRecord, *, duplicate: bool) -> dict[str, Any
         "reconciliation": {
             "state": record.reconciliation_state,
             "condition": record.reconciliation_condition,
+            "recoverable": record.reconciliation_recoverable,
+            "recovery_action": record.reconciliation_recovery_action,
+            "current_card": record.reconciliation_current_card,
         },
     }
 

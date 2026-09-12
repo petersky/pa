@@ -3463,6 +3463,8 @@ class CardProjection:
                 receipts.append(integration_evidence.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key or str(uuid4()), "outcome": "integrated", "actor_kind": "integration", "milestones": ["integrated"]}))
         acceptance = data.completion_acceptance
         if acceptance:
+            if "integrated" in acceptance.milestones:
+                raise CompletionConflict("completion_integration_producer_required")
             if not requirement or acceptance.requirement_revision != requirement.revision:
                 raise CompletionConflict("stale_completion_requirement")
             if data.expected_version is None or not idempotency_key:

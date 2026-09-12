@@ -42,13 +42,19 @@ def completion_state(requirement: Any, evidence: Any = ()) -> dict:
     current = [item for item in receipts if (item.get("requirement_revision") == revision or item.get("outcome") == "integrated") and item.get("actor") and item.get("recorded_at")]
     integrated = [item for item in current if item.get("outcome") == "integrated"]
     # A receipt accepting build A never certifies a later integrated build B.
-    if integrated:
-        subject = integrated[-1].get("subject_revision")
+    subjects = integrated or [item for item in current if item.get("outcome") == "accepted"]
+    if subjects:
+        subject = subjects[-1].get("subject_revision")
         current = [item for item in current if item.get("subject_revision") == subject or item.get("outcome") == "human_override"]
     human = any(item.get("outcome") == "human_override" for item in current)
     accepted = any(item.get("outcome") == "accepted" for item in current)
-    satisfied = sorted({stage for item in current for stage in item.get("milestones", [])})
-    required = requirement.get("milestones", [])
+    # Acceptance cannot manufacture the supervisor's integration outcome, even
+    # when an older receipt explicitly claimed that milestone.
+    satisfied = sorted({stage for item in current for stage in item.get("milestones", [])
+                        if stage != "integrated" or item.get("outcome") == "integrated"})
+    required = list(requirement.get("milestones", []))
+    if requirement.get("mode") == "integration_only" and "integrated" not in required:
+        required.insert(0, "integrated")
     missing = [stage for stage in required if stage not in satisfied]
     if requirement.get("mode") == "explicit_acceptance" and not accepted:
         missing.append("acceptance")
