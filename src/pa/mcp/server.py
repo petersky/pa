@@ -115,4 +115,14 @@ def _get_mcp():
 
 
 def run_stdio() -> None:
+    import logging
+    import sys
+
+    from pa.core.logging import JsonFormatter
+
+    # Keep the existing secret/exception redaction without configuring the
+    # service's shared rotating log file. stdout belongs exclusively to MCP.
+    stderr = logging.StreamHandler(sys.stderr)
+    stderr.setFormatter(JsonFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[stderr], force=True)
     _get_mcp().run(transport="stdio")

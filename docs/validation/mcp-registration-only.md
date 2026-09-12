@@ -27,8 +27,11 @@ ordinary input schemas match fingerprints captured from the pre-repair base;
 assigned discovery remains the exact nine-tool allowlist.
 
 Codex's two-second observation deadline leaves MCP health pending. Explicit
-startup success confirms connectivity; late failure changes published health and
-live UI status, and later explicit success recovers it. Evidence is tied to the
+startup success, when an adapter supports it, confirms connectivity. Codex ACP
+1.11.0 emits only startup failures/cancellations, so a successful PA tool result
+from the exact current provider/session confirms connectivity instead. Late
+failure changes published health and live UI status; a subsequent bound PA tool
+success recovers it. Silence stays pending. Evidence is tied to the
 PAClient object and exact native session ID, invalidated on new connection,
 disconnect, or rejected initial startup. Cancelled-only notifications remain
 nonfatal. A timeout mixed with cancellation is still a failure. Error details
@@ -64,8 +67,9 @@ it is not evidence of the production timeout's precise cause.
 Final test runs clear inherited PA_* variables and set temporary data/workspace
 roots. Earlier selected tests used explicit temporary data directories but
 inherited PA_WORKSPACE_ROOT; the broad run was interrupted when discovered.
-Shared workspace-manager schema initialization may have occurred in those
-runs. No direct shared-data inspection or corrective write was attempted. This
+The original broad run is invalidated as acceptance evidence. Retained evidence
+does not establish the exact earlier subprocess environment or production
+central database writes; the persisted worker workspace root is its leased tree. No direct shared-data inspection or corrective write was attempted. This
 qualification was reported durably in checkpoint
 `3e1795ac-7dff-4345-ba17-d978bcb92608`; the owner API subsequently still reported
 this session's sole lease ready at fence 218.
@@ -96,3 +100,35 @@ rerun passed 32 tests. The handshake test uses the existing bootstrap probe's
 AsyncExitStack pattern: its unchanged 25-second deadline covers spawn,
 initialize, and tools/list; SDK process teardown uses its separate bounded waits.
 The four latest full runs, including teardown, took 13.32–21.27 seconds.
+
+## Coordinator adapter review follow-up
+
+Revalidated installed Codex ACP 1.11.0 `createMcpStartupUpdates`,
+`completeItemEvent` MCP branch, and raw input/output helpers. The checked-in
+contract fixture extracts those functions verbatim and executes them with Node;
+ready yields no event, failure yields the forwarded error, and a completed PA
+call includes `rawInput.server/tool` and `rawOutput.result/error`. This is a
+contract fixture, not a production provider launch. The isolated ACP wire test
+now uses those actual event shapes for late failure and bound-tool recovery.
+Tests reject other-server, stale-client/session, failed-result, title-only,
+in-progress and missing-result evidence. Live health includes the bound-tool
+recovery. Provider/job route syntax is rejected before authenticated forwarding.
+Local install/update retain the tested 910-second HTTP/900-second service budget;
+fleet forwarding retains its pre-existing 120-second service transport bound.
+
+The two preserved stderr logging edits were reviewed and included: stdio uses
+only a stderr handler with the existing secret/exception redactor, no FileHandler.
+All runs below clear inherited PA_* and set temporary data and workspace roots:
+
+- 49 focused registration, forwarding, redaction and adapter regressions passed.
+- Four actual locked-data stdio cases and the 30-second ACP wire case passed.
+- 91 related ACP client, session live-event and stream-join tests passed.
+- Wheel and sdist build passed.
+- Plain source initialize/tools-list: 4.379 s (5.240 s including teardown).
+- Plain wheel initialize/tools-list: 5.116 s (5.717 s including teardown).
+  Both returned 205 tools without creating data/workspace directories. These
+  are plain protocol timings without test audit hooks, not production stall
+  attribution. The wheel was loaded directly without installing or activating it.
+
+Review progress correlation: `mcp-repair-pr436-adapter-review-v1` (HTTP 200).
+Root still owns final exact-head approval, merge and release/production acceptance.

@@ -261,7 +261,8 @@ async def test_mcp_health_is_attached_to_live_ui_event(tmp_path):
     payload = runtime._append_transcript.call_args.args[1]
     assert payload['pa_mcp']['state'] == 'disconnected'
     assert '30 seconds' in payload['pa_mcp']['detail']
-    await emit(client, 'completed')
+    contract = json.loads((Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_events.json').read_text())
+    await client.session_update('native-current', contract['success'])
     assert runtime._append_transcript.call_args.args[1]['pa_mcp']['state'] == 'connected'
 
 
@@ -309,3 +310,93 @@ async def test_actual_acp_wire_late_startup_failure_and_recovery(tmp_path):
             await recovered.wait()
     assert [item['state'] for item in evidence] == ['disconnected', 'connected']
     assert list(tmp_path.iterdir()) == []
+
+
+def test_stdio_logs_redact_messages_and_exceptions_without_shared_files():
+    import io
+    import logging
+    from pa.mcp import server
+    stdout, stderr = io.StringIO(), io.StringIO()
+    root = logging.getLogger()
+    def run(**kwargs):
+        assert kwargs == {'transport': 'stdio'}
+        assert len(root.handlers) == 1
+        assert not isinstance(root.handlers[0], logging.FileHandler)
+        logging.warning('Authorization: Bearer test-sensitive-value')
+        try:
+            raise RuntimeError('secret=test-sensitive-exception')
+        except RuntimeError:
+            logging.exception('provider failure')
+    candidate = MagicMock()
+    candidate.run.side_effect = run
+    with patch.object(root, 'handlers', []), patch.object(root, 'level', logging.WARNING), patch('sys.stdout', stdout), patch('sys.stderr', stderr), patch.object(server, '_get_mcp', return_value=candidate):
+        server.run_stdio()
+    assert stdout.getvalue() == ''
+    assert 'test-sensitive-value' not in stderr.getvalue()
+    assert 'test-sensitive-exception' not in stderr.getvalue()
+    assert '[redacted]' in stderr.getvalue()
+
+
+def test_codex_adapter_error_only_contract_fixture():
+    """Execute the extracted installed adapter functions, including dropped ready."""
+    import subprocess
+    fixture = Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_contract.js'
+    result = subprocess.run(['node', str(fixture)], capture_output=True, text=True, check=True, timeout=10)
+    actual = json.loads(result.stdout)
+    assert actual == json.loads(fixture.with_name('codex_acp_1_11_mcp_events.json').read_text())
+    assert actual['ready'] == []
+    assert actual['success']['sessionUpdate'] == 'tool_call_update'
+
+
+@pytest.mark.asyncio
+async def test_error_only_adapter_confirms_only_current_session_pa_tool_success(tmp_path):
+    import copy
+    events = json.loads((Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_events.json').read_text())
+    connection = AgentConnection(Settings(data_dir=tmp_path), MagicMock(), agent_name='codex')
+    old = bind(connection)
+    client = bind(connection)
+    success = events['success']
+    assert events['ready'] == []
+    assert await client.wait_for_pa_mcp_startup_failure('native-current', timeout=2.0) is None
+    assert connection.pa_mcp_health['state'] == 'checking'
+    await old.session_update('native-current', success)
+    await client.session_update('other-session', success)
+    assert connection.pa_mcp_health['state'] == 'checking'
+    for change in [
+        {'rawInput': {'server': 'another', 'tool': 'list_items'}},
+        {'rawOutput': {'result': {'isError': True}, 'error': None}},
+        {'rawOutput': {'result': {}, 'error': {'message': 'failed'}}},
+        {'rawOutput': None},
+        {'status': 'in_progress'},
+        {'rawInput': None, 'title': 'mcp.pa.list_items'},
+    ]:
+        candidate = copy.deepcopy(success)
+        candidate.update(change)
+        await client.session_update('native-current', candidate)
+        assert connection.pa_mcp_health['state'] == 'checking'
+    await client.session_update('native-current', success)
+    assert connection.pa_mcp_health['state'] == 'connected'
+    await client.session_update('native-current', events['failed'][0])
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    await client.session_update('native-current', success)
+    assert connection.pa_mcp_health['state'] == 'connected'
+    assert 'detail' not in connection.pa_mcp_health
+    await old.session_update('native-current', events['failed'][0])
+    assert connection.pa_mcp_health['state'] == 'connected'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('invalid', ['', '..', '../codex', 'codex/install', 'codex?x', 'codex#x', '%2e%2e', 'a\\b', 'a\n'])
+@pytest.mark.parametrize('field', ['provider_id', 'job_id'])
+async def test_provider_path_segments_rejected_before_http(tmp_path, invalid, field):
+    from pa.mcp.context import registration_context
+    from pa.mcp.tools.agent_providers import register_mcp
+    from tests.test_goal_assigned_service_mcp import FakeMcp
+    with patch.dict(os.environ, {'PA_DATA_DIR': str(tmp_path)}, clear=True):
+        mcp = FakeMcp()
+        register_mcp(mcp, registration_context())
+        arguments = {'provider_id': 'codex', 'job_id': 'job-test', field: invalid}
+        with patch('pa.mcp.local_api.request_local_pa') as request:
+            with pytest.raises(ValueError, match='Invalid provider or job identifier'):
+                await mcp.functions['agent_provider_login_cancel'](**arguments)
+            request.assert_not_called()

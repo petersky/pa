@@ -14,15 +14,14 @@ def send(value):
 
 def startup():
     time.sleep(30)
-    for status, text in [('failed', 'PA MCP client timed out after 30 seconds'), ('completed', '')]:
+    from pathlib import Path
+    contract = json.loads(Path(__file__).with_name('codex_acp_1_11_mcp_events.json').read_text())
+    for update in [*contract['failed'], contract['success']]:
         send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {
-            'sessionId': 'native-current', 'update': {
-                'sessionUpdate': 'tool_call', 'toolCallId': 'mcp_startup.pa',
-                'title': 'PA MCP startup', 'status': status,
-                'content': [{'type': 'content', 'content': {'type': 'text', 'text': text}}],
-            },
+            'sessionId': 'native-current', 'update': update,
         }})
         time.sleep(0.5)
+
 
 
 for line in sys.stdin:

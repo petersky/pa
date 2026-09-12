@@ -472,6 +472,34 @@ class PAClient(Client):
                 event.set()
             if self.on_mcp_startup:
                 self.on_mcp_startup(key)
+        # Codex ACP 1.11 forwards only failed/cancelled startup events. Its
+        # completed MCP calls carry rawInput.server/tool and rawOutput.result.
+        # A successful call through PA is positive evidence from this provider
+        # session; titles, silence and an independent owner probe are not.
+        raw_input = normalized.get("raw_input")
+        raw_output = normalized.get("raw_output")
+        if (
+            normalized.get("type") in {"tool_call", "tool_call_update"}
+            and normalized.get("tool_call_id")
+            and normalized.get("tool_call_id") != "mcp_startup.pa"
+            and normalized.get("status") == "completed"
+            and isinstance(raw_input, dict)
+            and raw_input.get("server") == "pa"
+            and isinstance(raw_input.get("tool"), str)
+            and raw_input["tool"]
+            and isinstance(raw_output, dict)
+            and raw_output.get("error") is None
+            and isinstance(raw_output.get("result"), dict)
+            and not raw_output["result"].get("isError", False)
+        ):
+            key = str(session_id)
+            self._mcp_startup_failures.pop(key, None)
+            self._mcp_startup_successes.add(key)
+            event = self._mcp_startup_events.get(key)
+            if event is not None:
+                event.set()
+            if self.on_mcp_startup:
+                self.on_mcp_startup(key)
         self._wire(
             "in",
             {

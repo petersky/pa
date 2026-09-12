@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import re
+from urllib.parse import quote
+
 from pa.core.context import AppContext
+
+
+def _path_segment(value: str) -> str:
+    """Reject route syntax before quoting an opaque provider or job identifier."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise ValueError("Invalid provider or job identifier")
+    return quote(value, safe="")
 
 
 def register_mcp(mcp, ctx: AppContext) -> None:
@@ -39,21 +49,21 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         provider_id: str, instance_id: str | None = None
     ) -> dict:
         """Status for one ACP provider (cursor, codex, openinterpreter, …)."""
-        return await forward(instance_id, "GET", f"/{provider_id}")
+        return await forward(instance_id, "GET", f"/{_path_segment(provider_id)}")
 
     @mcp.tool()
     async def agent_provider_install(
         provider_id: str, instance_id: str | None = None
     ) -> dict:
         """Install or verify an ACP provider on this host or a fleet peer."""
-        return await forward(instance_id, "POST", f"/{provider_id}/install", timeout=910.0)
+        return await forward(instance_id, "POST", f"/{_path_segment(provider_id)}/install", timeout=910.0)
 
     @mcp.tool()
     async def agent_provider_update(
         provider_id: str, instance_id: str | None = None
     ) -> dict:
         """Update an ACP provider package/binary."""
-        return await forward(instance_id, "POST", f"/{provider_id}/update", timeout=910.0)
+        return await forward(instance_id, "POST", f"/{_path_segment(provider_id)}/update", timeout=910.0)
 
     @mcp.tool()
     async def agent_provider_configure(
@@ -81,14 +91,14 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             "model_provider_env_key": model_provider_env_key,
             "model_provider_wire_api": model_provider_wire_api,
         }
-        return await forward(instance_id, "POST", f"/{provider_id}/configure", body=body)
+        return await forward(instance_id, "POST", f"/{_path_segment(provider_id)}/configure", body=body)
 
     @mcp.tool()
     async def agent_provider_probe(
         provider_id: str, instance_id: str | None = None
     ) -> dict:
         """Probe ACP initialize handshake for a provider."""
-        return await forward(instance_id, "POST", f"/{provider_id}/probe")
+        return await forward(instance_id, "POST", f"/{_path_segment(provider_id)}/probe")
 
     @mcp.tool()
     async def agent_provider_login_start(
@@ -98,18 +108,18 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         instance_id: str | None = None,
     ) -> dict:
         """Explicitly start a bounded Codex device-login job on a target instance."""
-        return await forward(instance_id, "POST", f"/{provider_id}/login-jobs", body={"consent": consent, "timeout_seconds": timeout_seconds})
+        return await forward(instance_id, "POST", f"/{_path_segment(provider_id)}/login-jobs", body={"consent": consent, "timeout_seconds": timeout_seconds})
 
     @mcp.tool()
     async def agent_provider_login_status(
         provider_id: str, job_id: str, instance_id: str | None = None
     ) -> dict:
         """Read a device-login job without returning credentials."""
-        return await forward(instance_id, "GET", f"/{provider_id}/login-jobs/{job_id}")
+        return await forward(instance_id, "GET", f"/{_path_segment(provider_id)}/login-jobs/{_path_segment(job_id)}")
 
     @mcp.tool()
     async def agent_provider_login_cancel(
         provider_id: str, job_id: str, instance_id: str | None = None
     ) -> dict:
         """Cancel an active device-login job."""
-        return await forward(instance_id, "POST", f"/{provider_id}/login-jobs/{job_id}/cancel")
+        return await forward(instance_id, "POST", f"/{_path_segment(provider_id)}/login-jobs/{_path_segment(job_id)}/cancel")
