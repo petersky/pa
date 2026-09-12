@@ -108,7 +108,71 @@ function settled(w,state){
  // Explicit clear retires its receipt and controls, fencing the late reply.
  const cleared=make(),clearAck=deferred();cleared.apiWithTimeout=()=>clearAck.promise;cleared.send();cleared.drafts.clear(true);
  cleared.els.input.value='after clear';cleared.drafts.changed();clearAck.resolve({accepted:true});await tick();settled(cleared);assert.equal(cleared.els.input.value,'after clear');
- const conflict=make();conflict.drafts.beginSubmission();conflict.drafts.submissionFailed({rawText:'submitted',images:[],conflict:true});assert.equal(conflict.drafts.pendingReceipt(),null);
+ // A definitive fingerprint conflict rejects this attempt, even if the ID
+ // belongs to an accepted older payload. Neither SSE nor a late lookup may
+ // retire any of the rejected text, binary images, or metadata.
+ const conflict=make(),conflictPost=deferred(),conflictLookup=deferred();
+ const rejectedImage={name:'rejected.png',data:'rejected-bytes'};
+ const rejectedMetadata={name:'rejected.png',mime_type:'image/png',size:14};
+ conflict.pendingImages=[rejectedImage];conflict.drafts.attachmentMetadata=[rejectedMetadata];
+ conflict.apiWithTimeout=()=>conflictPost.promise;conflict.send();
+ const rejectedId=conflict.drafts.submissionId;
+ conflict.apiWithTimeout=()=>conflictLookup.promise;
+ const rejectedLookup=conflict.reconcilePendingSubmission();
+ const rejection=Error('fingerprint conflict');rejection.status=409;
+ rejection.detail={code:'client_prompt_id_conflict'};
+ conflictPost.reject(rejection);await tick();
+ assert.equal(conflict.drafts.pendingReceipt(),null);
+ assert.equal(conflict.drafts.observeAcceptance(rejectedId,true),false);
+ conflictLookup.resolve({accepted:true,status:'completed'});await rejectedLookup;
+ settled(conflict,'failed');assert.equal(conflict.els.input.value,'submitted');
+ assert.deepEqual(conflict.pendingImages,[rejectedImage]);
+ assert.deepEqual(conflict.drafts.attachmentMetadata,[rejectedMetadata]);
+
+ // A late A transport failure must not start a lookup or change B's controls.
+ const late=make(),aPost=deferred(),bPost=deferred(),aLookup=deferred();
+ late.apiWithTimeout=()=>aPost.promise;late.send();
+ late.apiWithTimeout=()=>aLookup.promise;const aReconcile=late.reconcilePendingSubmission();
+ late.drafts.observeAcceptance(late.drafts.submissionId,false);
+ late.els.input.value='B';late.drafts.changed();
+ let bRequests=0;late.apiWithTimeout=()=>{bRequests++;return bPost.promise;};late.send();
+ const bId=late.drafts.submissionId;aPost.reject(Error('late A network failure'));
+ aLookup.resolve({accepted:true,status:'completed'});await aReconcile;await tick();
+ assert.equal(bRequests,1);assert.equal(late.drafts.submissionId,bId);
+ assert.equal(late.els.input.value,'B');assert.equal(late.submissionPending,true);
+ assert.equal(late.submissionState,'sending');bPost.resolve({accepted:true});await tick();settled(late);
+
+ // Restored A edited away and back to identical text is still a newer draft.
+ const editedRestore=make(),newImageAfterRestore={name:'new.png',data:'new-bytes'};
+ const newMetadataAfterRestore={name:'new.png',mime_type:'image/png',size:9};
+ editedRestore.drafts.apply({text:'restored A',submission_id:'restored-edit-id',attachments:[{name:'old.png'}]});
+ editedRestore.els.input.value='different';editedRestore.drafts.changed();
+ editedRestore.els.input.value='restored A';editedRestore.drafts.changed();
+ editedRestore.pendingImages=[newImageAfterRestore];
+ editedRestore.drafts.attachmentMetadata.push(newMetadataAfterRestore);
+ assert.equal(editedRestore.drafts.observeAcceptance('restored-edit-id',false),true);
+ settled(editedRestore);assert.equal(editedRestore.els.input.value,'restored A');
+ assert.deepEqual(editedRestore.pendingImages,[newImageAfterRestore]);
+ assert.deepEqual(editedRestore.drafts.attachmentMetadata,[newMetadataAfterRestore]);
+
+ // Switching away and back creates a fresh restored receipt, even for the
+ // same durable ID; the prior request cannot settle that new scope.
+ const returned=make(),oldPost=deferred();returned.apiWithTimeout=()=>oldPost.promise;returned.send();
+ const originalSession=returned.sessionId;
+ returned.drafts.switchSession('away');returned.sessionId='away';
+ returned.drafts.switchSession(originalSession);returned.sessionId=originalSession;
+ const returnedReceipt=returned.drafts.pendingReceipt();
+ returned.apiWithTimeout=()=>new Promise(noop);
+ oldPost.resolve({accepted:true});await tick();
+ assert.equal(returned.drafts.pendingReceipt(),returnedReceipt);
+ assert.equal(returned.els.input.value,'submitted');assert.equal(returned.submissionState,'checking');
+ returned.drafts.observeAcceptance(returnedReceipt.id,false);settled(returned);
+
+ // Receipt settlement is monotonic when a slower lookup subsequently fails.
+ const monotonic=make(),lateLookup=deferred();monotonic.drafts.beginSubmission();
+ monotonic.apiWithTimeout=()=>lateLookup.promise;const looking=monotonic.reconcilePendingSubmission();
+ monotonic.drafts.observeAcceptance(monotonic.drafts.submissionId,false);
+ lateLookup.reject(Error('late lookup failure'));await looking;settled(monotonic,'accepted');
  // Applying a newer storage draft releases the old pending controls as well.
  const storageDraft=make(),storageAck=deferred();storageDraft.apiWithTimeout=()=>storageAck.promise;storageDraft.send();
  storageDraft.drafts.apply({text:'from another tab',attachments:[]});storageAck.resolve({accepted:true});await tick();settled(storageDraft);assert.equal(storageDraft.els.input.value,'from another tab');
