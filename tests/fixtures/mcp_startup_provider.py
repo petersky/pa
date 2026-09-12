@@ -50,15 +50,20 @@ for line in sys.stdin:
     if method == 'initialize':
         result = {'protocolVersion': 1, 'agentCapabilities': {}, 'agentInfo': {'name': 'isolated-test', 'version': '1'}}
     elif method == 'session/load':
-        emit_update(history_update())
+        if '--explicit-success' not in sys.argv:
+            emit_update(history_update())
         result = {}
     elif method == 'session/new':
         result = {'sessionId': 'native-current'}
     else:
         continue
+    if method in {'session/new', 'session/load'} and '--explicit-success' in sys.argv:
+        emit_update({'sessionUpdate': 'tool_call', 'toolCallId': 'mcp_startup.pa', 'title': 'PA MCP startup', 'status': 'completed'})
+        if '--newer-failure' in sys.argv:
+            emit_update({'sessionUpdate': 'tool_call', 'toolCallId': 'mcp_startup.pa', 'title': 'PA MCP startup', 'status': 'failed', 'content': [{'type': 'content', 'content': {'type': 'text', 'text': 'PA MCP failed to start: newer failure'}}]})
     send({'jsonrpc': '2.0', 'id': request['id'], 'result': result})
-    if method == 'session/new':
+    if method == 'session/new' and '--explicit-success' not in sys.argv:
         threading.Thread(target=startup, daemon=True).start()
 
-    if method == 'session/load':
+    if method == 'session/load' and '--explicit-success' not in sys.argv:
         threading.Thread(target=after_load, daemon=True).start()

@@ -489,3 +489,42 @@ async def test_actual_load_replay_wire_requires_fresh_start(tmp_path):
             await connected.wait()
     assert observed == ['checking', 'checking', 'checking', 'connected']
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('load', [False, True])
+@pytest.mark.parametrize('newer_failure', [False, True])
+async def test_connect_preserves_explicit_startup_evidence_before_new_load_return(tmp_path, load, newer_failure):
+    from pa.acp.providers.base import AgentProviderSpec
+    from acp.schema import McpServerStdio
+    from pa.acp.mcp_config import McpHandshakeError
+    fixture = Path(__file__).parent / 'fixtures/mcp_startup_provider.py'
+    args = [str(fixture), '--explicit-success']
+    if newer_failure:
+        args.append('--newer-failure')
+    connection = AgentConnection(
+        Settings(data_dir=tmp_path, instance_id='owner-test'), MagicMock(), agent_name='codex',
+        provider_spec=AgentProviderSpec(id='codex', display_name='Isolated fixture', command=sys.executable, args=args, session_load_supported=True),
+    )
+    # Run the real connect + SDK subprocess/new/load boundary, not begin_live
+    # directly. The fixture emits explicit evidence before its RPC response.
+    with patch('pa.acp.client.probe_owner_channel', return_value={'state': 'connected'}), patch('pa.acp.client.pa_mcp_servers', return_value=[McpServerStdio(name='pa', command=sys.executable, args=[], env=[])]):
+        async with asyncio.timeout(10):
+            try:
+                if newer_failure:
+                    try:
+                        await connection.connect(cwd=str(tmp_path), resume_external_id='native-current' if load else None)
+                    except McpHandshakeError:
+                        pass
+                    # SDK notification callbacks can finish after the RPC result.
+                    async with asyncio.timeout(1):
+                        while connection.pa_mcp_health['state'] != 'disconnected':
+                            await asyncio.sleep(0.01)
+                    assert connection.pa_mcp_health['state'] == 'disconnected'
+                    assert 'newer failure' in str(connection.pa_mcp_health)
+                else:
+                    await connection.connect(cwd=str(tmp_path), resume_external_id='native-current' if load else None)
+                    assert connection.pa_mcp_health['state'] == 'connected'
+                    assert connection.pa_mcp_health['provider_context_probe']['classification'] == 'startup_confirmed'
+            finally:
+                await connection.disconnect()

@@ -454,7 +454,9 @@ class PAClient(Client):
         """Open evidence collection only after session/new or session/load returns."""
         self._mcp_live_session = str(session_id)
         self._mcp_recovery_calls.clear()
-        self._mcp_startup_successes.clear()
+        # Explicit startup success can arrive before new/load returns. Keep it:
+        # pre-boundary tool history is already ineligible, and hard failures
+        # discard success in session_update before this boundary is opened.
 
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)

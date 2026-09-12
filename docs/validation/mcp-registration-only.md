@@ -174,7 +174,8 @@ independent exact-head review and integration/release/production acceptance.
 Completed MCP history from Codex ACP `createHistoryUpdates` is not connectivity
 proof. Positive PA tool evidence now requires an invocation start observed only
 after session/new or session/load has returned for the current native session.
-Opening this boundary clears pre-load success/start state; hard failures remain
+Opening this boundary clears pre-load invocation starts, preserves explicit
+startup success from the same client/session, and hard failures remain
 authoritative and invalidate all earlier invocation starts. Completions without
 a matching live start cannot confirm initial health or recover a failure.
 History is still delivered through the existing transcript path; this change
@@ -187,3 +188,20 @@ before and after its response, then confirms health with a fresh live call.
 All tests clear inherited PA_* and use temporary data/workspace roots. Build
 passed. No timing threshold, tool proxy, authorization, redaction or composer
 code changed in this follow-up. Root retains exact-head approval and integration.
+
+## Explicit startup evidence at the connection boundary
+
+`begin_live_mcp_session` preserves authoritative explicit startup success already
+received by this client/native session during new/load. It still clears invocation
+starts; historical tool completions remain ineligible under the live-start gate.
+A later hard failure removes the success and remains authoritative. The bounded
+fixture emits success (optionally followed by failure) before its actual new/load
+RPC response, and the regression invokes real `AgentConnection.connect` plus SDK
+subprocess transport. This covers the producer/consumer boundary, not just a
+helper call. SDK notification callbacks may finish after the RPC response; the
+failure cases verify eventual published failure as well as admission failure.
+
+102 isolated registration/ACP tests passed, including the four new/load cases,
+history replay, current invocation ordering and the actual 30-second wire case.
+Wheel/sdist build passed. No timeout or threshold was changed. This follow-up
+preserves proxy/path validation, stderr redaction and composer integration.
