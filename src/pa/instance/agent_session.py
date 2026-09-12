@@ -5307,6 +5307,12 @@ class AgentSessionManager:
         if self._should_abort_recovery():
             await runtime.close()
             raise RuntimeError("Agent is quiescing")
+        # Snapshot recovery bypasses create_session, but restored prompts must
+        # still revalidate their persisted execution selection before delivery.
+        if getattr(self, "_selection_service", None) is None:
+            from pa.execution.selection_service import SelectionService
+
+            self._selection_service = SelectionService(self.settings, self.store, self)
         queued = self._recovery_queue(snap, session, workspace_env)
         await runtime.start(
             resume_external_id=snap.external_session_id,

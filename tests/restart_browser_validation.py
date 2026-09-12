@@ -29,6 +29,7 @@ def main():
     for key in ('PA_EXECUTION_CONTEXT', 'PA_SYNC_TOKEN_FILE'):
         env.pop(key, None)
     env['PA_OWNER_API_URL'] = BASE
+    legacy = "--legacy-queued" in sys.argv
     calls = []
     processes = []
     logs = []
@@ -46,11 +47,16 @@ def main():
     def start(generation):
         log = open(ARTIFACTS / f'automated-browser-{generation}.log', 'w')
         logs.append(log)
+        child_env = dict(env)
+        if legacy and generation == 1:
+            child_env["PA_FIXTURE_LEGACY_PRODUCER"] = "1"
+        else:
+            child_env.pop("PA_FIXTURE_LEGACY_PRODUCER", None)
         process = subprocess.Popen([
             sys.executable, '-m', 'uvicorn', 'tests.restart_browser_app:create_app',
             '--factory', '--host', '127.0.0.1', '--port', '8097',
             '--timeout-graceful-shutdown', '3',
-        ], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+        ], cwd=ROOT, env=child_env, stdout=log, stderr=subprocess.STDOUT)
         processes.append(process)
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
@@ -82,10 +88,15 @@ def main():
         # Close the inspection browser so its SSE connection cannot hold raw
         # uvicorn shutdown open. This is not an agent recovery operation.
         call('POST', '/api/browser/detach', browser)
-        receipt = call('POST', f'/api/agent/sessions/{sid}/restart-handoffs', {
-            'continuation_prompt': 'Continue this exact human chat once automatically.',
-            'idempotency_key': 'browser-restart-' + str(uuid4()),
-        })
+        if legacy:
+            seeded = call('POST', f'/fixture/queued-legacy-restart/{sid}', {})
+            receipt = seeded['receipt']
+            assert seeded['agent_env']['PA_EXECUTION_CONTEXT']
+        else:
+            receipt = call('POST', f'/api/agent/sessions/{sid}/restart-handoffs', {
+                'continuation_prompt': 'Continue this exact human chat once automatically.',
+                'idempotency_key': 'browser-restart-' + str(uuid4()),
+            })
         first.wait(timeout=60)
         start(2)
         deadline = time.monotonic() + 45
@@ -97,7 +108,14 @@ def main():
             assert time.monotonic() < deadline, delivered
             time.sleep(.25)
         assert state['session']['external_session_id'] == provider_id
-        assert state['session']['control_mode'] == 'human' and not state['queue']
+        assert state['session']['control_mode'] == 'human'
+        if legacy:
+            assert [p['id'] for p in state['queue']] == ['held-automation']
+            assert state['session']['execution_binding'] == seeded['binding']
+            assert delivered['execution_binding'] == seeded['binding']
+            assert not any(k in seeded['binding'] for k in ('dispatch_id', 'realm_id', 'principal_id'))
+        else:
+            assert not state['queue']
         history = call('GET', f'/api/agent/history/{sid}?limit=250')['events']
         prompt_id = receipt['continuation_prompt_id']
         assert sum(e['event_type'] == 'user_message' and e['payload'].get('id') == prompt_id for e in history) == 1
@@ -112,9 +130,12 @@ def main():
         (ARTIFACTS / 'automated-browser-final.png').write_bytes(base64.b64decode(screenshot['data_base64']))
         call('POST', '/api/browser/detach', browser)
         assert not any('/recover' in path or '/queue/resume' in path for _, path in calls)
+        assert not any(e['event_type'] == 'user_message' and e['payload'].get('id') == 'held-automation' for e in history)
         evidence = {'session_id': sid, 'provider_id': provider_id, 'receipt': delivered,
                     'calls': calls, 'provider_starts': len(starts), 'control_mode': 'human'}
-        (ARTIFACTS / 'automated-browser-evidence.json').write_text(json.dumps(evidence, indent=2))
+        if legacy:
+            evidence['legacy_seed'] = seeded
+        (ARTIFACTS / ('legacy-browser-evidence.json' if legacy else 'automated-browser-evidence.json')).write_text(json.dumps(evidence, indent=2))
         print(json.dumps({'session_id': sid, 'receipt_id': receipt['id'], 'result': 'passed'}))
     finally:
         for process in processes:

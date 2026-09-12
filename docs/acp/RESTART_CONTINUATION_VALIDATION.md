@@ -154,3 +154,32 @@ All 147 related tests and `uv build` pass. The isolated browser lifecycle passed
 again: session `fe7150e0-a370-4352-8532-798240c15817`, receipt
 `aa9f8711-16b9-535b-96ae-1d2672af17cc`, with exact provider identity and one
 automatically delivered continuation. Production acceptance remains root-owned.
+
+## Combined acceptance after PR #431
+
+Integrated main at `61bcc53428e9f69e137c72572f9176a1e1f0fcfe` in the same leased
+worktree. `uv run python -m tests.restart_browser_validation --legacy-queued`
+emulates the old binding producer only in the first isolated process. It
+persists an already-authorized queued receipt and unrelated automatic prompt,
+then commits a real quiesce snapshot before terminating that fixture process.
+The cold process uses the current producer without the emulation hook.
+
+This exposed a separate cold-snapshot admission failure: `_selection_service`
+was only initialized by `create_session`, so a restored queued turn failed its
+selection audit before delivery. Snapshot restoration now initializes that
+service before starting the restored runtime, retaining selection revalidation.
+The pre-fix browser run timed out with the same receipt still queued and the
+missing-service exception; the corrected integrated run passed.
+
+Passing session `a434c44f-1a79-4e16-be6c-a3d95a397eeb`, existing receipt
+`58825ed2-87f3-42db-b57a-e9f9e84b88ce`: exact provider identity, two session starts,
+one continuation user message and completion, unchanged legacy binding without
+`dispatch_id`/`realm_id`/`principal_id`, nonempty canonical workspace environment,
+and ordinary automation still held. No new receipt is requested during cold
+startup. The fixture uses a scratch workspace and tool-free provider; it does
+not establish production repository-lease or provider-account acceptance.
+Production receipt `0aaef8ba-9474-5338-aacb-2a8028a427e2` is untouched.
+
+Final combined validation: 158 tests passed across restart handoff, dispatch
+notification binding, session observability, readiness, MCP configuration and
+dispatch follow-up identity suites; `uv build` passed.

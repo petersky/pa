@@ -1508,3 +1508,44 @@ def test_failed_restart_lookup_does_not_block_later_user_prompt(tmp_path):
         assert runtime._run_prompt.call_args.args[0].id == 'user-next'
         assert [item.id for item in runtime._queue] == [receipt.continuation_prompt_id]
     asyncio.run(scenario())
+
+
+def test_snapshot_restore_initializes_selection_audit_without_fresh_admission(tmp_path):
+    from pa.instance.quiesce import QuiesceSnapshot
+    from pa.execution.selection_service import SelectionService
+
+    async def scenario():
+        (tmp_path / "data").mkdir()
+        store, manager, runtime, receipt = _human_handoff(tmp_path / "data")
+        manager.settings.workspace_root = tmp_path / "workspaces"
+        manager = AgentSessionManager(manager.settings, store)
+        runtime.manager = manager
+        original_binding = {'version': 1, 'execution_card_id': None,
+                            'execution_project_id': None, 'origin_instance_id': None}
+        runtime.session.execution_binding = original_binding
+        store.save_session(runtime.session)
+        env = await manager._prepare_workspace(runtime.session, requested_cwd=None,
+                                               provider_id='codex', fresh_admission=False)
+        assert env['PA_EXECUTION_CONTEXT']
+        binding = dict(runtime.session.execution_binding)
+        runtime.agent_env.update(env)
+        item = runtime.enqueue('accepted continuation', source='restart-handoff:old-receipt',
+                               prompt_id='old-prompt', _defer_drain=True)
+        snapshot = runtime.to_session_snapshot()
+        cold = AgentSessionManager(manager.settings, store)
+        assert not hasattr(cold, '_selection_service')
+        async def provider_start(restored, **kwargs):
+            # The provider can start draining accepted work here, before any
+            # create_session call has initialized fresh-admission dependencies.
+            assert isinstance(cold._selection_service, SelectionService)
+            assert kwargs['resume_external_id'] == 'exact-provider-thread'
+            queued, = kwargs['queued_prompts']
+            assert (queued.id, queued.message) == (item.id, item.message)
+            assert queued.agent_env == restored.agent_env
+            assert queued.agent_env['PA_EXECUTION_CONTEXT']
+        with patch.object(AgentSessionRuntime, 'start', provider_start):
+            restored = await cold._resume_from_snapshot(snapshot, QuiesceSnapshot())
+        assert restored.session.execution_binding == binding
+        assert store.get_session(runtime.session_id).execution_binding == binding
+        assert not any(k in binding for k in ('dispatch_id', 'realm_id', 'principal_id'))
+    asyncio.run(scenario())
