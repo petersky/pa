@@ -781,107 +781,12 @@ assert.strictEqual(refreshed.store.read("session-a").text, "unfinished compositi
 """
         self._run_node(program, store_script, widget_script)
 
-    def test_delayed_ack_suppresses_repeated_send_and_transient_409_keeps_key(
-        self,
-    ) -> None:
-        script = SERVER / "static" / "js" / "agent-chat.js"
-        program = r"""
-const fs = require("fs");
-const vm = require("vm");
-const assert = require("assert");
-const noop = function () {};
-global.document = {
-  body: { addEventListener: noop },
-  addEventListener: noop,
-  querySelector: function () { return null; },
-  querySelectorAll: function () { return []; },
-};
-global.window = {
-  addEventListener: noop,
-  location: { href: "http://127.0.0.1:8080/agent" },
-};
-global.URL = URL;
-vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
-
-const Widget = window.PAAgentChat.AgentChatWidget;
-const widget = Object.create(Widget.prototype);
-const send = { disabled: false, textContent: "Send" };
-const form = { setAttribute: noop };
-const action = { disabled: false };
-let calls = [];
-let resolveRequest;
-let rejectRequest;
-let failure = null;
-const drafts = {
-  beginSubmission: function () { return "browser-prompt-stable"; },
-  setStatus: noop,
-  submissionAccepted: noop,
-  submissionFailed: function (value) { failure = value; },
-};
-Object.assign(widget, {
-  sessionId: "session-1",
-  sessionClosed: false,
-  submissionPending: false,
-  submissionState: "idle",
-  composerEnabled: true,
-  prompting: false,
-  pendingImages: [],
-  drafts,
-  els: { input: { value: "hello" }, send, form, messages: null },
-  root: {
-    dataset: {},
-    querySelector: function () { return null; },
-    querySelectorAll: function () { return [action]; },
-  },
-  commandInvocation: function () { return null; },
-  api: function (path, options) {
-    calls.push({ path, options });
-    return new Promise(function (resolve, reject) {
-      resolveRequest = resolve;
-      rejectRequest = reject;
-    });
-  },
-  _isDuplicateUserBubble: function () { return false; },
-  addBubble: noop,
-  setTurnActive: noop,
-  scrollToBottom: noop,
-  refreshQueue: noop,
-  resolveSessionNotLive: noop,
-  clearPendingImages: noop,
-  submissionRetryVisible: false,
-  submissionRetryReason: "",
-});
-
-(async function () {
-  widget.send("append");
-  widget.send("append"); // repeated button gesture
-  widget.send("append"); // repeated Enter gesture reaches the same guard
-  assert.strictEqual(calls.length, 1);
-  assert.strictEqual(calls[0].options.headers["Idempotency-Key"], "browser-prompt-stable");
-  assert.strictEqual(JSON.parse(calls[0].options.body).client_prompt_id, "browser-prompt-stable");
-  assert.strictEqual(send.disabled, true);
-  assert.strictEqual(send.textContent, "Sending…");
-  resolveRequest({ accepted: true, queued: true });
-  await new Promise(setImmediate);
-  assert.strictEqual(widget.submissionPending, false);
-  assert.strictEqual(send.disabled, false);
-
-  widget.els.input.value = "hello";
-  widget.send("append");
-  assert.strictEqual(calls.length, 2);
-  const transient = new Error("session restarting");
-  transient.status = 409;
-  transient.detail = { code: "session_not_live", recoverable: true };
-  rejectRequest(transient);
-  await new Promise(setImmediate);
-  assert.strictEqual(failure.conflict, false);
-})().catch(function (error) {
-  process.stderr.write(error.stack || String(error));
-  process.exitCode = 1;
-});
-"""
-        self._run_node(program, script)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_integrated_receipt_lifecycle(self) -> None:
+        scripts = [SERVER / "static" / "js" / name for name in (
+            "agent-chat-drafts.js", "agent-chat-draft-widget.js", "agent-chat.js"
+        )]
+        result = subprocess.run(
+            [shutil.which("node"), str(ROOT / "tests" / "agent_chat_receipt_node_harness.js"),
+             *map(str, scripts)], capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

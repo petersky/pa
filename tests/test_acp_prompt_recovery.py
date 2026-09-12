@@ -257,26 +257,19 @@ global.window = {
 };
 global.URL = URL;
 global.performance = global.window.performance;
-vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"));
+for (const script of process.argv.slice(1)) {
+  vm.runInThisContext(fs.readFileSync(script, "utf8"));
+}
 
 const Widget = window.PAAgentChat.AgentChatWidget;
 const widget = Object.create(Widget.prototype);
 const send = { disabled: false, textContent: "Send" };
 const form = { setAttribute: noop };
-const input = { value: "hello" };
+const input = { value: "hello", addEventListener: noop };
 const statusCalls = [];
 const bubbles = [];
 let promptResolve;
 let statusResolve;
-const drafts = {
-  submissionId: "browser-prompt-stable",
-  restoringSubmission: false,
-  beginSubmission: function () { return "browser-prompt-stable"; },
-  setStatus: function (message) { statusCalls.push(message); },
-  submissionAccepted: noop,
-  submissionFailed: noop,
-  observeAcceptance: noop,
-};
 Object.assign(widget, {
   sessionId: "session-1",
   sessionClosed: false,
@@ -289,7 +282,7 @@ Object.assign(widget, {
   composerEnabled: true,
   prompting: false,
   pendingImages: [],
-  drafts,
+  renderPendingImages: noop,
   providerId: "codex",
   preferredProvider: "codex",
   els: { input, send, form, messages: null, toolActivity: null },
@@ -321,18 +314,28 @@ Object.assign(widget, {
   clearPendingImages: noop,
 });
 
+widget.drafts = window.PAAgentDrafts.installWidget(widget);
+input.value = "hello";
+
 (async function () {
-  // Force the network-uncertain path without waiting for the real timeout.
+  // A POST which never settles must reach the real bounded timeout and lookup.
+  let lookupStarted;
+  const lookup = new Promise(resolve => { lookupStarted = resolve; });
   widget.api = function (path) {
     if (path.indexOf("/prompts/") !== -1) {
+      lookupStarted();
       return new Promise(function (resolve) { statusResolve = resolve; });
     }
-    const err = new Error("network drop");
-    err.name = "TypeError";
-    return Promise.reject(err);
+    return new Promise(noop);
   };
   widget.send("append");
-  await new Promise(setImmediate);
+  const stableId = widget.drafts.submissionId;
+  let deadline;
+  try {
+    await Promise.race([lookup, new Promise((resolve, reject) => {
+      deadline = setTimeout(() => reject(new Error("Durable lookup did not start")), 4000);
+    })]);
+  } finally { clearTimeout(deadline); }
   assert.ok(
     widget.submissionState === "acknowledgement_uncertain" ||
     widget.submissionState === "checking",
@@ -349,12 +352,17 @@ Object.assign(widget, {
   assert.strictEqual(widget.submissionPending, false);
   assert.strictEqual(send.textContent, "Retry");
   assert.ok(widget.submissionRetryVisible);
+  assert.strictEqual(widget.drafts.submissionId, stableId);
+  assert.strictEqual(input.value, "hello");
 })().catch(function (error) {
   process.stderr.write(error.stack || String(error));
   process.exitCode = 1;
 });
 """
-        self._run_node(program, script)
+        self._run_node(
+            program, SERVER / "static" / "js" / "agent-chat-drafts.js",
+            SERVER / "static" / "js" / "agent-chat-draft-widget.js", script,
+        )
 
     def test_codex_commentary_in_chat_and_thoughts_nest_tools(self) -> None:
         script = SERVER / "static" / "js" / "agent-chat.js"
