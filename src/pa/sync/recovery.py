@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import copy
 import hashlib
 import json
 import re
@@ -22,6 +23,8 @@ from pa.domain.models import CardEvent, SyncCommit
 from pa.sync.event_log import MAX_HISTORY_COMMITS, EventHistoryObjectError
 from pa.sync.object_store import object_hash
 
+MAX_RECOVERY_KEYS = 64
+MAX_RECOVERY_ATTEMPT_HISTORY = 8
 MAX_RECOVERY_PEERS = 4
 MAX_RECOVERY_FETCHED_OBJECTS = 32
 MAX_RECOVERY_PEER_REQUESTS = 64
@@ -112,6 +115,7 @@ class SyncRecovery:
         self._state_lock = threading.RLock()
         self._task: asyncio.Task | None = None
         self._jobs: dict[str, asyncio.Task] = {}
+        self._job_views: dict[str, dict[str, Any]] = {}
         self._closing = False
         self._loop = asyncio.get_running_loop()
         self.state: dict[str, Any] = self._load()
@@ -128,6 +132,11 @@ class SyncRecovery:
                     phase="interrupted",
                     active_residual_worker=False,
                 )
+            receipts = record.setdefault("key_receipts", {})
+            for key in record.pop("stale_request_keys", []):
+                receipts.setdefault(key, {"phase": "stale"})
+            for key in record.get("request_keys", []):
+                receipts.setdefault(key, self._public_record(record))
         self.log.on_history_failure = self.note_failure
 
     def _load(self) -> dict[str, Any]:
@@ -137,7 +146,13 @@ class SyncRecovery:
         except OSError, ValueError:
             return {}
 
-    def _save(self, *, realm_id: str | None = None, **updates: Any) -> None:
+    def _save(
+        self,
+        *,
+        realm_id: str | None = None,
+        operation_update: bool = True,
+        **updates: Any,
+    ) -> None:
         with self._state_lock:
             realm_id = realm_id or self.state.get("realm_id")
             if realm_id:
@@ -145,6 +160,18 @@ class SyncRecovery:
                 record.update(
                     updates, realm_id=realm_id, updated_at=datetime.now(UTC).isoformat()
                 )
+                view = self._public_record(record)
+                if operation_update:
+                    for key in record.get("request_keys", []):
+                        record.setdefault("key_receipts", {})[key] = copy.deepcopy(view)
+                job_view = self._job_views.get(realm_id)
+                if (
+                    operation_update
+                    and job_view is not None
+                    and job_view.get("operation_id") == record.get("operation_id")
+                ):
+                    job_view.clear()
+                    job_view.update(copy.deepcopy(view))
                 self.state = dict(record)
             else:
                 self.state.update(updates)
@@ -162,7 +189,8 @@ class SyncRecovery:
         if not self.realms:
             self._save(state="healthy")
 
-    def public(self, realm_id: str | None = None) -> dict[str, Any]:
+    @staticmethod
+    def _public_record(record: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "state",
             "realm_id",
@@ -174,12 +202,18 @@ class SyncRecovery:
             "updated_at",
             "operation_id",
             "head_hash",
+            "operation_head_hash",
             "reference_hash",
             "active_residual_worker",
             "phase",
             "resume_count",
             "previous_operation_id",
+            "attempt_history",
+            "prior_attempts_omitted",
         }
+        return copy.deepcopy({k: v for k, v in record.items() if k in allowed})
+
+    def public(self, realm_id: str | None = None) -> dict[str, Any]:
         with self._state_lock:
             record = (
                 self.realms.get(realm_id, {})
@@ -196,7 +230,7 @@ class SyncRecovery:
                     ),
                 )
             )
-            result = {k: v for k, v in record.items() if k in allowed}
+            result = self._public_record(record)
             if not realm_id:
                 result["state"] = (
                     "recovering"
@@ -229,7 +263,13 @@ class SyncRecovery:
         evidence["object_kind"] = kind if kind in {"event", "commit"} else None
         with self._state_lock:
             self._save(
-                realm_id=realm_id, state="recovering", code=failure.code, **evidence
+                realm_id=realm_id,
+                state="recovering",
+                code=failure.code,
+                operation_update=bool(
+                    self.realms.get(realm_id, {}).get("active_residual_worker")
+                ),
+                **evidence,
             )
         if not self._closing:
             self._loop.call_soon_threadsafe(self._ensure_job, realm_id)
@@ -238,45 +278,29 @@ class SyncRecovery:
         self, realm_id: str, request_key: str | None = None, *, resume: bool = False
     ) -> asyncio.Future[bool]:
         record = self.realms.get(realm_id, {})
-        if request_key and request_key in record.get("stale_request_keys", []):
-            raise RecoveryLimitError("stale_recovery_head")
+        head = self.log.get_head(realm_id)
+        saved = record.get("key_receipts", {}).get(request_key)
+        if saved is not None:
+            if (
+                saved.get("phase") == "stale"
+                or saved.get("operation_head_hash", saved.get("head_hash")) != head
+            ):
+                raise RecoveryLimitError("stale_recovery_head")
+            if saved.get("phase") == "complete":
+                receipt = self._loop.create_future()
+                receipt.set_result(saved.get("state") == "healthy")
+                return receipt
+        elif request_key and len(record.get("key_receipts", {})) >= MAX_RECOVERY_KEYS:
+            raise RecoveryLimitError("request_identity_limit")
         task = self._jobs.get(realm_id)
         if task is not None and not task.done():
             if request_key:
-                keys = list(self.realms[realm_id].get("request_keys", []))
+                keys = list(record.get("request_keys", []))
                 if request_key not in keys:
-                    if len(keys) >= 64:
-                        raise RecoveryLimitError("request_identity_limit")
                     self._save(realm_id=realm_id, request_keys=[*keys, request_key])
             return task
-        record = self.realms.get(realm_id, {})
-        head = self.log.get_head(realm_id)
         operation_head = record.get("operation_head_hash", record.get("head_hash"))
-        if request_key in record.get("request_keys", []) and operation_head != head:
-            raise RecoveryLimitError("stale_recovery_head")
-        if (
-            task is not None
-            and operation_head == head
-            and request_key is not None
-            and request_key in record.get("request_keys", [])
-        ):
-            return task
         same_head = operation_head == head
-        same_key = request_key is not None and request_key in record.get(
-            "request_keys", []
-        )
-        # A terminal receipt survives process exit. Startup explicitly requests
-        # authoritative verification of degraded records instead of replaying it.
-        if (
-            task is None
-            and same_head
-            and same_key
-            and not resume
-            and record.get("phase") == "complete"
-        ):
-            receipt = self._loop.create_future()
-            receipt.set_result(record.get("state") == "healthy")
-            return receipt
         resuming = (
             task is None
             and same_head
@@ -286,13 +310,20 @@ class SyncRecovery:
         keys = list(record.get("request_keys", [])) if resuming else []
         if request_key and request_key not in keys:
             keys.append(request_key)
-        stale_keys = list(record.get("stale_request_keys", []))
-        if not same_head:
-            stale_keys = list(
-                dict.fromkeys([*stale_keys, *record.get("request_keys", [])])
-            )
-        if len(keys) > 64:
+        if len(keys) > MAX_RECOVERY_KEYS:
             raise RecoveryLimitError("request_identity_limit")
+        history = list(record.get("attempt_history", [])) if resuming else []
+        omitted = int(record.get("prior_attempts_omitted", 0)) if resuming else 0
+        if resuming:
+            previous = self._public_record(record)
+            previous.pop("attempt_history", None)
+            previous.pop("prior_attempts_omitted", None)
+            history.append(previous)
+            if len(history) > MAX_RECOVERY_ATTEMPT_HISTORY:
+                # Keep the original attempt and the most recent attempts; report
+                # exactly how many intermediate attempts are no longer retained.
+                history.pop(1)
+                omitted += 1
         updates = {}
         if record.get("head_hash") != head:
             # Old evidence cannot authorize installation at a new head. Obtain
@@ -314,13 +345,15 @@ class SyncRecovery:
             else record.get("operation_id"),
             resume_count=int(record.get("resume_count", 0)) + 1 if resuming else 0,
             request_keys=keys,
-            stale_request_keys=stale_keys,
+            attempt_history=history,
+            prior_attempts_omitted=omitted,
             active_residual_worker=True,
             phase="resuming" if resuming else "starting",
             attempts=[],
             work=_RecoveryBudget().public(),
             **updates,
         )
+        self._job_views[realm_id] = self.public(realm_id)
         task = asyncio.create_task(
             self._run_job(realm_id, head), name="sync-object-recovery"
         )
@@ -359,18 +392,31 @@ class SyncRecovery:
     async def retry(
         self, realm_id: str, *, request_key: str | None = None
     ) -> bool | None:
+        recovered, _ = await self.retry_result(realm_id, request_key=request_key)
+        return recovered
+
+    async def retry_result(
+        self, realm_id: str, *, request_key: str | None = None
+    ) -> tuple[bool | None, dict[str, Any]]:
         # Persist only a digest, never an arbitrary caller-supplied identity.
         identity = (
             hashlib.sha256(request_key.encode()).hexdigest() if request_key else None
         )
         task = self._ensure_job(realm_id, identity)
+        with self._state_lock:
+            saved = self.realms[realm_id].get("key_receipts", {}).get(identity)
+            view = (
+                copy.deepcopy(saved)
+                if task.done() and saved
+                else self._job_views[realm_id]
+            )
         try:
             async with asyncio.timeout(self.request_timeout):
-                return await asyncio.shield(task)
+                recovered = await asyncio.shield(task)
         except TimeoutError:
-            if task.done():
-                return task.result()
-            return None
+            recovered = task.result() if task.done() else None
+        with self._state_lock:
+            return recovered, copy.deepcopy(view)
 
     async def _run_job(self, realm_id: str, head: str | None) -> bool:
         failure = self._saved_failure(realm_id)

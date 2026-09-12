@@ -993,7 +993,7 @@ async def sync_recovery(request: Request, body: dict) -> dict:
     from pa.sync.recovery import RecoveryLimitError
 
     try:
-        recovered = await recovery.retry(
+        recovered, operation = await recovery.retry_result(
             realm_id, request_key=request.headers.get("Idempotency-Key")
         )
     except RecoveryLimitError as exc:
@@ -1001,7 +1001,7 @@ async def sync_recovery(request: Request, body: dict) -> dict:
     if recovered and not recovery.degraded():
         ctx.services["sync_startup_repaired"] = True
     return {"recovered": recovered, "pending": recovered is None,
-            "recovery": recovery.public(realm_id)}
+            "recovery": operation, "realm_recovery": recovery.public(realm_id)}
 
 
 @router.post("/sync/index/maintenance")

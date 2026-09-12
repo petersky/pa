@@ -670,6 +670,12 @@ async def test_actual_startup_resumes_persisted_recovery(
         else:
             assert current["operation_id"] == operation
             assert current["resume_count"] == 1
+            prior = current["attempt_history"][-1]
+            original = json.loads(persisted)["realms"]["default"]
+            assert prior["operation_id"] == operation
+            assert prior["state"] == ("unrecoverable" if terminal else "recovering")
+            assert prior["attempts"] == original["attempts"]
+            assert prior["work"] == original["work"]
             replies = await asyncio.gather(
                 *(
                     h.client.post(
@@ -688,6 +694,12 @@ async def test_actual_startup_resumes_persisted_recovery(
         await asyncio.wait_for(ctx.services["sync_recovery_task"], 10)
         assert recovery.public("default")["state"] == "healthy"
         assert passes == [target]
+        if not changed_head:
+            assert (
+                recovery.public("default")["attempt_history"]
+                == current["attempt_history"]
+            )
+            assert recovery.public("default")["resume_count"] == 1
         assert (
             h.log.get_head("default")
             == h.store.get_projection_head("default")
@@ -764,5 +776,185 @@ async def test_new_failure_evidence_cannot_rebind_previous_request_head(tmp_path
         assert h.recovery.public("default")["previous_operation_id"] == previous
         assert await h.recovery._jobs["default"]
         assert h.log.get_head("default") == commit.hash
+    finally:
+        await h.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("a_success", [False, True])
+async def test_durable_a_b_a_replay_during_work_after_completion_and_restart(
+    tmp_path, a_success
+):
+    h = Harness(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    try:
+        h.recovery.request_timeout = 5
+        if a_success:
+            h.objects.put(h.raw)
+        else:
+            h.peer_response = lambda request: httpx.Response(503, request=request)
+        first = (
+            await h.client.post(
+                "/api/sync/recovery",
+                json={},
+                headers={"Idempotency-Key": "operation-A"},
+            )
+        ).json()
+        assert first["recovered"] == a_success
+        original_receipt = first["recovery"]
+        h.objects.put(h.raw)
+        original_verify = h.log.verify_index
+        scans = []
+
+        def verify(realm, head):
+            scans.append(head)
+            entered.set()
+            assert release.wait(10)
+            if a_success:
+                raise RuntimeError("private failure text must not enter receipt")
+            return original_verify(realm, head)
+
+        h.log.verify_index = verify
+        h.recovery.request_timeout = 0.01
+        second = (
+            await h.client.post(
+                "/api/sync/recovery",
+                json={},
+                headers={"Idempotency-Key": "operation-B"},
+            )
+        ).json()
+        assert second["pending"]
+        assert await asyncio.to_thread(entered.wait, 5)
+        second_id = second["recovery"]["operation_id"]
+        assert second_id != original_receipt["operation_id"]
+
+        async def replay_a():
+            reply = (
+                await h.client.post(
+                    "/api/sync/recovery",
+                    json={},
+                    headers={"Idempotency-Key": "operation-A"},
+                )
+            ).json()
+            assert reply["recovered"] == a_success
+            assert reply["recovery"] == original_receipt
+            assert reply["realm_recovery"]["operation_id"] == second_id
+            assert scans == [h.head]
+
+        await replay_a()  # Must not join the different in-flight operation B.
+        assert h.recovery.degraded()
+        assert (await h.client.post("/api/ordinary", json={})).status_code == 503
+        release.set()
+        assert await h.recovery._jobs["default"] == (not a_success)
+        await replay_a()
+        assert (
+            h.recovery.degraded() == a_success
+        )  # Old success cannot clear B's failure.
+        assert (await h.client.post("/api/ordinary", json={})).status_code == (
+            503 if a_success else 200
+        )
+        await h.recovery.close()
+        h.recovery = SyncRecovery(
+            h.settings,
+            h.engine,
+            h.recovery.projection_rebuilder,
+            projection_head=h.store.get_projection_head,
+        )
+        h.services["sync_recovery"] = h.recovery
+        await replay_a()
+        second_replay = (
+            await h.client.post(
+                "/api/sync/recovery",
+                json={},
+                headers={"Idempotency-Key": "operation-B"},
+            )
+        ).json()
+        assert second_replay["recovery"]["operation_id"] == second_id
+        assert second_replay["recovered"] == (not a_success)
+        _, advanced = h.log.append_event(event("changed after receipts"))
+        for key in ("operation-A", "operation-B"):
+            stale = await h.client.post(
+                "/api/sync/recovery", json={}, headers={"Idempotency-Key": key}
+            )
+            assert stale.status_code == 409
+            assert stale.json()["detail"]["code"] == "stale_recovery_head"
+        assert h.log.get_head("default") == advanced.hash
+        assert "private failure" not in h.recovery.path.read_text()
+    finally:
+        release.set()
+        await h.close()
+
+
+@pytest.mark.asyncio
+async def test_receipt_limit_rejects_new_keys_without_eviction_or_work(
+    tmp_path, monkeypatch
+):
+    import pa.sync.recovery as recovery_module
+
+    monkeypatch.setattr(recovery_module, "MAX_RECOVERY_KEYS", 2)
+    h = Harness(tmp_path)
+    try:
+        h.objects.put(h.raw)
+        h.recovery.request_timeout = 5
+        a, receipt = await h.recovery.retry_result("default", request_key="A")
+        assert a
+        assert await h.recovery.retry("default", request_key="B")
+        before = h.recovery.path.read_text()
+        rejected = await h.client.post(
+            "/api/sync/recovery", json={}, headers={"Idempotency-Key": "C"}
+        )
+        assert rejected.status_code == 409
+        assert rejected.json()["detail"]["code"] == "request_identity_limit"
+        assert h.recovery.path.read_text() == before
+        await h.recovery.close()
+        h.recovery = SyncRecovery(
+            h.settings,
+            h.engine,
+            h.recovery.projection_rebuilder,
+            projection_head=h.store.get_projection_head,
+        )
+        assert await h.recovery.retry_result("default", request_key="A") == (
+            True,
+            receipt,
+        )
+        assert len(h.recovery.realms["default"]["key_receipts"]) == 2
+    finally:
+        await h.close()
+
+
+@pytest.mark.asyncio
+async def test_resumed_attempt_audit_is_bounded_and_retains_original_failure(
+    tmp_path, monkeypatch
+):
+    import pa.sync.recovery as recovery_module
+
+    monkeypatch.setattr(recovery_module, "MAX_RECOVERY_ATTEMPT_HISTORY", 2)
+    h = Harness(tmp_path)
+    try:
+        h.peer_response = lambda request: httpx.Response(503, request=request)
+        h.recovery.request_timeout = 5
+        failed, original = await h.recovery.retry_result("default", request_key="A")
+        assert failed is False
+        for _ in range(3):
+            await h.recovery.close()
+            h.recovery = SyncRecovery(
+                h.settings,
+                h.engine,
+                h.recovery.projection_rebuilder,
+                projection_head=h.store.get_projection_head,
+            )
+            assert await h.recovery.recover([]) is False
+        failed, current = await h.recovery.retry_result("default", request_key="A")
+        assert failed is False
+        assert current["operation_id"] == original["operation_id"]
+        assert current["resume_count"] == 3
+        assert current["prior_attempts_omitted"] == 1
+        assert len(current["attempt_history"]) == 2
+        first = current["attempt_history"][0]
+        assert first["state"] == "unrecoverable"
+        assert first["attempts"] == original["attempts"]
+        assert first["work"] == original["work"]
+        assert first["resume_count"] == 0
+        assert current["attempt_history"][-1]["resume_count"] == 2
     finally:
         await h.close()

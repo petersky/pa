@@ -22,11 +22,18 @@ repair. Neither parent links nor durable refs are changed. Legacy diagnostics
 without canonical reference evidence must first obtain evidence by verification.
 
 There is one process-owned task per realm. Its UUID identifies the recovery
-generation. Up to 64 concurrent request-key SHA256 digests can join it; raw
-keys are never retained. Retired key digests remain fenced to their prior head. An HTTP wait expires independently: `recovered: null`,
-`pending: true`, and the same `operation_id` describe unfinished work. A repeated
-key joins the job or returns its completed result without another scan. A new
-key can retry a terminal failure. Verification and reprojection use the actual
+generation. A realm retains up to 64 distinct request-key SHA256 digests and their
+operation receipts; raw keys are never retained. A new key at the limit gets
+`request_identity_limit` without evicting a receipt or starting work. Existing
+keys, owned workers, and automatic startup verification remain available.
+An HTTP wait expires independently: `recovered: null`, `pending: true`, and the
+same `operation_id` describe unfinished work. Unknown keys join an active worker;
+a known key resolves its own receipt before considering the current worker.
+Thus A→B→A at the same head returns A's identity and outcome without another scan,
+even across process exit. Retained keys are rejected after their captured head
+changes. Responses expose the requested operation as `recovery` and current
+realm health as `realm_recovery`; replaying an old success cannot clear a newer
+failure's gate. A new key can retry a terminal failure. Verification and reprojection use the actual
 `AsyncRuntime` `wait_for_completion=True` contract: `timeout=None` alone would
 still apply the runtime's default timeout. Cancelling a request does not cancel
 the owner. Shutdown drains owners before closing their peer client.
@@ -41,8 +48,13 @@ Actual SyncModule startup automatically starts authoritative verification for
 persisted degraded subscribed realms, including terminal failures whose objects
 were subsequently restored. An interrupted same-head operation retains its UUID
 and key aliases, with an explicit resume count. Terminal same-key receipts also
-survive process exit. Startup verification may resume a failed operation; it does
-not claim historical success. A changed head starts a linked new generation,
+survive process exit. Before startup resumes a failed or interrupted operation,
+it preserves that attempt's state, diagnostic, peer attempts, and work counters
+in `attempt_history`. The current result and `resume_count` are separate. History
+retains the original attempt and seven recent attempts; `prior_attempts_omitted`
+reports any intermediate entries removed by the bound. It never relabels a prior
+failure as success. Legacy state migrates only receipts actually retained there;
+previously discarded receipts or outcomes are not reconstructed. A changed head starts a linked new generation,
 discards stale object evidence, and rejects keys belonging to the old head.
 Unsubscribed realm failures remain gated and are not silently erased. No saved
 scan cursor is trusted across process exit: a new process verifies canonical
@@ -56,4 +68,6 @@ rejection cases cover hash/schema/realm/reference failures and head changes.
 Startup integration persists an actual timed-out or failed operation, restores
 complete canonical history, then runs SyncModule startup with the real runtime
 and public gate. It covers missing legacy proof, changed heads, unrelated realm
-failures, same-key restart receipts, and late automatic readiness.
+failures, same-key restart receipts, and late automatic readiness. Additional
+cases cover A→B→A during B and after completion/restart, differing outcomes,
+receipt capacity, and bounded resumed-attempt history.
