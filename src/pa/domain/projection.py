@@ -6090,9 +6090,10 @@ class CardProjection:
                 target_head, stop=projected
             ):
                 for event_hash in commit.event_hashes:
-                    event = self.event_log.get_event(event_hash)
-                    if event is None:
-                        raise ValueError(f"missing event object {event_hash}")
+                    event = self.event_log.read_referenced_event(
+                        event_hash, realm_id=realm_id,
+                        head=target_head, reference=commit_hash,
+                    )
                     self.mark_operation_durable(
                         event, commit_hash, event_hash=event_hash
                     )

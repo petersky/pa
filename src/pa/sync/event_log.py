@@ -213,20 +213,24 @@ class EventLog:
         self._refs: dict[str, str] = {}
         self._lock = threading.RLock()
         self._load_refs()
+        self.on_history_failure: Callable[[str, EventHistoryObjectError], None] | None = None
 
     def index_status(self, realm_id: str) -> dict[str, Any]:
         """Return bounded derived-index health without touching DAG objects."""
         return self.index.status(realm_id, self.get_head(realm_id))
 
     def _authoritative_index_records(
-        self, head: str
+        self, head: str, realm_id: str | None = None
     ) -> Iterator[tuple[str, SyncCommit, list[tuple[str, CardEvent]]]]:
         for commit_hash, commit in self._iter_commits_parent_first(head):
+            if realm_id is not None and commit.realm_id != realm_id:
+                raise EventHistoryObjectError("corrupt_object", commit_hash, "commit")
             events: list[tuple[str, CardEvent]] = []
             for event_hash in commit.event_hashes:
-                event = self.get_event(event_hash)
-                if event is None:
-                    raise EventHistoryObjectError("missing_event", event_hash, "event")
+                event = self.read_referenced_event(
+                    event_hash, realm_id=commit.realm_id,
+                    head=head, reference=commit_hash,
+                )
                 events.append((event_hash, event))
             yield commit_hash, commit, events
 
@@ -253,7 +257,7 @@ class EventLog:
                     realm_id,
                     indexed,
                     requested,
-                    self._authoritative_index_records(requested),
+                    self._authoritative_index_records(requested, realm_id),
                     _event_entity,
                 )
                 if advanced:
@@ -261,7 +265,7 @@ class EventLog:
             self.index.rebuild(
                 realm_id,
                 requested,
-                self._authoritative_index_records(requested),
+                self._authoritative_index_records(requested, realm_id),
                 _event_entity,
             )
             return True
@@ -274,7 +278,7 @@ class EventLog:
         self.index.rebuild(
             realm_id,
             head,
-            self._authoritative_index_records(head),
+            self._authoritative_index_records(head, realm_id),
             _event_entity,
             force=True,
         )
@@ -446,6 +450,25 @@ class EventLog:
     def get_event(self, event_hash: str) -> CardEvent | None:
         return self._get_object(event_hash, CardEvent, "event")
 
+    def read_referenced_event(
+        self, event_hash: str, *, realm_id: str, head: str, reference: str
+    ) -> CardEvent:
+        """Retain canonical reference evidence at the actual traversal failure."""
+        try:
+            event = self.get_event(event_hash)
+            if event is None:
+                raise EventHistoryObjectError("missing_event", event_hash, "event")
+            if event.realm_id != realm_id:
+                raise EventHistoryObjectError("corrupt_object", event_hash, "event")
+            return event
+        except EventHistoryObjectError as exc:
+            exc.diagnostic.update(
+                realm_id=realm_id, head_hash=head, reference_hash=reference
+            )
+            if self.on_history_failure is not None:
+                self.on_history_failure(realm_id, exc)
+            raise
+
     def get_commit(self, commit_hash: str) -> SyncCommit | None:
         return self._get_object(commit_hash, SyncCommit, "commit")
 
@@ -463,6 +486,7 @@ class EventLog:
         active: set[str] = set()
         max_commits = max(1, min(int(max_commits), MAX_HISTORY_COMMITS))
         stack: list[tuple[str, SyncCommit | None]] = [(commit_hash, None)]
+        references: dict[str, str] = {}
 
         while stack:
             current_hash, expanded_commit = stack.pop()
@@ -482,9 +506,10 @@ class EventLog:
                 raise EventHistoryLimitError(len(visited), max_commits)
             commit = self.get_commit(current_hash)
             if not commit:
-                raise EventHistoryObjectError(
-                    "missing_parent", current_hash, "commit"
-                )
+                failure = EventHistoryObjectError("missing_parent", current_hash, "commit")
+                failure.diagnostic.update(head_hash=commit_hash,
+                                          reference_hash=references.get(current_hash, current_hash))
+                raise failure
             if any(not parent for parent in commit.parent_hashes):
                 raise EventHistoryObjectError(
                     "corrupt_object", current_hash, "commit"
@@ -493,6 +518,8 @@ class EventLog:
                 raise EventHistoryLimitError(len(visited), max_commits)
 
             stack.append((current_hash, commit))
+            for parent in commit.parent_hashes:
+                references.setdefault(parent, current_hash)
             stack.extend((parent, None) for parent in reversed(commit.parent_hashes))
 
     def apply_commit_chain(
@@ -508,11 +535,10 @@ class EventLog:
             commit_hash, seen=seen, max_commits=max_commits
         ):
             for event_hash in commit.event_hashes:
-                event = self.get_event(event_hash)
-                if not event:
-                    raise EventHistoryObjectError(
-                        "missing_event", event_hash, "event"
-                    )
+                event = self.read_referenced_event(
+                    event_hash, realm_id=commit.realm_id,
+                    head=commit_hash, reference=current_hash,
+                )
                 if provenance_handler is not None:
                     provenance_handler(current_hash, event_hash, event)
                 handler(event)
@@ -1751,7 +1777,9 @@ class EventHistoryObjectError(EventHistoryError):
             "object_kind": object_kind,
         }
         if schema_version is not None:
-            diagnostic["schema_version"] = schema_version
+            diagnostic["schema_version"] = (
+                schema_version if type(schema_version) is int else "invalid"
+            )
             diagnostic["supported_schema_version"] = (
                 _SUPPORTED_OBJECT_SCHEMA_VERSION
             )
