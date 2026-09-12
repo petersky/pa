@@ -85,12 +85,14 @@ def _get_mcp():
         # Validate restriction before registering anything or caching a server.
         assigned = assigned_service_mcp_mode()
         from pa.mcp.context import registration_context
-        from pa.core.registry import ModuleRegistry
+        from pa.core.registry import BUILTIN_MODULE_NAMES, ModuleRegistry
         from pa.core.mcp_registration import UniqueToolRegistrationProxy
 
         candidate = MCPServer("pa", version=__version__)
         ctx = registration_context()
-        registry = ModuleRegistry(ctx, registration_only=True)
+        registry = ModuleRegistry(
+            ctx, registration_only=True, reserved_names=BUILTIN_MODULE_NAMES,
+        )
         registration_target = (
             ToolAllowlistProxy(candidate, ASSIGNED_SERVICE_TOOL_ALLOWLIST)
             if assigned

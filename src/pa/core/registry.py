@@ -14,6 +14,14 @@ logger = logging.getLogger(__name__)
 
 ENTRYPOINT_GROUP = "pa.modules"
 
+# Reserve the same module namespace when stdio loads only proxy definitions.
+BUILTIN_MODULE_NAMES = frozenset({
+    "agent_chat", "agent_providers", "auth", "backups", "browser", "cloud",
+    "collaboration", "debug", "files", "fleet", "goals", "instance", "intake",
+    "integrations", "items", "limbic", "notifications", "orchestration",
+    "pr-supervisor", "projects", "sync", "telemetry", "theme", "trust", "ui_shell",
+})
+
 
 @dataclass
 class LoadedModule:
@@ -24,9 +32,13 @@ class LoadedModule:
 class ModuleRegistry:
     """Discovers, loads, and lifecycle-manages PA modules."""
 
-    def __init__(self, ctx: AppContext, *, registration_only: bool = False) -> None:
+    def __init__(
+        self, ctx: AppContext, *, registration_only: bool = False,
+        reserved_names: frozenset[str] = frozenset(),
+    ) -> None:
         self.ctx = ctx
         self.registration_only = registration_only
+        self.reserved_names = reserved_names
         self._loaded: list[LoadedModule] = []
 
     @property
@@ -34,7 +46,9 @@ class ModuleRegistry:
         return list(self._loaded)
 
     def register(self, module: Module, *, source: str = "builtin") -> None:
-        if any(entry.module.name == module.name for entry in self._loaded):
+        if module.name in self.reserved_names or any(
+            entry.module.name == module.name for entry in self._loaded
+        ):
             raise ValueError(f"Module already registered: {module.name}")
 
         if not self.registration_only:

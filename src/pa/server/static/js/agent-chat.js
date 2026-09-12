@@ -2479,10 +2479,10 @@
         }
         break;
       case "tool_call":
-        if (!replay && payload.pa_mcp) this.renderMcpHealth(payload.pa_mcp);
         // Cursor reuses a null messageId for the whole turn, so without this
         // post-tool text is appended onto the pre-tool bubble ("needed.Monica").
         this.finalizeStreams(created, true);
+        if (!replay && payload.pa_mcp) this.renderMcpHealth(payload.pa_mcp);
         this.upsertTool(payload, created);
         break;
       case "tool_call_update":

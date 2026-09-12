@@ -5,6 +5,7 @@ import os
 import sqlite3
 import sys
 import time
+from contextlib import AsyncExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -60,12 +61,17 @@ sys.addaudithook(audit)
     args = ['-m', 'pa', 'mcp'] if entrypoint == 'module' else ['mcp']
     started = time.monotonic()
     try:
-        async with asyncio.timeout(25):
-            async with stdio_client(StdioServerParameters(command=command, args=args, env=env)) as streams:
-                async with ClientSession(*streams) as session:
-                    await session.initialize()
-                    tools = (await session.list_tools()).tools
-        assert time.monotonic() - started < 25
+        async with AsyncExitStack() as stack:
+            # Match the real bootstrap probe: the 25s deadline covers spawn,
+            # initialize, and tools/list; SDK teardown has its own bounded waits.
+            async with asyncio.timeout(25):
+                streams = await stack.enter_async_context(stdio_client(
+                    StdioServerParameters(command=command, args=args, env=env)
+                ))
+                session = await stack.enter_async_context(ClientSession(*streams))
+                await session.initialize()
+                tools = (await session.list_tools()).tools
+                assert time.monotonic() - started < 25
         names = {t.name for t in tools}
         if assigned:
             assert names == ASSIGNED_SERVICE_TOOL_ALLOWLIST
@@ -142,7 +148,7 @@ async def test_stale_generation_and_cancelled_only_cannot_override_health(tmp_pa
 def test_registration_never_calls_service_lifecycle(tmp_path, monkeypatch):
     from pa.mcp import server
     from pa.core.kernel import Kernel
-    from pa.core.registry import ModuleRegistry
+    from pa.core.registry import BUILTIN_MODULE_NAMES, ModuleRegistry
     from pa.mcp.context import registration_context
     monkeypatch.setenv('PA_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(server, 'mcp', None)
@@ -150,6 +156,10 @@ def test_registration_never_calls_service_lifecycle(tmp_path, monkeypatch):
         ctx = registration_context()
         registry = ModuleRegistry(ctx, registration_only=True)
         registry.load_all()
+        assert {entry.module.name for entry in registry.modules if entry.source == "builtin"} == BUILTIN_MODULE_NAMES
+        proxy_registry = ModuleRegistry(ctx, registration_only=True, reserved_names=BUILTIN_MODULE_NAMES)
+        with pytest.raises(ValueError, match="already registered"):
+            proxy_registry.register(registry.modules[0].module, source="entrypoint:duplicate")
         for entry in registry.modules:
             monkeypatch.setattr(type(entry.module), 'on_load', lambda *_: pytest.fail('module lifecycle'))
         server._get_mcp()

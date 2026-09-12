@@ -460,7 +460,7 @@ class ConfigurationCliContractTests(unittest.TestCase):
         self.assertIn("/api/configuration/card-summary/test", paths)
         self.assertIn("/api/configuration/audit", paths)
         source = (
-            Path(__file__).parents[1] / "src" / "pa" / "modules" / "instance.py"
+            Path(__file__).parents[1] / "src" / "pa" / "mcp" / "tools" / "instance.py"
         ).read_text()
         for tool in (
             "configuration_schema",

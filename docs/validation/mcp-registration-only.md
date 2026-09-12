@@ -80,3 +80,19 @@ merge, official release, installation, and production activation/acceptance.
 This worker does not merge, publish, restart PA, or edit production receipts or
 queues. Keep the card Waiting through source integration until root completes
 fresh toolful New chat and dispatch acceptance.
+
+## CI compatibility follow-up
+
+The first CI run exposed transport tests that relied on the MCP child creating
+credentials, a static source-path assertion for moved tools, and a stream-order
+assertion. Fixtures now provision their test-owned credentials explicitly, the
+source assertion follows the canonical proxy module, and stream finalization
+still precedes health display. The registry also reserves all original built-in
+module names before plugin discovery, preserving duplicate-module rejection.
+
+The follow-up transport/configuration/stream tests passed (64 tests and 306
+subtests before the entrypoint cases). The focused registration/forwarding/UI
+rerun passed 32 tests. The handshake test uses the existing bootstrap probe's
+AsyncExitStack pattern: its unchanged 25-second deadline covers spawn,
+initialize, and tools/list; SDK process teardown uses its separate bounded waits.
+The four latest full runs, including teardown, took 13.32–21.27 seconds.
