@@ -48,3 +48,51 @@ The server refreshes and advertises its local capability after saving. If that
 step fails, the response explicitly reports `refresh_pending`; retry the same
 request to refresh without duplicating the mutation. A successful scope write
 does not authorize a merge or change supervision policy.
+
+Policy loading is shared by Settings, credentials and capability production.
+New documents record `pa_supervision_scope.schema_version: 1` and an explicit
+`mode`: `none` (no grants), `allowlist` (nonempty list), or `unrestricted` (no
+list entries). This API writes only `allowlist` after the existing exact consent
+and access check. Legacy nonempty lists keep their exact permissions and CAS
+revision and are labeled `legacy_explicit`. An explicitly stored legacy empty
+list retains its historical unrestricted meaning, labeled `legacy_unrestricted`;
+this is compatibility evidence, not a new approval. No startup migration writes.
+
+**Compatibility change:** an environment-token-only installation with no scope
+file no longer has an implicit unrestricted grant. Use the normal Settings
+preview and exact-list update to establish scope (the unconfigured revision is
+`missing`). Missing scope fields, malformed JSON/types, unknown schemas and
+unreadable files are ineligible even when authentication comes from the
+environment. Restore a valid local document if it is damaged; PA will not
+silently overwrite it. A current invalid policy immediately removes eligibility;
+a previous valid grant is never reused for new effects. Environment-over-file
+credential precedence is preserved.
+
+Settings shows the current instance's saved revision separately from its
+published capability. “Advertised scope by instance” is a read-only view of the
+configured authority's received advertisements, bounded to 200 rows from the
+last day. Older authorities may expose only fresh rows. The existing capabilities
+endpoint remains fresh-only by default; the diagnostic reader opts into
+`include_stale=true`. It is not a remote configuration audit. Eligibility still expires at
+120 seconds; historical rows remain visible as stale. Missing information is
+unknown, not a denial or an empty unrestricted list. Older valid advertisements
+retain their existing scope semantics and show an unavailable revision.
+Different instance lists are expected local policy, not evidence of a reset.
+
+Authority failures, invalid responses, stale/incompatible capabilities, local
+configuration failures, authentication, repository access and explicit scope
+denials have separate diagnostic causes. Watch state/API and supervision/card
+views retain their causal context. Authority reads are shared across watches for
+15 seconds (30 seconds after failure), and blocked watches retain their bounded
+poll schedule. Receiver ordering prevents older advertisements replacing newer
+ones; future observations and expired lease capabilities cannot grant effects.
+The optional `eligibility_journal_hook` receives safe typed reports; shared
+journal infrastructure owns issue storage, deduplication and recovery correlation.
+
+A failed GitHub `/user` verification is also causal evidence: HTTP 401 reports
+`credentials_rejected`; transport errors, provider errors and verification
+deadlines report `verification_unavailable`. Both deny new supervision effects
+and use the existing bounded error-probe retry interval. A timeout does not prove
+that credentials were rejected. Authority asyncio deadlines report
+`authority_unreachable` through the same bounded inventory path; caller
+cancellation remains cancellation rather than an eligibility diagnosis.

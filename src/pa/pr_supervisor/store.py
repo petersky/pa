@@ -680,6 +680,10 @@ class PRSupervisorStore:
                     reason="protocol_upgrade_required",
                     protocol_version=PR_WATCH_PROTOCOL_VERSION,
                 )
+            age = (now - capability.checked_at).total_seconds()
+            if age > 120 or age < -5:
+                return LeaseGrant(acquired=False, reason="capability_stale",
+                                  protocol_version=PR_WATCH_PROTOCOL_VERSION)
             if not capability.supports(watch.repository):
                 return LeaseGrant(
                     acquired=False,
@@ -1025,6 +1029,30 @@ class PRSupervisorStore:
             raise KeyError(watch_id)
         return updated
 
+    def record_eligibility_recovery(self, watch_id: str, report: dict, *, next_poll_at: datetime) -> None:
+        """Clear only an eligibility blocker, never an unrelated current error."""
+        with self._conn(immediate=True) as conn:
+            row = conn.execute("SELECT * FROM pr_watches WHERE id = ?", (watch_id,)).fetchone()
+            if not row:
+                return
+            watch = self._row_to_watch(row)
+            if not watch.actionable:
+                return
+            state = dict(watch.state)
+            previous = state.get("eligibility") or {}
+            if previous.get("dependency", "capability_inventory") != report.get("dependency", "capability_inventory"):
+                return
+            state["eligibility"] = report
+            owned_error = state.get("supervisor_state") == "supervision_eligibility_blocked"
+            if owned_error:
+                state["supervisor_state"] = "eligible_instance_available"
+            conn.execute(
+                """UPDATE pr_watches SET state_json = ?, next_poll_at = ?, updated_at = ?,
+                    status = CASE WHEN ? THEN 'active' ELSE status END,
+                    last_error = CASE WHEN ? THEN NULL ELSE last_error END WHERE id = ?""",
+                (json.dumps(state), next_poll_at.isoformat(), utcnow().isoformat(),
+                 owned_error, owned_error, watch_id))
+
     def mark_error(
         self,
         watch_id: str,
@@ -1034,6 +1062,7 @@ class PRSupervisorStore:
         owner_instance_id: str | None = None,
         fence_token: int | None = None,
         visible_state: str = "error",
+        eligibility: dict | None = None,
     ) -> PRWatch | None:
         now = utcnow()
         with self._conn(immediate=True) as conn:
@@ -1054,6 +1083,8 @@ class PRSupervisorStore:
                 raise StaleFenceError(f"stale fence for watch {watch_id}")
             state = dict(watch.state)
             state["supervisor_state"] = visible_state
+            if eligibility is not None:
+                state["eligibility"] = eligibility
             conn.execute(
                 """
                 UPDATE pr_watches
@@ -1354,21 +1385,27 @@ class PRSupervisorStore:
         return [dict(row) for row in rows]
 
     def save_capability(self, capability: GitHubCapability) -> None:
+        now = utcnow()
+        if capability.checked_at > now + timedelta(seconds=5):
+            raise ValueError("capability observation is in the future")
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO pr_supervisor_instances
+                INSERT INTO pr_supervisor_instances
                 (instance_id, capability_json, last_seen) VALUES (?, ?, ?)
+                ON CONFLICT(instance_id) DO UPDATE SET
+                    capability_json = excluded.capability_json, last_seen = excluded.last_seen
+                WHERE excluded.last_seen > pr_supervisor_instances.last_seen
                 """,
                 (
                     capability.instance_id,
-                    capability.model_dump_json(),
+                    capability.model_copy(update={"authority_received_at": now}).model_dump_json(),
                     capability.checked_at.isoformat(),
                 ),
             )
 
     def list_capabilities(
-        self, *, fresh_seconds: int = 120, now: datetime | None = None
+        self, *, fresh_seconds: int = 120, now: datetime | None = None, limit: int = 200
     ) -> list[GitHubCapability]:
         now = now or utcnow()
         cutoff = now - timedelta(seconds=fresh_seconds)
@@ -1376,9 +1413,9 @@ class PRSupervisorStore:
             rows = conn.execute(
                 """
                 SELECT capability_json FROM pr_supervisor_instances
-                WHERE last_seen >= ? ORDER BY last_seen DESC
+                WHERE last_seen >= ? AND last_seen <= ? ORDER BY last_seen DESC LIMIT ?
                 """,
-                (cutoff.isoformat(),),
+                (cutoff.isoformat(), (now + timedelta(seconds=5)).isoformat(), min(max(limit, 1), 200)),
             ).fetchall()
         return [
             GitHubCapability.model_validate_json(row["capability_json"]) for row in rows

@@ -1317,9 +1317,9 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             capability = await service.refresh_capability(force=True)
 
-        self.assertEqual(capability.state, "error")
+        self.assertEqual(capability.state, "verification_unavailable")
         self.assertFalse(capability.authenticated)
-        self.assertEqual(capability.detail, "ConnectTimeout")
+        self.assertEqual(capability.detail, "GitHub credential verification is unavailable. Check provider connectivity; automatic retry is scheduled.")
         self.assertIsNotNone(service._capability_checked_at)
 
     async def test_condition_change_rearms_same_failure(self) -> None:
@@ -3228,6 +3228,8 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                         "instance_id": "worker-a",
                         "pr_watch_protocol_version": 1,
                         "authenticated": True,
+                        "allowed_repositories": [],
+                        "checked_at": utcnow().isoformat(),
                     },
                 },
             )
@@ -3281,6 +3283,8 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                         "instance_id": "worker-a",
                         "pr_watch_protocol_version": 2,
                         "authenticated": True,
+                        "allowed_repositories": [],
+                        "checked_at": utcnow().isoformat(),
                     },
                 },
             )
@@ -3672,6 +3676,8 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                         "instance_id": self.settings.instance_id,
                         "pr_watch_protocol_version": 2,
                         "authenticated": True,
+                        "allowed_repositories": [],
+                        "checked_at": utcnow().isoformat(),
                     },
                 },
             )
@@ -3688,6 +3694,8 @@ class PRSupervisorApiAndMcpTests(unittest.TestCase):
                         "instance_id": self.settings.instance_id,
                         "pr_watch_protocol_version": 2,
                         "authenticated": True,
+                        "allowed_repositories": [],
+                        "checked_at": utcnow().isoformat(),
                     },
                 },
             )
