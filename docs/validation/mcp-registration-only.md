@@ -159,3 +159,12 @@ silence/failure/recovery test passed. The stdio children use test-only owner
 credentials/session context and isolated workspace roots. Five focused
 ordering/adapter/live/UI checks and the wheel/sdist build passed. No production
 provider was launched and no production credentials were given to test children.
+
+Root merged composer PR #434 as `9e82b41c0cdfbac8cfb17909d5b5744074bdd843`.
+This second PR was rebased onto that actual main commit without conflicts.
+Comparison against merged main confirms draft-widget is unchanged and
+agent-chat contains only MCP health additions at 1613, 1759, 2485 and 2489.
+Combined isolated draft/receipt, prompt-recovery, stream-join and MCP checks
+passed (78 tests); wheel/sdist build passed. Progress correlation
+`mcp-repair-pr436-composer-rebase-v1` returned HTTP 200. Root still owns
+independent exact-head review and integration/release/production acceptance.
