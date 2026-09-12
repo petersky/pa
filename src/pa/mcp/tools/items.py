@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 from pa.attachments import safe_filename
 from pa.core.context import AppContext
@@ -336,9 +337,14 @@ def register_mcp(mcp, ctx: AppContext) -> None:
 
     @mcp.tool()
     def get_operation_outcome(
-        idempotency_key: str, realm: str = "default"
+        idempotency_key: str, realm: str = "default", owner: Literal["canonical", "restart", "dispatch"] | None = None,
+        operation: str | None = None, request_fingerprint: str | None = None,
     ) -> dict:
-        """Look up the authoritative durable outcome of a mutation."""
+        """Passively observe an owner/realm receipt; pending is not non-commit.
+
+        owner is canonical, restart, or dispatch. Legacy ambiguous keys conflict.
+        operation/fingerprint, when supplied, must match the original request.
+        """
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key cannot be empty")
@@ -346,5 +352,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             ctx.settings,
             "GET",
             f"/api/operations/{quote(key, safe='')}",
-            params={"realm": realm},
+            params={k: v for k, v in {"realm": realm, "owner": owner,
+                    "operation": operation, "request_fingerprint": request_fingerprint}.items()
+                    if v is not None},
         )

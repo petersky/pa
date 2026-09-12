@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -135,31 +136,86 @@ class _CacheControlMiddleware:
 class _SyncRecoveryAdmissionMiddleware:
     """Reject ordinary mutations while canonical history is incomplete."""
 
-    ALLOWED = frozenset(
-        {
-            "/api/sync/get",
-            "/api/sync/have",
-            "/api/sync/need",
-            "/api/sync/reconcile",
-            "/api/sync/recovery",
-        }
-    )
-
-    def __init__(self, app, ctx: AppContext) -> None:
+    def __init__(self, app, ctx: AppContext, routes=()) -> None:
         self.app = app
         self.ctx = ctx
+        self.routes = routes
 
     async def __call__(self, scope, receive, send) -> None:
-        recovery = self.ctx.services.get("sync_recovery")
+        from pa.core.operation_dependencies import OperationDependency, classify_operation
+        from starlette.routing import Match
         method = str(scope.get("method") or "GET").upper()
         path = str(scope.get("path") or "")
-        blocked = (
-            scope.get("type") == "http"
-            and method not in {"GET", "HEAD", "OPTIONS"}
-            and recovery
-            and recovery.degraded()
-            and path not in self.ALLOWED
-        )
+        if scope.get("type") != "http" or (
+            method in {"GET", "HEAD", "OPTIONS"} and path != "/api/sync/check"
+        ):
+            await self.app(scope, receive, send)
+            return
+        endpoint = None
+        for route in self.routes:
+            match, child = route.matches(scope)
+            if match == Match.FULL:
+                endpoint = child.get("endpoint")
+                break
+        dependency = classify_operation(method, path, endpoint=endpoint)
+        if (dependency.kind == OperationDependency.RECOVERY or
+                dependency.kind == OperationDependency.LOCAL_OPERATIONAL and not dependency.body_constraint):
+            await self.app(scope, receive, send)
+            return
+        recovery = self.ctx.services.get("sync_recovery")
+        if not recovery:
+            await self.app(scope, receive, send)
+            return
+        degraded, recovery_view = recovery.admission_view()
+        if not degraded:
+            await self.app(scope, receive, send)
+            return
+        blocked = dependency.kind == OperationDependency.GLOBAL_HISTORY
+        if dependency.kind == OperationDependency.REALM_HISTORY or dependency.body_constraint:
+            realm = None
+            body = None
+            if dependency.realm_source == "query":
+                query = parse_qs((scope.get("query_string") or b"").decode("latin-1"))
+                values = query.get("realm", [])
+                if len(values) == 1:
+                    realm = values[0]
+            else:
+                import json
+                messages = []
+                raw = bytearray()
+                # Bound buffering; replay every consumed message to the endpoint.
+                complete = False
+                for _ in range(64):
+                    message = await receive()
+                    messages.append(message)
+                    if message["type"] != "http.request":
+                        break
+                    raw.extend(message.get("body", b""))
+                    if not message.get("more_body"):
+                        complete = True
+                        break
+                    if len(raw) > 65536:
+                        break
+                if complete and len(raw) <= 65536:
+                    try:
+                        body = json.loads(raw)
+                        realm = body.get("realm_id") if isinstance(body, dict) else None
+                    except (ValueError, UnicodeError):
+                        pass
+                original_receive = receive
+                async def replay_receive():
+                    return messages.pop(0) if messages else await original_receive()
+                receive = replay_receive
+            # Missing/unknown realm stays conservative. A supplied query cannot
+            # override a body-owned realm, and duplicate query selectors fail shut.
+            if dependency.body_constraint == "no_operator_input":
+                blocked = not isinstance(body, dict) or body.get("operator_input") is not None
+            else:
+                known = isinstance(realm, str) and realm in self.ctx.settings.subscribed_realms
+                if known:
+                    blocked, recovery_view = recovery.admission_view(realm)
+                else:
+                    blocked = True
         if blocked:
             from starlette.responses import JSONResponse
 
@@ -168,10 +224,10 @@ class _SyncRecoveryAdmissionMiddleware:
                     "detail": {
                         "code": "sync_history_recovery",
                         "message": (
-                            "Mutation rejected while canonical sync history "
-                            "is incomplete"
+                            "Mutation requires healthy, available canonical "
+                            "sync history"
                         ),
-                        "recovery": recovery.public(),
+                        "recovery": recovery_view,
                     }
                 },
                 status_code=503,
@@ -268,6 +324,9 @@ class Kernel:
                 "async_runtime",
                 async_runtime,
             )
+            from pa.core.operation_status import OperationStatusService
+
+            ctx.register_service("operation_status", OperationStatusService(settings.data_dir))
             hooks.set_async_runtime(async_runtime)
             if writer_lock:
                 ctx.register_service("writer_lock", writer_lock)
@@ -490,6 +549,9 @@ class Kernel:
         execution_router = self.ctx.services.get("execution_router")
         if execution_router:
             await bounded("closing execution router", execution_router.close(), 0.5)
+        operation_status = self.ctx.services.get("operation_status")
+        if operation_status:
+            await bounded("closing operation status", operation_status.close(), 0.5)
         async_runtime = self.ctx.services.get("async_runtime")
         if async_runtime:
             await bounded("closing async runtime", async_runtime.close(), 0.5)
@@ -605,8 +667,8 @@ class Kernel:
         from pa.openapi import install_openapi_contract
 
         install_openapi_contract(app)
+        app.add_middleware(_SyncRecoveryAdmissionMiddleware, ctx=self.ctx, routes=app.routes)
         self._install_auth_middleware(app)
-        app.add_middleware(_SyncRecoveryAdmissionMiddleware, ctx=self.ctx)
 
         if self.ctx.settings.debug:
             self._install_debug_middleware(app)

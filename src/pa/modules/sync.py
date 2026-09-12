@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from datetime import UTC, datetime
 from typing import Annotated, Any, Callable
 
@@ -51,6 +52,10 @@ async def _offload(
     **kwargs: Any,
 ) -> Any:
     runtime = ctx.services.get("async_runtime")
+    status_service = ctx.services.get("operation_status")
+    if operation == "sync.status" and status_service is not None:
+        runtime = status_service.reads
+        timeout = min(timeout, 0.5)
     if runtime:
         return await runtime.run_blocking(
             operation, call, *args, timeout=timeout, **kwargs
@@ -921,7 +926,7 @@ async def sync_status(request: Request, realm: str | None = None) -> dict:
 
 
 @router.post("/sync/reconcile")
-def sync_reconcile(
+async def sync_reconcile(
     request: Request,
     response: Response,
     body: dict,
@@ -930,6 +935,70 @@ def sync_reconcile(
         Header(alias="Idempotency-Key", min_length=1, max_length=300),
     ],
 ) -> dict:
+    """Admit dependency repair before any ordinary canonical receipt work."""
+    from pa.modules.items import _operation_fingerprint
+    from pa.sync.recovery import RecoveryLimitError
+
+    if set(body) - {"realm_id"}:
+        raise HTTPException(422, detail={"code": "invalid_reconcile_request"})
+    ctx = request.app.state.ctx
+    realm_id = body.get("realm_id") or ctx.settings.primary_realm
+    if not isinstance(realm_id, str) or realm_id not in ctx.settings.subscribed_realms:
+        raise HTTPException(422, detail={"code": "invalid_reconcile_realm"})
+    _check_realm_access(request, realm_id)
+    status_service = ctx.services.get("operation_status")
+    runtime = status_service.reads if status_service else ctx.services.get("async_runtime")
+    store = get_store()
+    if runtime:
+        prior = await runtime.run_blocking("operation.reconcile_receipt", store.read_operation_receipt, _idempotency_key)
+    else:
+        prior = await asyncio.to_thread(store.read_operation_receipt, _idempotency_key)
+    if prior is not None:
+        fingerprint = _operation_fingerprint(request, "sync.reconcile", {"realm_id": realm_id})
+        if (prior["realm_id"] != realm_id or prior["operation"] != "sync.reconcile"
+                or prior["request_fingerprint"] != fingerprint):
+            raise HTTPException(409, detail={"code": "idempotency_conflict"})
+        if prior["state"] == "succeeded" and prior.get("result_json"):
+            response.headers["X-PA-Operation-ID"] = _idempotency_key
+            response.headers["X-PA-Operation-Replayed"] = "true"
+            return json.loads(prior["result_json"])
+    recovery = ctx.services.get("sync_recovery")
+    if recovery is None:
+        raise HTTPException(503, detail={"code": "recovery_unavailable"})
+    try:
+        recovered, receipt = await recovery.retry_result(
+            realm_id, request_key="sync.reconcile:" + _idempotency_key,
+        )
+    except RecoveryLimitError as exc:
+        raise HTTPException(409, detail={"code": exc.code}) from exc
+    if recovered is not True:
+        response.status_code = 202 if recovered is None else 503
+        return {"accepted": True, "durable": True, "pending": recovered is None,
+                "recovered": recovered, "owner": "sync_recovery",
+                "recovery": receipt, "realm_id": realm_id,
+                "recovery_action": "sync_reconcile_with_same_key"}
+    # The dedicated recovery owner has verified the history/index/projection.
+    # Existing canonical replay identity remains authoritative after that point.
+    return await recovery.runtime.run_blocking(
+        "sync.reconcile_finish", _sync_reconcile_at_head,
+        request, response, body, _idempotency_key, receipt.get("operation_head_hash"),
+        wait_for_completion=True,
+    )
+
+
+def _sync_reconcile_at_head(request, response, body, key, expected_head):
+    store = get_store()
+    log = request.app.state.ctx.require_service("event_log")
+    realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
+    # Keep the existing lock order and revalidate the exact repaired head before
+    # ordinary receipt admission. A concurrent newer ref is never silently used.
+    with store.mutation(), log._lock:
+        if log.get_head(realm_id) != expected_head:
+            raise HTTPException(409, detail={"code": "stale_recovery_head"})
+        return _sync_reconcile_healthy(request, response, body, key)
+
+
+def _sync_reconcile_healthy(request, response, body, _idempotency_key):
     """Reload durable refs and repair a stale SQLite projection safely."""
     realm_id = body.get("realm_id") or request.app.state.ctx.settings.primary_realm
     _check_realm_access(request, realm_id)

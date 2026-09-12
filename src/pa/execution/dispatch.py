@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import islice
+
 import asyncio
 import copy
 import hashlib
@@ -858,6 +860,7 @@ class DispatchStore:
         )
         self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
+        self._operation_records: dict[str, set[tuple[str, str]]] = {}
         self._latest_card_records: dict[str, DispatchRecord] = {}
         self._latest_session_records: dict[tuple[str, str], DispatchRecord] = {}
         self._latest_session_records_global: dict[str, DispatchRecord] = {}
@@ -1627,6 +1630,7 @@ class DispatchStore:
                 for source in records:
                     candidate = self._snapshot(source)
                     previous = self._records.get(candidate.dispatch_id)
+                    self._update_operation_records_locked(candidate, previous)
                     self._records[candidate.dispatch_id] = candidate
                     self._update_history_count_locked(candidate, previous)
                     self._update_latest_card_record_locked(candidate, previous)
@@ -1675,6 +1679,7 @@ class DispatchStore:
     def _load(self) -> None:
         if self._conn is None:
             self._records = self._load_legacy_snapshot()
+            self._rebuild_operation_records_locked()
             self._rebuild_latest_card_records_locked()
             self._rebuild_latest_session_records_locked()
             self._rebuild_history_counts_locked()
@@ -1689,6 +1694,7 @@ class DispatchStore:
                 ).fetchone()
             except sqlite3.OperationalError:
                 self._records = self._load_legacy_snapshot()
+                self._rebuild_operation_records_locked()
                 self._rebuild_latest_card_records_locked()
                 self._rebuild_latest_session_records_locked()
                 self._rebuild_history_counts_locked()
@@ -1763,6 +1769,7 @@ class DispatchStore:
                 if sequences:
                     migrated = True
         self._records = records
+        self._rebuild_operation_records_locked()
         self._rebuild_latest_card_records_locked()
         self._rebuild_latest_session_records_locked()
         self._rebuild_history_counts_locked()
@@ -2369,6 +2376,49 @@ class DispatchStore:
                 default=None,
             )
             return self._snapshot(record) if record else None
+
+    @staticmethod
+    def _operation_keys(record: DispatchRecord):
+        if record.idempotency_key:
+            yield record.idempotency_key, "dispatch.create"
+        for key, action in record.control_operations.items():
+            if action:
+                yield key, f"dispatch.{action}"
+        for key in record.followup_operations:
+            yield key, "dispatch.followup"
+
+    def _update_operation_records_locked(self, candidate, previous=None):
+        if previous is not None:
+            for key, operation in self._operation_keys(previous):
+                bucket = self._operation_records.get(key)
+                if bucket is not None:
+                    bucket.discard((operation, previous.dispatch_id))
+                    if not bucket:
+                        self._operation_records.pop(key, None)
+        for key, operation in self._operation_keys(candidate):
+            self._operation_records.setdefault(key, set()).add(
+                (operation, candidate.dispatch_id)
+            )
+
+    def _rebuild_operation_records_locked(self):
+        self._operation_records = {}
+        for record in self._records.values():
+            self._update_operation_records_locked(record)
+
+    def read_operation_receipts(self, idempotency_key: str):
+        """Indexed, bounded lookup retaining collisions instead of choosing latest."""
+        self._require_readable()
+        if not self._index_lock.acquire(timeout=0.05):
+            from pa.core.async_runtime import BlockingOperationTimeout
+            raise BlockingOperationTimeout("dispatch receipt index is busy")
+        try:
+            matches = self._operation_records.get(idempotency_key, set())
+            # More than one owner is ambiguous; callers need at most two to
+            # reject it. Do not snapshot unbounded legacy key reuse on a poll.
+            return [(operation, self._snapshot(self._records[record_id]))
+                    for operation, record_id in islice(matches, 2)]
+        finally:
+            self._index_lock.release()
 
     def find_operation_by_idempotency(
         self, idempotency_key: str, *, realm_id: str | None = None

@@ -195,7 +195,10 @@ async def test_authority_transport_loss_and_completed_exact_prompt_outcome_recon
     authority_request = MagicMock()
     authority_request.state.instance_authenticated = True
     authority_request.app.state.ctx.settings = env.request.app.state.ctx.settings
-    authority_request.app.state.ctx.services = {"dispatch_store": authority_ledger}
+    from pa.core.operation_status import OperationStatusService
+    status_service = OperationStatusService(tmp_path)
+    authority_request.app.state.ctx.services = {"dispatch_store": authority_ledger,
+                                               "operation_status": status_service}
     authority_env = SimpleNamespace(**{**vars(env), "request": authority_request})
     hide_receipt = True
     posts = []
@@ -224,6 +227,10 @@ async def test_authority_transport_loss_and_completed_exact_prompt_outcome_recon
         hide_receipt = False
         with patch("pa.modules.items.get_store", return_value=env.store):
             outcome = await operation_outcome_endpoint(authority_request, KEY)
+            assert outcome["status"] == "delivery_ambiguous"
+            await asyncio.gather(*status_service.tasks.values())
+            outcome = await operation_outcome_endpoint(authority_request, KEY)
+        await status_service.close()
         assert outcome["status"] == "accepted"
         assert outcome["result"]["response"]["accepted"] is True
         assert outcome["result"]["prompt_id"] == prompt_id
@@ -445,7 +452,7 @@ async def test_operation_outcome_store_and_ledger_work_is_off_event_loop(env):
     import threading
 
     main_thread = threading.get_ident()
-    original = env.store.get_operation_outcome
+    original = env.store.read_operation_receipt
     lookup_threads = []
 
     def lookup(*args, **kwargs):
@@ -454,10 +461,11 @@ async def test_operation_outcome_store_and_ledger_work_is_off_event_loop(env):
         return original(*args, **kwargs)
 
     with patch("pa.modules.items.get_store", return_value=env.store), patch.object(
-        env.store, "get_operation_outcome", side_effect=lookup,
+        env.store, "read_operation_receipt", side_effect=lookup,
     ):
         result = await operation_outcome_endpoint(env.request, "absent-operation")
-    assert result["status"] == "not_found" and lookup_threads
+    assert result["status"] == "lookup_pending" and lookup_threads
+    assert result["owner"] is None and result["accepted"] is None
 
 
 @pytest.mark.asyncio
