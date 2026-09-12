@@ -21,8 +21,8 @@ def projection(tmp_path):
     return CardProjection(tmp_path / "cards.db", event_log=log)
 
 
-def protected(store, *, milestones=None):
-    return store.create_card(CardCreate(title="release", lane="waiting", completion_requirement={
+def protected(store, *, milestones=None, realm="default"):
+    return store.create_card(CardCreate(realm_id=realm, title="release", lane="waiting", completion_requirement={
         "mode": "explicit_acceptance", "criteria": "Publish and verify production",
         "milestones": milestones or [], "acceptance_principals": ["instance:acceptance"],
     }))
@@ -127,9 +127,10 @@ def test_actual_api_proxy_rejected_human_done_audited_and_ui(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_real_merge_pending_acceptance_preserves_workspace(tmp_path):
+@pytest.mark.parametrize("realm", ["default", "engineering"])
+async def test_real_merge_pending_acceptance_preserves_workspace(tmp_path, realm):
     store = projection(tmp_path)
-    card = protected(store, milestones=["integrated", "verified"])
+    card = protected(store, milestones=["integrated", "verified"], realm=realm)
     workspace_root = tmp_path / "git-fixture"
     workspace_root.mkdir()
     manager, _, linked = manager_for(workspace_root)
@@ -141,22 +142,34 @@ async def test_real_merge_pending_acceptance_preserves_workspace(tmp_path):
     await service.refresh_capability(force=True)
     item = watch(policy=PRPolicy(stable_head_seconds=0, stable_observations=1))
     item.card_id = card.id
+    item.realm_id = realm
     await service.register_watch(item, replicate=False)
     await service.run_once()
     watches.schedule_now(watch_id=item.id)
     await service.run_once()
-    current = store.get_card(card.id)
+    current = store.get_card(card.id, realm_id=realm)
     assert current.lane == CardLane.WAITING
     assert current.completion_evidence[0].outcome == "integrated"
     assert current.completion_status["missing"] == ["verified", "acceptance"]
     assert not manager.list()[0].completed
     assert manager.mark_card_completed(card.id, merged=True) == 0
+    # A prior/older writer's terminal lease flags cannot turn a protected
+    # non-default-realm card into a missing-card cleanup exemption.
+    if realm != "default":
+        assert store.get_card(card.id, realm_id="default") is None
+    assert store.card_completion_eligible(card.id) is False
+    lease.completed = lease.merged = True
+    lease.state = "completed"
+    manager._save(lease)
+    assert manager.collect_garbage(now=utcnow() + timedelta(days=2))["retained"] == 1
+    from pathlib import Path
+    assert Path(lease.worktree_path).exists()
     assert watches.get_watch(item.id).state["card_disposition"]["reason_code"] == "acceptance_pending"
     reopened = PRSupervisorStore(watches.db_path)
     assert reopened.list_card_completion_due(now=utcnow() + timedelta(days=1)) == []
     await service._complete_merged_card(reopened.get_watch(item.id))
-    assert len(store.get_card(card.id).completion_evidence) == 1
-    done = store.update_card(card.id, CardUpdate(lane="done", expected_version=current.updated_at, completion_acceptance=CompletionEvidence(requirement_revision=current.completion_requirement.revision, subject_revision="c" * 40, milestones=["verified"])), principal_id="instance:acceptance", idempotency_key="accept-build-c", actor_session_id="verifier-session", actor_dispatch_id="verifier-dispatch")
+    assert len(store.get_card(card.id, realm_id=realm).completion_evidence) == 1
+    done = store.update_card(card.id, CardUpdate(lane="done", expected_version=current.updated_at, completion_acceptance=CompletionEvidence(requirement_revision=current.completion_requirement.revision, subject_revision="c" * 40, milestones=["verified"])), realm_id=realm, principal_id="instance:acceptance", idempotency_key="accept-build-c", actor_session_id="verifier-session", actor_dispatch_id="verifier-dispatch")
     assert done.lane == CardLane.DONE
     assert manager.mark_card_completed(card.id, merged=True) == 1
     # Even accepted completion cannot collect an active execution.
