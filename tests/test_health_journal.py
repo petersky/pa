@@ -346,7 +346,7 @@ async def test_actual_mcp_stdio_http_report_roundtrip(fleet, monkeypatch):
         listener.close()
 
 
-@pytest.mark.parametrize('decision', ['repair', 'no_fix'])
+@pytest.mark.parametrize('decision', ['repair', 'no_fix', 'integration_only', 'stale_requirement'])
 def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypatch, decision):
     pytest.importorskip('pa.domain.completion', reason='Actual repair producer requires companion lifecycle declaration contract')
     from unittest.mock import AsyncMock
@@ -358,6 +358,8 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
     from pa.instance.agent_session import reset_instance_agent
     from tests.test_fleet_placement import _candidate
     reset_settings(); reset_store(); reset_instance_agent()
+    from pa.instance.session_lifecycle import SessionLifecyclePolicy
+    monkeypatch.setattr(SessionLifecyclePolicy, 'start', lambda self: None)
     settings = Settings(data_dir=tmp_path/'owner', workspace_root=tmp_path/'workspaces',
                         instance_id=str(uuid4()), agent_enabled=False,
                         auth_required=True, subscribed_realms=['default'], peers=[], sync_token='isolated-health-peer')
@@ -423,7 +425,8 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
                 from pa.execution.dispatch import DispatchStore, CompletionOutbox
                 session = ctx.store.save_session(AgentSession(id='no-fix-worker', agent_name='codex',
                     card_id=card.id, dispatch_id=first.dispatch_id, authority_instance_id=settings.instance_id,
-                    status='closed'))
+                    status='idle'))
+                assert ctx.require_service('instance_agent').get(session.id) is None
                 ledger = ctx.require_service('dispatch_store')
                 record = ledger.put(first.model_copy(update={'session_id':session.id, 'state':'running'}))
                 nofix = client.patch('/api/health-journal/groups/'+group['id'],
@@ -449,11 +452,81 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
                     actual = ledger.get(record.dispatch_id)
                     assert actual.acknowledged_at is not None
                     assert actual.reconciliation_state in {'applied', 'not_applicable', 'operator_state_preserved'}
+                    assert ctx.store.get_session(session.id).status == 'idle'
+                    lifecycle = ctx.require_service('session_lifecycle')
+                    client.portal.call(lifecycle.run_once)
+                    assert ctx.store.get_session(session.id).status == 'closed'
+                    assert lifecycle.diagnostics[session.id]['close_reason'] == 'dispatch_completed'
                     client.portal.call(service.cycle)
                     assert not service.journal.status()['active_actions']
                     assert service.journal.groups(['default'])[0]['disposition'] == 'no_fix'
+                    service.journal.append(Observation(**observation(error_code='separate_bounded_issue',
+                        occurrence_key='next-investigation')), principal='user:local', realm='default', key='next-investigation')
+                    client.portal.call(service.cycle)
+                    next_action = service.journal.status()['active_actions'][0]
+                    assert next_action['id'] != action['id']
+                    assert json.loads(next_action['result'])['dispatch_id'] != first.dispatch_id
                 finally:
                     target.close()
+                return
+            if decision in {'integration_only', 'stale_requirement'}:
+                headers = {'Authorization':f'Bearer {user.cli_token}'}
+                if decision == 'integration_only':
+                    declaration = client.patch('/api/cards/'+card.id, params={'realm':'default'},
+                        headers=headers | {'Idempotency-Key':'existing-integration-only'}, json={
+                            'expected_version':card.updated_at.isoformat(), 'field_intent':['completion_requirement'],
+                            'completion_requirement':{'mode':'integration_only', 'milestones':[],
+                                'criteria':'Keep source integration', 'acceptance_principals':['user:local']}})
+                    assert declaration.status_code == 200, declaration.text
+                else:
+                    original_api = service.local_api
+                    attempts, stale_statuses = [], []
+                    async def stale_patch(action_payload, method, path, **kwargs):
+                        if method == 'PATCH' and '/api/cards/' in path:
+                            attempts.append((kwargs['key'], kwargs['body']))
+                            await original_api(action_payload, method, path, key='concurrent-card-change',
+                                body={'expected_version':kwargs['body']['expected_version'],
+                                      'title':'Deliberate concurrent canonical update'})
+                        try:
+                            return await original_api(action_payload, method, path, **kwargs)
+                        except httpx.HTTPStatusError as exc:
+                            stale_statuses.append(exc.response.status_code)
+                            raise
+                    monkeypatch.setattr(service, 'local_api', stale_patch)
+                transition = {'expected_version':group['version'], 'disposition':'reproduced',
+                              'reason':'Bounded canonical protection', 'card_id':card.id}
+                response = client.patch('/api/health-journal/groups/'+group['id'], headers=headers, json=transition)
+                if decision == 'stale_requirement':
+                    assert response.status_code >= 400, response.text
+                    assert len(attempts) == 1 and stale_statuses == [409]
+                    saved = json.loads(service.journal.status()['active_actions'][0]['result'])['effects']['requirement']
+                    assert saved['payload']['body'] == attempts[0][1]
+                    assert service.journal.groups(['default'])[0]['version'] == group['version']
+                    current = ctx.store.get_card(card.id)
+                    assert current.completion_requirement is None
+                    correction = client.patch('/api/cards/'+card.id, params={'realm':'default'},
+                        headers=headers | {'Idempotency-Key':'deliberate-canonical-correction'}, json={
+                            **saved['payload']['body'], 'expected_version':current.updated_at.isoformat()})
+                    assert correction.status_code == 200, correction.text
+                    corrected = ctx.store.get_card(card.id).completion_requirement.model_dump(mode='json')
+                    response = client.patch('/api/health-journal/groups/'+group['id'], headers=headers, json=transition)
+                    assert len(attempts) == 1  # Never resend the historical stale PATCH.
+                    same_action = service.journal.status()['active_actions'][0]
+                    assert same_action['id'] == action['id']
+                    assert json.loads(same_action['result'])['effects']['requirement'] == saved
+                    assert ctx.store.get_card(card.id).completion_requirement.model_dump(mode='json') == corrected
+                assert response.status_code == 200, response.text
+                if decision == 'integration_only':
+                    from pa.domain.completion import completion_state
+                    requirement = ctx.store.get_card(card.id).completion_requirement
+                    assert requirement.acceptance_principals == ['user:local']
+                    assert requirement.criteria.startswith('Keep source integration')
+                    assert set(requirement.milestones) == {'integrated', 'verified'}
+                    evidence = CompletionEvidence(requirement_revision=requirement.revision,
+                        subject_revision=commit, milestones=['verified'], outcome='accepted',
+                        actor='user:local', recorded_at=card.updated_at.isoformat())
+                    status = completion_state(requirement, [evidence])
+                    assert not status['accepted'] and 'integrated' in status['missing']
                 return
             # Every repair-entry disposition must protect the card before success.
             original_api = service.local_api

@@ -244,6 +244,9 @@ class HealthService:
                 return (req.get('mode') == 'explicit_acceptance' and req.get('revision')
                         and 'verified' in req.get('milestones', [])
                         and f'health-group:{group_id}' in req.get('criteria', ''))
+            card = await current_card()
+            if protected(card):
+                return
             saved = result.get('effects', {}).get('requirement')
             if saved:
                 plan = saved.get('payload')
@@ -252,15 +255,15 @@ class HealthService:
                 await self.local_api(action['payload'], plan['method'], plan['path'],
                                      body=plan['body'], key=saved['id'])
             else:
-                card = await current_card()
-                if protected(card):
-                    return
                 from pa.domain.models import CardUpdate
                 if 'completion_requirement' not in CardUpdate.model_fields:
                     raise JournalError('repair_completion_contract_unavailable')
                 req = dict(card.get('completion_requirement') or {})
+                milestones = list(req.get('milestones', []))
+                if req.get('mode') == 'integration_only' and 'integrated' not in milestones:
+                    milestones.insert(0, 'integrated')
                 req.update(schema_version=1, mode='explicit_acceptance',
-                    milestones=list(dict.fromkeys([*req.get('milestones', []), 'verified'])),
+                    milestones=list(dict.fromkeys([*milestones, 'verified'])),
                     criteria=(req.get('criteria') or '') +
                         f' Verify the declared repair build and scenario for health-group:{group_id}; retain exact canonical acceptance receipt and affected instance references.')
                 req.setdefault('acceptance_principals', [])

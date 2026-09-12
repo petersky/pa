@@ -76,11 +76,14 @@ acceptance evidence or erase requirements on a previously protected repair.
 Before acknowledging reproduced, linked, in_progress or merged (or any transition
 supplying commit/PR evidence), PA installs or proves an explicit canonical
 verification requirement on the actual action's bound card and realm. It preserves
-existing owners, criteria and milestones and adds the health group verification
-scope. The exact normal API/CAS declaration is reserved in the existing durable
-action before submission; unknown/lost replies replay that request and cannot
-acknowledge repair permission. The prompt requires successful transition before
-edits/PR work. This is the authorized workflow contract, not an OS security boundary.
+existing owners, criteria and milestones (including the implicit integrated
+milestone of integration_only) and adds the health group verification scope. The
+exact normal API/CAS declaration is reserved in the existing durable action before
+submission; unknown/lost replies replay that request and cannot
+acknowledge repair permission. Current valid canonical protection is proved before
+replaying a saved plan, so an authorized correction can unblock the same action
+without resending a stale PATCH; the prior plan remains in history. The prompt
+requires successful transition before edits/PR work. This is the authorized workflow contract, not an OS security boundary.
 The initial repair declaration grants no automatic acceptance principals.
 Until an owner is declared, a verification attempt returns typed
 `acceptance_owner_unconfigured`; declared but unaccepted work returns
