@@ -43,7 +43,11 @@ available in the result, pending the separate lifecycle observation adapter.
 ## Bounded reconciliation ownership
 
 Kernel owns a status service with two read workers, eight queued reads, and a
-500 ms caller deadline. SQLite receipt queries are read-only, have a 50 ms busy limit and a 250 ms work
+500 ms caller deadline. The service is constructed only in server lifespan after
+acquiring the existing data-directory writer lock. Auxiliary CLI/registration
+boot never initializes the reconciliation schema or resets live repair phases;
+only owned server startup marks prior unfinished receipts interrupted.
+SQLite receipt queries are read-only, have a 50 ms busy limit and a 250 ms work
 limit, and dispatch lookup uses an incrementally maintained key index with a
 50 ms lock limit. It retains at most two claims to detect ambiguity and copies
 only selected receipt evidence, without an unbounded list, whole-dispatch copy,

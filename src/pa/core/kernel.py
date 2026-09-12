@@ -324,9 +324,6 @@ class Kernel:
                 "async_runtime",
                 async_runtime,
             )
-            from pa.core.operation_status import OperationStatusService
-
-            ctx.register_service("operation_status", OperationStatusService(settings.data_dir))
             hooks.set_async_runtime(async_runtime)
             if writer_lock:
                 ctx.register_service("writer_lock", writer_lock)
@@ -569,12 +566,19 @@ class Kernel:
             writer_lock = kernel.ctx.services.get("writer_lock")
             if not writer_lock:
                 writer_lock = DataDirWriterLock(kernel.ctx.settings.data_dir)
-                writer_lock.acquire()
                 kernel.ctx.register_service("writer_lock", writer_lock)
+            writer_lock.acquire()
             dispatch_store = kernel.ctx.services.get("dispatch_store")
             promote_writer = getattr(dispatch_store, "promote_writer", None)
             started = False
             try:
+                from pa.core.operation_status import OperationStatusService
+
+                # Auxiliary CLI/registration boot must never create this journal
+                # or mark a live server's repair owners interrupted.
+                kernel.ctx.register_service(
+                    "operation_status", OperationStatusService(kernel.ctx.settings.data_dir)
+                )
                 if callable(promote_writer):
                     promote_writer()
                 await kernel.startup(app)
@@ -584,10 +588,12 @@ class Kernel:
                 try:
                     if started:
                         await kernel.shutdown(app)
-                    elif dispatch_store and not getattr(
-                        dispatch_store, "read_only", True
-                    ):
-                        dispatch_store.close()
+                    else:
+                        operation_status = kernel.ctx.services.get("operation_status")
+                        if operation_status:
+                            await operation_status.close()
+                        if dispatch_store and not getattr(dispatch_store, "read_only", True):
+                            dispatch_store.close()
                 finally:
                     writer_lock.release()
 
