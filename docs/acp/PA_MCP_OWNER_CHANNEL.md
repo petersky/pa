@@ -16,11 +16,16 @@ in supported service-manager and container deployments. Deployments that move
 children into another namespace must expose an explicit locally reachable
 listener there; PA rejects session admission if the probe cannot reach it.
 
-Before starting an ACP provider, PA probes `/api/ready` with the local API token
+Before starting an ACP provider, PA probes `/api/owner-ready` with the local API token
 and instance fence. It distinguishes unreachable, rejected authentication,
 instance mismatch, incompatible API, and API-not-ready states. A failed probe
 prevents prompt delivery and includes the sanitized endpoint class and recovery
 action. The MCP client independently verifies `X-PA-Instance-ID` on responses.
+
+Owner readiness requires initialized API services, warmed routes, and completed
+local sync repair. It does not depend on the provider startup that is making the
+probe, or on a previous probe's failure. `/api/ready` remains the operator gate
+and additionally waits for agent startup and owner-channel health.
 
 Transient request failures retry briefly. Persistent failures open a bounded
 circuit so subsequent tool calls fail quickly while periodic calls perform

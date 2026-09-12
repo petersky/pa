@@ -143,17 +143,22 @@ def build_session_presentation(
 
     queue_reason = None
     if queue:
-        if control == "human" and any(
-            str(_field(item, "source", "") or "")
-            .casefold()
-            .startswith(("card-reconciliation:", "pr-supervisor", "post-turn", "evaluation", "reconciliation", "dispatch"))
-            for item in queue
+        paused = bool(getattr(runtime, "_queue_paused", False)) if live else bool(durable.get("queue_paused"))
+        eligibility = getattr(runtime, "_prompt_eligible", None) if live else None
+        if paused:
+            queue_reason = "operator_paused"
+        elif prompting or in_flight:
+            queue_reason = "waiting_for_current_response"
+        elif control == "human" and all(
+            not eligibility(item) if callable(eligibility) else
+            str(_field(item, "source", "") or "").strip().casefold().startswith(
+                ("card-reconciliation:", "pr-supervisor", "post-turn", "evaluation",
+                 "reconciliation", "dispatch", "goal", "recovery", "restart-handoff:")
+            ) for item in queue
         ):
             queue_reason = "automation_paused_for_takeover"
         elif not connected:
             queue_reason = "waiting_for_recovery"
-        elif prompting or in_flight:
-            queue_reason = "waiting_for_current_response"
         else:
             queue_reason = "waiting_for_provider_capacity"
 
@@ -216,13 +221,14 @@ def build_session_presentation(
     elif connected and queue:
         display_status = "Queued"
         explanation = {
+            "operator_paused": "The queue is paused. Resume the queue to continue pending prompts.",
             "automation_paused_for_takeover": "Automatic prompts are held until control returns to automation.",
             "waiting_for_current_response": "Prompts are waiting for the current response.",
             "waiting_for_provider_capacity": "Prompts are durably queued for provider capacity.",
             "waiting_for_recovery": "Prompts are durably queued while the provider session is restored.",
         }[queue_reason]
         next_action = (
-            None if queue_reason == "automation_paused_for_takeover" else "start_next_prompt"
+            None if queue_reason in {"automation_paused_for_takeover", "operator_paused"} else "start_next_prompt"
         )
     elif not connected and obligations:
         retry_at = recovery.get("next_retry_at")

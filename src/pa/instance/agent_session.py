@@ -299,6 +299,8 @@ class AgentSessionRuntime:
         self._queue: list[QueuedPrompt] = []
         self._queue_paused = False
         self._in_flight: QueuedPrompt | None = None
+        self._draining_prompt: QueuedPrompt | None = None
+        self._restart_receipts: dict[str, RestartHandoff] = {}
         self._drain_task: asyncio.Task[None] | None = None
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._recent_live_events: deque[dict[str, Any]] = deque()
@@ -1394,18 +1396,73 @@ class AgentSessionRuntime:
         await self._drain_transcripts()
         return state
 
+    def _restart_continuation_receipt(self, item: QueuedPrompt) -> RestartHandoff | None:
+        """Validate cached evidence; delivery callers must refresh it off-loop first."""
+        if not item.source.startswith("restart-handoff:"):
+            return None
+        receipt = self._restart_receipts.get(item.id)
+        if (
+            receipt is None
+            or item.source != f"restart-handoff:{receipt.id}"
+            or receipt.session_id != self.session_id
+            or receipt.continuation_prompt_id != item.id
+            or receipt.continuation_prompt != item.message
+            or item.session_id != self.session_id
+            or item.principal_id != self.session.principal_id
+            or item.cwd != self.session.cwd
+            or item.agent_env != self._merged_agent_env(None)
+            or item.publication_fence
+            or receipt.status != "continuation_queued"
+            or receipt.delivered_at is not None
+            or receipt.card_id != item.card_id
+            or receipt.project_id != item.project_id
+            or item.images
+            or (receipt.instance_id and receipt.instance_id != self.settings.instance_id)
+            or receipt.execution_binding != self.session.execution_binding
+        ):
+            return None
+        return receipt
+
+    async def _refresh_restart_receipt(self, item: QueuedPrompt) -> None:
+        # Cached evidence is only a presentation hint. Invalidate before yielding
+        # and reload off-loop both before dequeue and at the execution boundary.
+        self._restart_receipts.pop(item.id, None)
+        if not item.source.startswith("restart-handoff:"):
+            return
+        receipt = await self._offload(
+            "sqlite.restart_continuation_authorization",
+            self.store.get_restart_handoff,
+            item.source.split(":", 1)[1],
+        )
+        if receipt is not None:
+            self._restart_receipts[item.id] = receipt
+
+    def _needs_restart_validation(self, item: QueuedPrompt) -> bool:
+        # This schedules validation only; it is never permission to deliver.
+        return self.session.purpose == "chat" and item.source.startswith("restart-handoff:")
+
+    def _prompt_eligible(self, item: QueuedPrompt) -> bool:
+        return (
+            self.session.control_mode != "human"
+            or not _is_automatic_source(item.source)
+            or (
+                self.session.purpose == "chat"
+                and self._restart_continuation_receipt(item) is not None
+            )
+        )
+
     def _start_drain(self) -> None:
         if self._drain_task and not self._drain_task.done():
             return
         if self._queue_paused or not self._queue:
             return
-        if self.session.control_mode == "human" and not any(
-            not _is_automatic_source(item.source) for item in self._queue
-        ):
+        if not any(self._prompt_eligible(item) or self._needs_restart_validation(item)
+                   for item in self._queue):
             return
         self._drain_task = asyncio.create_task(self._drain_queue())
 
     async def _drain_queue(self) -> None:
+        self._restart_receipts.clear()
         while (
             self._queue
             and not self._queue_paused
@@ -1414,15 +1471,33 @@ class AgentSessionRuntime:
         ):
             if self.manager.quiescing:
                 break
-            eligible_index = next(
-                (
-                    index
-                    for index, candidate in enumerate(self._queue)
-                    if self.session.control_mode != "human"
-                    or not _is_automatic_source(candidate.source)
-                ),
-                None,
-            )
+            # Inspect queue order before doing I/O. A receipt behind an eligible
+            # user prompt must never delay that prompt. Restart the scan after
+            # each await because priority, membership and scope may have changed.
+            validated: set[str] = set()
+            unavailable: set[str] = set()
+            eligible_index = None
+            while not (self._queue_paused or self._closed or not self.connected
+                       or self.manager.quiescing):
+                candidate = next((candidate for candidate in self._queue
+                                  if candidate.id not in unavailable
+                                  and (self._prompt_eligible(candidate)
+                                       or (self._needs_restart_validation(candidate)
+                                           and candidate.id not in validated))), None)
+                if candidate is None:
+                    break
+                if (candidate.source.startswith("restart-handoff:")
+                        and candidate.id not in validated):
+                    validated.add(candidate.id)
+                    try:
+                        await self._refresh_restart_receipt(candidate)
+                    except Exception:
+                        self._restart_receipts.pop(candidate.id, None)
+                        unavailable.add(candidate.id)
+                        logger.exception("Restart receipt authorization unavailable for %s", candidate.id)
+                    continue
+                eligible_index = self._queue.index(candidate)
+                break
             if eligible_index is None:
                 break
             item = self._queue[eligible_index]
@@ -1436,6 +1511,11 @@ class AgentSessionRuntime:
                 # Admission may have yielded while the queue was edited.
                 if item not in self._queue:
                     continue
+                if self._queue_paused or not self._prompt_eligible(item):
+                    break
+            # Provider admission performs async work before _in_flight is set.
+            # Keep ownership visible to receipt replay throughout that interval.
+            self._draining_prompt = item
             self._queue.remove(item)
             self._append_transcript(
                 "queue_dequeued",
@@ -1450,12 +1530,13 @@ class AgentSessionRuntime:
             )
             try:
                 await self._run_prompt(item)
-                if item.source.startswith("restart-handoff:"):
-                    handoff_id = item.source.split(":", 1)[1]
+                await self._refresh_restart_receipt(item)
+                receipt = self._restart_continuation_receipt(item)
+                if receipt is not None:
                     await self._offload(
                         "sqlite.restart_handoff_delivered",
                         self.store.update_restart_handoff,
-                        handoff_id,
+                        receipt.id,
                         status="continuation_delivered",
                         delivered=True,
                     )
@@ -1491,6 +1572,9 @@ class AgentSessionRuntime:
                     lifecycle="recoverable_interrupted"
                 )
                 break
+            finally:
+                self._restart_receipts.pop(item.id, None)
+                self._draining_prompt = None
         self._flush_transcript()
 
     def _require_execution_context_active(self):
@@ -1676,10 +1760,7 @@ class AgentSessionRuntime:
         if (
             not self._queue_paused
             and not _defer_drain
-            and not (
-                self.session.control_mode == "human"
-                and _is_automatic_source(source)
-            )
+            and (self._prompt_eligible(item) or self._needs_restart_validation(item))
         ):
             self._start_drain()
         return item
@@ -1966,6 +2047,13 @@ class AgentSessionRuntime:
                     await collaboration.prepare_turn(self)
                 except Exception as exc:
                     raise PromptAdmissionBlocked(str(exc)) from exc
+            await self._refresh_restart_receipt(item)
+            if _is_automatic_source(item.source) and (
+                self._queue_paused or not self._prompt_eligible(item)
+            ):
+                raise PromptAdmissionBlocked(
+                    "Automatic prompt held: the queue was paused or its authorization changed during admission"
+                )
             self._in_flight = item
             self._turn_started_at = datetime.now(UTC)
             self._turn_agent_events = []
@@ -2503,6 +2591,7 @@ class AgentSessionRuntime:
         self.manager.request_recovery(self.session_id)
 
     async def cancel(self, *, pause_queue: bool = True) -> None:
+        self._restart_receipts.clear()
         if pause_queue:
             self._queue_paused = True
         if self.connection:
@@ -2516,6 +2605,7 @@ class AgentSessionRuntime:
         await self._drain_transcripts()
 
     def pause_queue(self) -> None:
+        self._restart_receipts.clear()
         self._queue_paused = True
         self._append_transcript("queue_paused", {})
         self._checkpoint_runtime(lifecycle="paused")
@@ -2532,6 +2622,7 @@ class AgentSessionRuntime:
         """Persist takeover before changing which durable prompts may drain."""
         if mode == self.session.control_mode:
             return
+        self._restart_receipts.clear()
         self.session.control_mode = mode
         self.session.updated_at = datetime.now(UTC)
         self._append_transcript(
@@ -3314,6 +3405,8 @@ class AgentSessionManager:
         )
         for receipt in pending:
             self._schedule_restart_handoff(receipt.id)
+        if self._resume_on_start:
+            await self._resume_restart_handoffs(replay_only=True)
 
     async def _recovery_once(self, *, now: datetime | None = None) -> None:
         if not self._startup_complete or self._should_abort_recovery():
@@ -4686,23 +4779,63 @@ class AgentSessionManager:
                 failure_stage=stage,
             )
 
-    async def _resume_restart_handoffs(self) -> None:
+    async def _resume_restart_handoffs(self, *, replay_only: bool = False) -> None:
         async with self.label_lock("restart-handoff-replay"):
-            await self._resume_pending_restart_handoffs()
+            await self._resume_pending_restart_handoffs(replay_only=replay_only)
 
-    async def _resume_pending_restart_handoffs(self) -> None:
+    async def _resume_pending_restart_handoffs(self, *, replay_only: bool = False) -> None:
         pending = await self._offload(
             "sqlite.restart_handoffs_pending", self.store.list_restart_handoffs,
             statuses=(
                 "requested", "waiting_for_turn_end", "quiescing",
                 "restarting", "resuming", "continuation_queued",
+                "failed",
             )
         )
         for handoff in pending:
+            if handoff.status == "failed" and handoff.failure_stage == "resuming":
+                completed = await self._offload(
+                    "sqlite.restart_handoff_completion", self.store.find_prompt_completion,
+                    handoff.session_id, handoff.continuation_prompt_id,
+                )
+                if completed is not None:
+                    await self._offload(
+                        "sqlite.restart_handoff_delivered", self.store.update_restart_handoff,
+                        handoff.id, status="continuation_delivered", delivered=True,
+                    )
+                    continue
+            # Old versions terminalized transient owner-readiness failures.
+            # Only this known retryable stage may re-enter automatic replay.
+            transient_failure = (
+                handoff.failure_stage == "resuming"
+                and "PA MCP owner channel api_not_ready (endpoint=" in (handoff.error or "")
+            )
+            if handoff.status == "failed" and not transient_failure:
+                continue
             if handoff.status in {"requested", "waiting_for_turn_end", "quiescing"}:
-                if handoff.id not in self._restart_handoff_tasks:
+                if not replay_only and handoff.id not in self._restart_handoff_tasks:
                     self._schedule_restart_handoff(handoff.id)
                 continue
+            session = await self._offload(
+                "sqlite.restart_handoff_session", self.store.get_session, handoff.session_id
+            )
+            if not session or session.status == "closed" or session.archived_at:
+                continue
+            if session.control_mode == "human" and session.purpose == "automated_run":
+                # Taking over an automated run remains a workflow pause. The
+                # chat continuation exception must not reactivate that workflow.
+                continue
+            durable = dict((session.config_json or {}).get(_DURABLE_RUNTIME_KEY) or {})
+            recovery = dict(session.recovery_json or {})
+            runtime = self.get(handoff.session_id)
+            if durable.get("queue_paused") and not (runtime and runtime.connected):
+                continue
+            if recovery.get("blocked"):
+                continue
+            retry_at = recovery.get("next_retry_at")
+            if retry_at and not (runtime and runtime.connected):
+                if datetime.fromisoformat(retry_at) > datetime.now(UTC):
+                    continue
             try:
                 completed = await self._offload(
                     "sqlite.restart_handoff_completion",
@@ -4741,6 +4874,9 @@ class AgentSessionManager:
                 accepted = list(runtime._queue)
                 if runtime._in_flight is not None:
                     accepted.append(runtime._in_flight)
+                draining = getattr(runtime, "_draining_prompt", None)
+                if draining is not None:
+                    accepted.append(draining)
                 already_accepted = any(
                     item.id == handoff.continuation_prompt_id for item in accepted
                 )
@@ -4783,7 +4919,16 @@ class AgentSessionManager:
                     handoff.id, status="continuation_queued"
                 )
                 runtime._start_drain()
+            except SessionAdmissionInProgress:
+                # Another exact-session recovery owns provider admission. Its
+                # durable result will be reconciled by the next watchdog sweep.
+                continue
             except Exception as exc:
+                transient = "PA MCP owner channel api_not_ready (endpoint=" in str(exc)
+                if transient:
+                    await self._mark_recovery_interrupted(
+                        self._snapshot_from_persisted(session), exc
+                    )
                 await self._offload(
                     "sqlite.restart_handoff_resume_failed",
                     self.store.update_restart_handoff, handoff.id,
@@ -5162,6 +5307,12 @@ class AgentSessionManager:
         if self._should_abort_recovery():
             await runtime.close()
             raise RuntimeError("Agent is quiescing")
+        # Snapshot recovery bypasses create_session, but restored prompts must
+        # still revalidate their persisted execution selection before delivery.
+        if getattr(self, "_selection_service", None) is None:
+            from pa.execution.selection_service import SelectionService
+
+            self._selection_service = SelectionService(self.settings, self.store, self)
         queued = self._recovery_queue(snap, session, workspace_env)
         await runtime.start(
             resume_external_id=snap.external_session_id,

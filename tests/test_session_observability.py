@@ -174,3 +174,47 @@ def test_stale_durable_admission_without_runtime_never_reports_busy() -> None:
     assert result["activity"]["phase"] != "running"
     assert "turn_in_flight" not in result["liveness"]["evidence"]
     assert "recent_sanitized_progress" not in result["liveness"]["evidence"]
+
+
+def test_live_in_flight_turn_wins_over_later_durable_queued_handoff():
+    live = runtime()
+    live._queue = [SimpleNamespace(id='handoff', source='restart-handoff:receipt')]
+    result = build_session_observability(
+        session(purpose='chat', control_mode='human'), runtime=live,
+        events=[event(1, 'user_message', {'id': 'followup-1', 'source': 'ui'}, 10),
+                event(2, 'queue_enqueued', {'id': 'handoff', 'source': 'restart-handoff:receipt'}, 5)],
+        instance_id='monica', instance_name='Monica', now=NOW,
+    )
+    assert result['turn']['id'] == 'followup-1'
+    assert result['turn']['state'] == 'running'
+    assert result['activity']['phase'] == 'running'
+    assert result['liveness']['classification'] != 'queued'
+    assert result['queue']['reason'] == 'waiting_for_current_response'
+
+
+def test_held_human_queue_reports_control_and_operator_pause_reasons():
+    live = runtime()
+    live._in_flight = None
+    live._queue = [SimpleNamespace(id='handoff', source='restart-handoff:unverified')]
+    for paused, reason in [(False, 'automation_paused_for_takeover'), (True, 'operator_paused')]:
+        live._queue_paused = paused
+        result = build_session_observability(
+            session(purpose='chat', control_mode='human', status='idle'), runtime=live,
+            events=[], instance_id='monica', instance_name='Monica', now=NOW,
+        )
+        assert result['queue']['reason'] == reason
+        assert result['presentation']['next_automatic_action'] is None
+
+
+def test_old_running_event_does_not_override_new_queue_without_live_turn():
+    live = runtime()
+    live._in_flight = None
+    live._queue = [SimpleNamespace(id='new-queue', source='evaluation:held')]
+    result = build_session_observability(
+        session(purpose='chat', control_mode='human', status='idle'), runtime=live,
+        events=[event(1, 'user_message', {'id': 'old-turn'}, 200),
+                event(2, 'queue_enqueued', {'id': 'new-queue'}, 10)],
+        instance_id='monica', instance_name='Monica', now=NOW,
+    )
+    assert result['turn']['id'] == 'new-queue'
+    assert result['activity']['phase'] != 'running'

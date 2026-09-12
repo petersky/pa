@@ -259,3 +259,31 @@ class ReadyContractHTTPTests(unittest.TestCase):
                 payload = response.json()
                 self.assertEqual(payload["status"], "ready")
                 self.assertIn(payload["lifecycle"], {"ready", "idle", "error"})
+
+
+class OwnerReadyTests(EvaluateReadyTests):
+    def test_owner_ready_breaks_provider_startup_and_probe_health_cycles(self):
+        from pa.server.readiness import evaluate_owner_ready
+        self.ctx.services['agent_lifecycle'] = {'phase': 'starting'}
+        with patch('pa.server.readiness.owner_channel_health', return_value={'state': 'degraded'}):
+            self.assertIsNone(evaluate_owner_ready(self.app, self.ctx))
+            self.assertEqual(evaluate_ready(self.app, self.ctx, self.settings)['lifecycle'], 'starting')
+        self.ctx.services['sync_startup_repaired'] = False
+        self.assertEqual(evaluate_owner_ready(self.app, self.ctx)['sync'], 'repair_pending')
+        self.ctx.services['sync_startup_repaired'] = True
+        self.app.state.ready_openapi_warmed = False
+        self.assertEqual(evaluate_owner_ready(self.app, self.ctx)['missing_routes'], ['openapi'])
+        self.ctx.services.pop('event_log')
+        self.assertEqual(evaluate_owner_ready(self.app, self.ctx)['missing_services'], ['event_log'])
+
+    def test_owner_route_ready_while_operator_route_waits_for_provider(self):
+        from pa.modules.instance import router
+        self.ctx.settings = self.settings
+        self.app.state.ctx = self.ctx
+        self.app.include_router(router, prefix='/api')
+        self.ctx.services['agent_lifecycle'] = {'phase': 'starting'}
+        with TestClient(self.app) as client:
+            assert client.get('/api/ready').status_code == 503
+            response = client.get('/api/owner-ready')
+            assert response.status_code == 200
+            assert response.json()['instance_id'] == self.settings.instance_id
