@@ -75,10 +75,10 @@ def user_scope(request):
         if not hmac.compare_digest(capability, expected) or getattr(runtime, '_closed', False):
             raise HTTPException(403, 'Invalid journal session capability')
         request.state.health_session = session
-        return session.principal_id, [ctx.settings.primary_realm], False
+        return session.principal_id, [session.realm_id], False
     user = require_user(request)
-    # Journal scope comes from server configuration. Principal filtering protects
-    # private local observations; fleet/admin views are explicitly operational.
+    # Operational records are shared within authorized realms. Authorship still
+    # binds writes/idempotency; it is not a separate read permission boundary.
     principal = get_principal_id(request)
     realms = list(request.app.state.ctx.settings.subscribed_realms)
     membership = request.app.state.ctx.services.get('membership')
@@ -117,14 +117,16 @@ class Configure(Strict):
 async def report_problem(request: Request, body: Observation,
                          key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=160)]):
     principal, realms, _ = user_scope(request)
-    realm = body.realm or request.app.state.ctx.settings.primary_realm
+    assigned = getattr(request.state, 'health_session', None)
+    realm = body.realm or (assigned.realm_id if assigned else request.app.state.ctx.settings.primary_realm)
     if realm not in realms:
         raise HTTPException(403, 'Realm is not available to this journal')
-    assigned = getattr(request.state, 'health_session', None)
     context = {'session_id': assigned.id, 'dispatch_id': assigned.dispatch_id, 'card_id': assigned.card_id,
                'project_id': assigned.project_id} if assigned else {}
     session_id = request.headers.get('x-pa-health-session-id')
-    if session_id:
+    if assigned and session_id and session_id != assigned.id:
+        raise HTTPException(403, 'Journal selector conflicts with signed session binding')
+    if session_id and not assigned:
         # The header is only a selector. The live server's owned session supplies
         # principal, dispatch/card/repository context; it never trusts body claims.
         manager = request.app.state.ctx.services.get('instance_agent')
@@ -144,7 +146,7 @@ async def report_problem(request: Request, body: Observation,
 async def list_problems(request: Request, cursor: str | None = Query(None, max_length=160),
                         limit: int = Query(32, ge=1, le=32)):
     principal, realms, admin = user_scope(request)
-    return await service(request).call(service(request).journal.page, principal=None if admin else principal,
+    return await service(request).call(service(request).journal.page, principal=None,
                                       realms=realms, cursor=cursor, limit=limit)
 
 
@@ -152,7 +154,7 @@ async def list_problems(request: Request, cursor: str | None = Query(None, max_l
 async def get_problem(request: Request, report_id: UUID, before: int | None = Query(None, ge=1)):
     principal, realms, admin = user_scope(request)
     return await service(request).call(service(request).journal.report, str(report_id),
-                                      principal=None if admin else principal, realms=realms, before=before)
+                                      principal=None, realms=realms, before=before)
 
 
 @router.get('/outbox')
@@ -261,7 +263,7 @@ async def received_handover(request: Request):
 async def journal_page(request: Request, cursor: str | None = Query(None, max_length=160)):
     principal, realms, admin = user_scope(request)
     page = await service(request).call(service(request).journal.page, realms=realms,
-                                      principal=None if admin else principal, cursor=cursor)
+                                      principal=None, cursor=cursor)
     status = await service(request).call(service(request).journal.status)
     parts = ['<!doctype html><html><head><title>PA problem journal</title></head><body>',
              '<h1>PA problem journal</h1><p>Gathered means durably collected. A merged PR still requires declared acceptance.</p>',

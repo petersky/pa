@@ -250,7 +250,7 @@ async def test_restricted_session_reporting_derives_principal(fleet):
     from pa.acp.environment import assigned_service_session_capability
     _, source, _ = fleet
     session = SimpleNamespace(id=str(uuid4()), dispatch_id=str(uuid4()), principal_id='user:restricted',
-                              card_id='card-bound', project_id='project-bound')
+                              card_id='card-bound', project_id='project-bound', realm_id='default')
     source.ctx.services['instance_agent'] = SimpleNamespace(get=lambda sid: SimpleNamespace(session=session, _closed=False) if sid == session.id else None)
     capability = assigned_service_session_capability(secret=source.settings.session_secret,
         dispatch_id=session.dispatch_id, session_id=session.id, target_instance_id=source.settings.instance_id)
@@ -744,3 +744,92 @@ async def test_actual_scope_producer_shared_journal_dependency_recovery(fleet):
     assert secondary[0]['payload']['observation']['actual'] == 'failure observed'
     assert secondary[0]['payload']['report_id'] != page['items'][0]['payload']['report_id']
     assert secondary[0]['payload']['observation']['correlation_ids'] == page['items'][0]['payload']['observation']['correlation_ids']
+
+
+@pytest.mark.asyncio
+async def test_authenticated_custody_responses_cannot_regress_source(fleet, monkeypatch):
+    authority, source, network = fleet
+    created = (await api(source, 'POST', '/reports', body=observation())).json()
+    await authority.service.cycle(manual=True)
+    current = source.journal.report(created['report_id'], realms=['default'])['history'][0]['custody']
+    original = network.handle_async_request
+    captured, release = asyncio.Event(), asyncio.Event()
+    held = False
+    async def reordered(request):
+        nonlocal held
+        response = await original(request)
+        if request.url.path.endswith('/receipts/'+current['receipt_id']) and not held:
+            held = True
+            await response.aread()
+            captured.set()
+            await release.wait()
+        return response
+    monkeypatch.setattr(network, 'handle_async_request', reordered)
+    headers = {'Authorization':'Bearer synthetic-shared-fleet-token'}
+    delayed = asyncio.create_task(api(source, 'POST', '/gathered', body={'receipt_id':current['receipt_id']}, headers=headers))
+    try:
+        await asyncio.wait_for(captured.wait(), 3)
+        updated = await api(authority, 'PATCH', f'/groups/{current["group_id"]}', body={
+            'expected_version':current['version'], 'disposition':'linked', 'reason':'Current repair owner',
+            'card_id':str(uuid4()), 'pr_url':'https://github.com/owner/pa/pull/7', 'commit':'d'*40})
+        assert updated.status_code == 200
+        latest = await api(source, 'POST', '/gathered', body={'receipt_id':current['receipt_id']}, headers=headers)
+        assert latest.status_code == 200 and latest.json()['custody'] == 'advanced'
+        release.set()
+        stale = await asyncio.wait_for(delayed, 3)
+        assert stale.status_code == 200 and stale.json()['custody'] == 'stale_ignored'
+        result = (await api(source, 'GET', '/reports/'+created['report_id'])).json()
+        assert result['history'][0]['custody']['disposition'] == 'linked'
+        assert result['history'][0]['custody']['fix']['commit'] == 'd'*40
+        assert len(result['custody_history']) == 2
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=source.app), base_url='http://source') as client:
+            page = await client.get('/health-journal', headers=source.headers)
+        assert 'Current repair owner' in page.text and 'pull/7' in page.text
+        receipt = authority.journal.receipt(current['receipt_id'])
+        assert source.journal.gathered(receipt)['custody'] == 'replayed'
+        with pytest.raises(JournalError, match='custody_version_conflict'):
+            source.journal.gathered(receipt | {'disposition':'no_fix'})
+    finally:
+        release.set()
+        await asyncio.gather(delayed, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_shared_realm_reads_and_exact_signed_nonprimary_session(fleet):
+    from pa.acp.environment import assigned_service_session_capability
+    from pa.domain.models import AgentSession
+    _, source, _ = fleet
+    source.settings.subscribed_realms.append('secondary')
+    first = source.users.create_user('first', 'synthetic-password')
+    second = source.users.create_user('second', 'synthetic-password')
+    source.ctx.services['membership'] = SimpleNamespace(has_role=lambda realm, principal, **kw:realm == 'secondary')
+    first_headers = {'Authorization':f'Bearer {first.cli_token}', 'Idempotency-Key':'first-report'}
+    second_headers = {'Authorization':f'Bearer {second.cli_token}', 'Idempotency-Key':'second-report'}
+    authored = await api(source, 'POST', '/reports', body=observation(realm='secondary'), headers=first_headers)
+    assert authored.status_code == 201
+    assert (await api(source, 'GET', '/reports/'+authored.json()['report_id'], headers=second_headers)).status_code == 200
+    shared = (await api(source, 'GET', '/reports', headers=second_headers)).json()['items']
+    assert len(shared) == 1 and shared[0]['payload']['principal'] == 'user:'+first.id
+    foreign = (await api(source, 'POST', '/reports', body=observation(), key='admin-default')).json()
+    assert (await api(source, 'GET', '/reports/'+foreign['report_id'], headers=second_headers)).status_code == 404
+    session = AgentSession(agent_name='codex', realm_id='secondary', principal_id='user:'+second.id,
+        dispatch_id=str(uuid4()), card_id=str(uuid4()))
+    other = session.model_copy(update={'id':str(uuid4()), 'dispatch_id':str(uuid4()), 'realm_id':'default'})
+    runtimes = {s.id:SimpleNamespace(session=s, _closed=False) for s in (session, other)}
+    source.ctx.services['instance_agent'] = SimpleNamespace(get=runtimes.get)
+    token = assigned_service_session_capability(secret=source.settings.session_secret,
+        dispatch_id=session.dispatch_id, session_id=session.id, target_instance_id=source.settings.instance_id)
+    signed = {'Authorization':f'GoalSession {token}', 'X-PA-Assigned-Session-ID':session.id,
+        'X-PA-Assigned-Dispatch-ID':session.dispatch_id, 'Idempotency-Key':'signed-secondary'}
+    accepted = await api(source, 'POST', '/reports', body=observation(), headers=signed)
+    assert accepted.status_code == 201, accepted.text
+    record = (await api(source, 'GET', '/reports/'+accepted.json()['report_id'], headers=signed)).json()['history'][0]['payload']
+    assert record['realm'] == 'secondary' and record['context']['session_id'] == session.id
+    assert record['context']['dispatch_id'] == session.dispatch_id
+    assert (await api(source, 'POST', '/reports', body=observation(realm='default'), headers=signed)).status_code == 403
+    assert (await api(source, 'POST', '/reports', body=observation(), headers=signed | {'X-PA-Health-Session-ID':other.id})).status_code == 403
+    assert (await api(source, 'GET', '/reports/'+authored.json()['report_id'], headers=signed)).status_code == 200
+    assert (await api(source, 'GET', '/reports/'+foreign['report_id'], headers=signed)).status_code == 404
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=source.app), base_url='http://source') as client:
+        page = await client.get('/health-journal', headers=second_headers)
+    assert authored.json()['report_id'] in page.text and foreign['report_id'] not in page.text

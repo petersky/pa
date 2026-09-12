@@ -26,8 +26,9 @@ links using that version. Report and group IDs are distinct. Source UI at
 commit and acceptance. Gathered means durable delivery, not resolved.
 
 HTTP routes live under `/api/health-journal`. Normal user/CLI and assigned-session
-authentication bind the reporting principal on the server. Non-admin readers
-see only their own records in authorized realms. Group triage/configuration is
+authentication bind the reporting principal on the server. Operational records are shared among
+readers authorized for that realm; a signed assigned session remains bound to its
+exact live session realm, principal and dispatch. Group triage/configuration is
 administrator-only. Cookie writes retain normal CSRF protection. Shared fleet
 authentication admits only narrow outbox/receipt/handover routes; the collector
 binds responses to configured peer endpoints and source identity. A source

@@ -63,8 +63,8 @@ class Journal:
               payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS custody_history(
               seq INTEGER PRIMARY KEY AUTOINCREMENT, report TEXT NOT NULL, revision INTEGER NOT NULL,
-              receipt_id TEXT NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL,
-              UNIQUE(report,revision,receipt_id,version));
+              receipt_id TEXT NOT NULL, epoch INTEGER NOT NULL, version INTEGER NOT NULL, payload TEXT NOT NULL,
+              UNIQUE(report,revision,receipt_id,epoch,version));
             CREATE TABLE IF NOT EXISTS producer_issues(
               issue_key TEXT PRIMARY KEY, scope TEXT NOT NULL, instance_id TEXT NOT NULL,
               reason TEXT NOT NULL, generation INTEGER NOT NULL, active INTEGER NOT NULL,
@@ -276,9 +276,22 @@ class Journal:
             row = db.execute('SELECT * FROM revisions WHERE report=? AND revision=?', (identity[2], identity[3])).fetchone()
             if not row or row['hash'] != verified_receipt['hash']:
                 raise JournalError('revision_hash_conflict')
-            db.execute('INSERT OR IGNORE INTO custody_history(report,revision,receipt_id,version,payload) VALUES(?,?,?,?,?)', (identity[2], identity[3], verified_receipt['receipt_id'], verified_receipt['version'], encode(verified_receipt)))
+            outcome = {'gathered': True, 'report_id': identity[2], 'revision': int(identity[3])}
+            previous = json.loads(row['gathered']) if row['gathered'] else None
+            if previous:
+                if previous['receipt_id'] != verified_receipt['receipt_id'] or previous['group_id'] != verified_receipt['group_id']:
+                    raise JournalError('custody_identity_conflict')
+                current_order = (previous['epoch'], previous['version'])
+                incoming_order = (verified_receipt['epoch'], verified_receipt['version'])
+                if incoming_order < current_order:
+                    return {**outcome, 'custody': 'stale_ignored', 'version': previous['version']}
+                if incoming_order == current_order:
+                    if encode(previous) != encode(verified_receipt):
+                        raise JournalError('custody_version_conflict')
+                    return {**outcome, 'custody': 'replayed', 'version': previous['version']}
+            db.execute('INSERT INTO custody_history(report,revision,receipt_id,epoch,version,payload) VALUES(?,?,?,?,?,?)', (identity[2], identity[3], verified_receipt['receipt_id'], verified_receipt['epoch'], verified_receipt['version'], encode(verified_receipt)))
             db.execute('UPDATE revisions SET gathered=? WHERE seq=?', (encode(verified_receipt), row['seq']))
-            return {'gathered': True, 'report_id': identity[2], 'revision': int(identity[3])}
+            return {**outcome, 'custody': 'advanced', 'version': verified_receipt['version']}
 
     @staticmethod
     def _history(db, group, payload):
