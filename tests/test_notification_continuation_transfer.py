@@ -714,3 +714,33 @@ def test_transfer_rejects_explicit_invalid_bearer_in_open_auth(recovery, with_co
     assert current.version == r.notice.version
     assert current.continuation_transfer is None
     assert current.interaction.response is None
+
+
+def test_retired_transferred_failure_cannot_resume_or_enqueue(recovery):
+    r = recovery
+
+    async def exercise():
+        await transfer(r)
+        with patch.object(r.service, "_deliver", side_effect=RuntimeError("Target unavailable")):
+            with pytest.raises(NotificationConflict):
+                await respond(r)
+        failed = r.store.get_notification(r.notice.id)
+        retired = r.service.resolve(failed, principal_id="user:local", idempotency_key="retire-failed")
+        with (
+            patch.object(r.manager, "recover_session") as resume,
+            patch.object(r.runtime, "enqueue") as enqueue,
+        ):
+            with pytest.raises(NotificationConflict) as retry:
+                await respond(r, key="retired-retry", retry=True)
+            assert retry.value.code == "interaction_already_resolved"
+            assert await respond(r) == retired
+            with pytest.raises(NotificationConflict) as foreign:
+                await r.service.respond(r.notice, InteractionResponse(idempotency_key="answer-1", retry=True), principal_id="user:other")
+            assert foreign.value.code == "response_principal_mismatch"
+            resume.assert_not_called()
+            enqueue.assert_not_called()
+        assert not r.runtime._queue
+        assert r.store.get_prompt_acceptance("successor", failed.interaction.continuation_prompt_id) is None
+        assert r.store.get_notification(r.notice.id) == retired
+
+    asyncio.run(exercise())

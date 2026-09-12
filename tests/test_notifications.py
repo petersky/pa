@@ -1216,3 +1216,69 @@ def test_unnegotiated_local_checkpoint_returns_structured_interaction_receipt(tm
     assert receipt["notification"]["session_id"] == "session-local"
     assert receipt["notification"]["id"] == duplicate["notification"]["id"]
     assert record.progress_protocol_version is None
+
+
+@pytest.mark.parametrize("continuation_mode", ["protocol", "prompt"])
+def test_retired_failed_response_rejects_stale_service_and_api_attempts(
+    tmp_path: Path, continuation_mode: str,
+) -> None:
+    kernel = _kernel(tmp_path)
+    service = kernel.ctx.require_service("notifications")
+    notice = _create(service, interaction=_interaction(continuation_mode=continuation_mode))
+    handler = MagicMock(side_effect=RuntimeError("original execution unavailable"))
+    service.register_delivery_handler(notice.id, handler)
+    original = InteractionResponse(idempotency_key="original-answer", value="saved answer")
+    with pytest.raises(NotificationConflict, match="original execution unavailable"):
+        asyncio.run(service.respond(notice, original, principal_id="user:local"))
+    failed = service.store.get_notification(notice.id)
+    retired = service.resolve(failed, principal_id="user:local", idempotency_key="retire")
+    assert retired.interaction == failed.interaction
+    assert retired.interaction.delivery_attempts == 1
+    assert retired.interaction.delivered_at is None
+    assert retired.interaction.state == InteractionState.FAILED
+    assert not retired.outstanding
+    snapshot = retired.model_dump(mode="json")
+
+    with patch.object(service, "_deliver", new_callable=AsyncMock) as delivery:
+        # Pass the pre-resolution object, as an already-open UI would do.
+        with pytest.raises(NotificationConflict) as stale:
+            asyncio.run(service.respond(failed, InteractionResponse(idempotency_key="stale-retry", retry=True), principal_id="user:local"))
+        assert stale.value.code == "interaction_already_resolved"
+        assert asyncio.run(service.respond(failed, original, principal_id="user:local")).model_dump(mode="json") == snapshot
+        with pytest.raises(NotificationConflict) as mismatch:
+            asyncio.run(service.respond(failed, InteractionResponse(idempotency_key="original-answer", value="different"), principal_id="user:local"))
+        assert mismatch.value.code == "idempotency_conflict"
+        with TestClient(kernel.build_app()) as client:
+            assert client.get("/").status_code == 200
+            headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+            url = f"/api/notifications/{notice.id}/respond"
+            for index, shape in enumerate(({"retry": True}, {"value": "saved answer"}, {"cancel": True})):
+                response = client.post(url, headers=headers, json={"idempotency_key": f"new-{index}", **shape})
+                assert response.status_code == 409
+                assert response.json()["detail"]["code"] == "interaction_already_resolved"
+            for shape in ({"value": "saved answer"}, {"retry": True}):
+                replay = client.post(url, headers=headers, json={"idempotency_key": "original-answer", **shape})
+                assert replay.status_code == 200
+                assert replay.json()["interaction"]["state"] == "failed"
+                assert replay.json()["interaction"]["delivered_at"] is None
+            history = client.get("/api/notifications?resolved=true").json()["items"]
+            public = next(item for item in history if item["id"] == notice.id)
+            assert public["presentation"]["status"] == "Request retired · resolved"
+            assert public["presentation"]["required_action"] is None
+            assert public["presentation"]["response_status"]["delivery"] == "Historical delivery failure"
+            assert public["interaction"]["delivery_error"] == "original execution unavailable"
+        delivery.assert_not_awaited()
+    handler.assert_called_once()
+    assert service.store.get_notification(notice.id).model_dump(mode="json") == snapshot
+
+
+@pytest.mark.parametrize("state", [InteractionState.OUTSTANDING, InteractionState.ANSWERED, InteractionState.DELIVERY_PENDING])
+def test_resolve_still_requires_completion_of_pending_interaction(tmp_path: Path, state) -> None:
+    service = _kernel(tmp_path).ctx.require_service("notifications")
+    interaction = _interaction()
+    interaction.state = state
+    notice = _create(service, interaction=interaction)
+    with pytest.raises(NotificationConflict) as error:
+        service.resolve(notice, principal_id="user:local", idempotency_key="retire-pending")
+    assert error.value.code == "interaction_response_required"
+    assert service.store.get_notification(notice.id) == notice

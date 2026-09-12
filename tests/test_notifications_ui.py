@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_notifications import _reset_singletons  # noqa: F401
+
 ROOT = Path(__file__).parents[1]
 
 
@@ -121,6 +123,9 @@ ui.interactionControls({
 });
 assert.strictEqual(storageReads, 0, "sensitive drafts must not be loaded from browser storage");
 assert.ok(ui.interactionControls({ id: "failed", interaction: { state: "failed" } }).includes("Retry delivery"));
+for (const state of ["outstanding", "failed", "answered", "delivery_pending"]) {
+  assert.strictEqual(ui.interactionControls({ id: "retired", resolved_at: "2026-09-12T00:00:00Z", interaction: { state } }), "");
+}
 assert.strictEqual(ui.interactionControls({ id: "expired", interaction: { state: "expired" } }), "");
 """
     completed = subprocess.run(
@@ -130,3 +135,59 @@ assert.strictEqual(ui.interactionControls({ id: "expired", interaction: { state:
         text=True,
     )
     assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is required for UI tests")
+def test_retired_failure_api_payload_renders_accurate_non_actionable_history(tmp_path) -> None:
+    import asyncio
+    import json
+
+    from fastapi.testclient import TestClient
+    from pa.domain.notifications import InteractionResponse
+    from pa.notifications import NotificationConflict
+    from tests.test_notifications import _create, _kernel
+
+    kernel = _kernel(tmp_path)
+    service = kernel.ctx.require_service("notifications")
+    notice = _create(service)
+
+    def fail(_response):
+        raise RuntimeError("Original execution unavailable")
+
+    service.register_delivery_handler(notice.id, fail)
+    with pytest.raises(NotificationConflict):
+        asyncio.run(service.respond(notice, InteractionResponse(idempotency_key="answer", value="recorded"), principal_id="user:local"))
+    service.resolve(notice, principal_id="user:local", idempotency_key="retire")
+    with TestClient(kernel.build_app()) as client:
+        payload = client.get(f"/api/notifications/{notice.id}").json()
+    harness = r'''
+const assert = require("assert");
+const item = JSON.parse(process.argv[2]);
+const list = { innerHTML: "", querySelectorAll: () => [], querySelector: () => null };
+const chrome = { querySelector: () => list };
+global.window = {};
+global.document = {
+  readyState: "loading", addEventListener: () => {}, querySelector: () => chrome,
+  createElement: () => ({
+    set textContent(value) { this.text = String(value); },
+    get innerHTML() { return this.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  })
+};
+require(process.argv[1]);
+for (const response_mode of ["local", "remote"]) {
+  item.routing.response_mode = response_mode;
+  window.PANotificationsTest.render([item], false);
+  assert.ok(list.innerHTML.includes("Request retired · resolved"));
+  assert.ok(list.innerHTML.includes("Historical delivery failure"));
+  assert.ok(list.innerHTML.includes("Response recorded"));
+  assert.ok(!list.innerHTML.includes("data-notification-retry"));
+  assert.ok(!list.innerHTML.includes("Required action:"));
+  assert.ok(!list.innerHTML.includes("Respond on the owning instance"));
+  assert.ok(!list.innerHTML.includes("Delivered to request"));
+}
+'''
+    completed = subprocess.run(
+        [shutil.which("node"), "-e", harness, str(ROOT / "src/pa/server/static/js/notifications.js"), json.dumps(payload)],
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
