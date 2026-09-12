@@ -919,10 +919,10 @@ class MutationHttpIdempotencyTests(unittest.TestCase):
                     headers=authorization,
                 )
 
-            self.assertEqual(cross_realm.status_code, 200, cross_realm.text)
-            self.assertEqual(cross_realm.json()["status"], "not_found")
+            self.assertEqual(cross_realm.status_code, 409, cross_realm.text)
+            self.assertEqual(cross_realm.json()["detail"]["code"], "operation_identity_conflict")
             self.assertEqual(same_realm.status_code, 200, same_realm.text)
-            self.assertEqual(same_realm.json()["status"], "succeeded")
+            self.assertEqual(same_realm.json()["status"], "accepted")
             self.assertEqual(
                 same_realm.json()["result"]["card_id"], "realm-a-card"
             )
