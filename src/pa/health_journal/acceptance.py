@@ -8,7 +8,7 @@ def _dict(value):
     return value.model_dump(mode='json') if hasattr(value, 'model_dump') else dict(value or {})
 
 
-def verify_acceptance(card, group, assessment):
+def verify_acceptance(card, group, assessment, *, repair_sessions=(), repair_dispatches=()):
     """Require an exact current lifecycle receipt for this fix/build/scenario.
 
     References in the canonical receipt bind health-group:<id>, scenario:<name>
@@ -39,6 +39,10 @@ def verify_acceptance(card, group, assessment):
         raise JournalError('acceptance_subject_superseded')
     required_refs = {f'health-group:{group["id"]}', f'scenario:{assessment.acceptance_scenario}',
                      *(f'instance:{i}' for i in assessment.accepted_instances)}
+    origin_sessions = set(repair_sessions) | {requirement.get('originating_session_id')}
+    origin_dispatches = set(repair_dispatches) | {requirement.get('originating_dispatch_id'), group['data'].get('dispatch_id')}
+    origin_sessions.difference_update({None, ""})
+    origin_dispatches.difference_update({None, ""})
     for receipt in current:
         if (receipt.get('idempotency_key') == assessment.acceptance_reference
                 and receipt.get('subject_revision') == subject
@@ -46,5 +50,15 @@ def verify_acceptance(card, group, assessment):
                 and receipt.get('actor') and receipt.get('recorded_at')
                 and 'verified' in receipt.get('milestones', [])
                 and required_refs <= set(receipt.get('references', []))):
+            if receipt.get('actor_kind') == 'bound_session':
+                session, dispatch = receipt.get('actor_session_id'), receipt.get('actor_dispatch_id')
+                if not session or not dispatch or not (origin_sessions or origin_dispatches):
+                    raise JournalError('acceptance_independence_unconfirmed')
+                if session in origin_sessions or dispatch in origin_dispatches:
+                    raise JournalError('repair_self_acceptance_forbidden')
+                if receipt['actor'] not in requirement['acceptance_principals']:
+                    raise JournalError('acceptance_actor_unauthorized')
+            elif receipt.get('actor_kind') != 'human':
+                raise JournalError('acceptance_actor_unbound')
             return True
     raise JournalError('current_scoped_acceptance_receipt_required')

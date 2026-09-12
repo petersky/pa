@@ -428,6 +428,10 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
                 accepted_subject_revision=commit, acceptance_reference='synthetic-current-acceptance',
                 acceptance_scenario='synthetic-provider-smoke', accepted_instances=[settings.instance_id])
             verify_acceptance(accepted, group, assessment)
+            user = UserDirectory(settings.data_dir).get('local')
+            verified = client.patch('/api/health-journal/groups/'+group['id'],
+                json=assessment.model_dump(mode='json'), headers={'Authorization':f'Bearer {user.cli_token}'})
+            assert verified.status_code == 200, verified.text
     finally:
         reset_instance_agent(); reset_store(); reset_settings()
 
@@ -653,7 +657,7 @@ async def test_normal_lifecycle_obligations_keep_single_health_slot(fleet):
 
 
 @pytest.mark.asyncio
-async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, tmp_path):
+async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, tmp_path, monkeypatch):
     pytest.importorskip('pa.domain.completion', reason='Companion lifecycle component required; also exercised in recorded combined integration overlay')
     from pa.domain.models import CardCreate, CardUpdate, CompletionEvidence
     from pa.domain.projection import CardProjection
@@ -672,7 +676,8 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
     authority.ctx.store = projection
     card = projection.create_card(CardCreate(title='Scoped repair', realm_id='secondary', completion_requirement={
         'mode':'explicit_acceptance', 'criteria':'Verify journal scenario on affected instance',
-        'milestones':['verified'], 'acceptance_principals':['instance:acceptance']}))
+        'milestones':['verified'], 'acceptance_principals':['user:local'],
+        'originating_session_id':'repair-session', 'originating_dispatch_id':'repair-dispatch'}))
     commit = 'a'*40
     linked = await api(authority, 'PATCH', f'/groups/{group["id"]}', body={
         'expected_version':1, 'disposition':'linked', 'reason':'Canonical scoped repair', 'card_id':card.id, 'commit':commit})
@@ -685,9 +690,49 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
     evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
         subject_revision=commit, milestones=['verified'], references=[f'health-group:{group["id"]}',
             'scenario:journal-smoke', f'instance:{source.settings.instance_id}'])
-    projection.update_card(card.id, CardUpdate(completion_acceptance=evidence, expected_version=card.updated_at),
-        realm_id='secondary', principal_id='instance:acceptance', instance_id=authority.settings.instance_id,
-        idempotency_key='canonical-acceptance')
+    # Use the actual authenticated canonical HTTP consumer, not body actor claims.
+    from pa.modules.items import router as card_router
+    from pa.domain.models import AgentSession
+    from pa.execution.dispatch import DispatchStore, DispatchRecord, GoalDispatchProvenance
+    from pa.acp.environment import assigned_service_session_capability
+    authority.app.include_router(card_router, prefix='/api')
+    monkeypatch.setattr('pa.modules.items.get_store', lambda:projection)
+    ledger = DispatchStore(tmp_path/'acceptance-dispatches')
+    authority.ctx.services['dispatch_store'] = ledger
+    runtimes = {}
+    authority.ctx.services['instance_agent'] = SimpleNamespace(get=runtimes.get)
+    await authority.service.cycle(manual=True)
+    assert source.journal.page(realms=['secondary'])['items'][0]['custody']['disposition'] == 'linked'
+    try:
+        for origin in (True, False):
+            session_id = 'repair-session' if origin else 'verifier-session'
+            dispatch_id = 'repair-dispatch' if origin else 'verifier-dispatch'
+            session = projection.save_session(AgentSession(id=session_id, agent_name='codex', realm_id='secondary',
+                dispatch_id=dispatch_id, authority_instance_id=authority.settings.instance_id, status='active'))
+            runtimes[session_id] = SimpleNamespace(session=session, _closed=False, connected=True)
+            ledger.put(DispatchRecord(mutation_id=dispatch_id, dispatch_id=dispatch_id, session_id=session_id,
+                target_instance_id=authority.settings.instance_id, authority_instance_id=authority.settings.instance_id,
+                authority_url='http://authority', state='running', principal_id='user:local', card_id=card.id,
+                goal_provenance=GoalDispatchProvenance(goal_id='verification', goal_version=1, policy_revision=1,
+                    authority_instance_id=authority.settings.instance_id, fencing_token=1,
+                    action_reservation_id='reservation', actor_principal='user:local')))
+            token = assigned_service_session_capability(secret=authority.settings.session_secret,
+                dispatch_id=dispatch_id, session_id=session_id, target_instance_id=authority.settings.instance_id)
+            headers = {'Authorization':f'GoalSession {token}', 'X-PA-Assigned-Session-ID':session_id,
+                'X-PA-Assigned-Dispatch-ID':dispatch_id, 'Idempotency-Key':'origin-attempt' if origin else 'canonical-acceptance'}
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=authority.app), base_url='http://authority') as client:
+                response = await client.patch('/api/cards/'+card.id, params={'realm':'secondary'}, headers=headers,
+                    json={'expected_version':card.updated_at.isoformat(), 'completion_acceptance':evidence.model_dump(mode='json')})
+            if origin:
+                assert response.status_code == 409, response.text
+                assert response.json()['detail']['code'] == 'completion_self_acceptance_forbidden'
+            else:
+                assert response.status_code == 200, response.text
+                receipt = response.json()['completion_evidence'][-1]
+                assert receipt['actor_kind'] == 'bound_session'
+                assert receipt['actor_session_id'] == session_id and receipt['actor_dispatch_id'] == dispatch_id
+    finally:
+        ledger.close()
     assert (await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body | {'acceptance_reference':'forged'})).status_code == 409
     accepted = await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body)
     assert accepted.status_code == 200, accepted.text

@@ -74,6 +74,7 @@ class Journal:
             CREATE TABLE IF NOT EXISTS actions(
               id TEXT PRIMARY KEY, group_id TEXT NOT NULL,
               payload TEXT NOT NULL, state TEXT NOT NULL, result TEXT);
+            CREATE INDEX IF NOT EXISTS actions_group ON actions(group_id);
             ''')
             for key, value in [('incarnation', str(uuid4())), ('instance_id', instance_id),
                                ('policy', encode(Policy().model_dump())),
@@ -609,3 +610,10 @@ class Journal:
         with self.connection(write=True) as db:
             db.execute('INSERT INTO producer_issues VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(issue_key) DO UPDATE SET generation=excluded.generation,active=excluded.active,report_id=excluded.report_id,semantic_hash=excluded.semantic_hash',
                 tuple(value[k] for k in ('issue_key','scope','instance_id','reason','generation','active','report_id','semantic_hash','correlation_key')))
+
+    def repair_dispatches(self, group_id):
+        with self.connection() as db:
+            rows = db.execute("SELECT json_extract(result,'$.dispatch_id') FROM actions WHERE group_id=? AND json_extract(result,'$.dispatch_id') IS NOT NULL LIMIT 33", (group_id,)).fetchall()
+            if len(rows) > 32:
+                raise JournalError('acceptance_origin_bound_exceeded')
+            return [row[0] for row in rows]
