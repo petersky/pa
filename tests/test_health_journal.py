@@ -368,8 +368,12 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             repository = ctx.store.create_repository(RepositoryCreate(url='https://example.test/owner/pa.git'))
             ctx.store.link_project_repository(project.id, repository.id)
             candidate = _candidate(settings.instance_id, local=True, repositories=[repository.id])
+            candidate.capabilities.append('completion-requirements:v1')
             monkeypatch.setattr('pa.modules.fleet._placement_candidates', AsyncMock(return_value=[candidate]))
             service = ctx.require_service('health_journal')
+            supervisor = ctx.require_service('pr_supervisor')
+            if hasattr(supervisor, 'eligibility_journal_hook'):
+                assert supervisor.eligibility_journal_hook.__self__ is service
             journal = service.journal
             journal.configure(Policy(authority_id=settings.instance_id, enabled=True,
                 project_id=project.id, principal_id='user:local'), expected_version=1, actor='user:local')
@@ -405,6 +409,13 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             card = cards[0]
             group = service.journal.groups(['default'])[0]
             commit = 'c'*40
+            with pytest.raises(JournalError, match='acceptance_owner_unconfigured'):
+                verify_acceptance(card, group, Assessment(expected_version=group['version'],
+                    disposition='deployed_verified', reason='Owner must be explicitly declared'))
+            card = ctx.store.update_card(card.id, CardUpdate(
+                completion_requirement=card.completion_requirement.model_copy(update={'acceptance_principals':['user:local']}),
+                field_intent=['completion_requirement'], expected_version=card.updated_at), realm_id='default', principal_id='user:local', direct_human=True,
+                instance_id=settings.instance_id, idempotency_key='synthetic-owner-declaration')
             evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
                 subject_revision=commit, milestones=['verified'], references=[f'health-group:{group["id"]}',
                     'scenario:synthetic-provider-smoke', f'instance:{settings.instance_id}'])

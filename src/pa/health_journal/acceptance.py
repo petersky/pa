@@ -18,8 +18,12 @@ def verify_acceptance(card, group, assessment):
     """
     requirement = _dict(getattr(card, 'completion_requirement', None))
     status = getattr(card, 'completion_status', {}) or {}
-    if not requirement or requirement.get('schema_version') != 1 or not status.get('accepted'):
-        raise JournalError('canonical_acceptance_pending')
+    if not requirement or requirement.get('schema_version') != 1:
+        raise JournalError('awaiting_acceptance')
+    if not requirement.get('acceptance_principals'):
+        raise JournalError('acceptance_owner_unconfigured')
+    if not status.get('accepted'):
+        raise JournalError('awaiting_acceptance')
     if not group['data'].get('card_id') or group['data']['card_id'] != card.id:
         raise JournalError('acceptance_card_mismatch')
     subject = assessment.accepted_subject_revision

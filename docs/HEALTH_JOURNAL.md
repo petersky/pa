@@ -71,7 +71,11 @@ Health-created cards declare explicit canonical acceptance, a verified milestone
 and criteria binding the health group to a build/scenario/affected instances. The
 initial declaration grants no automatic acceptance principals; normal supported
 human acceptance or an explicitly authorized canonical declaration update supplies
-that authority. The journal requires a current canonical accepted receipt with
+that authority. Until an owner is declared, a verification attempt returns typed
+`acceptance_owner_unconfigured`; declared but unaccepted work returns
+`awaiting_acceptance`. Declare the owner through the ordinary authorized current-card
+completion requirement update, preserving its server-generated revision. This does
+not block source-fix construction, ready PRs, or immediate repair backlinks. The journal requires a current canonical accepted receipt with
 matching subject and `health-group:`, `scenario:`, `instance:` references. A merge,
 legacy Done lane or forged reference cannot certify deployment. The companion
 canonical completion contract must be installed before repair card admission;
