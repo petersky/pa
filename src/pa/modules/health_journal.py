@@ -120,9 +120,7 @@ async def report_problem(request: Request, body: Observation,
                          key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=160)]):
     principal, realms, _ = user_scope(request)
     assigned = getattr(request.state, 'health_session', None)
-    realm = body.realm or (assigned.realm_id if assigned else request.app.state.ctx.settings.primary_realm)
-    if realm not in realms:
-        raise HTTPException(403, 'Realm is not available to this journal')
+    session = assigned
     context = {'session_id': assigned.id, 'dispatch_id': assigned.dispatch_id, 'card_id': assigned.card_id,
                'project_id': assigned.project_id} if assigned else {}
     session_id = request.headers.get('x-pa-health-session-id')
@@ -139,6 +137,9 @@ async def report_problem(request: Request, body: Observation,
         context = {'session_id': session.id, 'card_id': session.card_id,
                    'project_id': session.project_id, 'dispatch_id': getattr(session, 'dispatch_id', None),
                    'repository': (session.config_json or {}).get('execution_context', {}).get('repository')}
+    realm = body.realm or (session.realm_id if session else request.app.state.ctx.settings.primary_realm)
+    if realm not in realms:
+        raise HTTPException(403, 'Realm is not available to this journal')
     context['runtime_build'] = service(request).runtime_build
     return await service(request).call(service(request).journal.append, body,
                                       principal=principal, realm=realm, key=key, context=context)

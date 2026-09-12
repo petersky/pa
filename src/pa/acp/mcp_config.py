@@ -302,15 +302,32 @@ def _get_ready(endpoint: OwnerEndpoint, token: str, instance_id: str, timeout: f
         )
 
 
+_UNBOUND_PRINCIPAL = object()
+
+
+def _ordinary_user_token(settings: Settings, principal_id: str | None | object) -> str:
+    users = UserDirectory(settings.data_dir)
+    if principal_id is _UNBOUND_PRINCIPAL:
+        # Standalone diagnostics have no managed session owner.
+        return users.ensure_default_user().cli_token
+    if not isinstance(principal_id, str) or not principal_id.startswith("user:"):
+        raise ValueError("ordinary MCP session requires an existing user principal")
+    user = users.get(principal_id.removeprefix("user:"))
+    if user is None or not user.cli_token.strip():
+        raise ValueError("ordinary MCP session owner credential is unavailable")
+    return user.cli_token
+
+
 def probe_owner_channel(
     settings: Settings,
     *,
     timeout: float = 4.0,
     environment: Mapping[str, str] | None = None,
+    principal_id: str | None | object = _UNBOUND_PRINCIPAL,
 ) -> dict[str, str]:
     """Verify reachability, authentication, API readiness, and instance identity."""
     endpoint = owner_endpoint(settings, environment)
-    token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+    token = _ordinary_user_token(settings, principal_id)
     deadline = time.monotonic() + timeout
     delay = 0.1
     try:
@@ -397,6 +414,7 @@ def pa_mcp_servers(
     owner_environment: Mapping[str, str] | None = None,
     session_environment: Mapping[str, str] | None = None,
     private_environment: Mapping[str, str] | None = None,
+    principal_id: str | None | object = _UNBOUND_PRINCIPAL,
 ) -> list[McpServerStdio]:
     """Stdio MCP bridge so ACP agents get PA tools in-session."""
     # The ACP provider may have a different cwd, PATH, or inherited PA_* set.
@@ -438,7 +456,7 @@ def pa_mcp_servers(
         # Ordinary MCP bridges retain the owner bearer contract. Assigned bridges
         # have a server-enforced tool surface and never receive this broad token.
         owner_env["PA_LOCAL_API_TOKEN"] = (
-            UserDirectory(settings.data_dir).ensure_default_user().cli_token
+            _ordinary_user_token(settings, principal_id)
         )
     browser_env: dict[str, str] = {}
     if not assigned_mode:
@@ -480,12 +498,14 @@ async def _probe_pa_mcp_stdio_async(
     owner_environment: Mapping[str, str] | None,
     session_environment: Mapping[str, str] | None,
     private_environment: Mapping[str, str] | None = None,
+    principal_id: str | None | object = _UNBOUND_PRINCIPAL,
 ) -> dict[str, str | int]:
     server = pa_mcp_servers(
         settings,
         owner_environment=owner_environment,
         session_environment=session_environment,
         private_environment=private_environment,
+        principal_id=principal_id,
     )[0]
     environment = {item.name: item.value for item in server.env}
     context = _bootstrap_context(settings, server, owner_environment=owner_environment)
@@ -554,6 +574,7 @@ def probe_pa_mcp_stdio(
     owner_environment: Mapping[str, str] | None = None,
     session_environment: Mapping[str, str] | None = None,
     private_environment: Mapping[str, str] | None = None,
+    principal_id: str | None | object = _UNBOUND_PRINCIPAL,
 ) -> dict[str, str | int]:
     """Exercise initialize/tools-list/clean shutdown against the pinned MCP child."""
     return asyncio.run(
@@ -563,5 +584,6 @@ def probe_pa_mcp_stdio(
             owner_environment=owner_environment,
             session_environment=session_environment,
             private_environment=private_environment,
+            principal_id=principal_id,
         )
     )

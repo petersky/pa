@@ -26,7 +26,12 @@ links using that version. Report and group IDs are distinct. Source UI at
 commit and acceptance. Gathered means durable delivery, not resolved.
 
 HTTP routes live under `/api/health-journal`. Normal user/CLI and assigned-session
-authentication bind the reporting principal on the server. Operational records are shared among
+authentication bind the reporting principal on the server. Managed ordinary MCP
+connections and their bootstrap probes use the existing trusted session user
+credential; missing owners or credentials fail closed. The ordinary session selector
+is checked against that authenticated principal before an omitted report realm
+defaults to the session realm. Explicit realms still require normal realm
+authorization. Operational records are shared among
 readers authorized for that realm; a signed assigned session remains bound to its
 exact live session realm, principal and dispatch. Group triage/configuration is
 administrator-only. Cookie writes retain normal CSRF protection. Shared fleet

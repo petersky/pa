@@ -1166,6 +1166,8 @@ class AgentSessionRestoreTests(unittest.TestCase):
             context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
             context.__aexit__ = AsyncMock()
             socket = Path(tmp) / "runtime" / "owner.sock"
+            from pa.auth.users import UserDirectory
+            UserDirectory(Path(tmp)).ensure_default_user()
             connection = AgentConnection(
                 Settings(data_dir=Path(tmp), instance_id="owner-instance"),
                 store,
@@ -1203,7 +1205,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                         AsyncMock(return_value=None),
                     ),
                 ):
-                    await connection.connect()
+                    await connection.connect(principal_id="user:local")
                 environment = spawn.call_args.kwargs["env"]
                 self.assertEqual(environment["DISABLE_MCP_CONFIG_FILTERING"], "true")
                 config = json.loads(environment["CODEX_CONFIG"])
@@ -1241,6 +1243,8 @@ class AgentSessionRestoreTests(unittest.TestCase):
         context.__aenter__ = AsyncMock(return_value=(acp, MagicMock()))
         context.__aexit__ = AsyncMock()
         socket = Path(tmp) / "runtime" / "owner.sock"
+        from pa.auth.users import UserDirectory
+        UserDirectory(Path(tmp)).ensure_default_user()
         connection = AgentConnection(
             Settings(data_dir=Path(tmp), instance_id="owner-instance"),
             store,
@@ -1278,7 +1282,7 @@ class AgentSessionRestoreTests(unittest.TestCase):
                     AsyncMock(return_value=None),
                 ),
             ):
-                await connection.connect()
+                await connection.connect(principal_id="user:local")
 
         asyncio.run(run())
         return owner_probe, stdio_probe, connection

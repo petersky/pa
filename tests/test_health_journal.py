@@ -316,10 +316,16 @@ async def test_actual_mcp_stdio_http_report_roundtrip(fleet, monkeypatch):
         async with asyncio.timeout(5):
             while not server.started:
                 await asyncio.sleep(0.01)
+        from pa.acp.mcp_config import pa_mcp_servers
+        from pa.domain.models import AgentSession
+        bound = AgentSession(agent_name='fixture', principal_id='user:local', realm_id='default')
+        source.ctx.services['instance_agent'] = SimpleNamespace(
+            get=lambda selector: SimpleNamespace(session=bound) if selector == bound.id else None)
+        descriptor = pa_mcp_servers(source.settings, principal_id=bound.principal_id,
+            owner_environment={'PA_OWNER_API_URL':f'http://127.0.0.1:{port}'})[0]
         env = {k:v for k,v in os.environ.items() if not k.startswith('PA_')}
-        env.update(PA_DATA_DIR=str(source.settings.data_dir), PA_INSTANCE_ID=source.settings.instance_id,
-                   PA_LOCAL_API_URL=f'http://127.0.0.1:{port}', PA_LOCAL_API_TOKEN=source.headers['Authorization'][7:],
-                   PA_AGENT_ENABLED='false')
+        env.update({item.name:item.value for item in descriptor.env})
+        env.update(PA_EXECUTION_CONTEXT=json.dumps({'session_id':bound.id}), PA_AGENT_ENABLED='false')
         async with asyncio.timeout(30):
             async with stdio_client(StdioServerParameters(command=sys.executable, args=['-m','pa','mcp'], env=env)) as streams:
                 async with ClientSession(*streams) as session:
@@ -345,6 +351,139 @@ async def test_actual_mcp_stdio_http_report_roundtrip(fleet, monkeypatch):
         server.should_exit = True
         await asyncio.wait_for(serving, 5)
         listener.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('recovered', [False, True])
+async def test_ordinary_bound_connection_mcp_report(fleet, monkeypatch, recovered):
+    import os
+    import socket
+    import uvicorn
+    from unittest.mock import MagicMock
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from pa.acp.client import AgentConnection
+    from pa.acp.providers.base import AgentProviderSpec
+    from pa.acp import mcp_config
+    from pa.domain.models import AgentSession
+
+    _, source, _ = fleet
+    source.settings.subscribed_realms.append('secondary')
+    source.settings.agent_enabled = True
+    owner = source.users.create_user('ordinary', 'synthetic-password')
+    principal = 'user:' + owner.id
+    source.ctx.services['membership'] = SimpleNamespace(
+        has_role=lambda realm, actor, **kw: realm == 'secondary' and actor == principal)
+    bound = AgentSession(agent_name='fixture', principal_id=principal, realm_id='secondary')
+    foreign = AgentSession(agent_name='fixture', principal_id='user:local', realm_id='secondary')
+    runtimes = {s.id: SimpleNamespace(session=s) for s in (bound, foreign)}
+    source.ctx.services['instance_agent'] = SimpleNamespace(get=runtimes.get)
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    endpoint = f'http://127.0.0.1:{listener.getsockname()[1]}'
+    server = uvicorn.Server(uvicorn.Config(source.app, log_level='error', lifespan='off'))
+    serving = asyncio.create_task(server.serve(sockets=[listener]))
+    # The selector is ordinary provider context, not authentication. Preserve it
+    # through the real MCP child; HTTP verifies it against the selected user.
+    execution = json.dumps({'session_id': bound.id})
+    monkeypatch.setenv('PA_EXECUTION_CONTEXT', execution)
+    monkeypatch.setenv('PA_OWNER_API_URL', endpoint)
+    monkeypatch.setenv('PA_LOCAL_API_TOKEN', 'synthetic-untrusted-provider-token')
+    descriptors = []
+    real_servers = mcp_config.pa_mcp_servers
+    def descriptor(settings, **kwargs):
+        assert kwargs['principal_id'] == principal
+        result = real_servers(settings, **kwargs)
+        descriptors.append(result[0])
+        return result
+    monkeypatch.setattr('pa.acp.client.pa_mcp_servers', descriptor)
+    connection = AgentConnection(source.settings, MagicMock(), agent_name='fixture',
+        provider_spec=AgentProviderSpec(id='fixture', display_name='Fixture', command='unused-fixture'))
+    class AdmissionObserved(Exception):
+        pass
+    async def offload(label, fn, *args, **kwargs):
+        if label == 'acp.pa_mcp_owner_probe':
+            assert fn.keywords['principal_id'] == principal
+            return {'state':'connected'}  # Readiness route is outside this isolated app.
+        if label == 'acp.pa_mcp_stdio_probe':
+            assert fn.keywords['principal_id'] == principal
+            # Real same-owner bootstrap; no external provider is started.
+            result = await asyncio.to_thread(fn, *args)
+            assert result['state'] == 'connected'
+            raise AdmissionObserved
+        raise AssertionError(label)
+    monkeypatch.setattr(connection, '_offload', offload)
+    try:
+        async with asyncio.timeout(5):
+            while not server.started:
+                await asyncio.sleep(.01)
+        with pytest.raises(AdmissionObserved):
+            await connection.connect(existing_session=bound if recovered else None,
+                principal_id=principal if not recovered else 'user:ignored-caller',
+                resume_external_id='fixture-recovered' if recovered else None)
+        descriptor_env = {item.name:item.value for item in descriptors[0].env}
+        assert descriptor_env['PA_LOCAL_API_TOKEN'] == owner.cli_token
+        env = {k:v for k,v in os.environ.items() if not k.startswith('PA_')}
+        env.update(descriptor_env, PA_EXECUTION_CONTEXT=execution, PA_AGENT_ENABLED='false')
+        async def exchange(selector, *, deny=False):
+            params = StdioServerParameters(command=descriptors[0].command,
+                args=list(descriptors[0].args), env=env | {'PA_EXECUTION_CONTEXT': json.dumps({'session_id':selector})})
+            async with stdio_client(params) as streams:
+                async with ClientSession(*streams) as client:
+                    await client.initialize()
+                    args = {'idempotency_key':'ordinary-report', 'observation':observation()}
+                    result = await client.call_tool('report_pa_problem', args)
+                    if deny:
+                        assert result.is_error
+                        return
+                    assert not result.is_error, result
+                    receipt = json.loads(result.content[0].text)
+                    replay = await client.call_tool('report_pa_problem', args)
+                    assert not replay.is_error and json.loads(replay.content[0].text) == receipt
+                    listed = await client.call_tool('list_pa_problems', {})
+                    assert not listed.is_error
+                    assert len(json.loads(listed.content[0].text)['items']) == 1
+                    read = await client.call_tool('get_pa_problem', {'report_id':receipt['report_id']})
+                    assert not read.is_error
+                    payload = json.loads(read.content[0].text)['history'][0]['payload']
+                    assert payload['principal'] == principal
+                    assert payload['realm'] == 'secondary'
+                    assert payload['source_instance_id'] == source.settings.instance_id
+                    assert payload['context']['session_id'] == bound.id
+                    denied = await client.call_tool('report_pa_problem', {
+                        'idempotency_key':'forbidden', 'observation':observation(realm='default')})
+                    assert denied.is_error
+        async with asyncio.timeout(60):
+            await exchange(bound.id)
+            await exchange(foreign.id, deny=True)
+        assert source.journal.status()['pending_revisions'] == 1
+    finally:
+        server.should_exit = True
+        await asyncio.wait_for(serving, 5)
+        listener.close()
+
+
+@pytest.mark.parametrize('principal', [None, '', 'user:missing', 'system:provider', 'user:'])
+def test_explicit_ordinary_mcp_owner_fails_closed(tmp_path, principal):
+    from pa.acp.mcp_config import pa_mcp_servers, probe_pa_mcp_stdio, probe_owner_channel
+    settings = Settings(data_dir=tmp_path)
+    UserDirectory(tmp_path).ensure_default_user()
+    for operation in (pa_mcp_servers, probe_pa_mcp_stdio, probe_owner_channel):
+        with pytest.raises(ValueError, match='ordinary MCP session'):
+            operation(settings, principal_id=principal)
+
+
+def test_empty_ordinary_mcp_credential_fails_closed(tmp_path):
+    from pa.acp.mcp_config import pa_mcp_servers, probe_pa_mcp_stdio, probe_owner_channel
+    users = UserDirectory(tmp_path)
+    users.ensure_default_user()
+    user = users.create_user('empty', 'synthetic-password')
+    user.cli_token = ''
+    users._save()
+    for operation in (pa_mcp_servers, probe_pa_mcp_stdio, probe_owner_channel):
+        with pytest.raises(ValueError, match='credential is unavailable'):
+            operation(Settings(data_dir=tmp_path), principal_id='user:'+user.id)
+    assert pa_mcp_servers(Settings(data_dir=tmp_path))  # Separate standalone bootstrap.
 
 
 @pytest.mark.parametrize('decision', ['repair', 'no_fix', 'integration_only', 'stale_requirement'])
