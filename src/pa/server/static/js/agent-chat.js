@@ -3197,6 +3197,17 @@
     if (!this.showQueue || !this.els.queue || !this.els.queueList) return;
     const self = this;
     this.els.queue.hidden = !queue.length && !this.queuePaused;
+    const meta = this.root.querySelector("[data-acw-queue-meta]");
+    if (meta) {
+      const parts = [];
+      if (queue.length) parts.push("(" + queue.length + ")");
+      if (this.queuePaused) parts.push("paused");
+      meta.textContent = parts.join(" ");
+    }
+    const pauseBtn = this.root.querySelector("[data-acw-queue-pause]");
+    const resumeBtn = this.root.querySelector("[data-acw-queue-resume]");
+    if (pauseBtn) pauseBtn.disabled = !!this.queuePaused;
+    if (resumeBtn) resumeBtn.disabled = !this.queuePaused;
     this.els.queueList.innerHTML = "";
     queue.forEach(function (item, index) {
       const li = document.createElement("li");

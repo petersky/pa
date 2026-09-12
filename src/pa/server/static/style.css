@@ -2851,6 +2851,10 @@ code {
 .acw-queue {
   border-top: 1px solid var(--pa-border);
   padding-top: 0.4rem;
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .acw-queue-header {
@@ -2858,6 +2862,8 @@ code {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.25rem;
+  flex: 0 0 auto;
+  gap: 0.5rem;
 }
 
 .acw-queue-list {
@@ -2867,6 +2873,11 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-height: 0;
+  max-height: min(12rem, 28dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .acw-queue-list li {

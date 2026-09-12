@@ -858,6 +858,13 @@ setImmediate(function () {
         self.assertIn("overflow: hidden", widget)
         self.assertIn("min-height: 0", css_block(".acw-chat-stage"))
         self.assertIn("min-height: 0", css_block(".acw-messages"))
+        queue = css_block(".acw-queue")
+        self.assertIn("min-height: 0", queue)
+        self.assertIn("flex: 0 1 auto", queue)
+        queue_list = css_block(".acw-queue-list")
+        self.assertIn("max-height: min(12rem, 28dvh)", queue_list)
+        self.assertIn("overflow-y: auto", queue_list)
+        self.assertIn("flex: 0 0 auto", css_block(".acw-composer"))
 
         # Pages that wrap page_layout in a history-boundary div must keep the
         # wrapper in the flex chain, or the layout collapses to content height
