@@ -220,6 +220,16 @@ def _presentation_metadata(item: Notification) -> dict[str, Any]:
             next_effect = (
                 "Retry sends the same recorded response; it does not create a new reply."
             )
+        if item.resolved_at:
+            required_action = None
+            if state in {
+                InteractionState.OUTSTANDING,
+                InteractionState.ANSWERED,
+                InteractionState.DELIVERY_PENDING,
+                InteractionState.FAILED,
+            }:
+                status = "Request retired · resolved"
+                next_effect = "No further response delivery is allowed. The saved response and prior delivery outcome are preserved."
         return {
             "category": "request",
             "status": status,
@@ -276,9 +286,11 @@ def _public_notice(request: Request, item: Notification) -> dict[str, Any]:
                     "connection_lost": "Interrupted",
                 }.get(event.event_type, "Not yet confirmed")
         presentation["response_status"] = {
-            "recording": "Response recorded" if interaction.responded_at else "Awaiting response",
+            "recording": "Response recorded" if interaction.responded_at else "No response recorded" if item.resolved_at else "Awaiting response",
             "delivery": ("Delivered to request" if interaction.delivered_at else
+                         "Historical delivery failure" if item.resolved_at and interaction.state == InteractionState.FAILED else
                          "Delivery failed" if interaction.state == InteractionState.FAILED else
+                         "Closed without confirmed delivery" if item.resolved_at else
                          "Delivery pending" if interaction.responded_at else "Not submitted"),
             "continuation": continuation,
         }

@@ -144,7 +144,7 @@
   }
   function interactionControls(item) {
     var interaction = item.interaction;
-    if (!interaction) return "";
+    if (!interaction || item.resolved_at) return "";
     if (["failed", "answered", "delivery_pending"].indexOf(interaction.state) >= 0) {
       return '<div class="notification-actions"><button type="button" class="primary small" data-notification-retry>Retry delivery</button></div>';
     }
@@ -217,7 +217,7 @@
         (item.interaction && item.interaction.responded_at && destination && /^\/(?!\/)/.test(destination) ? '<a href="' + esc(destination) + '">View continuation and progress</a>' : '') +
         bodyMarkup(item) +
         (presentation.next_effect ? '<p class="notification-effect">' + esc(presentation.next_effect) + "</p>" : "") +
-        (remote ? '<p class="notification-warning">Respond on the owning instance. This copy will remain outstanding until the owner records the result.</p>' : "") +
+        (remote && !item.resolved_at ? '<p class="notification-warning">Respond on the owning instance. This copy will remain outstanding until the owner records the result.</p>' : "") +
         (!remote ? interactionControls(item) : "") +
         '<p class="notification-feedback" data-notification-feedback role="status" aria-live="polite"></p>' +
         identityDetails(item) +

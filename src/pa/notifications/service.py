@@ -754,6 +754,14 @@ class NotificationService:
                     f"The request is already {interaction.state.value}",
                     notification=current,
                 )
+            # Existing-key replays above remain read-only, including failed outcomes.
+            # Retirement closes delivery without rewriting the historical outcome.
+            if current.resolved_at is not None:
+                raise NotificationConflict(
+                    "interaction_already_resolved",
+                    "The request is resolved; no further response delivery is allowed",
+                    notification=current,
+                )
             if interaction.deadline and interaction.deadline <= datetime.now(UTC):
                 interaction.state = InteractionState.EXPIRED
                 current.resolved_at = datetime.now(UTC)
