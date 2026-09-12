@@ -44,6 +44,7 @@ from pa.acp.configuration import (
     validate_option_value,
 )
 from pa.acp.environment import (
+    ASSIGNED_SERVICE_MODE_ENV,
     inject_agent_github_environment,
     sanitize_provider_environment,
 )
@@ -1032,7 +1033,7 @@ class AgentConnection:
                 owner_health = await self._offload(
                     "acp.pa_mcp_owner_probe",
                     partial(probe_owner_channel, principal_id=mcp_principal)
-                    if not self.mcp_private_env else probe_owner_channel,
+                    if self.mcp_private_env.get(ASSIGNED_SERVICE_MODE_ENV) != "1" else probe_owner_channel,
                     self.settings,
                     timeout=5.0,
                 )

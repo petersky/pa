@@ -374,7 +374,18 @@ async def test_ordinary_bound_connection_mcp_report(fleet, monkeypatch, recovere
     principal = 'user:' + owner.id
     source.ctx.services['membership'] = SimpleNamespace(
         has_role=lambda realm, actor, **kw: realm == 'secondary' and actor == principal)
-    bound = AgentSession(agent_name='fixture', principal_id=principal, realm_id='secondary')
+    bound = AgentSession(agent_name='fixture', principal_id=principal, realm_id='secondary',
+        dispatch_id=str(uuid4()), authority_instance_id=source.settings.instance_id)
+    from pa.execution.dispatch import DispatchRecord, DispatchStore
+    from pa.modules.fleet import _assigned_mcp_environment_for_session
+    from pa.acp.environment import COMPLETION_DISPATCH_ENV, COMPLETION_SESSION_ENV
+    ledger = DispatchStore(source.settings.data_dir)
+    ledger.put(DispatchRecord(mutation_id='ordinary-fixture', dispatch_id=bound.dispatch_id,
+        session_id=bound.id, principal_id=principal, realm_id=bound.realm_id,
+        authority_instance_id=source.settings.instance_id, authority_url='http://fixture',
+        target_instance_id=source.settings.instance_id, state='running'))
+    binding = _assigned_mcp_environment_for_session(source.settings, ledger, bound)
+    assert binding == {COMPLETION_DISPATCH_ENV:bound.dispatch_id, COMPLETION_SESSION_ENV:bound.id}
     foreign = AgentSession(agent_name='fixture', principal_id='user:local', realm_id='secondary')
     runtimes = {s.id: SimpleNamespace(session=s) for s in (bound, foreign)}
     source.ctx.services['instance_agent'] = SimpleNamespace(get=runtimes.get)
@@ -397,7 +408,7 @@ async def test_ordinary_bound_connection_mcp_report(fleet, monkeypatch, recovere
         descriptors.append(result[0])
         return result
     monkeypatch.setattr('pa.acp.client.pa_mcp_servers', descriptor)
-    connection = AgentConnection(source.settings, MagicMock(), agent_name='fixture',
+    connection = AgentConnection(source.settings, MagicMock(), agent_name='fixture', mcp_private_env=binding,
         provider_spec=AgentProviderSpec(id='fixture', display_name='Fixture', command='unused-fixture'))
     class AdmissionObserved(Exception):
         pass
@@ -423,6 +434,7 @@ async def test_ordinary_bound_connection_mcp_report(fleet, monkeypatch, recovere
                 resume_external_id='fixture-recovered' if recovered else None)
         descriptor_env = {item.name:item.value for item in descriptors[0].env}
         assert descriptor_env['PA_LOCAL_API_TOKEN'] == owner.cli_token
+        assert all(descriptor_env[key] == value for key, value in binding.items())
         env = {k:v for k,v in os.environ.items() if not k.startswith('PA_')}
         env.update(descriptor_env, PA_EXECUTION_CONTEXT=execution, PA_AGENT_ENABLED='false')
         async def exchange(selector, *, deny=False):
