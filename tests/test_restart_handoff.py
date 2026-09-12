@@ -337,7 +337,7 @@ def test_restart_handoff_listing_requires_session_owner_or_admin(tmp_path: Path)
             continuation_prompt_id="private-prompt",
         )
     )
-    manager = SimpleNamespace(store=store)
+    manager = SimpleNamespace(store=store, get=lambda _: None)
     request = MagicMock()
     request.app.state.ctx.settings.auth_required = True
     request.state.user.role = "member"
@@ -410,7 +410,7 @@ def test_authenticated_normal_restart_handoff_post_and_get_ownership(
     session = store.save_session(
         AgentSession(id="owned", agent_name="codex", principal_id="user:owner")
     )
-    manager = SimpleNamespace(store=store, request_restart_handoff=AsyncMock())
+    manager = SimpleNamespace(store=store, get=lambda _: None, request_restart_handoff=AsyncMock())
     manager.request_restart_handoff.return_value = RestartHandoff(
         session_id=session.id,
         idempotency_key="owned-key",
@@ -938,7 +938,7 @@ def test_handoff_retry_route_is_owned_and_restart_session_rearms_latest_failure(
             error="repository unavailable",
         )
     )
-    manager = SimpleNamespace(store=store, retry_restart_handoff=AsyncMock())
+    manager = SimpleNamespace(store=store, get=lambda _: None, retry_restart_handoff=AsyncMock())
     manager.retry_restart_handoff.return_value = receipt.model_copy(
         update={"status": "continuation_queued", "error": None}
     )
@@ -1839,3 +1839,67 @@ def test_blocked_restart_store_keeps_reads_and_quiesce_deadline_responsive(tmp_p
             if sweep is not None and not sweep.done():
                 await sweep
     asyncio.run(scenario())
+
+
+def test_public_restart_receipts_consume_shared_observation_without_losing_residual_work(tmp_path):
+    from fastapi.testclient import TestClient
+    from pa.core.kernel import Kernel
+    from pa.core.operation_observation import OperationObservation
+    from pa.domain.models import TranscriptEvent
+    from pa.domain.store import reset_store
+    from pa.instance.agent_session import reset_instance_agent
+
+    reset_store()
+    reset_instance_agent()
+    settings = Settings(data_dir=tmp_path / 'data', workspace_root=tmp_path / 'workspaces',
+                        agent_enabled=False, peers=[], sync_token='isolated-peer-token')
+    app = Kernel.boot(settings=settings).build_app()
+    with TestClient(app) as client:
+        store = app.state.ctx.store
+        session = store.save_session(AgentSession(id='exact-session', agent_name='codex',
+            realm_id='other', execution_binding={'workspace': 'exact-leased-workspace'}))
+        manager = AgentSessionManager(settings, store)
+        client.get('/')
+        headers = {'Authorization': 'Bearer isolated-peer-token', 'Idempotency-Key': 'exact-key',
+                   'X-CSRF-Token': client.cookies.get('pa_csrf')}
+        with patch('pa.modules.agent_chat._require_session_traffic_ready', return_value=manager), \
+             patch.object(manager, '_schedule_restart_handoff'):
+            posted = client.post(f'/api/agent/sessions/{session.id}/restart-handoffs',
+                json={'idempotency_key': 'exact-key', 'continuation_prompt': 'Continue exact work'}, headers=headers)
+            assert posted.status_code == 200, posted.text
+            data = posted.json()
+            observed = OperationObservation.from_receipt(data['observation'])
+            assert observed.identity.owner == 'restart'
+            assert observed.identity.realm_id == 'other'
+            assert observed.identity.idempotency_key == 'exact-key'
+            assert observed.accepted and observed.committed and observed.projected is None
+            assert observed.effect == 'not_started'
+            receipt = store.get_restart_handoff(data['id'])
+            failed = store.update_restart_handoff(receipt.id, status='failed', expected_status=receipt.status,
+                expected_version=receipt.phase_version, owner_instance_id=settings.instance_id,
+                failure_stage='resuming', reason_code='lost_ack', error='enqueue acknowledgement lost')
+            runtime = SimpleNamespace(_queue=[SimpleNamespace(id=receipt.continuation_prompt_id)],
+                _in_flight=None, _draining_prompt=None, _queue_paused=False)
+            with patch.object(manager, 'get', return_value=runtime):
+                def read():
+                    response = client.get(f'/api/agent/sessions/{session.id}/restart-handoffs', headers=headers)
+                    assert response.status_code == 200, response.text
+                    return response.json()['handoffs'][0]['observation']
+                queued = read()
+                assert queued['worker_state'] == 'queued' and queued['effect'] == 'unknown'
+                assert queued['phase_version'] == failed.phase_version and queued['domain_stage'] == 'failed'
+                runtime._in_flight = runtime._queue.pop()
+                assert read()['worker_state'] == 'active'
+                assert store.get_restart_handoff(receipt.id) == failed
+            assert read()['worker_state'] == 'unconfirmed'
+            store.append_transcript_events([TranscriptEvent(session_id=session.id, seq=1, event_type='turn_completed',
+                payload={'queued_prompt_id': receipt.continuation_prompt_id, 'stop_reason': 'end_turn'})])
+            store.update_restart_handoff(receipt.id, status='continuation_delivered', expected_status=failed.status,
+                expected_version=failed.phase_version, owner_instance_id=settings.instance_id)
+            done = read()
+            assert done['effect'] == 'complete' and done['worker_state'] == 'absent'
+            assert done['continuation_prompt_id'] == receipt.continuation_prompt_id
+            assert OperationObservation.from_receipt(done).as_outcome() == done
+            assert any(item['error'] == 'enqueue acknowledgement lost' for item in store.get_restart_handoff(receipt.id).transition_history)
+    reset_store()
+    reset_instance_agent()

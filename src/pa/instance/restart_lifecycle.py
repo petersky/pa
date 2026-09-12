@@ -6,6 +6,8 @@ fields are an adapter for the shared operation observation, not another owner.
 
 from __future__ import annotations
 
+from pa.core.operation_observation import OperationObservation
+
 TERMINAL = frozenset({"continuation_delivered", "restart_completed"})
 LEGAL_TRANSITIONS = {
     "requested": {"waiting_for_turn_end", "failed"},
@@ -99,4 +101,17 @@ def restart_observation_fields(receipt, *, session=None, runtime=None) -> dict:
         elif runtime is not None and status == "continuation_queued":
             if worker == "active":
                 phase = "running"
-    return {"phase": phase, "phase_version": receipt.phase_version, "attempt": receipt.attempts, "reason_code": reason, "next_action": next_action, "effect_state": effect, "worker_state": worker, "domain_stage": status}
+    # Legacy standalone receipts do not carry a realm. Empty means unknown;
+    # public session routes supply the exact durable session instead of guessing.
+    realm = session.realm_id if session is not None else (receipt.execution_binding or {}).get("realm_id", "")
+    return OperationObservation.from_receipt({
+        "identity": {"version": 1, "owner": "restart", "realm_id": realm,
+                     "idempotency_key": receipt.idempotency_key, "operation": "agent_restart_handoff"},
+        "status": status, "accepted": True, "committed": True, "projected": None,
+        "effect": "complete" if status in TERMINAL else effect,
+        "phase": phase, "phase_version": receipt.phase_version,
+        "attempt": receipt.attempts, "reason_code": reason, "next_action": next_action,
+        "effect_state": effect, "worker_state": worker, "domain_stage": status,
+        "session_id": receipt.session_id, "handoff_id": receipt.id,
+        "continuation_prompt_id": receipt.continuation_prompt_id,
+    }).as_outcome()
