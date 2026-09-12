@@ -16,9 +16,10 @@ from tests.test_pr_supervisor import _FakeGitHub, _DedupeDispatcher, snapshot, w
 
 
 @pytest.mark.asyncio
-async def test_pending_watch_acceptance_cannot_mint_integration_or_certify_next_subject(tmp_path):
+@pytest.mark.parametrize("realm", ["default", "acceptance-realm"])
+async def test_pending_watch_acceptance_cannot_mint_integration_or_certify_next_subject(tmp_path, realm):
     store = projection(tmp_path)
-    card = store.create_card(CardCreate(title='integrate then verify', lane='waiting', completion_requirement={
+    card = store.create_card(CardCreate(realm_id=realm, title='integrate then verify', lane='waiting', completion_requirement={
         'mode': 'explicit_acceptance', 'milestones': ['integrated', 'verified'], 'acceptance_principals': ['user:verifier']}))
     settings = Settings(data_dir=tmp_path, instance_id='instance-a', instance_url='http://instance-a', fleet_owner_url='http://instance-a', peers=[])
     watches = PRSupervisorStore(tmp_path / 'supervisor.db')
@@ -26,12 +27,13 @@ async def test_pending_watch_acceptance_cannot_mint_integration_or_certify_next_
     await service.refresh_capability(force=True)
     item = watch(policy=PRPolicy(stable_head_seconds=0, stable_observations=1))
     item.card_id = card.id
+    item.realm_id = realm
     await service.register_watch(item, replicate=False)
     await service.run_once()
     evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision, subject_revision='b' * 40, milestones=['integrated', 'verified'])
     def accept(current, proof, key):
         return store.update_card(current.id, CardUpdate(expected_version=current.updated_at, completion_acceptance=proof),
-            principal_id='user:verifier', actor_session_id='verifier-session', actor_dispatch_id='verifier-dispatch', idempotency_key=key)
+            realm_id=realm, principal_id='user:verifier', actor_session_id='verifier-session', actor_dispatch_id='verifier-dispatch', idempotency_key=key)
     with pytest.raises(CompletionConflict, match='completion_integration_producer_required'):
         accept(card, evidence, 'cannot-mint-integration')
     card = accept(card, evidence.model_copy(update={'milestones': ['verified']}), 'accept-A')
@@ -41,7 +43,7 @@ async def test_pending_watch_acceptance_cannot_mint_integration_or_certify_next_
     assert 'integrated' in completion_state(card.completion_requirement, [old_claim])['missing']
     watches.schedule_now(watch_id=item.id)
     await service.run_once()
-    card = store.get_card(card.id)
+    card = store.get_card(card.id, realm_id=realm)
     assert card.lane == CardLane.WAITING
     assert 'integrated' in card.completion_status['satisfied']
     assert 'verified' in card.completion_status['missing']
@@ -49,7 +51,7 @@ async def test_pending_watch_acceptance_cannot_mint_integration_or_certify_next_
     assert card.completion_evidence[-1].subject_revision == 'c' * 40
     card = accept(card, evidence.model_copy(update={'milestones': ['verified'], 'subject_revision': 'c' * 40}), 'accept-B')
     await service._complete_merged_card(watches.get_watch(item.id))
-    assert store.get_card(card.id).lane == CardLane.DONE
+    assert store.get_card(card.id, realm_id=realm).lane == CardLane.DONE
 
 
 @pytest.mark.parametrize('conflict', ['version', 'completion'])
