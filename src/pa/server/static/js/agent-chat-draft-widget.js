@@ -137,6 +137,7 @@
     // Any edit is a new logical draft. The in-flight request keeps its captured
     // id, while the edited text must not inherit that id across a refresh.
     if (this.submissionId) {
+      this.pendingReceipt();
       const wasRestoring = this.restoringSubmission;
       this.submissionId = null;
       this.restoringSubmission = false;
@@ -236,6 +237,7 @@
   };
 
   WidgetDraftController.prototype.apply = function (record, message) {
+    this.receipt = null;
     this.record = record || null;
     this.submissionId = record && record.submission_id || null;
     this.restoringSubmission = !!this.submissionId;
@@ -257,6 +259,7 @@
         } catch (_) {}
       }
     }
+    this.pendingReceipt();
     this.renderAttachmentNotice();
     this.dirty = false;
     if (this.restoringSubmission) {
@@ -272,9 +275,14 @@
           self.widget.reconcilePendingSubmission();
         }, 0);
       }
-    } else if (message) this.setStatus(message);
-    else if (record && !record.cleared) this.setStatus("Draft restored from this browser.");
-    else this.setStatus("No local draft.");
+    } else {
+      if (this.widget.submissionPending && typeof this.widget.setSubmissionState === "function") {
+        this.widget.setSubmissionState("idle", false);
+      }
+      if (message) this.setStatus(message);
+      else if (record && !record.cleared) this.setStatus("Draft restored from this browser.");
+      else this.setStatus("No local draft.");
+    }
   };
 
   WidgetDraftController.prototype.restore = function () {
@@ -337,8 +345,9 @@
     const session = snapshot.session || snapshot;
     this.cardId = session.card_id || this.widget.cardId || null;
     this.projectId = session.project_id || null;
-    if (!this.submissionId || !this.restoringSubmission) return;
-    const promptId = this.submissionId;
+    const receipt = this.pendingReceipt();
+    if (!receipt) return;
+    const promptId = receipt.id;
     const accepted = (snapshot.transcript || []).some(function (event) {
       const type = event && (event.type || event.event_type);
       const payload = event && event.payload || {};
@@ -353,35 +362,37 @@
       }));
       return;
     }
-    // Live snapshots intentionally omit transcript pages. Keep checking until
-    // the bounded prompt-status reconcile settles; do not flip to retryable yet.
-    if (!Object.prototype.hasOwnProperty.call(snapshot, "transcript")) {
-      if (typeof this.widget.reconcilePendingSubmission === "function") {
-        this.widget.reconcilePendingSubmission();
-      }
-      return;
+    // Missing history is not evidence of nonacceptance (it may be paginated).
+    if (typeof this.widget.reconcilePendingSubmission === "function") {
+      this.widget.reconcilePendingSubmission();
     }
-    this.restoringSubmission = false;
-    if (typeof this.widget.setSubmissionState === "function") {
-      this.widget.setSubmissionState("retryable", false, {
-        retryVisible: true,
-        reason: "Previous send was not confirmed; retry will reuse the same submission ID.",
-      });
+  };
+
+  // A receipt outlives edits to the composer, but never its draft scope.
+  WidgetDraftController.prototype.pendingReceipt = function () {
+    if (!this.receipt && this.submissionId) {
+      this.receipt = {
+        id: this.submissionId,
+        rawText: this.widget.els.input && this.widget.els.input.value || "",
+        images: (this.widget.pendingImages || []).slice(),
+        metadata: this.attachmentMetadata.slice(),
+        sessionId: this.sessionId,
+        instanceId: this.instanceId,
+        principalId: this.principalId,
+      };
     }
-    this.setStatus("Previous send was not confirmed; retry will reuse the same submission ID.");
+    return this.receipt || null;
   };
 
   WidgetDraftController.prototype.observeAcceptance = function (promptId, queued) {
-    if (!this.restoringSubmission || !promptId || promptId !== this.submissionId) {
-      return false;
-    }
-    const rawText = this.record && !this.record.cleared
-      ? this.record.text
-      : (this.widget.els.input && this.widget.els.input.value || "");
-    this.restoringSubmission = false;
+    const receipt = this.pendingReceipt();
+    if (!receipt || !promptId || promptId !== receipt.id ||
+        receipt.sessionId !== this.sessionId || receipt.instanceId !== this.instanceId ||
+        receipt.principalId !== this.principalId) return false;
     this.submissionAccepted({
-      rawText: rawText,
-      images: [],
+      rawText: receipt.rawText,
+      images: receipt.images,
+      receipt: receipt,
       message: queued ? "Prompt queued." : "Prompt accepted.",
     });
     if (typeof this.widget.setSubmissionState === "function") {
@@ -408,8 +419,12 @@
       clearTimeout(this.timer);
       this.timer = null;
     }
+    this.receipt = null;
     this.submissionId = null;
     this.restoringSubmission = false;
+    if (typeof this.widget.setSubmissionState === "function") {
+      this.widget.setSubmissionState("idle", false);
+    }
     this.attachmentMetadata = [];
     this._discardBinaryAttachments();
     if (clearInput && this.widget.els.input) this.widget.els.input.value = "";
@@ -425,13 +440,18 @@
   WidgetDraftController.prototype.beginSubmission = function () {
     if (!this.submissionId) this.submissionId = Drafts.randomId();
     this.restoringSubmission = false;
+    this.receipt = null;
+    this.pendingReceipt();
     this.flush({ force: true });
     return this.submissionId;
   };
 
   WidgetDraftController.prototype.submissionAccepted = function (submission) {
     const input = this.widget.els.input;
-    if (input && input.value === submission.rawText) input.value = "";
+    const receipt = submission.receipt;
+    if (receipt && this.receipt !== receipt) return false;
+    const matchingDraft = !receipt || this.submissionId === receipt.id;
+    if (matchingDraft && input && input.value === submission.rawText) input.value = "";
     const submitted = submission.images || [];
     this.widget.pendingImages = (this.widget.pendingImages || []).filter(function (image) {
       if (submitted.indexOf(image) === -1) return true;
@@ -439,12 +459,17 @@
       return false;
     });
     this.widget.renderPendingImages();
-    this.submissionId = null;
+    this.receipt = null;
+    if (matchingDraft) this.submissionId = null;
     this.restoringSubmission = false;
-    this.attachmentMetadata = [];
+    this.attachmentMetadata = receipt ? this.attachmentMetadata.filter(function (item) {
+      return receipt.metadata.indexOf(item) === -1;
+    }) : [];
+    this.renderAttachmentNotice();
     if (
       (!input || !input.value) &&
-      !(this.widget.pendingImages && this.widget.pendingImages.length)
+      !(this.widget.pendingImages && this.widget.pendingImages.length) &&
+      !this.attachmentMetadata.length
     ) {
       this.clear(false, submission.message || "Draft cleared after the prompt was accepted.");
     } else {
@@ -465,6 +490,7 @@
         return image !== submittedImages[index];
       });
     if (submission.conflict || inputChanged || imagesChanged) this.submissionId = null;
+    if (submission.conflict) this.receipt = null;
     this.dirty = true;
     this.flush({ force: true });
     this.setStatus(this.submissionId

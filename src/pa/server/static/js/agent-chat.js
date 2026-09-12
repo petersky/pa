@@ -3666,7 +3666,7 @@
     this._syncSubmissionControls();
   };
 
-  AgentChatWidget.prototype.markSubmissionAccepted = function (result, displayText, submittedImages, draftRawText) {
+  AgentChatWidget.prototype.markSubmissionAccepted = function (result, displayText, submittedImages, draftRawText, promptId) {
     result = result || {};
     const rawText = draftRawText == null ? displayText : draftRawText;
     if (!this._isDuplicateUserBubble(displayText)) {
@@ -3681,9 +3681,11 @@
         }),
       });
     }
-    this.setTurnActive(true);
+    if (result.status !== "completed") this.setTurnActive(true);
     this.scrollToBottom();
-    if (this.drafts) {
+    if (this.drafts && promptId) {
+      this.drafts.observeAcceptance(promptId, !!result.queued);
+    } else if (this.drafts) {
       this.drafts.submissionAccepted({
         rawText: rawText,
         images: submittedImages || [],
@@ -3693,14 +3695,42 @@
       this.els.input.value = "";
       this.clearPendingImages();
     }
-    this.setSubmissionState(result.queued ? "queued" : "accepted", false);
+    this.setSubmissionState(result.status || (result.queued ? "queued" : "accepted"), false, { retryVisible: false });
     if (result.queued) this.refreshQueue();
+  };
+
+  // Transport generations fence event/history streams. Durable receipts instead
+  // follow the same owner/session across reconnects and fence by receipt object.
+  AgentChatWidget.prototype._submissionScope = function (promptId) {
+    if (!this.drafts) this.fallbackSubmissionId = promptId;
+    return { generation: this.subscriptionGeneration, sessionId: this.sessionId, apiBase: this.apiBase,
+      owner: this.ownerInstanceId, drafts: this.drafts,
+      receipt: this.drafts && this.drafts.pendingReceipt(), promptId: promptId };
+  };
+
+  AgentChatWidget.prototype._isCurrentSubmission = function (scope) {
+    return !this.destroyed && !this.sessionClosed && this.sessionId === scope.sessionId &&
+      this.apiBase === scope.apiBase && this.ownerInstanceId === scope.owner &&
+      this.drafts === scope.drafts && ((!this.drafts &&
+        scope.generation === this.subscriptionGeneration &&
+        scope.promptId === this.fallbackSubmissionId) ||
+        (this.drafts && this.drafts.pendingReceipt() === scope.receipt && scope.receipt &&
+         scope.receipt.id === scope.promptId &&
+         scope.receipt.sessionId === this.drafts.sessionId &&
+         scope.receipt.instanceId === this.drafts.instanceId &&
+         scope.receipt.principalId === this.drafts.principalId));
+  };
+
+  AgentChatWidget.prototype._matchesSubmissionResponse = function (scope, response) {
+    return !response || ((!response.session_id || response.session_id === scope.sessionId) &&
+      (!response.prompt_id || response.prompt_id === scope.promptId));
   };
 
   AgentChatWidget.prototype.reconcilePendingSubmission = function (options) {
     options = options || {};
     const self = this;
-    const promptId = this.drafts && this.drafts.submissionId;
+    const receipt = this.drafts && this.drafts.pendingReceipt();
+    const promptId = receipt && receipt.id;
     if (!promptId || !this.sessionId) {
       if (options.unreachable && this.drafts && this.drafts.restoringSubmission) {
         this.setSubmissionState("retryable", false, {
@@ -3721,19 +3751,22 @@
       this.drafts.setStatus("Checking durable acceptance for the previous prompt…");
     }
     const targetSessionId = this.sessionId;
-    const generation = this.subscriptionGeneration;
+    const scope = this._submissionScope(promptId);
     const started = performance.now();
     return this.apiWithTimeout(
       "/sessions/" + encodeURIComponent(targetSessionId) +
         "/prompts/" + encodeURIComponent(promptId),
       PROMPT_RECONCILE_TIMEOUT_MS
     ).then(function (status) {
-      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return null;
+      if (!self._isCurrentSubmission(scope)) return null;
+      if (!self._matchesSubmissionResponse(scope, status)) {
+        throw new Error("Prompt acceptance response identity did not match the requested submission.");
+      }
       const elapsed = performance.now() - started;
       if (status && status.accepted) {
         const lifecycleState = status.status || (status.queued ? "queued" : "accepted");
         if (self.drafts) {
-          self.drafts.observeAcceptance(promptId, !!status.queued);
+          if (!self.drafts.observeAcceptance(promptId, !!status.queued)) return null;
           self.setSubmissionState(lifecycleState, false, { retryVisible: false });
         } else {
           const rawText = self.els.input && self.els.input.value || "";
@@ -3757,7 +3790,7 @@
       }
       return status;
     }).catch(function (err) {
-      if (!self._isCurrentSessionRequest(targetSessionId, generation)) return null;
+      if (!self._isCurrentSubmission(scope)) return null;
       const reason = options.reason ||
         ("Prompt acceptance lookup failed: " + (err && err.message || "unreachable") +
           ". Retry reuses the same submission ID; duplicate execution is prevented.");
@@ -4037,6 +4070,7 @@
     const promptId = this.drafts
       ? this.drafts.beginSubmission()
       : (window.PAAgentDrafts ? window.PAAgentDrafts.randomId() : String(Date.now()));
+    const scope = this._submissionScope(promptId);
     this.setSubmissionState("sending", true, { retryVisible: false });
     if (this.drafts) this.drafts.setStatus("Sending — waiting for durable acknowledgement…");
     const body = {
@@ -4057,16 +4091,16 @@
       }
     )
       .then(function (res) {
-        if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
-        if (!res || !res.accepted) {
+        if (!self._isCurrentSubmission(scope)) return;
+        if (!res || !res.accepted || !self._matchesSubmissionResponse(scope, res)) {
           const error = new Error("PA could not confirm durable prompt acceptance.");
           error.acceptanceUnconfirmed = true;
           throw error;
         }
-        self.markSubmissionAccepted(res, text, submittedImages, draftRawText);
+        self.markSubmissionAccepted(res, text, submittedImages, draftRawText, promptId);
       })
       .catch(function (err) {
-        if (!self._isCurrentSessionRequest(targetSessionId, generation)) return;
+        if (!self._isCurrentSubmission(scope)) return;
         const code = apiErrorCode(err);
         const timedOut = !!(err && (err.timeout || err.code === "request_timeout"));
         const networkish = timedOut || err.acceptanceUnconfirmed ||
