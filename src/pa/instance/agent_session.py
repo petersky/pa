@@ -3421,6 +3421,8 @@ class AgentSessionManager:
             statuses=("requested", "waiting_for_turn_end"),
         )
         for receipt in pending:
+            if self._should_abort_admission():
+                break
             self._schedule_restart_handoff(receipt.id)
         if self._resume_on_start:
             await self._resume_restart_handoffs(replay_only=True)
@@ -4832,7 +4834,7 @@ class AgentSessionManager:
             if handoff.status == "failed" and not transient_failure:
                 continue
             if handoff.status in {"requested", "waiting_for_turn_end", "quiescing"}:
-                if not replay_only and handoff.id not in self._restart_handoff_tasks:
+                if not replay_only and not self._should_abort_admission() and handoff.id not in self._restart_handoff_tasks:
                     self._schedule_restart_handoff(handoff.id)
                 continue
             session = await self._offload(
@@ -4871,6 +4873,11 @@ class AgentSessionManager:
                         handoff.id, status="continuation_delivered", delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
                     continue
+                # Reads above can span this process committing quiescence. A
+                # restarting receipt is not evidence that a new process is here.
+                # Exact completed-turn evidence remains authoritative above.
+                if self._should_abort_admission():
+                    continue
                 if not handoff.continuation_prompt.strip():
                     handoff = await self._offload(
                         "sqlite.restart_handoff_no_continuation",
@@ -4885,6 +4892,8 @@ class AgentSessionManager:
                         "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
                         handoff.id, status="resuming", retry=transient_failure, increment_attempts=transient_failure, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
                     )
+                if self._should_abort_admission():
+                    continue
                 runtime = self.get(handoff.session_id)
                 if runtime is None or runtime._closed or not runtime.connected:
                     runtime = await self.recover_session(
@@ -4912,7 +4921,10 @@ class AgentSessionManager:
                         "sqlite.restart_handoff_delivered", self.store.update_restart_handoff,
                         handoff.id, status="continuation_delivered", delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
-                    runtime._start_drain()
+                    if not self._should_abort_admission():
+                        runtime._start_drain()
+                    continue
+                if self._should_abort_admission():
                     continue
                 if handoff.status == "continuation_queued":
                     # Recovery restores the checkpointed queue. A queued receipt
@@ -4937,7 +4949,8 @@ class AgentSessionManager:
                     "sqlite.restart_handoff_queued", self.store.update_restart_handoff,
                     handoff.id, status="continuation_queued", expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
                 )
-                runtime._start_drain()
+                if not self._should_abort_admission():
+                    runtime._start_drain()
             except RestartTransitionConflict:
                 continue
             except SessionAdmissionInProgress:

@@ -1614,3 +1614,87 @@ def test_enqueue_survives_failed_receipt_phase_write_without_inventing_absence(t
         assert store.get_restart_handoff(receipt.id) == failed
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('read_stage', ['sqlite.restart_handoffs_watchdog', 'sqlite.restart_handoffs_pending', 'sqlite.restart_handoff_session', 'sqlite.restart_handoff_completion'])
+@pytest.mark.parametrize('continuation', ['', 'Continue exact work'])
+def test_coordinator_read_crossing_committed_quiesce_cannot_infer_restart(tmp_path, read_stage, continuation):
+    async def scenario():
+        store = CardProjection(tmp_path / 'pa.db')
+        settings = Settings(data_dir=tmp_path, instance_id='owner')
+        manager = AgentSessionManager(settings, store)
+        session = store.save_session(AgentSession(id='s', agent_name='codex', status='active'))
+        handoff = store.create_restart_handoff(RestartHandoff(session_id=session.id, idempotency_key='recovery',
+            continuation_prompt=continuation, continuation_prompt_id='exact-prompt', instance_id='owner'))
+        # A pending-list read can see the very restart its sweep scheduled. Later
+        # reads may belong to an earlier restart while a new handoff quiesces us.
+        trigger = handoff
+        if read_stage not in {'sqlite.restart_handoffs_watchdog', 'sqlite.restart_handoffs_pending'}:
+            _advance_restart_fixture(store, handoff.id, status='restarting')
+            trigger_session = store.save_session(AgentSession(id='trigger-s', agent_name='codex', status='active'))
+            trigger = store.create_restart_handoff(RestartHandoff(session_id=trigger_session.id, idempotency_key='new-restart',
+                continuation_prompt='', continuation_prompt_id='new-prompt', instance_id='owner'))
+        read_entered = asyncio.Event()
+        release_read = asyncio.Event()
+        host_entered = asyncio.Event()
+        release_host = asyncio.Event()
+        original = manager._offload
+        held = False
+
+        async def barrier(operation, func, *args, **kwargs):
+            nonlocal held
+            if operation == 'sqlite.restart_handoff_read':
+                await read_entered.wait()
+            if operation == read_stage and not held:
+                held = True
+                read_entered.set()
+                await release_read.wait()
+            if operation == 'service.restart_handoff':
+                # The real handoff executor has committed quiescence and the
+                # restarting phase, but has not issued the host restart yet.
+                assert manager.quiescing and not manager._accepting
+                assert store.get_restart_handoff(trigger.id).status == 'restarting'
+                host_entered.set()
+                await release_host.wait()
+                return None  # Never call a host service in this test.
+            return await original(operation, func, *args, **kwargs)
+
+        manager._offload = barrier
+        manager.recover_session = AsyncMock()
+        if read_stage == 'sqlite.restart_handoffs_watchdog':
+            manager._schedule_restart_handoff(trigger.id)
+        sweep = asyncio.create_task(manager._recover_unscheduled_restart_handoffs())
+        try:
+            await asyncio.wait_for(host_entered.wait(), timeout=5)
+            release_read.set()
+            await asyncio.wait_for(sweep, timeout=5)
+            current = store.get_restart_handoff(handoff.id)
+            assert current.status == 'restarting'
+            assert current.delivered_at is None
+            assert current.continuation_prompt_id == 'exact-prompt'
+            manager.recover_session.assert_not_called()
+            assert manager._restart_handoff_tasks  # Host request still delayed.
+        finally:
+            release_read.set()
+            release_host.set()
+            await asyncio.gather(sweep, *list(manager._restart_handoff_tasks.values()))
+    asyncio.run(scenario())
+
+
+def test_quiesced_replay_preserves_authoritative_completed_turn(tmp_path):
+    async def scenario():
+        from pa.domain.models import TranscriptEvent
+        store = CardProjection(tmp_path / 'pa.db')
+        manager = AgentSessionManager(Settings(data_dir=tmp_path, instance_id='owner'), store)
+        session = store.save_session(AgentSession(id='s', agent_name='codex', status='active'))
+        handoff = store.create_restart_handoff(RestartHandoff(session_id=session.id, idempotency_key='completed',
+            continuation_prompt='Continue', continuation_prompt_id='exact-prompt', instance_id='owner'))
+        _advance_restart_fixture(store, handoff.id, status='restarting')
+        store.append_transcript_events([TranscriptEvent(session_id=session.id, seq=1,
+            event_type='turn_completed', payload={'queued_prompt_id': 'exact-prompt', 'stop_reason': 'end_turn'})])
+        await manager.quiesce(reason='test-committed-quiescence')
+        manager.recover_session = AsyncMock()
+        await manager._recover_unscheduled_restart_handoffs()
+        assert store.get_restart_handoff(handoff.id).status == 'continuation_delivered'
+        manager.recover_session.assert_not_called()
+    asyncio.run(scenario())
