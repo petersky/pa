@@ -205,3 +205,38 @@ failure cases verify eventual published failure as well as admission failure.
 history replay, current invocation ordering and the actual 30-second wire case.
 Wheel/sdist build passed. No timeout or threshold was changed. This follow-up
 preserves proxy/path validation, stderr redaction and composer integration.
+
+
+## Final sync recovery integration gate
+
+Rebased onto actual sync recovery PR #435 merge
+`c875237bd0674f1ff9a2228423a1ee88e78936dc`, whose first parent is composer
+PR #434 merge `9e82b41c0cdfbac8cfb17909d5b5744074bdd843` and second parent is
+reviewed sync head `b0190c150086c3b2d346dc995f659e27689134ba`. Rebase had no
+conflicts. Service recovery files match main exactly; `modules/sync.py` differs
+only in delegating `register_mcp` to extracted proxies. Composer draft-widget
+matches main and agent-chat differences remain limited to MCP health.
+
+On rebased source `471f565b8b327d4b7eefa8f3273f4ee3723d2594`, the final isolated
+combined gate passed **152 tests in 152.81 seconds**: `test_sync_recovery_owned`,
+`test_sync_recovery`, `test_mutation_idempotency`, `test_mcp_registration_only`,
+`test_agent_chat_drafts`, `test_acp_prompt_recovery`, `test_agent_chat_stream_join`.
+This includes JS harnesses, four actual source stdio cases (console/module,
+ordinary/assigned, locked service data), and actual ACP failure/replay/explicit
+startup producer-boundary cases. `uv build` produced wheel and sdist successfully.
+The final wheel was exercised directly via PYTHONPATH with `python -m pa mcp`,
+using test-only owner/session binding and isolated data/workspace roots. It
+initialized and returned 205 tools in 10.219 seconds (11.154 including teardown),
+without creating those directories. This was final package validation, not a
+repeat of the earlier comparative benchmark. Entry-point metadata still resolves
+`pa` to `pa.cli.entrypoint:main`.
+
+Final wheel SHA256: `f23368fd55a56c35f2daee9c4886a8656f79a8cfc69cdd8edbe00d16ea512c06`.
+
+Heavy local validation window was announced in checkpoint
+`mcp-repair-pr436-final-validation-begin-v1` and closed by
+`mcp-repair-pr436-final-validation-end-v1` (both HTTP 200). No further heavy
+local validation is planned. All runs cleared inherited PA_* and supplied
+temporary roots; the earlier isolation qualification above remains in force.
+Root retains independent exact-head review, signal revalidation, merge, release
+and production activation/acceptance. This card remains Waiting.
