@@ -35,6 +35,27 @@ function settled(w,state){
  assert(!w.statusElement.textContent.includes('Checking'));if(state)assert.equal(w.submissionState,state);
 }
 (async()=>{
+ // Real teardown before the later draft lifecycle flush preserves metadata.
+ for(const reason of ['pagehide','htmx-before-swap']) for(const clear of [false,true]){
+  const w=make();Object.assign(w,{_stashSessionDomCache:noop,closeSSE:noop,stopBrowserRefresh:noop,resetArtifacts:noop,toolTimers:{}});
+  w.els.input.value='new unsent intent';
+  w.pendingImages=[{name:'survive.png',mime_type:'image/png',size:5,data:'bytes'}];
+  w.drafts.changed();w.drafts.flush({force:true});
+  if(clear)w.drafts.clear(true);
+  const expected=w.drafts.store.read(w.sessionId);
+  w.destroy(reason);
+  const saved=w.drafts.store.read(w.sessionId);
+  for(const field of ['text','attachments','submission_id','cleared'])assert.deepEqual(saved[field],expected[field]);
+  w.drafts.flush({force:true});w.drafts.flush();
+  assert.deepEqual(w.drafts.store.read(w.sessionId),saved);
+  assert.deepEqual(w.pendingImages,[]);
+  const restored=make();restored.drafts.attachmentNotice={textContent:'',hidden:true};
+  restored.sessionId=w.sessionId;restored.drafts.switchSession(w.sessionId);
+  assert.equal(restored.els.input.value,clear?'':'new unsent intent');
+  assert.deepEqual(restored.drafts.attachmentMetadata,clear?[]:[{name:'survive.png',mime_type:'image/png',size:5}]);
+  assert.equal(restored.drafts.attachmentNotice.hidden,clear);
+  if(!clear)assert(restored.drafts.attachmentNotice.textContent.includes('Reselect before sending: survive.png'));
+ }
  // Real controller, real widget send/reconcile. SSE handler acknowledgements can
  // settle the receipt while the POST is still outstanding.
  for(const queued of [false,true]){

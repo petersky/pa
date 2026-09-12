@@ -169,7 +169,18 @@
     return this.attachmentMetadata.slice();
   };
 
+  WidgetDraftController.prototype.destroy = function () {
+    if (this.destroyed) return;
+    // Save names while binary attachments still exist. Later pagehide/HTMX
+    // handlers and timers must not rewrite this draft after widget cleanup.
+    this.flush({ force: true });
+    this.destroyed = true;
+    this.receipt = null;
+    controllers.delete(this);
+  };
+
   WidgetDraftController.prototype.flush = function (options) {
+    if (this.destroyed) return null;
     options = options || {};
     if (!this.sessionId || (!options.force && this.composing)) return null;
     if (this.timer) {

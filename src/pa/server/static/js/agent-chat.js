@@ -2289,6 +2289,7 @@
   AgentChatWidget.prototype.destroy = function (reason) {
     if (this.destroyed) return;
     this._stashSessionDomCache();
+    if (this.drafts) this.drafts.destroy();
     this.destroyed = true;
     if (this.routeAbortController) this.routeAbortController.abort();
     this.routeAbortController = null;
