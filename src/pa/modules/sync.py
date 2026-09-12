@@ -982,16 +982,26 @@ def sync_reconcile(
 @router.post("/sync/recovery")
 async def sync_recovery(request: Request, body: dict) -> dict:
     """Retry bounded authenticated recovery without changing a durable ref."""
+    if set(body) - {"realm_id"}:
+        raise HTTPException(status_code=422, detail={"code": "invalid_recovery_request"})
     ctx: AppContext = request.app.state.ctx
     realm_id = body.get("realm_id") or ctx.settings.primary_realm
     _check_realm_access(request, realm_id)
     recovery = ctx.services.get("sync_recovery")
     if recovery is None:
         raise HTTPException(status_code=409, detail={"code": "recovery_unavailable"})
-    recovered = await recovery.retry(realm_id)
-    if recovered:
+    from pa.sync.recovery import RecoveryLimitError
+
+    try:
+        recovered = await recovery.retry(
+            realm_id, request_key=request.headers.get("Idempotency-Key")
+        )
+    except RecoveryLimitError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    if recovered and not recovery.degraded():
         ctx.services["sync_startup_repaired"] = True
-    return {"recovered": recovered, "recovery": recovery.public()}
+    return {"recovered": recovered, "pending": recovered is None,
+            "recovery": recovery.public(realm_id)}
 
 
 @router.post("/sync/index/maintenance")
@@ -1307,7 +1317,10 @@ class SyncModule(Module):
             realm_id: str, target_head: str | None = None
         ) -> dict[str, Any]:
             with store.mutation():
-                head = target_head or event_log.get_head(realm_id)
+                current_head = event_log.get_head(realm_id)
+                if target_head is not None and current_head != target_head:
+                    raise StaleSyncHeadError(realm_id, target_head, current_head)
+                head = target_head or current_head
                 result = (
                     store.catch_up_projection(realm_id, head)
                     if head
@@ -1327,6 +1340,18 @@ class SyncModule(Module):
         engine.on_head_advanced(rebuild_projection)
         runtime = ctx.require_service("async_runtime")
 
+        from pa.sync.recovery import SyncRecovery
+
+        recovery = SyncRecovery(
+            settings,
+            engine,
+            rebuild_projection,
+            projection_head=store.get_projection_head,
+            on_health_change=lambda healthy: ctx.services.update(
+                sync_startup_repaired=healthy
+            ),
+        )
+        ctx.register_service("sync_recovery", recovery)
         failures: list[tuple[str, EventHistoryObjectError]] = []
 
         def repair_local_projections() -> None:
@@ -1344,14 +1369,13 @@ class SyncModule(Module):
         # Local durability is restored before admission. Peer/DNS/network work is
         # explicitly backgrounded so health and status endpoints become live.
         await runtime.run_blocking(
-            "sync.startup_reconcile", repair_local_projections, timeout=120.0
+            "sync.startup_reconcile", repair_local_projections, timeout=120.0,
+            wait_for_completion=True,
         )
 
-        from pa.sync.recovery import SyncRecovery
-
-        recovery = SyncRecovery(settings, engine, rebuild_projection)
-        ctx.register_service("sync_recovery", recovery)
-        ctx.register_service("sync_startup_repaired", not failures)
+        ctx.register_service(
+            "sync_startup_repaired", not failures and not recovery.degraded()
+        )
         if not failures:
             recovery.mark_healthy()
         engine.start()
@@ -1417,6 +1441,9 @@ class SyncModule(Module):
             engine.request_convergence(realm)
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
+        recovery = ctx.services.get("sync_recovery")
+        if recovery:
+            await recovery.close()
         engine = ctx.services.get("sync_engine")
         if engine:
             await engine.close()

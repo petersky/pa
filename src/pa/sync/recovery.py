@@ -5,17 +5,21 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import hashlib
 import json
+import re
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from pydantic import ValidationError
 
 from pa.core.io import atomic_write_json
 from pa.domain.models import CardEvent, SyncCommit
-from pa.sync.event_log import EventHistoryObjectError
+from pa.sync.event_log import MAX_HISTORY_COMMITS, EventHistoryObjectError
 from pa.sync.object_store import object_hash
 
 MAX_RECOVERY_PEERS = 4
@@ -78,41 +82,87 @@ class _RecoveryBudget:
 
 
 class SyncRecovery:
-    def __init__(self, settings, engine, projection_rebuilder) -> None:
+    """One owned job per realm; HTTP waiters never own blocking workers.
+
+    Admission is object-only and internal: no supplied object/hash/proof is
+    accepted by the endpoint. Evidence is produced by canonical traversal and
+    checked again against immutable references and the current durable head.
+    """
+
+    request_timeout = 120.0
+    worker_queue_timeout = 120.0
+
+    def __init__(
+        self,
+        settings,
+        engine,
+        projection_rebuilder,
+        *,
+        projection_head=None,
+        on_health_change=None,
+    ) -> None:
         self.settings = settings
         self.engine = engine
         self.log = engine.log
         self.store = engine.store
         self.projection_rebuilder = projection_rebuilder
+        self.projection_head = projection_head
+        self.on_health_change = on_health_change
         self.path = settings.data_dir / "sync_recovery.json"
-        self._lock = asyncio.Lock()
+        self._state_lock = threading.RLock()
         self._task: asyncio.Task | None = None
+        self._jobs: dict[str, asyncio.Task] = {}
+        self._closing = False
+        self._loop = asyncio.get_running_loop()
         self.state: dict[str, Any] = self._load()
+        self.realms = self.state.setdefault("realms", {})
+        # Migrate old evidence, but never invent a canonical reference for it.
+        if not self.realms and self.state.get("realm_id"):
+            self.realms[self.state["realm_id"]] = {
+                k: v for k, v in self.state.items() if k != "realms"
+            }
+        for record in self.realms.values():
+            if record.get("state") == "recovering":
+                record.update(
+                    state="unrecoverable",
+                    code="interrupted_recovery",
+                    active_residual_worker=False,
+                )
+        self.log.on_history_failure = self.note_failure
 
     def _load(self) -> dict[str, Any]:
         try:
             value = json.loads(self.path.read_text())
             return value if isinstance(value, dict) else {}
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return {}
 
-    def _save(self, **updates: Any) -> None:
-        self.state.update(updates, updated_at=datetime.now(UTC).isoformat())
-        atomic_write_json(self.path, {"version": 1, **self.state}, mode=0o600)
+    def _save(self, *, realm_id: str | None = None, **updates: Any) -> None:
+        with self._state_lock:
+            realm_id = realm_id or self.state.get("realm_id")
+            if realm_id:
+                record = self.realms.setdefault(realm_id, {})
+                record.update(
+                    updates, realm_id=realm_id, updated_at=datetime.now(UTC).isoformat()
+                )
+                self.state = dict(record)
+            else:
+                self.state.update(updates)
+            self.state["realms"] = self.realms
+            atomic_write_json(self.path, {"version": 2, **self.state}, mode=0o600)
+        if self.on_health_change:
+            self.on_health_change(not self.degraded())
 
     def degraded(self) -> bool:
-        return self.state.get("state") in {"recovering", "unrecoverable"}
+        with self._state_lock:
+            return any(r.get("state") != "healthy" for r in self.realms.values())
 
     def mark_healthy(self) -> None:
-        self._save(
-            state="healthy",
-            code=None,
-            object_kind=None,
-            object_hash=None,
-            recovery_head=None,
-        )
+        # Startup may establish health before any recovery evidence exists.
+        if not self.realms:
+            self._save(state="healthy")
 
-    def public(self) -> dict[str, Any]:
+    def public(self, realm_id: str | None = None) -> dict[str, Any]:
         allowed = {
             "state",
             "realm_id",
@@ -122,74 +172,228 @@ class SyncRecovery:
             "attempts",
             "work",
             "updated_at",
+            "operation_id",
+            "head_hash",
+            "reference_hash",
+            "active_residual_worker",
+            "phase",
         }
-        result = {key: value for key, value in self.state.items() if key in allowed}
-        if self.degraded():
-            result["next_steps"] = [
-                "Restore connectivity to an authenticated healthy realm peer.",
-                "Retry supported sync recovery/reconcile after the peer is available.",
-                "Do not edit refs or object files manually.",
-            ]
-        return result
+        with self._state_lock:
+            record = (
+                self.realms.get(realm_id, {})
+                if realm_id
+                else next(
+                    (r for r in self.realms.values() if r.get("state") == "recovering"),
+                    next(
+                        (
+                            r
+                            for r in self.realms.values()
+                            if r.get("state") != "healthy"
+                        ),
+                        self.state,
+                    ),
+                )
+            )
+            result = {k: v for k, v in record.items() if k in allowed}
+            if not realm_id:
+                result["state"] = (
+                    "recovering"
+                    if any(r.get("state") == "recovering" for r in self.realms.values())
+                    else "unrecoverable"
+                    if self.degraded()
+                    else "healthy"
+                )
+            return result
 
-    def start(self, failures: list[tuple[str, EventHistoryObjectError]]) -> asyncio.Task:
+    async def close(self) -> None:
+        self._closing = True
+        self.log.on_history_failure = None
+        # Drain owners before closing their peer client or blocking runtime.
+        await asyncio.gather(
+            *(asyncio.shield(t) for t in self._jobs.values()), return_exceptions=True
+        )
+
+    def note_failure(self, realm_id: str, failure: EventHistoryObjectError) -> None:
+        # Called on the projection/index worker. Save before returning so the
+        # mutation gate closes even if the original HTTP waiter has disappeared.
+        evidence = {
+            key: value
+            if isinstance(value := failure.diagnostic.get(key), str)
+            and re.fullmatch(r"[0-9a-f]{64}", value)
+            else None
+            for key in ("object_hash", "head_hash", "reference_hash")
+        }
+        kind = failure.diagnostic.get("object_kind")
+        evidence["object_kind"] = kind if kind in {"event", "commit"} else None
+        with self._state_lock:
+            self._save(
+                realm_id=realm_id, state="recovering", code=failure.code, **evidence
+            )
+        if not self._closing:
+            self._loop.call_soon_threadsafe(self._ensure_job, realm_id)
+
+    def _ensure_job(
+        self, realm_id: str, request_key: str | None = None
+    ) -> asyncio.Task:
+        task = self._jobs.get(realm_id)
+        if task is not None and not task.done():
+            if request_key:
+                keys = list(self.realms[realm_id].get("request_keys", []))
+                if request_key not in keys:
+                    if len(keys) >= 64:
+                        raise RecoveryLimitError("request_identity_limit")
+                    self._save(realm_id=realm_id, request_keys=[*keys, request_key])
+            return task
+        record = self.realms.get(realm_id, {})
+        head = self.log.get_head(realm_id)
+        if (
+            request_key in record.get("request_keys", [])
+            and record.get("head_hash") != head
+        ):
+            raise RecoveryLimitError("stale_recovery_head")
+        if (
+            task is not None
+            and record.get("head_hash") == head
+            and request_key is not None
+            and request_key in record.get("request_keys", [])
+        ):
+            return task
+        operation_id = str(uuid4())
+        self._save(
+            realm_id=realm_id,
+            state="recovering",
+            operation_id=operation_id,
+            request_keys=[request_key] if request_key else [],
+            active_residual_worker=True,
+            attempts=[],
+            work=_RecoveryBudget().public(),
+        )
+        task = asyncio.create_task(
+            self._run_job(realm_id, head), name="sync-object-recovery"
+        )
+        self._jobs[realm_id] = task
+        task.add_done_callback(
+            lambda done: done.exception() if not done.cancelled() else None
+        )
+        return task
+
+    def start(
+        self, failures: list[tuple[str, EventHistoryObjectError]]
+    ) -> asyncio.Task:
         if self._task and not self._task.done():
             return self._task
-        self._task = asyncio.create_task(self.recover(failures), name="sync-object-recovery")
+        self._task = asyncio.create_task(
+            self.recover(failures), name="sync-object-recovery-start"
+        )
         return self._task
 
-    async def recover(self, failures: list[tuple[str, EventHistoryObjectError]]) -> bool:
-        async with self._lock:
-            for realm_id, failure in failures:
-                recovery_head = self.log.get_head(realm_id)
-                self._save(
-                    state="recovering",
-                    realm_id=realm_id,
-                    code=failure.code,
-                    object_kind=failure.diagnostic.get("object_kind"),
-                    object_hash=failure.diagnostic.get("object_hash"),
-                    recovery_head=recovery_head,
-                    attempts=[],
-                    work=_RecoveryBudget().public(),
-                )
-                if not await self._recover_realm(
-                    realm_id, failure=failure, failure_head=recovery_head
-                ):
-                    self._save(state="unrecoverable")
-                    return False
-            self.mark_healthy()
-            return True
+    async def recover(
+        self, failures: list[tuple[str, EventHistoryObjectError]]
+    ) -> bool:
+        for realm_id, failure in failures:
+            self.note_failure(realm_id, failure)
+        results = [
+            await asyncio.shield(self._ensure_job(realm)) for realm, _ in failures
+        ]
+        return all(results) and not self.degraded()
 
-    async def retry(self, realm_id: str) -> bool:
-        async with self._lock:
-            failure = self._saved_failure(realm_id)
-            failure_head = self.state.get("recovery_head")
-            self._save(
-                state="recovering",
-                realm_id=realm_id,
-                attempts=[],
-                work=_RecoveryBudget().public(),
-            )
+    async def retry(
+        self, realm_id: str, *, request_key: str | None = None
+    ) -> bool | None:
+        # Persist only a digest, never an arbitrary caller-supplied identity.
+        identity = (
+            hashlib.sha256(request_key.encode()).hexdigest() if request_key else None
+        )
+        task = self._ensure_job(realm_id, identity)
+        try:
+            async with asyncio.timeout(self.request_timeout):
+                return await asyncio.shield(task)
+        except TimeoutError:
+            if task.done():
+                return task.result()
+            return None
+
+    async def _run_job(self, realm_id: str, head: str | None) -> bool:
+        failure = self._saved_failure(realm_id)
+        record = self.realms.get(realm_id, {})
+        failure_head = record.get("head_hash")
+        self._save(realm_id=realm_id, head_hash=head)
+        try:
             recovered = await self._recover_realm(
-                realm_id,
-                failure=failure,
-                failure_head=(failure_head if isinstance(failure_head, str) else None),
+                realm_id, failure=failure, failure_head=failure_head
             )
-            if recovered:
-                self.mark_healthy()
-            else:
-                self._save(state="unrecoverable")
+
+            def finish() -> None:
+                with self.log._lock, self.log._refs_file_lock():
+                    self.log._load_refs()
+                    if self.log._refs.get(self.log.ref_key(realm_id)) != head:
+                        raise RecoveryLimitError("stale_recovery_head")
+                    if (
+                        recovered
+                        and head
+                        and not self.log.index.status(realm_id, head).get("ready")
+                    ):
+                        raise RecoveryLimitError("index_not_verified")
+                    if (
+                        recovered
+                        and self.projection_head
+                        and self.projection_head(realm_id) != head
+                    ):
+                        raise RecoveryLimitError("projection_not_current")
+                    self._save(
+                        realm_id=realm_id,
+                        state="healthy" if recovered else "unrecoverable",
+                        head_hash=head,
+                        active_residual_worker=False,
+                        phase="complete",
+                        **(
+                            {
+                                "code": None,
+                                "object_kind": None,
+                                "object_hash": None,
+                                "reference_hash": None,
+                            }
+                            if recovered
+                            else {
+                                "code": next(
+                                    (
+                                        a["result"]
+                                        for a in reversed(
+                                            self.realms[realm_id].get("attempts", [])
+                                        )
+                                    ),
+                                    "unavailable_or_invalid",
+                                )
+                            }
+                        ),
+                    )
+
+            await self.engine._offload(
+                "sync.recovery.finish", finish, wait_for_completion=True
+            )
             return recovered
+        except Exception as exc:
+            self._save(
+                realm_id=realm_id,
+                state="unrecoverable",
+                code=self._safe_error(exc),
+                active_residual_worker=False,
+                phase="complete",
+            )
+            return False
 
     def _saved_failure(self, realm_id: str) -> EventHistoryObjectError | None:
-        if self.state.get("realm_id") != realm_id:
+        record = self.realms.get(realm_id, {})
+        expected, kind, code = (
+            record.get(k) for k in ("object_hash", "object_kind", "code")
+        )
+        if not all(isinstance(v, str) and v for v in (expected, kind, code)):
             return None
-        expected = self.state.get("object_hash")
-        kind = self.state.get("object_kind")
-        code = self.state.get("code")
-        if not all(isinstance(value, str) and value for value in (expected, kind, code)):
-            return None
-        return EventHistoryObjectError(code, expected, kind)
+        failure = EventHistoryObjectError(code, expected, kind)
+        failure.diagnostic.update(
+            {k: record[k] for k in ("head_hash", "reference_hash") if k in record}
+        )
+        return failure
 
     async def _recover_realm(
         self,
@@ -214,21 +418,26 @@ class SyncRecovery:
                 failure_head=failure_head,
                 budget=budget,
             )
-            self._save(attempts=attempts, work=budget.public())
+            self._save(realm_id=realm_id, attempts=attempts, work=budget.public())
             return True
-        except _PeerRequired:
-            pass
+        except _PeerRequired as exc:
+            failure = exc.failure
+            failure_head = failure.diagnostic.get("head_hash")
         except Exception as exc:
             attempts.append({"peer": "local", "result": self._safe_error(exc)})
-            self._save(attempts=attempts, work=budget.public())
+            self._save(realm_id=realm_id, attempts=attempts, work=budget.public())
             return False
 
-        routes = self.engine.peer_table.prefer_same_zone(
-            realm_id, self.settings.zone
-        )[:MAX_RECOVERY_PEERS]
+        if not self.settings.sync_token:
+            attempts.append({"peer": "none", "result": "no_authenticated_peer"})
+            self._save(realm_id=realm_id, attempts=attempts, work=budget.public())
+            return False
+        routes = self.engine.peer_table.prefer_same_zone(realm_id, self.settings.zone)[
+            :MAX_RECOVERY_PEERS
+        ]
         if not routes:
             attempts.append({"peer": "none", "result": "no_authenticated_peer"})
-            self._save(attempts=attempts, work=budget.public())
+            self._save(realm_id=realm_id, attempts=attempts, work=budget.public())
             return False
         for route in routes:
             peer = route.target_instance_id or "configured_peer"
@@ -241,11 +450,11 @@ class SyncRecovery:
                     budget=budget,
                 )
                 attempts.append({"peer": peer, "result": "recovered"})
-                self._save(attempts=attempts, work=budget.public())
+                self._save(realm_id=realm_id, attempts=attempts, work=budget.public())
                 return True
             except Exception as exc:
                 attempts.append({"peer": peer, "result": self._safe_error(exc)})
-                self._save(attempts=attempts, work=budget.public())
+                self._save(realm_id=realm_id, attempts=attempts, work=budget.public())
                 if isinstance(exc, RecoveryLimitError):
                     break
         return False
@@ -274,36 +483,51 @@ class SyncRecovery:
         budget: _RecoveryBudget,
     ) -> None:
         current_failure = failure
+        # Legacy records without canonical reference evidence are hints only.
+        if current_failure is not None and not current_failure.diagnostic.get(
+            "reference_hash"
+        ):
+            current_failure = None
         while True:
             head = self.log.get_head(realm_id)
             if not head:
                 return
             if failure_head and head != failure_head:
-                current_failure = None
+                raise RecoveryLimitError("stale_recovery_head")
 
             if current_failure is not None:
                 expected = current_failure.diagnostic.get("object_hash")
                 kind = current_failure.diagnostic.get("object_kind")
                 if not isinstance(expected, str) or kind not in {"commit", "event"}:
                     raise current_failure
+                await self.engine._offload(
+                    "sync.recovery.reference",
+                    self._check_reference,
+                    realm_id,
+                    head,
+                    current_failure,
+                    wait_for_completion=True,
+                )
                 try:
                     self._validate(expected, self.store.get(expected), kind, realm_id)
                 except EventHistoryObjectError:
                     if peer_url is None:
                         raise _PeerRequired(current_failure)
                     await self._fetch_object(
-                        peer_url, realm_id, expected, kind, budget=budget
+                        peer_url, realm_id, expected, kind, budget=budget, head=head
                     )
                 current_failure = None
 
             budget.validation_passes += 1
+            self._save(realm_id=realm_id, phase="verifying", work=budget.public())
             try:
                 await self.engine._offload(
                     "sync.recovery.verify_index",
                     self.log.verify_index,
                     realm_id,
                     head,
-                    timeout=120.0,
+                    timeout=self.worker_queue_timeout,
+                    wait_for_completion=True,
                 )
             except EventHistoryObjectError as exc:
                 current_failure = exc
@@ -312,20 +536,60 @@ class SyncRecovery:
 
             if self.log.get_head(realm_id) != head:
                 budget.record_head_change()
-                failure_head = None
-                continue
+                raise RecoveryLimitError("stale_recovery_head")
 
+            self._save(realm_id=realm_id, phase="reprojecting", work=budget.public())
             await self.engine._offload(
                 "sync.recovery.rebuild_projection",
                 self.projection_rebuilder,
                 realm_id,
-                timeout=120.0,
+                *([head] if self.projection_head is not None else []),
+                timeout=self.worker_queue_timeout,
+                wait_for_completion=True,
             )
             if self.log.get_head(realm_id) != head:
                 budget.record_head_change()
-                failure_head = None
-                continue
+                raise RecoveryLimitError("stale_recovery_head")
             return
+
+    def _check_reference(
+        self, realm_id: str, head: str, failure: EventHistoryObjectError
+    ) -> None:
+        if any(
+            not isinstance(value := failure.diagnostic.get(key), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", value)
+            for key in ("object_hash", "head_hash", "reference_hash")
+        ):
+            raise RecoveryLimitError("invalid_recovery_reference")
+        if self.log.get_head(realm_id) != head:
+            raise RecoveryLimitError("stale_recovery_head")
+        if failure.diagnostic.get("head_hash") != head:
+            raise RecoveryLimitError("stale_recovery_head")
+        reference = failure.diagnostic.get("reference_hash")
+        expected = failure.diagnostic.get("object_hash")
+        kind = failure.diagnostic.get("object_kind")
+        # Canonical commit bytes establish reachability; a present/indexed tip
+        # alone never establishes completeness. No event history pre-scan.
+        if kind == "commit" and expected == head and reference == head:
+            return
+        pending, seen = [head], set()
+        while pending:
+            candidate = pending.pop()
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if len(seen) > MAX_HISTORY_COMMITS:
+                raise RecoveryLimitError("reference_limit_exceeded")
+            commit = self.log.get_commit(candidate)
+            if commit is None or commit.realm_id != realm_id:
+                raise RecoveryLimitError("invalid_recovery_reference")
+            if candidate == reference:
+                links = commit.event_hashes if kind == "event" else commit.parent_hashes
+                if expected in links:
+                    return
+                break
+            pending.extend(commit.parent_hashes)
+        raise RecoveryLimitError("invalid_recovery_reference")
 
     async def _fetch_object(
         self,
@@ -335,8 +599,10 @@ class SyncRecovery:
         kind: str,
         *,
         budget: _RecoveryBudget,
+        head: str,
     ) -> None:
         budget.reserve_request()
+        self._save(realm_id=realm_id, phase="fetching", work=budget.public())
         response = await self.engine._request(
             "POST",
             f"{peer_url.rstrip('/')}/api/sync/get",
@@ -344,7 +610,9 @@ class SyncRecovery:
         )
         response.raise_for_status()
         body = await self.engine._response_json(response)
-        encoded = body.get("objects", {}).get(expected) if isinstance(body, dict) else None
+        encoded = (
+            body.get("objects", {}).get(expected) if isinstance(body, dict) else None
+        )
         if not isinstance(encoded, str):
             raise EventHistoryObjectError(
                 "missing_event" if kind == "event" else "missing_parent",
@@ -357,26 +625,46 @@ class SyncRecovery:
         except (ValueError, binascii.Error) as exc:
             raise EventHistoryObjectError("corrupt_object", expected, kind) from exc
         self._validate(expected, raw, kind, realm_id)
+
+        def install() -> None:
+            # Share the ref fence with ordinary ref writers. Network and history
+            # work stay outside this narrow critical section.
+            with self.log._lock, self.log._refs_file_lock():
+                self.log._load_refs()
+                if self.log._refs.get(self.log.ref_key(realm_id)) != head:
+                    raise RecoveryLimitError("stale_recovery_head")
+                self.store.repair(expected, raw)
+
         await self.engine._offload(
             "sync.recovery.install_object",
-            self.store.repair,
-            expected,
-            raw,
+            install,
             timeout=30.0,
+            wait_for_completion=True,
         )
 
     @staticmethod
     def _validate(expected: str, raw: bytes | None, kind: str, realm_id: str):
         if raw is None:
-            raise EventHistoryObjectError("missing_event" if kind == "event" else "missing_parent", expected, kind)
+            raise EventHistoryObjectError(
+                "missing_event" if kind == "event" else "missing_parent", expected, kind
+            )
         if object_hash(raw) != expected:
             raise EventHistoryObjectError("corrupt_object", expected, kind)
         try:
             value = json.loads(raw)
-            if not isinstance(value, dict) or value.get("schema_version", 1) != 1:
+            if (
+                not isinstance(value, dict)
+                or type(value.get("schema_version", 1)) is not int
+                or value.get("schema_version", 1) != 1
+            ):
                 raise ValueError
             model = (CardEvent if kind == "event" else SyncCommit).model_validate(value)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValidationError,
+            ValueError,
+        ) as exc:
             raise EventHistoryObjectError("corrupt_object", expected, kind) from exc
         if model.realm_id != realm_id:
             raise EventHistoryObjectError("corrupt_object", expected, kind)

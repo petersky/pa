@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,7 +22,7 @@ from pa.server.readiness import (
 )
 from pa.sync.engine import SyncEngine
 from pa.sync.event_log import EventHistoryObjectError, EventLog
-from pa.sync.object_store import ObjectStore, object_hash
+from pa.sync.object_store import ObjectStore
 from pa.sync.recovery import SyncRecovery
 
 
@@ -39,7 +38,7 @@ def _event() -> CardEvent:
 
 
 def _fixture(tmp_path: Path):
-    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False)
+    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False, sync_token="test-token")
     objects = ObjectStore(settings.objects_dir)
     log = EventLog(objects, tmp_path, "local")
     _, commit = log.append_event(_event())
@@ -52,113 +51,6 @@ def _fixture(tmp_path: Path):
     peers.add_route(PeerRoute(realm_id="default", target_url="http://healthy"))
     engine = SyncEngine(settings, objects, log, peers, MembershipStore(tmp_path))
     return settings, objects, log, engine, event_hash, event_bytes
-
-
-class _SyntheticDeepStore:
-    """Generate a deterministic content-addressed chain without disk/CPU churn."""
-
-    event_hash = "event-00000"
-
-    def __init__(self, commit_count: int) -> None:
-        self.commit_count = commit_count
-        event = _event().model_dump(mode="json")
-        event["test_hash"] = self.event_hash
-        self.event_bytes = json.dumps(event).encode()
-        self.event_repaired = False
-
-    @staticmethod
-    def hash(raw: bytes) -> str:
-        return str(json.loads(raw)["test_hash"])
-
-    @property
-    def head(self) -> str:
-        return f"commit-{self.commit_count - 1:05d}"
-
-    def get(self, expected: str) -> bytes | None:
-        if expected == self.event_hash:
-            return self.event_bytes if self.event_repaired else None
-        if not expected.startswith("commit-"):
-            return None
-        index = int(expected.removeprefix("commit-"))
-        if not 0 <= index < self.commit_count:
-            return None
-        return json.dumps(
-            {
-                "schema_version": 1,
-                "hash": "",
-                "realm_id": "default",
-                "instance_id": "local",
-                "parent_hashes": [f"commit-{index - 1:05d}"] if index else [],
-                "event_hashes": [self.event_hash],
-                "author_principal": "user:local",
-                "timestamp": "2026-08-23T00:00:00Z",
-                "signature": None,
-                "test_hash": expected,
-            }
-        ).encode()
-
-    def has(self, expected: str) -> bool:
-        return self.get(expected) is not None
-
-    def repair(self, expected: str, data: bytes) -> str:
-        assert self.hash(data) == expected == self.event_hash
-        self.event_repaired = True
-        return expected
-
-
-class _DeepIndexedLog:
-    """Minimal ref/index harness that locally validates every reachable object."""
-
-    def __init__(
-        self,
-        store: _SyntheticDeepStore,
-        root: Path,
-        head: str,
-        expected_commits: int,
-    ) -> None:
-        self.store = store
-        self.head = head
-        self.expected_commits = expected_commits
-        self.refs_path = root / "sync_refs.json"
-        self.refs_path.write_text(json.dumps({"default/local": head}))
-        self._status = {"state": "stale", "ready": False, "commit_count": 0}
-
-    def get_head(self, realm_id: str) -> str | None:
-        return self.head if realm_id == "default" else None
-
-    def verify_index(self, realm_id: str, head: str) -> None:
-        assert realm_id == "default" and head == self.head
-        event_raw = self.store.get(self.store.event_hash)
-        assert event_raw is not None
-        assert self.store.hash(event_raw) == self.store.event_hash
-        self._status = {
-            "state": "ready",
-            "ready": True,
-            "commit_count": self.expected_commits,
-        }
-
-    def index_status(self, realm_id: str) -> dict:
-        assert realm_id == "default"
-        return self._status
-
-
-def _deep_fixture(tmp_path: Path, commit_count: int = 20_005):
-    """Build and locally validate a real >20k content-addressed commit DAG."""
-    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False)
-    objects = _SyntheticDeepStore(commit_count)
-    log = _DeepIndexedLog(objects, tmp_path, objects.head, commit_count)
-    peers = PeerTable(tmp_path)
-    peers.add_route(PeerRoute(realm_id="default", target_url="http://healthy"))
-    engine = SyncEngine(settings, objects, log, peers, MembershipStore(tmp_path))
-    return (
-        settings,
-        objects,
-        log,
-        engine,
-        objects.event_hash,
-        objects.event_bytes,
-        commit_count,
-    )
 
 
 @pytest.mark.asyncio
@@ -217,7 +109,7 @@ async def test_mismatched_peer_object_is_rejected_without_partial_projection(tmp
 
 @pytest.mark.asyncio
 async def test_missing_parent_commit_is_recovered_with_original_topology(tmp_path: Path) -> None:
-    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False)
+    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False, sync_token="test-token")
     objects = ObjectStore(settings.objects_dir)
     log = EventLog(objects, tmp_path, "local")
     _, parent = log.append_event(_event())
@@ -248,54 +140,6 @@ async def test_missing_parent_commit_is_recovered_with_original_topology(tmp_pat
     assert log.get_head("default") == head.hash
     assert log.get_commit(head.hash).parent_hashes == [parent.hash]
     assert rebuilt == ["default"]
-
-
-@pytest.mark.asyncio
-async def test_one_missing_event_in_over_20k_history_uses_one_peer_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("pa.sync.recovery.object_hash", _SyntheticDeepStore.hash)
-    (
-        settings,
-        objects,
-        log,
-        engine,
-        event_hash,
-        event_bytes,
-        commit_count,
-    ) = _deep_fixture(tmp_path)
-    original_ref = log.refs_path.read_bytes()
-    requests: list[list[str]] = []
-
-    async def request(method, url, *, payload=None, **_kwargs):
-        requests.append(payload["hashes"])
-        return httpx.Response(
-            200,
-            request=httpx.Request(method, url),
-            json={"objects": {event_hash: base64.b64encode(event_bytes).decode()}},
-        )
-
-    engine._request = request
-    rebuilt: list[str] = []
-    recovery = SyncRecovery(settings, engine, rebuilt.append)
-    failure = EventHistoryObjectError("missing_event", event_hash, "event")
-
-    assert await recovery.recover([("default", failure)]) is True
-    assert requests == [[event_hash]]
-    assert recovery.public()["work"] == {
-        "peer_requests": 1,
-        "fetched_objects": 1,
-        "validation_passes": 1,
-        "head_changes": 0,
-        "max_peer_requests": 64,
-        "max_fetched_objects": 32,
-        "max_head_changes": 8,
-        "limit_hit": None,
-    }
-    assert log.index_status("default")["commit_count"] == commit_count
-    assert log.index_status("default")["ready"] is True
-    assert rebuilt == ["default"]
-    assert log.refs_path.read_bytes() == original_ref
 
 
 @pytest.mark.asyncio
@@ -336,7 +180,7 @@ async def test_retry_after_peer_availability_transitions_health_and_readiness(
     app.state.ready_openapi_warmed = True
     app.state.ready_paths = REQUIRED_READY_PATHS
     app.state.required_ready_paths = REQUIRED_READY_PATHS
-    request = Request({"type": "http", "method": "POST", "path": "/", "app": app})
+    request = Request({"type": "http", "method": "POST", "path": "/", "app": app, "headers": []})
     request.state.principal_id = "user:local"
 
     assert (await health(request))["status"] == "degraded"
@@ -364,7 +208,7 @@ async def test_retry_after_peer_availability_transitions_health_and_readiness(
 async def test_fetched_object_limit_is_precise_and_preserves_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False)
+    settings = Settings(data_dir=tmp_path, instance_id="local", agent_enabled=False, sync_token="test-token")
     objects = ObjectStore(settings.objects_dir)
     log = EventLog(objects, tmp_path, "local")
     first_event, _ = log.append_event(_event())

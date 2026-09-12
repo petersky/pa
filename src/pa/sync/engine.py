@@ -147,11 +147,13 @@ class SyncEngine:
         /,
         *args: Any,
         timeout: float | None = 30.0,
+        wait_for_completion: bool = False,
         **kwargs: Any,
     ) -> Any:
         if self.async_runtime:
             return await self.async_runtime.run_blocking(
-                operation, call, *args, timeout=timeout, **kwargs
+                operation, call, *args, timeout=timeout,
+                wait_for_completion=wait_for_completion, **kwargs
             )
         return await asyncio.to_thread(call, *args, **kwargs)
 
@@ -221,7 +223,9 @@ class SyncEngine:
             try:
                 # No inner timeout: caller deadlines must not detach ownership
                 # from the shielded worker that still owns this realm.
-                result = await self._offload(operation, call, *args, timeout=None)
+                result = await self._offload(
+                    operation, call, *args, timeout=None, wait_for_completion=True
+                )
                 if isinstance(result, dict):
                     stats.update(
                         commits_applied=result.get("commits_applied", 0),
