@@ -3689,7 +3689,7 @@
       this.drafts.submissionAccepted({
         rawText: rawText,
         images: submittedImages || [],
-        message: result.queued ? "Prompt queued." : "Prompt accepted.",
+        message: "Prompt accepted.",
       });
     } else if (this.els.input && this.els.input.value === rawText) {
       this.els.input.value = "";

@@ -44,6 +44,7 @@ function settled(w,state){
   assert.equal(w.drafts.observeAcceptance('wrong-id',queued),false);
   w.handleEvent({type:queued?'queue_enqueued':'user_message',seq:1,payload:{id,message:'submitted'}},false,false);settled(w,queued?'queued':'accepted');
   assert.equal(w.els.input.value,'');
+  assert.equal(w.statusElement.textContent,'Prompt accepted.');
   w.els.input.value='next';w.drafts.changed();
   post.resolve({accepted:true,queued});await tick();assert.equal(w.els.input.value,'next');settled(w);
   assert.equal(w.drafts.observeAcceptance(id,queued),false);
@@ -59,6 +60,13 @@ function settled(w,state){
   if(reconnect)w.subscriptionGeneration++;
   post.resolve({accepted:true,queued:false});await tick();settled(w);assert.equal(w.els.input.value,'');
  }
+ // Completed durable status cannot regress to queued on a late HTTP receipt.
+ const completed=make(),completedPost=deferred();completed.apiWithTimeout=()=>completedPost.promise;completed.send();
+ completed.apiWithTimeout=()=>Promise.resolve({accepted:true,status:'completed'});
+ await completed.reconcilePendingSubmission();settled(completed,'completed');
+ assert.equal(completed.statusElement.textContent,'Prompt accepted.');
+ completedPost.resolve({accepted:true,queued:true});await tick();settled(completed,'completed');
+ assert.equal(completed.statusElement.textContent,'Prompt accepted.');
  // Preserve even an edit back to identical text; retire only submitted images.
  const w=make(),post=deferred(),oldImage={name:'old',data:'a'},newImage={name:'new',data:'b'};
  w.pendingImages=[oldImage];w.apiWithTimeout=()=>post.promise;w.send();const id=w.drafts.submissionId;

@@ -393,7 +393,7 @@
       rawText: receipt.rawText,
       images: receipt.images,
       receipt: receipt,
-      message: queued ? "Prompt queued." : "Prompt accepted.",
+      message: "Prompt accepted.",
     });
     if (typeof this.widget.setSubmissionState === "function") {
       this.widget.setSubmissionState(queued ? "queued" : "accepted", false);
