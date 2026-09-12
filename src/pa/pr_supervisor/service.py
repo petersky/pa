@@ -955,6 +955,14 @@ class PRSupervisor:
                         self.store.record_eligibility_recovery, watch.id, eligible.model_dump(mode="json"),
                         next_poll_at=utcnow() + timedelta(seconds=watch.policy.poll_max_seconds))
                 continue
+            if self.eligibility_journal_hook is not None:
+                # A repository observation cannot resolve an inventory incident.
+                # Verify that dependency separately even after local capability
+                # recovers, and keep polling it if a repository error replaces
+                # the watch's previous inventory diagnostic. The existing cache
+                # bounds remote reads; local scope never proves authority health.
+                inventory = await self._eligible_capabilities(watch.repository)
+                await self._emit_eligibility_diagnostic(watch, inventory)
             grant = await self._acquire_lease(watch, capability)
             if not grant.acquired:
                 continue

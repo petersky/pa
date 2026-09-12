@@ -267,7 +267,8 @@ async def test_repository_denial_only_heals_after_successful_observation(tmp_pat
             # Even immediately before successful network observation, neither
             # the watch nor the shared journal may have declared recovery.
             assert all(not call.args[0]['report']['eligible']
-                       for call in service.eligibility_journal_hook.call_args_list)
+                       for call in service.eligibility_journal_hook.call_args_list
+                       if call.args[0]['report']['dependency'] == 'github_repository_observation')
         if calls < 3:
             raise GitHubAPIError(status_code, 'snapshot', 'private-secret')
         return snapshot()
@@ -285,7 +286,8 @@ async def test_repository_denial_only_heals_after_successful_observation(tmp_pat
         assert calls == 3
         assert current.status.value == 'active'
         assert current.last_error is None
-        emissions = [call.args[0] for call in service.eligibility_journal_hook.call_args_list]
+        emissions = [call.args[0] for call in service.eligibility_journal_hook.call_args_list
+                     if call.args[0]['report']['dependency'] == 'github_repository_observation']
         assert len(emissions) == 3
         assert emissions[0]['issues'][0]['issue_key'] == emissions[1]['issues'][0]['issue_key']
         assert emissions[-1]['report']['dependency'] == 'github_repository_observation'
@@ -320,5 +322,86 @@ async def test_delayed_inventory_uses_response_time_for_freshness(tmp_path):
             assert cached.eligible == ['authority']
             assert cached.observed_at == clock[0]
             assert service._get_json.await_count == 1
+    finally:
+        await service.http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_inventory_and_repository_incidents_recover_independently(tmp_path, monkeypatch):
+    from pa.pr_supervisor.github import GitHubAPIError
+    from tests.test_pr_supervisor import snapshot
+    monkeypatch.setenv('PA_GITHUB_TOKEN', 'secret')
+    service = PRSupervisor(Settings(data_dir=tmp_path, instance_id='local', peers=[]), MagicMock())
+    service.domain_store.list_cards.return_value = []
+    service.github._request = AsyncMock(return_value=(200, {'login': 'test'}))
+    service.github.snapshot = AsyncMock(side_effect=[GitHubAPIError(403, 'snapshot'),
+        GitHubAPIError(403, 'snapshot'), snapshot()])
+    service._notify = AsyncMock()
+    service.store.upsert_watch(PRWatch(id='independent-recovery', repository='owner/repo', pr_number=17,
+        pr_url='https://github.com/owner/repo/pull/17'))
+    reports, incidents = [], set()
+
+    def journal(event):
+        report = event['report']
+        reports.append(report)
+        dependency = report['dependency']
+        if report['evaluation_state'] == 'complete':
+            for candidate in report['candidates']:
+                if candidate['reason_code'] is None:
+                    incidents.difference_update({key for key in incidents
+                        if key[:2] == (dependency, candidate['instance_id'])})
+        for issue in event['issues']:
+            incidents.add((dependency, issue['instance_id'], issue['reason_code']))
+
+    service.eligibility_journal_hook = journal
+    inventory_issue = ('capability_inventory', 'local', 'scope_config_unavailable')
+    repository_issue = ('github_repository_observation', 'local', 'repository_access_denied')
+    try:
+        await service.run_once()
+        assert incidents == {inventory_issue}
+        service.github.snapshot.assert_not_awaited()
+        write_policy(tmp_path, {'allowed_repositories': ['owner/repo']})
+        for attempt in range(3):
+            service.store.schedule_now(watch_id='independent-recovery')
+            await service.run_once()
+            assert inventory_issue not in incidents
+            if attempt < 2:
+                assert incidents == {repository_issue}
+                current = service.store.get_watch('independent-recovery')
+                assert current.state['eligibility']['dependency'] == 'github_repository_observation'
+                assert not current.state['eligibility']['eligible']
+            else:
+                assert not incidents
+        assert [r['dependency'] for r in reports] == ['capability_inventory',
+            'capability_inventory', 'github_repository_observation',
+            'capability_inventory', 'github_repository_observation',
+            'capability_inventory', 'github_repository_observation']
+    finally:
+        await service.http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_local_capability_does_not_heal_unavailable_authority(tmp_path, monkeypatch):
+    from pa.pr_supervisor.models import LeaseGrant
+    monkeypatch.setenv('PA_GITHUB_TOKEN', 'secret')
+    write_policy(tmp_path, {'allowed_repositories': ['owner/repo']})
+    service = PRSupervisor(Settings(data_dir=tmp_path, instance_id='local',
+        instance_url='http://local', fleet_owner_url='http://authority'), MagicMock())
+    service.domain_store.list_cards.return_value = []
+    service.github._request = AsyncMock(return_value=(200, {'login': 'test'}))
+    service._post_json = AsyncMock(return_value={})
+    service._get_json = AsyncMock(side_effect=httpx.ReadTimeout('secret'))
+    service._acquire_lease = AsyncMock(return_value=LeaseGrant(acquired=False))
+    service.eligibility_journal_hook = MagicMock()
+    service.store.upsert_watch(PRWatch(id='authority-not-healed', repository='owner/repo', pr_number=17,
+        pr_url='https://github.com/owner/repo/pull/17'))
+    try:
+        await service.run_once()
+        report = service.eligibility_journal_hook.call_args.args[0]['report']
+        assert service.capability.supports('owner/repo')
+        assert report['dependency'] == 'capability_inventory'
+        assert report['evaluation_state'] == 'unavailable'
+        assert report['reason_code'] == 'authority_unreachable'
+        assert not report['eligible']
     finally:
         await service.http_client.aclose()
