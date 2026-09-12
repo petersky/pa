@@ -207,7 +207,7 @@ class Harness:
 
     async def close(self):
         self.fetch_release.set()
-        await asyncio.gather(*self.recovery._jobs.values(), return_exceptions=True)
+        await self.recovery.close()
         await self.client.aclose()
         await self.engine._client.aclose()
         await self.runtime.close()

@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -835,6 +835,10 @@ class CardProjection:
             conn.execute(
                 "ALTER TABLE agent_restart_handoffs ADD COLUMN failure_stage TEXT"
             )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_restart_handoffs_key "
+            "ON agent_restart_handoffs(idempotency_key)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_restart_handoffs_status_updated "
             "ON agent_restart_handoffs(status, updated_at)"
@@ -1772,6 +1776,44 @@ class CardProjection:
                 """,
                 (error_code, datetime.now(UTC).isoformat(), idempotency_key),
             )
+
+    @contextmanager
+    def _receipt_connection(self) -> Iterator[sqlite3.Connection]:
+        """Independent read-only snapshot with bounded SQLite work and waiting."""
+        conn = sqlite3.connect(self.db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.05)
+        conn.row_factory = sqlite3.Row
+        deadline = time.monotonic() + 0.25
+        conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+        try:
+            conn.execute("BEGIN")
+            yield conn
+        except sqlite3.OperationalError as exc:
+            from pa.core.async_runtime import BlockingOperationTimeout
+            raise BlockingOperationTimeout("operation receipt storage is unavailable") from exc
+        finally:
+            conn.close()
+
+    def read_operation_claims(self, idempotency_key: str, *, visible_realms=None):
+        """Read canonical and restart claims in one bounded SQLite snapshot."""
+        with self._receipt_connection() as conn:
+            return (
+                self.read_operation_receipt(idempotency_key, _connection=conn),
+                self.read_restart_receipts(idempotency_key, _connection=conn, visible_realms=visible_realms),
+            )
+
+    def read_operation_receipt(self, idempotency_key: str, *, _connection=None) -> dict | None:
+        """Bounded, passive receipt read. Absence is not proof of non-commit.
+
+        In particular this adapter must never acquire the mutation lock, inspect
+        immutable history, or rebuild an index/projection. The owning recovery
+        worker uses get_operation_outcome for those tasks.
+        """
+        with (nullcontext(_connection) if _connection is not None else self._receipt_connection()) as conn:
+            row = conn.execute(
+                "SELECT * FROM mutation_operations WHERE idempotency_key=?",
+                (idempotency_key,),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def get_operation_outcome(
         self, idempotency_key: str, *, realm_id: str = "default"
@@ -5040,6 +5082,18 @@ class CardProjection:
                 "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
             ).fetchone()
         return self._row_to_restart_handoff(row) if row else None
+
+    def read_restart_receipts(self, idempotency_key: str, *, _connection=None, visible_realms=None) -> list[tuple[str, RestartHandoff]]:
+        """Return at most two indexed claims, preserving legacy ambiguity."""
+        realm_filter = "" if visible_realms is None else " AND s.realm_id IN (" + ",".join("?" for _ in visible_realms) + ")"
+        args = (idempotency_key, *(visible_realms or ()))
+        with (nullcontext(_connection) if _connection is not None else self._receipt_connection()) as conn:
+            rows = conn.execute(
+                f"""SELECT h.*, s.realm_id AS receipt_realm FROM agent_restart_handoffs h
+                   JOIN agent_sessions s ON s.id=h.session_id
+                   WHERE h.idempotency_key=? {realm_filter} LIMIT 2""", args,
+            ).fetchall()
+        return [(row["receipt_realm"], self._row_to_restart_handoff(row)) for row in rows]
 
     def find_restart_handoff_by_idempotency(
         self, idempotency_key: str, *, realm_id: str = "default"

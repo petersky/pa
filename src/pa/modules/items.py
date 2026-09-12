@@ -2077,52 +2077,294 @@ def create_card_api(
         raise
 
 
-@router.get("/operations/{idempotency_key}")
+@router.get("/operations/{idempotency_key:path}")
 async def operation_outcome_endpoint(
-    request: Request, idempotency_key: str, realm: str | None = None
+    request: Request, idempotency_key: str, realm: str | None = None,
+    owner: Literal["canonical", "restart", "dispatch"] | None = None,
+    operation: str | None = None, request_fingerprint: str | None = None,
 ) -> dict:
-    from pa.modules.fleet import _offload_request, reconcile_followup_acceptance
-
-    outcome = await _offload_request(
-        request, "operation.outcome_read", operation_outcome_api,
-        request, idempotency_key, realm,
-    )
-    result = outcome.get("result") or {}
-    if (outcome.get("operation") == "dispatch.followup"
-            and result.get("prompt_id") and not result.get("response")):
-        ledger = request.app.state.ctx.services["dispatch_store"]
-        record = await _offload_request(
-            request, "dispatch.followup_read", ledger.get, result["dispatch_id"],
+    from pa.core.operation_status import OperationStatusService
+    from pa.modules.fleet import _offload_request
+    service = request.app.state.ctx.services.get("operation_status")
+    if isinstance(service, OperationStatusService):
+        outcome = await service.reads.run_blocking(
+            "operation.outcome_read", operation_outcome_api, request,
+            idempotency_key, realm, owner, operation, request_fingerprint,
         )
-        if record:
-            await reconcile_followup_acceptance(request, record, idempotency_key)
-            outcome = await _offload_request(
-                request, "operation.outcome_read", operation_outcome_api,
-                request, idempotency_key, realm,
-            )
+    else:
+        outcome = await _offload_request(request, "operation.outcome_read",
+            operation_outcome_api, request, idempotency_key, realm, owner,
+            operation, request_fingerprint)
+    outcome.pop("_receipt_revision", None)
     return outcome
 
 
-def operation_outcome_api(
-    request: Request, idempotency_key: str, realm: str | None = None
+@router.post("/operation-recovery/{idempotency_key:path}", status_code=202)
+async def operation_recovery_endpoint(
+    request: Request, idempotency_key: str, realm: str | None = None,
+    owner: Literal["canonical", "restart", "dispatch"] | None = None,
+    operation: str | None = None, request_fingerprint: str | None = None,
 ) -> dict:
+    """Explicitly admit a coalesced repair; never resend the original mutation."""
+    from pa.core.operation_status import OperationStatusService
+    from pa.core.async_runtime import BlockingOperationTimeout, BlockingQueueFull
+    from pa.modules.fleet import reconcile_followup_acceptance
+
+    ctx = request.app.state.ctx
+    service = ctx.services.get("operation_status")
+    if not isinstance(service, OperationStatusService):
+        raise HTTPException(503, detail={"code": "operation_recovery_unavailable"})
+    outcome = await service.reads.run_blocking(
+        "operation.outcome_read", operation_outcome_api, request,
+        idempotency_key, realm, owner, operation, request_fingerprint,
+    )
+    realm_id = realm or ctx.settings.primary_realm
+    revision = outcome.pop("_receipt_revision", None)
+    result = outcome.get("result") or {}
+    canonical_pending = outcome["status"] == "lookup_pending" or (outcome.get("owner") == "canonical" and outcome["status"] in {"pending", "resumable", "retryable"})
+    followup_pending = (outcome.get("operation") == "dispatch.followup"
+                        and result.get("prompt_id") and not result.get("response"))
+    if canonical_pending or followup_pending:
+        try:
+            job = await service.reads.run_blocking(
+                "operation.repair_admission", service.admission,
+                "canonical" if canonical_pending else outcome["owner"], realm_id, idempotency_key, revision,
+            )
+        except BlockingQueueFull:
+            outcome["reconciliation"] = {"state": "capacity_unavailable", "accepted": False}
+            return outcome
+        except BlockingOperationTimeout:
+            # The admission worker may still commit its receipt after this wait.
+            outcome["reconciliation"] = {"state": "admission_pending", "accepted": None}
+            return outcome
+        outcome["reconciliation"] = {k: v for k, v in job.items() if k != "result"}
+
+        async def repair(runtime):
+            if canonical_pending:
+                return await runtime.run_blocking(
+                    "operation.canonical_repair", _repair_operation_receipt,
+                    get_store(), idempotency_key, realm_id, wait_for_completion=True,
+                )
+            ledger = ctx.services["dispatch_store"]
+            record = await runtime.run_blocking("operation.dispatch_read", ledger.get, result["dispatch_id"], wait_for_completion=True)
+            if record:
+                async def repair_offload(_request, name, call, *args, **kwargs):
+                    return await runtime.run_blocking(name, call, *args, wait_for_completion=True, **kwargs)
+                return await reconcile_followup_acceptance(
+                    request, record, idempotency_key, offload=repair_offload,
+                )
+            return None
+
+        service.schedule(job, repair)
+    return outcome
+
+
+def _repair_operation_receipt(store, key, realm_id):
+    """Produce a negative-lookup watermark only under the existing repair locks."""
+    log = store.event_log
+    if log is None:
+        return {**store.get_operation_outcome(key, realm_id=realm_id), "lookup_head": None}
+    with store.mutation(), log._lock:
+        outcome = store.get_operation_outcome(key, realm_id=realm_id)
+        return {**outcome, "lookup_head": log.get_head(realm_id)}
+
+
+def operation_outcome_api(request, idempotency_key, realm=None, owner=None,
+                          operation=None, request_fingerprint=None):
+    import sqlite3
+    from pa.core.async_runtime import BlockingOperationTimeout
+    from pa.core.operation_observation import OperationObservation
+
+    service = request.app.state.ctx.services.get("operation_status")
+    jobs = {}
+
+    def read_job(owner, realm_id, key):
+        identity = (owner, realm_id, key)
+        if identity not in jobs:
+            try:
+                jobs[identity] = service.read_job(*identity) if service else None
+            except (sqlite3.DatabaseError, OSError, json.JSONDecodeError, BlockingOperationTimeout):
+                # Only the auxiliary observation is optional. Owner reads and
+                # identity/authorization validation stay outside this boundary.
+                jobs[identity] = {"state": "unavailable", "accepted": None,
+                                  "code": "reconciliation_observation_unavailable"}
+        return jobs[identity]
+
+    receipt = _operation_outcome_receipts(request, idempotency_key, realm, owner,
+                                         operation, request_fingerprint, read_job=read_job)
+    if "reconciliation" not in receipt:
+        job = read_job(receipt.get("owner") or "canonical", receipt["realm_id"], idempotency_key)
+        if job:
+            receipt["reconciliation"] = {k: v for k, v in job.items() if k != "result"}
+    if (receipt.get("recovery_state") == "reconciliation_required"
+            or receipt["status"] == "lookup_pending"):
+        active = (receipt.get("reconciliation") or {}).get("state") in {"queued", "running"}
+        receipt["recovery_action"] = "get_operation_outcome" if active else "recover_operation_outcome"
+    return OperationObservation.from_receipt(receipt).as_outcome()
+
+
+def _operation_outcome_receipts(
+    request: Request, idempotency_key: str, realm: str | None = None,
+    owner: str | None = None, operation: str | None = None,
+    request_fingerprint: str | None = None, *, read_job,
+) -> dict:
+    """Read owner receipts only; key text is never parsed as a namespace.
+
+    A legacy key with several claims is a conflict, even if their timestamps
+    differ. Typed lookup selects one owner but cannot change realm, operation,
+    or request fingerprint. Missing receipt bytes never prove non-commit.
+    """
     realm_id = realm or request.app.state.ctx.settings.primary_realm
-    outcome = get_store().get_operation_outcome(
-        idempotency_key, realm_id=realm_id
-    )
-    if outcome["status"] != "not_found":
-        return outcome
-    handoff = get_store().find_restart_handoff_by_idempotency(
-        idempotency_key, realm_id=realm_id
-    )
+    if owner not in {None, "canonical", "restart", "dispatch"}:
+        raise HTTPException(422, detail={"code": "invalid_operation_owner"})
+    if not idempotency_key.strip() or len(idempotency_key) > 300:
+        raise HTTPException(422, detail={"code": "invalid_operation_key"})
+    membership = request.app.state.ctx.services.get("membership")
+    if membership is not None:
+        from pa.modules.sync import _check_realm_access
+        _check_realm_access(request, realm_id)
+    store = get_store()
+    visible_realms = None
+    if membership is not None:
+        from pa.modules.sync import _membership_principal
+        visible_realms = {r for r in request.app.state.ctx.settings.subscribed_realms
+                          if membership.has_role(r, _membership_principal(request))}
+        visible_realms.add(realm_id)
+    canonical, handoffs = store.read_operation_claims(idempotency_key, visible_realms=visible_realms)
+    if canonical is not None and visible_realms is not None and canonical["realm_id"] not in visible_realms:
+        canonical = None
+    ledger = request.app.state.ctx.services.get("dispatch_store")
+    dispatches = ledger.read_operation_receipts(
+        idempotency_key, include_result=not (canonical or handoffs) and owner in {None, "dispatch"},
+        realm_id=realm_id, expected_operation=operation, request_fingerprint=request_fingerprint,
+        visible_realms=visible_realms,
+    ) if ledger else []
+    claims = ([('canonical', canonical['realm_id'], canonical['operation'], canonical['request_fingerprint'])] if canonical else [])
+    claims += [('restart', r, 'agent_restart_handoff', None) for r, h in handoffs]
+    claims += [('dispatch', r.realm_id, op,
+                r.followup_operations[idempotency_key].get('fingerprint') if op == 'dispatch.followup'
+                else r.request_fingerprint if op == 'dispatch.create' else None) for op, r in dispatches]
+    # A canonical wrapper may point at the same durable delegated receipt.
+    # Equivalence requires exact operation/realm/fingerprint and a stable result
+    # link, never a key prefix or whichever owner happened to answer first.
+    delegated = None
+    if canonical is not None and len(claims) == 2:
+        other = claims[1]
+        wrapper_result = json.loads(canonical.get("result_json") or "null")
+        link = (dispatches[0][1].dispatch_id if dispatches else handoffs[0][1].id if handoffs else None)
+        link_field = "dispatch_id" if dispatches else "handoff_id"
+        if (canonical["state"] == "succeeded" and isinstance(wrapper_result, dict)
+                and wrapper_result.get(link_field) == link
+                and claims[0][1:] == other[1:]):
+            delegated = other
+            claims = [claims[0] if owner == "canonical" else other]
+            if owner != "canonical":
+                canonical = None
+                # The bounded producer can now include the selected result.
+                if dispatches:
+                    dispatches = ledger.read_operation_receipts(idempotency_key,
+                        realm_id=realm_id, expected_operation=operation,
+                        request_fingerprint=request_fingerprint, visible_realms=visible_realms)
+                    if len(dispatches) != 1:
+                        raise HTTPException(409, detail={"code": "operation_namespace_conflict"})
+                    reread_operation, reread = dispatches[0]
+                    reread_fingerprint = (reread.followup_operations[idempotency_key].get("fingerprint")
+                        if reread_operation == "dispatch.followup" else reread.request_fingerprint
+                        if reread_operation == "dispatch.create" else None)
+                    if (reread.dispatch_id != link or
+                            ("dispatch", reread.realm_id, reread_operation, reread_fingerprint) != other):
+                        raise HTTPException(409, detail={"code": "operation_identity_conflict"})
+    if len(claims) > 1:
+        raise HTTPException(409, detail={"code": "operation_namespace_conflict", "idempotency_key": idempotency_key})
+    if claims:
+        actual_owner, actual_realm, actual_operation, actual_fingerprint = claims[0]
+        if (owner is not None and owner != actual_owner) or actual_realm != realm_id or (operation is not None and operation != actual_operation) or (request_fingerprint is not None and request_fingerprint != actual_fingerprint):
+            raise HTTPException(409, detail={"code": "operation_identity_conflict", "idempotency_key": idempotency_key})
+    else:
+        actual_owner = owner  # An untyped absent key has no proven owner yet.
+    identity = {"owner": actual_owner, "realm_id": realm_id,
+                "identity": {"version": 1, "owner": actual_owner,
+                             "realm_id": realm_id, "idempotency_key": idempotency_key,
+                             "request_fingerprint": actual_fingerprint if claims else request_fingerprint,
+                             "operation": actual_operation if claims else operation}}
+    outcome = {**identity, "idempotency_key": idempotency_key,
+               "status": "lookup_pending", "durable": None,
+               "accepted": None, "committed": None, "projected": None, "effect": "unknown",
+               "recovery_state": "receipt_absent_history_unchecked",
+               "recovery_action": "recover_operation_outcome"}
+    if canonical is None and store.event_log is not None:
+        outcome["_receipt_revision"] = "history:" + str(store.event_log.read_cached_head(realm_id))
+
+    proof = read_job("canonical", realm_id, idempotency_key) if not claims else None
+    if proof:
+        outcome["reconciliation"] = {k: v for k, v in proof.items() if k != "result"}
+    proof_result = (proof or {}).get("result") or {}
+    if (not claims and (proof or {}).get("state") == "completed"
+            and proof_result.get("status") == "not_found"
+            and "lookup_head" in proof_result
+            and proof_result["lookup_head"] == (store.event_log.read_cached_head(realm_id) if store.event_log else None)):
+        outcome.update(status="not_found", durable=False, accepted=False,
+                       committed=False, projected=False, effect="none",
+                       lookup_head=proof_result["lookup_head"],
+                       recovery_state="verified_absent_at_head", recovery_action=None)
+
+    def finish_local_receipt(receipt):
+        # A lost derived canonical row is not proof that another legacy owner
+        # owns the key. Typed reads have an explicit namespace; untyped reads
+        # must wait for the canonical owner to resolve the historical claim.
+        log = store.event_log
+        if owner is not None or log is None or delegated is not None:
+            return receipt
+        head = log.read_cached_head(realm_id)
+        if head is None:
+            return receipt
+        proof = read_job("canonical", realm_id, idempotency_key)
+        proof_result = (proof or {}).get("result") or {}
+        if ((proof or {}).get("state") == "completed"
+                and proof_result.get("status") == "not_found"
+                and proof_result.get("lookup_head") == head):
+            return receipt
+        return {
+            **outcome, "owner": None,
+            "identity": {**identity["identity"], "owner": None, "operation": None,
+                         "request_fingerprint": None},
+            "_receipt_revision": "history:" + head,
+            "recovery_state": "legacy_owner_resolution_required",
+            "observed_receipts": [receipt],
+        }
+
+    if canonical is not None:
+        result = store._operation_outcome(idempotency_key, canonical)
+        # A stale pending receipt may have lost the durable append acknowledgement.
+        # Passive observation cannot certify that a retry has no effect.
+        if result["status"] == "retryable":
+            result.update(status="pending", durable=None,
+                          recovery_state="reconciliation_required",
+                          recovery_action="recover_operation_outcome")
+        if not canonical.get("commit_hash") and canonical["state"] != "succeeded":
+            result["durable"] = None
+        revision = hashlib.sha256(json.dumps([
+            canonical["owner_token"], canonical["state"], canonical.get("commit_hash"),
+            canonical["request_fingerprint"],
+        ]).encode()).hexdigest()
+        return {**result, **identity, "accepted": True, "_receipt_revision": revision,
+                "committed": bool(canonical.get("commit_hash")) or None,
+                "projected": True if canonical["state"] == "succeeded" and delegated is None else None,
+                "effect": "complete" if canonical["state"] == "succeeded" and delegated is None else "unknown"}
+    handoff = handoffs[0][1] if handoffs else None
     if handoff is not None:
         failed = handoff.status == "failed"
         terminal = handoff.status in {"continuation_delivered", "restart_completed"}
-        return {
+        return finish_local_receipt({
             "idempotency_key": idempotency_key,
+            **identity,
             "operation": "agent_restart_handoff",
             "status": handoff.status,
             "durable": True,
+            "accepted": True,
+            "committed": True,
+            "projected": None,
+            "effect": "unknown",
             "recovery_state": (
                 "retryable_existing_receipt"
                 if failed
@@ -2156,27 +2398,24 @@ def operation_outcome_api(
                     if handoff.delivered_at else None
                 ),
             },
-        }
-    dispatch_store = request.app.state.ctx.services.get("dispatch_store")
-    if dispatch_store is None:
+        })
+    if not dispatches:
         return outcome
-    dispatch = dispatch_store.find_operation_by_idempotency(
-        idempotency_key, realm_id=realm_id
-    )
-    if dispatch is None:
-        return outcome
-    operation, record = dispatch
-    if record.realm_id != realm_id:
-        return outcome
+    operation, record = dispatches[0]
     if operation == "dispatch.followup":
         followup = record.followup_operations[idempotency_key]
         state = followup.get("state") or "pending"
         legacy_unknown = not followup.get("prompt_id") and not followup.get("response")
-        return {
+        return finish_local_receipt({
             "idempotency_key": idempotency_key,
+            **identity,
             "operation": operation,
             "status": "legacy_delivery_ambiguous" if legacy_unknown else state,
             "durable": True,
+            "accepted": True,
+            "committed": True,
+            "projected": None,
+            "effect": "provider_accepted" if (followup.get("response") or {}).get("accepted") else "unknown",
             "automatic_retry_safe": not legacy_unknown,
             "recovery_state": "legacy_identity_unknown" if legacy_unknown else "durable_followup_operation_found",
             "result": {
@@ -2188,11 +2427,16 @@ def operation_outcome_api(
                 "error": followup.get("error"),
                 "response": followup.get("response"),
             },
-        }
-    return {
+        })
+    return finish_local_receipt({
         "idempotency_key": idempotency_key,
+            **identity,
         "operation": operation,
-        "status": "succeeded",
+        "status": "accepted",
+        "accepted": True,
+        "committed": True,
+        "projected": None,
+        "effect": "unknown",
         "durable": True,
         "recovery_state": "durable_dispatch_record_found",
         "result": {
@@ -2201,7 +2445,7 @@ def operation_outcome_api(
             "card_id": record.card_id,
             "session_id": record.session_id,
         },
-    }
+    })
 
 
 @router.get("/cards/{card_id}")

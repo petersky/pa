@@ -314,6 +314,14 @@ class EventLog:
     def ref_key(self, realm_id: str) -> str:
         return f"{realm_id}/{self.instance_id}"
 
+    def read_cached_head(self, realm_id: str) -> str | None:
+        """Passive publication snapshot of this sole writer's last observed ref.
+
+        No file reload, index work, or lock acquisition belongs on status reads.
+        Mutation/recovery callers must still use get_head and its CAS checks.
+        """
+        return self._refs.get(self.ref_key(realm_id))
+
     def get_head(self, realm_id: str) -> str | None:
         # Ref files may be advanced by a recovery utility or an older PA process.
         # Always refresh so a long-running server never requires a restart merely
