@@ -144,3 +144,75 @@ def test_no_integration_acceptance_does_not_union_different_subjects(tmp_path):
             assert card.completion_status['missing'] == ['active']
     assert card.completion_status['accepted']
     assert completion_state({'schema_version':1,'mode':'integration_only','milestones':[]})['missing'] == ['integrated']
+
+
+@pytest.mark.parametrize('outcome', ['applied', 'not_applicable', 'operator_state_preserved', 'conflict_requires_resolution'])
+def test_http_outbox_completion_terminal_vocabulary_reaches_session_lifecycle(tmp_path, outcome):
+    import asyncio
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from pa.core.kernel import Kernel
+    from pa.domain.models import AgentSession
+    from pa.domain.store import reset_store
+    from pa.execution.dispatch import DispatchStore, CompletionOutbox
+    from pa.instance.agent_session import reset_instance_agent
+    from pa.instance.session_lifecycle import SessionLifecyclePolicy
+
+    reset_store()
+    reset_instance_agent()
+    settings = Settings(data_dir=tmp_path / 'data', workspace_root=tmp_path / 'workspaces',
+                        agent_enabled=False, peers=[], sync_token='isolated-peer-token')
+    app = Kernel.boot(settings=settings).build_app()
+    with TestClient(app) as client:
+        store = app.state.ctx.store
+        card = store.create_card(CardCreate(title='acknowledged outcome', lane='active'))
+        record = DispatchRecord(dispatch_id='dispatch-1', mutation_id='turn-1', card_id=card.id,
+            realm_id='default', card_version=card.updated_at.isoformat(), card_snapshot=card.model_dump(mode='json'),
+            authority_instance_id=settings.instance_id, authority_url='http://testserver',
+            target_instance_id='target', session_id='worker-session', state='running')
+        authority = app.state.ctx.services['dispatch_store']
+        authority.put(record)
+        if outcome in {'operator_state_preserved', 'conflict_requires_resolution'}:
+            store.update_card(card.id, CardUpdate(lane='done' if outcome == 'operator_state_preserved' else 'waiting'))
+        payload = {'summary': 'turn ended'}
+        if outcome != 'not_applicable':
+            payload['card_disposition'] = {'contract': 'pa.card-disposition/v1',
+                'lane': 'waiting' if outcome == 'operator_state_preserved' else 'done',
+                'outcome': 'verified turn outcome', 'evidence': {'integration_required': False}}
+        target = DispatchStore(tmp_path / 'target-ledger')
+        record.state = 'completion_pending'
+        record.completion_payload = payload
+        target.put(record)
+        outbox = CompletionOutbox(target, 'isolated-peer-token')
+        responses = []
+        async def forward(url, **kwargs):
+            response = client.post(url, **kwargs)
+            responses.append(response)
+            return response
+        async def scenario():
+            with patch.object(outbox, '_http_client', return_value=SimpleNamespace(post=forward)):
+                await outbox._send(target.get('dispatch-1'))
+            assert responses[0].status_code == 200, responses[0].text
+            ack = responses[0].json()
+            assert ack['acknowledged']
+            assert ack['reconciliation']['state'] == outcome
+            delivered = target.get('dispatch-1')
+            assert delivered.state == 'completed'
+            assert delivered.completion_delivery_class == 'acknowledged'
+            assert delivered.reconciliation_state == outcome
+            assert delivered.reconciliation_recoverable == (outcome == 'conflict_requires_resolution')
+            session = AgentSession(id='worker-session', agent_name='codex', status='idle',
+                                   purpose='automated_run', card_id=card.id)
+            manager = SimpleNamespace(settings=settings, get=lambda _: None)
+            policy = SessionLifecyclePolicy(manager, {})
+            try:
+                decision = await policy._decision(session, sessions=[session], dispatches=[delivered],
+                    watches=[], leases=[], now=datetime.now(UTC))
+            finally:
+                await policy.close()
+            assert decision == (('retained', 'reconciliation_active') if outcome == 'conflict_requires_resolution'
+                                else ('close', 'dispatch_completed'))
+            assert authority.get('dispatch-1').reconciliation_state == outcome
+        asyncio.run(scenario())
+    reset_store()
+    reset_instance_agent()
