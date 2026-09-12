@@ -61,6 +61,7 @@ async def fleet(tmp_path):
         journal = Journal(settings.data_dir/'health.db', settings.instance_id)
         service = HealthService(ctx, journal, transport=network)
         ctx.register_service('health_journal', service)
+        ctx.register_service('sync_recovery', SimpleNamespace(admission_view=lambda realm: (False, {})))
         app = FastAPI()
         app.state.ctx = ctx
         app.include_router(router, prefix='/api')
@@ -1222,3 +1223,107 @@ async def test_all_repair_entries_require_bound_protection(fleet):
         'expected_version':group['version'], 'disposition':'no_fix', 'reason':'Cannot smuggle a repair link', 'commit':'a'*40})
     assert denied.status_code == 409
     assert authority.journal.groups(['default'])[0] == group
+
+
+@pytest.mark.asyncio
+async def test_kernel_journal_local_operations_and_bound_recovery_admission(tmp_path, monkeypatch):
+    from pa.core.kernel import Kernel, _SyncRecoveryAdmissionMiddleware
+    from pa.config import reset_settings
+    from pa.domain.store import reset_store
+    from pa.modules.items import router as items_router
+    from tests.test_sync_recovery_owned import Harness
+
+    reset_settings(); reset_store()
+    h = Harness(tmp_path/'isolated-history')
+    h.settings.workspace_root = tmp_path/'workspaces'
+    h.settings.auth_required = True
+    h.settings.subscribed_realms = ['default', 'healthy']
+    h.services['membership'].ensure_owner_membership('healthy', 'local')
+    h.objects.put(h.raw)  # Boot with complete fixture history, then damage it below.
+    kernel = Kernel.boot(settings=h.settings, load_modules=False)
+    h.objects._path_for(h.hash).unlink()
+    kernel.ctx.store = h.store
+    kernel.ctx.services.update(h.services)
+    journal = Journal(h.settings.data_dir/'health.db', h.settings.instance_id)
+    current = HealthService(kernel.ctx, journal)
+    kernel.ctx.register_service('health_journal', current)
+    app = kernel.build_app()
+    app.state.ctx = kernel.ctx
+    app.include_router(router, prefix='/api')
+    app.include_router(items_router, prefix='/api')
+    current.app = app
+    assert any(m.cls is _SyncRecoveryAdmissionMiddleware for m in app.user_middleware)
+    monkeypatch.setattr('pa.modules.items.get_store', lambda: h.store)
+    h.fetch_release.clear()
+    h.diagnose()  # Real missing canonical event, reported by actual traversal.
+    assert h.recovery.admission_view('default')[0]
+    assert not h.recovery.admission_view('healthy')[0]
+    user = UserDirectory(h.settings.data_dir).get('local')
+    auth = {'Authorization':f'Bearer {user.cli_token}'}
+    peer = {'Authorization':f'Bearer {h.settings.sync_token}'}
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://local') as client:
+            async def request(method, path, body=None, *, headers=auth, key='local-test'):
+                return await client.request(method, '/api/health-journal'+path, json=body,
+                    headers=headers | {'Idempotency-Key':key})
+            assert (await request('POST', '/reports', observation(), headers={})).status_code in {401, 403}
+            assert (await request('POST', '/reports', observation(realm='unknown'))).status_code == 403
+            configured = await request('PATCH', '/config', {'expected_version':1,
+                'policy':{'authority_id':h.settings.instance_id, 'enabled':True}})
+            assert configured.status_code == 200, configured.text
+            for realm in ['default', 'healthy']:
+                reported = await request('POST', '/reports', observation(realm=realm), key='report-'+realm)
+                assert reported.status_code == 201, reported.text
+            assert (await request('POST', '/reports', observation(source_instance_id='forged'), key='forged')).status_code == 422
+            collected = await request('POST', '/run')
+            assert collected.status_code == 200, collected.text
+            entries = journal.page(realms=['default', 'healthy'])['items']
+            assert len(entries) == 2 and all(e['delivery'] == 'gathered' for e in entries)
+            receipt_id = entries[0]['custody']['receipt_id']
+            gathered = await request('POST', '/gathered', {'receipt_id':receipt_id}, headers=peer)
+            assert gathered.status_code == 200, gathered.text
+            assert (await request('POST', '/gathered', {'receipt_id':receipt_id}, headers=auth)).status_code == 403
+            bound = {g['realm']:g for g in journal.groups(['default', 'healthy'])}
+            for disposition in ['no_fix', 'duplicate', 'needs_input', 'reopened']:
+                group = journal.group(bound['default']['id'], realms=['default'])
+                result = await request('PATCH', '/groups/'+group['id'], {
+                    'expected_version':group['version'], 'disposition':disposition, 'reason':'Local reasoned triage'})
+                assert result.status_code == 200, result.text
+            group = journal.group(bound['default']['id'], realms=['default'])
+            for disposition in ['reproduced', 'linked', 'in_progress', 'merged', 'deployed_verified', 'no_fix', 'duplicate']:
+                body = {'expected_version':group['version'], 'disposition':disposition, 'reason':'Requires canonical history'}
+                if disposition == 'no_fix':
+                    body['commit'] = 'a'*40
+                if disposition == 'duplicate':
+                    body['pr_url'] = 'https://github.com/example/pa/pull/1'
+                blocked = await request('PATCH', '/groups/'+group['id']+'?realm=healthy', body)
+                assert blocked.status_code == 503 and blocked.json()['detail']['code'] == 'sync_history_recovery', blocked.text
+            assert journal.group(group['id'], realms=['default'])['version'] == group['version']
+            healthy = bound['healthy']
+            allowed = await request('PATCH', '/groups/'+healthy['id']+'?realm=default', {
+                'expected_version':healthy['version'], 'disposition':'reproduced', 'reason':'Healthy bound realm'})
+            assert allowed.status_code == 409 and allowed.json()['detail']['code'] == 'repair_action_required', allowed.text
+            # Inner canonical admission remains gated by its own normal contract.
+            for realm, expected in [('default',503), ('healthy',201)]:
+                card = await client.post('/api/cards', headers=auth | {'Idempotency-Key':'card-'+realm},
+                    json={'realm_id':realm, 'title':'Isolated card', 'summary':'provided', 'auto_enrich':False})
+                assert card.status_code == expected, card.text
+            kernel.ctx.services.pop('sync_recovery')
+            unknown = await request('PATCH', '/groups/'+healthy['id'], {
+                'expected_version':healthy['version'], 'disposition':'deployed_verified', 'reason':'Unknown admission'})
+            assert unknown.status_code == 503 and unknown.json()['detail']['code'] == 'canonical_admission_unavailable'
+            kernel.ctx.services['sync_recovery'] = h.recovery
+            h.settings.subscribed_realms = ['healthy']
+            denied = await request('PATCH', '/groups/'+group['id']+'?realm=healthy', {
+                'expected_version':group['version'], 'disposition':'reproduced', 'reason':'Unavailable bound realm'})
+            assert denied.status_code == 404
+            h.settings.subscribed_realms = ['default', 'healthy']
+            client.cookies.set('pa_session', SessionManager(h.settings.session_secret).create_token(user))
+            await client.get('/api/health-journal/status')
+            assert (await request('POST', '/reports', observation(), headers={}, key='csrf')).status_code == 403
+            assert (await request('POST', '/reports', observation(),
+                headers={'X-CSRF-Token':client.cookies['pa_csrf']}, key='csrf')).status_code == 201
+    finally:
+        await current.stop()
+        await h.close()
+        reset_store(); reset_settings()

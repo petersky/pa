@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 
 from pa.auth.middleware import get_principal_id, require_user
 from pa.core.contracts import Module
+from pa.core.operation_dependencies import local_operational
 from pa.health_journal.models import Assessment, Observation, Policy, Strict
 from pa.health_journal.service import HealthService
 from pa.health_journal.store import Journal, JournalError
@@ -114,6 +115,7 @@ class Configure(Strict):
 
 
 @router.post('/reports', status_code=201)
+@local_operational
 async def report_problem(request: Request, body: Observation,
                          key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=160)]):
     principal, realms, _ = user_scope(request)
@@ -167,6 +169,7 @@ async def outbox(request: Request, cursor: str | None = Query(None, max_length=1
 
 
 @router.post('/gathered')
+@local_operational
 async def gathered(request: Request, body: Gathered):
     peer_only(request)
     return await service(request).verify_gathered(str(body.receipt_id))
@@ -202,16 +205,33 @@ async def group_history(request: Request, group_id: UUID, after: int = Query(0, 
 
 
 @router.patch('/groups/{group_id}')
+@local_operational
 async def assess(request: Request, group_id: UUID, body: Assessment):
     principal, realms, admin = user_scope(request)
     if not admin:
         raise HTTPException(403, 'Administrator triage access required')
     accepted = False
-    if body.disposition in {'reproduced', 'linked', 'in_progress', 'merged'} or (body.disposition != 'deployed_verified' and (body.commit or body.pr_url)):
+    repair = body.disposition in {'reproduced', 'linked', 'in_progress', 'merged'} or bool(body.commit or body.pr_url)
+    group = None
+    if repair or body.disposition == 'deployed_verified':
+        # This mixed endpoint is locally admitted only so reasoned triage stays
+        # available. Canonical-dependent work requires the group's trusted realm,
+        # never a caller-supplied query/body selector, before proof or acknowledgment.
+        group = await service(request).call(service(request).journal.group, str(group_id), realms=realms)
+        realm = group.get('realm')
+        recovery = request.app.state.ctx.services.get('sync_recovery')
+        if not realm or realm not in request.app.state.ctx.settings.subscribed_realms or recovery is None:
+            raise JournalError('canonical_admission_unavailable', 503)
+        try:
+            blocked, _ = recovery.admission_view(realm)
+        except Exception:
+            raise JournalError('canonical_admission_unavailable', 503) from None
+        if blocked is not False:
+            raise JournalError('sync_history_recovery', 503)
+    if repair and body.disposition != 'deployed_verified':
         await service(request).protect_repair(str(group_id), body, realms=realms)
     if body.disposition == 'deployed_verified':
         from pa.health_journal.acceptance import verify_acceptance
-        group = await service(request).call(service(request).journal.group, str(group_id), realms=realms)
         card_id = body.card_id or group['data'].get('card_id')
         if not card_id:
             raise JournalError('acceptance_card_required')
@@ -235,6 +255,7 @@ async def assess(request: Request, group_id: UUID, body: Assessment):
 
 
 @router.patch('/config')
+@local_operational
 async def configure(request: Request, body: Configure):
     admin_only(request)
     if body.policy.authority_id:
@@ -247,12 +268,14 @@ async def configure(request: Request, body: Configure):
 
 
 @router.post('/run')
+@local_operational
 async def run(request: Request):
     admin_only(request)
     return await service(request).cycle(manual=True)
 
 
 @router.post('/transfer')
+@local_operational
 async def transfer(request: Request, body: Transfer):
     admin_only(request)
     return await service(request).transfer(body.action, target_id=str(body.target_id or ''),

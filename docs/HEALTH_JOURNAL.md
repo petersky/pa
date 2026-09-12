@@ -149,3 +149,12 @@ Release acceptance remains a root-owned packaged boot/provider-stub check follow
 by a harmless real two-instance report/collection/visibility check. No production
 fault injection, automatic deployment, secret inspection, permission expansion or
 alternate PR merge engine is part of this service.
+
+Journal reporting, custody, configuration and collection controls use the existing
+`local_operational` recovery dependency annotation. Authentication, realm scope,
+CSRF and source identity checks still apply. Reasoned local group dispositions
+remain available while canonical history recovers. Repair/link/merge transitions,
+commit or PR evidence, and deployed verification first check
+`sync_recovery.admission_view` for the stored group's authorized realm; caller
+realm selectors cannot redirect that check. Missing admission state fails closed.
+Inner card and dispatch operations retain their normal canonical gates.
