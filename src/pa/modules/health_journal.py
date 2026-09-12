@@ -301,7 +301,12 @@ async def journal_page(request: Request, cursor: str | None = Query(None, max_le
     page = await service(request).call(service(request).journal.page, realms=realms,
                                       principal=None, cursor=cursor)
     status = await service(request).call(service(request).journal.status)
-    parts = ['<!doctype html><html><head><title>PA problem journal</title></head><body>',
+    parts = ['<!doctype html><html><head><meta charset="utf-8">'
+             '<meta name="viewport" content="width=device-width, initial-scale=1">'
+             '<title>PA problem journal</title><style>'
+             'body{box-sizing:border-box;max-width:72rem;margin:0 auto;padding:1rem;overflow-wrap:anywhere}'
+             'pre{white-space:pre-wrap;overflow-wrap:anywhere}'
+             '</style></head><body>',
              '<h1>PA problem journal</h1><p>Gathered means durably collected. A merged PR still requires declared acceptance.</p>',
              '<p><a href="/api/health-journal/status">Authority and collection status</a></p>']
     policy = status['policy']
