@@ -1,3 +1,3 @@
-from pa.cli.main import app
+from pa.cli.entrypoint import main
 
-app()
+main()

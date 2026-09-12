@@ -158,6 +158,9 @@ def _is_assigned_session_route(request: Request) -> bool:
     return (request.method, request.url.path) in {
         ("GET", "/api/goal-assigned-session/goal"),
         ("GET", "/api/goal-assigned-session/dispatch"),
+        ("GET", "/api/goal-assigned-session/restart-handoffs"),
+        ("POST", "/api/goal-assigned-session/restart-handoff"),
+        ("POST", "/api/goal-assigned-session/restart-handoff/edit"),
         ("POST", "/api/goal-assigned-session/proposals"),
         ("POST", "/api/goal-assigned-session/evidence"),
         ("POST", "/api/goal-assigned-session/audit"),

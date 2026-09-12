@@ -629,6 +629,12 @@ class AgentSessionRuntime:
 
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
         normalized = normalize_session_update(update)
+        if (
+            normalized.get("type") in {"tool_call", "tool_call_update"}
+            and self.connection
+            and _external_session_id == self.session.external_session_id
+        ):
+            normalized["pa_mcp"] = dict(self.connection.pa_mcp_health)
         event_type = str(normalized.get("type") or "session_update")
         if event_type in _TURN_STREAM_EVENT_TYPES:
             self._turn_streamed = True

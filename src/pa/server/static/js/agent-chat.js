@@ -1610,6 +1610,21 @@
     this.els.status.className = "acw-status-dot is-" + state;
   };
 
+  AgentChatWidget.prototype.renderMcpHealth = function (health) {
+    if (!this.els.status || !this.els.status.parentNode) return;
+    if (!this.els.mcpHealth) {
+      this.els.mcpHealth = document.createElement("span");
+      this.els.mcpHealth.setAttribute("role", "status");
+      this.els.status.parentNode.appendChild(this.els.mcpHealth);
+    }
+    const state = health && health.state;
+    const label = state === "checking" ? "PA tools starting" :
+      state === "disconnected" ? "PA tools unavailable" : "";
+    this.els.mcpHealth.textContent = label;
+    this.els.mcpHealth.hidden = !label;
+    this.els.mcpHealth.title = health && (health.detail || health.recovery) || label;
+  };
+
   AgentChatWidget.prototype._hasTurnHistory = function () {
     const turnEvents = {
       user_message: true,
@@ -1741,6 +1756,7 @@
     // snapshot state afterward so replay cannot reset an active turn's timer.
     this.setTurnActive(!!snap.prompting, snap.turn_started_at);
     this.setStatus(this.prompting ? "working" : snap.connected ? "online" : "offline");
+    this.renderMcpHealth(snap.pa_mcp);
     this.renderQueue(snap.queue || []);
     this.renderModelsModes(snap);
     this.renderConfigOptions(snap);
@@ -2466,9 +2482,11 @@
         // Cursor reuses a null messageId for the whole turn, so without this
         // post-tool text is appended onto the pre-tool bubble ("needed.Monica").
         this.finalizeStreams(created, true);
+        if (!replay && payload.pa_mcp) this.renderMcpHealth(payload.pa_mcp);
         this.upsertTool(payload, created);
         break;
       case "tool_call_update":
+        if (!replay && payload.pa_mcp) this.renderMcpHealth(payload.pa_mcp);
         this.upsertTool(payload, created);
         break;
       case "plan":

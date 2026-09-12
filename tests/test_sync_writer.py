@@ -541,6 +541,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_not_found_can_preserve_optional_mcp_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 404,
                 request=httpx.Request("GET", "http://127.0.0.1/api/items/missing"),
@@ -557,6 +558,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_read_timeout_is_reported_without_masking_attribute_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             with (
                 patch(
                     "httpx.request",
@@ -576,6 +578,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_http2_cancel_retries_mcp_read_with_same_correlation_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             success = httpx.Response(
                 200,
                 json={"status": "converged"},
@@ -597,6 +600,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_http2_cancel_exhaustion_names_read_retry_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             cancelled = httpx.RemoteProtocolError(
                 "response headers: http/2 stream closed with error code CANCEL (0x8)"
             )
@@ -615,6 +619,7 @@ class LocalMcpApiTests(unittest.TestCase):
         for phase in phases:
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as tmp:
                 settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+                UserDirectory(settings.data_dir).ensure_default_user()
                 success = httpx.Response(
                     200,
                     json={"effect_id": "one-durable-effect"},
@@ -642,6 +647,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_mutation_server_errors_are_unknown_without_noncommit_proof(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             for status in (500, 503):
                 with self.subTest(status=status):
                     detail = {
@@ -685,6 +691,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_lost_mutation_response_preserves_supplied_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             with (
                 patch(
                     "httpx.request",
@@ -712,6 +719,7 @@ class LocalMcpApiTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 200,
                 content=b'{"committed":',
@@ -742,6 +750,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_request_timeout_can_be_extended_for_durable_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 202,
                 json={"accepted": True, "dispatch_id": "dispatch-1"},
@@ -763,6 +772,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_default_owner_request_budget_tolerates_normal_write_contention(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 200,
                 json={"outcome": "succeeded"},
@@ -778,6 +788,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_no_content_mutation_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 204,
                 request=httpx.Request(
@@ -795,6 +806,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_validation_error_preserves_sanitized_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 422,
                 json={
@@ -838,6 +850,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_malformed_id_validation_is_not_an_instance_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 422,
                 json={
@@ -862,6 +875,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_verified_instance_mismatch_has_specific_diagnostic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             response = httpx.Response(
                 422,
                 json={"detail": "request rejected"},
@@ -886,6 +900,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_auth_and_server_errors_keep_context_without_mismatch_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             for status in (401, 403, 500, 503):
                 response = httpx.Response(
                     status,
@@ -906,6 +921,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_structured_remote_error_survives_mcp_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             detail = {
                 "code": "target_projection_not_ready",
                 "message": "Target projection is catching up.",
@@ -938,6 +954,7 @@ class LocalMcpApiTests(unittest.TestCase):
     def test_placement_409_surfaces_rejected_candidates_on_mcp_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(data_dir=Path(tmp), agent_enabled=False)
+            UserDirectory(settings.data_dir).ensure_default_user()
             detail = {
                 "code": "no_eligible_instance",
                 "message": "No eligible instance remains after policy filters.",
@@ -982,6 +999,7 @@ class LocalMcpApiTests(unittest.TestCase):
                 instance_id="owner",
                 agent_enabled=False,
             )
+            UserDirectory(settings.data_dir).ensure_default_user()
             with TestClient(Kernel.boot(settings=settings).build_app()) as client:
                 response = client.get(
                     "/api/ready", headers={"X-Request-ID": "client-correlation"}
@@ -1048,6 +1066,7 @@ class LocalMcpApiTests(unittest.TestCase):
                 port=9876,
                 agent_enabled=False,
             )
+            UserDirectory(settings.data_dir).ensure_default_user()
             token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
             headers = {"Authorization": f"Bearer {token}"}
 

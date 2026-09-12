@@ -108,7 +108,12 @@ def _is_hard_mcp_startup_failure(detail: str) -> bool:
     text = (detail or "").lower()
     if not text.strip():
         return False
-    if "startup was cancelled" in text and "failed to start" not in text:
+    if "startup was cancelled" in text and not any(
+        marker in text for marker in (
+            "failed to start", "timed out", "timeout", "connection refused",
+            "permission denied", "not found",
+        )
+    ):
         return False
     return True
 
@@ -341,7 +346,10 @@ class PAClient(Client):
         self._updates: list[Any] = []
         self._mcp_startup_failures: dict[str, str] = {}
         self._mcp_startup_successes: set[str] = set()
+        self._mcp_recovery_calls: dict[tuple[str, str], None] = {}
+        self._mcp_live_session: str | None = None
         self._mcp_startup_events: dict[str, asyncio.Event] = {}
+        self.on_mcp_startup: Callable[[str], None] | None = None
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -442,11 +450,44 @@ class PAClient(Client):
         )
         return response
 
+    def begin_live_mcp_session(self, session_id: str) -> None:
+        """Open evidence collection only after session/new or session/load returns."""
+        self._mcp_live_session = str(session_id)
+        self._mcp_recovery_calls.clear()
+        # Explicit startup success can arrive before new/load returns. Keep it:
+        # pre-boundary tool history is already ineligible, and hard failures
+        # discard success in session_update before this boundary is opened.
+
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)
         normalized = normalize_session_update(update)
+        key = str(session_id)
+        call_id = str(normalized.get("tool_call_id") or "")
+        call_key = (key, call_id)
+        raw_input = normalized.get("raw_input")
+        is_pa_call = (
+            isinstance(raw_input, dict) and raw_input.get("server") == "pa"
+            and isinstance(raw_input.get("tool"), str) and bool(raw_input["tool"])
+        )
+        # Ignore history replay: only starts after session/load returns qualify.
+        # Every hard failure invalidates starts, so old completions cannot recover.
         if (
-            normalized.get("type") == "tool_call"
+            key == self._mcp_live_session
+            and normalized.get("type") == "tool_call"
+            and normalized.get("status") in {"pending", "in_progress"}
+            and call_id and (is_pa_call or call_id == "mcp_startup.pa")
+        ):
+            self._mcp_recovery_calls[call_key] = None
+            if len(self._mcp_recovery_calls) > 256:
+                self._mcp_recovery_calls.pop(next(iter(self._mcp_recovery_calls)))
+        live_call = call_key in self._mcp_recovery_calls
+        recovery_allowed = (
+            key not in self._mcp_startup_failures or call_key in self._mcp_recovery_calls
+        )
+        if normalized.get("status") in {"completed", "success", "succeeded", "failed"}:
+            self._mcp_recovery_calls.pop(call_key, None)
+        if (
+            normalized.get("type") in {"tool_call", "tool_call_update"}
             and normalized.get("tool_call_id") == "mcp_startup.pa"
         ):
             key = str(session_id)
@@ -455,12 +496,50 @@ class PAClient(Client):
                 detail = redact_log_text(
                     json.dumps(normalized.get("content") or [], default=str)
                 )
-                self._mcp_startup_failures[key] = detail[:1000]
-            elif status in {"completed", "success", "succeeded"}:
+                if _is_hard_mcp_startup_failure(detail):
+                    self._mcp_recovery_calls = {
+                        k: v for k, v in self._mcp_recovery_calls.items() if k[0] != key
+                    }
+                    self._mcp_startup_successes.discard(key)
+                    self._mcp_startup_failures[key] = detail[:1000]
+            elif status in {"completed", "success", "succeeded"} and recovery_allowed:
+                self._mcp_startup_failures.pop(key, None)
                 self._mcp_startup_successes.add(key)
             event = self._mcp_startup_events.get(key)
             if event is not None:
                 event.set()
+            if self.on_mcp_startup:
+                self.on_mcp_startup(key)
+        # Codex ACP 1.11 forwards only failed/cancelled startup events. Its
+        # completed MCP calls carry rawInput.server/tool and rawOutput.result.
+        # A successful call through PA is positive evidence from this provider
+        # session; titles, silence and an independent owner probe are not.
+        raw_input = normalized.get("raw_input")
+        raw_output = normalized.get("raw_output")
+        if (
+            normalized.get("type") in {"tool_call", "tool_call_update"}
+            and normalized.get("tool_call_id")
+            and normalized.get("tool_call_id") != "mcp_startup.pa"
+            and normalized.get("status") == "completed"
+            and key == self._mcp_live_session
+            and live_call
+            and isinstance(raw_input, dict)
+            and raw_input.get("server") == "pa"
+            and isinstance(raw_input.get("tool"), str)
+            and raw_input["tool"]
+            and isinstance(raw_output, dict)
+            and raw_output.get("error") is None
+            and isinstance(raw_output.get("result"), dict)
+            and not raw_output["result"].get("isError", False)
+        ):
+            key = str(session_id)
+            self._mcp_startup_failures.pop(key, None)
+            self._mcp_startup_successes.add(key)
+            event = self._mcp_startup_events.get(key)
+            if event is not None:
+                event.set()
+            if self.on_mcp_startup:
+                self.on_mcp_startup(key)
         self._wire(
             "in",
             {
@@ -520,8 +599,6 @@ class PAClient(Client):
                     return None
         finally:
             self._mcp_startup_events.pop(key, None)
-            self._mcp_startup_failures.pop(key, None)
-            self._mcp_startup_successes.discard(key)
 
     async def read_text_file(
         self,
@@ -695,6 +772,7 @@ class AgentConnection:
         self._conn: Any = None
         self._proc: Any = None
         self._client: PAClient | None = None
+        self._mcp_observer: tuple[PAClient, str] | None = None
         self._wire: WireJsonlLogger | None = None
         self.session: AgentSession | None = None
         self._connection_id: str | None = None
@@ -721,6 +799,48 @@ class AgentConnection:
         self._wire_task: asyncio.Task[None] | None = None
         self._wire_dropped = 0
         self._wire_drop_report_at = 0.0
+
+    def _publish_mcp_startup(self, client: PAClient, session_id: str) -> None:
+        """Accept evidence only from this connection's exact provider session."""
+        if (
+            self._mcp_observer != (client, session_id) or self._client is not client
+            or not self.session or self.session.external_session_id != session_id
+        ):
+            return
+        failure = client._mcp_startup_failures.get(session_id)
+        success = session_id in client._mcp_startup_successes
+        probe = {"state": "pending", "classification": "startup_pending"}
+        if failure:
+            probe = {
+                "state": "failed",
+                "classification": "provider_context_startup_failed",
+                "detail": failure,
+            }
+            self.pa_mcp_health.update(
+                state="disconnected", classification="mcp_provider_context_startup_failed",
+                last_failure=datetime.now(UTC).isoformat(),
+                retry_state="provider_startup_failed", detail=failure,
+                recovery=(
+                    "Inspect the reported PA MCP startup error and owner endpoint; "
+                    "retry after correcting the cause."
+                ),
+            )
+        elif success:
+            probe = {"state": "usable", "classification": "startup_confirmed"}
+            self.pa_mcp_health.update(
+                state="connected", classification=None,
+                last_success=datetime.now(UTC).isoformat(), last_failure=None,
+                retry_state="connected",
+            )
+            self.pa_mcp_health.pop("detail", None)
+            self.pa_mcp_health.pop("recovery", None)
+        else:
+            self.pa_mcp_health.update(
+                state="checking", classification="provider_context_startup_pending",
+                last_success=None, last_failure=None,
+                retry_state="provider_context_probe_pending",
+            )
+        self.pa_mcp_health["provider_context_probe"] = probe
 
     async def _offload(
         self, operation: str, call, *args, timeout: float | None = None, **kwargs
@@ -868,6 +988,7 @@ class AgentConnection:
         card_id: str | None = None,
         project_id: str | None = None,
     ) -> AgentSession:
+        self._mcp_observer = None
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
         await self._abort_connect_if_shutting_down(stage="preflight")
@@ -952,6 +1073,7 @@ class AgentConnection:
                         state="checking",
                         classification=None,
                         bridge_probe=delegated_probe,
+                        last_success=None,
                         retry_state="provider_context_probe_pending",
                     )
                 else:
@@ -1016,6 +1138,10 @@ class AgentConnection:
             wire_logger=self._wire_log,
             auto_approve=self.auto_approve,
             async_runtime=self.async_runtime,
+        )
+        startup_client = self._client
+        startup_client.on_mcp_startup = lambda session_id: self._publish_mcp_startup(
+            startup_client, session_id
         )
 
         def resolve_launch() -> tuple[AgentProviderSpec, str]:
@@ -1242,11 +1368,18 @@ class AgentConnection:
 
         assert self.session is not None
         if mcp and spec.id == "codex" and self.session.external_session_id:
+            self._client.begin_live_mcp_session(self.session.external_session_id)
+            self._mcp_observer = (self._client, self.session.external_session_id)
+            self._publish_mcp_startup(*self._mcp_observer)
             provider_failure = await self._client.wait_for_pa_mcp_startup_failure(
                 self.session.external_session_id,
                 timeout=2.0,
             )
             if provider_failure:
+                self._client._mcp_startup_failures[
+                    self.session.external_session_id
+                ] = provider_failure
+                self._publish_mcp_startup(*self._mcp_observer)
                 self.pa_mcp_health.update(
                     state="disconnected",
                     classification="mcp_provider_context_startup_failed",
@@ -1255,24 +1388,15 @@ class AgentConnection:
                         "classification": "provider_context_startup_failed",
                     },
                     last_failure=datetime.now(UTC).isoformat(),
-                    retry_state="session_reconnect_required",
+                    retry_state="provider_startup_failed",
                 )
+                self._mcp_observer = None
                 raise McpHandshakeError(
                     "provider_context_startup_failed",
-                    "Correct the provider sandbox/mode or owner endpoint, then reconnect the session.",
+                    self.pa_mcp_health["recovery"],
                     provider_failure,
                 )
-            self.pa_mcp_health["provider_context_probe"] = {
-                "state": "usable",
-                "classification": "no_startup_failure",
-            }
-            self.pa_mcp_health.update(
-                state="connected",
-                classification=None,
-                last_success=datetime.now(UTC).isoformat(),
-                last_failure=None,
-                retry_state="connected",
-            )
+            self._publish_mcp_startup(*self._mcp_observer)
 
         sandbox_health_registry.success(
             spec.id,
@@ -1975,6 +2099,7 @@ class AgentConnection:
                 raise ACPConfigurationError(message) from exc
 
     async def disconnect(self, *, timeout: float = 5.0, force: bool = False) -> None:
+        self._mcp_observer = None
         async with self._disconnect_lock:
             ctx = self._ctx
             proc = self._proc

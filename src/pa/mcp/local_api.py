@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json as jsonlib
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -78,6 +79,7 @@ _ASSIGNED_MCP_ENDPOINTS = frozenset(
     {
         ("GET", "/api/goal-assigned-session/goal"),
         ("GET", "/api/goal-assigned-session/dispatch"),
+        ("GET", "/api/goal-assigned-session/restart-handoffs"),
         ("POST", "/api/goal-assigned-session/proposals"),
         ("POST", "/api/goal-assigned-session/evidence"),
         ("POST", "/api/goal-assigned-session/audit"),
@@ -300,7 +302,12 @@ def request_local_pa(
     timeout_seconds: float = 10.0,
 ):
     method = method.upper()
-    assigned_mode = os.environ.get(ASSIGNED_SERVICE_MODE_ENV, "") == "1"
+    from pa.mcp.server import assigned_service_mcp_mode
+
+    try:
+        assigned_mode = assigned_service_mcp_mode()
+    except RuntimeError as exc:
+        raise LocalPAServerUnavailable(str(exc)) from exc
     operation_id: str | None = None
     if method in {"POST", "PUT", "PATCH", "DELETE"}:
         operation_id = next(
@@ -331,7 +338,12 @@ def request_local_pa(
     if not assigned_mode:
         token = os.environ.get("PA_LOCAL_API_TOKEN", "").strip()
         if not token:
-            token = UserDirectory(settings.data_dir).ensure_default_user().cli_token
+            users = UserDirectory(settings.data_dir).list_users()
+            if not users:
+                raise LocalPAServerUnavailable(
+                    "No owner API credential is configured; initialize PA through the service first."
+                )
+            token = users[0].cli_token
     expected_instance_id = os.environ.get("PA_INSTANCE_ID", "").strip()
     assigned_capability = (
         assigned_service_session_capability(
@@ -387,7 +399,17 @@ def request_local_pa(
             f"endpoint={endpoint_type} retry_in={retry_in:.1f}s). "
             "PA itself may still be healthy; do not write PA_DATA_DIR."
         )
-    timeout_seconds = max(0.1, min(float(timeout_seconds), 120.0))
+    # Local provider install/update already have a service-owned 900s action
+    # budget. Preserve it when replacing the former direct MCP execution with
+    # HTTP forwarding; all other requests retain the existing transport cap.
+    timeout_cap = (
+        910.0
+        if method == "POST" and re.fullmatch(
+            r"/api/agent/providers/[^/]+/(?:install|update)", path
+        )
+        else 120.0
+    )
+    timeout_seconds = max(0.1, min(float(timeout_seconds), timeout_cap))
     deadline = now + timeout_seconds
     cancel_attempts = 0
     while True:
