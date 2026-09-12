@@ -11,6 +11,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -738,7 +739,8 @@ class PRSupervisor:
             settings.data_dir / "pr_supervisor.db"
         )
         self.store.completion_capabilities = domain_store.card_completion_capabilities
-        self.store.completion_card_db_path = domain_store.db_path
+        card_db_path = getattr(domain_store, "db_path", None)
+        self.store.completion_card_db_path = card_db_path if isinstance(card_db_path, (str, Path)) else None
         self.credentials = (
             github_client.credentials
             if github_client
