@@ -79,10 +79,9 @@ sys.addaudithook(audit)
             assert names == ASSIGNED_SERVICE_TOOL_ALLOWLIST
         else:
             assert {'instance_info', 'agent_providers_list', 'preview_agent_restart_handoff'} <= names
-            # Entry-point plugins may add tools; verify the contract, not a
-            # deployment-specific total. Restricted mode remains exact above.
+            # Entry-point plugins may add tools; verify both merged contracts.
             assert len(names) == len(tools)
-            assert "record_card_acceptance" in names
+            assert {"record_card_acceptance", "report_pa_problem", "get_pa_problem_group"} <= names
         assert {p.name: (p.stat().st_size, p.stat().st_mtime_ns) for p in data.iterdir()} == before
     finally:
         db.rollback()
@@ -197,6 +196,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     tools = await server._get_mcp().list_tools()
     actual = {t.name: hashlib.sha256(json.dumps(t.input_schema, sort_keys=True).encode()).hexdigest() for t in tools}
     baseline = json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_cb2588d3.json').read_text())
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_health_journal.json').read_text()))
     # Status deliberately adds optional owner/operation/fingerprint selectors;
     # all other tool contracts remain frozen to the historical fixture.
     baseline['get_operation_outcome'] = '89e98961cba2c587d7c207dfee0e485297700204227ddd4100a23e7546524485'

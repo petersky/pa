@@ -42,6 +42,10 @@ SYNC_PATHS = {
 # native updates. Other API routes continue to require a user session/CLI token.
 FLEET_INSTANCE_ROUTES = {
     ("GET", "/api/status"),
+    ("GET", "/api/health-journal/outbox"),
+    ("GET", "/api/health-journal/handover"),
+    ("GET", "/api/health-journal/handover/received"),
+    ("POST", "/api/health-journal/gathered"),
     ("GET", "/api/agent/quiesce"),
     ("POST", "/api/agent/quiesce"),
     ("GET", "/api/fleet/peer-update-check"),
@@ -79,6 +83,10 @@ def _is_sync_path(path: str) -> bool:
 
 
 def _is_fleet_instance_route(request: Request) -> bool:
+    if request.method == "GET" and re.fullmatch(
+        r"/api/health-journal/receipts/[a-f0-9-]{36}", request.url.path
+    ):
+        return True
     if request.method == "POST" and re.fullmatch(
         r"/api/fleet/dispatch-jobs/[A-Za-z0-9-]{1,80}/assigned-service/"
         r"(?:goal|dispatch|proposals|evidence|audit|progress)",
@@ -155,7 +163,13 @@ def _is_assigned_service_route(request: Request) -> bool:
 
 
 def _is_assigned_session_route(request: Request) -> bool:
-    if request.method == "PATCH" and re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}", request.url.path) and request.headers.get("authorization", "").startswith("SessionAcceptance "):
+    if request.headers.get("authorization", "").startswith("SessionAcceptance "):
+        return request.method == "PATCH" and bool(re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}", request.url.path))
+    if (request.method, request.url.path) in {
+        ('POST', '/api/health-journal/reports'),
+        ('GET', '/api/health-journal/reports'),
+        ('GET', '/api/health-journal/status'),
+    } or (request.method == 'GET' and re.fullmatch(r'/api/health-journal/reports/[a-f0-9-]{36}', request.url.path)):
         return True
     return (request.method, request.url.path) in {
         ("GET", "/api/goal-assigned-session/goal"),
@@ -188,7 +202,10 @@ def _needs_csrf(request: Request) -> bool:
     path = request.url.path
     if _is_public(path) or path in CSRF_EXEMPT_PATHS:
         return False
-    if _is_goal_run_credential_route(request) or _is_assigned_session_route(request):
+    if _is_goal_run_credential_route(request) or (
+        _is_assigned_session_route(request)
+        and (not path.startswith('/api/health-journal/') or request.headers.get('authorization', '').startswith('GoalSession '))
+    ):
         return False
     return not (
         path.startswith("/api/")

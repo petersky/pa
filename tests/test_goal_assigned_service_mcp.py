@@ -73,6 +73,8 @@ async def test_assigned_mcp_registration_is_exact_and_identity_free() -> None:
         services={},
         require_service=lambda _name: MagicMock(),
     )
+    from pa.modules.health_journal import HealthJournalModule
+    HealthJournalModule().register_mcp(restricted, ctx)
     GoalsModule().register_mcp(restricted, ctx)
     FleetModule().register_mcp(restricted, ctx)
     # This module has direct provider install/configure mutators. Registering it

@@ -99,6 +99,17 @@ def test_ordinary_registered_acceptance_receipt_and_terminal_replay(transport, c
     assert result['lane'] == 'waiting'
     assert result['completion_status']['accepted']
     assert t.sent[-1]['Authorization'].startswith('SessionAcceptance pas1.')
+    # Merging the journal routes must not expand this acceptance-purpose token.
+    for method, path, body in (
+        ('GET', '/api/health-journal/reports', None),
+        ('GET', '/api/health-journal/status', None),
+        ('POST', '/api/health-journal/reports', {
+            'subsystem':'synthetic', 'error_code':'purpose-test', 'summary':'Synthetic scope check',
+            'occurrence_key':'purpose-check'}),
+    ):
+        denied = t.client.request(method, path, json=body,
+            headers={**t.sent[-1], 'Idempotency-Key':'no-report-authority'})
+        assert denied.status_code in {401, 403}
     assert 'pas1.' not in json.dumps(result)
     # The authenticated producer cannot use its private credential for mutation
     # outside acceptance, and neither tool results nor logs disclose it.

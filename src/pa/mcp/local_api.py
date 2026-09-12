@@ -79,6 +79,9 @@ def _response_proves_non_commit(
 
 _ASSIGNED_MCP_ENDPOINTS = frozenset(
     {
+        ("POST", "/api/health-journal/reports"),
+        ("GET", "/api/health-journal/reports"),
+        ("GET", "/api/health-journal/status"),
         ("GET", "/api/goal-assigned-session/goal"),
         ("GET", "/api/goal-assigned-session/dispatch"),
         ("GET", "/api/goal-assigned-session/restart-handoffs"),
@@ -333,7 +336,9 @@ def request_local_pa(
         raise LocalPAServerUnavailable(
             "The assigned Goal MCP session binding is incomplete; reload the session."
         )
-    if assigned_mode and (method, path) not in _ASSIGNED_MCP_ENDPOINTS:
+    if assigned_mode and (method, path) not in _ASSIGNED_MCP_ENDPOINTS and not (
+        method == 'GET' and re.fullmatch(r'/api/health-journal/reports/[a-f0-9-]{36}', path)
+    ):
         raise LocalPAServerUnavailable(
             "Assigned Goal sessions cannot invoke this ordinary PA tool."
         )

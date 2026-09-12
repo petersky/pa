@@ -44,6 +44,7 @@ from pa.acp.configuration import (
     validate_option_value,
 )
 from pa.acp.environment import (
+    ASSIGNED_SERVICE_MODE_ENV,
     inject_agent_github_environment,
     sanitize_provider_environment,
 )
@@ -992,10 +993,12 @@ class AgentConnection:
         if not self.settings.agent_enabled:
             raise RuntimeError("Agent connection disabled (PA_AGENT_ENABLED=false)")
         await self._abort_connect_if_shutting_down(stage="preflight")
+        mcp_principal = existing_session.principal_id if existing_session is not None else principal_id
         mcp = pa_mcp_servers(
             self.settings,
             session_environment=self.extra_env,
             private_environment=self.mcp_private_env,
+            principal_id=mcp_principal,
         )
         spec = self._resolved_spec()
         provider_id = spec.id or self.agent_name or DEFAULT_PROVIDER_ID
@@ -1029,7 +1032,8 @@ class AgentConnection:
             try:
                 owner_health = await self._offload(
                     "acp.pa_mcp_owner_probe",
-                    probe_owner_channel,
+                    partial(probe_owner_channel, principal_id=mcp_principal)
+                    if self.mcp_private_env.get(ASSIGNED_SERVICE_MODE_ENV) != "1" else probe_owner_channel,
                     self.settings,
                     timeout=5.0,
                 )
@@ -1095,6 +1099,7 @@ class AgentConnection:
                             timeout=12.0,
                             session_environment=self.extra_env,
                             private_environment=self.mcp_private_env,
+                            principal_id=mcp_principal,
                         ),
                         timeout=15.0,
                     )
