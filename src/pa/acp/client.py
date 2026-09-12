@@ -347,6 +347,7 @@ class PAClient(Client):
         self._mcp_startup_failures: dict[str, str] = {}
         self._mcp_startup_successes: set[str] = set()
         self._mcp_recovery_calls: dict[tuple[str, str], None] = {}
+        self._mcp_live_session: str | None = None
         self._mcp_startup_events: dict[str, asyncio.Event] = {}
         self.on_mcp_startup: Callable[[str], None] | None = None
 
@@ -449,6 +450,12 @@ class PAClient(Client):
         )
         return response
 
+    def begin_live_mcp_session(self, session_id: str) -> None:
+        """Open evidence collection only after session/new or session/load returns."""
+        self._mcp_live_session = str(session_id)
+        self._mcp_recovery_calls.clear()
+        self._mcp_startup_successes.clear()
+
     async def session_update(self, session_id, update, **kwargs: Any) -> None:
         self._updates.append(update)
         normalized = normalize_session_update(update)
@@ -460,10 +467,10 @@ class PAClient(Client):
             isinstance(raw_input, dict) and raw_input.get("server") == "pa"
             and isinstance(raw_input.get("tool"), str) and bool(raw_input["tool"])
         )
-        # Recovery must begin after the last hard failure. A completion for an
-        # older in-flight call (or a delayed startup-ready event) is not recovery.
+        # Ignore history replay: only starts after session/load returns qualify.
+        # Every hard failure invalidates starts, so old completions cannot recover.
         if (
-            key in self._mcp_startup_failures
+            key == self._mcp_live_session
             and normalized.get("type") == "tool_call"
             and normalized.get("status") in {"pending", "in_progress"}
             and call_id and (is_pa_call or call_id == "mcp_startup.pa")
@@ -471,6 +478,7 @@ class PAClient(Client):
             self._mcp_recovery_calls[call_key] = None
             if len(self._mcp_recovery_calls) > 256:
                 self._mcp_recovery_calls.pop(next(iter(self._mcp_recovery_calls)))
+        live_call = call_key in self._mcp_recovery_calls
         recovery_allowed = (
             key not in self._mcp_startup_failures or call_key in self._mcp_recovery_calls
         )
@@ -511,7 +519,8 @@ class PAClient(Client):
             and normalized.get("tool_call_id")
             and normalized.get("tool_call_id") != "mcp_startup.pa"
             and normalized.get("status") == "completed"
-            and recovery_allowed
+            and key == self._mcp_live_session
+            and live_call
             and isinstance(raw_input, dict)
             and raw_input.get("server") == "pa"
             and isinstance(raw_input.get("tool"), str)
@@ -1357,6 +1366,7 @@ class AgentConnection:
 
         assert self.session is not None
         if mcp and spec.id == "codex" and self.session.external_session_id:
+            self._client.begin_live_mcp_session(self.session.external_session_id)
             self._mcp_observer = (self._client, self.session.external_session_id)
             self._publish_mcp_startup(*self._mcp_observer)
             provider_failure = await self._client.wait_for_pa_mcp_startup_failure(

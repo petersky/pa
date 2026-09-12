@@ -168,3 +168,22 @@ Combined isolated draft/receipt, prompt-recovery, stream-join and MCP checks
 passed (78 tests); wheel/sdist build passed. Progress correlation
 `mcp-repair-pr436-composer-rebase-v1` returned HTTP 200. Root still owns
 independent exact-head review and integration/release/production acceptance.
+
+## Session/load history fence
+
+Completed MCP history from Codex ACP `createHistoryUpdates` is not connectivity
+proof. Positive PA tool evidence now requires an invocation start observed only
+after session/new or session/load has returned for the current native session.
+Opening this boundary clears pre-load success/start state; hard failures remain
+authoritative and invalidate all earlier invocation starts. Completions without
+a matching live start cannot confirm initial health or recover a failure.
+History is still delivered through the existing transcript path; this change
+only restricts health evidence and never synthesizes live tool work.
+
+97 focused registration/ACP tests, including the actual 30-second failure wire
+case, passed. Six focused history/order/generation cases passed, including a
+real isolated ACP session/load protocol test that emits completed history both
+before and after its response, then confirms health with a fresh live call.
+All tests clear inherited PA_* and use temporary data/workspace roots. Build
+passed. No timing threshold, tool proxy, authorization, redaction or composer
+code changed in this follow-up. Root retains exact-head approval and integration.

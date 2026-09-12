@@ -88,6 +88,7 @@ sys.addaudithook(audit)
 
 def bind(connection, native='native-current'):
     client = PAClient(MagicMock())
+    client.begin_live_mcp_session(native)
     connection._client = client
     connection.session = AgentSession(agent_name='codex', external_session_id=native)
     connection._mcp_observer = (client, native)
@@ -365,7 +366,10 @@ async def test_error_only_adapter_confirms_only_current_session_pa_tool_success(
     assert events['ready'] == []
     assert await client.wait_for_pa_mcp_startup_failure('native-current', timeout=2.0) is None
     assert connection.pa_mcp_health['state'] == 'checking'
+    start = {**success, 'sessionUpdate': 'tool_call', 'status': 'in_progress', 'rawOutput': None}
+    await old.session_update('native-current', start)
     await old.session_update('native-current', success)
+    await client.session_update('other-session', start)
     await client.session_update('other-session', success)
     assert connection.pa_mcp_health['state'] == 'checking'
     for change in [
@@ -380,6 +384,7 @@ async def test_error_only_adapter_confirms_only_current_session_pa_tool_success(
         candidate.update(change)
         await client.session_update('native-current', candidate)
         assert connection.pa_mcp_health['state'] == 'checking'
+    await client.session_update('native-current', {**success, 'sessionUpdate': 'tool_call', 'status': 'in_progress', 'rawOutput': None})
     await client.session_update('native-current', success)
     assert connection.pa_mcp_health['state'] == 'connected'
     await client.session_update('native-current', events['failed'][0])
@@ -429,3 +434,58 @@ async def test_completion_started_before_new_failure_cannot_recover(tmp_path):
     await client.session_update('native-current', fresh)
     await client.session_update('native-current', {**success, 'toolCallId': 'fresh-recovery'})
     assert connection.pa_mcp_health['state'] == 'connected'
+
+
+@pytest.mark.asyncio
+async def test_loaded_completed_history_cannot_confirm_current_mcp(tmp_path):
+    events = json.loads((Path(__file__).parent / 'fixtures/codex_acp_1_11_mcp_events.json').read_text())
+    connection = AgentConnection(Settings(data_dir=tmp_path), MagicMock(), agent_name='codex')
+    client = bind(connection)
+    success = events['success']
+    history = {**success, 'sessionUpdate': 'tool_call', 'title': 'mcp.pa.list_items'}
+    start = {**history, 'status': 'in_progress', 'rawOutput': None}
+    client._mcp_live_session = None  # session/load is replaying history.
+    await client.session_update('native-current', start)
+    await client.session_update('native-current', history)
+    assert connection.pa_mcp_health['state'] == 'checking'
+    client.begin_live_mcp_session('native-current')
+    # Even delayed replay after load returns has no qualifying live start.
+    await client.session_update('native-current', history)
+    await client.session_update('native-current', success)
+    assert connection.pa_mcp_health['state'] == 'checking'
+    assert connection.pa_mcp_health['last_success'] is None
+    await client.session_update('native-current', start)
+    await client.session_update('native-current', events['failed'][0])
+    await client.session_update('native-current', success)
+    assert connection.pa_mcp_health['state'] == 'disconnected'
+    await client.session_update('native-current', {**start, 'toolCallId': 'new-live'})
+    await client.session_update('native-current', {**success, 'toolCallId': 'new-live'})
+    assert connection.pa_mcp_health['state'] == 'connected'
+
+
+@pytest.mark.asyncio
+async def test_actual_load_replay_wire_requires_fresh_start(tmp_path):
+    from acp import PROTOCOL_VERSION
+    from pa.acp.transport import spawn_agent
+    connection = AgentConnection(Settings(data_dir=tmp_path), MagicMock(), agent_name='codex')
+    client = bind(connection)
+    client._mcp_live_session = None
+    observed = []
+    connected = asyncio.Event()
+    async def update(_native, _update):
+        observed.append(connection.pa_mcp_health['state'])
+        if observed[-1] == 'connected':
+            connected.set()
+    client.on_update = update
+    fixture = Path(__file__).parent / 'fixtures/mcp_startup_provider.py'
+    env = {k: v for k, v in os.environ.items() if not k.startswith('PA_')}
+    async with asyncio.timeout(10):
+        async with spawn_agent(client, sys.executable, str(fixture), env=env) as (protocol, _process):
+            await protocol.initialize(protocol_version=PROTOCOL_VERSION)
+            await protocol.load_session(session_id='native-current', cwd=str(tmp_path), mcp_servers=[])
+            client.begin_live_mcp_session('native-current')
+            connection._publish_mcp_startup(client, 'native-current')
+            assert connection.pa_mcp_health['state'] == 'checking'
+            await connected.wait()
+    assert observed == ['checking', 'checking', 'checking', 'connected']
+    assert list(tmp_path.iterdir()) == []
