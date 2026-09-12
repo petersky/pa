@@ -22,6 +22,8 @@ from pa.prompts import (
 )
 
 EXPECTED_PROMPT_KEYS = {
+    "health.problem_reporting",
+    "health.triage",
     "agent.context.execution_boundary",
     "card.reconciliation.disposition",
     "agent.context.browser",
@@ -639,6 +641,8 @@ class PromptCompositionTests(unittest.TestCase):
         self.assertIn("agent.context.execution", keys)
         self.assertIn("agent.context.data_safety", keys)
         self.assertIn("agent.context.browser", keys)
+        self.assertIn("health.problem_reporting", keys)
+        self.assertIn("report_pa_problem", sent)
         self.assertIn("agent.message.wrapper", keys)
         versions = {item["key"]: item["version"] for item in history[-1]["prompts"]}
         self.assertEqual(versions["agent.context.execution"], 1)

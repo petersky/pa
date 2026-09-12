@@ -13,6 +13,10 @@ mcp = None
 
 ASSIGNED_SERVICE_TOOL_ALLOWLIST = frozenset(
     {
+        "report_pa_problem",
+        "list_pa_problems",
+        "get_pa_problem",
+        "health_journal_status",
         "get_assigned_dispatch",
         "get_assigned_goal",
         "propose_assigned_goal_action",
@@ -28,6 +32,7 @@ ASSIGNED_SERVICE_TOOL_ALLOWLIST = frozenset(
 # Restart tools route according to the authenticated bridge mode. The remaining
 # assigned tools require Goal governance and cannot serve ordinary card workers.
 ASSIGNED_SERVICE_ONLY_TOOLS = ASSIGNED_SERVICE_TOOL_ALLOWLIST - {
+    "report_pa_problem", "list_pa_problems", "get_pa_problem", "health_journal_status",
     "preview_agent_restart_handoff",
     "edit_agent_restart_handoff",
     "request_agent_restart_handoff",
@@ -104,7 +109,7 @@ def _get_mcp():
         for name in (
             "backups", "fleet", "sync", "notifications", "projects",
             "pr_supervisor", "items", "goals", "intake", "limbic", "instance",
-            "collaboration", "agent_chat", "telemetry", "browser", "agent_providers",
+            "collaboration", "agent_chat", "telemetry", "health_journal", "browser", "agent_providers",
         ):
             import_module(f"pa.mcp.tools.{name}").register_mcp(guarded, ctx)
         registry.load_entrypoints()

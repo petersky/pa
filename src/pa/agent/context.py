@@ -393,6 +393,7 @@ def compose_session_prompt(
                 provider=provider,
             ),
             PROMPTS.render("agent.context.data_safety", provider=provider),
+            PROMPTS.render("health.problem_reporting", provider=provider),
             PROMPTS.render("agent.context.interactions", provider=provider),
             PROMPTS.render("agent.context.collaboration", provider=provider),
             PROMPTS.render("agent.context.browser", provider=provider),
