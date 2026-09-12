@@ -13,6 +13,18 @@ def register_mcp(mcp, ctx: AppContext) -> None:
     from pa.mcp.local_api import request_local_pa
 
     @mcp.tool()
+    def list_items(
+        kind: ItemKind | None = None, status: ItemStatus | None = None
+    ) -> list[dict]:
+        """List goals, tasks, projects, and concerns."""
+        return request_local_pa(
+            ctx.settings,
+            "GET",
+            "/api/items",
+            params={"kind": kind, "status": status},
+        )
+
+    @mcp.tool()
     def record_card_acceptance(
         card_id: str, realm: str, expected_version: str,
         requirement_revision: str, subject_revision: str,
@@ -35,18 +47,6 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                 "subject_revision": subject_revision,
                 "milestones": milestones, "references": references,
             }},
-        )
-
-    @mcp.tool()
-    def list_items(
-        kind: ItemKind | None = None, status: ItemStatus | None = None
-    ) -> list[dict]:
-        """List goals, tasks, projects, and concerns."""
-        return request_local_pa(
-            ctx.settings,
-            "GET",
-            "/api/items",
-            params={"kind": kind, "status": status},
         )
 
     @mcp.tool()
