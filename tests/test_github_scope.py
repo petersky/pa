@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -16,6 +16,8 @@ from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
 from pa.pr_supervisor import scope
 from pa.pr_supervisor.github import GitHubAPIError, GitHubClient, GitHubCredentials
+
+_REAL_GITHUB_REQUEST = GitHubClient._request
 
 
 @pytest.fixture
@@ -392,3 +394,113 @@ def test_heartbeat_rejects_invalid_stale_and_forged_identity(api):
         assert result.status_code == 422
         assert 'secret' not in result.text
     assert not any(row.instance_id == 'forged' for row in service.store.list_capabilities())
+
+
+@pytest.mark.parametrize('failure,reason', [(401, 'credentials_rejected'),
+    (503, 'verification_unavailable'), ('timeout', 'verification_unavailable'),
+    ('deadline', 'verification_unavailable')])
+def test_actual_probe_cause_reaches_capability_watch_api_ui_and_recovers(api, failure, reason):
+    import asyncio
+    from datetime import timedelta
+    from pa.pr_supervisor.models import PRWatch, utcnow
+    from tests.test_pr_supervisor import snapshot
+    client, app, _ = api
+    service = app.state.ctx.require_service('pr_supervisor')
+    runtime = app.state.ctx.require_service('async_runtime')
+    client.portal.call(service._loop_supervisor.close)
+    failed, user_calls = [True], []
+    async def transport(request):
+        assert request.url.path == '/user'
+        user_calls.append(request.url.path)
+        if failed[0]:
+            if failure == 'timeout':
+                raise httpx.ReadTimeout('private-secret')
+            if failure == 'deadline':
+                await asyncio.Event().wait()
+            return httpx.Response(failure, json={'message': 'private-secret'})
+        return httpx.Response(200, json={'login': 'test'})
+    http = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+    real_observe = runtime.observe
+    async def short_probe_observe(operation, awaitable, *, timeout=None):
+        return await real_observe(operation, awaitable,
+            timeout=0.01 if operation == 'http.github' else timeout)
+    runtime.observe = short_probe_observe
+    service.github._provided_client = http
+    service.github._request = _REAL_GITHUB_REQUEST.__get__(service.github, GitHubClient)
+    service.eligibility_journal_hook = MagicMock()
+    watch = service.store.upsert_watch(PRWatch(id='probe-cause-ui', repository='petersky/pa',
+        pr_number=42, pr_url='https://github.com/petersky/pa/pull/42'))
+    try:
+        client.portal.call(lambda: service.refresh_capability(force=True))
+        client.portal.call(service.run_once)
+        assert len(user_calls) == 1  # Not reprobed by the next run_once.
+        capability = client.get('/api/pr-supervisor/capabilities').json()['local']
+        assert capability['state'] == reason
+        assert not capability['authenticated']
+        result = client.get('/api/pr-supervisor/watches/' + watch.id)
+        assert reason in result.text and 'private-secret' not in result.text
+        if reason == 'verification_unavailable':
+            assert 'credentials_unavailable' not in result.text
+            assert 'credentials_rejected' not in result.text
+        assert reason in client.get('/pull-requests?watch=' + watch.id).text
+        comparison = client.get('/api/github/supervision-scope/comparison')
+        assert comparison.json()['candidates'][0]['reason_code'] == reason
+        failed[0] = False
+        service._capability_checked_at = utcnow() - timedelta(seconds=service.CAPABILITY_ERROR_RETRY_SECONDS + 1)
+        service.github.snapshot = AsyncMock(return_value=snapshot().model_copy(update={
+            'repository': 'petersky/pa', 'number': 42}))
+        service._notify = AsyncMock()
+        service.store.schedule_now(watch_id=watch.id)
+        client.portal.call(service.run_once)
+        assert len(user_calls) == 2
+        assert service.capability.state == 'ready'
+        assert service.capability.supports('petersky/pa')
+        assert service.store.get_watch(watch.id).last_error is None
+        inventory = [call.args[0]['report'] for call in service.eligibility_journal_hook.call_args_list
+            if call.args[0]['report']['dependency'] == 'capability_inventory']
+        assert inventory[-1]['eligible'] == ['scope-test']
+    finally:
+        runtime.observe = real_observe
+        client.portal.call(http.aclose)
+
+
+def test_actual_authority_deadline_reaches_watch_api_and_ui(api):
+    import asyncio
+    from pa.pr_supervisor.models import PRWatch
+    client, app, _ = api
+    service = app.state.ctx.require_service('pr_supervisor')
+    runtime = app.state.ctx.require_service('async_runtime')
+    client.portal.call(service._loop_supervisor.close)
+    service.settings.instance_url = 'http://local'
+    service.settings.fleet_owner_url = 'http://authority'
+    calls = []
+    async def transport(request):
+        if request.method == 'POST':
+            return httpx.Response(200, json={})
+        calls.append(request.url.path)
+        await asyncio.Event().wait()
+    http = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+    original_http, real_observe = service.http_client, runtime.observe
+    async def short_peer_observe(operation, awaitable, *, timeout=None):
+        return await real_observe(operation, awaitable,
+            timeout=0.01 if operation == 'http.pr_supervisor_peer' else timeout)
+    runtime.observe = short_peer_observe
+    service.http_client = http
+    try:
+        for number in (1, 2):
+            service.store.upsert_watch(PRWatch(id=f'deadline-{number}', repository='petersky/eschaton',
+                pr_number=number, pr_url=f'https://github.com/petersky/eschaton/pull/{number}'))
+        client.portal.call(service.run_once)
+        assert len(calls) == 1
+        for number in (1, 2):
+            response = client.get(f'/api/pr-supervisor/watches/deadline-{number}')
+            assert response.json()['watch']['state']['eligibility']['reason_code'] == 'authority_unreachable'
+            assert 'credentials_unavailable' not in response.text
+        page = client.get('/pull-requests?watch=deadline-1')
+        assert 'authority_unreachable' in page.text
+        assert 'Automatic retry is scheduled' in page.text
+        assert runtime.snapshot()['operations']['http.pr_supervisor_peer']['timed_out'] == 1
+    finally:
+        service.http_client = original_http
+        runtime.observe = real_observe
+        client.portal.call(http.aclose)

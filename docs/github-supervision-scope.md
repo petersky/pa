@@ -88,3 +88,11 @@ poll schedule. Receiver ordering prevents older advertisements replacing newer
 ones; future observations and expired lease capabilities cannot grant effects.
 The optional `eligibility_journal_hook` receives safe typed reports; shared
 journal infrastructure owns issue storage, deduplication and recovery correlation.
+
+A failed GitHub `/user` verification is also causal evidence: HTTP 401 reports
+`credentials_rejected`; transport errors, provider errors and verification
+deadlines report `verification_unavailable`. Both deny new supervision effects
+and use the existing bounded error-probe retry interval. A timeout does not prove
+that credentials were rejected. Authority asyncio deadlines report
+`authority_unreachable` through the same bounded inventory path; caller
+cancellation remains cancellation rather than an eligibility diagnosis.

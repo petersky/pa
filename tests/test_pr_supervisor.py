@@ -1317,9 +1317,9 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             capability = await service.refresh_capability(force=True)
 
-        self.assertEqual(capability.state, "error")
+        self.assertEqual(capability.state, "verification_unavailable")
         self.assertFalse(capability.authenticated)
-        self.assertEqual(capability.detail, "GitHub credential verification failed; check this instance's credential access.")
+        self.assertEqual(capability.detail, "GitHub credential verification is unavailable. Check provider connectivity; automatic retry is scheduled.")
         self.assertIsNotNone(service._capability_checked_at)
 
     async def test_condition_change_rearms_same_failure(self) -> None:

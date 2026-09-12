@@ -199,10 +199,15 @@ class GitHubClient:
             return capability
         try:
             await self._request("GET", "/user", operation="credential probe")
-        except (GitHubAPIError, httpx.HTTPError) as exc:
-            capability.authenticated = False
-            capability.state = "error"
-            capability.detail = "GitHub credential verification failed; check this instance's credential access."
+        except (GitHubAPIError, httpx.HTTPError, TimeoutError) as exc:
+            capability.authenticated = False  # Effect admission remains fail closed.
+            rejected = isinstance(exc, GitHubAPIError) and exc.status_code == 401
+            capability.state = "credentials_rejected" if rejected else "verification_unavailable"
+            capability.detail = (
+                "GitHub rejected this instance's credential. Check its authentication."
+                if rejected else
+                "GitHub credential verification is unavailable. Check provider connectivity; automatic retry is scheduled."
+            )
         return capability
 
     async def create_pull_request(

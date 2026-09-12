@@ -405,3 +405,55 @@ async def test_local_capability_does_not_heal_unavailable_authority(tmp_path, mo
         assert not report['eligible']
     finally:
         await service.http_client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('producer', ['probe', 'authority'])
+@pytest.mark.parametrize('cancelled', [False, True])
+async def test_real_observe_deadline_and_caller_cancellation(tmp_path, monkeypatch, producer, cancelled):
+    import asyncio
+    from pa.core.async_runtime import AsyncRuntime
+    monkeypatch.setenv('PA_GITHUB_TOKEN', 'secret')
+    write_policy(tmp_path, {'allowed_repositories': ['petersky/pa']})
+    runtime = AsyncRuntime()
+    real_observe = runtime.observe
+    entered = asyncio.Event()
+
+    async def short_observe(operation, awaitable, *, timeout=None):
+        # Exercise the real asyncio deadline producer; change only the test deadline.
+        return await real_observe(operation, awaitable, timeout=10 if cancelled else 0.01)
+
+    runtime.observe = short_observe
+    async def transport(request):
+        entered.set()
+        await asyncio.Event().wait()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        service = PRSupervisor(Settings(data_dir=tmp_path, instance_id='local',
+            instance_url='http://local', fleet_owner_url='http://authority'), MagicMock(),
+            http_client=client, async_runtime=runtime)
+        try:
+            operation = service.github.probe('local') if producer == 'probe' else service._eligible_capabilities('petersky/pa')
+            task = asyncio.create_task(operation)
+            await entered.wait()
+            if cancelled:
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                assert not hasattr(service, '_eligibility_inventory')
+            else:
+                result = await task
+                if producer == 'probe':
+                    assert result.state == 'verification_unavailable'
+                    assert not result.supports('petersky/pa')
+                    assert result.token_source == 'environment'
+                else:
+                    assert result.reason_code == 'authority_unreachable'
+                    assert result.evaluation_state == 'unavailable'
+                    cached = await service._eligible_capabilities('petersky/pa')
+                    assert cached.reason_code == 'authority_unreachable'
+                metrics = runtime.snapshot()['operations']
+                key = 'http.github' if producer == 'probe' else 'http.pr_supervisor_peer'
+                assert metrics[key]['timed_out'] == 1
+        finally:
+            await runtime.close()

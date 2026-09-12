@@ -9,13 +9,15 @@ from pydantic import BaseModel, Field
 from pa.pr_supervisor.models import GitHubCapability, PR_WATCH_PROTOCOL_VERSION, utcnow
 
 Reason = Literal["scope_denied", "scope_config_invalid", "scope_config_unavailable",
-                 "credentials_unavailable", "repository_access_denied", "capability_stale",
+                 "credentials_unavailable", "credentials_rejected", "verification_unavailable", "repository_access_denied", "capability_stale",
                  "capability_incompatible", "authority_unreachable", "authority_response_invalid",
                  "no_candidates"]
 ACTIONS = {
     "scope_denied": "Review the exact repository scope in Settings on the named instance.",
     "scope_config_invalid": "Repair the invalid local GitHub scope configuration, then review its exact scope in Settings.",
     "scope_config_unavailable": "Restore the missing or unreadable local GitHub scope configuration; environment credentials do not establish scope.",
+    "verification_unavailable": "GitHub credential verification is unavailable. Check provider connectivity; automatic retry is scheduled.",
+    "credentials_rejected": "GitHub rejected the named instance's credential. Check its authentication.",
     "credentials_unavailable": "Check GitHub authentication on the named instance.",
     "repository_access_denied": "Check the existing credential's access to this repository on the named instance.",
     "capability_stale": "Check the named instance's capability publisher and its connection to the authority.",
@@ -86,6 +88,8 @@ def evaluate(capabilities: list[GitHubCapability], repository: str | None, *,
             reason = "capability_incompatible"
         elif item.configuration_status != "valid":
             reason = "scope_config_invalid" if item.configuration_status == "invalid" else "scope_config_unavailable"
+        elif item.state in ("verification_unavailable", "credentials_rejected"):
+            reason = item.state
         elif not item.authenticated:
             reason = "credentials_unavailable"
         elif item.state == "repository_access_denied":

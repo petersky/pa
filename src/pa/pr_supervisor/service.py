@@ -876,7 +876,7 @@ class PRSupervisor:
         self.github.credentials = credentials
         probe_seconds = (
             self.CAPABILITY_ERROR_RETRY_SECONDS
-            if self._capability and self._capability.state == "error"
+            if self._capability and self._capability.state in ("error", "verification_unavailable", "credentials_rejected")
             else self.CAPABILITY_PROBE_SECONDS
         )
         probe_due = (
@@ -2818,7 +2818,7 @@ class PRSupervisor:
                 )
             self._authority_last_success_at = utcnow()
             self._authority_last_error = None
-        except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        except (httpx.HTTPError, RuntimeError, TimeoutError, ValueError) as exc:
             reason = "authority_response_invalid" if isinstance(exc, ValueError) else "authority_unreachable"
             self._authority_last_error = reason
             report = EligibilityReport(evaluation_state="unavailable", reason_code=reason,
@@ -3113,7 +3113,7 @@ class PRSupervisor:
             )
             self._authority_last_success_at = utcnow()
             self._authority_last_error = None
-        except (httpx.HTTPError, RuntimeError) as exc:
+        except (httpx.HTTPError, RuntimeError, TimeoutError) as exc:
             self._authority_last_error = "authority_unreachable"
             logger.warning(
                 "PR supervisor capability heartbeat failed: %s",
@@ -3168,7 +3168,7 @@ class PRSupervisor:
                     authority_id = local.instance_id
                     window = data.get("history_seconds")
                     history_seconds = window if type(window) is int and 0 < window <= 86400 else None
-                except (httpx.HTTPError, RuntimeError):
+                except (httpx.HTTPError, RuntimeError, TimeoutError):
                     failure = "authority_unreachable"
                 except (ValueError, TypeError, AttributeError):
                     failure = "authority_response_invalid"
