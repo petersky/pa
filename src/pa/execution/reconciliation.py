@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 RECONCILIATION_SOURCE_PREFIX = "card-reconciliation:"
 RECONCILIATION_TERMINAL_STATES = {
+    # Authority completion outcomes consumed by the target outbox. Terminal
+    # means no reconciliation work remains, not that the card goal succeeded.
+    "applied",
+    "not_applicable",
+    "operator_state_preserved",
     "not_required",
     "resolved",
     "skipped_closed",

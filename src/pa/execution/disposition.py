@@ -37,6 +37,13 @@ class CardDispositionV1(BaseModel):
     evidence: CardDispositionEvidenceV1
 
 
+class CardDispositionV2(CardDispositionV1):
+    """Completion intent bound to the declaration observed by the producer."""
+
+    contract: Literal["pa.card-disposition/v2"]
+    completion_requirement_revision: str = Field(min_length=1)
+
+
 class CardDispositionDecision(BaseModel):
     """Auditable server decision for one requested disposition."""
 
@@ -50,18 +57,23 @@ class CardDispositionDecision(BaseModel):
     requested_lane: CardLane | None = None
     applied_lane: CardLane
     reason: str
-    disposition: CardDispositionV1 | None = None
+    disposition: CardDispositionV2 | CardDispositionV1 | None = None
     watch_id: str | None = None
+    reason_code: str = "integration_evidence"
+    missing_requirements: list[str] = Field(default_factory=list)
+    satisfied_requirements: list[str] = Field(default_factory=list)
+    cleanup_eligible: bool = False
 
 
 def parse_card_disposition(
     value: Any,
-) -> tuple[CardDispositionV1 | None, str | None]:
+) -> tuple[CardDispositionV2 | CardDispositionV1 | None, str | None]:
     """Parse v1 without allowing malformed business data to fail transport ACK."""
     if value is None:
         return None, None
     try:
-        return CardDispositionV1.model_validate(value), None
+        model = CardDispositionV2 if isinstance(value, dict) and value.get("contract") == "pa.card-disposition/v2" else CardDispositionV1
+        return model.model_validate(value), None
     except (ValidationError, TypeError, ValueError) as exc:
         return None, str(exc)
 
@@ -111,6 +123,8 @@ def decide_card_disposition(
     current_lane: CardLane,
     watches: list[PRWatch] | None = None,
     now: datetime | None = None,
+    completion_requirement: Any = None,
+    completion_evidence: Any = (),
 ) -> CardDispositionDecision:
     """Resolve a requested lane while defaulting to preservation and guarding Done."""
     disposition, error = parse_card_disposition(value)
@@ -129,6 +143,17 @@ def decide_card_disposition(
                 f"{(error or 'validation failed')[:1000]}"
             ),
         )
+    if isinstance(disposition, CardDispositionV2):
+        revision = getattr(completion_requirement, "revision", None)
+        if isinstance(completion_requirement, dict):
+            revision = completion_requirement.get("revision")
+        if disposition.completion_requirement_revision != revision:
+            return CardDispositionDecision(
+                status="downgraded", requested_lane=disposition.lane,
+                applied_lane=current_lane, disposition=disposition,
+                reason="The completion requirement changed; the current lane was preserved.",
+                reason_code="stale_completion_requirement",
+            )
     if disposition.lane != CardLane.DONE:
         return CardDispositionDecision(
             status="applied",
@@ -142,8 +167,19 @@ def decide_card_disposition(
     allowed, reason, watch_id = _done_evidence_is_safe(
         disposition, linked, now=now or utcnow()
     )
+    from pa.domain.completion import completion_state
+    completion = completion_state(completion_requirement, completion_evidence)
+    if allowed and not completion["accepted"] and current_lane != CardLane.DONE:
+        return CardDispositionDecision(
+            status="downgraded", requested_lane=CardLane.DONE,
+            applied_lane=CardLane.WAITING, disposition=disposition, watch_id=watch_id,
+            reason="Integration recorded; awaiting " + ", ".join(completion["missing"]) + ".",
+            reason_code=completion["reason_code"], missing_requirements=completion["missing"],
+            satisfied_requirements=completion["satisfied"],
+        )
     if allowed:
         return CardDispositionDecision(
+            cleanup_eligible=completion["accepted"],
             status="applied",
             requested_lane=CardLane.DONE,
             applied_lane=CardLane.DONE,

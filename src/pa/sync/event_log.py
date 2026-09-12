@@ -1193,6 +1193,7 @@ class EventLog:
     def _snapshot_from_events(
         events: Iterator[CardEvent], entity: str
     ) -> dict | None:
+        from pa.domain.completion import protected_event_payload
         state: dict | None = None
         card_seen_since_delete = False
         for event in events:
@@ -1208,7 +1209,7 @@ class EventLog:
                 EventType.PROJECT_CREATED,
                 EventType.INSTANCE_GROUP_CREATED,
             }:
-                state = dict(event.payload)
+                state = protected_event_payload(state or {}, event.payload, expected_version=event.causal_card_version, field_intent=event.field_intent) if entity == "card" else dict(event.payload)
                 if entity == "card":
                     card_seen_since_delete = True
             elif event.type in {
@@ -1228,7 +1229,7 @@ class EventLog:
                     card_seen_since_delete = True
                 if state is None:
                     state = {}
-                state.update(event.payload)
+                state.update(protected_event_payload(state, event.payload, expected_version=event.causal_card_version, field_intent=event.field_intent) if entity == "card" else event.payload)
             elif event.type in {
                 EventType.CARD_DELETED,
                 EventType.INSTANCE_GROUP_DELETED,
@@ -1386,6 +1387,8 @@ class EventLog:
                 "scanned_commits": 0,
             }
 
+        from pa.domain.completion import completion_history_effect
+        completion_snapshot = {}
         if self.ensure_indexed(realm_id, head):
             indexed_rows = self.index.entity_rows(realm_id, head, entity, entity_id)
             if indexed_rows is not None:
@@ -1407,6 +1410,9 @@ class EventLog:
                         entity_seen_since_delete = False
                     else:
                         entity_seen_since_delete = True
+                    completion_effect = "applied"
+                    if entity == "card" and not duplicate_create:
+                        completion_snapshot, completion_effect = completion_history_effect(completion_snapshot, event)
                     if row_index < offset:
                         continue
                     parents = str(row["parents"] or "").split(chr(31))
@@ -1420,7 +1426,7 @@ class EventLog:
                             "commit_principal": row["author_principal"],
                             "commit_timestamp": row["timestamp"],
                             "projection_effect": (
-                                "ignored_duplicate_create" if duplicate_create else "applied"
+                                "ignored_duplicate_create" if duplicate_create else completion_effect
                             ),
                         }
                     )
@@ -1446,6 +1452,7 @@ class EventLog:
         seen_commits: set[str] = set()
         entity_present = False
         entity_seen_since_delete = False
+        completion_snapshot = {}
         matching_index = 0
         has_more = False
 
@@ -1477,6 +1484,9 @@ class EventLog:
                     else:
                         entity_seen_since_delete = True
 
+                    completion_effect = "applied"
+                    if entity == "card" and not duplicate_create:
+                        completion_snapshot, completion_effect = completion_history_effect(completion_snapshot, event)
                     if matching_index >= offset:
                         if len(records) >= limit:
                             has_more = True
@@ -1493,7 +1503,7 @@ class EventLog:
                                 "projection_effect": (
                                     "ignored_duplicate_create"
                                     if duplicate_create
-                                    else "applied"
+                                    else completion_effect
                                 ),
                             }
                         )

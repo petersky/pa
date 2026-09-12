@@ -1151,7 +1151,14 @@ class WorkspaceManager:
             entry.startswith("?? ") for entry in entries
         )
 
+    def _card_completion_eligible(self, card_id: str) -> bool:
+        # Missing cards retain the existing orphan/session-closed policy; a
+        # known card must pass its current declaration regardless of realm.
+        return self.store.card_completion_eligible(card_id) is not False
+
     def mark_card_completed(self, card_id: str, *, merged: bool) -> int:
+        if not self._card_completion_eligible(card_id):
+            return 0
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -1196,7 +1203,7 @@ class WorkspaceManager:
             terminal = False
             if lease.card_id:
                 lane = cards.get(lease.card_id)
-                terminal = lane == "done"
+                terminal = lane == "done" and self._card_completion_eligible(lease.card_id)
                 if lane is None:
                     result["missing_cards"] += 1
                     if session_closed:
@@ -1332,7 +1339,8 @@ class WorkspaceManager:
             if lease.state == "cleaned":
                 continue
             if (
-                lease.session_id in active_session_ids
+                (lease.card_id and not self._card_completion_eligible(lease.card_id))
+                or lease.session_id in active_session_ids
                 or not lease.completed
                 or not lease.merged
                 or lease.expires_at > now
@@ -1563,6 +1571,8 @@ class WorkspaceManager:
         worktree = Path(lease.worktree_path)
         cache = Path(lease.cache_path)
         try:
+            if lease.card_id and not self._card_completion_eligible(lease.card_id):
+                raise WorkspaceProvisioningError("card completion requirements are pending")
             self._assert_managed_path(worktree)
             self._assert_managed_path(cache)
             if worktree.exists():
@@ -1616,6 +1626,8 @@ class WorkspaceManager:
                     lease.cleanup_evidence = {
                         "proof": "branch has no commits outside refreshed origin refs"
                     }
+                if lease.card_id and not self._card_completion_eligible(lease.card_id):
+                    raise WorkspaceProvisioningError("card completion requirements changed before cleanup")
                 self._git("-C", str(cache), "worktree", "remove", str(worktree))
                 for empty_parent in (worktree.parent, worktree.parent.parent):
                     try:

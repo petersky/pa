@@ -1861,6 +1861,22 @@ _ENVIRONMENT_ONLY_DEFINITIONS = (
         rationale="Retained only so restricted bootstrap can reject caller-selected Goal authority identity.",
     ),
     _env_only(
+        "completion_dispatch_id",
+        "PA_COMPLETION_DISPATCH_ID",
+        "Ordinary acceptance producer dispatch binding.",
+        "Internal runtime",
+        107,
+        rationale="Derived from the durable ordinary dispatch for the private MCP bridge; not operator configuration or a credential.",
+    ),
+    _env_only(
+        "completion_session_id",
+        "PA_COMPLETION_SESSION_ID",
+        "Ordinary acceptance producer session binding.",
+        "Internal runtime",
+        108,
+        rationale="Derived from the exact durable session for the private MCP bridge; never an asserted acceptance principal.",
+    ),
+    _env_only(
         "writable_roots",
         "PA_WRITABLE_ROOTS",
         "Per-session filesystem write boundary.",

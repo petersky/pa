@@ -27,6 +27,8 @@ from pa.acp.configuration import (
     normalized_session_config_json,
 )
 from pa.acp.environment import (
+    COMPLETION_DISPATCH_ENV,
+    COMPLETION_SESSION_ENV,
     ASSIGNED_SERVICE_DISPATCH_ENV,
     ASSIGNED_SERVICE_MODE_ENV,
     ASSIGNED_SERVICE_SESSION_ENV,
@@ -222,8 +224,13 @@ def _project_recovery_block(exc: BaseException) -> bool:
     )
 
 
+from pa.instance.restart_lifecycle import RestartTransitionConflict, restart_observation_fields
+
+
 class AgentStartupNotReady(RuntimeError):
     """Raised when session traffic arrives before durable recovery finishes."""
+
+    code = "owner_not_ready"
 
 
 class AgentSessionRecoveryError(RuntimeError):
@@ -1539,13 +1546,16 @@ class AgentSessionRuntime:
                 await self._refresh_restart_receipt(item)
                 receipt = self._restart_continuation_receipt(item)
                 if receipt is not None:
-                    await self._offload(
-                        "sqlite.restart_handoff_delivered",
-                        self.store.update_restart_handoff,
-                        receipt.id,
-                        status="continuation_delivered",
-                        delivered=True,
-                    )
+                    try:
+                        await self._offload(
+                            "sqlite.restart_handoff_delivered",
+                            self.store.update_restart_handoff,
+                            receipt.id,
+                            status="continuation_delivered",
+                            delivered=True, expected_status=receipt.status, expected_version=receipt.phase_version, owner_instance_id=self.settings.instance_id,
+                        )
+                    except RestartTransitionConflict:
+                        pass  # The completed turn is durable; the owner will reconcile.
                 if item.publication_fence:
                     self._queue_paused = True
                     self._append_transcript(
@@ -2930,7 +2940,7 @@ class AgentSessionRuntime:
                 if rid in getattr(self, "_elicitation_requests", {})
             ],
             "restart_handoffs": [
-                item.model_dump(mode="json")
+                {**item.model_dump(mode="json"), "observation": restart_observation_fields(item, session=self.session, runtime=self)}
                 for item in (
                     self.store.list_restart_handoffs(session_id=self.session_id)
                     if callable(getattr(self.store, "list_restart_handoffs", None))
@@ -3241,6 +3251,8 @@ class AgentSessionManager:
                 self.assigned_mcp_environment_resolver(session) or {}
             )
         assigned_names = {
+            COMPLETION_DISPATCH_ENV,
+            COMPLETION_SESSION_ENV,
             ASSIGNED_SERVICE_MODE_ENV,
             ASSIGNED_SERVICE_DISPATCH_ENV,
             ASSIGNED_SERVICE_SESSION_ENV,
@@ -3252,9 +3264,8 @@ class AgentSessionManager:
             )
         mismatched = {
             name
-            for name, value in derived_mcp_environment.items()
-            if name in supplied_mcp_environment
-            and supplied_mcp_environment[name] != value
+            for name in supplied_assignment
+            if supplied_mcp_environment[name] != derived_mcp_environment.get(name)
         }
         if mismatched:
             raise AgentSessionRecoveryError(
@@ -3410,6 +3421,8 @@ class AgentSessionManager:
             statuses=("requested", "waiting_for_turn_end"),
         )
         for receipt in pending:
+            if self._should_abort_admission():
+                break
             self._schedule_restart_handoff(receipt.id)
         if self._resume_on_start:
             await self._resume_restart_handoffs(replay_only=True)
@@ -4739,10 +4752,11 @@ class AgentSessionManager:
                 "requested", "waiting_for_turn_end", "quiescing"
             }:
                 return
-            await self._offload(
-                "sqlite.restart_handoff_waiting", self.store.update_restart_handoff,
-                handoff_id, status="waiting_for_turn_end"
-            )
+            if handoff.status == "requested":
+                handoff = await self._offload(
+                    "sqlite.restart_handoff_waiting", self.store.update_restart_handoff,
+                    handoff_id, status="waiting_for_turn_end", expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
+                )
             runtime = self.get(handoff.session_id)
             while runtime and runtime.prompting:
                 await asyncio.sleep(_QUIESCE_POLL_SECONDS)
@@ -4760,15 +4774,15 @@ class AgentSessionManager:
                 runtime._flush_transcript()
                 await runtime._drain_transcripts(raise_on_timeout=True)
             stage = "quiescing"
-            await self._offload(
+            handoff = await self._offload(
                 "sqlite.restart_handoff_quiescing", self.store.update_restart_handoff,
-                handoff_id, status="quiescing"
+                handoff_id, status="quiescing", expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
             )
             await self.quiesce(reason=f"restart-handoff:{handoff_id}")
             stage = "restarting"
-            await self._offload(
+            handoff = await self._offload(
                 "sqlite.restart_handoff_restarting", self.store.update_restart_handoff,
-                handoff_id, status="restarting", increment_attempts=True
+                handoff_id, status="restarting", increment_attempts=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
             )
             from pa.cli.service import request_restart
             await self._offload(
@@ -4777,13 +4791,41 @@ class AgentSessionManager:
             )
         except asyncio.CancelledError:
             raise
+        except RestartTransitionConflict:
+            return  # A competing durable transition owns the next action.
         except Exception as exc:
+            from pa.instance.restart_lifecycle import restart_reason_code
             logger.exception("Deferred restart handoff %s failed", handoff_id)
-            await self._offload(
+            handoff = await self._offload(
                 "sqlite.restart_handoff_failed", self.store.update_restart_handoff,
                 handoff_id, status="failed", error=(str(exc) or type(exc).__name__)[:1000],
-                failure_stage=stage,
+                failure_stage=stage, reason_code=restart_reason_code(exc), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
             )
+
+    async def _offload_restart_recovery(self, operation, *args, **kwargs):
+        return await self._offload(
+            operation, self._advance_restart_recovery_if_accepting,
+            asyncio.get_running_loop(), *args, **kwargs,
+        )
+
+    def _advance_restart_recovery_if_accepting(self, loop, *args, **kwargs):
+        # Acquire the existing async owner lock only when the queued worker
+        # actually executes. Passive runtime reads never wait on a database.
+        async def admit():
+            lock = self.label_lock("restart-handoff-effect")
+            await lock.acquire()
+            if self._should_abort_admission():
+                lock.release()
+                raise SessionAdmissionInProgress("Restart recovery admission is closed")
+            return lock
+
+        lock = asyncio.run_coroutine_threadsafe(admit(), loop).result()
+        try:
+            return self.store.update_restart_handoff(*args, **kwargs)
+        finally:
+            # The worker retains ownership even if its awaiting sweep is
+            # cancelled; quiesce cannot commit over a residual database write.
+            loop.call_soon_threadsafe(lock.release)
 
     async def _resume_restart_handoffs(self, *, replay_only: bool = False) -> None:
         async with self.label_lock("restart-handoff-replay"):
@@ -4805,21 +4847,19 @@ class AgentSessionManager:
                     handoff.session_id, handoff.continuation_prompt_id,
                 )
                 if completed is not None:
-                    await self._offload(
+                    handoff = await self._offload(
                         "sqlite.restart_handoff_delivered", self.store.update_restart_handoff,
-                        handoff.id, status="continuation_delivered", delivered=True,
+                        handoff.id, status="continuation_delivered", delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
                     continue
             # Old versions terminalized transient owner-readiness failures.
             # Only this known retryable stage may re-enter automatic replay.
-            transient_failure = (
-                handoff.failure_stage == "resuming"
-                and "PA MCP owner channel api_not_ready (endpoint=" in (handoff.error or "")
-            )
+            from pa.instance.restart_lifecycle import retryable_owner_failure
+            transient_failure = retryable_owner_failure(handoff)
             if handoff.status == "failed" and not transient_failure:
                 continue
             if handoff.status in {"requested", "waiting_for_turn_end", "quiescing"}:
-                if not replay_only and handoff.id not in self._restart_handoff_tasks:
+                if not replay_only and not self._should_abort_admission() and handoff.id not in self._restart_handoff_tasks:
                     self._schedule_restart_handoff(handoff.id)
                 continue
             session = await self._offload(
@@ -4852,26 +4892,32 @@ class AgentSessionManager:
                 if completed is not None:
                     # The provider turn may have completed before the process
                     # could advance the receipt. Never replay completed work.
-                    await self._offload(
+                    handoff = await self._offload(
                         "sqlite.restart_handoff_delivered",
                         self.store.update_restart_handoff,
-                        handoff.id, status="continuation_delivered", delivered=True,
+                        handoff.id, status="continuation_delivered", delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
                     continue
+                # Reads above can span this process committing quiescence. A
+                # restarting receipt is not evidence that a new process is here.
+                # Exact completed-turn evidence remains authoritative above.
+                if self._should_abort_admission():
+                    continue
                 if not handoff.continuation_prompt.strip():
-                    await self._offload(
+                    handoff = await self._offload_restart_recovery(
                         "sqlite.restart_handoff_no_continuation",
-                        self.store.update_restart_handoff,
                         handoff.id,
                         status="restart_completed",
-                        delivered=True,
+                        delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
                     continue
                 if handoff.status != "continuation_queued":
-                    await self._offload(
-                        "sqlite.restart_handoff_resuming", self.store.update_restart_handoff,
-                        handoff.id, status="resuming"
+                    handoff = await self._offload_restart_recovery(
+                        "sqlite.restart_handoff_resuming",
+                        handoff.id, status="resuming", retry=transient_failure, increment_attempts=transient_failure, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
                     )
+                if self._should_abort_admission():
+                    continue
                 runtime = self.get(handoff.session_id)
                 if runtime is None or runtime._closed or not runtime.connected:
                     runtime = await self.recover_session(
@@ -4895,11 +4941,14 @@ class AgentSessionManager:
                     handoff.session_id, handoff.continuation_prompt_id,
                 )
                 if completed is not None:
-                    await self._offload(
+                    handoff = await self._offload(
                         "sqlite.restart_handoff_delivered", self.store.update_restart_handoff,
-                        handoff.id, status="continuation_delivered", delivered=True,
+                        handoff.id, status="continuation_delivered", delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
-                    runtime._start_drain()
+                    if not self._should_abort_admission():
+                        runtime._start_drain()
+                    continue
+                if self._should_abort_admission():
                     continue
                 if handoff.status == "continuation_queued":
                     # Recovery restores the checkpointed queue. A queued receipt
@@ -4920,26 +4969,30 @@ class AgentSessionManager:
                         project_id=handoff.project_id,
                         _defer_drain=True,
                     )
-                await self._offload(
+                handoff = await self._offload(
                     "sqlite.restart_handoff_queued", self.store.update_restart_handoff,
-                    handoff.id, status="continuation_queued"
+                    handoff.id, status="continuation_queued", expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
                 )
-                runtime._start_drain()
+                if not self._should_abort_admission():
+                    runtime._start_drain()
+            except RestartTransitionConflict:
+                continue
             except SessionAdmissionInProgress:
                 # Another exact-session recovery owns provider admission. Its
                 # durable result will be reconciled by the next watchdog sweep.
                 continue
             except Exception as exc:
-                transient = "PA MCP owner channel api_not_ready (endpoint=" in str(exc)
+                from pa.instance.restart_lifecycle import restart_reason_code
+                transient = restart_reason_code(exc) == "owner_not_ready"
                 if transient:
                     await self._mark_recovery_interrupted(
                         self._snapshot_from_persisted(session), exc
                     )
-                await self._offload(
+                handoff = await self._offload(
                     "sqlite.restart_handoff_resume_failed",
                     self.store.update_restart_handoff, handoff.id,
                     status="failed", error=str(exc)[:1000],
-                    failure_stage="resuming",
+                    failure_stage="resuming", reason_code=restart_reason_code(exc), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                 )
 
     async def resume_restart_handoffs_after_startup(self) -> None:
@@ -6347,8 +6400,9 @@ class AgentSessionManager:
         )
 
     async def stop(self, *, fast: bool = False) -> None:
-        self._accepting = False
-        self._quiescing = True
+        with self._runtime_lifecycle_lock:
+            self._accepting = False
+            self._quiescing = True
         if self._recovery_coordinator_task:
             self._recovery_coordinator_task.cancel()
         for task in list(self._recovery_tasks.values()):
@@ -6387,11 +6441,12 @@ class AgentSessionManager:
         # Admission is transactional until a quiesce snapshot is committed (or a
         # real process shutdown fence is active). A timed-out handoff must not
         # leave Start Session returning agent_draining forever.
-        prior_accepting = self._accepting
-        prior_quiescing = self._quiescing
+        with self._runtime_lifecycle_lock:
+            prior_accepting = self._accepting
+            prior_quiescing = self._quiescing
+            self._quiescing = True
+            self._accepting = False
         committed = False
-        self._quiescing = True
-        self._accepting = False
 
         async def _emit(
             phase: str, *, done: bool = False, error: str | None = None
@@ -6414,12 +6469,21 @@ class AgentSessionManager:
             nonlocal committed
             if committed or is_shutting_down():
                 return
-            self._accepting = prior_accepting
-            self._quiescing = prior_quiescing
+            with self._runtime_lifecycle_lock:
+                self._accepting = prior_accepting
+                self._quiescing = prior_quiescing
 
         try:
             await _emit("quiescing")
             deadline = asyncio.get_running_loop().time() + timeout
+            effect_lock = self.label_lock("restart-handoff-effect")
+            try:
+                await asyncio.wait_for(effect_lock.acquire(), timeout=max(0, deadline - asyncio.get_running_loop().time()))
+            except TimeoutError:
+                await _emit("timeout", done=True, error="Restart recovery write is still outstanding")
+                raise TimeoutError("Quiesce deadline: restart recovery write is still outstanding") from None
+            else:
+                effect_lock.release()
             while any(rt.prompting for rt in self._runtimes.values()):
                 if asyncio.get_running_loop().time() >= deadline:
                     await _emit(

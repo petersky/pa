@@ -26,6 +26,31 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    def record_card_acceptance(
+        card_id: str, realm: str, expected_version: str,
+        requirement_revision: str, subject_revision: str,
+        milestones: list[str], references: list[str], idempotency_key: str,
+    ) -> dict:
+        """Record acceptance as this live ordinary dispatch/session for its exact card.
+
+        Requires a declared eligible principal and independence from the repair
+        origin. PA stamps actor identity; this tool does not change the card lane.
+        Replay the same arguments and key to recover an existing receipt.
+        """
+        if not idempotency_key.strip():
+            raise ValueError("idempotency_key cannot be empty")
+        return request_local_pa(
+            ctx.settings, "PATCH", f"/api/cards/{quote(card_id, safe='')}",
+            params={"realm": realm}, headers={"Idempotency-Key": idempotency_key},
+            bound_completion=True,
+            json={"expected_version": expected_version, "completion_acceptance": {
+                "requirement_revision": requirement_revision,
+                "subject_revision": subject_revision,
+                "milestones": milestones, "references": references,
+            }},
+        )
+
+    @mcp.tool()
     def list_cards(
         realm: str | None = None,
         lane: CardLane | None = None,
@@ -94,6 +119,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         expected_version: str | None = None,
         field_intent: list[str] | None = None,
         execution_preferences: dict | None = None,
+        completion_requirement: dict | None = None,
+        completion_acceptance: dict | None = None,
     ) -> dict | None:
         """Update a canonical card. Omitted fields remain unchanged."""
         key = idempotency_key.strip()
@@ -109,6 +136,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                 "project_id": project_id,
                 "tags": tags,
                 "execution_preferences": execution_preferences,
+                "completion_requirement": completion_requirement,
+                "completion_acceptance": completion_acceptance,
             }.items()
             if value is not None
         }
@@ -123,7 +152,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             params={"realm": realm},
             json=changes,
             allow_not_found=True,
-            headers={"Idempotency-Key": key},
+            headers={"Idempotency-Key": key, "X-PA-Completion-Producer": "automation"},
         )
 
     @mcp.tool()

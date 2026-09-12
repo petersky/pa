@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pa.domain.completion import completion_runtime_capabilities
+
 import asyncio
 import copy
 import hashlib
@@ -777,7 +779,7 @@ def _assigned_mcp_environment_for_session(
     if not dispatch_id:
         return None
     record = ledger.get(dispatch_id)
-    if record is None or record.goal_provenance is None:
+    if record is None:
         return None
     provenance = record.goal_provenance
     if (
@@ -785,14 +787,19 @@ def _assigned_mcp_environment_for_session(
         or record.session_id != session.id
         or record.target_instance_id != settings.instance_id
         or record.authority_instance_id != session.authority_instance_id
-        or provenance.authority_instance_id != record.authority_instance_id
-        or provenance.resolved_target_instance_id != record.target_instance_id
-        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
-        or record.acknowledged_at is not None
+        or (provenance is not None and provenance.authority_instance_id != record.authority_instance_id)
+        or (provenance is not None and provenance.resolved_target_instance_id != record.target_instance_id)
+        or (provenance is not None and (
+            record.state in {"failed", "cancelled", "completed", "acknowledged"}
+            or record.acknowledged_at is not None
+        ))
     ):
         raise RuntimeError(
             "governed session does not match its durable assigned dispatch binding"
         )
+    if provenance is None:
+        from pa.acp.environment import COMPLETION_DISPATCH_ENV, COMPLETION_SESSION_ENV
+        return {COMPLETION_DISPATCH_ENV: record.dispatch_id, COMPLETION_SESSION_ENV: session.id}
     return assigned_service_mcp_environment(
         dispatch_id=record.dispatch_id,
         session_id=session.id,
@@ -2325,7 +2332,9 @@ def complete_dispatch(
         )
     decision = (
         decide_card_disposition(
-            body.disposition, current_lane=card.lane, watches=watches
+            body.disposition, current_lane=card.lane, watches=watches,
+            completion_requirement=card.completion_requirement,
+            completion_evidence=card.completion_evidence
         )
         if card
         else None
@@ -2352,6 +2361,7 @@ def complete_dispatch(
         else None
     )
 
+    reconciliation_condition = None
     if not decision or decision.requested_lane is None:
         outcome = "not_applicable"
         reason = decision.reason if decision else "No card disposition applies."
@@ -2372,15 +2382,34 @@ def complete_dispatch(
             f"{base_lane.value}; requested {requested_lane.value} was not applied."
         )
     else:
-        request.app.state.ctx.store.update_card(
-            card.id,
-            CardUpdate(lane=requested_lane),
-            realm_id=body.realm_id,
-            principal_id="fleet:card-disposition",
-            instance_id=request.app.state.ctx.settings.instance_id,
-        )
-        outcome = "applied"
-        reason = decision.reason
+        from pa.domain.projection import CardVersionConflict
+        from pa.domain.completion import CompletionConflict
+        try:
+            request.app.state.ctx.store.update_card(
+                card.id,
+                CardUpdate(lane=requested_lane, expected_version=card.updated_at),
+                realm_id=body.realm_id,
+                principal_id="fleet:card-disposition",
+                instance_id=request.app.state.ctx.settings.instance_id,
+            )
+            outcome = "applied"
+            reason = decision.reason
+        except (CardVersionConflict, CompletionConflict) as exc:
+            # Transport ACK is already immutable. Preserve it and leave the
+            # newer card for the existing explicit reconciliation owner.
+            outcome = "conflict_requires_resolution"
+            reconciliation_condition = (
+                "stale_card_version" if isinstance(exc, CardVersionConflict) else exc.code
+            )
+            reason = "Completion acknowledged; newer card state requires reconciliation."
+            card = request.app.state.ctx.store.get_card(card.id, realm_id=body.realm_id) or card
+            record.reconciliation_current_card = {
+                "lane": card.lane.value, "updated_at": card.updated_at.isoformat(),
+                "preferred_instance": card.preferred_instance,
+            }
+            record.reconciliation_recovery_action = (
+                "Reconcile the acknowledged dispatch against the current card; do not resend a stale lane write."
+            )
 
     record.card_disposition_status = decision.status if decision else "not_applicable"
     record.card_disposition_reason = reason
@@ -2389,7 +2418,7 @@ def complete_dispatch(
     )
     record.reconciliation_state = outcome
     record.reconciliation_condition = (
-        "operator_resolution" if outcome == "conflict_requires_resolution" else None
+        (reconciliation_condition or "operator_resolution") if outcome == "conflict_requires_resolution" else None
     )
     record.reconciliation_recoverable = outcome == "conflict_requires_resolution"
     record.reconciliation_updated_at = datetime.now(UTC)
@@ -2579,6 +2608,9 @@ def _completion_ack(record: DispatchRecord, *, duplicate: bool) -> dict[str, Any
         "reconciliation": {
             "state": record.reconciliation_state,
             "condition": record.reconciliation_condition,
+            "recoverable": record.reconciliation_recoverable,
+            "recovery_action": record.reconciliation_recovery_action,
+            "current_card": record.reconciliation_current_card,
         },
     }
 
@@ -2595,10 +2627,10 @@ def progress_capabilities(request: Request) -> dict[str, Any]:
     }
 
 
-def _assigned_local_dispatch(request: Request) -> DispatchRecord:
+def _assigned_local_dispatch(request: Request, *, completion: bool = False, require_live: bool = True) -> DispatchRecord:
     """Authenticate one restricted local session capability and derive its dispatch."""
 
-    capability = getattr(request.state, "assigned_session_capability", None) or ""
+    capability = getattr(request.state, "completion_session_capability" if completion else "assigned_session_capability", None) or ""
     session_id = request.headers.get("X-PA-Assigned-Session-ID", "").strip()
     asserted_dispatch_id = request.headers.get(
         "X-PA-Assigned-Dispatch-ID", ""
@@ -2617,6 +2649,7 @@ def _assigned_local_dispatch(request: Request) -> DispatchRecord:
             dispatch_id=record.dispatch_id,
             session_id=session.id,
             target_instance_id=ctx.settings.instance_id,
+            purpose="completion-acceptance" if completion else "assigned-session",
         )
     if (
         not capability
@@ -2628,13 +2661,15 @@ def _assigned_local_dispatch(request: Request) -> DispatchRecord:
         or record.session_id != session.id
         or record.target_instance_id != ctx.settings.instance_id
         or session.authority_instance_id != record.authority_instance_id
-        or session.status in {"closed", "quiesced", "configuration_failed"}
-        or runtime is None
-        or getattr(runtime, "_closed", False)
-        or not getattr(runtime, "connected", False)
-        or record.state in {"failed", "cancelled", "completed", "acknowledged"}
-        or record.acknowledged_at is not None
-        or record.goal_provenance is None
+        or (require_live and (
+            session.status in {"closed", "quiesced", "configuration_failed"}
+            or runtime is None
+            or getattr(runtime, "_closed", False)
+            or not getattr(runtime, "connected", False)
+            or record.state in {"failed", "cancelled", "completed", "acknowledged"}
+            or record.acknowledged_at is not None
+        ))
+        or (record.goal_provenance is not None if completion else record.goal_provenance is None)
     ):
         raise HTTPException(
             status_code=403,
@@ -3589,7 +3624,7 @@ async def fleet_update_readiness(
         settings.instance_name,
         owner_public_url(settings),
         zone=settings.zone,
-        capabilities=list(settings.capabilities),
+        capabilities=completion_runtime_capabilities(settings.capabilities),
         dispatch_capacity=settings.dispatch_capacity,
         dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
         dispatch_queue_capacity=settings.dispatch_queue_capacity,
@@ -3861,7 +3896,7 @@ def _overview_instance(request: Request, instance_id: str) -> FleetInstance:
             name=ctx.settings.instance_name,
             url=owner_public_url(ctx.settings),
             zone=ctx.settings.zone,
-            capabilities=list(ctx.settings.capabilities),
+            capabilities=completion_runtime_capabilities(ctx.settings.capabilities),
             dispatch_capacity=ctx.settings.dispatch_capacity,
             dispatch_provider_capacities=dict(
                 ctx.settings.dispatch_provider_capacities
@@ -7584,8 +7619,10 @@ async def _resolve_policy_placement(
             activity.get("self_protective_participation") or {}
         )
 
+    from pa.domain.completion import completion_capabilities
     required_capabilities = sorted(
-        set(body.required_capabilities)
+        completion_capabilities(card.completion_requirement if card else None)
+        | set(body.required_capabilities)
         | {f"mcp:{name}" for name in body.required_mcp_servers}
         | set(plan.requirements.required_capabilities)
     )
@@ -10429,6 +10466,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                     "message": "The selected authority did not receive the routed request.",
                 },
             )
+        _require_completion_routing_compatibility(ctx, body.card_id, selected_authority, body.target_instance_id)
         forwarded = body.model_dump(mode="json")
         forwarded["authority_instance_id"] = selected_authority
         return await _peer_authority_json(
@@ -10879,6 +10917,20 @@ def _admit_with_workspace_guard(ctx, ledger, record, **kwargs):
     return ledger.admit(record, **kwargs)
 
 
+def _require_completion_routing_compatibility(ctx, card_id, *owners) -> None:
+    if not card_id:
+        return
+    required = ctx.store.card_completion_capabilities(card_id)
+    if not required:
+        return
+    fleet = ctx.require_service("fleet_registry")
+    for owner in set(owners) - {None}:
+        instance = fleet.get_instance(owner)
+        available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else (instance.capabilities if instance else [])
+        if not required.issubset(set(available)):
+            raise HTTPException(status_code=409, detail={"code": "completion_owner_incompatible", "instance_id": owner, "required_capabilities": sorted(required)})
+
+
 async def _admit_remote_agent_work(
     request: Request,
     instance_id: str,
@@ -10902,6 +10954,11 @@ async def _admit_remote_agent_work(
                     "message": "The selected authority did not receive the routed request.",
                 },
             )
+        if "dispatch_store" in ctx.services:
+            replay = await _existing_named_dispatch(request, instance_id, body, body.project_id)
+            if replay is not None:
+                return replay
+        _require_completion_routing_compatibility(ctx, body.card_id, selected_authority, instance_id)
         forwarded = body.model_dump(mode="json")
         forwarded["authority_instance_id"] = selected_authority
         return await _peer_authority_json(
@@ -10961,6 +11018,8 @@ async def _admit_remote_agent_work(
                 "job_id": existing.dispatch_id,
                 "dispatch": _dispatch_public(request, existing),
             }
+
+    _require_completion_routing_compatibility(ctx, body.card_id, selected_authority, instance_id)
 
     _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
     _apply_dispatch_mode_default(body)
@@ -14937,7 +14996,7 @@ class FleetModule(Module):
             settings.instance_name,
             self_url,
             zone=settings.zone,
-            capabilities=settings.capabilities,
+            capabilities=completion_runtime_capabilities(settings.capabilities),
             dispatch_capacity=settings.dispatch_capacity,
             dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
             dispatch_queue_capacity=settings.dispatch_queue_capacity,

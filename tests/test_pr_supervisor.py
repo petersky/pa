@@ -1198,6 +1198,8 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
             peers=[],
         )
         self.domain = MagicMock()
+        self.domain.db_path = None  # This fixture has no authoritative SQLite projection.
+        self.domain.update_card.side_effect = lambda _id, data, **kwargs: self.domain.get_card.return_value.model_copy(update={"lane": data.lane})
         self.domain.list_cards.return_value = []
         self.domain.get_project.return_value = None
         self.store = PRSupervisorStore(Path(self.tmp.name) / "supervisor.db")

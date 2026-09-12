@@ -22,6 +22,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from pa.acp.environment import (
+    COMPLETION_DISPATCH_ENV,
+    COMPLETION_SESSION_ENV,
     ASSIGNED_SERVICE_AUTHORITY_INSTANCE_ENV,
     ASSIGNED_SERVICE_AUTHORITY_URL_ENV,
     ASSIGNED_SERVICE_CREDENTIAL_ENV,
@@ -444,6 +446,10 @@ def pa_mcp_servers(
         raise ValueError("assigned MCP session binding requires assigned mode")
     if not assigned_mode:
         assigned_service_env = {}
+    completion_env = {name: private_environment.get(name, "").strip() for name in (COMPLETION_DISPATCH_ENV, COMPLETION_SESSION_ENV)}
+    if any(completion_env.values()) and (assigned_mode or not all(completion_env.values())):
+        raise ValueError("ordinary completion binding is incomplete or assigned")
+    completion_env = {name: value for name, value in completion_env.items() if value}
     endpoint = owner_endpoint(settings, owner_environment)
     owner_env = {
         "PA_DATA_DIR": str(settings.data_dir),
@@ -479,6 +485,7 @@ def pa_mcp_servers(
             **owner_env,
             **browser_env,
             **assigned_service_env,
+            **completion_env,
         }.items()
     ]
     return [

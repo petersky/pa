@@ -170,6 +170,24 @@ class KnowledgeBulkRequest(BaseModel):
     action: Literal["archive", "supersede"]
 
 
+from pa.domain.completion import CompletionConflict
+
+
+def _direct_human_card_action(request: Request) -> bool:
+    # MCP/instance proxies use the owner's token too; they cannot claim the
+    # ordinary human override merely by presenting that credential.
+    return bool(getattr(request.state, "user_authenticated", False) is True and getattr(request.state, "authentication_method", None) == "browser_session" and get_principal_id(request).startswith("user:") and not request.headers.get("X-PA-MCP-Instance-ID") and not request.headers.get("X-PA-Completion-Producer") and not getattr(request.state, "instance_authenticated", False))
+
+
+def _update_card_from_ui(request: Request, card_id: str, data: CardUpdate, realm_id: str):
+    try:
+        return get_store().update_card(card_id, data, realm_id=realm_id, principal_id=get_principal_id(request), instance_id=request.app.state.ctx.settings.instance_id, direct_human=_direct_human_card_action(request))
+    except CompletionConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    except CardVersionConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "stale_card_version", "actual_version": exc.actual.isoformat()}) from exc
+
+
 class CardProjectChangeRequest(BaseModel):
     project_id: str | None = None
     decision: Literal["preserve", "migrate", "cancel"] | None = None
@@ -1841,7 +1859,7 @@ def list_cards_api(
     cards = get_store().list_cards(
         realm_id=realm_id, lane=lane, kind=kind, limit=limit, offset=offset
     )
-    return [c.model_dump(mode="json") for c in cards]
+    return [{**c.model_dump(mode="json"), "completion_status": c.completion_status} for c in cards]
 
 
 @router.get("/cards/facets")
@@ -2059,8 +2077,9 @@ def create_card_api(
             instance_id=settings.instance_id,
             idempotency_key=key,
             request_fingerprint=fingerprint,
+            direct_human=_direct_human_card_action(request),
         )
-        result = card.model_dump(mode="json")
+        result = {**card.model_dump(mode="json"), "completion_status": card.completion_status}
         store.complete_operation(key, result)
         if data.auto_enrich:
             background_tasks.add_task(
@@ -2072,6 +2091,9 @@ def create_card_api(
         if not data.summary.strip():
             _schedule_card_summary(request, background_tasks, card)
         return result
+    except CompletionConflict as exc:
+        store.fail_operation(key, exc.code)
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except Exception as exc:
         store.fail_operation(key, type(exc).__name__)
         raise
@@ -2353,34 +2375,22 @@ def _operation_outcome_receipts(
                 "effect": "complete" if canonical["state"] == "succeeded" and delegated is None else "unknown"}
     handoff = handoffs[0][1] if handoffs else None
     if handoff is not None:
-        failed = handoff.status == "failed"
-        terminal = handoff.status in {"continuation_delivered", "restart_completed"}
+        from pa.instance.restart_lifecycle import restart_observation_fields
+
+        session = store.get_session(handoff.session_id)
+        manager = request.app.state.ctx.services.get("instance_agent")
+        runtime = manager.get(handoff.session_id) if manager is not None else None
+        observation = restart_observation_fields(handoff, session=session, runtime=runtime)
         return finish_local_receipt({
+            **observation,
             "idempotency_key": idempotency_key,
+            # The authenticated claim lookup above owns identity, including the
+            # realm of historical receipts whose session is no longer present.
             **identity,
             "operation": "agent_restart_handoff",
-            "status": handoff.status,
             "durable": True,
-            "accepted": True,
-            "committed": True,
-            "projected": None,
-            "effect": "unknown",
-            "recovery_state": (
-                "retryable_existing_receipt"
-                if failed
-                else "restart_completed_without_continuation"
-                if handoff.status == "restart_completed"
-                else "continuation_delivered_exactly_once"
-                if terminal
-                else "durable_restart_handoff_in_progress"
-            ),
-            "recovery_action": (
-                "request_agent_restart_handoff_with_same_key"
-                if failed
-                else None
-                if terminal
-                else "get_operation_outcome"
-            ),
+            "recovery_state": observation["reason_code"],
+            "recovery_action": observation["next_action"],
             "result": {
                 "handoff_id": handoff.id,
                 "session_id": handoff.session_id,
@@ -2454,7 +2464,7 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
     card = get_store().get_card(card_id, realm_id=realm_id)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    return card.model_dump(mode="json")
+    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
 
 
 @router.get("/cards/{card_id}/history")
@@ -2510,6 +2520,55 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
     }
 
 
+def _require_completion_owner_compatibility(request: Request, card_id: str, data: CardUpdate, *, realm_id: str | None = None) -> None:
+    """Do not add protection while an incompatible existing owner can clean up."""
+    if not data.completion_requirement:
+        return
+    from pa.domain.completion import completion_capabilities, completion_runtime_capabilities
+    ctx = request.app.state.ctx
+    current = ctx.store.get_card(card_id, realm_id=realm_id or ctx.settings.primary_realm)
+    if current is None or current.completion_requirement == data.completion_requirement:
+        return
+    required = completion_capabilities(data.completion_requirement)
+    fleet = ctx.services.get("fleet_registry")
+    sessions = ctx.store.list_sessions_for_cards({card_id})
+    agent = ctx.services.get("instance_agent")
+    workspace_manager = getattr(agent, "workspace_manager", None)
+    leases = workspace_manager.list(card_id=card_id) if workspace_manager else []
+    # Only the existing workspace owner can supply authoritative cleanup proof.
+    # A closed session, expired lease, or Done card alone does not discharge it.
+    cleaned_sessions = set()
+    for session in sessions:
+        owned = [lease for lease in leases if lease.session_id == session.id]
+        if session.status == "closed" and owned and all(
+            lease.state == "cleaned" and lease.cleanup_decision in {"safe_remote_ancestry", "safe_non_ancestor"} and lease.cleanup_evidence
+            for lease in owned
+        ):
+            cleaned_sessions.add(session.id)
+    owners = {session.origin_instance_id or ctx.settings.instance_id for session in sessions if session.id not in cleaned_sessions}
+    dispatch = ctx.services.get("dispatch_store")
+    if dispatch:
+        from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
+        owners.update(record.target_instance_id for record in dispatch.list(card_id=card_id, realm_id=realm_id or ctx.settings.primary_realm, limit=10000) if record.state not in TERMINAL_DISPATCH_STATES or record.session_id not in cleaned_sessions)
+    for owner in owners:
+        instance = fleet.get_instance(owner) if fleet else None
+        available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else (instance.capabilities if instance else [])
+        if not required.issubset(set(available)):
+            raise CompletionConflict("completion_existing_owner_incompatible")
+    watches = ctx.services.get("pr_supervisor_store")
+    if watches:
+        capabilities = {item.instance_id: set(item.capabilities) for item in watches.list_capabilities()}
+        for watch in watches.list_watches(card_id=card_id, realm_id=realm_id or ctx.settings.primary_realm, include_retired=True):
+            if (watch.terminal or watch.retired_at is not None) and watch.originating_session_id in cleaned_sessions:
+                continue
+            # Terminal watches can still own local post-merge cleanup. Expiry
+            # alone is not proof that an older completion worker is quiescent.
+            for owner in {watch.owner_instance_id, watch.originating_instance_id} - {None}:
+                available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else capabilities.get(owner, set())
+                if not required.issubset(set(available)):
+                    raise CompletionConflict("completion_existing_owner_incompatible")
+
+
 @router.patch("/cards/{card_id}")
 def update_card_api(
     request: Request,
@@ -2523,6 +2582,19 @@ def update_card_api(
     ],
     realm: str | None = None,
 ) -> dict:
+    actor_session_id = actor_dispatch_id = None
+    actor_principal = get_principal_id(request)
+    bound_completion = getattr(request.state, "completion_session_capability", None) is not None
+    if bound_completion:
+        from pa.modules.fleet import _assigned_local_dispatch
+        record = _assigned_local_dispatch(request, completion=True, require_live=False)
+        if record.card_id != card_id or record.realm_id != (realm or request.app.state.ctx.settings.primary_realm):
+            raise HTTPException(status_code=403, detail={"code": "completion_actor_scope_mismatch"})
+        allowed = {"completion_acceptance", "expected_version"}
+        if not data.completion_acceptance or not data.model_fields_set.issubset(allowed):
+            raise HTTPException(status_code=403, detail={"code": "completion_actor_scope_mismatch"})
+        actor_session_id, actor_dispatch_id = record.session_id, record.dispatch_id
+        actor_principal = record.principal_id
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
     payload = {
@@ -2532,6 +2604,8 @@ def update_card_api(
             data.expected_version.isoformat() if data.expected_version else None
         ),
         "field_intent": data.field_intent,
+        "completion_actor": {"principal": actor_principal, "session_id": actor_session_id, "dispatch_id": actor_dispatch_id, **({"realm_id": realm_id} if bound_completion else {})},
+        "completion_acceptance": data.completion_acceptance.model_dump(mode="json") if data.completion_acceptance else None,
     }
     key, fingerprint, replay = _begin_operation(
         request, operation="card.update", realm_id=realm_id, payload=payload
@@ -2542,15 +2616,28 @@ def update_card_api(
         return replay
     store = get_store()
     try:
+        if bound_completion:
+            _assigned_local_dispatch(request, completion=True)
+            current = store.get_card(card_id, realm_id=realm_id)
+            requirement = current.completion_requirement if current else None
+            if not (requirement and (requirement.originating_session_id or requirement.originating_dispatch_id)):
+                raise CompletionConflict("completion_actor_independence_unconfirmed")
+        _require_completion_owner_compatibility(request, card_id, data, realm_id=realm_id)
         card = store.update_card(
             card_id,
             data,
             realm_id=realm_id,
-            principal_id=get_principal_id(request),
+            principal_id=actor_principal,
+            actor_session_id=actor_session_id,
+            actor_dispatch_id=actor_dispatch_id,
             instance_id=settings.instance_id,
             idempotency_key=key,
             request_fingerprint=fingerprint,
+            direct_human=not bound_completion and _direct_human_card_action(request),
         )
+    except CompletionConflict as exc:
+        store.fail_operation(key, exc.code)
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except CardVersionConflict as exc:
         store.fail_operation(key, "stale_card_version")
         raise HTTPException(
@@ -2569,7 +2656,7 @@ def update_card_api(
     if not card:
         store.fail_operation(key, "card_not_found")
         raise HTTPException(status_code=404, detail="Card not found")
-    result = card.model_dump(mode="json")
+    result = {**card.model_dump(mode="json"), "completion_status": card.completion_status}
     store.complete_operation(key, result)
     if {"title", "body"} & data.model_fields_set:
         _schedule_card_summary(request, background_tasks, card)
@@ -2734,7 +2821,7 @@ def remove_card_attachment_api(
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
     )
-    return card.model_dump(mode="json")
+    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
 
 
 @router.post("/items", status_code=201)
@@ -3139,7 +3226,7 @@ async def create_card_modal_ui(
             await upload.close()
 
     return JSONResponse(
-        card.model_dump(mode="json"),
+        {**card.model_dump(mode="json"), "completion_status": card.completion_status},
         status_code=201,
         headers={"Location": f"/cards/{card.id}"},
     )
@@ -3467,13 +3554,13 @@ def change_card_project_api(
     if body.project_id == card.project_id:
         return {
             "status": "unchanged",
-            "card": card.model_dump(mode="json"),
+            "card": {**card.model_dump(mode="json"), "completion_status": card.completion_status},
             "impact": impact,
         }
     if body.decision == "cancel":
         return {
             "status": "cancelled",
-            "card": card.model_dump(mode="json"),
+            "card": {**card.model_dump(mode="json"), "completion_status": card.completion_status},
             "impact": impact,
         }
     if impact["dependent"] and body.decision is None:
@@ -3635,6 +3722,7 @@ def card_detail_update(
     summary: str | None = Form(None),
     lane: CardLane | None = Form(None),
     realm: str | None = None,
+    expected_version: datetime | None = Form(None),
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
@@ -3653,13 +3741,8 @@ def card_detail_update(
         changes["lane"] = lane
     card = existing
     if changes:
-        card = store.update_card(
-            card_id,
-            CardUpdate(**changes),
-            realm_id=realm_id,
-            principal_id=get_principal_id(request),
-            instance_id=settings.instance_id,
-        )
+        card = _update_card_from_ui(request, card_id, CardUpdate(**changes, expected_version=expected_version), realm_id)
+
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     if {"title", "body"} & changes.keys():
@@ -3696,16 +3779,11 @@ def card_lane_move(
     card_id: str,
     lane: CardLane = Form(...),
     realm: str | None = None,
+    expected_version: datetime | None = Form(None),
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
-    get_store().update_card(
-        card_id,
-        CardUpdate(lane=lane),
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
-    )
+    _update_card_from_ui(request, card_id, CardUpdate(lane=lane, expected_version=expected_version), realm_id)
     return HTMLResponse("", status_code=204)
 
 

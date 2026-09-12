@@ -1259,7 +1259,8 @@ async def request_restart_handoff(
         )
     except (ValueError, AgentSessionRecoveryError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return handoff.model_dump(mode="json")
+    from pa.instance.restart_lifecycle import restart_observation_fields
+    return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
 
 
 @router.get("/sessions/{session_id}/restart-handoffs")
@@ -1276,9 +1277,10 @@ def list_restart_handoffs(request: Request, session_id: str) -> dict:
         and getattr(user, "role", None) != "admin"
     ):
         raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    from pa.instance.restart_lifecycle import restart_observation_fields
     return {
         "handoffs": [
-            item.model_dump(mode="json")
+            {**item.model_dump(mode="json"), "observation": restart_observation_fields(item, session=session, runtime=mgr.get(session_id))}
             for item in mgr.store.list_restart_handoffs(session_id=session_id)
         ]
     }
@@ -1312,7 +1314,8 @@ async def edit_restart_handoff(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return handoff.model_dump(mode="json")
+    from pa.instance.restart_lifecycle import restart_observation_fields
+    return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
 
 
 @router.post("/sessions/{session_id}/restart-handoffs/{handoff_id}/retry")
@@ -1338,7 +1341,8 @@ async def retry_restart_handoff(
         )
     except (ValueError, AgentSessionRecoveryError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return handoff.model_dump(mode="json")
+    from pa.instance.restart_lifecycle import restart_observation_fields
+    return {**handoff.model_dump(mode="json"), "observation": restart_observation_fields(handoff, session=session, runtime=mgr.get(session_id))}
 
 
 @router.get("/observability/v1/capabilities")
