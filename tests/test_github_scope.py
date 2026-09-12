@@ -165,7 +165,8 @@ def test_preview_update_refresh_and_private_choices(api, document):
     approved.pop("instance_id")
     result = client.put("/api/github/supervision-scope", headers=headers, json=approved)
     assert result.status_code == 200, result.text
-    assert result.json()["capability_refresh"] == {"state": "ready", "authenticated": True}
+    assert result.json()["capability_refresh"] == {"state": "ready", "authenticated": True,
+        "policy_revision": result.json()["revision"]}
     assert app.state.ctx.require_service("pr_supervisor").credentials.allowed_repositories == ["petersky/eschaton", "petersky/pa"]
     replay = client.put("/api/github/supervision-scope", headers=headers, json=approved)
     assert replay.json()["duplicate"] is True
@@ -267,3 +268,127 @@ def test_mcp_scope_tools_proxy_only_to_running_server(document):
         assert local.call_args.kwargs["json"]["confirmation_id"] == "confirmation"
         mcp.functions["github_supervision_scope_audit"]()
         assert local.call_args.args[1:] == ("GET", "/api/github/supervision-scope/audit")
+
+
+@pytest.mark.parametrize('failure,reason', [(httpx.ReadTimeout('secret'), 'authority_unreachable'),
+    ({'instances': 'secret'}, 'authority_response_invalid')])
+def test_real_service_failure_watch_api_and_ui(api, document, failure, reason):
+    from pa.pr_supervisor.models import PRWatch
+    client, app, _ = api
+    service = app.state.ctx.require_service('pr_supervisor')
+    client.portal.call(service._loop_supervisor.close)
+    service.settings.fleet_owner_url = 'http://authority'
+    service.settings.instance_url = 'http://local'
+    watch = service.store.upsert_watch(PRWatch(id='eligibility-ui', repository='petersky/eschaton',
+        pr_number=42, pr_url='https://github.com/petersky/eschaton/pull/42'))
+    read = AsyncMock(side_effect=failure) if isinstance(failure, Exception) else AsyncMock(return_value=failure)
+    with patch.object(service, '_get_json', read), patch.object(service, '_post_json', AsyncMock(return_value={})), patch.object(service, '_reconcile_merged_cards', AsyncMock()):
+        client.portal.call(service.run_once)
+        result = client.get('/api/pr-supervisor/watches/' + watch.id)
+        assert result.status_code == 200
+        assert result.json()['watch']['state']['eligibility']['reason_code'] == reason
+        assert 'secret' not in result.text
+        assert 'Configure instance-local GitHub authentication' not in result.text
+        page = client.get('/pull-requests?watch=' + watch.id)
+        assert page.status_code == 200
+        assert reason in page.text
+        assert 'Automatic retry is scheduled' in page.text
+        comparison = client.get('/api/github/supervision-scope/comparison')
+        assert comparison.json()['evaluation_state'] == 'unavailable'
+        assert comparison.json()['reason_code'] == reason
+        assert read.await_count == 1
+
+
+def test_instance_comparison_is_read_only_and_publication_is_separate(api, document):
+    from datetime import timedelta
+    from pa.pr_supervisor.models import GitHubCapability, utcnow
+    client, app, headers = api
+    service = app.state.ctx.require_service('pr_supervisor')
+    client.portal.call(service._loop_supervisor.close)
+    service.store.save_capability(GitHubCapability(instance_id='macmini', instance_name='Macmini',
+        authenticated=True, allowed_repositories=['petersky/pa'], pr_watch_protocol_version=2,
+        policy_revision='mini-revision', scope_mode='allowlist', policy_source='configured'))
+    service.store.save_capability(GitHubCapability(instance_id='old-peer', authenticated=True,
+        allowed_repositories=[], checked_at=utcnow()-timedelta(seconds=121)))
+    original = document.read_bytes()
+    response = client.get('/api/github/supervision-scope/comparison')
+    assert response.status_code == 200
+    data = response.json()
+    rows = {row['instance_id']: row for row in data['candidates']}
+    assert rows['macmini']['repositories'] == ['petersky/pa']
+    assert rows['macmini']['policy_revision'] == 'mini-revision'
+    assert rows['old-peer']['freshness'] == 'stale'
+    assert rows['old-peer']['policy_revision'] is None
+    assert data['inventory_kind'] == 'authority_received_advertisements'
+    assert document.read_bytes() == original
+    assert client.get('/api/github/supervision-scope/comparison', headers={'Authorization': 'Bearer fleet-secret'}).status_code in {401, 403}
+    service._authority_last_error = 'authority_unreachable'
+    saved = client.get('/api/github/supervision-scope').json()
+    assert saved['published_capability']['state'] == 'publication_pending'
+    assert saved['revision'] == scope.snapshot(document.parent.parent)['revision']
+    page = client.get('/settings?section=github')
+    assert 'Advertised scope by instance' in page.text
+    assert 'not direct audits' in page.text
+
+
+def test_missing_environment_only_installation_uses_existing_consent_flow(api, document, monkeypatch):
+    client, _, headers = api
+    document.unlink()
+    monkeypatch.setenv('PA_GITHUB_TOKEN', 'credential-secret')
+    current = client.get('/api/github/supervision-scope').json()
+    assert current['configuration_status'] == 'missing'
+    assert current['scope_mode'] == 'none'
+    response = client.post('/api/github/supervision-scope/preview', headers=headers,
+        json={'allowed_repositories': ['petersky/pa'], 'expected_revision': current['revision']})
+    assert response.status_code == 200, response.text
+    assert not document.exists()
+    body = response.json()['operator_input']['choices'][0]['value']
+    body.pop('instance_id')
+    body['idempotency_key'] = 'establish-exact-scope'
+    result = client.put('/api/github/supervision-scope', headers=headers, json=body)
+    assert result.status_code == 200, result.text
+    assert result.json()['scope_mode'] == 'allowlist'
+    assert json.loads(document.read_text())['allowed_repositories'] == ['petersky/pa']
+    assert 'secret' not in document.read_text()
+
+
+def test_save_before_failed_authority_publication_keeps_receipt(api, document):
+    client, app, headers = api
+    service = app.state.ctx.require_service('pr_supervisor')
+    client.portal.call(service._loop_supervisor.close)
+    service.settings.fleet_owner_url = 'http://authority'
+    service.settings.instance_url = 'http://local'
+    body = proposal(document)
+    with patch.object(service, '_post_json', AsyncMock(side_effect=httpx.ReadTimeout('secret'))):
+        saved = client.put('/api/github/supervision-scope', headers=headers, json=body)
+    assert saved.status_code == 200
+    assert saved.json()['capability_refresh']['state'] == 'refresh_pending'
+    revision = saved.json()['revision']
+    assert scope.snapshot(document.parent.parent)['revision'] == revision
+    assert 'secret' not in saved.text
+    with patch.object(service, '_post_json', AsyncMock(return_value={})):
+        replay = client.put('/api/github/supervision-scope', headers=headers, json=body)
+    assert replay.json()['duplicate']
+    assert replay.json()['revision'] == revision
+    assert replay.json()['capability_refresh']['state'] == 'ready'
+    assert len(scope.audit(document.parent.parent)) == 1
+
+
+def test_heartbeat_rejects_invalid_stale_and_forged_identity(api):
+    from datetime import timedelta
+    from pa.pr_supervisor.models import GitHubCapability, utcnow
+    client, app, _ = api
+    service = app.state.ctx.require_service('pr_supervisor')
+    client.portal.call(service._loop_supervisor.close)
+    headers = {'Authorization': 'Bearer fleet-secret', 'X-PA-Origin-Instance-ID': 'peer'}
+    capability = GitHubCapability(instance_id='peer', authenticated=True, pr_watch_protocol_version=2,
+        allowed_repositories=['petersky/pa']).model_dump(mode='json')
+    assert client.post('/api/pr-supervisor/instances/heartbeat', json=capability, headers=headers).status_code == 200
+    assert client.post('/api/pr-supervisor/instances/heartbeat', json={**capability, 'instance_id':'forged'}, headers=headers).status_code == 403
+    for changed in [{'checked_at': (utcnow()-timedelta(seconds=121)).isoformat()},
+                    {'checked_at': (utcnow()+timedelta(seconds=60)).isoformat()},
+                    {'allowed_repositories': 'secret'}, {'authenticated':'true'}]:
+        result = client.post('/api/pr-supervisor/instances/heartbeat', json={**capability, **changed}, headers=headers)
+        assert result.status_code == 422
+        assert 'secret' not in result.text
+    assert not any(row.instance_id == 'forged' for row in service.store.list_capabilities())

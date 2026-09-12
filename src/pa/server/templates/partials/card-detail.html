@@ -259,7 +259,7 @@
           <article>
             <a href="{{ watch.pr_url }}" target="_blank" rel="noopener">{{ watch.repository }}#{{ watch.pr_number }}</a>
             <span class="badge">{{ watch.status.value }}</span>
-            {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% endif %}
+            {% if watch.last_error %}<p class="danger">{{ watch.last_error }}</p>{% if watch.state.get("eligibility") %}<a href="/settings?section=github">Review instance scope and advertised comparison</a>{% endif %}{% endif %}
           </article>
           {% endfor %}
         </div>

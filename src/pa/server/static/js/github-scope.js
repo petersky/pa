@@ -24,14 +24,44 @@
   }
   function clear() { proposal = null; review.hidden = true; }
   async function load() {
-    clear();
+    clear(); revision = null;
+    status.textContent = "";
     try {
       var data = await request("", "GET");
       revision = data.revision;
       input.value = data.allowed_repositories.join("\n");
-      document.getElementById("pa-github-scope-current").textContent = "Current scope: " +
-        (data.scope_mode === "unrestricted" ? "unrestricted (legacy empty list)" : data.allowed_repositories.join(", "));
-    } catch (error) { status.textContent = error.message; }
+      var publication = data.published_capability || {};
+      document.getElementById("pa-github-scope-current").textContent =
+        "Current instance: " + data.instance_name + " (" + data.instance_id + "). Scope: " +
+        data.scope_mode + "; " + (data.allowed_repositories.join(", ") || "no listed repositories") +
+        ". Source: " + data.policy_source + ". Saved revision: " + data.revision +
+        ". Published revision: " + (publication.policy_revision || "unknown") +
+        ". Observation: " + (publication.observed_at || "unknown") +
+        (publication.policy_revision !== data.revision || publication.state === "publication_pending" ?
+          ". Capability publication pending." : ". Capability: " + publication.state + ".");
+    } catch (error) {
+      document.getElementById("pa-github-scope-current").textContent = "Current scope: unknown; configuration unavailable or invalid.";
+      input.value = ""; status.textContent = error.message;
+    }
+    var comparison = document.getElementById("pa-github-scope-comparison");
+    comparison.replaceChildren();
+    try {
+      var fleet = await request("/comparison", "GET");
+      if (fleet.evaluation_state === "unavailable") {
+        comparison.textContent = fleet.message; return;
+      }
+      if (!fleet.candidates.length) comparison.textContent = "No advertisements in the bounded inventory; remote configuration is unknown.";
+      fleet.candidates.forEach(function (row) {
+        var entry = document.createElement("p");
+        entry.textContent = (row.instance_name || "Instance") + " (" + row.instance_id + ")" + (row.instance_id === fleet.current_instance_id ? " (current instance)" : "") +
+          ": " + (row.scope_mode || "unknown") + "; " + (row.repositories === null ? "scope unknown" : row.repositories.join(", ")) +
+          ". Source: " + row.policy_source + ". Revision: " + (row.policy_revision || "unavailable (older peer)") +
+          ". Observed: " + row.observed_at + ". Authority received: " + (row.authority_received_at || "unknown") + ". " + row.freshness +
+          ". Authentication: " + (row.authenticated ? "advertised authenticated" : "unavailable") +
+          (row.reason_code ? ". " + row.reason_code + ": " + row.action : ". Available advertisement.");
+        comparison.appendChild(entry);
+      });
+    } catch (error) { comparison.textContent = "Advertised scope unknown. " + error.message; }
   }
   input.addEventListener("input", clear);
   document.getElementById("pa-github-scope-reload").addEventListener("click", load);
@@ -41,6 +71,7 @@
   form.addEventListener("submit", async function (event) {
     event.preventDefault();
     if (busy) return;
+    if (!revision) { status.textContent = "Restore a readable scope configuration and reload before reviewing a change."; return; }
     busy = true; clear(); status.textContent = "Validating repository access…";
     var candidateText = input.value;
     try {

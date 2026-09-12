@@ -3,11 +3,11 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utcnow() -> datetime:
@@ -241,7 +241,8 @@ class PRWatchEvent(BaseModel):
 
 
 class GitHubCapability(BaseModel):
-    instance_id: str
+    instance_id: str = Field(min_length=1, max_length=200)
+    instance_name: str | None = Field(default=None, max_length=120)
     pr_watch_protocol_version: int = Field(default=1, ge=1)
     authenticated: bool = False
     webhook_configured: bool = False
@@ -251,9 +252,36 @@ class GitHubCapability(BaseModel):
     state: str = "unauthenticated"
     detail: str | None = None
     checked_at: datetime = Field(default_factory=utcnow)
+    authority_received_at: datetime | None = None
+    scope_mode: Literal["none", "allowlist", "unrestricted"] | None = None
+    policy_revision: str | None = Field(default=None, max_length=100)
+    policy_source: str = "legacy_capability"
+    configuration_status: Literal["valid", "missing", "unreadable", "invalid"] = "valid"
+
+    @field_validator("checked_at")
+    @classmethod
+    def aware_observation(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("capability observation requires timezone")
+        return value.astimezone(UTC)
+
+    @field_validator("allowed_repositories")
+    @classmethod
+    def canonical_scope(cls, values: list[str]) -> list[str]:
+        return sorted({canonical_repository_name(value) for value in values})
+
+    @model_validator(mode="after")
+    def consistent_scope(self):
+        if self.scope_mode is not None and bool(self.allowed_repositories) != (self.scope_mode == "allowlist"):
+            raise ValueError("contradictory capability scope")
+        return self
 
     def supports(self, repository: str) -> bool:
-        if not self.authenticated:
+        if not self.authenticated or self.configuration_status != "valid" or self.scope_mode == "none":
+            return False
+        if self.scope_mode == "allowlist" and not self.allowed_repositories:
+            return False
+        if self.scope_mode == "unrestricted" and self.allowed_repositories:
             return False
         try:
             identity = canonical_repository_name(repository)
