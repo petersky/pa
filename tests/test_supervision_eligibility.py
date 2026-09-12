@@ -236,3 +236,89 @@ def test_stale_capability_cannot_acquire_effect_lease(tmp_path):
     grant = store.try_acquire_lease('fence', 'peer', capability=cap(checked_at=utcnow()-timedelta(seconds=121)))
     assert not grant.acquired
     assert grant.reason == 'capability_stale'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status_code', [401, 403, 404])
+async def test_repository_denial_only_heals_after_successful_observation(tmp_path, monkeypatch, status_code):
+    from pa.pr_supervisor.github import GitHubAPIError
+    from tests.test_pr_supervisor import snapshot
+    monkeypatch.setenv('PA_GITHUB_TOKEN', 'secret')
+    write_policy(tmp_path, {'allowed_repositories': ['owner/repo']})
+    service = PRSupervisor(Settings(data_dir=tmp_path, instance_id='local', peers=[]), MagicMock())
+    service.domain_store.list_cards.return_value = []
+    service.github._request = AsyncMock(return_value=(200, {'login': 'test'}))
+    service._notify = AsyncMock()
+    service.eligibility_journal_hook = MagicMock()
+    service.store.upsert_watch(PRWatch(id='access-recovery', repository='owner/repo', pr_number=17,
+        pr_url='https://github.com/owner/repo/pull/17'))
+    calls = 0
+
+    async def observe(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            current = service.store.get_watch('access-recovery')
+            assert current.status.value == 'blocked'
+            assert current.last_error
+            report = current.state['eligibility']
+            assert report['dependency'] == 'github_repository_observation'
+            assert not report['eligible']
+            # Even immediately before successful network observation, neither
+            # the watch nor the shared journal may have declared recovery.
+            assert all(not call.args[0]['report']['eligible']
+                       for call in service.eligibility_journal_hook.call_args_list)
+        if calls < 3:
+            raise GitHubAPIError(status_code, 'snapshot', 'private-secret')
+        return snapshot()
+
+    service.github.snapshot = observe
+    try:
+        for attempt in range(3):
+            service.store.schedule_now(watch_id='access-recovery')
+            await service.run_once()
+            current = service.store.get_watch('access-recovery')
+            if attempt < 2:
+                assert current.status.value == 'blocked'
+                assert not current.state['eligibility']['eligible']
+                assert 'secret' not in current.last_error
+        assert calls == 3
+        assert current.status.value == 'active'
+        assert current.last_error is None
+        emissions = [call.args[0] for call in service.eligibility_journal_hook.call_args_list]
+        assert len(emissions) == 3
+        assert emissions[0]['issues'][0]['issue_key'] == emissions[1]['issues'][0]['issue_key']
+        assert emissions[-1]['report']['dependency'] == 'github_repository_observation'
+        assert emissions[-1]['report']['eligible'] == ['local']
+        assert not emissions[-1]['issues']
+    finally:
+        await service.http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_delayed_inventory_uses_response_time_for_freshness(tmp_path):
+    service = PRSupervisor(Settings(data_dir=tmp_path, instance_id='local',
+        instance_url='http://local', fleet_owner_url='http://authority'), MagicMock())
+    started = utcnow()
+    clock = [started]
+
+    async def delayed_read(url):
+        clock[0] = started + timedelta(seconds=10)
+        heartbeat = cap('authority', checked_at=clock[0]).model_dump(mode='json')
+        return {'local': heartbeat, 'instances': [heartbeat], 'history_seconds': 86400}
+
+    service._get_json = AsyncMock(side_effect=delayed_read)
+    try:
+        with patch('pa.pr_supervisor.service.utcnow', side_effect=lambda: clock[0]):
+            report = await service._eligible_capabilities('petersky/pa')
+            assert report.eligible == ['authority']
+            assert report.candidates[0].freshness == 'fresh'
+            assert report.observed_at == started + timedelta(seconds=10)
+            assert service._eligibility_inventory[0] == started + timedelta(seconds=15)
+            clock[0] += timedelta(seconds=1)
+            cached = await service._eligible_capabilities('petersky/pa')
+            assert cached.eligible == ['authority']
+            assert cached.observed_at == clock[0]
+            assert service._get_json.await_count == 1
+    finally:
+        await service.http_client.aclose()

@@ -955,12 +955,6 @@ class PRSupervisor:
                         self.store.record_eligibility_recovery, watch.id, eligible.model_dump(mode="json"),
                         next_poll_at=utcnow() + timedelta(seconds=watch.policy.poll_max_seconds))
                 continue
-            if watch.state.get("eligibility"):
-                report = evaluate([capability], watch.repository, authority_instance_id=self.settings.instance_id)
-                await self._emit_eligibility_diagnostic(watch, report)
-                await self._offload("sqlite.pr_supervisor_eligibility_recovery",
-                    self.store.record_eligibility_recovery, watch.id, report.model_dump(mode="json"),
-                    next_poll_at=utcnow())
             grant = await self._acquire_lease(watch, capability)
             if not grant.acquired:
                 continue
@@ -2009,6 +2003,14 @@ class PRSupervisor:
                 poll_attempt=attempt,
                 now=now,
             )
+            # The fenced successful observation, not an allowlist match or a
+            # credential /user probe, proves this dependency recovered. Emit it
+            # even if an intervening inventory failure changed the watch error;
+            # the shared journal may still hold the earlier repository issue.
+            recovery = evaluate([self.capability], watch.repository,
+                                authority_instance_id=self.settings.instance_id)
+            recovery.dependency = "github_repository_observation"
+            await self._emit_eligibility_diagnostic(updated, recovery)
             await self._audit(
                 updated,
                 "observation",
@@ -2058,6 +2060,7 @@ class PRSupervisor:
                 reason = "credentials_unavailable" if exc.status_code == 401 else "repository_access_denied"
                 eligibility = evaluate([self.capability], watch.repository,
                                        authority_instance_id=self.settings.instance_id)
+                eligibility.dependency = "github_repository_observation"
                 eligibility.eligible = []
                 candidate = eligibility.candidates[0]
                 candidate.reason_code, candidate.action = reason, ACTIONS[reason]
@@ -2078,6 +2081,8 @@ class PRSupervisor:
                     owner_instance_id=self.settings.instance_id,
                     fence_token=grant.fence_token,
                 )
+                if eligibility is not None:
+                    await self._emit_eligibility_diagnostic(errored, eligibility)
                 await self._audit(
                     watch,
                     "poll_error",
@@ -3121,7 +3126,7 @@ class PRSupervisor:
             failures = [(report.authority_instance_id or "configured_authority", report.reason_code)] if report.reason_code else []
             failures += [(c.instance_id, c.reason_code) for c in report.candidates if c.reason_code]
             for instance_id, reason in failures:
-                identity = ["pr_supervisor.eligibility", report.authority_instance_id,
+                identity = ["pr_supervisor.eligibility", report.dependency, report.authority_instance_id,
                             instance_id, watch.repository, reason]
                 issues.append({"issue_key": hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
                                "instance_id": instance_id, "reason_code": reason})
@@ -3172,7 +3177,7 @@ class PRSupervisor:
             authority_id = self.settings.instance_id
             history_seconds = 86400
         return evaluate(capabilities, repository, authority_instance_id=authority_id,
-                        ttl=self.CAPABILITY_TTL_SECONDS, now=now).model_copy(update={"history_seconds": history_seconds})
+                        ttl=self.CAPABILITY_TTL_SECONDS, now=utcnow()).model_copy(update={"history_seconds": history_seconds})
 
     async def _replicate(self, watch: PRWatch | None) -> None:
         if not watch:

@@ -1039,6 +1039,9 @@ class PRSupervisorStore:
             if not watch.actionable:
                 return
             state = dict(watch.state)
+            previous = state.get("eligibility") or {}
+            if previous.get("dependency", "capability_inventory") != report.get("dependency", "capability_inventory"):
+                return
             state["eligibility"] = report
             owned_error = state.get("supervisor_state") == "supervision_eligibility_blocked"
             if owned_error:

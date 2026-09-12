@@ -43,6 +43,7 @@ class EligibilityCandidate(BaseModel):
 
 
 class EligibilityReport(BaseModel):
+    dependency: Literal["capability_inventory", "github_repository_observation"] = "capability_inventory"
     eligible: list[str] = Field(default_factory=list)
     evaluation_state: Literal["complete", "unavailable"] = "complete"
     authority_instance_id: str | None = None
