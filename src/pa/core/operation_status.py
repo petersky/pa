@@ -35,7 +35,9 @@ class OperationStatusService:
 
     @contextmanager
     def _connect(self, *, readonly=False):
-        conn = sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.05) if readonly else sqlite3.connect(self.path, timeout=0.05)
+        # Optional observations must not spend a known receipt's response budget
+        # waiting for this auxiliary writer. Explicit admission retains its wait.
+        conn = sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=0) if readonly else sqlite3.connect(self.path, timeout=0.05)
         try:
             yield conn
             if not readonly:

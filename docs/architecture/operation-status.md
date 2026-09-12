@@ -108,3 +108,12 @@ quiesce, authenticated target progress ingestion, and plain local progress check
 are explicitly classified. Checkpoints carrying operator input remain gated because
 they create canonical notifications;
 canonical card mutations in a degraded realm remain gated.
+
+Auxiliary reconciliation observation is optional. A missing, locked or unreadable
+reconciliation database yields `reconciliation.state = unavailable` with unknown
+repair acceptance, while validated canonical/restart/dispatch facts remain
+available. Each job is read at most once per response. Missing or legacy owner
+resolution stays pending without readable proof; authorization, owner-store and
+identity failures retain their normal errors. A stale receipt requiring repair
+advertises `recover_operation_outcome` unless a queued/running repair already
+owns it, in which case passive `get_operation_outcome` polling is appropriate.

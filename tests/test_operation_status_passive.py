@@ -218,6 +218,7 @@ async def test_repeated_pending_polls_one_durable_owner_and_late_result(tmp_path
     h.store.begin_operation(idempotency_key="pending", operation="card.create",
                             request_fingerprint="same", realm_id="default", correlation_id="lost-ack")
     entered, release = threading.Event(), threading.Event()
+    h.store = CardProjection(h.store.db_path, h.log)
     original = h.store.get_operation_outcome
     calls = []
 
@@ -232,15 +233,28 @@ async def test_repeated_pending_polls_one_durable_owner_and_late_result(tmp_path
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local", headers=auth) as client:
                 first = await client.get("/api/operations/pending", params={"owner": "canonical"})
                 assert first.json()["status"] == "pending"
+                assert first.json()["recovery_action"] == "recover_operation_outcome"
                 assert not service.tasks and not calls
                 assert service.read_job("canonical", "default", "pending") is None
                 first = await client.post("/api/operation-recovery/pending", params={"owner": "canonical"})
                 assert first.status_code == 202
                 assert await asyncio.to_thread(entered.wait, 2)
                 more = await asyncio.gather(*[client.get("/api/operations/pending", params={"owner": "canonical"}) for _ in range(6)])
-                ids = {r.json()["reconciliation"]["id"] for r in [first, *more]}
+                ids = {first.json()["reconciliation"]["id"]}
+                for poll in more:
+                    observation = poll.json()
+                    job = observation["reconciliation"]
+                    if job["state"] == "unavailable":
+                        assert job["accepted"] is None
+                        assert observation["recovery_action"] == "recover_operation_outcome"
+                    else:
+                        ids.add(job["id"])
+                        assert observation["recovery_action"] == "get_operation_outcome"
                 assert len(ids) == len(calls) == len(service.tasks) == 1
                 assert all(r.json()["status"] == "pending" for r in more)
+                active = await client.get("/api/operations/pending", params={"owner": "canonical"})
+                assert active.json()["reconciliation"]["state"] == "running"
+                assert active.json()["recovery_action"] == "get_operation_outcome"
                 release.set()
                 await asyncio.gather(*service.tasks.values())
     finally:
@@ -409,6 +423,7 @@ print(j['id'])
                 assert pending.json()["durable"] is None
                 assert pending.json()["reconciliation"]["id"] == process.stdout.strip()
                 assert pending.json()["reconciliation"]["state"] == "interrupted"
+                assert pending.json()["recovery_action"] == "recover_operation_outcome"
                 assert not service.tasks
                 await client.post("/api/operation-recovery/lost-ack", params={"realm": "healthy", "owner": "canonical"})
                 await asyncio.gather(*service.tasks.values())

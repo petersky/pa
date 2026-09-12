@@ -2171,21 +2171,42 @@ def _repair_operation_receipt(store, key, realm_id):
 
 def operation_outcome_api(request, idempotency_key, realm=None, owner=None,
                           operation=None, request_fingerprint=None):
+    import sqlite3
+    from pa.core.async_runtime import BlockingOperationTimeout
     from pa.core.operation_observation import OperationObservation
-    receipt = _operation_outcome_receipts(request, idempotency_key, realm, owner,
-                                         operation, request_fingerprint)
+
     service = request.app.state.ctx.services.get("operation_status")
-    if service and "reconciliation" not in receipt:
-        job = service.read_job(receipt.get("owner") or "canonical", receipt["realm_id"], idempotency_key)
+    jobs = {}
+
+    def read_job(owner, realm_id, key):
+        identity = (owner, realm_id, key)
+        if identity not in jobs:
+            try:
+                jobs[identity] = service.read_job(*identity) if service else None
+            except (sqlite3.DatabaseError, OSError, json.JSONDecodeError, BlockingOperationTimeout):
+                # Only the auxiliary observation is optional. Owner reads and
+                # identity/authorization validation stay outside this boundary.
+                jobs[identity] = {"state": "unavailable", "accepted": None,
+                                  "code": "reconciliation_observation_unavailable"}
+        return jobs[identity]
+
+    receipt = _operation_outcome_receipts(request, idempotency_key, realm, owner,
+                                         operation, request_fingerprint, read_job=read_job)
+    if "reconciliation" not in receipt:
+        job = read_job(receipt.get("owner") or "canonical", receipt["realm_id"], idempotency_key)
         if job:
             receipt["reconciliation"] = {k: v for k, v in job.items() if k != "result"}
+    if (receipt.get("recovery_state") == "reconciliation_required"
+            or receipt["status"] == "lookup_pending"):
+        active = (receipt.get("reconciliation") or {}).get("state") in {"queued", "running"}
+        receipt["recovery_action"] = "get_operation_outcome" if active else "recover_operation_outcome"
     return OperationObservation.from_receipt(receipt).as_outcome()
 
 
 def _operation_outcome_receipts(
     request: Request, idempotency_key: str, realm: str | None = None,
     owner: str | None = None, operation: str | None = None,
-    request_fingerprint: str | None = None,
+    request_fingerprint: str | None = None, *, read_job,
 ) -> dict:
     """Read owner receipts only; key text is never parsed as a namespace.
 
@@ -2274,8 +2295,7 @@ def _operation_outcome_receipts(
     if canonical is None and store.event_log is not None:
         outcome["_receipt_revision"] = "history:" + str(store.event_log.read_cached_head(realm_id))
 
-    service = request.app.state.ctx.services.get("operation_status")
-    proof = service.read_job(actual_owner if claims else "canonical", realm_id, idempotency_key) if service else None
+    proof = read_job("canonical", realm_id, idempotency_key) if not claims else None
     if proof:
         outcome["reconciliation"] = {k: v for k, v in proof.items() if k != "result"}
     proof_result = (proof or {}).get("result") or {}
@@ -2298,8 +2318,7 @@ def _operation_outcome_receipts(
         head = log.read_cached_head(realm_id)
         if head is None:
             return receipt
-        service = request.app.state.ctx.services.get("operation_status")
-        proof = service.read_job("canonical", realm_id, idempotency_key) if service else None
+        proof = read_job("canonical", realm_id, idempotency_key)
         proof_result = (proof or {}).get("result") or {}
         if ((proof or {}).get("state") == "completed"
                 and proof_result.get("status") == "not_found"
@@ -2321,7 +2340,7 @@ def _operation_outcome_receipts(
         if result["status"] == "retryable":
             result.update(status="pending", durable=None,
                           recovery_state="reconciliation_required",
-                          recovery_action="get_operation_outcome")
+                          recovery_action="recover_operation_outcome")
         if not canonical.get("commit_hash") and canonical["state"] != "succeeded":
             result["durable"] = None
         revision = hashlib.sha256(json.dumps([
