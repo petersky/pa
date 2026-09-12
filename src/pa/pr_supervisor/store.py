@@ -112,7 +112,7 @@ class PRSupervisorStore:
                     ON pr_watches(updated_at, id)
                     WHERE status='merged' AND card_id IS NOT NULL
                       AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
-                     AND COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') != 'acceptance_pending';
+                     AND COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured');
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_due
                     ON pr_watches(status, next_poll_at);
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_card
@@ -424,7 +424,7 @@ class PRSupervisorStore:
                 """SELECT * FROM pr_watches
                    WHERE status='merged' AND card_id IS NOT NULL
                      AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
-                     AND COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') != 'acceptance_pending'
+                     AND COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured')
                      AND (json_extract(state_json, '$.card_completion_retry.next_retry_at') IS NULL
                           OR json_extract(state_json, '$.card_completion_retry.next_retry_at') <= ?)
                    ORDER BY updated_at, id LIMIT ?""",

@@ -176,7 +176,7 @@ from pa.domain.completion import CompletionConflict
 def _direct_human_card_action(request: Request) -> bool:
     # MCP/instance proxies use the owner's token too; they cannot claim the
     # ordinary human override merely by presenting that credential.
-    return bool(get_principal_id(request).startswith("user:") and not request.headers.get("X-PA-MCP-Instance-ID") and not request.headers.get("X-PA-Completion-Producer") and not getattr(request.state, "instance_authenticated", False))
+    return bool(getattr(request.state, "user_authenticated", False) is True and getattr(request.state, "authentication_method", None) == "browser_session" and get_principal_id(request).startswith("user:") and not request.headers.get("X-PA-MCP-Instance-ID") and not request.headers.get("X-PA-Completion-Producer") and not getattr(request.state, "instance_authenticated", False))
 
 
 def _update_card_from_ui(request: Request, card_id: str, data: CardUpdate, realm_id: str):
@@ -2350,6 +2350,20 @@ def update_card_api(
     ],
     realm: str | None = None,
 ) -> dict:
+    actor_session_id = actor_dispatch_id = None
+    actor_principal = get_principal_id(request)
+    if getattr(request.state, "assigned_session_capability", None):
+        from pa.modules.fleet import _assigned_local_dispatch
+        record = _assigned_local_dispatch(request)
+        allowed = {"completion_acceptance", "expected_version", "lane"}
+        if not data.completion_acceptance or not data.model_fields_set.issubset(allowed) or data.lane not in {None, CardLane.DONE}:
+            raise HTTPException(status_code=403, detail={"code": "completion_actor_scope_mismatch"})
+        current = request.app.state.ctx.store.get_card(card_id, realm_id=realm or request.app.state.ctx.settings.primary_realm)
+        requirement = current.completion_requirement if current else None
+        if record.card_id == card_id and not (requirement and (requirement.originating_session_id or requirement.originating_dispatch_id)):
+            raise HTTPException(status_code=409, detail={"code": "completion_actor_independence_unconfirmed"})
+        actor_session_id, actor_dispatch_id = record.session_id, record.dispatch_id
+        actor_principal = record.principal_id
     settings = request.app.state.ctx.settings
     realm_id = realm or settings.primary_realm
     payload = {
@@ -2359,6 +2373,7 @@ def update_card_api(
             data.expected_version.isoformat() if data.expected_version else None
         ),
         "field_intent": data.field_intent,
+        "completion_actor": {"principal": actor_principal, "session_id": actor_session_id, "dispatch_id": actor_dispatch_id},
         "completion_acceptance": data.completion_acceptance.model_dump(mode="json") if data.completion_acceptance else None,
     }
     key, fingerprint, replay = _begin_operation(
@@ -2375,7 +2390,9 @@ def update_card_api(
             card_id,
             data,
             realm_id=realm_id,
-            principal_id=get_principal_id(request),
+            principal_id=actor_principal,
+            actor_session_id=actor_session_id,
+            actor_dispatch_id=actor_dispatch_id,
             instance_id=settings.instance_id,
             idempotency_key=key,
             request_fingerprint=fingerprint,

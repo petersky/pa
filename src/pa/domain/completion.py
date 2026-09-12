@@ -54,7 +54,8 @@ def completion_state(requirement: Any, evidence: Any = ()) -> dict:
         missing.append("acceptance")
     if human:
         missing = []
-    return {"reason_code": "requirements_satisfied" if not missing else "acceptance_pending", "missing": missing, "satisfied": satisfied, "accepted": not missing}
+    owner_missing = bool(missing and not requirement.get("acceptance_principals") and (requirement.get("mode") == "explicit_acceptance" or set(missing) - {"integrated"}))
+    return {"reason_code": "completion_owner_unconfigured" if owner_missing else "requirements_satisfied" if not missing else "acceptance_pending", "missing": missing, "satisfied": satisfied, "accepted": not missing}
 
 
 def _dict(value: Any) -> dict:

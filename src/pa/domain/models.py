@@ -407,6 +407,8 @@ class CompletionRequirement(BaseModel):
     criteria: str = Field(default="", max_length=4000)
     milestones: list[Literal["integrated", "published", "active", "verified"]] = Field(default_factory=list)
     acceptance_principals: list[str] = Field(default_factory=list)
+    originating_session_id: str | None = None
+    originating_dispatch_id: str | None = None
 
     @model_validator(mode="after")
     def integration_mode_requires_integration(self):
@@ -422,6 +424,9 @@ class CompletionEvidence(BaseModel):
     milestones: list[Literal["integrated", "published", "active", "verified"]] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
     actor: str = ""
+    actor_kind: Literal["human", "bound_session", "integration"] | None = None
+    actor_session_id: str | None = None
+    actor_dispatch_id: str | None = None
     instance_id: str = ""
     recorded_at: datetime | None = None
     idempotency_key: str = ""

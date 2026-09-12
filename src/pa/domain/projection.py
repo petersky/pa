@@ -2657,7 +2657,7 @@ class CardProjection:
             if card.lane == CardLane.DONE:
                 if not direct_human or not principal_id.startswith("user:"):
                     raise CompletionConflict("acceptance_pending")
-                card.completion_evidence.append(CompletionEvidence(requirement_revision=card.completion_requirement.revision, subject_revision=card.id, actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override"))
+                card.completion_evidence.append(CompletionEvidence(requirement_revision=card.completion_requirement.revision, subject_revision=card.id, actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human"))
         if via_log and self.event_log:
             event = CardEvent(
                 type=EventType.CARD_CREATED,
@@ -3413,6 +3413,8 @@ class CardProjection:
         request_fingerprint: str | None = None,
         direct_human: bool = False,
         integration_evidence: CompletionEvidence | None = None,
+        actor_session_id: str | None = None,
+        actor_dispatch_id: str | None = None,
     ) -> Card | None:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card:
@@ -3458,24 +3460,31 @@ class CardProjection:
             if data.expected_version is None or principal_id != "instance:pr-supervisor":
                 raise CompletionConflict("integration_producer_unauthorized")
             if not any(item.requirement_revision == requirement.revision and item.subject_revision == integration_evidence.subject_revision and item.outcome == "integrated" for item in receipts):
-                receipts.append(integration_evidence.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key or str(uuid4()), "outcome": "integrated", "milestones": ["integrated"]}))
+                receipts.append(integration_evidence.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key or str(uuid4()), "outcome": "integrated", "actor_kind": "integration", "milestones": ["integrated"]}))
         acceptance = data.completion_acceptance
         if acceptance:
             if not requirement or acceptance.requirement_revision != requirement.revision:
                 raise CompletionConflict("stale_completion_requirement")
             if data.expected_version is None or not idempotency_key:
                 raise CompletionConflict("completion_acceptance_requires_version_and_identity")
+            if not direct_human:
+                if not requirement.acceptance_principals:
+                    raise CompletionConflict("completion_owner_unconfigured")
+                if not actor_session_id or not actor_dispatch_id:
+                    raise CompletionConflict("completion_actor_unbound")
+                if actor_session_id == requirement.originating_session_id or actor_dispatch_id == requirement.originating_dispatch_id:
+                    raise CompletionConflict("completion_self_acceptance_forbidden")
             if not direct_human and principal_id not in requirement.acceptance_principals:
                 raise CompletionConflict("completion_acceptance_unauthorized")
-            acceptance = acceptance.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key, "outcome": "accepted"})
+            acceptance = acceptance.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key, "outcome": "accepted", "actor_kind": "human" if direct_human else "bound_session", "actor_session_id": actor_session_id, "actor_dispatch_id": actor_dispatch_id})
             receipts.append(acceptance)
         if requirement and updates.get("lane") == CardLane.DONE and card.lane != CardLane.DONE:
             if direct_human and principal_id.startswith("user:"):
                 if data.expected_version is None:
                     raise CompletionConflict("completion_override_requires_version")
-                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override"))
+                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human"))
             elif not completion_state(requirement, receipts)["accepted"]:
-                raise CompletionConflict("acceptance_pending")
+                raise CompletionConflict(completion_state(requirement, receipts)["reason_code"])
             updates["completion_requirement"] = requirement.model_dump(mode="json")
         if receipts != card.completion_evidence:
             updates["completion_evidence"] = [item.model_dump(mode="json") for item in receipts]

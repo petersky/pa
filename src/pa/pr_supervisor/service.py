@@ -2586,7 +2586,7 @@ class PRSupervisor:
             )
             return
         state = dict(watch.state)
-        if decision.applied_lane == CardLane.DONE or decision.reason_code == "acceptance_pending":
+        if decision.applied_lane == CardLane.DONE or decision.reason_code in {"acceptance_pending", "completion_owner_unconfigured"}:
             state.pop("card_completion_retry", None)
         else:
             state["card_completion_retry"] = self._card_completion_retry(watch, decision.reason)

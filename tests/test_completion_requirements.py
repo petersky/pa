@@ -59,7 +59,7 @@ def test_acceptance_authority_and_stale_requirement(tmp_path):
     evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision, subject_revision="build-a", milestones=["verified"], references=["artifact:sha256:abc"])
     update = CardUpdate(lane="done", expected_version=card.updated_at, completion_acceptance=evidence)
     with pytest.raises(CompletionConflict, match="unauthorized"):
-        store.update_card(card.id, update, principal_id="instance:worker", idempotency_key="fake-accept")
+        store.update_card(card.id, update, principal_id="instance:worker", idempotency_key="fake-accept", actor_session_id="worker-session", actor_dispatch_id="worker-dispatch")
     changed = store.update_card(card.id, CardUpdate(completion_requirement={"mode": "explicit_acceptance", "criteria": "new build"}, expected_version=card.updated_at, field_intent=["completion_requirement"]))
     with pytest.raises(CardVersionConflict):
         store.update_card(card.id, update, principal_id="instance:acceptance", idempotency_key="stale")
@@ -103,6 +103,13 @@ def test_actual_api_proxy_rejected_human_done_audited_and_ui(tmp_path):
             response = client.patch(f"/api/cards/{card.id}", json={"lane": "done", "expected_version": card.updated_at.isoformat()}, headers=headers)
             assert response.status_code == 409, response.text
             assert response.json()["detail"]["code"] == "acceptance_pending"
+            from pa.auth.sessions import SessionManager
+            from pa.auth.users import UserDirectory
+            user = UserDirectory(settings.data_dir).ensure_default_user()
+            shared = client.patch(f"/api/cards/{card.id}", json={"lane": "done", "expected_version": card.updated_at.isoformat()}, headers={"Authorization": "Bearer " + user.cli_token, "Idempotency-Key": "shared-bearer-done", "X-CSRF-Token": client.cookies.get("pa_csrf")})
+            assert shared.status_code == 409
+            assert shared.json()["detail"]["code"] == "acceptance_pending"
+            client.cookies.set("pa_session", SessionManager(settings.session_secret).create_token(user))
             headers.pop("X-PA-MCP-Instance-ID")
             headers["Idempotency-Key"] = "human-override"
             response = client.patch(f"/api/cards/{card.id}", json={"lane": "done", "expected_version": card.updated_at.isoformat()}, headers=headers)
@@ -149,7 +156,7 @@ async def test_real_merge_pending_acceptance_preserves_workspace(tmp_path):
     assert reopened.list_card_completion_due(now=utcnow() + timedelta(days=1)) == []
     await service._complete_merged_card(reopened.get_watch(item.id))
     assert len(store.get_card(card.id).completion_evidence) == 1
-    done = store.update_card(card.id, CardUpdate(lane="done", expected_version=current.updated_at, completion_acceptance=CompletionEvidence(requirement_revision=current.completion_requirement.revision, subject_revision="c" * 40, milestones=["verified"])), principal_id="instance:acceptance", idempotency_key="accept-build-c")
+    done = store.update_card(card.id, CardUpdate(lane="done", expected_version=current.updated_at, completion_acceptance=CompletionEvidence(requirement_revision=current.completion_requirement.revision, subject_revision="c" * 40, milestones=["verified"])), principal_id="instance:acceptance", idempotency_key="accept-build-c", actor_session_id="verifier-session", actor_dispatch_id="verifier-dispatch")
     assert done.lane == CardLane.DONE
     assert manager.mark_card_completed(card.id, merged=True) == 1
     # Even accepted completion cannot collect an active execution.
@@ -184,7 +191,7 @@ def test_legacy_snapshot_omission_and_stale_requirement_keep_protection(tmp_path
     from pa.core.ui.work_presentation import present_work_item
     presentation = present_work_item(current, dispatch={"state": "completed"})
     assert presentation["state_label"] == "Waiting"
-    assert presentation["state"] == "acceptance_pending"
+    assert presentation["state"] == "completion_owner_unconfigured"
 
 
 @pytest.mark.asyncio
