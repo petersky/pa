@@ -965,6 +965,12 @@ async def sync_reconcile(
     recovery = ctx.services.get("sync_recovery")
     if recovery is None:
         raise HTTPException(503, detail={"code": "recovery_unavailable"})
+    degraded, _health = recovery.admission_view(realm_id)
+    if not degraded:
+        # A healthy realm uses ordinary reconciliation. It must not force a
+        # recovery history walk or spend the dedicated recovery key budget.
+        return await _offload(ctx, "sync.reconcile", _sync_reconcile_healthy,
+                              request, response, body, _idempotency_key)
     try:
         recovered, receipt = await recovery.retry_result(
             realm_id, request_key="sync.reconcile:" + _idempotency_key,

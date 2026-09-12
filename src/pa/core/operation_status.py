@@ -34,11 +34,12 @@ class OperationStatusService:
             conn.execute("UPDATE reconciliation SET state='interrupted' WHERE state IN ('queued','running')")
 
     @contextmanager
-    def _connect(self):
-        conn = sqlite3.connect(self.path, timeout=0.05)
+    def _connect(self, *, readonly=False):
+        conn = sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.05) if readonly else sqlite3.connect(self.path, timeout=0.05)
         try:
             yield conn
-            conn.commit()
+            if not readonly:
+                conn.commit()
         except sqlite3.OperationalError as exc:
             raise BlockingOperationTimeout("operation reconciliation storage is unavailable") from exc
         finally:
@@ -50,10 +51,10 @@ class OperationStatusService:
         return hashlib.sha256(identity.encode()).hexdigest()
 
     def read_job(self, owner: str, realm: str, key: str) -> dict | None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT state,result FROM reconciliation WHERE id=?",
+        with self._connect(readonly=True) as conn:
+            row = conn.execute("SELECT state,result,error,retry_at FROM reconciliation WHERE id=?",
                                (self.job_id(owner, realm, key),)).fetchone()
-        return {"state": row[0], "result": json.loads(row[1]) if row[1] else None} if row else None
+        return {"id": self.job_id(owner, realm, key), "accepted": True, "state": row[0], "result": json.loads(row[1]) if row[1] else None, "error": row[2], "retry_at": row[3]} if row else None
 
     def admission(self, owner: str, realm: str, key: str, revision: str | None = None) -> dict:
         job_id = self.job_id(owner, realm, key)
@@ -85,7 +86,7 @@ class OperationStatusService:
                           time.time() + 5 if state in {"waiting", "failed"} else 0, job_id))
 
     def schedule(self, job: dict, factory) -> None:
-        """Coalesce before worker admission. A GET never waits for this task."""
+        """Coalesce before worker admission. Only explicit recovery admission starts this task."""
         job_id = job["id"]
         if (self.closing or job_id in self.tasks or job["state"] == "completed"
                 or job.get("retry_at", 0) > time.time()):

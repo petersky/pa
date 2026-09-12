@@ -74,6 +74,7 @@ def application(h):
     app.add_middleware(_SyncRecoveryAdmissionMiddleware, ctx=app.state.ctx, routes=app.routes)
     users = UserDirectory(h.settings.data_dir)
     token = users.ensure_default_user().cli_token
+    h.services.update(users=users, sessions=SessionManager(h.settings.session_secret))
     app.add_middleware(AuthMiddleware, settings=h.settings, users=users,
                        sessions=SessionManager(h.settings.session_secret))
     Kernel(app.state.ctx, None)._install_runtime_error_handlers(app)
@@ -231,6 +232,10 @@ async def test_repeated_pending_polls_one_durable_owner_and_late_result(tmp_path
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local", headers=auth) as client:
                 first = await client.get("/api/operations/pending", params={"owner": "canonical"})
                 assert first.json()["status"] == "pending"
+                assert not service.tasks and not calls
+                assert service.read_job("canonical", "default", "pending") is None
+                first = await client.post("/api/operation-recovery/pending", params={"owner": "canonical"})
+                assert first.status_code == 202
                 assert await asyncio.to_thread(entered.wait, 2)
                 more = await asyncio.gather(*[client.get("/api/operations/pending", params={"owner": "canonical"}) for _ in range(6)])
                 ids = {r.json()["reconciliation"]["id"] for r in [first, *more]}
@@ -273,8 +278,7 @@ async def test_real_bad_realm_keeps_healthy_realm_and_authenticated_local_seam_a
                 assert duplicate_realm.status_code == 503
                 for path, body in [("/api/cards", {"title": "missing realm"}),
                                    ("/api/cards", {"realm_id": "unknown", "title": "unknown"}),
-                                   ("/api/sync/push", {"realm_id": "default"}),
-                                   ("/api/auth/login", {})]:
+                                   ("/api/sync/push", {"realm_id": "default"})]:
                     headers = {**auth, "Idempotency-Key": "blocked-other"}
                     if path == "/api/sync/push":
                         headers["Authorization"] = "Bearer test-peer-token"
@@ -317,6 +321,8 @@ async def test_legacy_collisions_and_typed_fingerprint_owner_realm_conflicts(tmp
                 assert good.status_code == 200 and good.json()["status"] == "accepted"
                 # Legacy owners could independently admit the same key. Never
                 # use newest-record ordering to silently change its meaning.
+                h.settings.subscribed_realms.append("healthy")
+                h.services["membership"].ensure_owner_membership("healthy", "local")
                 h.store.begin_operation(idempotency_key="key", operation="card.create",
                     request_fingerprint="canonical", realm_id="healthy", correlation_id="legacy")
                 for params in [{}, {"owner": "dispatch"}]:
@@ -402,6 +408,9 @@ print(j['id'])
                 assert pending.json()["status"] == "pending"
                 assert pending.json()["durable"] is None
                 assert pending.json()["reconciliation"]["id"] == process.stdout.strip()
+                assert pending.json()["reconciliation"]["state"] == "interrupted"
+                assert not service.tasks
+                await client.post("/api/operation-recovery/lost-ack", params={"realm": "healthy", "owner": "canonical"})
                 await asyncio.gather(*service.tasks.values())
                 done = await client.get("/api/operations/lost-ack", params={"realm": "healthy", "owner": "canonical"})
                 assert done.json()["status"] == "succeeded", done.text
@@ -443,6 +452,16 @@ async def test_actual_mcp_tool_uses_authenticated_passive_asgi_route(tmp_path, m
                 result = await asyncio.to_thread(lambda: asyncio.run(mcp.call_tool("get_operation_outcome", {
                     "idempotency_key": "mcp/key:legacy", "realm": "default", "owner": "restart"})))
                 assert "failed" in str(result) and "mcp/key:legacy" in str(result)
+            h.settings.subscribed_realms.append("healthy")
+            h.services["membership"].ensure_owner_membership("healthy", "local")
+            with patch("httpx.request", side_effect=transport), patch("pa.modules.items.get_store", return_value=h.store):
+                admitted = await asyncio.to_thread(lambda: asyncio.run(mcp.call_tool("recover_operation_outcome", {
+                    "idempotency_key": "mcp/absent", "realm": "healthy"})))
+                assert "reconciliation" in str(admitted)
+                await asyncio.gather(*service.tasks.values())
+                observed = await asyncio.to_thread(lambda: asyncio.run(mcp.call_tool("get_operation_outcome", {
+                    "idempotency_key": "mcp/absent", "realm": "healthy"})))
+                assert "not_found" in str(observed) and "verified_absent_at_head" in str(observed)
         finally:
             await service.close()
             await h.close()
@@ -548,7 +567,9 @@ async def test_legacy_resolution_never_chooses_a_ledger_over_a_lost_canonical_ro
                 assert unresolved.json()["status"] == "lookup_pending"
                 assert unresolved.json()["owner"] is None
                 assert unresolved.json()["observed_receipts"][0]["result"]["dispatch_id"] == "legacy-dispatch"
-                job_id = unresolved.json()["reconciliation"]["id"]
+                assert not service.tasks
+                admitted = await client.post("/api/operation-recovery/legacy-key", params=params)
+                job_id = admitted.json()["reconciliation"]["id"]
                 await asyncio.gather(*service.tasks.values())
                 for _ in range(3):
                     resolved = await client.get(path, params=params)
@@ -568,6 +589,7 @@ async def test_legacy_resolution_never_chooses_a_ledger_over_a_lost_canonical_ro
                 pending = await client.get(path, params=params)
                 assert pending.json()["status"] == "lookup_pending"
                 assert pending.json()["reconciliation"]["id"] == job_id
+                await client.post("/api/operation-recovery/legacy-key", params=params)
                 await asyncio.gather(*service.tasks.values())
                 conflict = await client.get(path, params=params)
                 assert conflict.status_code == 409

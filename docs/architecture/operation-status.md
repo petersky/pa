@@ -3,7 +3,7 @@
 Operation status is an observation of the owner's receipt. It is not an instruction
 to repeat an effect. HTTP `GET /api/operations/{key}` and MCP
 `get_operation_outcome` use bounded, passive SQLite and dispatch-index adapters.
-They never invoke the legacy canonical history lookup on the request worker.
+They never admit or schedule reconciliation, invoke canonical history lookup, or write the reconciliation journal. Explicit authenticated HTTP `POST /api/operation-recovery/{key}` and MCP `recover_operation_outcome` admit repair with the same identity selectors.
 
 ## Identity and legacy replay
 
@@ -18,7 +18,7 @@ Optional owner, operation, and request-fingerprint selectors must agree with the
 receipt. A fingerprint from one owner's request schema must not be recomputed as
 another owner's fingerprint. Historical restart/control receipts that do not
 record a fingerprint cannot certify a supplied fingerprint. Such a request fails
-closed. Realm access is checked before receipt lookup. Conflicting owner claims,
+closed. Realm access is checked before receipt lookup. Foreign realms without access are excluded before collision detection. A completed canonical wrapper and delegated receipt are equivalent only when their operation, realm, fingerprint and stable result ID agree. Conflicting owner claims,
 multiple legacy dispatch/restart claims, or a mismatched realm/selector return 409;
 lookup never chooses the newest claim. An untyped local receipt remains
 `lookup_pending` with bounded `observed_receipts` evidence until the canonical
@@ -38,7 +38,7 @@ canonical event or durable local receipt). `projected` is unknown unless the
 canonical receipt proves completion; it is not applicable to local ledgers.
 `effect` remains unknown without effect evidence. Dispatch admission is accepted,
 not fabricated effect success. Existing restart and follow-up state details remain
-available in the result, pending the separate lifecycle observation adapter.
+available in the result. The pure shared `OperationObservation.from_receipt` adapter in `pa.core.operation_observation` exports this evidence and typed `OperationIdentity` for lifecycle consumers without introducing admission or transition authority.
 
 ## Bounded reconciliation ownership
 
@@ -63,13 +63,12 @@ separate durable reconciliation request. Its stable ID hashes owner, realm, and
 unchanged operation key. Admission is persisted in `operation_reconciliation.db`;
 this database owns repair requests, never canonical/dispatch/restart outcomes.
 At most 32 requests are owned at once and one worker executes blocking canonical
-repair. Concurrent polls coalesce before worker admission. Client cancellation
+repair. Repeated explicit admissions coalesce before worker admission; polls only read the existing job. Client cancellation
 and timeout do not cancel the repair or return its capacity early. Pending/error
 retries have a cooldown; a changed receipt revision can resume the same job ID.
 A process restart marks unfinished receipts interrupted and a later authenticated
-poll resumes them. Status returns current owner evidence even when repair capacity
-is unavailable. No cached repair result is promoted into an operation success or
-not-found assertion.
+explicit recovery admission resumes them. Status returns current owner evidence even when repair capacity
+is unavailable. No cached repair result is promoted into operation success. A completed negative lookup may certify `not_found` only at its exact verified published head, after current owner receipts have been checked first. A changed head invalidates that proof.
 
 The existing canonical repair method and its global SQLite mutation lock are
 retained for repair/replay callers. The existing object-recovery service separately
@@ -87,7 +86,7 @@ legacy `GET /sync/check`, which actually converges refs and therefore requires a
 explicit healthy query realm.
 Unknown mutations remain globally history-dependent and are blocked while any
 realm is degraded. Explicit card create (body realm) and update (query realm)
-operations depend on that subscribed realm. Sync push, convergence, and conflict
+operations depend on that subscribed realm. Actual UI create/edit/delete/move/project-change aliases use their explicit query realm; the MCP create/update tools use those same canonical API routes. Sync push, convergence, and conflict
 resolution require an explicit healthy body realm and retain their normal
 membership, immutable-object, and ref-CAS validation. Missing, duplicate, malformed, or
 unknown realm selectors remain conservative. The gate never lets a query realm
@@ -95,10 +94,9 @@ override a body-owned realm.
 
 The five existing sync object/recovery admission paths remain narrow exemptions.
 `sync/reconcile` first passively replays a completed legacy receipt when available;
-otherwise it admits the existing durable object-recovery owner before entering
-ordinary canonical receipt admission. Pending/failed dependency repair is reported
+healthy realms use ordinary cheap reconciliation without spending the recovery key budget. Actual degraded evidence selects the existing durable object-recovery owner before ordinary canonical receipt admission. Pending/failed dependency repair is reported
 as such, not as a consistent projection. It preserves normal same-key replay after
-repair. Other ref mutation, auth/permissions, workspace creation, and unknown
+repair. Local credential verification and login/logout cookie control remain reachable under their existing authentication/CSRF rules. User/role/permission grants, other ref mutation, workspace creation, and unknown
 routes remain conservatively gated; sync push is realm-gated, never exempt.
 
 `pa.core.operation_dependencies.local_operational` is an explicit endpoint

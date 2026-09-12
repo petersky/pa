@@ -79,7 +79,7 @@ sys.addaudithook(audit)
             assert names == ASSIGNED_SERVICE_TOOL_ALLOWLIST
         else:
             assert {'instance_info', 'agent_providers_list', 'preview_agent_restart_handoff'} <= names
-            assert len(names) == 205
+            assert len(names) == 206
         assert {p.name: (p.stat().st_size, p.stat().st_mtime_ns) for p in data.iterdir()} == before
     finally:
         db.rollback()
@@ -197,6 +197,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     # Status deliberately adds optional owner/operation/fingerprint selectors;
     # all other tool contracts remain frozen to the historical fixture.
     baseline['get_operation_outcome'] = '89e98961cba2c587d7c207dfee0e485297700204227ddd4100a23e7546524485'
+    baseline["recover_operation_outcome"] = "067beb8bc05e49dc3cf8a38d3d6cffcf01ce709996be73ce77a8472701b08131"
     assert actual == baseline
 
 

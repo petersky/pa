@@ -2451,7 +2451,7 @@ class DispatchStore:
     def read_operation_receipts(
         self, idempotency_key: str, *, include_result: bool = True,
         realm_id: str | None = None, expected_operation: str | None = None,
-        request_fingerprint: str | None = None,
+        request_fingerprint: str | None = None, visible_realms=None,
     ):
         """Indexed, bounded lookup retaining collisions instead of choosing latest."""
         self._require_readable()
@@ -2460,6 +2460,21 @@ class DispatchStore:
             raise BlockingOperationTimeout("dispatch receipt index is busy")
         try:
             matches = self._operation_records.get(idempotency_key, set())
+            if visible_realms is not None:
+                # Authorization filtering must precede collision detection and
+                # result projection. Bound even pathological legacy key reuse.
+                import time
+                from pa.core.async_runtime import BlockingOperationTimeout
+                deadline = time.monotonic() + 0.05
+                visible = []
+                for match in matches:
+                    if time.monotonic() > deadline:
+                        raise BlockingOperationTimeout("dispatch claim visibility budget exceeded")
+                    if self._records[match[1]].realm_id in visible_realms:
+                        visible.append(match)
+                        if len(visible) == 2:
+                            break
+                matches = visible
             # More than one owner is ambiguous; callers need at most two to
             # reject it. Do not snapshot unbounded legacy key reuse on a poll.
             selected = []

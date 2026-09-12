@@ -19,7 +19,7 @@ from pa.execution.followup import (PROMPT_IDENTITY_PROTOCOL, bind_followup_promp
 from pa.instance.agent_session import AgentSessionManager, AgentSessionRuntime
 from pa.modules.agent_chat import (PromptBody, dispatch_prompt_capabilities, get_prompt_acceptance_status, session_prompt)
 from pa.modules.fleet import DispatchFollowupBody, _process_remote_dispatch, prompt_dispatch_session
-from pa.modules.items import operation_outcome_endpoint
+from pa.modules.items import operation_outcome_endpoint, operation_recovery_endpoint
 
 MESSAGE = "Please review how Bearer credentials are handled."
 KEY = "review-followup-v1"
@@ -228,6 +228,8 @@ async def test_authority_transport_loss_and_completed_exact_prompt_outcome_recon
         with patch("pa.modules.items.get_store", return_value=env.store):
             outcome = await operation_outcome_endpoint(authority_request, KEY)
             assert outcome["status"] == "delivery_ambiguous"
+            assert not status_service.tasks
+            await operation_recovery_endpoint(authority_request, KEY)
             await asyncio.gather(*status_service.tasks.values())
             outcome = await operation_outcome_endpoint(authority_request, KEY)
         await status_service.close()

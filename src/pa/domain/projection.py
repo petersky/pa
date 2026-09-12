@@ -1793,12 +1793,12 @@ class CardProjection:
         finally:
             conn.close()
 
-    def read_operation_claims(self, idempotency_key: str):
+    def read_operation_claims(self, idempotency_key: str, *, visible_realms=None):
         """Read canonical and restart claims in one bounded SQLite snapshot."""
         with self._receipt_connection() as conn:
             return (
                 self.read_operation_receipt(idempotency_key, _connection=conn),
-                self.read_restart_receipts(idempotency_key, _connection=conn),
+                self.read_restart_receipts(idempotency_key, _connection=conn, visible_realms=visible_realms),
             )
 
     def read_operation_receipt(self, idempotency_key: str, *, _connection=None) -> dict | None:
@@ -5083,13 +5083,15 @@ class CardProjection:
             ).fetchone()
         return self._row_to_restart_handoff(row) if row else None
 
-    def read_restart_receipts(self, idempotency_key: str, *, _connection=None) -> list[tuple[str, RestartHandoff]]:
+    def read_restart_receipts(self, idempotency_key: str, *, _connection=None, visible_realms=None) -> list[tuple[str, RestartHandoff]]:
         """Return at most two indexed claims, preserving legacy ambiguity."""
+        realm_filter = "" if visible_realms is None else " AND s.realm_id IN (" + ",".join("?" for _ in visible_realms) + ")"
+        args = (idempotency_key, *(visible_realms or ()))
         with (nullcontext(_connection) if _connection is not None else self._receipt_connection()) as conn:
             rows = conn.execute(
-                """SELECT h.*, s.realm_id AS receipt_realm FROM agent_restart_handoffs h
+                f"""SELECT h.*, s.realm_id AS receipt_realm FROM agent_restart_handoffs h
                    JOIN agent_sessions s ON s.id=h.session_id
-                   WHERE h.idempotency_key=? LIMIT 2""", (idempotency_key,),
+                   WHERE h.idempotency_key=? {realm_filter} LIMIT 2""", args,
             ).fetchall()
         return [(row["receipt_realm"], self._row_to_restart_handoff(row)) for row in rows]
 

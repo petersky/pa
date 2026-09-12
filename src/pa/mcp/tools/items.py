@@ -336,6 +336,27 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    def recover_operation_outcome(
+        idempotency_key: str, realm: str = "default", owner: Literal["canonical", "restart", "dispatch"] | None = None,
+        operation: str | None = None, request_fingerprint: str | None = None,
+    ) -> dict:
+        """Explicitly admit owned receipt reconciliation without resending a mutation.
+
+        Poll get_operation_outcome for passive observations of this stable job.
+        """
+        key = idempotency_key.strip()
+        if not key:
+            raise ValueError("idempotency_key cannot be empty")
+        return request_local_pa(
+            ctx.settings,
+            "POST",
+            f"/api/operation-recovery/{quote(key, safe='')}",
+            params={k: v for k, v in {"realm": realm, "owner": owner,
+                    "operation": operation, "request_fingerprint": request_fingerprint}.items()
+                    if v is not None},
+        )
+
+    @mcp.tool()
     def get_operation_outcome(
         idempotency_key: str, realm: str = "default", owner: Literal["canonical", "restart", "dispatch"] | None = None,
         operation: str | None = None, request_fingerprint: str | None = None,

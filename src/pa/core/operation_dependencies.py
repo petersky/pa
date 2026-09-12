@@ -4,7 +4,7 @@ Unknown operations remain global-history dependent. Modules may mark narrowly
 authenticated local control/reporting endpoints with ``local_operational``;
 this is the extension seam for the health journal. It grants no credentials or
 realm permissions and must never annotate sync push, ref changes, workspace
-creation, authentication, or permission changes.
+creation, user/role changes, or permission grants.
 """
 from __future__ import annotations
 
@@ -46,6 +46,12 @@ def classify_operation(method: str, path: str, *, endpoint=None) -> Dependency:
         return Dependency(OperationDependency.PASSIVE)
     if getattr(endpoint, "pa_operation_dependency", None) == OperationDependency.LOCAL_OPERATIONAL:
         return Dependency(OperationDependency.LOCAL_OPERATIONAL)
+    if method == "POST" and path.startswith("/api/operation-recovery/"):
+        return Dependency(OperationDependency.RECOVERY)
+    if method == "POST" and path in {"/api/auth/login", "/api/auth/logout", "/login"}:
+        # Credential verification / cookie control only; ordinary auth policy
+        # and the login form CSRF check still run. No user or grant mutation.
+        return Dependency(OperationDependency.LOCAL_OPERATIONAL)
     if method == "POST" and path in {
         "/api/sync/get", "/api/sync/have", "/api/sync/need",
         "/api/sync/recovery", "/api/sync/reconcile",
@@ -63,5 +69,9 @@ def classify_operation(method: str, path: str, *, endpoint=None) -> Dependency:
     }:
         return Dependency(OperationDependency.REALM_HISTORY, "body")
     if method == "PATCH" and re.fullmatch(r"/api/cards/[^/]+", path):
+        return Dependency(OperationDependency.REALM_HISTORY, "query")
+    if (method == "POST" and path in {"/cards", "/items", "/partials/cards/new"}
+            or method in {"POST", "DELETE"} and re.fullmatch(r"/partials/cards/[^/]+(?:/move|/project-change)?", path)
+            or method == "POST" and re.fullmatch(r"/api/cards/[^/]+/project-change", path)):
         return Dependency(OperationDependency.REALM_HISTORY, "query")
     return Dependency(OperationDependency.GLOBAL_HISTORY)
