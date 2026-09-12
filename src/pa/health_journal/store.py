@@ -239,13 +239,20 @@ class Journal:
                 db.execute('INSERT INTO groups VALUES(?,?,?,?,?,?)',
                            (group_id, fingerprint, payload['realm'], 1, 'new', encode({'reason': 'Awaiting bounded evidence triage'})))
                 self._history(db, group_id, {'disposition': 'new', 'at': now(), 'actor': 'system:collector'})
+            if group:
+                # Membership is part of the observed CAS snapshot, regardless of
+                # the current triage disposition. Exact replays returned above.
+                db.execute('UPDATE groups SET version=version+1 WHERE id=?', (group_id,))
+                db.execute('UPDATE inbox SET ack_dirty=1 WHERE group_id=?', (group_id,))
+                self._history(db, group_id, {'action':'observation_gathered', 'identity':identity,
+                    'version':group['version'] + 1, 'at':now()})
             if group and group['disposition'] == 'deployed_verified':
                 accepted = json.loads(group['data']).get('acceptance_reference')
                 if accepted and payload['observation'].get('recurrence_after_acceptance') == accepted:
-                    db.execute("UPDATE groups SET disposition='reopened',version=version+1 WHERE id=?", (group_id,))
+                    db.execute("UPDATE groups SET disposition='reopened' WHERE id=?", (group_id,))
                     self._history(db, group_id, {'disposition': 'reopened', 'reason': 'Explicit confirmed recurrence after accepted boundary', 'identity': identity, 'at': now()})
                 else:
-                    db.execute("UPDATE groups SET disposition='awaiting_acceptance',version=version+1 WHERE id=?", (group_id,))
+                    db.execute("UPDATE groups SET disposition='awaiting_acceptance' WHERE id=?", (group_id,))
                     self._history(db, group_id, {'disposition':'awaiting_acceptance', 'reason':'New observation lies outside the previous acceptance snapshot.', 'identity':identity, 'at':now()})
                 db.execute('UPDATE inbox SET ack_dirty=1 WHERE group_id=?', (group_id,))
             receipt = {'receipt_id': str(uuid4()), 'identity': identity, 'hash': entry['hash'],

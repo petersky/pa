@@ -84,7 +84,9 @@ The journal rejects the originating repair session or dispatch, including earlie
 actions for the same group, and fails closed when origin evidence exceeds its bound
 or is unavailable. Shared bearer credentials alone do not prove independence. Whole-group acceptance
 requires the actual current source-instance set to be covered by the canonical
-receipt. The journal stamps an inbox watermark in that same transaction. A later
+receipt. Every novel inbox revision advances the group CAS version, so an assessment
+based on an earlier membership snapshot is rejected; exact replay does not advance
+the version. The journal stamps an inbox watermark in that same transaction. A later
 observation outside that snapshot remains awaiting acceptance, while previously
 covered records retain their verified scope. Uncovered source receipts do not
 present another instance's acceptance reference as their own. The companion

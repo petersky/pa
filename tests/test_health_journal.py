@@ -591,7 +591,9 @@ async def test_pending_revision_after_accepted_boundary_is_triaged_without_false
     authority.journal.action_result(first['id'], state='terminal', result={}, owner='coordinator', fence=lease['fence'])
     await api(source, 'POST', '/reports', body=observation(summary='Delayed evidence requiring bounded triage'), key='delayed')
     entry = source.journal.page(realms=['default'])['items'][-1]
+    before = authority.journal.group(first['group_id'], realms=['default'])['version']
     authority.journal.ingest(entry, source_id=source.settings.instance_id, realms=['default'], owner='coordinator', fence=lease['fence'])
+    assert authority.journal.group(first['group_id'], realms=['default'])['version'] == before + 1
     second = authority.journal.action(owner='coordinator', fence=lease['fence'])
     assert second['id'] != first['id'] and second['group_id'] == first['group_id']
     assert second['result'] == {'card_id':'canonical-repair-card'}
@@ -681,9 +683,9 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
         'originating_session_id':'repair-session', 'originating_dispatch_id':'repair-dispatch'}))
     commit = 'a'*40
     linked = await api(authority, 'PATCH', f'/groups/{group["id"]}', body={
-        'expected_version':1, 'disposition':'linked', 'reason':'Canonical scoped repair', 'card_id':card.id, 'commit':commit})
+        'expected_version':group['version'], 'disposition':'linked', 'reason':'Canonical scoped repair', 'card_id':card.id, 'commit':commit})
     assert linked.status_code == 200
-    body = {'expected_version':2, 'disposition':'deployed_verified', 'reason':'Declared scenario verified',
+    body = {'expected_version':linked.json()['version'], 'disposition':'deployed_verified', 'reason':'Declared scenario verified',
         'card_id':card.id, 'commit':commit, 'accepted_subject_revision':commit,
         'acceptance_reference':'canonical-acceptance', 'acceptance_scenario':'journal-smoke',
         'accepted_instances':[source.settings.instance_id]}
@@ -746,8 +748,27 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
     finally:
         ledger.close()
     assert (await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body | {'acceptance_reference':'forged'})).status_code == 409
+    observed = (await api(authority, 'GET', f'/groups/{group["id"]}')).json()
+    assert observed['version'] == body['expected_version']
+    previous_watermark = observed['data'].get('acceptance_watermark')
+    await api(source, 'POST', '/reports', body=observation(realm='secondary', summary='Evidence arrived after verifier read'), key='racing-revision')
+    await authority.service.cycle(manual=True)
+    stale = await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body)
+    assert stale.status_code == 409 and stale.json()['detail']['code'] == 'assessment_version_conflict'
+    fresh = (await api(authority, 'GET', f'/groups/{group["id"]}')).json()
+    assert fresh['version'] == observed['version'] + 1
+    assert fresh['data'].get('acceptance_watermark') == previous_watermark
+    entry = source.journal.page(realms=['secondary'])['items'][-1]
+    lease = authority.journal.lease(authority.service.owner)
+    authority.journal.ingest(entry, source_id=source.settings.instance_id, realms=['secondary'],
+        owner=authority.service.owner, fence=lease['fence'])
+    authority.journal.release(authority.service.owner, lease['fence'])
+    replayed = (await api(authority, 'GET', f'/groups/{group["id"]}')).json()
+    assert replayed == fresh
+    body['expected_version'] = fresh['version']
     accepted = await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body)
     assert accepted.status_code == 200, accepted.text
+    assert accepted.json()['data']['acceptance_watermark'] > (previous_watermark or 0)
     await authority.service.cycle(manual=True)
     source_report = source.journal.page(realms=['secondary'])['items'][0]
     assert source_report['custody']['disposition'] == 'deployed_verified'
