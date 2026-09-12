@@ -219,24 +219,29 @@ async def test_watchdog_recovers_receipt_when_postcommit_callback_was_lost(tmp_p
 
 
 @pytest.mark.parametrize("state", ["pending", "running", "failed", "cancelled", "succeeded"])
-def test_followup_outcome_reads_exact_operation_state_not_dispatch_existence(state):
+def test_followup_outcome_reads_exact_operation_state_not_dispatch_existence(tmp_path, state):
+    from pa.execution.dispatch import DispatchRecord, DispatchStore
     from pa.modules.items import operation_outcome_api
 
-    record = SimpleNamespace(
+    record = DispatchRecord(
+        mutation_id="mutation", authority_instance_id="local", authority_url="http://local",
+        target_instance_id="local",
         realm_id="default", dispatch_id="dispatch", session_id="session", card_id="card",
         state="completed", followup_operations={"followup-key": {
             "state": state, "prompt_id": "exact-prompt", "error": {"message": "intake failed"} if state == "failed" else None,
         }},
     )
-    store, ledger = MagicMock(), MagicMock()
-    store.get_operation_outcome.return_value = {"status": "not_found"}
-    store.find_restart_handoff_by_idempotency.return_value = None
-    ledger.find_operation_by_idempotency.return_value = ("dispatch.followup", record)
+    store = CardProjection(tmp_path / "pa.db")
+    ledger = DispatchStore(tmp_path / "dispatch")
+    ledger.put(record)
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(ctx=SimpleNamespace(
         settings=SimpleNamespace(primary_realm="default"), services={"dispatch_store": ledger},
     ))))
-    with patch("pa.modules.items.get_store", return_value=store):
-        result = operation_outcome_api(request, "followup-key")
+    try:
+        with patch("pa.modules.items.get_store", return_value=store):
+            result = operation_outcome_api(request, "followup-key", owner="dispatch")
+    finally:
+        ledger.close()
     assert result["status"] == state
     assert result["result"]["prompt_id"] == "exact-prompt"
     assert result["recovery_state"] != "durable_dispatch_record_found"

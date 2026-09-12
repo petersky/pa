@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import islice
+
 import asyncio
 import copy
 import hashlib
@@ -826,6 +828,49 @@ class CapacityAdmission(BaseModel):
     override_reason: str | None = None
 
 
+def _copy_operation_receipt(value):
+    """Detach selected JSON evidence within a finite passive-read budget.
+
+    Oversized evidence is unavailable, never silently truncated into a different
+    outcome. This work must run outside the shared dispatch index lock.
+    """
+    nodes, characters = 2048, 65536
+    deadline = time.monotonic() + 0.1
+
+    def visit(item, depth=0):
+        nonlocal nodes, characters
+        nodes -= 1
+        if nodes < 0 or depth > 16 or time.monotonic() > deadline:
+            raise BlockingOperationTimeout("selected operation receipt exceeds passive read budget")
+        if isinstance(item, str):
+            characters -= len(item)
+            if characters < 0:
+                raise BlockingOperationTimeout("selected operation receipt exceeds passive read budget")
+            return item
+        if item is None or type(item) in {bool, int, float}:
+            return item
+        if type(item) in {dict, list} and len(item) <= nodes:
+            if isinstance(item, dict):
+                return {visit(key, depth + 1): visit(child, depth + 1)
+                        for key, child in item.items()}
+            return [visit(child, depth + 1) for child in item]
+        raise BlockingOperationTimeout("selected operation receipt is unavailable within passive read budget")
+
+    return visit(value)
+
+
+class DispatchOperationReceipt(BaseModel):
+    """Detached owner evidence without copying a dispatch's accumulated history."""
+
+    dispatch_id: str
+    realm_id: str
+    state: str
+    card_id: str | None
+    session_id: str | None
+    request_fingerprint: str | None
+    followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
 class DispatchStore:
     """Transactional incremental ledger shared by dispatch, progress, and outbox.
 
@@ -858,6 +903,7 @@ class DispatchStore:
         )
         self.metrics_path = data_dir / "dispatch_queue_metrics.json"
         self._records: dict[str, DispatchRecord] = {}
+        self._operation_records: dict[str, set[tuple[str, str]]] = {}
         self._latest_card_records: dict[str, DispatchRecord] = {}
         self._latest_session_records: dict[tuple[str, str], DispatchRecord] = {}
         self._latest_session_records_global: dict[str, DispatchRecord] = {}
@@ -1627,6 +1673,7 @@ class DispatchStore:
                 for source in records:
                     candidate = self._snapshot(source)
                     previous = self._records.get(candidate.dispatch_id)
+                    self._update_operation_records_locked(candidate, previous)
                     self._records[candidate.dispatch_id] = candidate
                     self._update_history_count_locked(candidate, previous)
                     self._update_latest_card_record_locked(candidate, previous)
@@ -1675,6 +1722,7 @@ class DispatchStore:
     def _load(self) -> None:
         if self._conn is None:
             self._records = self._load_legacy_snapshot()
+            self._rebuild_operation_records_locked()
             self._rebuild_latest_card_records_locked()
             self._rebuild_latest_session_records_locked()
             self._rebuild_history_counts_locked()
@@ -1689,6 +1737,7 @@ class DispatchStore:
                 ).fetchone()
             except sqlite3.OperationalError:
                 self._records = self._load_legacy_snapshot()
+                self._rebuild_operation_records_locked()
                 self._rebuild_latest_card_records_locked()
                 self._rebuild_latest_session_records_locked()
                 self._rebuild_history_counts_locked()
@@ -1763,6 +1812,7 @@ class DispatchStore:
                 if sequences:
                     migrated = True
         self._records = records
+        self._rebuild_operation_records_locked()
         self._rebuild_latest_card_records_locked()
         self._rebuild_latest_session_records_locked()
         self._rebuild_history_counts_locked()
@@ -2369,6 +2419,96 @@ class DispatchStore:
                 default=None,
             )
             return self._snapshot(record) if record else None
+
+    @staticmethod
+    def _operation_keys(record: DispatchRecord):
+        if record.idempotency_key:
+            yield record.idempotency_key, "dispatch.create"
+        for key, action in record.control_operations.items():
+            if action:
+                yield key, f"dispatch.{action}"
+        for key in record.followup_operations:
+            yield key, "dispatch.followup"
+
+    def _update_operation_records_locked(self, candidate, previous=None):
+        if previous is not None:
+            for key, operation in self._operation_keys(previous):
+                bucket = self._operation_records.get(key)
+                if bucket is not None:
+                    bucket.discard((operation, previous.dispatch_id))
+                    if not bucket:
+                        self._operation_records.pop(key, None)
+        for key, operation in self._operation_keys(candidate):
+            self._operation_records.setdefault(key, set()).add(
+                (operation, candidate.dispatch_id)
+            )
+
+    def _rebuild_operation_records_locked(self):
+        self._operation_records = {}
+        for record in self._records.values():
+            self._update_operation_records_locked(record)
+
+    def read_operation_receipts(
+        self, idempotency_key: str, *, include_result: bool = True,
+        realm_id: str | None = None, expected_operation: str | None = None,
+        request_fingerprint: str | None = None, visible_realms=None,
+    ):
+        """Indexed, bounded lookup retaining collisions instead of choosing latest."""
+        self._require_readable()
+        if not self._index_lock.acquire(timeout=0.05):
+            from pa.core.async_runtime import BlockingOperationTimeout
+            raise BlockingOperationTimeout("dispatch receipt index is busy")
+        try:
+            matches = self._operation_records.get(idempotency_key, set())
+            if visible_realms is not None:
+                # Authorization filtering must precede collision detection and
+                # result projection. Bound even pathological legacy key reuse.
+                import time
+                from pa.core.async_runtime import BlockingOperationTimeout
+                deadline = time.monotonic() + 0.05
+                visible = []
+                for match in matches:
+                    if time.monotonic() > deadline:
+                        raise BlockingOperationTimeout("dispatch claim visibility budget exceeded")
+                    if self._records[match[1]].realm_id in visible_realms:
+                        visible.append(match)
+                        if len(visible) == 2:
+                            break
+                matches = visible
+            # More than one owner is ambiguous; callers need at most two to
+            # reject it. Do not snapshot unbounded legacy key reuse on a poll.
+            selected = []
+            for operation, record_id in islice(matches, 2):
+                record = self._records[record_id]
+                followup = record.followup_operations.get(idempotency_key) if operation == "dispatch.followup" else None
+                fingerprint = followup.get("fingerprint") if followup is not None else record.request_fingerprint if operation == "dispatch.create" else None
+                qualified = (
+                    include_result and len(matches) == 1
+                    and (realm_id is None or record.realm_id == realm_id)
+                    and (expected_operation is None or operation == expected_operation)
+                    and (request_fingerprint is None or fingerprint == request_fingerprint)
+                )
+                # Identity conflicts must remain observable even when the
+                # selected result is too large to serve passively.
+                fields = ("state", "prompt_id", "fingerprint", "error", "response") if qualified else ("fingerprint",)
+                # Published records are detached on publication. Pin only the
+                # selected field references here; never walk nested results or
+                # unrelated histories while holding the shared index lock.
+                selected.append({"operation": operation, "receipt": dict(
+                    dispatch_id=record.dispatch_id, realm_id=record.realm_id,
+                    state=record.state, card_id=record.card_id, session_id=record.session_id,
+                    request_fingerprint=record.request_fingerprint,
+                    followup_operations={idempotency_key: {
+                        key: followup.get(key) for key in fields
+                    }} if followup is not None else {},
+                )})
+        finally:
+            self._index_lock.release()
+        receipts = []
+        for fields in selected:
+            detached = _copy_operation_receipt(fields)
+            receipts.append((detached["operation"], DispatchOperationReceipt(**detached["receipt"])))
+        return receipts
 
     def find_operation_by_idempotency(
         self, idempotency_key: str, *, realm_id: str | None = None

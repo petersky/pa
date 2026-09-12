@@ -13491,10 +13491,12 @@ async def _require_dispatch_prompt_protocol(request: Request, instance_id: str) 
 
 
 async def reconcile_followup_acceptance(
-    request: Request, record: DispatchRecord, key: str | None,
+    request: Request, record: DispatchRecord, key: str | None, *, offload=None,
 ) -> dict | None:
     """Recover only a receipt proved by the target's exact durable prompt ID."""
     from pa.execution.followup import followup_receipt
+
+    offload = offload or _offload_request
 
     operation = (record.followup_operations.get(key) if key
                  else record.initial_prompt_operation) or {}
@@ -13528,19 +13530,19 @@ async def reconcile_followup_acceptance(
     operation.pop("error", None)
     ledger = _dispatch_store(request)
     if key:
-        await _offload_request(
+        await offload(
             request, "dispatch.followup_reconcile", _merge_dispatch_followup_operation,
             ledger, record, key,
         )
     else:
         from pa.execution.followup import acknowledge_initial_prompt
 
-        await _offload_request(
+        await offload(
             request, "dispatch.initial_prompt_reconcile", acknowledge_initial_prompt,
             ledger, record, response,
         )
     if key and operation.get("goal_provenance"):
-        await _offload_request(
+        await offload(
             request, "goal.dispatch_followup_release_accepted",
             _release_goal_dispatch_followup, request.app.state.ctx, ledger, record,
             idempotency_key=key, outcome="followup-accepted", applied=True,

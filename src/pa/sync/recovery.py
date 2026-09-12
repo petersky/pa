@@ -106,6 +106,8 @@ class SyncRecovery:
     ) -> None:
         self.settings = settings
         self.engine = engine
+        from pa.core.async_runtime import AsyncRuntime
+        self.runtime = AsyncRuntime(max_workers=1, max_queue=8, default_timeout=120)
         self.log = engine.log
         self.store = engine.store
         self.projection_rebuilder = projection_rebuilder
@@ -180,9 +182,19 @@ class SyncRecovery:
         if self.on_health_change:
             self.on_health_change(not self.degraded())
 
-    def degraded(self) -> bool:
+    def degraded(self, realm_id: str | None = None) -> bool:
         with self._state_lock:
-            return any(r.get("state") != "healthy" for r in self.realms.values())
+            records = self.realms.values() if realm_id is None else [self.realms.get(realm_id, {})]
+            return any(r and r.get("state") != "healthy" for r in records)
+
+    def admission_view(self, realm_id: str | None = None) -> tuple[bool, dict[str, Any]]:
+        """Conservative nonblocking gate snapshot; never park the ASGI loop."""
+        if not self._state_lock.acquire(blocking=False):
+            return True, {"state": "unavailable", "code": "recovery_state_busy"}
+        try:
+            return self.degraded(realm_id), self.public(realm_id)
+        finally:
+            self._state_lock.release()
 
     def mark_healthy(self) -> None:
         # Startup may establish health before any recovery evidence exists.
@@ -248,6 +260,7 @@ class SyncRecovery:
         await asyncio.gather(
             *(asyncio.shield(t) for t in self._jobs.values()), return_exceptions=True
         )
+        await self.runtime.close()
 
     def note_failure(self, realm_id: str, failure: EventHistoryObjectError) -> None:
         # Called on the projection/index worker. Save before returning so the
@@ -473,7 +486,7 @@ class SyncRecovery:
                         ),
                     )
 
-            await self.engine._offload(
+            await self.runtime.run_blocking(
                 "sync.recovery.finish", finish, wait_for_completion=True
             )
             return recovered
@@ -605,7 +618,7 @@ class SyncRecovery:
                 kind = current_failure.diagnostic.get("object_kind")
                 if not isinstance(expected, str) or kind not in {"commit", "event"}:
                     raise current_failure
-                await self.engine._offload(
+                await self.runtime.run_blocking(
                     "sync.recovery.reference",
                     self._check_reference,
                     realm_id,
@@ -626,7 +639,7 @@ class SyncRecovery:
             budget.validation_passes += 1
             self._save(realm_id=realm_id, phase="verifying", work=budget.public())
             try:
-                await self.engine._offload(
+                await self.runtime.run_blocking(
                     "sync.recovery.verify_index",
                     self.log.verify_index,
                     realm_id,
@@ -644,7 +657,7 @@ class SyncRecovery:
                 raise RecoveryLimitError("stale_recovery_head")
 
             self._save(realm_id=realm_id, phase="reprojecting", work=budget.public())
-            await self.engine._offload(
+            await self.runtime.run_blocking(
                 "sync.recovery.rebuild_projection",
                 self.projection_rebuilder,
                 realm_id,
@@ -740,7 +753,7 @@ class SyncRecovery:
                     raise RecoveryLimitError("stale_recovery_head")
                 self.store.repair(expected, raw)
 
-        await self.engine._offload(
+        await self.runtime.run_blocking(
             "sync.recovery.install_object",
             install,
             timeout=30.0,

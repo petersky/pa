@@ -717,10 +717,9 @@ def test_operation_outcome_reports_failed_restart_receipt_truthfully(
 
     assert outcome["operation"] == "agent_restart_handoff"
     assert outcome["status"] == "failed"
-    assert outcome["recovery_state"] == "retryable_existing_receipt"
-    assert outcome["recovery_action"] == (
-        "request_agent_restart_handoff_with_same_key"
-    )
+    assert outcome["recovery_state"] == "failed"
+    assert outcome["recovery_action"] == "inspect_failure"
+    assert outcome["worker_state"] == "unconfirmed"
     assert outcome["result"]["handoff_id"] == receipt.id
     assert outcome["result"]["failure_stage"] == "resuming"
     assert "continuation_prompt" not in outcome["result"]
@@ -1855,10 +1854,13 @@ def test_public_restart_receipts_consume_shared_observation_without_losing_resid
                         agent_enabled=False, peers=[], sync_token='isolated-peer-token')
     app = Kernel.boot(settings=settings).build_app()
     with TestClient(app) as client:
+        settings.subscribed_realms.append("other")
+        app.state.ctx.services["membership"].ensure_owner_membership("other", "local")
         store = app.state.ctx.store
         session = store.save_session(AgentSession(id='exact-session', agent_name='codex',
-            realm_id='other', execution_binding={'workspace': 'exact-leased-workspace'}))
+            realm_id='other', execution_binding={}))
         manager = AgentSessionManager(settings, store)
+        app.state.ctx.services["instance_agent"] = manager
         client.get('/')
         headers = {'Authorization': 'Bearer isolated-peer-token', 'Idempotency-Key': 'exact-key',
                    'X-CSRF-Token': client.cookies.get('pa_csrf')}
@@ -1874,6 +1876,25 @@ def test_public_restart_receipts_consume_shared_observation_without_losing_resid
             assert observed.identity.idempotency_key == 'exact-key'
             assert observed.accepted and observed.committed and observed.projected is None
             assert observed.effect == 'not_started'
+            def common_matches(observation):
+                before = store.get_restart_handoff(data['id'])
+                live = manager.get(session.id)
+                queue_before = list(live._queue) if live is not None else None
+                scheduled_before = manager._schedule_restart_handoff.call_count
+                response = client.get('/api/operations/exact-key', params={
+                    'realm': 'other', 'owner': 'restart', 'operation': 'agent_restart_handoff'}, headers=headers)
+                assert response.status_code == 200, response.text
+                common = response.json()
+                for field in ('identity', 'status', 'effect', 'phase', 'phase_version',
+                              'attempt', 'reason_code', 'next_action', 'worker_state', 'effect_state'):
+                    assert common[field] == observation[field], field
+                assert common['recovery_action'] == observation['next_action']
+                assert common['result']['handoff_id'] == data['id']
+                assert store.get_restart_handoff(data['id']) == before
+                assert (list(live._queue) if live is not None else None) == queue_before
+                assert manager._schedule_restart_handoff.call_count == scheduled_before
+                return common
+            common_matches(data['observation'])
             receipt = store.get_restart_handoff(data['id'])
             failed = store.update_restart_handoff(receipt.id, status='failed', expected_status=receipt.status,
                 expected_version=receipt.phase_version, owner_instance_id=settings.instance_id,
@@ -1884,12 +1905,20 @@ def test_public_restart_receipts_consume_shared_observation_without_losing_resid
                 def read():
                     response = client.get(f'/api/agent/sessions/{session.id}/restart-handoffs', headers=headers)
                     assert response.status_code == 200, response.text
-                    return response.json()['handoffs'][0]['observation']
+                    observation = response.json()['handoffs'][0]['observation']
+                    common_matches(observation)
+                    return observation
                 queued = read()
                 assert queued['worker_state'] == 'queued' and queued['effect'] == 'unknown'
                 assert queued['phase_version'] == failed.phase_version and queued['domain_stage'] == 'failed'
                 runtime._in_flight = runtime._queue.pop()
                 assert read()['worker_state'] == 'active'
+                runtime._queue_paused = True
+                assert read()['next_action'] == 'resume_by_operator'
+                runtime._queue_paused = False
+                session.execution_binding = {'workspace': 'different'}
+                store.save_session(session)
+                assert read()['reason_code'] == 'execution_binding_mismatch'
                 assert store.get_restart_handoff(receipt.id) == failed
             assert read()['worker_state'] == 'unconfirmed'
             store.append_transcript_events([TranscriptEvent(session_id=session.id, seq=1, event_type='turn_completed',
