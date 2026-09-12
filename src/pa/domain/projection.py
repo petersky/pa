@@ -29,6 +29,8 @@ from pa.domain.models import (
     CardSummarySource,
     CardSummaryStatus,
     CardUpdate,
+    CompletionRequirement,
+    CompletionEvidence,
     EventType,
     Item,
     ItemCreate,
@@ -632,6 +634,8 @@ class CardProjection:
             conn.execute("ALTER TABLE cards ADD COLUMN project_id TEXT")
         for col, decl in (
             ("execution_preferences", "TEXT NOT NULL DEFAULT '{}'"),
+            ("completion_requirement", "TEXT"),
+            ("completion_evidence", "TEXT NOT NULL DEFAULT '[]'"),
             ("summary", "TEXT NOT NULL DEFAULT ''"),
             ("summary_source", "TEXT NOT NULL DEFAULT 'fallback'"),
             ("summary_updated_at", "TEXT"),
@@ -831,6 +835,9 @@ class CardProjection:
                 "PRAGMA table_info(agent_restart_handoffs)"
             ).fetchall()
         }
+        for name, declaration in (("phase_version", "INTEGER NOT NULL DEFAULT 0"), ("reason_code", "TEXT"), ("transition_history_json", "TEXT NOT NULL DEFAULT '[]'")):
+            if name not in handoff_cols:
+                conn.execute(f"ALTER TABLE agent_restart_handoffs ADD COLUMN {name} {declaration}")
         if "failure_stage" not in handoff_cols:
             conn.execute(
                 "ALTER TABLE agent_restart_handoffs ADD COLUMN failure_stage TEXT"
@@ -2315,6 +2322,8 @@ class CardProjection:
             ],
             preferred_instance=p.get("preferred_instance"),
             preferred_capabilities=p.get("preferred_capabilities", []),
+            completion_requirement=p.get("completion_requirement"),
+            completion_evidence=p.get("completion_evidence") or [],
             execution_preferences=p.get("execution_preferences") or {},
             lease_holder_instance=p.get("lease_holder_instance"),
             lease_holder_principal=p.get("lease_holder_principal"),
@@ -2329,6 +2338,10 @@ class CardProjection:
 
     def _apply_upserted(self, event: CardEvent) -> None:
         payload = {**event.payload, "id": event.card_id, "realm_id": event.realm_id}
+        from pa.domain.completion import protected_event_payload
+        prior = self.get_card(event.card_id, realm_id=event.realm_id)
+        if prior:
+            payload = protected_event_payload(prior.model_dump(mode="json"), payload, expected_version=event.causal_card_version, field_intent=event.field_intent)
         try:
             card = Card.model_validate(payload)
         except ValidationError:
@@ -2427,7 +2440,8 @@ class CardProjection:
         card = self.get_card(event.card_id, realm_id=event.realm_id)
         if not card:
             return
-        payload = dict(event.payload)
+        from pa.domain.completion import protected_event_payload
+        payload = protected_event_payload(card.model_dump(mode="json"), event.payload, expected_version=event.causal_card_version, field_intent=event.field_intent)
         # Histories written before cards became canonical used item ``status``.
         # Translate during projection without rewriting the durable event.
         if "lane" not in payload and "status" in payload:
@@ -2460,6 +2474,10 @@ class CardProjection:
                 card.summary_source = CardSummarySource(value)
             elif key == "summary_status":
                 card.summary_status = CardSummaryStatus(value)
+            elif key == "completion_requirement":
+                card.completion_requirement = CompletionRequirement.model_validate(value) if value else None
+            elif key == "completion_evidence":
+                card.completion_evidence = [CompletionEvidence.model_validate(item) for item in value]
             elif key == "execution_preferences":
                 from pa.execution.selection import ExecutionPreferences
 
@@ -2579,8 +2597,8 @@ class CardProjection:
                  owner_principal, preferred_instance, preferred_capabilities,
                  lease_holder_instance, lease_holder_principal, lease_expires_at,
                  created_by_principal, created_by_instance, created_at, updated_at,
-                 execution_preferences)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 execution_preferences, completion_requirement, completion_evidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card.id,
@@ -2631,6 +2649,8 @@ class CardProjection:
                     card.created_at.isoformat(),
                     card.updated_at.isoformat(),
                     card.execution_preferences.model_dump_json(),
+                    card.completion_requirement.model_dump_json() if card.completion_requirement else None,
+                    json.dumps([item.model_dump(mode="json") for item in card.completion_evidence]),
                 ),
             )
 
@@ -2644,6 +2664,7 @@ class CardProjection:
         via_log: bool = True,
         idempotency_key: str | None = None,
         request_fingerprint: str | None = None,
+        direct_human: bool = False,
     ) -> Card:
         now = datetime.now(UTC)
         supplied_summary = data.summary.strip()
@@ -2666,10 +2687,19 @@ class CardProjection:
             tags=data.tags,
             preferred_instance=data.preferred_instance,
             preferred_capabilities=data.preferred_capabilities,
+            completion_requirement=(data.completion_requirement.model_copy(update={"revision": str(uuid4())}) if data.completion_requirement else None),
             execution_preferences=data.execution_preferences,
             created_by_principal=principal_id,
             created_by_instance=instance_id,
         )
+        if card.completion_requirement:
+            from pa.domain.completion import CompletionConflict
+            if card.completion_requirement.schema_version != 1:
+                raise CompletionConflict("unsupported_completion_requirement")
+            if card.lane == CardLane.DONE:
+                if not direct_human or not principal_id.startswith("user:"):
+                    raise CompletionConflict("acceptance_pending")
+                card.completion_evidence.append(CompletionEvidence(requirement_revision=card.completion_requirement.revision, subject_revision=card.id, actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human"))
         if via_log and self.event_log:
             event = CardEvent(
                 type=EventType.CARD_CREATED,
@@ -2782,6 +2812,24 @@ class CardProjection:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def card_completion_capabilities(self, card_id: str) -> set[str]:
+        from pa.domain.completion import completion_capabilities
+        with self._conn() as conn:
+            row = conn.execute("SELECT completion_requirement FROM cards WHERE id=?", (card_id,)).fetchone()
+        return completion_capabilities(json.loads(row["completion_requirement"] or "null")) if row else set()
+
+    def card_completion_eligible(self, card_id: str) -> bool | None:
+        """Internal lease lookup by globally unique card ID, across realms."""
+        from pa.domain.completion import completion_state
+        with self._conn() as conn:
+            row = conn.execute("SELECT lane, completion_requirement, completion_evidence FROM cards WHERE id=?", (card_id,)).fetchone()
+        if row is None:
+            return None
+        return row["lane"] == "done" and completion_state(
+            json.loads(row["completion_requirement"] or "null"),
+            json.loads(row["completion_evidence"] or "[]"),
+        )["accepted"]
 
     def list_card_lanes(self, realm_id: str | None = None) -> dict[str, str]:
         """Return id → lane without materializing card bodies."""
@@ -3405,6 +3453,10 @@ class CardProjection:
         instance_id: str = "local",
         idempotency_key: str | None = None,
         request_fingerprint: str | None = None,
+        direct_human: bool = False,
+        integration_evidence: CompletionEvidence | None = None,
+        actor_session_id: str | None = None,
+        actor_dispatch_id: str | None = None,
     ) -> Card | None:
         card = self.get_card(card_id, realm_id=realm_id)
         if not card:
@@ -3424,7 +3476,62 @@ class CardProjection:
             updates = {
                 key: value for key, value in updates.items() if key in requested_fields
             }
+        from pa.domain.completion import CompletionConflict, completion_state
         now = datetime.now(UTC)
+        requirement = card.completion_requirement
+        receipts = list(card.completion_evidence)
+        if requirement is None and updates.get("completion_requirement") is None:
+            updates.pop("completion_requirement", None)
+        if requirement and updates.get("completion_requirement") == requirement.model_dump(mode="json"):
+            updates.pop("completion_requirement")
+        if "completion_requirement" in updates:
+            if data.expected_version is None or data.field_intent is None or "completion_requirement" not in data.field_intent:
+                raise CompletionConflict("completion_requirement_edit_requires_version_and_intent")
+            if updates["completion_requirement"] is None:
+                raise CompletionConflict("completion_requirement_cannot_be_erased")
+            requirement = CompletionRequirement.model_validate(updates["completion_requirement"])
+            if requirement.schema_version != 1:
+                raise CompletionConflict("unsupported_completion_requirement")
+            requirement = requirement.model_copy(update={"revision": str(uuid4())})
+            updates["completion_requirement"] = requirement.model_dump(mode="json")
+            if card.lane == CardLane.DONE and updates.get("lane") not in {CardLane.ACTIVE, CardLane.WAITING}:
+                raise CompletionConflict("completion_requirement_change_requires_reopen")
+        if integration_evidence:
+            if not requirement or integration_evidence.requirement_revision != requirement.revision:
+                raise CompletionConflict("stale_completion_requirement")
+            if data.expected_version is None or principal_id != "instance:pr-supervisor":
+                raise CompletionConflict("integration_producer_unauthorized")
+            if not any(item.requirement_revision == requirement.revision and item.subject_revision == integration_evidence.subject_revision and item.outcome == "integrated" for item in receipts):
+                receipts.append(integration_evidence.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key or str(uuid4()), "outcome": "integrated", "actor_kind": "integration", "milestones": ["integrated"]}))
+        acceptance = data.completion_acceptance
+        if acceptance:
+            if "integrated" in acceptance.milestones:
+                raise CompletionConflict("completion_integration_producer_required")
+            if not requirement or acceptance.requirement_revision != requirement.revision:
+                raise CompletionConflict("stale_completion_requirement")
+            if data.expected_version is None or not idempotency_key:
+                raise CompletionConflict("completion_acceptance_requires_version_and_identity")
+            if not direct_human:
+                if not requirement.acceptance_principals:
+                    raise CompletionConflict("completion_owner_unconfigured")
+                if not actor_session_id or not actor_dispatch_id:
+                    raise CompletionConflict("completion_actor_unbound")
+                if actor_session_id == requirement.originating_session_id or actor_dispatch_id == requirement.originating_dispatch_id:
+                    raise CompletionConflict("completion_self_acceptance_forbidden")
+            if not direct_human and principal_id not in requirement.acceptance_principals:
+                raise CompletionConflict("completion_acceptance_unauthorized")
+            acceptance = acceptance.model_copy(update={"actor": principal_id, "instance_id": instance_id, "recorded_at": now, "idempotency_key": idempotency_key, "outcome": "accepted", "actor_kind": "human" if direct_human else "bound_session", "actor_session_id": actor_session_id, "actor_dispatch_id": actor_dispatch_id})
+            receipts.append(acceptance)
+        if requirement and updates.get("lane") == CardLane.DONE and card.lane != CardLane.DONE:
+            if direct_human and principal_id.startswith("user:"):
+                if data.expected_version is None:
+                    raise CompletionConflict("completion_override_requires_version")
+                receipts.append(CompletionEvidence(requirement_revision=requirement.revision, subject_revision=card.updated_at.isoformat(), actor=principal_id, instance_id=instance_id, recorded_at=now, idempotency_key=idempotency_key or str(uuid4()), outcome="human_override", actor_kind="human"))
+            elif not completion_state(requirement, receipts)["accepted"]:
+                raise CompletionConflict(completion_state(requirement, receipts)["reason_code"])
+            updates["completion_requirement"] = requirement.model_dump(mode="json")
+        if receipts != card.completion_evidence:
+            updates["completion_evidence"] = [item.model_dump(mode="json") for item in receipts]
         payload = {}
         nullable_summary_fields = {
             "summary_failure",
@@ -3513,7 +3620,11 @@ class CardProjection:
                 )
                 and hasattr(card, key)
             ):
-                if key == "execution_preferences":
+                if key == "completion_requirement":
+                    value = CompletionRequirement.model_validate(value) if value else None
+                elif key == "completion_evidence":
+                    value = [CompletionEvidence.model_validate(item) for item in value]
+                elif key == "execution_preferences":
                     from pa.execution.selection import ExecutionPreferences
 
                     value = ExecutionPreferences.model_validate(value or {})
@@ -5053,8 +5164,8 @@ class CardProjection:
                    (id, session_id, idempotency_key, continuation_prompt,
                     continuation_prompt_id, status, card_id, project_id, instance_id,
                     execution_binding_json, error, failure_stage, attempts,
-                    created_at, updated_at, delivered_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    created_at, updated_at, delivered_at, phase_version, reason_code, transition_history_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     handoff.id,
                     handoff.session_id,
@@ -5072,6 +5183,7 @@ class CardProjection:
                     handoff.created_at.isoformat(),
                     handoff.updated_at.isoformat(),
                     handoff.delivered_at.isoformat() if handoff.delivered_at else None,
+                    handoff.phase_version, handoff.reason_code, json.dumps(handoff.transition_history),
                 ),
             )
         return handoff
@@ -5130,32 +5242,61 @@ class CardProjection:
         handoff_id: str,
         *,
         status: str,
+        expected_status: str,
+        expected_version: int,
+        owner_instance_id: str,
         error: str | None = None,
         delivered: bool = False,
         increment_attempts: bool = False,
         failure_stage: str | None = None,
+        reason_code: str | None = None,
+        retry: bool = False,
     ) -> RestartHandoff | None:
+        from pa.instance.restart_lifecycle import validate_transition, RestartTransitionConflict, TERMINAL
         now = datetime.now(UTC)
         with measured_lock(self._mutation_lock), self._conn() as conn:
-            conn.execute(
-                """UPDATE agent_restart_handoffs SET status=?, error=?, failure_stage=?, updated_at=?,
-                   attempts=attempts+?, delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
-                   WHERE id=?""",
-                (
-                    status,
-                    error,
-                    failure_stage,
-                    now.isoformat(),
-                    int(increment_attempts),
-                    int(delivered),
-                    now.isoformat(),
-                    handoff_id,
-                ),
+            row = conn.execute("SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)).fetchone()
+            if row is None:
+                return None
+            current = self._row_to_restart_handoff(row)
+            if not owner_instance_id or (current.instance_id and current.instance_id != owner_instance_id):
+                raise RestartTransitionConflict("Restart receipt owner does not match")
+            if current.status in TERMINAL and status == current.status:
+                return current
+            if retry and conn.execute("SELECT 1 FROM agent_restart_handoffs WHERE session_id=? AND id!=? AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed') LIMIT 1", (current.session_id, handoff_id)).fetchone():
+                raise RestartTransitionConflict("Session already has another nonterminal restart handoff")
+            validate_transition(current, status=status, expected_status=expected_status, expected_version=expected_version, owner_instance_id=owner_instance_id, retry=retry)
+            if status == current.status:
+                return current
+            if status == "continuation_delivered":
+                if self.find_prompt_completion(current.session_id, current.continuation_prompt_id) is None:
+                    raise RestartTransitionConflict("Exact continuation turn completion evidence is missing")
+                delivered = True
+            elif status == "restart_completed":
+                if current.continuation_prompt.strip():
+                    raise RestartTransitionConflict("A continuation still requires exact turn completion")
+                delivered = True
+            elif delivered:
+                raise RestartTransitionConflict("Only terminal completion may set delivered_at")
+            history = [*current.transition_history, {
+                "phase_version": current.phase_version, "status": current.status,
+                "attempt": current.attempts, "error": current.error,
+                "reason_code": current.reason_code, "failure_stage": current.failure_stage,
+                "updated_at": current.updated_at.isoformat(), "transitioned_at": now.isoformat(),
+                "owner_instance_id": owner_instance_id,
+            }]
+            cursor = conn.execute(
+                """UPDATE agent_restart_handoffs SET status=?, error=?, failure_stage=?, reason_code=?, updated_at=?,
+                   attempts=attempts+?, phase_version=phase_version+1, transition_history_json=?,
+                   delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
+                   WHERE id=? AND status=? AND phase_version=?""",
+                (status, error, failure_stage, reason_code, now.isoformat(), int(increment_attempts),
+                 json.dumps(history), int(delivered), now.isoformat(), handoff_id, expected_status, expected_version),
             )
-            row = conn.execute(
-                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
-            ).fetchone()
-        return self._row_to_restart_handoff(row) if row else None
+            if cursor.rowcount != 1:
+                raise RestartTransitionConflict("Restart receipt changed concurrently")
+            row = conn.execute("SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)).fetchone()
+        return self._row_to_restart_handoff(row)
 
     def edit_restart_handoff(
         self, handoff_id: str, *, session_id: str, continuation_prompt: str
@@ -5174,9 +5315,10 @@ class CardProjection:
                 raise ValueError(
                     "Restart continuation can only be edited before PA begins quiescing"
                 )
+            history = [*handoff.transition_history, {"phase_version": handoff.phase_version, "status": handoff.status, "attempt": handoff.attempts, "error": handoff.error, "reason_code": handoff.reason_code, "failure_stage": handoff.failure_stage, "updated_at": handoff.updated_at.isoformat(), "transitioned_at": now.isoformat(), "action": "continuation_edited"}]
             conn.execute(
-                "UPDATE agent_restart_handoffs SET continuation_prompt=?, updated_at=? WHERE id=?",
-                (continuation_prompt.strip(), now.isoformat(), handoff_id),
+                "UPDATE agent_restart_handoffs SET continuation_prompt=?, updated_at=?, phase_version=phase_version+1, transition_history_json=? WHERE id=?",
+                (continuation_prompt.strip(), now.isoformat(), json.dumps(history), handoff_id),
             )
             refreshed = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
@@ -5221,16 +5363,13 @@ class CardProjection:
                 }
                 else "resuming"
             )
-            conn.execute(
-                """UPDATE agent_restart_handoffs
-                   SET status=?, error=NULL, failure_stage=NULL, updated_at=?
-                   WHERE id=? AND status='failed'""",
-                (retry_status, now.isoformat(), handoff_id),
-            )
-            refreshed = conn.execute(
-                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
-            ).fetchone()
-        return self._row_to_restart_handoff(refreshed)
+            # CAS below revalidates this receipt and competing operations.
+        return self.update_restart_handoff(
+            handoff_id, status=retry_status, expected_status=handoff.status,
+            expected_version=handoff.phase_version,
+            owner_instance_id=handoff.instance_id or "local", retry=True,
+            increment_attempts=retry_status == "resuming", reason_code="operator_retry",
+        )
 
     def list_session_audit_page(
         self,
@@ -6271,6 +6410,8 @@ class CardProjection:
             owner_principal=row["owner_principal"],
             preferred_instance=row["preferred_instance"],
             preferred_capabilities=json.loads(row["preferred_capabilities"]),
+            completion_requirement=json.loads(row["completion_requirement"]) if "completion_requirement" in keys and row["completion_requirement"] else None,
+            completion_evidence=json.loads(row["completion_evidence"]) if "completion_evidence" in keys else [],
             execution_preferences=json.loads(row["execution_preferences"])
             if "execution_preferences" in keys
             else {},
@@ -6393,6 +6534,9 @@ class CardProjection:
             continuation_prompt=row["continuation_prompt"],
             continuation_prompt_id=row["continuation_prompt_id"],
             status=row["status"],
+            phase_version=int(row["phase_version"] or 0),
+            reason_code=row["reason_code"],
+            transition_history=json.loads(row["transition_history_json"] or "[]"),
             card_id=row["card_id"],
             project_id=row["project_id"],
             instance_id=row["instance_id"],

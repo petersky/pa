@@ -155,6 +155,8 @@ def _is_assigned_service_route(request: Request) -> bool:
 
 
 def _is_assigned_session_route(request: Request) -> bool:
+    if request.method == "PATCH" and re.fullmatch(r"/api/cards/[A-Za-z0-9-]{1,80}", request.url.path) and request.headers.get("authorization", "").startswith("SessionAcceptance "):
+        return True
     return (request.method, request.url.path) in {
         ("GET", "/api/goal-assigned-session/goal"),
         ("GET", "/api/goal-assigned-session/dispatch"),
@@ -278,6 +280,7 @@ class AuthMiddleware:
         request.state.principal_id = None
         request.state.user = None
         request.state.user_authenticated = False
+        request.state.authentication_method = None
         request.state.instance_authenticated = False
         request.state.authenticated_instance_id = None
         request.state.provider_run_credential = None
@@ -297,6 +300,8 @@ class AuthMiddleware:
         provider_run_credential_supplied = auth_header.startswith("GoalRun ")
         if provider_run_credential_supplied:
             request.state.provider_run_credential = auth_header[8:].strip()
+        completion_capability_supplied = auth_header.startswith("SessionAcceptance ")
+        request.state.completion_session_capability = auth_header[len("SessionAcceptance "):].strip() if completion_capability_supplied else None
         assigned_session_capability_supplied = auth_header.startswith("GoalSession ")
         if assigned_session_capability_supplied:
             request.state.assigned_session_capability = auth_header[12:].strip()
@@ -333,6 +338,7 @@ class AuthMiddleware:
                     request.state.user = user
                     request.state.principal_id = f"user:{user.id}"
                     request.state.user_authenticated = True
+                    request.state.authentication_method = "browser_session"
 
         if (
             _sync_auth_required(self.settings)
@@ -362,7 +368,7 @@ class AuthMiddleware:
                 )
                 and not (
                     _is_assigned_session_route(request)
-                    and assigned_session_capability_supplied
+                    and (assigned_session_capability_supplied or completion_capability_supplied)
                 )
                 and not (
                     is_fleet_instance_route and request.state.instance_authenticated

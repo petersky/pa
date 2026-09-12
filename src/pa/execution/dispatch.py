@@ -5380,6 +5380,17 @@ class CompletionOutbox:
                     record.card_disposition_reason = disposition.get("reason")
                     record.card_lane_before = disposition.get("lane_before")
                     record.card_lane_after = disposition.get("lane_after")
+                reconciliation = acknowledgement.get("reconciliation")
+                if isinstance(reconciliation, dict):
+                    for field in ("state", "condition", "recovery_action"):
+                        value = reconciliation.get(field)
+                        if field in reconciliation and (isinstance(value, str) or (value is None and field != "state")):
+                            setattr(record, "reconciliation_" + field, value)
+                    if isinstance(reconciliation.get("recoverable"), bool):
+                        record.reconciliation_recoverable = reconciliation["recoverable"]
+                    if isinstance(reconciliation.get("current_card"), dict):
+                        record.reconciliation_current_card = reconciliation["current_card"]
+                    record.reconciliation_updated_at = datetime.now(UTC)
                 record.acknowledged_at = datetime.now(UTC)
                 record.last_error = None
                 record.completion_delivery_class = "acknowledged"

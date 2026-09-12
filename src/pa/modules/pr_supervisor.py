@@ -960,6 +960,7 @@ class PRSupervisorModule(Module):
 
     def on_load(self, ctx: AppContext) -> None:
         store = PRSupervisorStore(ctx.settings.data_dir / "pr_supervisor.db")
+        store.completion_capabilities = ctx.store.card_completion_capabilities
         ctx.register_service("pr_supervisor_store", store)
         pages: PageRegistry = ctx.require_service("pages")
         pages.register(

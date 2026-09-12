@@ -38,6 +38,8 @@ class PRSupervisorStore:
     """
 
     def __init__(self, db_path: Path) -> None:
+        self.completion_capabilities = None
+        self.completion_card_db_path: Path | None = None
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -110,7 +112,8 @@ class PRSupervisorStore:
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_completion
                     ON pr_watches(updated_at, id)
                     WHERE status='merged' AND card_id IS NOT NULL
-                      AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done';
+                      AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
+                     AND COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured');
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_due
                     ON pr_watches(status, next_poll_at);
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_card
@@ -416,12 +419,22 @@ class PRSupervisorStore:
         return [self._row_to_watch(row) for row in rows]
 
     def list_card_completion_due(self, *, now: datetime | None = None, limit: int = 100) -> list[PRWatch]:
-        """Hydrate only a bounded batch of merged cards due for bookkeeping."""
+        """Select bounded bookkeeping work; parked acceptance wakes on card change."""
         with self._conn() as conn:
+            changed = "0"
+            if self.completion_card_db_path is not None:
+                # Read the authoritative local projection in the same query.
+                # No polling/hydration of every parked watch or new wake owner.
+                conn.execute("ATTACH DATABASE ? AS completion_cards", (str(self.completion_card_db_path),))
+                changed = """EXISTS (SELECT 1 FROM completion_cards.cards AS card
+                    WHERE card.id=pr_watches.card_id AND card.realm_id=pr_watches.realm_id
+                    AND card.updated_at != COALESCE(json_extract(state_json, '$.card_completion_version'), ''))"""
             rows = conn.execute(
-                """SELECT * FROM pr_watches
+                f"""SELECT * FROM pr_watches
                    WHERE status='merged' AND card_id IS NOT NULL
                      AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
+                     AND (COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured')
+                          OR {changed})
                      AND (json_extract(state_json, '$.card_completion_retry.next_retry_at') IS NULL
                           OR json_extract(state_json, '$.card_completion_retry.next_retry_at') <= ?)
                    ORDER BY updated_at, id LIMIT ?""",
@@ -690,6 +703,11 @@ class PRSupervisorStore:
                     reason="capability_ineligible",
                     protocol_version=PR_WATCH_PROTOCOL_VERSION,
                 )
+            required = {item for item in watch.required_capabilities if item.startswith("completion-requirements:")}
+            if self.completion_capabilities and watch.card_id:
+                required |= self.completion_capabilities(watch.card_id)
+            if not required.issubset(set(capability.capabilities)):
+                return LeaseGrant(acquired=False, reason="completion_owner_incompatible", protocol_version=PR_WATCH_PROTOCOL_VERSION)
             lease_active = (
                 watch.owner_instance_id
                 and watch.lease_expires_at

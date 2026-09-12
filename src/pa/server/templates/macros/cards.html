@@ -24,7 +24,8 @@
          {% if movable %}draggable="true"{% endif %}
          data-card-id="{{ card.id }}"
          data-realm="{{ card.realm_id }}"
-         data-card-lane="{{ card.lane.value }}">
+         data-card-lane="{{ card.lane.value }}"
+         data-card-version="{{ card.updated_at.isoformat() }}">
   {% if not title_only %}
   <div class="compact-card-meta">
     <span class="badge">{{ card.kind.value }}</span>
@@ -45,6 +46,9 @@
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
+  {% if card.completion_requirement and card.completion_status.missing %}
+  <p class="muted small">Next: {{ card.completion_status.missing[0] | replace("_", " ") }}.</p>
+  {% endif %}
   {% if presentation and presentation.action %}
   {{ presentation_action(presentation.action, card.title, card.id, card.realm_id) }}
   {% elif not progress and (not session or session.status in ('closed', 'quiesced')) %}

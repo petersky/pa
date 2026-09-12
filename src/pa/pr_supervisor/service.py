@@ -11,6 +11,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -737,6 +738,9 @@ class PRSupervisor:
         self.store = supervisor_store or PRSupervisorStore(
             settings.data_dir / "pr_supervisor.db"
         )
+        self.store.completion_capabilities = domain_store.card_completion_capabilities
+        card_db_path = getattr(domain_store, "db_path", None)
+        self.store.completion_card_db_path = card_db_path if isinstance(card_db_path, (str, Path)) else None
         self.credentials = (
             github_client.credentials
             if github_client
@@ -890,6 +894,8 @@ class PRSupervisor:
             self._capability = (
                 await self.github.probe(self.settings.instance_id)
             ).model_copy(update={"pr_watch_protocol_version": 2, "instance_name": self.settings.instance_name})
+            from pa.domain.completion import COMPLETION_CAPABILITY
+            self._capability.capabilities = sorted(set(self._capability.capabilities) | {COMPLETION_CAPABILITY})
             self._capability_checked_at = now
 
         heartbeat_due = (
@@ -991,6 +997,9 @@ class PRSupervisor:
                 "github:authenticated",
                 f"github:repo:{watch.repository}",
             ]
+        if watch.card_id:
+            required = await self._offload("sqlite.completion_capabilities", self.domain_store.card_completion_capabilities, watch.card_id)
+            watch.required_capabilities = sorted(set(watch.required_capabilities) | set(required))
         stored = await self._offload(
             "sqlite.pr_supervisor_watch_write", self.store.upsert_watch, watch
         )
@@ -2564,18 +2573,44 @@ class PRSupervisor:
             card_id=watch.card_id,
             include_retired=True,
         )
+        if card.completion_requirement:
+            integration = decide_card_disposition(
+                disposition_for_merged_watch(watch), current_lane=card.lane,
+                watches=linked_watches,
+            )
+            if integration.status == "applied" and integration.applied_lane == CardLane.DONE:
+                from pa.domain.models import CompletionEvidence
+                subject = str(watch.state.get("merge_commit_sha") or "")
+                if not any(item.requirement_revision == card.completion_requirement.revision and item.subject_revision == subject and item.outcome == "integrated" for item in card.completion_evidence):
+                    try:
+                        card = await self._offload(
+                            "sqlite.card_write", self.domain_store.update_card,
+                            card.id, CardUpdate(expected_version=card.updated_at),
+                            realm_id=watch.realm_id, principal_id="instance:pr-supervisor",
+                            instance_id=self.settings.instance_id,
+                            idempotency_key=f"{watch.id}:integrated:{card.completion_requirement.revision}:{subject}",
+                            integration_evidence=CompletionEvidence(
+                                requirement_revision=card.completion_requirement.revision,
+                                subject_revision=subject, references=[watch.pr_url], outcome="integrated",
+                            ),
+                        )
+                    except Exception as exc:
+                        await self._defer_card_completion(watch, str(exc))
+                        return
         decision = decide_card_disposition(
             disposition_for_merged_watch(watch),
             current_lane=card.lane,
             watches=linked_watches,
+            completion_requirement=card.completion_requirement,
+            completion_evidence=card.completion_evidence,
         )
         try:
             if decision.applied_lane != card.lane:
-                await self._offload(
+                card = await self._offload(
                     "sqlite.card_write",
                     self.domain_store.update_card,
                     watch.card_id,
-                    CardUpdate(lane=decision.applied_lane),
+                    CardUpdate(lane=decision.applied_lane, expected_version=card.updated_at),
                     realm_id=watch.realm_id,
                     principal_id="instance:pr-supervisor",
                     instance_id=self.settings.instance_id,
@@ -2595,13 +2630,16 @@ class PRSupervisor:
             )
             return
         state = dict(watch.state)
-        if decision.applied_lane == CardLane.DONE:
+        if decision.applied_lane == CardLane.DONE or decision.reason_code in {"acceptance_pending", "completion_owner_unconfigured"}:
             state.pop("card_completion_retry", None)
         else:
             state["card_completion_retry"] = self._card_completion_retry(watch, decision.reason)
+        state["card_completion_version"] = card.updated_at.isoformat()
         state["card_lane"] = decision.applied_lane.value
         state["card_disposition"] = {
             "contract": "pa.card-disposition/v1",
+            "reason_code": decision.reason_code,
+            "missing_requirements": decision.missing_requirements,
             "status": decision.status,
             "reason": decision.reason,
             "requested_lane": decision.requested_lane.value
@@ -2636,7 +2674,7 @@ class PRSupervisor:
             },
         )
         await self._replicate(completed)
-        if decision.applied_lane == CardLane.DONE and self.workspace_manager:
+        if decision.cleanup_eligible and decision.applied_lane == CardLane.DONE and self.workspace_manager:
             try:
                 await self._offload(
                     "filesystem.workspace_completion",

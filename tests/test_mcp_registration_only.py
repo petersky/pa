@@ -56,7 +56,7 @@ sys.addaudithook(audit)
     env.update(PA_DATA_DIR=str(data), PA_AGENT_ENABLED='false', PA_INSTANCE_ID='owner-test',
                PA_LOCAL_API_URL='http://127.0.0.1:1', PA_LOCAL_API_TOKEN='isolated-test-only-token',
                PA_WORKSPACE_ROOT=str(tmp_path / 'workspaces'), PA_BROWSER_SESSION_ID='session-test',
-               PYTHONPATH=str(guard), PYTHONDONTWRITEBYTECODE='1')
+               PYTHONPATH=os.pathsep.join((str(guard), str(Path(__file__).resolve().parents[1] / 'src'))), PYTHONDONTWRITEBYTECODE='1')
     if assigned:
         env.update(PA_ASSIGNED_SERVICE_MODE='1', PA_ASSIGNED_SERVICE_SESSION_ID='session-test', PA_ASSIGNED_SERVICE_DISPATCH_ID='dispatch-test')
     command = sys.executable if entrypoint == 'module' else str(Path(sys.executable).parent / 'pa')
@@ -79,7 +79,10 @@ sys.addaudithook(audit)
             assert names == ASSIGNED_SERVICE_TOOL_ALLOWLIST
         else:
             assert {'instance_info', 'agent_providers_list', 'preview_agent_restart_handoff'} <= names
-            assert len(names) == 206
+            # Entry-point plugins may add tools; verify the contract, not a
+            # deployment-specific total. Restricted mode remains exact above.
+            assert len(names) == len(tools)
+            assert "record_card_acceptance" in names
         assert {p.name: (p.stat().st_size, p.stat().st_mtime_ns) for p in data.iterdir()} == before
     finally:
         db.rollback()

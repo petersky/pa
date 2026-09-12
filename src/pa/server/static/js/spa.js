@@ -169,6 +169,7 @@
     }
 
     var bodyParams = new URLSearchParams({ lane: lane });
+    if (card.dataset.cardVersion) bodyParams.set("expected_version", card.dataset.cardVersion);
     return fetch("/partials/cards/" + encodeURIComponent(cardId) + "/move?realm=" + encodeURIComponent(realm), {
       method: "POST",
       credentials: "same-origin",

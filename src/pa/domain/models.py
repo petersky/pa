@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 from pa.execution.selection import ExecutionPreferences
 
 from pa.fleet.capacity import (
@@ -398,7 +398,44 @@ class CardAttachment(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class CompletionRequirement(BaseModel):
+    """Optional declared goal; only a deliberate edit changes its revision."""
+
+    schema_version: int = Field(default=1, ge=1)
+    mode: Literal["integration_only", "explicit_acceptance"]
+    revision: str = ""
+    criteria: str = Field(default="", max_length=4000)
+    milestones: list[Literal["integrated", "published", "active", "verified"]] = Field(default_factory=list)
+    acceptance_principals: list[str] = Field(default_factory=list)
+    originating_session_id: str | None = None
+    originating_dispatch_id: str | None = None
+
+    @model_validator(mode="after")
+    def integration_mode_requires_integration(self):
+        if self.mode == "integration_only" and "integrated" not in self.milestones:
+            self.milestones = ["integrated", *self.milestones]
+        return self
+
+
+class CompletionEvidence(BaseModel):
+    schema_version: Literal[1] = 1
+    requirement_revision: str
+    subject_revision: str = Field(min_length=1)
+    milestones: list[Literal["integrated", "published", "active", "verified"]] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    actor: str = ""
+    actor_kind: Literal["human", "bound_session", "integration"] | None = None
+    actor_session_id: str | None = None
+    actor_dispatch_id: str | None = None
+    instance_id: str = ""
+    recorded_at: datetime | None = None
+    idempotency_key: str = ""
+    outcome: Literal["accepted", "human_override", "integrated"] = "accepted"
+
+
 class Card(BaseModel):
+    completion_requirement: CompletionRequirement | None = None
+    completion_evidence: list[CompletionEvidence] = Field(default_factory=list)
     execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
@@ -438,6 +475,11 @@ class Card(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @property
+    def completion_status(self) -> dict:
+        from pa.domain.completion import completion_state
+        return completion_state(self.completion_requirement, self.completion_evidence)
+
     @model_validator(mode="before")
     @classmethod
     def accept_legacy_status(cls, data):
@@ -445,6 +487,7 @@ class Card(BaseModel):
 
 
 class CardCreate(BaseModel):
+    completion_requirement: CompletionRequirement | None = None
     execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     realm_id: str = "default"
     kind: CardKind = CardKind.TASK
@@ -478,6 +521,8 @@ class CardCreate(BaseModel):
 
 
 class CardUpdate(BaseModel):
+    completion_requirement: CompletionRequirement | None = None
+    completion_acceptance: CompletionEvidence | None = Field(default=None, exclude=True)
     execution_preferences: ExecutionPreferences | None = None
     kind: CardKind | None = None
     title: str | None = None
@@ -737,6 +782,9 @@ class RestartHandoff(BaseModel):
     idempotency_key: str
     continuation_prompt: str = ""
     status: str = "requested"
+    phase_version: int = Field(default=0, ge=0)
+    reason_code: str | None = None
+    transition_history: list[dict] = Field(default_factory=list)
     card_id: str | None = None
     project_id: str | None = None
     instance_id: str | None = None
@@ -748,6 +796,12 @@ class RestartHandoff(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     delivered_at: datetime | None = None
+
+    @computed_field
+    @property
+    def observation(self) -> dict:
+        from pa.instance.restart_lifecycle import restart_observation_fields
+        return restart_observation_fields(self)
 
 
 class TranscriptEvent(BaseModel):

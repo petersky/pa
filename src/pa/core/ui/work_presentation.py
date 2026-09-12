@@ -367,6 +367,8 @@ def present_work_item(
     card_title = str(_value(card, "title", "Untitled work"))
     realm_id = str(_value(card, "realm_id", "default") or "default")
     lane = str(_enum_value(_value(card, "lane", "")) or "")
+    from pa.domain.completion import completion_state
+    completion = completion_state(_value(card, "completion_requirement"), _value(card, "completion_evidence", []))
     dispatch_id = dispatch.get("dispatch_id")
     session_id = (
         dispatch.get("session_id")
@@ -609,6 +611,17 @@ def present_work_item(
             else _action("open_card", "Open card", href=card_href)
         )
         action_explanation = "Inspect the linked execution before considering another dispatch."
+    elif _value(card, "completion_requirement") and lane != "done" and not completion["accepted"]:
+        group = "attention"
+        state_code = completion["reason_code"]
+        state_label = "Waiting"
+        summary = "Next: " + completion["missing"][0].replace("_", " ") + "."
+        reason = "The execution turn ended; the declared card goal remains incomplete."
+        tone = "blocked"
+        priority = 90
+        attention_code = completion["reason_code"]
+        action = _action("open_card", "Open card", href=card_href)
+        action_explanation = "Review the current completion requirement."
     elif state in {"completed", "acknowledged"} or lane == "done":
         group = "outcome"
         state_code = "completed"
