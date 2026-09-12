@@ -2288,6 +2288,38 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
     }
 
 
+def _require_completion_owner_compatibility(request: Request, card_id: str, data: CardUpdate) -> None:
+    """Do not add protection while an incompatible existing owner can clean up."""
+    if not data.completion_requirement:
+        return
+    from pa.domain.completion import completion_capabilities, completion_runtime_capabilities
+    ctx = request.app.state.ctx
+    current = ctx.store.get_card(card_id)
+    if current and current.completion_requirement == data.completion_requirement:
+        return
+    required = completion_capabilities(data.completion_requirement)
+    fleet = ctx.services.get("fleet_registry")
+    owners = {session.origin_instance_id or ctx.settings.instance_id for session in ctx.store.list_sessions_for_cards({card_id})}
+    dispatch = ctx.services.get("dispatch_store")
+    if dispatch:
+        owners.update(record.target_instance_id for record in dispatch.list(card_id=card_id))
+    for owner in owners:
+        instance = fleet.get_instance(owner) if fleet else None
+        available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else (instance.capabilities if instance else [])
+        if not required.issubset(set(available)):
+            raise CompletionConflict("completion_existing_owner_incompatible")
+    watches = ctx.services.get("pr_supervisor_store")
+    if watches:
+        capabilities = {item.instance_id: set(item.capabilities) for item in watches.list_capabilities()}
+        for watch in watches.list_watches(card_id=card_id, include_retired=True):
+            # Terminal watches can still own local post-merge cleanup. Expiry
+            # alone is not proof that an older completion worker is quiescent.
+            for owner in {watch.owner_instance_id, watch.originating_instance_id} - {None}:
+                available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else capabilities.get(owner, set())
+                if not required.issubset(set(available)):
+                    raise CompletionConflict("completion_existing_owner_incompatible")
+
+
 @router.patch("/cards/{card_id}")
 def update_card_api(
     request: Request,
@@ -2321,6 +2353,7 @@ def update_card_api(
         return replay
     store = get_store()
     try:
+        _require_completion_owner_compatibility(request, card_id, data)
         card = store.update_card(
             card_id,
             data,

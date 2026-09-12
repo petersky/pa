@@ -6,6 +6,23 @@ from typing import Any
 from datetime import datetime
 
 
+COMPLETION_CAPABILITY = "completion-requirements:v1"
+
+
+def completion_runtime_capabilities(configured) -> list[str]:
+    # Advertise implemented support without persisting it into user configuration
+    # (which could survive a downgrade to an incompatible binary).
+    return sorted(set(configured) | {COMPLETION_CAPABILITY})
+
+
+def completion_capabilities(requirement: Any) -> set[str]:
+    """Version-specific ownership eligibility, only for explicitly protected cards."""
+    if not requirement:
+        return set()
+    version = _dict(requirement).get("schema_version", 1)
+    return {f"completion-requirements:v{version}"}
+
+
 class CompletionConflict(ValueError):
     def __init__(self, code: str):
         self.code = code

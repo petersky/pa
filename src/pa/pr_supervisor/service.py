@@ -734,6 +734,7 @@ class PRSupervisor:
         self.store = supervisor_store or PRSupervisorStore(
             settings.data_dir / "pr_supervisor.db"
         )
+        self.store.completion_capabilities = domain_store.card_completion_capabilities
         self.credentials = (
             github_client.credentials
             if github_client
@@ -887,6 +888,8 @@ class PRSupervisor:
             self._capability = (
                 await self.github.probe(self.settings.instance_id)
             ).model_copy(update={"pr_watch_protocol_version": 2})
+            from pa.domain.completion import COMPLETION_CAPABILITY
+            self._capability.capabilities = sorted(set(self._capability.capabilities) | {COMPLETION_CAPABILITY})
             self._capability_checked_at = now
 
         heartbeat_due = (
@@ -974,6 +977,9 @@ class PRSupervisor:
                 "github:authenticated",
                 f"github:repo:{watch.repository}",
             ]
+        if watch.card_id:
+            required = await self._offload("sqlite.completion_capabilities", self.domain_store.card_completion_capabilities, watch.card_id)
+            watch.required_capabilities = sorted(set(watch.required_capabilities) | set(required))
         stored = await self._offload(
             "sqlite.pr_supervisor_watch_write", self.store.upsert_watch, watch
         )

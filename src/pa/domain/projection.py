@@ -2771,6 +2771,12 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_card(row) for row in rows]
 
+    def card_completion_capabilities(self, card_id: str) -> set[str]:
+        from pa.domain.completion import completion_capabilities
+        with self._conn() as conn:
+            row = conn.execute("SELECT completion_requirement FROM cards WHERE id=?", (card_id,)).fetchone()
+        return completion_capabilities(json.loads(row["completion_requirement"] or "null")) if row else set()
+
     def card_completion_eligible(self, card_id: str) -> bool | None:
         """Internal lease lookup by globally unique card ID, across realms."""
         from pa.domain.completion import completion_state

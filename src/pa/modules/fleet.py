@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pa.domain.completion import completion_runtime_capabilities
+
 import asyncio
 import copy
 import hashlib
@@ -3591,7 +3593,7 @@ async def fleet_update_readiness(
         settings.instance_name,
         owner_public_url(settings),
         zone=settings.zone,
-        capabilities=list(settings.capabilities),
+        capabilities=completion_runtime_capabilities(settings.capabilities),
         dispatch_capacity=settings.dispatch_capacity,
         dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
         dispatch_queue_capacity=settings.dispatch_queue_capacity,
@@ -3863,7 +3865,7 @@ def _overview_instance(request: Request, instance_id: str) -> FleetInstance:
             name=ctx.settings.instance_name,
             url=owner_public_url(ctx.settings),
             zone=ctx.settings.zone,
-            capabilities=list(ctx.settings.capabilities),
+            capabilities=completion_runtime_capabilities(ctx.settings.capabilities),
             dispatch_capacity=ctx.settings.dispatch_capacity,
             dispatch_provider_capacities=dict(
                 ctx.settings.dispatch_provider_capacities
@@ -7586,8 +7588,10 @@ async def _resolve_policy_placement(
             activity.get("self_protective_participation") or {}
         )
 
+    from pa.domain.completion import completion_capabilities
     required_capabilities = sorted(
-        set(body.required_capabilities)
+        completion_capabilities(card.completion_requirement if card else None)
+        | set(body.required_capabilities)
         | {f"mcp:{name}" for name in body.required_mcp_servers}
         | set(plan.requirements.required_capabilities)
     )
@@ -10913,6 +10917,14 @@ async def _admit_remote_agent_work(
             f"instances/{instance_id}/agent/start",
             body=forwarded,
         )
+    if body.card_id:
+        required = ctx.store.card_completion_capabilities(body.card_id)
+        if required:
+            fleet = ctx.require_service("fleet_registry")
+            target = fleet.get_instance(instance_id)
+            available = completion_runtime_capabilities(settings.capabilities) if instance_id == settings.instance_id else (target.capabilities if target else [])
+            if not required.issubset(set(available)):
+                raise HTTPException(status_code=409, detail={"code": "completion_owner_incompatible", "required_capabilities": sorted(required)})
     _submitted_payload, submitted_fingerprint, idempotency_key = (
         _named_dispatch_identity(request, instance_id, body, body.project_id)
     )
@@ -14937,7 +14949,7 @@ class FleetModule(Module):
             settings.instance_name,
             self_url,
             zone=settings.zone,
-            capabilities=settings.capabilities,
+            capabilities=completion_runtime_capabilities(settings.capabilities),
             dispatch_capacity=settings.dispatch_capacity,
             dispatch_provider_capacities=dict(settings.dispatch_provider_capacities),
             dispatch_queue_capacity=settings.dispatch_queue_capacity,

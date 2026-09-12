@@ -38,6 +38,7 @@ class PRSupervisorStore:
     """
 
     def __init__(self, db_path: Path) -> None:
+        self.completion_capabilities = None
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -688,6 +689,11 @@ class PRSupervisorStore:
                     reason="capability_ineligible",
                     protocol_version=PR_WATCH_PROTOCOL_VERSION,
                 )
+            required = {item for item in watch.required_capabilities if item.startswith("completion-requirements:")}
+            if self.completion_capabilities and watch.card_id:
+                required |= self.completion_capabilities(watch.card_id)
+            if not required.issubset(set(capability.capabilities)):
+                return LeaseGrant(acquired=False, reason="completion_owner_incompatible", protocol_version=PR_WATCH_PROTOCOL_VERSION)
             lease_active = (
                 watch.owner_instance_id
                 and watch.lease_expires_at
