@@ -1,5 +1,5 @@
 {% from "macros/instance_identity.html" import instance_identity %}
-<article class="card-detail" data-card-detail data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}" data-card-lane="{{ card.lane.value }}">
+<article class="card-detail" data-card-detail data-card-id="{{ card.id }}" data-card-realm="{{ card.realm_id }}" data-card-lane="{{ card.lane.value }}" data-card-version="{{ card.updated_at.isoformat() }}">
   <header class="card-detail-header">
     <div class="card-detail-header-main">
       <div class="card-detail-heading">
@@ -11,6 +11,7 @@
                 hx-swap="innerHTML"
                 hx-trigger="change">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_version" value="{{ card.updated_at.isoformat() }}">
             <label class="sr-only" for="card-lane-{{ card.id }}">Lane</label>
             <select id="card-lane-{{ card.id }}" name="lane" aria-label="Change lane">
               {% for lane in lanes %}<option value="{{ lane.value }}" {% if card.lane == lane %}selected{% endif %}>{{ lane.value | capitalize }}</option>{% endfor %}
@@ -22,6 +23,7 @@
                 hx-swap="innerHTML"
                 hx-trigger="change">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_version" value="{{ card.updated_at.isoformat() }}">
             <label class="sr-only" for="card-project-{{ card.id }}">Project</label>
             <select id="card-project-{{ card.id }}" name="project_id" aria-label="Change project">
               <option value="">No project</option>
@@ -38,6 +40,7 @@
                 hx-target="#card-detail-dialog-content"
                 hx-swap="innerHTML">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_version" value="{{ card.updated_at.isoformat() }}">
             <label class="sr-only" for="card-title-input-{{ card.id }}">Title</label>
             <input id="card-title-input-{{ card.id }}" type="text" name="title" value="{{ card.title }}" required data-inline-edit-input>
             <div class="inline-edit-actions">
@@ -57,6 +60,12 @@
       </div>
     </div>
 
+    {% if card.completion_requirement %}
+    <p class="muted" data-completion-reason="{{ card.completion_status.reason_code }}">
+      {% if card.completion_status.missing %}Next: {{ card.completion_status.missing[0] | replace('_', ' ') }}.{% else %}Completion requirements satisfied.{% endif %}
+      {{ card.completion_requirement.criteria }}
+    </p>
+    {% endif %}
     {% include "partials/card-progress.html" %}
 
     <div class="card-detail-tabs"
@@ -125,6 +134,7 @@
                 hx-target="#card-detail-dialog-content"
                 hx-swap="innerHTML">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_version" value="{{ card.updated_at.isoformat() }}">
             <label class="sr-only" for="card-summary-input-{{ card.id }}">Summary</label>
             <textarea id="card-summary-input-{{ card.id }}" name="summary" rows="4" data-inline-edit-input>{{ card.summary }}</textarea>
             <small>Saving a summary records manual provenance.</small>
@@ -151,6 +161,7 @@
         <form hx-post="/api/cards/{{ card.id }}/summary/regenerate?realm={{ card.realm_id }}"
               hx-swap="none">
           <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_version" value="{{ card.updated_at.isoformat() }}">
           <button type="submit" class="ghost small">Regenerate summary</button>
         </form>
         {% else %}
@@ -175,6 +186,7 @@
                 hx-target="#card-detail-dialog-content"
                 hx-swap="innerHTML">
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="expected_version" value="{{ card.updated_at.isoformat() }}">
             <div class="markdown-editor-tabs" role="tablist" aria-label="Description editor mode">
               <button type="button" class="markdown-editor-tab" role="tab" aria-selected="true" data-markdown-tab="edit">Edit</button>
               <button type="button" class="markdown-editor-tab ghost" role="tab" aria-selected="false" data-markdown-tab="preview">Preview</button>

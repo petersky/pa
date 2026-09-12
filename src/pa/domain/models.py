@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 from pa.execution.selection import ExecutionPreferences
 
 from pa.fleet.capacity import (
@@ -398,7 +398,39 @@ class CardAttachment(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class CompletionRequirement(BaseModel):
+    """Optional declared goal; only a deliberate edit changes its revision."""
+
+    schema_version: int = Field(default=1, ge=1)
+    mode: Literal["integration_only", "explicit_acceptance"]
+    revision: str = ""
+    criteria: str = Field(default="", max_length=4000)
+    milestones: list[Literal["integrated", "published", "active", "verified"]] = Field(default_factory=list)
+    acceptance_principals: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def integration_mode_requires_integration(self):
+        if self.mode == "integration_only" and "integrated" not in self.milestones:
+            self.milestones = ["integrated", *self.milestones]
+        return self
+
+
+class CompletionEvidence(BaseModel):
+    schema_version: Literal[1] = 1
+    requirement_revision: str
+    subject_revision: str = Field(min_length=1)
+    milestones: list[Literal["integrated", "published", "active", "verified"]] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    actor: str = ""
+    instance_id: str = ""
+    recorded_at: datetime | None = None
+    idempotency_key: str = ""
+    outcome: Literal["accepted", "human_override", "integrated"] = "accepted"
+
+
 class Card(BaseModel):
+    completion_requirement: CompletionRequirement | None = None
+    completion_evidence: list[CompletionEvidence] = Field(default_factory=list)
     execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     id: str = Field(default_factory=lambda: str(uuid4()))
     realm_id: str = "default"
@@ -438,6 +470,12 @@ class Card(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @computed_field
+    @property
+    def completion_status(self) -> dict:
+        from pa.domain.completion import completion_state
+        return completion_state(self.completion_requirement, self.completion_evidence)
+
     @model_validator(mode="before")
     @classmethod
     def accept_legacy_status(cls, data):
@@ -445,6 +483,7 @@ class Card(BaseModel):
 
 
 class CardCreate(BaseModel):
+    completion_requirement: CompletionRequirement | None = None
     execution_preferences: ExecutionPreferences = Field(default_factory=ExecutionPreferences)
     realm_id: str = "default"
     kind: CardKind = CardKind.TASK
@@ -478,6 +517,8 @@ class CardCreate(BaseModel):
 
 
 class CardUpdate(BaseModel):
+    completion_requirement: CompletionRequirement | None = None
+    completion_acceptance: CompletionEvidence | None = Field(default=None, exclude=True)
     execution_preferences: ExecutionPreferences | None = None
     kind: CardKind | None = None
     title: str | None = None

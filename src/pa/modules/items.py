@@ -170,6 +170,15 @@ class KnowledgeBulkRequest(BaseModel):
     action: Literal["archive", "supersede"]
 
 
+from pa.domain.completion import CompletionConflict
+
+
+def _direct_human_card_action(request: Request) -> bool:
+    # MCP/instance proxies use the owner's token too; they cannot claim the
+    # ordinary human override merely by presenting that credential.
+    return bool(get_principal_id(request).startswith("user:") and not request.headers.get("X-PA-MCP-Instance-ID") and not request.headers.get("X-PA-Completion-Producer") and not getattr(request.state, "instance_authenticated", False))
+
+
 class CardProjectChangeRequest(BaseModel):
     project_id: str | None = None
     decision: Literal["preserve", "migrate", "cancel"] | None = None
@@ -2059,6 +2068,7 @@ def create_card_api(
             instance_id=settings.instance_id,
             idempotency_key=key,
             request_fingerprint=fingerprint,
+            direct_human=_direct_human_card_action(request),
         )
         result = card.model_dump(mode="json")
         store.complete_operation(key, result)
@@ -2288,6 +2298,7 @@ def update_card_api(
             data.expected_version.isoformat() if data.expected_version else None
         ),
         "field_intent": data.field_intent,
+        "completion_acceptance": data.completion_acceptance.model_dump(mode="json") if data.completion_acceptance else None,
     }
     key, fingerprint, replay = _begin_operation(
         request, operation="card.update", realm_id=realm_id, payload=payload
@@ -2306,7 +2317,11 @@ def update_card_api(
             instance_id=settings.instance_id,
             idempotency_key=key,
             request_fingerprint=fingerprint,
+            direct_human=_direct_human_card_action(request),
         )
+    except CompletionConflict as exc:
+        store.fail_operation(key, exc.code)
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except CardVersionConflict as exc:
         store.fail_operation(key, "stale_card_version")
         raise HTTPException(
@@ -3391,6 +3406,7 @@ def card_detail_update(
     summary: str | None = Form(None),
     lane: CardLane | None = Form(None),
     realm: str | None = None,
+    expected_version: datetime | None = Form(None),
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
@@ -3411,10 +3427,11 @@ def card_detail_update(
     if changes:
         card = store.update_card(
             card_id,
-            CardUpdate(**changes),
+            CardUpdate(**changes, expected_version=expected_version),
             realm_id=realm_id,
             principal_id=get_principal_id(request),
             instance_id=settings.instance_id,
+            direct_human=_direct_human_card_action(request),
         )
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
@@ -3452,15 +3469,17 @@ def card_lane_move(
     card_id: str,
     lane: CardLane = Form(...),
     realm: str | None = None,
+    expected_version: datetime | None = Form(None),
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
     get_store().update_card(
         card_id,
-        CardUpdate(lane=lane),
+        CardUpdate(lane=lane, expected_version=expected_version),
         realm_id=realm_id,
         principal_id=get_principal_id(request),
         instance_id=settings.instance_id,
+        direct_human=_direct_human_card_action(request),
     )
     return HTMLResponse("", status_code=204)
 

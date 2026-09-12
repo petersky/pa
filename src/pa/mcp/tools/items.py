@@ -93,6 +93,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         expected_version: str | None = None,
         field_intent: list[str] | None = None,
         execution_preferences: dict | None = None,
+        completion_requirement: dict | None = None,
+        completion_acceptance: dict | None = None,
     ) -> dict | None:
         """Update a canonical card. Omitted fields remain unchanged."""
         key = idempotency_key.strip()
@@ -108,6 +110,8 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                 "project_id": project_id,
                 "tags": tags,
                 "execution_preferences": execution_preferences,
+                "completion_requirement": completion_requirement,
+                "completion_acceptance": completion_acceptance,
             }.items()
             if value is not None
         }
@@ -122,7 +126,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
             params={"realm": realm},
             json=changes,
             allow_not_found=True,
-            headers={"Idempotency-Key": key},
+            headers={"Idempotency-Key": key, "X-PA-Completion-Producer": "automation"},
         )
 
     @mcp.tool()

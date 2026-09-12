@@ -2325,7 +2325,9 @@ def complete_dispatch(
         )
     decision = (
         decide_card_disposition(
-            body.disposition, current_lane=card.lane, watches=watches
+            body.disposition, current_lane=card.lane, watches=watches,
+            completion_requirement=card.completion_requirement,
+            completion_evidence=card.completion_evidence
         )
         if card
         else None
@@ -2374,7 +2376,7 @@ def complete_dispatch(
     else:
         request.app.state.ctx.store.update_card(
             card.id,
-            CardUpdate(lane=requested_lane),
+            CardUpdate(lane=requested_lane, expected_version=card.updated_at),
             realm_id=body.realm_id,
             principal_id="fleet:card-disposition",
             instance_id=request.app.state.ctx.settings.instance_id,

@@ -2523,10 +2523,36 @@ class PRSupervisor:
             card_id=watch.card_id,
             include_retired=True,
         )
+        if card.completion_requirement:
+            integration = decide_card_disposition(
+                disposition_for_merged_watch(watch), current_lane=card.lane,
+                watches=linked_watches,
+            )
+            if integration.status == "applied" and integration.applied_lane == CardLane.DONE:
+                from pa.domain.models import CompletionEvidence
+                subject = str(watch.state.get("merge_commit_sha") or "")
+                if not any(item.requirement_revision == card.completion_requirement.revision and item.subject_revision == subject and item.outcome == "integrated" for item in card.completion_evidence):
+                    try:
+                        card = await self._offload(
+                            "sqlite.card_write", self.domain_store.update_card,
+                            card.id, CardUpdate(expected_version=card.updated_at),
+                            realm_id=watch.realm_id, principal_id="instance:pr-supervisor",
+                            instance_id=self.settings.instance_id,
+                            idempotency_key=f"{watch.id}:integrated:{card.completion_requirement.revision}:{subject}",
+                            integration_evidence=CompletionEvidence(
+                                requirement_revision=card.completion_requirement.revision,
+                                subject_revision=subject, references=[watch.pr_url], outcome="integrated",
+                            ),
+                        )
+                    except Exception as exc:
+                        await self._defer_card_completion(watch, str(exc))
+                        return
         decision = decide_card_disposition(
             disposition_for_merged_watch(watch),
             current_lane=card.lane,
             watches=linked_watches,
+            completion_requirement=card.completion_requirement,
+            completion_evidence=card.completion_evidence,
         )
         try:
             if decision.applied_lane != card.lane:
@@ -2534,7 +2560,7 @@ class PRSupervisor:
                     "sqlite.card_write",
                     self.domain_store.update_card,
                     watch.card_id,
-                    CardUpdate(lane=decision.applied_lane),
+                    CardUpdate(lane=decision.applied_lane, expected_version=card.updated_at),
                     realm_id=watch.realm_id,
                     principal_id="instance:pr-supervisor",
                     instance_id=self.settings.instance_id,
@@ -2554,13 +2580,15 @@ class PRSupervisor:
             )
             return
         state = dict(watch.state)
-        if decision.applied_lane == CardLane.DONE:
+        if decision.applied_lane == CardLane.DONE or decision.reason_code == "acceptance_pending":
             state.pop("card_completion_retry", None)
         else:
             state["card_completion_retry"] = self._card_completion_retry(watch, decision.reason)
         state["card_lane"] = decision.applied_lane.value
         state["card_disposition"] = {
             "contract": "pa.card-disposition/v1",
+            "reason_code": decision.reason_code,
+            "missing_requirements": decision.missing_requirements,
             "status": decision.status,
             "reason": decision.reason,
             "requested_lane": decision.requested_lane.value
@@ -2595,7 +2623,7 @@ class PRSupervisor:
             },
         )
         await self._replicate(completed)
-        if decision.applied_lane == CardLane.DONE and self.workspace_manager:
+        if decision.cleanup_eligible and decision.applied_lane == CardLane.DONE and self.workspace_manager:
             try:
                 await self._offload(
                     "filesystem.workspace_completion",
