@@ -179,6 +179,15 @@ def _direct_human_card_action(request: Request) -> bool:
     return bool(get_principal_id(request).startswith("user:") and not request.headers.get("X-PA-MCP-Instance-ID") and not request.headers.get("X-PA-Completion-Producer") and not getattr(request.state, "instance_authenticated", False))
 
 
+def _update_card_from_ui(request: Request, card_id: str, data: CardUpdate, realm_id: str):
+    try:
+        return get_store().update_card(card_id, data, realm_id=realm_id, principal_id=get_principal_id(request), instance_id=request.app.state.ctx.settings.instance_id, direct_human=_direct_human_card_action(request))
+    except CompletionConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    except CardVersionConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "stale_card_version", "actual_version": exc.actual.isoformat()}) from exc
+
+
 class CardProjectChangeRequest(BaseModel):
     project_id: str | None = None
     decision: Literal["preserve", "migrate", "cancel"] | None = None
@@ -1850,7 +1859,7 @@ def list_cards_api(
     cards = get_store().list_cards(
         realm_id=realm_id, lane=lane, kind=kind, limit=limit, offset=offset
     )
-    return [c.model_dump(mode="json") for c in cards]
+    return [{**c.model_dump(mode="json"), "completion_status": c.completion_status} for c in cards]
 
 
 @router.get("/cards/facets")
@@ -2070,7 +2079,7 @@ def create_card_api(
             request_fingerprint=fingerprint,
             direct_human=_direct_human_card_action(request),
         )
-        result = card.model_dump(mode="json")
+        result = {**card.model_dump(mode="json"), "completion_status": card.completion_status}
         store.complete_operation(key, result)
         if data.auto_enrich:
             background_tasks.add_task(
@@ -2082,6 +2091,9 @@ def create_card_api(
         if not data.summary.strip():
             _schedule_card_summary(request, background_tasks, card)
         return result
+    except CompletionConflict as exc:
+        store.fail_operation(key, exc.code)
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except Exception as exc:
         store.fail_operation(key, type(exc).__name__)
         raise
@@ -2220,7 +2232,7 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
     card = get_store().get_card(card_id, realm_id=realm_id)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    return card.model_dump(mode="json")
+    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
 
 
 @router.get("/cards/{card_id}/history")
@@ -2340,7 +2352,7 @@ def update_card_api(
     if not card:
         store.fail_operation(key, "card_not_found")
         raise HTTPException(status_code=404, detail="Card not found")
-    result = card.model_dump(mode="json")
+    result = {**card.model_dump(mode="json"), "completion_status": card.completion_status}
     store.complete_operation(key, result)
     if {"title", "body"} & data.model_fields_set:
         _schedule_card_summary(request, background_tasks, card)
@@ -2505,7 +2517,7 @@ def remove_card_attachment_api(
         principal_id=get_principal_id(request),
         instance_id=request.app.state.ctx.settings.instance_id,
     )
-    return card.model_dump(mode="json")
+    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
 
 
 @router.post("/items", status_code=201)
@@ -2910,7 +2922,7 @@ async def create_card_modal_ui(
             await upload.close()
 
     return JSONResponse(
-        card.model_dump(mode="json"),
+        {**card.model_dump(mode="json"), "completion_status": card.completion_status},
         status_code=201,
         headers={"Location": f"/cards/{card.id}"},
     )
@@ -3238,13 +3250,13 @@ def change_card_project_api(
     if body.project_id == card.project_id:
         return {
             "status": "unchanged",
-            "card": card.model_dump(mode="json"),
+            "card": {**card.model_dump(mode="json"), "completion_status": card.completion_status},
             "impact": impact,
         }
     if body.decision == "cancel":
         return {
             "status": "cancelled",
-            "card": card.model_dump(mode="json"),
+            "card": {**card.model_dump(mode="json"), "completion_status": card.completion_status},
             "impact": impact,
         }
     if impact["dependent"] and body.decision is None:
@@ -3425,14 +3437,8 @@ def card_detail_update(
         changes["lane"] = lane
     card = existing
     if changes:
-        card = store.update_card(
-            card_id,
-            CardUpdate(**changes, expected_version=expected_version),
-            realm_id=realm_id,
-            principal_id=get_principal_id(request),
-            instance_id=settings.instance_id,
-            direct_human=_direct_human_card_action(request),
-        )
+        card = _update_card_from_ui(request, card_id, CardUpdate(**changes, expected_version=expected_version), realm_id)
+
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     if {"title", "body"} & changes.keys():
@@ -3473,14 +3479,7 @@ def card_lane_move(
 ) -> HTMLResponse:
     realm_id = realm or _active_realm(request)
     settings = request.app.state.ctx.settings
-    get_store().update_card(
-        card_id,
-        CardUpdate(lane=lane, expected_version=expected_version),
-        realm_id=realm_id,
-        principal_id=get_principal_id(request),
-        instance_id=settings.instance_id,
-        direct_human=_direct_human_card_action(request),
-    )
+    _update_card_from_ui(request, card_id, CardUpdate(lane=lane, expected_version=expected_version), realm_id)
     return HTMLResponse("", status_code=204)
 
 

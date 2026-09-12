@@ -1276,9 +1276,10 @@ def list_restart_handoffs(request: Request, session_id: str) -> dict:
         and getattr(user, "role", None) != "admin"
     ):
         raise HTTPException(status_code=403, detail="Session is owned by another principal")
+    from pa.instance.restart_lifecycle import restart_observation_fields
     return {
         "handoffs": [
-            item.model_dump(mode="json")
+            {**item.model_dump(mode="json"), "observation": restart_observation_fields(item, session=session)}
             for item in mgr.store.list_restart_handoffs(session_id=session_id)
         ]
     }

@@ -37,6 +37,24 @@ from pa.modules.items import operation_outcome_api
 
 
 
+def _record_completed_turn(store, runtime, item):
+    from pa.domain.models import TranscriptEvent
+    store.append_transcript_events([TranscriptEvent(session_id=runtime.session_id, seq=store.next_transcript_seq(runtime.session_id), event_type="turn_completed", payload={"queued_prompt_id": item.id, "stop_reason": "end_turn"})])
+
+
+def _advance_restart_fixture(store, handoff_id, *, status, **kwargs):
+    """Seed interruption boundaries using legal observed-version transitions."""
+    from pa.domain.models import TranscriptEvent
+    route = ["requested", "waiting_for_turn_end", "quiescing", "restarting", "resuming", "continuation_queued", "continuation_delivered"]
+    current = store.get_restart_handoff(handoff_id)
+    if status == "continuation_delivered":
+        store.append_transcript_events([TranscriptEvent(session_id=current.session_id, seq=store.next_transcript_seq(current.session_id), event_type="turn_completed", payload={"queued_prompt_id": current.continuation_prompt_id})])
+    targets = [status] if status == "failed" else route[route.index(current.status) + 1:route.index(status) + 1]
+    for target in targets:
+        current = store.update_restart_handoff(handoff_id, status=target, expected_status=current.status, expected_version=current.phase_version, owner_instance_id=current.instance_id or "local", **(kwargs if target == status else {}))
+    return current
+
+
 def _queued_runtime(session):
     runtime = MagicMock(session=session, connected=True, _closed=False)
     runtime._queue = []
@@ -290,9 +308,9 @@ def test_restart_handoff_serializes_nonterminal_requests_per_session(
     assert "nonterminal restart handoff" in str(rejected[0])
     assert create(created[0].idempotency_key).id == created[0].id
 
-    store.update_restart_handoff(created[0].id, status="continuation_delivered")
+    _advance_restart_fixture(store, created[0].id, status="continuation_delivered")
     assert create("later").idempotency_key == "later"
-    store.update_restart_handoff(
+    _advance_restart_fixture(store,
         store.list_restart_handoffs(session_id="s")[-1].id,
         status="failed",
     )
@@ -499,7 +517,7 @@ def test_startup_replays_continuation_once_into_exact_session(tmp_path: Path) ->
             session_id=session.id, continuation_prompt="Resume work", idempotency_key="once"
         )
     )
-    store.update_restart_handoff(receipt.id, status="restarting")
+    _advance_restart_fixture(store, receipt.id, status="restarting")
     runtime = _queued_runtime(session)
     manager.recover_session = AsyncMock(return_value=runtime)
 
@@ -527,7 +545,7 @@ def test_restart_without_continuation_does_not_recover_or_enqueue(tmp_path: Path
             session_id=session.id, continuation_prompt="", idempotency_key="no-prompt"
         )
     )
-    store.update_restart_handoff(receipt.id, status="restarting")
+    _advance_restart_fixture(store, receipt.id, status="restarting")
     manager.recover_session = AsyncMock()
 
     asyncio.run(manager._resume_restart_handoffs())
@@ -554,7 +572,7 @@ def test_pending_restart_continuation_can_be_edited_or_removed(tmp_path: Path) -
         )
     )
     assert edited.continuation_prompt == ""
-    store.update_restart_handoff(receipt.id, status="quiescing")
+    _advance_restart_fixture(store, receipt.id, status="quiescing")
     with pytest.raises(ValueError, match="before PA begins quiescing"):
         asyncio.run(
             manager.edit_restart_handoff(
@@ -720,7 +738,7 @@ def test_restart_replay_appends_continuation_after_durable_queue(tmp_path: Path)
             idempotency_key="ordered-restart",
         )
     )
-    store.update_restart_handoff(receipt.id, status="restarting")
+    _advance_restart_fixture(store, receipt.id, status="restarting")
     runtime = AgentSessionRuntime(manager, session)
     runtime.connection = MagicMock(connected=True)
     runtime._queue_paused = True
@@ -765,7 +783,7 @@ def test_recovered_continuation_is_queued_then_delivered_exactly_once(
         runtime._checkpoint_runtime = MagicMock()
         runtime._append_transcript = MagicMock()
         runtime._flush_transcript = MagicMock()
-        runtime._run_prompt = AsyncMock()
+        runtime._run_prompt = AsyncMock(side_effect=lambda item: _record_completed_turn(store, runtime, item))
         manager.get = MagicMock(return_value=runtime)
 
         await manager._resume_restart_handoffs()
@@ -836,7 +854,7 @@ def test_handoff_never_falls_back_to_new_session(tmp_path: Path) -> None:
     receipt = asyncio.run(manager.request_restart_handoff(
         session_id=session.id, continuation_prompt="Continue", idempotency_key="failure"
     ))
-    store.update_restart_handoff(receipt.id, status="restarting")
+    _advance_restart_fixture(store, receipt.id, status="restarting")
     manager.recover_session = AsyncMock(side_effect=RuntimeError("workspace blocker"))
     manager.create_session = AsyncMock()
 
@@ -864,7 +882,7 @@ def test_failed_handoff_retry_recovers_exact_session_and_queues_once(
             idempotency_key="repair-once",
         )
     )
-    store.update_restart_handoff(receipt.id, status="restarting")
+    _advance_restart_fixture(store, receipt.id, status="restarting")
     manager.recover_session = AsyncMock(side_effect=RuntimeError("exact workspace blocker"))
     manager.create_session = AsyncMock()
 
@@ -1107,7 +1125,7 @@ def _human_handoff(tmp_path):
     runtime._append_transcript = MagicMock()
     runtime._flush_transcript = MagicMock()
     runtime._drain_transcripts = AsyncMock()
-    runtime._run_prompt = AsyncMock()
+    runtime._run_prompt = AsyncMock(side_effect=lambda item: _record_completed_turn(store, runtime, item))
     manager.get = MagicMock(return_value=runtime)
     return store, manager, runtime, receipt
 
@@ -1133,7 +1151,7 @@ def test_human_authorized_restart_drains_once_and_holds_other_automation(tmp_pat
 def test_restart_source_is_not_authorization(tmp_path, mismatch):
     async def scenario():
         store, manager, runtime, receipt = _human_handoff(tmp_path)
-        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        _advance_restart_fixture(store, receipt.id, status='continuation_queued')
         item = QueuedPrompt(id=receipt.continuation_prompt_id,
                             message=receipt.continuation_prompt,
                             session_id=runtime.session_id,
@@ -1143,7 +1161,7 @@ def test_restart_source_is_not_authorization(tmp_path, mismatch):
         elif mismatch == 'prompt': item.id = 'different-prompt'
         elif mismatch == 'message': item.message = 'different instructions'
         elif mismatch == 'binding': runtime.session.execution_binding = {'cwd': '/other'}
-        elif mismatch == 'status': store.update_restart_handoff(receipt.id, status='failed')
+        elif mismatch == 'status': _advance_restart_fixture(store, receipt.id, status='failed')
         elif mismatch == 'cwd': item.cwd = '/other'
         elif mismatch == 'environment': item.agent_env = {'EXTRA': 'unauthorized'}
         elif mismatch == 'principal': item.principal_id = 'other-user'
@@ -1190,6 +1208,7 @@ def test_restart_continuation_waits_for_existing_user_turn(tmp_path, pause_after
                 entered.set()
                 await release.wait()
                 runtime._in_flight = None
+            _record_completed_turn(store, runtime, item)
         runtime._run_prompt.side_effect = run
         runtime.enqueue('user instructions', source='ui', prompt_id='user-turn')
         await entered.wait()
@@ -1299,6 +1318,7 @@ def test_watchdog_during_dequeue_admission_gap_does_not_fail_receipt(tmp_path):
         async def admission(item):
             entered.set()
             await release.wait()
+            _record_completed_turn(store, runtime, item)
         runtime._run_prompt.side_effect = admission
         await manager._resume_restart_handoffs()
         await entered.wait()
@@ -1354,7 +1374,7 @@ def test_delayed_receipt_read_keeps_heartbeat_and_snapshot_responsive(tmp_path):
         import threading
         import time
         store, manager, runtime, receipt = _human_handoff(tmp_path)
-        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        _advance_restart_fixture(store, receipt.id, status='continuation_queued')
         runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
                         source='restart-handoff:' + receipt.id, _defer_drain=True)
         entered, release = threading.Event(), threading.Event()
@@ -1403,14 +1423,14 @@ def test_cached_receipt_is_revalidated_at_execution_after_revocation(tmp_path):
     async def scenario():
         from pa.instance.agent_session import PromptAdmissionBlocked
         store, manager, runtime, receipt = _human_handoff(tmp_path)
-        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        _advance_restart_fixture(store, receipt.id, status='continuation_queued')
         item = runtime.enqueue(receipt.continuation_prompt,
                                prompt_id=receipt.continuation_prompt_id,
                                source='restart-handoff:' + receipt.id, _defer_drain=True)
         await runtime._refresh_restart_receipt(item)
         assert runtime._prompt_eligible(item)
         async def revoke(_runtime):
-            store.update_restart_handoff(receipt.id, status='failed')
+            _advance_restart_fixture(store, receipt.id, status='failed')
         manager.collaboration_service = SimpleNamespace(prepare_turn=revoke)
         with patch('pa.execution.selection_settings.apply_pending', AsyncMock()), patch(
             'pa.execution.selection_audit.begin_prompt', return_value=None
@@ -1427,7 +1447,7 @@ def test_cached_receipt_is_revalidated_at_execution_after_revocation(tmp_path):
 def test_user_ahead_of_restart_receipt_runs_before_slow_or_failed_lookup(tmp_path, failure):
     async def scenario():
         store, manager, runtime, receipt = _human_handoff(tmp_path)
-        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        _advance_restart_fixture(store, receipt.id, status='continuation_queued')
         runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
                         source='restart-handoff:' + receipt.id, _defer_drain=True)
         runtime.enqueue('user first', source='ui', prompt_id='user-first',
@@ -1457,7 +1477,7 @@ def test_user_ahead_of_restart_receipt_runs_before_slow_or_failed_lookup(tmp_pat
 def test_restart_selection_rechecks_queue_after_receipt_read(tmp_path, change):
     async def scenario():
         store, manager, runtime, receipt = _human_handoff(tmp_path)
-        store.update_restart_handoff(receipt.id, status='continuation_queued')
+        _advance_restart_fixture(store, receipt.id, status='continuation_queued')
         item = runtime.enqueue(receipt.continuation_prompt, prompt_id=receipt.continuation_prompt_id,
                                source='restart-handoff:' + receipt.id, _defer_drain=True)
         entered, release = asyncio.Event(), asyncio.Event()

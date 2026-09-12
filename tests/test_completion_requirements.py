@@ -70,6 +70,9 @@ def test_acceptance_authority_and_stale_requirement(tmp_path):
 def test_source_only_legacy_and_unknown_schema(tmp_path):
     store = projection(tmp_path)
     card = store.create_card(CardCreate(title="source only"))
+    echoed = CardUpdate.model_validate({**card.model_dump(mode="json"), "body": "ordinary full-card edit"})
+    card = store.update_card(card.id, echoed)
+    assert card.body == "ordinary full-card edit"
     assert store.update_card(card.id, CardUpdate(lane="done"), principal_id="instance:legacy").lane == CardLane.DONE
     card = protected(store)
     requirement = card.completion_requirement.model_copy(update={"schema_version": 2})
@@ -108,6 +111,9 @@ def test_actual_api_proxy_rejected_human_done_audited_and_ui(tmp_path):
             replay = client.patch(f"/api/cards/{card.id}", json={"lane": "done", "expected_version": card.updated_at.isoformat()}, headers=headers)
             assert replay.status_code == 200
             assert replay.json() == response.json()
+            stale = client.post(f"/partials/cards/{card.id}/move?realm=default", data={"lane": "waiting", "expected_version": card.updated_at.isoformat()}, headers={"X-CSRF-Token": client.cookies.get("pa_csrf")})
+            assert stale.status_code == 409
+            assert stale.json()["detail"]["code"] == "stale_card_version"
     finally:
         reset_store()
         reset_instance_agent()
@@ -175,6 +181,10 @@ def test_legacy_snapshot_omission_and_stale_requirement_keep_protection(tmp_path
     snapshot = store.event_log.entity_snapshot(store.event_log.get_head("default"), "card", card.id)
     assert snapshot["completion_requirement"]["revision"] == current.completion_requirement.revision
     assert snapshot["lane"] == "waiting"
+    from pa.core.ui.work_presentation import present_work_item
+    presentation = present_work_item(current, dispatch={"state": "completed"})
+    assert presentation["state_label"] == "Waiting"
+    assert presentation["state"] == "acceptance_pending"
 
 
 @pytest.mark.asyncio

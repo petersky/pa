@@ -1717,14 +1717,17 @@
         quiescing: "Turn ended; PA is quiescing sessions.",
         restarting: "PA is restarting.",
         resuming: "PA restarted; resuming the exact session.",
-        continuation_queued: "Session resumed; continuation is queued in order.",
+        continuation_queued: "Continuation accepted; waiting for its turn to finish.",
         continuation_delivered: handoff.continuation_prompt
-          ? "PA service restarted; the previewed continuation was delivered."
+          ? "PA service restarted; the continuation turn completed."
           : "PA service restarted; no continuation prompt was sent.",
         restart_completed: "PA service restarted; no continuation prompt was sent.",
         failed: "Restart handoff failed: " + (handoff.error || "operator repair and retry required.")
       };
-      this.els.sessionActionStatus.textContent = labels[handoff.status] || handoff.status;
+      const observation = handoff.observation || {};
+      this.els.sessionActionStatus.dataset.operationPhase = observation.phase || handoff.status;
+      const prerequisites = {operator_paused: "Continuation paused; resume when ready.", exact_session_closed: "The exact session has ended; inspect its preserved history.", session_recovery_blocked: "Continuation waiting for session recovery.", execution_binding_mismatch: "Continuation waiting for its exact workspace binding."};
+      this.els.sessionActionStatus.textContent = prerequisites[observation.reason_code] || labels[observation.domain_stage || handoff.status] || handoff.status;
     }
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";

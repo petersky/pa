@@ -835,6 +835,9 @@ class CardProjection:
                 "PRAGMA table_info(agent_restart_handoffs)"
             ).fetchall()
         }
+        for name, declaration in (("phase_version", "INTEGER NOT NULL DEFAULT 0"), ("reason_code", "TEXT"), ("transition_history_json", "TEXT NOT NULL DEFAULT '[]'")):
+            if name not in handoff_cols:
+                conn.execute(f"ALTER TABLE agent_restart_handoffs ADD COLUMN {name} {declaration}")
         if "failure_stage" not in handoff_cols:
             conn.execute(
                 "ALTER TABLE agent_restart_handoffs ADD COLUMN failure_stage TEXT"
@@ -3427,6 +3430,8 @@ class CardProjection:
         now = datetime.now(UTC)
         requirement = card.completion_requirement
         receipts = list(card.completion_evidence)
+        if requirement is None and updates.get("completion_requirement") is None:
+            updates.pop("completion_requirement", None)
         if requirement and updates.get("completion_requirement") == requirement.model_dump(mode="json"):
             updates.pop("completion_requirement")
         if "completion_requirement" in updates:
@@ -5100,8 +5105,8 @@ class CardProjection:
                    (id, session_id, idempotency_key, continuation_prompt,
                     continuation_prompt_id, status, card_id, project_id, instance_id,
                     execution_binding_json, error, failure_stage, attempts,
-                    created_at, updated_at, delivered_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    created_at, updated_at, delivered_at, phase_version, reason_code, transition_history_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     handoff.id,
                     handoff.session_id,
@@ -5119,6 +5124,7 @@ class CardProjection:
                     handoff.created_at.isoformat(),
                     handoff.updated_at.isoformat(),
                     handoff.delivered_at.isoformat() if handoff.delivered_at else None,
+                    handoff.phase_version, handoff.reason_code, json.dumps(handoff.transition_history),
                 ),
             )
         return handoff
@@ -5165,32 +5171,61 @@ class CardProjection:
         handoff_id: str,
         *,
         status: str,
+        expected_status: str,
+        expected_version: int,
+        owner_instance_id: str,
         error: str | None = None,
         delivered: bool = False,
         increment_attempts: bool = False,
         failure_stage: str | None = None,
+        reason_code: str | None = None,
+        retry: bool = False,
     ) -> RestartHandoff | None:
+        from pa.instance.restart_lifecycle import validate_transition, RestartTransitionConflict, TERMINAL
         now = datetime.now(UTC)
         with measured_lock(self._mutation_lock), self._conn() as conn:
-            conn.execute(
-                """UPDATE agent_restart_handoffs SET status=?, error=?, failure_stage=?, updated_at=?,
-                   attempts=attempts+?, delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
-                   WHERE id=?""",
-                (
-                    status,
-                    error,
-                    failure_stage,
-                    now.isoformat(),
-                    int(increment_attempts),
-                    int(delivered),
-                    now.isoformat(),
-                    handoff_id,
-                ),
+            row = conn.execute("SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)).fetchone()
+            if row is None:
+                return None
+            current = self._row_to_restart_handoff(row)
+            if not owner_instance_id or (current.instance_id and current.instance_id != owner_instance_id):
+                raise RestartTransitionConflict("Restart receipt owner does not match")
+            if current.status in TERMINAL and status == current.status:
+                return current
+            if retry and conn.execute("SELECT 1 FROM agent_restart_handoffs WHERE session_id=? AND id!=? AND status NOT IN ('failed', 'continuation_delivered', 'restart_completed') LIMIT 1", (current.session_id, handoff_id)).fetchone():
+                raise RestartTransitionConflict("Session already has another nonterminal restart handoff")
+            validate_transition(current, status=status, expected_status=expected_status, expected_version=expected_version, owner_instance_id=owner_instance_id, retry=retry)
+            if status == current.status:
+                return current
+            if status == "continuation_delivered":
+                if self.find_prompt_completion(current.session_id, current.continuation_prompt_id) is None:
+                    raise RestartTransitionConflict("Exact continuation turn completion evidence is missing")
+                delivered = True
+            elif status == "restart_completed":
+                if current.continuation_prompt.strip():
+                    raise RestartTransitionConflict("A continuation still requires exact turn completion")
+                delivered = True
+            elif delivered:
+                raise RestartTransitionConflict("Only terminal completion may set delivered_at")
+            history = [*current.transition_history, {
+                "phase_version": current.phase_version, "status": current.status,
+                "attempt": current.attempts, "error": current.error,
+                "reason_code": current.reason_code, "failure_stage": current.failure_stage,
+                "updated_at": current.updated_at.isoformat(), "transitioned_at": now.isoformat(),
+                "owner_instance_id": owner_instance_id,
+            }]
+            cursor = conn.execute(
+                """UPDATE agent_restart_handoffs SET status=?, error=?, failure_stage=?, reason_code=?, updated_at=?,
+                   attempts=attempts+?, phase_version=phase_version+1, transition_history_json=?,
+                   delivered_at=CASE WHEN ? THEN ? ELSE delivered_at END
+                   WHERE id=? AND status=? AND phase_version=?""",
+                (status, error, failure_stage, reason_code, now.isoformat(), int(increment_attempts),
+                 json.dumps(history), int(delivered), now.isoformat(), handoff_id, expected_status, expected_version),
             )
-            row = conn.execute(
-                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
-            ).fetchone()
-        return self._row_to_restart_handoff(row) if row else None
+            if cursor.rowcount != 1:
+                raise RestartTransitionConflict("Restart receipt changed concurrently")
+            row = conn.execute("SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)).fetchone()
+        return self._row_to_restart_handoff(row)
 
     def edit_restart_handoff(
         self, handoff_id: str, *, session_id: str, continuation_prompt: str
@@ -5209,9 +5244,10 @@ class CardProjection:
                 raise ValueError(
                     "Restart continuation can only be edited before PA begins quiescing"
                 )
+            history = [*handoff.transition_history, {"phase_version": handoff.phase_version, "status": handoff.status, "attempt": handoff.attempts, "error": handoff.error, "reason_code": handoff.reason_code, "failure_stage": handoff.failure_stage, "updated_at": handoff.updated_at.isoformat(), "transitioned_at": now.isoformat(), "action": "continuation_edited"}]
             conn.execute(
-                "UPDATE agent_restart_handoffs SET continuation_prompt=?, updated_at=? WHERE id=?",
-                (continuation_prompt.strip(), now.isoformat(), handoff_id),
+                "UPDATE agent_restart_handoffs SET continuation_prompt=?, updated_at=?, phase_version=phase_version+1, transition_history_json=? WHERE id=?",
+                (continuation_prompt.strip(), now.isoformat(), json.dumps(history), handoff_id),
             )
             refreshed = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
@@ -5256,16 +5292,13 @@ class CardProjection:
                 }
                 else "resuming"
             )
-            conn.execute(
-                """UPDATE agent_restart_handoffs
-                   SET status=?, error=NULL, failure_stage=NULL, updated_at=?
-                   WHERE id=? AND status='failed'""",
-                (retry_status, now.isoformat(), handoff_id),
-            )
-            refreshed = conn.execute(
-                "SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)
-            ).fetchone()
-        return self._row_to_restart_handoff(refreshed)
+            # CAS below revalidates this receipt and competing operations.
+        return self.update_restart_handoff(
+            handoff_id, status=retry_status, expected_status=handoff.status,
+            expected_version=handoff.phase_version,
+            owner_instance_id=handoff.instance_id or "local", retry=True,
+            increment_attempts=retry_status == "resuming", reason_code="operator_retry",
+        )
 
     def list_session_audit_page(
         self,
@@ -6430,6 +6463,9 @@ class CardProjection:
             continuation_prompt=row["continuation_prompt"],
             continuation_prompt_id=row["continuation_prompt_id"],
             status=row["status"],
+            phase_version=int(row["phase_version"] or 0),
+            reason_code=row["reason_code"],
+            transition_history=json.loads(row["transition_history_json"] or "[]"),
             card_id=row["card_id"],
             project_id=row["project_id"],
             instance_id=row["instance_id"],

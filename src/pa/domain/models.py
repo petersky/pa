@@ -470,7 +470,6 @@ class Card(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    @computed_field
     @property
     def completion_status(self) -> dict:
         from pa.domain.completion import completion_state
@@ -778,6 +777,9 @@ class RestartHandoff(BaseModel):
     idempotency_key: str
     continuation_prompt: str = ""
     status: str = "requested"
+    phase_version: int = Field(default=0, ge=0)
+    reason_code: str | None = None
+    transition_history: list[dict] = Field(default_factory=list)
     card_id: str | None = None
     project_id: str | None = None
     instance_id: str | None = None
@@ -789,6 +791,12 @@ class RestartHandoff(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     delivered_at: datetime | None = None
+
+    @computed_field
+    @property
+    def observation(self) -> dict:
+        from pa.instance.restart_lifecycle import restart_observation_fields
+        return restart_observation_fields(self)
 
 
 class TranscriptEvent(BaseModel):
