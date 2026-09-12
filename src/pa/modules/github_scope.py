@@ -69,7 +69,7 @@ async def _validate(request: Request, repositories: list[str], credentials: GitH
             if scope.normalize_repositories([row.get("full_name", "")]) != [repository]:
                 raise HTTPException(409, {"code": "repository_identity_changed", "message": "Repository identity changed; use its current GitHub owner/name and preview again."})
             rows.append({"repository": repository, "private": bool(row.get("private", True))})
-    except (GitHubAPIError, httpx.HTTPError, ValueError):
+    except (GitHubAPIError, httpx.HTTPError, ValueError, TypeError, AttributeError):
         # Provider errors may contain credentials, URLs or private response text.
         raise HTTPException(422, {"code": "repository_access_failed", "message": "The existing GitHub credential could not validate every candidate repository. Check repository access and retry."}) from None
     return rows
@@ -79,7 +79,28 @@ async def _validate(request: Request, repositories: list[str], credentials: GitH
 async def read_scope(request: Request) -> dict:
     require_user(request)
     return {**await _run(request, scope.snapshot, request.app.state.ctx.settings.data_dir),
-            "instance_id": request.app.state.ctx.settings.instance_id}
+            "instance_id": request.app.state.ctx.settings.instance_id,
+            "instance_name": request.app.state.ctx.settings.instance_name,
+            "published_capability": _publication(request)}
+
+
+def _publication(request: Request) -> dict:
+    service = request.app.state.ctx.require_service("pr_supervisor")
+    capability = service.capability
+    return {"policy_revision": capability.policy_revision,
+            "observed_at": capability.checked_at.isoformat(),
+            "state": "publication_pending" if service._authority_last_error else capability.state}
+
+
+@router.get("/comparison")
+async def comparison(request: Request) -> dict:
+    require_user(request)
+    ctx = request.app.state.ctx
+    report = await ctx.require_service("pr_supervisor")._eligible_capabilities(None)
+    return {**report.model_dump(mode="json"), "current_instance_id": ctx.settings.instance_id,
+            "current_instance_name": ctx.settings.instance_name,
+            "inventory_kind": "authority_received_advertisements",
+            "limit": 200, "message": report.summary() if report.evaluation_state == "unavailable" else None}
 
 
 @router.get("/audit")
@@ -136,7 +157,9 @@ async def update_scope(request: Request, body: ScopeUpdate) -> dict:
     # Replay also repairs a crash/failure between the durable save and refresh.
     try:
         capability = await ctx.require_service("pr_supervisor").refresh_capability(force=True)
-        refresh = {"state": capability.state, "authenticated": capability.authenticated}
+        refresh = {"state": ("refresh_pending" if ctx.require_service("pr_supervisor")._authority_last_error
+                             else capability.state), "authenticated": capability.authenticated,
+                   "policy_revision": capability.policy_revision}
     except Exception:
         refresh = {"state": "refresh_pending", "authenticated": False}
     return {**result, "instance_id": ctx.settings.instance_id, "capability_refresh": refresh}

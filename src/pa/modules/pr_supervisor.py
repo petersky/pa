@@ -14,6 +14,7 @@ from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.ui.pages import PageDefinition, PageRegistry
 from pa.domain.models import Project, ProjectUpdate
+from pa.pr_supervisor.eligibility import validate_advertisement
 from pa.pr_supervisor.github import (
     GitHubAPIError,
     GitHubClient,
@@ -29,6 +30,7 @@ from pa.pr_supervisor.models import (
     PRWatch,
     PRWatchEvent,
     PRWatchStatus,
+    utcnow,
 )
 from pa.pr_supervisor.service import (
     ProvenanceValidationError,
@@ -525,14 +527,15 @@ async def create_pull_request(request: Request, body: dict[str, Any]) -> dict[st
 
 
 @router.get("/pr-supervisor/capabilities")
-def capabilities(request: Request) -> dict[str, Any]:
+def capabilities(request: Request, include_stale: bool = False) -> dict[str, Any]:
     service = _service(request)
-    instances = _store(request).list_capabilities()
+    instances = _store(request).list_capabilities(fresh_seconds=86400 if include_stale else 120, limit=199)
     if not any(
         item.instance_id == service.capability.instance_id for item in instances
     ):
         instances.insert(0, service.capability)
     return {
+        "history_seconds": 86400 if include_stale else 120,
         "local": service.capability.model_dump(mode="json"),
         "instances": [item.model_dump(mode="json") for item in instances],
     }
@@ -679,15 +682,21 @@ async def acquire_lease(
     request: Request, watch_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
     instance_id = str(body.get("instance_id") or "")
-    capability = GitHubCapability.model_validate(body.get("capability") or {})
+    try:
+        capability = validate_advertisement(body.get("capability"))
+    except ValueError:
+        raise HTTPException(422, detail={"code": "capability_invalid"}) from None
     caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
     if caller != instance_id or capability.instance_id != instance_id:
-        _store(request).save_capability(capability)
         return LeaseGrant(
             acquired=False,
             reason="capability_identity_mismatch",
             protocol_version=PR_WATCH_PROTOCOL_VERSION,
         ).model_dump(mode="json")
+    age = (utcnow() - capability.checked_at).total_seconds()
+    if age > 120 or age < -5:
+        return LeaseGrant(acquired=False, reason="capability_stale",
+                          protocol_version=PR_WATCH_PROTOCOL_VERSION).model_dump(mode="json")
     if capability.pr_watch_protocol_version < PR_WATCH_PROTOCOL_VERSION:
         _store(request).save_capability(capability)
         return LeaseGrant(
@@ -747,8 +756,16 @@ async def acquire_lease(
 
 @router.post("/pr-supervisor/instances/heartbeat")
 def heartbeat(request: Request, body: dict[str, Any]) -> dict[str, Any]:
-    capability = GitHubCapability.model_validate(body)
-    _store(request).save_capability(capability)
+    try:
+        capability = validate_advertisement(body)
+        caller = request.headers.get("X-PA-Origin-Instance-ID", "").strip()
+        if caller != capability.instance_id:
+            raise HTTPException(403, detail={"code": "capability_identity_mismatch"})
+        if (utcnow() - capability.checked_at).total_seconds() > 120:
+            raise ValueError("capability observation expired")
+        _store(request).save_capability(capability)
+    except ValueError:
+        raise HTTPException(422, detail={"code": "capability_invalid"}) from None
     return {"accepted": True}
 
 

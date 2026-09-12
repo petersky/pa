@@ -14,6 +14,8 @@ import httpx
 if TYPE_CHECKING:
     from pa.core.async_runtime import AsyncRuntime
 
+from pa.pr_supervisor.policy import PolicyLoadError, ScopePolicy, parse_policy, read_document
+
 from pa.pr_supervisor.models import (
     GitHubCapability,
     PRCheck,
@@ -40,6 +42,8 @@ class GitHubCredentials:
     webhook_secret: str = ""
     allowed_repositories: list[str] = field(default_factory=list)
     token_source: str | None = None
+    scope_policy: ScopePolicy | None = None
+    configuration_status: str = "valid"
 
     @classmethod
     def load(cls, data_dir: Path) -> GitHubCredentials:
@@ -47,28 +51,28 @@ class GitHubCredentials:
         webhook_secret = os.environ.get("PA_GITHUB_WEBHOOK_SECRET", "").strip()
         allowed: list[str] = []
         token_source = "environment" if token else None
-        path = data_dir / "integrations" / "github.json"
-        if path.exists():
-            try:
-                payload = json.loads(path.read_text())
-            except (OSError, json.JSONDecodeError):
-                payload = {}
-            if not token:
-                token = str(payload.get("token") or "").strip()
-                if token:
-                    token_source = "instance_file"
-            if not webhook_secret:
-                webhook_secret = str(payload.get("webhook_secret") or "").strip()
-            allowed = [
-                str(item).strip().strip("/")
-                for item in payload.get("allowed_repositories", [])
-                if str(item).strip()
-            ]
+        payload = {}
+        policy = None
+        status = "valid"
+        try:
+            payload = read_document(data_dir)
+            policy = parse_policy(payload)
+            allowed = list(policy.repositories)
+        except PolicyLoadError as exc:
+            status = exc.status
+        if not token and isinstance(payload.get("token"), str):
+            token = payload["token"].strip()
+            if token:
+                token_source = "instance_file"
+        if not webhook_secret and isinstance(payload.get("webhook_secret"), str):
+            webhook_secret = payload["webhook_secret"].strip()
         return cls(
             token=token,
             webhook_secret=webhook_secret,
             allowed_repositories=allowed,
             token_source=token_source,
+            scope_policy=policy,
+            configuration_status=status,
         )
 
     def capability(self, instance_id: str) -> GitHubCapability:
@@ -80,12 +84,18 @@ class GitHubCredentials:
             )
         return GitHubCapability(
             instance_id=instance_id,
+            scope_mode=self.scope_policy.mode if self.scope_policy else None,
+            policy_revision=self.scope_policy.revision if self.scope_policy else None,
+            policy_source=self.scope_policy.source if self.scope_policy else "legacy_capability",
+            configuration_status=self.configuration_status,
             authenticated=bool(self.token),
             webhook_configured=bool(self.webhook_secret),
             token_source=self.token_source,
             allowed_repositories=self.allowed_repositories,
             capabilities=capabilities,
-            state="ready" if self.token else "unauthenticated",
+            state=("scope_config_invalid" if self.configuration_status == "invalid" else
+                   "scope_config_unavailable" if self.configuration_status != "valid" else
+                   "ready" if self.token else "unauthenticated"),
             detail=(
                 None
                 if self.token
@@ -185,16 +195,18 @@ class GitHubClient:
 
     async def probe(self, instance_id: str) -> GitHubCapability:
         capability = self.credentials.capability(instance_id)
-        if not self.credentials.token:
+        if not self.credentials.token or self.credentials.configuration_status != "valid":
             return capability
         try:
             await self._request("GET", "/user", operation="credential probe")
-        except (GitHubAPIError, httpx.HTTPError) as exc:
-            capability.authenticated = False
-            capability.state = "error"
-            detail = str(exc).strip()
+        except (GitHubAPIError, httpx.HTTPError, TimeoutError) as exc:
+            capability.authenticated = False  # Effect admission remains fail closed.
+            rejected = isinstance(exc, GitHubAPIError) and exc.status_code == 401
+            capability.state = "credentials_rejected" if rejected else "verification_unavailable"
             capability.detail = (
-                f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+                "GitHub rejected this instance's credential. Check its authentication."
+                if rejected else
+                "GitHub credential verification is unavailable. Check provider connectivity; automatic retry is scheduled."
             )
         return capability
 

@@ -15,6 +15,7 @@ from uuid import uuid4
 from pa.core.io import atomic_write_json
 from pa.pr_supervisor.github import GitHubCredentials
 from pa.pr_supervisor.models import canonical_repository_name
+from pa.pr_supervisor.policy import PolicyLoadError, parse_policy, read_document
 
 _LOCK = threading.RLock()
 _META = "pa_supervision_scope"
@@ -36,30 +37,31 @@ def normalize_repositories(values: list[str]) -> list[str]:
 
 def _read(data_dir: Path) -> dict:
     try:
-        path = data_dir / "integrations" / "github.json"
-        payload = json.loads(path.read_text()) if path.exists() else {}
-        if not isinstance(payload, dict) or not isinstance(payload.get("allowed_repositories", []), list):
-            raise ValueError
-        if not isinstance(payload.get(_META, {}), dict):
-            raise ValueError
-        normalize_repositories(payload.get("allowed_repositories", []))
+        payload = read_document(data_dir)
+        parse_policy(payload)
         return payload
-    except (OSError, ValueError):
-        raise ScopeError("scope_unreadable", "GitHub scope configuration cannot be read safely.", 503) from None
+    except PolicyLoadError as exc:
+        if exc.status == "missing":
+            return {}  # A first exact-list update still requires access proof and consent.
+        raise ScopeError(exc.code, str(exc), 503) from None
 
 
 def _snapshot(payload: dict) -> dict:
-    repositories = normalize_repositories(payload.get("allowed_repositories", []))
-    metadata = payload.get(_META, {})
-    # The public revision contains no credential-derived material.
-    revision = metadata.get("revision") or hashlib.sha256(json.dumps(repositories).encode()).hexdigest()
-    return {"allowed_repositories": repositories, "revision": revision,
-            "scope_mode": "explicit" if repositories else "unrestricted"}
+    if not payload:
+        return {"allowed_repositories": [], "revision": "missing", "scope_mode": "none",
+                "policy_source": "unconfigured", "configuration_status": "missing"}
+    return parse_policy(payload).public()
 
 
 def snapshot(data_dir: Path) -> dict:
     with _LOCK:
         return _snapshot(_read(data_dir))
+
+
+def _receipt_result(receipt: dict) -> dict:
+    # Receipts share a credential document; return only the public scope fields.
+    result = receipt["result"]
+    return {key: result[key] for key in ("allowed_repositories", "revision", "scope_mode")}
 
 
 def prepare(data_dir: Path, *, repositories: list[str], expected_revision: str,
@@ -80,7 +82,7 @@ def prepare(data_dir: Path, *, repositories: list[str], expected_revision: str,
         if receipt:
             if receipt["fingerprint"] != fingerprint:
                 raise ScopeError("idempotency_conflict", "This idempotency key was used for a different scope request.")
-            return {**receipt["result"], "duplicate": True}, {}, GitHubCredentials(), fingerprint
+            return {**_receipt_result(receipt), "duplicate": True}, {}, GitHubCredentials(), fingerprint
         current = _snapshot(payload)
         if current["revision"] != expected_revision:
             raise ScopeError("scope_revision_conflict", "GitHub scope changed; refresh and review the change again.")
@@ -102,7 +104,7 @@ def commit(data_dir: Path, *, original: dict, credentials: GitHubCredentials,
         if receipt:
             if receipt["fingerprint"] != fingerprint:
                 raise ScopeError("idempotency_conflict", "This idempotency key was used for a different scope request.")
-            return {**receipt["result"], "duplicate": True}
+            return {**_receipt_result(receipt), "duplicate": True}
         # Recheck the whole document and effective credentials after the network
         # probe. Preserve unrelated metadata and reject concurrent token rotation.
         if current != original or GitHubCredentials.load(data_dir) != credentials:
@@ -110,7 +112,7 @@ def commit(data_dir: Path, *, original: dict, credentials: GitHubCredentials,
         previous = _snapshot(current)
         revision = str(uuid4())
         result = {"allowed_repositories": repositories, "revision": revision,
-                  "scope_mode": "explicit", "duplicate": False}
+                  "scope_mode": "allowlist", "duplicate": False}
         metadata = dict(current.get(_META, {}))
         audit = list(metadata.get("audit", []))
         audit.append({"event_id": str(uuid4()), "timestamp": datetime.now(UTC).isoformat(),
@@ -121,7 +123,7 @@ def commit(data_dir: Path, *, original: dict, credentials: GitHubCredentials,
                       "idempotency_key": idempotency_key})
         receipts = dict(metadata.get("receipts", {}))
         receipts[idempotency_key] = {"fingerprint": fingerprint, "result": result}
-        metadata.update(revision=revision, audit=audit, receipts=receipts)
+        metadata.update(revision=revision, audit=audit, receipts=receipts, schema_version=1, mode="allowlist")
         current["allowed_repositories"] = repositories
         current[_META] = metadata
         atomic_write_json(data_dir / "integrations" / "github.json", current, mode=0o600)

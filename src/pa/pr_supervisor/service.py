@@ -23,12 +23,13 @@ from pa.execution.disposition import (
     decide_card_disposition,
     disposition_for_merged_watch,
 )
+from pa.pr_supervisor.eligibility import ACTIONS, EligibilityReport, evaluate, validate_advertisement
 from pa.pr_supervisor.gating import (
     build_executor_prompt_rendered,
     evaluate_gate,
     redact_external_value,
 )
-from pa.pr_supervisor.github import GitHubClient, GitHubCredentials
+from pa.pr_supervisor.github import GitHubAPIError, GitHubClient, GitHubCredentials
 from pa.pr_supervisor.models import (
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
     PR_WATCH_PROTOCOL_VERSION,
@@ -728,7 +729,9 @@ class PRSupervisor:
         http_client: httpx.AsyncClient | None = None,
         async_runtime: AsyncRuntime | None = None,
         rng: random.Random | None = None,
+        eligibility_journal_hook=None,
     ) -> None:
+        self.eligibility_journal_hook = eligibility_journal_hook
         self.settings = settings
         self.domain_store = domain_store
         self.store = supervisor_store or PRSupervisorStore(
@@ -874,7 +877,7 @@ class PRSupervisor:
         self.github.credentials = credentials
         probe_seconds = (
             self.CAPABILITY_ERROR_RETRY_SECONDS
-            if self._capability and self._capability.state == "error"
+            if self._capability and self._capability.state in ("error", "verification_unavailable", "credentials_rejected")
             else self.CAPABILITY_PROBE_SECONDS
         )
         probe_due = (
@@ -887,7 +890,7 @@ class PRSupervisor:
         if probe_due:
             self._capability = (
                 await self.github.probe(self.settings.instance_id)
-            ).model_copy(update={"pr_watch_protocol_version": 2})
+            ).model_copy(update={"pr_watch_protocol_version": 2, "instance_name": self.settings.instance_name})
             from pa.domain.completion import COMPLETION_CAPABILITY
             self._capability.capabilities = sorted(set(self._capability.capabilities) | {COMPLETION_CAPABILITY})
             self._capability_checked_at = now
@@ -927,7 +930,8 @@ class PRSupervisor:
             if not capability.supports(watch.repository):
                 self._forget_watch(watch.id)
                 eligible = await self._eligible_capabilities(watch.repository)
-                if not eligible:
+                await self._emit_eligibility_diagnostic(watch, eligible)
+                if not eligible.eligible:
                     next_poll = utcnow() + timedelta(
                         seconds=watch.policy.poll_max_seconds
                     )
@@ -935,20 +939,33 @@ class PRSupervisor:
                         "sqlite.pr_supervisor_watch_write",
                         self.store.mark_error,
                         watch.id,
-                        "No eligible authenticated PA instance can access this repository",
+                        eligible.summary(),
                         next_poll_at=next_poll,
-                        visible_state="no_eligible_authenticated_instance",
+                        visible_state="supervision_eligibility_blocked",
+                        eligibility=eligible.model_dump(mode="json"),
                     )
                     await self._audit(
                         watch,
                         "capability_missing",
-                        f"{watch.id}:capability:none",
+                        f"{watch.id}:capability:{hashlib.sha256(eligible.summary().encode()).hexdigest()[:16]}",
                         payload={
                             "required_capabilities": watch.required_capabilities,
-                            "action": "Configure instance-local GitHub authentication",
+                            "eligibility": eligible.model_dump(mode="json"),
                         },
                     )
+                else:
+                    await self._offload("sqlite.pr_supervisor_eligibility_recovery",
+                        self.store.record_eligibility_recovery, watch.id, eligible.model_dump(mode="json"),
+                        next_poll_at=utcnow() + timedelta(seconds=watch.policy.poll_max_seconds))
                 continue
+            if self.eligibility_journal_hook is not None:
+                # A repository observation cannot resolve an inventory incident.
+                # Verify that dependency separately even after local capability
+                # recovers, and keep polling it if a repository error replaces
+                # the watch's previous inventory diagnostic. The existing cache
+                # bounds remote reads; local scope never proves authority health.
+                inventory = await self._eligible_capabilities(watch.repository)
+                await self._emit_eligibility_diagnostic(watch, inventory)
             grant = await self._acquire_lease(watch, capability)
             if not grant.acquired:
                 continue
@@ -2000,6 +2017,14 @@ class PRSupervisor:
                 poll_attempt=attempt,
                 now=now,
             )
+            # The fenced successful observation, not an allowlist match or a
+            # credential /user probe, proves this dependency recovered. Emit it
+            # even if an intervening inventory failure changed the watch error;
+            # the shared journal may still hold the earlier repository issue.
+            recovery = evaluate([self.capability], watch.repository,
+                                authority_instance_id=self.settings.instance_id)
+            recovery.dependency = "github_repository_observation"
+            await self._emit_eligibility_diagnostic(updated, recovery)
             await self._audit(
                 updated,
                 "observation",
@@ -2044,18 +2069,34 @@ class PRSupervisor:
             )
         except Exception as exc:  # noqa: BLE001
             delay = self._next_poll(watch.policy, watch.poll_attempt + 1)
-            message = str(exc)
-            logger.warning("PR supervisor poll failed watch=%s: %s", watch.id, message)
+            eligibility = None
+            if isinstance(exc, GitHubAPIError) and exc.status_code in (401, 403, 404):
+                reason = "credentials_unavailable" if exc.status_code == 401 else "repository_access_denied"
+                eligibility = evaluate([self.capability], watch.repository,
+                                       authority_instance_id=self.settings.instance_id)
+                eligibility.dependency = "github_repository_observation"
+                eligibility.eligible = []
+                candidate = eligibility.candidates[0]
+                candidate.reason_code, candidate.action = reason, ACTIONS[reason]
+                message = eligibility.summary()
+            elif isinstance(exc, (GitHubAPIError, httpx.HTTPError)):
+                message = "GitHub observation unavailable. Automatic retry is scheduled."
+            else:
+                message = "Supervision observation failed. Check instance diagnostics; automatic retry is scheduled."
+            logger.warning("PR supervisor poll failed watch=%s: %s", watch.id, type(exc).__name__)
             try:
                 errored = await self._offload(
                     "sqlite.pr_supervisor_watch_write",
                     self.store.mark_error,
                     watch.id,
                     message,
+                    eligibility=eligibility.model_dump(mode="json") if eligibility else None,
                     next_poll_at=delay,
                     owner_instance_id=self.settings.instance_id,
                     fence_token=grant.fence_token,
                 )
+                if eligibility is not None:
+                    await self._emit_eligibility_diagnostic(errored, eligibility)
                 await self._audit(
                     watch,
                     "poll_error",
@@ -2811,15 +2852,20 @@ class PRSupervisor:
                 )
             self._authority_last_success_at = utcnow()
             self._authority_last_error = None
-        except (httpx.HTTPError, RuntimeError, ValueError) as exc:
-            self._authority_last_error = str(exc)[:500]
+        except (httpx.HTTPError, RuntimeError, TimeoutError, ValueError) as exc:
+            reason = "authority_response_invalid" if isinstance(exc, ValueError) else "authority_unreachable"
+            self._authority_last_error = reason
+            report = EligibilityReport(evaluation_state="unavailable", reason_code=reason,
+                authority_reference=urlparse(remote).hostname if remote else self.settings.instance_id)
+            await self._emit_eligibility_diagnostic(watch, report)
             delay = self._lease_failure_delay(watch)
             self._lease_retry_at[watch.id] = self._monotonic() + delay
             await self._offload(
                 "sqlite.pr_supervisor_watch_write",
                 self.store.mark_error,
                 watch.id,
-                f"Fleet lease authority unavailable: {exc}",
+                report.summary(),
+                eligibility=report.model_dump(mode="json"),
                 next_poll_at=utcnow() + timedelta(seconds=delay),
                 visible_state="lease_authority_unavailable",
             )
@@ -3101,40 +3147,79 @@ class PRSupervisor:
             )
             self._authority_last_success_at = utcnow()
             self._authority_last_error = None
-        except (httpx.HTTPError, RuntimeError) as exc:
-            detail = str(exc).strip()
-            self._authority_last_error = (
-                f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
-            )[:500]
+        except (httpx.HTTPError, RuntimeError, TimeoutError) as exc:
+            self._authority_last_error = "authority_unreachable"
             logger.warning(
                 "PR supervisor capability heartbeat failed: %s",
                 self._authority_last_error,
             )
 
-    async def _eligible_capabilities(self, repository: str) -> list[GitHubCapability]:
+    async def _emit_eligibility_diagnostic(self, watch: PRWatch, report: EligibilityReport) -> None:
+        """Optional shared-journal seam; the journal owns storage and deduplication.
+
+        A successful dependency evaluation is explicit evidence. A changed failure
+        or a different eligible peer is not evidence that an earlier cause healed.
+        """
+        hook = self.eligibility_journal_hook
+        if hook is None:
+            return
+        try:
+            issues = []
+            failures = [(report.authority_instance_id or "configured_authority", report.reason_code)] if report.reason_code else []
+            failures += [(c.instance_id, c.reason_code) for c in report.candidates if c.reason_code]
+            for instance_id, reason in failures:
+                identity = ["pr_supervisor.eligibility", report.dependency, report.authority_instance_id,
+                            instance_id, watch.repository, reason]
+                issues.append({"issue_key": hashlib.sha256(json.dumps(identity).encode()).hexdigest(),
+                               "instance_id": instance_id, "reason_code": reason})
+            result = hook({"component": "pr_supervisor.eligibility", "repository": watch.repository,
+                           "watch_id": watch.id, "session_id": watch.originating_session_id,
+                           "issues": issues, "report": report.model_dump(mode="json")})
+            if inspect.isawaitable(result):
+                async with asyncio.timeout(1.0):
+                    await result
+        except Exception:
+            logger.warning("Optional eligibility journal hook unavailable")
+
+    async def _eligible_capabilities(self, repository: str | None) -> EligibilityReport:
         authority = self._authority_url()
+        now = utcnow()
         if authority:
-            try:
-                data = await self._get_json(
-                    f"{authority}/api/pr-supervisor/capabilities"
-                )
-                capabilities = [
-                    GitHubCapability.model_validate(item)
-                    for item in data.get("instances", [])
-                ]
-                return [
-                    capability
-                    for capability in capabilities
-                    if capability.supports(repository)
-                ]
-            except httpx.HTTPError, RuntimeError, ValueError:
-                return []
-        capabilities = await self._offload(
-            "sqlite.pr_supervisor_capability_read",
-            self.store.list_capabilities,
-            fresh_seconds=self.CAPABILITY_TTL_SECONDS,
-        )
-        return [item for item in capabilities if item.supports(repository)]
+            # One bounded inventory read for all watches; a failing authority
+            # cannot trigger one request per watch per loop.
+            cached = getattr(self, "_eligibility_inventory", None)
+            if cached and now < cached[0] and cached[1] == authority:
+                _, _, capabilities, authority_id, failure, history_seconds = cached
+            else:
+                capabilities, authority_id, failure = [], (cached[3] if cached and cached[1] == authority else None), None
+                history_seconds = None
+                try:
+                    data = await self._get_json(f"{authority}/api/pr-supervisor/capabilities?include_stale=true")
+                    if not isinstance(data, dict) or not isinstance(data.get("instances"), list) or len(data["instances"]) > 200:
+                        raise ValueError("invalid capability inventory")
+                    capabilities = [validate_advertisement(item) for item in data["instances"]]
+                    local = validate_advertisement(data.get("local"))
+                    authority_id = local.instance_id
+                    window = data.get("history_seconds")
+                    history_seconds = window if type(window) is int and 0 < window <= 86400 else None
+                except (httpx.HTTPError, RuntimeError, TimeoutError):
+                    failure = "authority_unreachable"
+                except (ValueError, TypeError, AttributeError):
+                    failure = "authority_response_invalid"
+                self._eligibility_inventory = (now + timedelta(seconds=30 if failure else 15), authority,
+                                               capabilities, authority_id, failure, history_seconds)
+            if failure:
+                return EligibilityReport(evaluation_state="unavailable", reason_code=failure,
+                                         authority_instance_id=authority_id,
+                                         authority_reference=urlparse(authority).hostname or "configured supervision authority")
+        else:
+            capabilities = await self._offload(
+                "sqlite.pr_supervisor_capability_read", self.store.list_capabilities,
+                fresh_seconds=86400, limit=200)
+            authority_id = self.settings.instance_id
+            history_seconds = 86400
+        return evaluate(capabilities, repository, authority_instance_id=authority_id,
+                        ttl=self.CAPABILITY_TTL_SECONDS, now=utcnow()).model_copy(update={"history_seconds": history_seconds})
 
     async def _replicate(self, watch: PRWatch | None) -> None:
         if not watch:
