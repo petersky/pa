@@ -285,7 +285,7 @@ async def test_recurring_after_declared_acceptance_and_delayed_replay(fleet):
     await authority.service.cycle(manual=True)
     group = authority.journal.groups(['default'])[0]
     authority.journal.assess(group['id'], Assessment(expected_version=1, disposition='deployed_verified',
-        reason='Synthetic lifecycle acceptance', card_id='card', acceptance_reference='acceptance-1'),
+        reason='Synthetic lifecycle acceptance', card_id='card', acceptance_reference='acceptance-1', accepted_instances=[source.settings.instance_id]),
         actor='system:lifecycle', realms=['default'], accepted=True)
     # Exact late replay does not reopen accepted state.
     await api(source, 'POST', '/reports', body=observation())
@@ -587,7 +587,7 @@ async def test_pending_revision_after_accepted_boundary_is_triaged_without_false
     lease = authority.journal.lease('coordinator')
     first = authority.journal.action(owner='coordinator', fence=lease['fence'])
     group = authority.journal.group(first['group_id'], realms=['default'])
-    authority.journal.assess(group['id'], Assessment(expected_version=group['version'], disposition='deployed_verified', reason='Synthetic verified boundary', card_id='canonical-repair-card'), actor='system:lifecycle', realms=['default'], accepted=True)
+    authority.journal.assess(group['id'], Assessment(expected_version=group['version'], disposition='deployed_verified', reason='Synthetic verified boundary', card_id='canonical-repair-card', accepted_instances=[source.settings.instance_id]), actor='system:lifecycle', realms=['default'], accepted=True)
     authority.journal.action_result(first['id'], state='terminal', result={}, owner='coordinator', fence=lease['fence'])
     await api(source, 'POST', '/reports', body=observation(summary='Delayed evidence requiring bounded triage'), key='delayed')
     entry = source.journal.page(realms=['default'])['items'][-1]
@@ -595,7 +595,7 @@ async def test_pending_revision_after_accepted_boundary_is_triaged_without_false
     second = authority.journal.action(owner='coordinator', fence=lease['fence'])
     assert second['id'] != first['id'] and second['group_id'] == first['group_id']
     assert second['result'] == {'card_id':'canonical-repair-card'}
-    assert authority.journal.group(first['group_id'], realms=['default'])['disposition'] == 'deployed_verified'
+    assert authority.journal.group(first['group_id'], realms=['default'])['disposition'] == 'awaiting_acceptance'
     assert authority.journal.action(owner='coordinator', fence=lease['fence'])['id'] == second['id']
 
 
@@ -667,6 +667,7 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
     authority.settings.subscribed_realms.append('secondary')
     source.settings.subscribed_realms.append('secondary')
     await api(source, 'POST', '/reports', body=observation(realm='secondary'))
+    await api(authority, 'POST', '/reports', body=observation(realm='secondary'), key='second-source')
     await authority.service.cycle(manual=True)
     group = authority.journal.groups(['secondary'])[0]
     root = tmp_path/'canonical'
@@ -731,6 +732,17 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
                 receipt = response.json()['completion_evidence'][-1]
                 assert receipt['actor_kind'] == 'bound_session'
                 assert receipt['actor_session_id'] == session_id and receipt['actor_dispatch_id'] == dispatch_id
+        partial = await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body)
+        assert partial.status_code == 409 and partial.json()['detail']['code'] == 'acceptance_scope_incomplete'
+        assert source.journal.page(realms=['secondary'])['items'][0]['custody']['disposition'] == 'linked'
+        complete_evidence = evidence.model_copy(update={'references':[*evidence.references, f'instance:{authority.settings.instance_id}']})
+        current_card = projection.get_card(card.id, realm_id='secondary')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=authority.app), base_url='http://authority') as client:
+            complete = await client.patch('/api/cards/'+card.id, params={'realm':'secondary'},
+                headers=headers | {'Idempotency-Key':'canonical-acceptance-full'},
+                json={'expected_version':current_card.updated_at.isoformat(), 'completion_acceptance':complete_evidence.model_dump(mode='json')})
+        assert complete.status_code == 200, complete.text
+        body.update(acceptance_reference='canonical-acceptance-full', accepted_instances=[source.settings.instance_id, authority.settings.instance_id])
     finally:
         ledger.close()
     assert (await api(authority, 'PATCH', f'/groups/{group["id"]}', body=body | {'acceptance_reference':'forged'})).status_code == 409
@@ -739,7 +751,16 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
     await authority.service.cycle(manual=True)
     source_report = source.journal.page(realms=['secondary'])['items'][0]
     assert source_report['custody']['disposition'] == 'deployed_verified'
-    assert source_report['custody']['fix']['acceptance_reference'] == 'canonical-acceptance'
+    assert source_report['custody']['fix']['acceptance_reference'] == 'canonical-acceptance-full'
+    assert authority.journal.page(realms=['secondary'])['items'][0]['custody']['disposition'] == 'deployed_verified'
+    late = (await api(source, 'POST', '/reports', body=observation(realm='secondary', occurrence_key='new-member'), key='late-member')).json()
+    await authority.service.cycle(manual=True)
+    entries = source.journal.page(realms=['secondary'])['items']
+    original, uncovered = entries[0], next(e for e in entries if e['payload']['report_id'] == late['report_id'])
+    assert original['custody']['disposition'] == 'deployed_verified'
+    assert uncovered['custody']['disposition'] == 'awaiting_acceptance'
+    assert uncovered['custody']['fix']['acceptance_reference'] is None
+    assert uncovered['custody']['fix']['acceptance_scope'] == 'uncovered'
 
 
 @pytest.mark.asyncio

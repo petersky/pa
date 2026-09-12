@@ -244,6 +244,10 @@ class Journal:
                 if accepted and payload['observation'].get('recurrence_after_acceptance') == accepted:
                     db.execute("UPDATE groups SET disposition='reopened',version=version+1 WHERE id=?", (group_id,))
                     self._history(db, group_id, {'disposition': 'reopened', 'reason': 'Explicit confirmed recurrence after accepted boundary', 'identity': identity, 'at': now()})
+                else:
+                    db.execute("UPDATE groups SET disposition='awaiting_acceptance',version=version+1 WHERE id=?", (group_id,))
+                    self._history(db, group_id, {'disposition':'awaiting_acceptance', 'reason':'New observation lies outside the previous acceptance snapshot.', 'identity':identity, 'at':now()})
+                db.execute('UPDATE inbox SET ack_dirty=1 WHERE group_id=?', (group_id,))
             receipt = {'receipt_id': str(uuid4()), 'identity': identity, 'hash': entry['hash'],
                        'authority_id': self.instance_id, 'epoch': policy['epoch'],
                        'group_id': group_id, 'gathered_at': now()}
@@ -260,10 +264,24 @@ class Journal:
             receipt = json.loads(row['receipt'])
             group = db.execute('SELECT * FROM groups WHERE id=?', (row['group_id'],)).fetchone()
             policy = json.loads(self._meta(db, 'policy'))
+            fix = json.loads(group['data'])
+            disposition = group['disposition']
+            if fix.get('acceptance_reference'):
+                source_id = json.loads(row['payload'])['source_instance_id']
+                covered = (source_id in fix.get('accepted_instances', [])
+                    and row['seq'] <= fix.get('acceptance_watermark', 0)
+                    and fix.get('accepted_subject_revision') == fix.get('commit'))
+                if disposition in {'deployed_verified', 'awaiting_acceptance'}:
+                    disposition = 'deployed_verified' if covered else 'awaiting_acceptance'
+                if not covered:
+                    fix = {**fix, 'last_group_acceptance_reference':fix['acceptance_reference'],
+                           'acceptance_reference':None, 'acceptance_scope':'uncovered',
+                           'reason':'This observation is outside the declared canonical acceptance scope.'}
+            fix['disposition'] = disposition
             return {**receipt, 'ingested_authority_id': receipt['authority_id'], 'ingested_epoch': receipt['epoch'],
                     'authority_id': policy['authority_id'], 'epoch': policy['epoch'],
-                    'disposition': group['disposition'], 'version': group['version'],
-                    'fix': json.loads(group['data'])}
+                    'disposition': disposition, 'version': group['version'],
+                    'fix': fix}
 
     def gathered(self, verified_receipt):
         """Caller must obtain this receipt from the configured authority channel."""
@@ -314,6 +332,11 @@ class Journal:
             if row['version'] != assessment.expected_version:
                 raise JournalError('assessment_version_conflict')
             data = {**json.loads(row['data']), **sanitized(assessment.model_dump(exclude_none=True))}
+            if assessment.disposition == 'deployed_verified':
+                affected = db.execute("SELECT DISTINCT json_extract(payload,'$.source_instance_id') FROM inbox WHERE group_id=? LIMIT 33", (group_id,)).fetchall()
+                if len(affected) > 32 or not {r[0] for r in affected} <= set(assessment.accepted_instances):
+                    raise JournalError('acceptance_scope_incomplete')
+                data['acceptance_watermark'] = db.execute('SELECT coalesce(max(seq),0) FROM inbox WHERE group_id=?', (group_id,)).fetchone()[0]
             db.execute('UPDATE groups SET version=version+1,disposition=?,data=? WHERE id=?',
                        (assessment.disposition, encode(data), group_id))
             db.execute('UPDATE inbox SET ack_dirty=1 WHERE group_id=?', (group_id,))

@@ -82,7 +82,12 @@ legacy Done lane or forged reference cannot certify deployment. Canonical receip
 must identify a verified human actor or an authenticated bound session/dispatch.
 The journal rejects the originating repair session or dispatch, including earlier
 actions for the same group, and fails closed when origin evidence exceeds its bound
-or is unavailable. Shared bearer credentials alone do not prove independence. The companion
+or is unavailable. Shared bearer credentials alone do not prove independence. Whole-group acceptance
+requires the actual current source-instance set to be covered by the canonical
+receipt. The journal stamps an inbox watermark in that same transaction. A later
+observation outside that snapshot remains awaiting acceptance, while previously
+covered records retain their verified scope. Uncovered source receipts do not
+present another instance's acceptance reference as their own. The companion
 canonical completion contract must be installed before repair card admission;
 otherwise admission fails closed with `repair_completion_contract_unavailable`.
 
