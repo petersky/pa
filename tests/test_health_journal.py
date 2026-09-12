@@ -1002,3 +1002,43 @@ async def test_shared_realm_reads_and_exact_signed_nonprimary_session(fleet):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=source.app), base_url='http://source') as client:
         page = await client.get('/health-journal', headers=second_headers)
     assert authored.json()['report_id'] in page.text and foreign['report_id'] not in page.text
+
+
+@pytest.mark.asyncio
+async def test_large_inbox_receipt_lookup_uses_unique_index(fleet, monkeypatch):
+    from contextlib import contextmanager
+    authority, source, _ = fleet
+    await api(source, 'POST', '/reports', body=observation())
+    await authority.service.cycle(manual=True)
+    journal = authority.journal
+    with journal.connection(write=True) as db:
+        row = dict(db.execute('SELECT * FROM inbox LIMIT 1').fetchone())
+        original = json.loads(row['receipt'])
+        # Bulk fixture data isolates lookup complexity from collection throughput.
+        db.executemany('INSERT INTO inbox(identity,hash,payload,receipt,group_id) VALUES(?,?,?,?,?)',
+            [(f'fixture-{i}', row['hash'], row['payload'],
+              json.dumps(original | {'receipt_id':f'fixture-receipt-{i}', 'identity':f'fixture-{i}'}), row['group_id'])
+             for i in range(10_000)])
+        assert db.execute('SELECT count(*) FROM inbox').fetchone()[0] == 10_001
+    connection = journal.connection
+    plans = []
+    @contextmanager
+    def traced_connection(**kwargs):
+        with connection(**kwargs) as db:
+            def trace(sql):
+                if sql.startswith('SELECT * FROM inbox WHERE'):
+                    plans.extend(r['detail'] for r in db.execute('EXPLAIN QUERY PLAN '+sql))
+            db.set_trace_callback(trace)
+            yield db
+    monkeypatch.setattr(journal, 'connection', traced_connection)
+    found = journal.receipt('fixture-receipt-9999')
+    assert found['identity'] == 'fixture-9999'
+    with pytest.raises(JournalError, match='receipt_not_found'):
+        journal.receipt('absent-receipt')
+    assert len(plans) == 2
+    assert all('SEARCH inbox USING INDEX receipt_ids' in plan for plan in plans)
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        with journal.connection(write=True) as db:
+            db.execute('INSERT INTO inbox(identity,hash,payload,receipt,group_id) VALUES(?,?,?,?,?)',
+                ('different-identity', row['hash'], row['payload'], row['receipt'], row['group_id']))
