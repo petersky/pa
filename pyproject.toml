@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-pa = "pa.cli.main:app"
+pa = "pa.cli.entrypoint:main"
 
 [project.entry-points."pa.modules"]
 # External plugins register here, e.g.:

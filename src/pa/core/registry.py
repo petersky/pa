@@ -24,8 +24,9 @@ class LoadedModule:
 class ModuleRegistry:
     """Discovers, loads, and lifecycle-manages PA modules."""
 
-    def __init__(self, ctx: AppContext) -> None:
+    def __init__(self, ctx: AppContext, *, registration_only: bool = False) -> None:
         self.ctx = ctx
+        self.registration_only = registration_only
         self._loaded: list[LoadedModule] = []
 
     @property
@@ -36,7 +37,8 @@ class ModuleRegistry:
         if any(entry.module.name == module.name for entry in self._loaded):
             raise ValueError(f"Module already registered: {module.name}")
 
-        module.on_load(self.ctx)
+        if not self.registration_only:
+            module.on_load(self.ctx)
         self._loaded.append(LoadedModule(module=module, source=source))
         logger.debug("Registered module %s (%s)", module.name, source)
 

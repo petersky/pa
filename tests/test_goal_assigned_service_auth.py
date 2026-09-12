@@ -1129,7 +1129,7 @@ def test_target_session_capability_is_bound_to_live_durable_dispatch(
     )
     ctx.store.save_session(session)
     runtime = SimpleNamespace(connected=True, _closed=False)
-    ctx.services["instance_agent"] = SimpleNamespace(get=lambda _id: runtime)
+    ctx.services["instance_agent"] = SimpleNamespace(get=lambda _id: runtime, store=ctx.store)
     capability = assigned_service_session_capability(
         secret=ctx.settings.session_secret,
         dispatch_id=dispatch_id,
@@ -1146,6 +1146,20 @@ def test_target_session_capability_is_bound_to_live_durable_dispatch(
                 "X-PA-Assigned-Dispatch-ID": asserted,
             },
         )
+
+    client = TestClient(app)
+    headers = {
+        "Authorization": f"GoalSession {capability}",
+        "X-PA-Assigned-Session-ID": session_id,
+        "X-PA-Assigned-Dispatch-ID": dispatch_id,
+    }
+    response = client.get("/api/goal-assigned-session/restart-handoffs", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"handoffs": []}
+    forged_headers = {**headers, "X-PA-Assigned-Dispatch-ID": "another-dispatch"}
+    assert client.get("/api/goal-assigned-session/restart-handoffs", headers=forged_headers).status_code == 403
+    assert client.get("/api/agent/sessions/other/restart-handoffs", headers=headers).status_code in {401, 403}
+    client.close()
 
     assert _assigned_local_dispatch(request()).dispatch_id == dispatch_id
     assert _assigned_mcp_environment_for_session(

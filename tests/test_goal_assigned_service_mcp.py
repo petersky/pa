@@ -221,9 +221,9 @@ def test_assigned_restart_preview_can_show_editable_or_empty_continuation() -> N
     store = MagicMock()
     store.list_restart_handoffs.return_value = []
     ctx = SimpleNamespace(settings=SimpleNamespace(), store=store)
-    with patch.dict(
+    with patch("pa.mcp.local_api.request_local_pa", return_value={"handoffs": []}) as owner, patch.dict(
         os.environ,
-        {ASSIGNED_SERVICE_SESSION_ENV: "session-bound"},
+        {ASSIGNED_SERVICE_MODE_ENV: "1", ASSIGNED_SERVICE_SESSION_ENV: "session-bound", ASSIGNED_SERVICE_DISPATCH_ENV: "dispatch-bound"},
         clear=True,
     ):
         FleetModule().register_mcp(restricted, ctx)
@@ -238,6 +238,9 @@ def test_assigned_restart_preview_can_show_editable_or_empty_continuation() -> N
     assert without_prompt["continuation_prompt"] is None
     assert without_prompt["will_send_continuation"] is False
 
+
+    assert owner.call_args.args[1:] == ("GET", "/api/goal-assigned-session/restart-handoffs")
+    store.list_restart_handoffs.assert_not_called()
 
 def test_assigned_pending_restart_continuation_can_be_removed() -> None:
     delegate = FakeMcp()
