@@ -2175,7 +2175,10 @@ def operation_outcome_api(
     store = get_store()
     canonical, handoffs = store.read_operation_claims(idempotency_key)
     ledger = request.app.state.ctx.services.get("dispatch_store")
-    dispatches = ledger.read_operation_receipts(idempotency_key) if ledger else []
+    dispatches = ledger.read_operation_receipts(
+        idempotency_key, include_result=not (canonical or handoffs) and owner in {None, "dispatch"},
+        realm_id=realm_id, expected_operation=operation, request_fingerprint=request_fingerprint,
+    ) if ledger else []
     claims = ([('canonical', canonical['realm_id'], canonical['operation'], canonical['request_fingerprint'])] if canonical else [])
     claims += [('restart', r, 'agent_restart_handoff', None) for r, h in handoffs]
     claims += [('dispatch', r.realm_id, op,

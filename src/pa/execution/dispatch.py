@@ -828,6 +828,37 @@ class CapacityAdmission(BaseModel):
     override_reason: str | None = None
 
 
+def _copy_operation_receipt(value):
+    """Detach selected JSON evidence within a finite passive-read budget.
+
+    Oversized evidence is unavailable, never silently truncated into a different
+    outcome. This work must run outside the shared dispatch index lock.
+    """
+    nodes, characters = 2048, 65536
+    deadline = time.monotonic() + 0.1
+
+    def visit(item, depth=0):
+        nonlocal nodes, characters
+        nodes -= 1
+        if nodes < 0 or depth > 16 or time.monotonic() > deadline:
+            raise BlockingOperationTimeout("selected operation receipt exceeds passive read budget")
+        if isinstance(item, str):
+            characters -= len(item)
+            if characters < 0:
+                raise BlockingOperationTimeout("selected operation receipt exceeds passive read budget")
+            return item
+        if item is None or type(item) in {bool, int, float}:
+            return item
+        if type(item) in {dict, list} and len(item) <= nodes:
+            if isinstance(item, dict):
+                return {visit(key, depth + 1): visit(child, depth + 1)
+                        for key, child in item.items()}
+            return [visit(child, depth + 1) for child in item]
+        raise BlockingOperationTimeout("selected operation receipt is unavailable within passive read budget")
+
+    return visit(value)
+
+
 class DispatchOperationReceipt(BaseModel):
     """Detached owner evidence without copying a dispatch's accumulated history."""
 
@@ -2417,7 +2448,11 @@ class DispatchStore:
         for record in self._records.values():
             self._update_operation_records_locked(record)
 
-    def read_operation_receipts(self, idempotency_key: str):
+    def read_operation_receipts(
+        self, idempotency_key: str, *, include_result: bool = True,
+        realm_id: str | None = None, expected_operation: str | None = None,
+        request_fingerprint: str | None = None,
+    ):
         """Indexed, bounded lookup retaining collisions instead of choosing latest."""
         self._require_readable()
         if not self._index_lock.acquire(timeout=0.05):
@@ -2427,19 +2462,38 @@ class DispatchStore:
             matches = self._operation_records.get(idempotency_key, set())
             # More than one owner is ambiguous; callers need at most two to
             # reject it. Do not snapshot unbounded legacy key reuse on a poll.
-            receipts = []
+            selected = []
             for operation, record_id in islice(matches, 2):
                 record = self._records[record_id]
                 followup = record.followup_operations.get(idempotency_key) if operation == "dispatch.followup" else None
-                receipts.append((operation, DispatchOperationReceipt(
+                fingerprint = followup.get("fingerprint") if followup is not None else record.request_fingerprint if operation == "dispatch.create" else None
+                qualified = (
+                    include_result and len(matches) == 1
+                    and (realm_id is None or record.realm_id == realm_id)
+                    and (expected_operation is None or operation == expected_operation)
+                    and (request_fingerprint is None or fingerprint == request_fingerprint)
+                )
+                # Identity conflicts must remain observable even when the
+                # selected result is too large to serve passively.
+                fields = ("state", "prompt_id", "fingerprint", "error", "response") if qualified else ("fingerprint",)
+                # Published records are detached on publication. Pin only the
+                # selected field references here; never walk nested results or
+                # unrelated histories while holding the shared index lock.
+                selected.append({"operation": operation, "receipt": dict(
                     dispatch_id=record.dispatch_id, realm_id=record.realm_id,
                     state=record.state, card_id=record.card_id, session_id=record.session_id,
                     request_fingerprint=record.request_fingerprint,
-                    followup_operations={idempotency_key: copy.deepcopy(followup)} if followup is not None else {},
-                )))
-            return receipts
+                    followup_operations={idempotency_key: {
+                        key: followup.get(key) for key in fields
+                    }} if followup is not None else {},
+                )})
         finally:
             self._index_lock.release()
+        receipts = []
+        for fields in selected:
+            detached = _copy_operation_receipt(fields)
+            receipts.append((detached["operation"], DispatchOperationReceipt(**detached["receipt"])))
+        return receipts
 
     def find_operation_by_idempotency(
         self, idempotency_key: str, *, realm_id: str | None = None

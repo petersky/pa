@@ -51,7 +51,12 @@ SQLite receipt queries are read-only, have a 50 ms busy limit and a 250 ms work
 limit, and dispatch lookup uses an incrementally maintained key index with a
 50 ms lock limit. It retains at most two claims to detect ambiguity and copies
 only selected receipt evidence, without an unbounded list, whole-dispatch copy,
-or record-history scan.
+or record-history scan. The index lock pins selected field references only;
+detachment runs after releasing it. Each selected receipt is limited to 2,048
+JSON values, 65,536 string characters, nesting depth 16 and 100 ms of copy time.
+Evidence exceeding that budget returns an explicit unavailable/timeout response,
+never a truncated result or a new repair admission. Identity/realm/namespace
+conflicts are checked without copying oversized result bodies.
 
 Missing/nonterminal canonical receipts and follow-up acceptance gaps may admit a
 separate durable reconciliation request. Its stable ID hashes owner, realm, and

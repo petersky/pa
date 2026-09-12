@@ -81,6 +81,82 @@ def application(h):
 
 
 @pytest.mark.asyncio
+async def test_selected_dispatch_result_budget_releases_index_and_preserves_conflicts(tmp_path):
+    import pa.execution.dispatch as dispatch_module
+
+    h = Harness(tmp_path)
+    h.settings.subscribed_realms = ["default", "healthy"]
+    h.services["membership"].ensure_owner_membership("healthy", "local")
+    service = OperationStatusService(tmp_path)
+    ledger = DispatchStore(tmp_path / "dispatch")
+    h.services.update(operation_status=service, dispatch_store=ledger)
+    followups = {f"old-{n}": {"state": "accepted", "response": {"accepted": True}} for n in range(1000)}
+    followups["selected"] = {"state": "accepted", "prompt_id": "one-prompt", "fingerprint": "fp",
+                             "response": {"accepted": True, "marker": "old"}}
+    for key in ("large", "large-canonical"):
+        followups[key] = {"state": "accepted", "prompt_id": key, "fingerprint": "fp",
+                          "response": {"accepted": True, "large_result": [0] * 10000}}
+    record = ledger.put(DispatchRecord(
+        dispatch_id="large-dispatch", mutation_id="mutation", idempotency_key="create-key",
+        authority_instance_id="local", authority_url="http://local", target_instance_id="local",
+        followup_operations=followups,
+    ))
+    app, auth = application(h)
+    entered, release = threading.Event(), threading.Event()
+    copy_receipt = dispatch_module._copy_operation_receipt
+
+    def paused_copy(value):
+        entered.set()
+        assert release.wait(10)
+        return copy_receipt(value)
+
+    try:
+        with patch("pa.modules.items.get_store", return_value=h.store):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local", headers=auth) as client:
+                with patch.object(dispatch_module, "_copy_operation_receipt", side_effect=paused_copy):
+                    reader = asyncio.create_task(client.get("/api/operations/selected", params={"owner": "dispatch"}))
+                    assert await asyncio.to_thread(entered.wait, 2)
+                    assert ledger._index_lock.acquire(blocking=False), "selected copy retained the shared index lock"
+                    ledger._index_lock.release()
+                    # The real producer publishes a new record while the old
+                    # selected observation is pinned, without waiting for copy.
+                    record.followup_operations["selected"]["response"]["marker"] = "new"
+                    await asyncio.wait_for(asyncio.to_thread(ledger.put, record), 3)
+                    release.set()
+                    observed = await reader
+                    assert observed.status_code == 200, observed.text
+                    assert observed.json()["result"]["response"]["marker"] == "old"
+
+                current = await client.get("/api/operations/selected", params={"owner": "dispatch"})
+                assert current.json()["result"]["response"]["marker"] == "new"
+                oversized = await client.get("/api/operations/large", params={"owner": "dispatch"})
+                assert oversized.status_code == 504
+                assert "passive read budget" in oversized.json()["detail"]
+                assert "accepted" not in oversized.json() and "reconciliation" not in oversized.json()
+                assert not service.tasks  # Oversized evidence is not a missing receipt.
+                for selectors in ({"owner": "canonical"}, {"owner": "dispatch", "realm": "healthy"},
+                                  {"owner": "dispatch", "request_fingerprint": "wrong"},
+                                  {"owner": "dispatch", "operation": "dispatch.create"}):
+                    conflict = await client.get("/api/operations/large", params=selectors)
+                    assert conflict.status_code == 409, conflict.text
+                    assert conflict.json()["detail"]["code"] == "operation_identity_conflict"
+                h.store.begin_operation(idempotency_key="large-canonical", operation="card.create",
+                    request_fingerprint="canonical", realm_id="default", correlation_id="conflict")
+                conflict = await client.get("/api/operations/large-canonical")
+                assert conflict.status_code == 409
+                assert conflict.json()["detail"]["code"] == "operation_namespace_conflict"
+                ledger.put(record.model_copy(update={"dispatch_id": "duplicate", "idempotency_key": "other-create"}))
+                conflict = await client.get("/api/operations/large")
+                assert conflict.status_code == 409
+                assert conflict.json()["detail"]["code"] == "operation_namespace_conflict"
+    finally:
+        release.set()
+        await service.close()
+        ledger.close()
+        await h.close()
+
+
+@pytest.mark.asyncio
 async def test_known_owner_receipts_bypass_held_canonical_repair_and_saturated_workers(tmp_path):
     h = Harness(tmp_path)
     status = OperationStatusService(tmp_path)
