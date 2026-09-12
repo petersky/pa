@@ -74,8 +74,20 @@ initial declaration grants no automatic acceptance principals; normal supported
 human acceptance or an explicitly authorized canonical declaration update supplies
 that authority. Until an owner is declared, a verification attempt returns typed
 `acceptance_owner_unconfigured`; declared but unaccepted work returns
-`awaiting_acceptance`. Declare the owner through the ordinary authorized current-card
-completion requirement update, preserving its server-generated revision. This does
+`awaiting_acceptance`. An already-authorized coordinator reads the group's retained action and the actual
+referenced durable dispatch record. Through the ordinary authorized current-card
+completion requirement update (with current expected version), it declares BOTH
+eligible `acceptance_principals` and the actual `originating_session_id` /
+`originating_dispatch_id`; an owner-principal-only update is insufficient. Preserve
+the current requirement's other fields and use its resulting canonical revision.
+No extra human permission step or automatic deployment is implied. If actual repair
+identity or an eligible deployment owner is unavailable, leave acceptance pending.
+An independent live ordinary session/dispatch for the same card and realm can then
+call `record_card_acceptance(card_id, realm, expected_version,
+requirement_revision, subject_revision, milestones, references, idempotency_key)`.
+Its private SessionAcceptance bridge derives and stamps the actor identity without
+Goal provenance. Original repair identities, including retained prior group action
+origins, remain ineligible; callers cannot supply an actor identity. This does
 not block source-fix construction, ready PRs, or immediate repair backlinks. The journal requires a current canonical accepted receipt with
 matching subject and `health-group:`, `scenario:`, `instance:` references. A merge,
 legacy Done lane or forged reference cannot certify deployment. Canonical receipts

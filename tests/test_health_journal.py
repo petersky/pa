@@ -359,11 +359,16 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
     reset_settings(); reset_store(); reset_instance_agent()
     settings = Settings(data_dir=tmp_path/'owner', instance_id=str(uuid4()), agent_enabled=False,
                         auth_required=True, subscribed_realms=['default'], peers=[])
+    from pa.domain.instance_config import update_instance_config
+    update_instance_config(settings.data_dir, session_secret=settings.session_secret, instance_id=settings.instance_id)
     kernel = Kernel.boot(settings=settings)
     app = kernel.build_app()
     try:
         with TestClient(app) as client:
             ctx = app.state.ctx
+            # Keep normal durable admission; this component test supplies the provider runtime.
+            client.portal.call(ctx.require_service('dispatch_worker').close)
+            monkeypatch.setattr(ctx.require_service('dispatch_worker'), 'start', lambda: None)
             project = ctx.store.create_project(ProjectCreate(title='Synthetic health project'))
             repository = ctx.store.create_repository(RepositoryCreate(url='https://example.test/owner/pa.git'))
             ctx.store.link_project_repository(project.id, repository.id)
@@ -412,17 +417,96 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             with pytest.raises(JournalError, match='acceptance_owner_unconfigured'):
                 verify_acceptance(card, group, Assessment(expected_version=group['version'],
                     disposition='deployed_verified', reason='Owner must be explicitly declared'))
-            card = ctx.store.update_card(card.id, CardUpdate(
-                completion_requirement=card.completion_requirement.model_copy(update={'acceptance_principals':['user:local']}),
-                field_intent=['completion_requirement'], expected_version=card.updated_at), realm_id='default', principal_id='user:local', direct_human=True,
-                instance_id=settings.instance_id, idempotency_key='synthetic-owner-declaration')
+            user = UserDirectory(settings.data_dir).get('local')
+            linked = client.patch('/api/health-journal/groups/'+group['id'],
+                headers={'Authorization':f'Bearer {user.cli_token}'},
+                json={'expected_version':group['version'], 'disposition':'linked',
+                    'reason':'Source fix ready; deployment owner is still undeclared',
+                    'card_id':card.id, 'commit':commit, 'pr_url':'https://github.com/example/pa/pull/1'})
+            assert linked.status_code == 200, linked.text
+            group = service.journal.groups(['default'])[0]
+            assert group['data']['pr_url'].endswith('/pull/1')
+            assert group['disposition'] == 'linked'
+            assert not card.completion_status['accepted']
+            # The isolated provider stub binds the actual admitted repair dispatch.
+            # The coordinator reads this durable evidence, never guesses an origin.
+            from pa.domain.models import AgentSession
+            from pa.execution.dispatch import DispatchRecord
+            from pa.modules.fleet import _assigned_mcp_environment_for_session
+            from pa.mcp import server as mcp_server, local_api
+            from pa.acp.environment import COMPLETION_SESSION_ENV, COMPLETION_DISPATCH_ENV
+            from pa.acp.mcp_config import pa_mcp_servers
+            ledger = ctx.require_service('dispatch_store')
+            repair_session = ctx.store.save_session(AgentSession(id='health-repair-session',
+                agent_name='codex', dispatch_id=first.dispatch_id,
+                authority_instance_id=settings.instance_id, status='active'))
+            ledger.put(first.model_copy(update={'session_id':repair_session.id, 'state':'running'}))
+            origin_ids = service.journal.repair_dispatches(group['id'])
+            assert origin_ids == [first.dispatch_id]
+            origin = ledger.get(origin_ids[0])
+            assert origin.goal_provenance is None
+            assert not card.completion_requirement.originating_session_id
+            assert not card.completion_requirement.originating_dispatch_id
+            user = UserDirectory(settings.data_dir).get('local')
+            declaration = client.patch('/api/cards/'+card.id, params={'realm':'default'},
+                headers={'Authorization':f'Bearer {user.cli_token}', 'Idempotency-Key':'synthetic-owner-declaration'},
+                json={'expected_version':card.updated_at.isoformat(), 'field_intent':['completion_requirement'],
+                    'completion_requirement':card.completion_requirement.model_copy(update={
+                        'acceptance_principals':['user:local'],
+                        'originating_session_id':origin.session_id,
+                        'originating_dispatch_id':origin.dispatch_id}).model_dump(mode='json')})
+            assert declaration.status_code == 200, declaration.text
+            card = ctx.store.get_card(card.id)
             evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
                 subject_revision=commit, milestones=['verified'], references=[f'health-group:{group["id"]}',
                     'scenario:synthetic-provider-smoke', f'instance:{settings.instance_id}'])
-            accepted = ctx.store.update_card(card.id,
-                CardUpdate(completion_acceptance=evidence, expected_version=card.updated_at),
-                realm_id='default', principal_id='user:local', direct_human=True,
-                instance_id=settings.instance_id, idempotency_key='synthetic-current-acceptance')
+            verifier = ctx.store.save_session(AgentSession(id='health-independent-verifier',
+                agent_name='codex', dispatch_id='health-verifier-dispatch',
+                authority_instance_id=settings.instance_id, status='active'))
+            ledger.put(DispatchRecord(mutation_id=verifier.dispatch_id, dispatch_id=verifier.dispatch_id,
+                session_id=verifier.id, authority_instance_id=settings.instance_id,
+                authority_url='http://testserver', target_instance_id=settings.instance_id,
+                principal_id='user:local', card_id=card.id, realm_id='default', state='running'))
+            manager = ctx.require_service('instance_agent')
+            monkeypatch.setattr(manager, 'get', lambda key: SimpleNamespace(_closed=False, connected=True)
+                if key in (repair_session.id, verifier.id) else None)
+            # Exercise the registered ordinary producer and its private HTTP bridge.
+            for name in ('PA_ASSIGNED_SERVICE_MODE', 'PA_ASSIGNED_SERVICE_SESSION_ID',
+                         'PA_ASSIGNED_SERVICE_DISPATCH_ID', 'PA_LOCAL_API_SOCKET'):
+                monkeypatch.delenv(name, raising=False)
+            monkeypatch.setenv('PA_DATA_DIR', str(settings.data_dir))
+            monkeypatch.setenv('PA_LOCAL_API_URL', 'http://testserver')
+            monkeypatch.setattr(mcp_server, 'mcp', None)
+            sent = []
+            def bridge(method, url, **kwargs):
+                sent.append(kwargs['headers'].copy())
+                kwargs.pop('timeout', None)
+                return client.request(method, url, **kwargs)
+            monkeypatch.setattr(local_api.httpx, 'request', bridge)
+            mcp = mcp_server._get_mcp()
+            args = dict(card_id=card.id, realm='default', expected_version=card.updated_at.isoformat(),
+                requirement_revision=card.completion_requirement.revision, subject_revision=commit,
+                milestones=evidence.milestones, references=evidence.references,
+                idempotency_key='synthetic-current-acceptance')
+            for session in (repair_session, verifier):
+                binding = _assigned_mcp_environment_for_session(settings, ledger, session)
+                assert binding[COMPLETION_SESSION_ENV] == session.id
+                assert binding[COMPLETION_DISPATCH_ENV] == session.dispatch_id
+                descriptor = pa_mcp_servers(settings, private_environment=binding)[0]
+                for value in descriptor.env:
+                    monkeypatch.setenv(value.name, value.value)
+                monkeypatch.delenv('PA_LOCAL_API_SOCKET', raising=False)
+                monkeypatch.setenv('PA_LOCAL_API_URL', 'http://testserver')
+                if session == repair_session:
+                    with pytest.raises(Exception, match='completion_self_acceptance_forbidden'):
+                        client.portal.call(mcp.call_tool, 'record_card_acceptance', args | {'idempotency_key':'repair-rejected'})
+                else:
+                    client.portal.call(mcp.call_tool, 'record_card_acceptance', args)
+            assert sent[-1]['Authorization'].startswith('SessionAcceptance ')
+            accepted = ctx.store.get_card(card.id)
+            receipt = accepted.completion_evidence[-1]
+            assert receipt.actor_kind == 'bound_session'
+            assert receipt.actor_session_id == verifier.id and receipt.actor_dispatch_id == verifier.dispatch_id
             assessment = Assessment(expected_version=group['version'], disposition='deployed_verified',
                 reason='Synthetic isolated acceptance', card_id=card.id, commit=commit,
                 accepted_subject_revision=commit, acceptance_reference='synthetic-current-acceptance',
@@ -696,7 +780,7 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
     # Use the actual authenticated canonical HTTP consumer, not body actor claims.
     from pa.modules.items import router as card_router
     from pa.domain.models import AgentSession
-    from pa.execution.dispatch import DispatchStore, DispatchRecord, GoalDispatchProvenance
+    from pa.execution.dispatch import DispatchStore, DispatchRecord
     from pa.acp.environment import assigned_service_session_capability
     authority.app.include_router(card_router, prefix='/api')
     monkeypatch.setattr('pa.modules.items.get_store', lambda:projection)
@@ -715,13 +799,11 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
             runtimes[session_id] = SimpleNamespace(session=session, _closed=False, connected=True)
             ledger.put(DispatchRecord(mutation_id=dispatch_id, dispatch_id=dispatch_id, session_id=session_id,
                 target_instance_id=authority.settings.instance_id, authority_instance_id=authority.settings.instance_id,
-                authority_url='http://authority', state='running', principal_id='user:local', card_id=card.id,
-                goal_provenance=GoalDispatchProvenance(goal_id='verification', goal_version=1, policy_revision=1,
-                    authority_instance_id=authority.settings.instance_id, fencing_token=1,
-                    action_reservation_id='reservation', actor_principal='user:local')))
+                authority_url='http://authority', state='running', principal_id='user:local', card_id=card.id, realm_id='secondary'))
             token = assigned_service_session_capability(secret=authority.settings.session_secret,
-                dispatch_id=dispatch_id, session_id=session_id, target_instance_id=authority.settings.instance_id)
-            headers = {'Authorization':f'GoalSession {token}', 'X-PA-Assigned-Session-ID':session_id,
+                dispatch_id=dispatch_id, session_id=session_id, target_instance_id=authority.settings.instance_id,
+                purpose='completion-acceptance')
+            headers = {'Authorization':f'SessionAcceptance {token}', 'X-PA-Assigned-Session-ID':session_id,
                 'X-PA-Assigned-Dispatch-ID':dispatch_id, 'Idempotency-Key':'origin-attempt' if origin else 'canonical-acceptance'}
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=authority.app), base_url='http://authority') as client:
                 response = await client.patch('/api/cards/'+card.id, params={'realm':'secondary'}, headers=headers,
