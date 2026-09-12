@@ -93,6 +93,7 @@ async def test_known_owner_receipts_bypass_held_canonical_repair_and_saturated_w
     ))
     record = ledger.put(DispatchRecord(dispatch_id="dispatch", mutation_id="mutation",
         idempotency_key="dispatch-key", request_fingerprint="fingerprint", state="acknowledged",
+        followup_operations={f"old-{n}": {"state": "accepted", "response": {"accepted": True}} for n in range(1000)},
         authority_instance_id="local", authority_url="http://local", target_instance_id="local"))
     app, auth = application(h)
     release, entered = threading.Event(), threading.Event()
@@ -110,7 +111,7 @@ async def test_known_owner_receipts_bypass_held_canonical_repair_and_saturated_w
         for n in range(h.runtime.max_workers - 1):
             ordinary.append(asyncio.create_task(h.runtime.run_blocking(
                 f"ordinary-{n}", release.wait, 10, wait_for_completion=True)))
-        with patch("pa.modules.items.get_store", return_value=h.store), patch.object(
+        with patch.object(ledger, "_snapshot", side_effect=AssertionError("GET copied dispatch history")), patch("pa.modules.items.get_store", return_value=h.store), patch.object(
                 h.log, "find_operation_event", side_effect=AssertionError("GET scanned history")):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local", headers=auth) as client:
                 for key, owner, expected in [("restart-key", "restart", handoff.id),

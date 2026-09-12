@@ -828,6 +828,18 @@ class CapacityAdmission(BaseModel):
     override_reason: str | None = None
 
 
+class DispatchOperationReceipt(BaseModel):
+    """Detached owner evidence without copying a dispatch's accumulated history."""
+
+    dispatch_id: str
+    realm_id: str
+    state: str
+    card_id: str | None
+    session_id: str | None
+    request_fingerprint: str | None
+    followup_operations: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
 class DispatchStore:
     """Transactional incremental ledger shared by dispatch, progress, and outbox.
 
@@ -2415,8 +2427,17 @@ class DispatchStore:
             matches = self._operation_records.get(idempotency_key, set())
             # More than one owner is ambiguous; callers need at most two to
             # reject it. Do not snapshot unbounded legacy key reuse on a poll.
-            return [(operation, self._snapshot(self._records[record_id]))
-                    for operation, record_id in islice(matches, 2)]
+            receipts = []
+            for operation, record_id in islice(matches, 2):
+                record = self._records[record_id]
+                followup = record.followup_operations.get(idempotency_key) if operation == "dispatch.followup" else None
+                receipts.append((operation, DispatchOperationReceipt(
+                    dispatch_id=record.dispatch_id, realm_id=record.realm_id,
+                    state=record.state, card_id=record.card_id, session_id=record.session_id,
+                    request_fingerprint=record.request_fingerprint,
+                    followup_operations={idempotency_key: copy.deepcopy(followup)} if followup is not None else {},
+                )))
+            return receipts
         finally:
             self._index_lock.release()
 

@@ -45,8 +45,9 @@ available in the result, pending the separate lifecycle observation adapter.
 Kernel owns a status service with two read workers, eight queued reads, and a
 500 ms caller deadline. SQLite receipt queries are read-only, have a 50 ms busy limit and a 250 ms work
 limit, and dispatch lookup uses an incrementally maintained key index with a
-50 ms lock limit. It retains at most two claims to detect ambiguity without an
-unbounded list or record-history scan.
+50 ms lock limit. It retains at most two claims to detect ambiguity and copies
+only selected receipt evidence, without an unbounded list, whole-dispatch copy,
+or record-history scan.
 
 Missing/nonterminal canonical receipts and follow-up acceptance gaps may admit a
 separate durable reconciliation request. Its stable ID hashes owner, realm, and
