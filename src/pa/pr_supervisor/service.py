@@ -738,6 +738,7 @@ class PRSupervisor:
             settings.data_dir / "pr_supervisor.db"
         )
         self.store.completion_capabilities = domain_store.card_completion_capabilities
+        self.store.completion_card_db_path = domain_store.db_path
         self.credentials = (
             github_client.credentials
             if github_client
@@ -2603,7 +2604,7 @@ class PRSupervisor:
         )
         try:
             if decision.applied_lane != card.lane:
-                await self._offload(
+                card = await self._offload(
                     "sqlite.card_write",
                     self.domain_store.update_card,
                     watch.card_id,
@@ -2631,6 +2632,7 @@ class PRSupervisor:
             state.pop("card_completion_retry", None)
         else:
             state["card_completion_retry"] = self._card_completion_retry(watch, decision.reason)
+        state["card_completion_version"] = card.updated_at.isoformat()
         state["card_lane"] = decision.applied_lane.value
         state["card_disposition"] = {
             "contract": "pa.card-disposition/v1",

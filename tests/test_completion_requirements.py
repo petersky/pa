@@ -28,18 +28,19 @@ def protected(store, *, milestones=None, realm="default"):
     }))
 
 
-def test_automation_human_and_replay(tmp_path):
+@pytest.mark.parametrize("lane_field", ["lane", "status"])
+def test_automation_human_and_replay(tmp_path, lane_field):
     store = projection(tmp_path)
     card = protected(store)
     with pytest.raises(CompletionConflict, match="acceptance_pending"):
         store.update_card(card.id, CardUpdate(lane="done"), principal_id="instance:old-supervisor")
     # An immutable delayed legacy lane claim is retained but cannot bypass the declaration.
-    event = CardEvent(type=EventType.CARD_UPDATED, realm_id="default", author_instance="old-instance", card_id=card.id, author_principal="instance:old-supervisor", payload={"lane": "done"})
+    event = CardEvent(type=EventType.CARD_UPDATED, realm_id="default", author_instance="old-instance", card_id=card.id, author_principal="instance:old-supervisor", payload={lane_field: "done"})
     store.commit_event(event)
     assert store.get_card(card.id).lane == CardLane.WAITING
     history = store.event_log.entity_history_page("default", "card", card.id)
     claim = next(item for item in history["events"] if item["event"]["id"] == event.id)
-    assert claim["event"]["payload"]["lane"] == "done"
+    assert claim["event"]["payload"][lane_field] == "done"
     assert claim["projection_effect"] == "completion_claim_preserved_pending"
     head = store.event_log.get_head("default")
     assert store.event_log.entity_snapshot(head, "card", card.id)["lane"] == "waiting"
@@ -228,3 +229,49 @@ async def test_declared_integration_only_completes_from_real_merge(tmp_path):
     reopened = store.update_card(card.id, CardUpdate(lane="waiting", completion_requirement={"mode": "explicit_acceptance", "milestones": ["integrated", "verified"]}, expected_version=result.updated_at, field_intent=["lane", "completion_requirement"]))
     assert "integrated" in reopened.completion_status["satisfied"]
     assert reopened.completion_status["missing"] == ["verified", "acceptance"]
+
+
+@pytest.mark.asyncio
+async def test_parked_acceptance_query_wakes_once_on_requirement_and_acceptance_change(tmp_path):
+    from unittest.mock import patch
+    store = projection(tmp_path)
+    card = protected(store, milestones=['integrated', 'verified'], realm='engineering')
+    settings = Settings(data_dir=tmp_path, instance_id='instance-a', instance_url='http://instance-a', fleet_owner_url='http://instance-a', peers=[])
+    watches = PRSupervisorStore(tmp_path / 'supervisor.db')
+    service = PRSupervisor(settings, store, supervisor_store=watches,
+        github_client=_FakeGitHub([snapshot(), snapshot(state='merged', merge_commit_sha='c' * 40)]), dispatcher=_DedupeDispatcher())
+    await service.refresh_capability(force=True)
+    item = watch(policy=PRPolicy(stable_head_seconds=0, stable_observations=1))
+    item.card_id, item.realm_id = card.id, 'engineering'
+    await service.register_watch(item, replicate=False)
+    await service.run_once()
+    watches.schedule_now(watch_id=item.id)
+    await service.run_once()
+    # Reopen the actual SQL store as on a later process, preserving its owner
+    # projection binding. Repeated scheduler sweeps must not hydrate this watch.
+    service.store = PRSupervisorStore(watches.db_path)
+    service.store.completion_card_db_path = store.db_path
+    with patch.object(service, '_complete_merged_card', wraps=service._complete_merged_card) as complete:
+        for _ in range(3):
+            await service._reconcile_merged_cards()
+        complete.assert_not_called()
+        card = store.get_card(card.id, realm_id='engineering')
+        changed = card.completion_requirement.model_dump(mode='json')
+        changed['criteria'] = 'Updated verification criterion'
+        card = store.update_card(card.id, CardUpdate(expected_version=card.updated_at,
+            completion_requirement=changed, field_intent=['completion_requirement']), realm_id='engineering')
+        await service._reconcile_merged_cards()
+        assert complete.call_count == 1
+        for _ in range(3):
+            await service._reconcile_merged_cards()
+        assert complete.call_count == 1
+        card = store.get_card(card.id, realm_id='engineering')
+        store.update_card(card.id, CardUpdate(expected_version=card.updated_at, completion_acceptance=CompletionEvidence(
+            requirement_revision=card.completion_requirement.revision, subject_revision='c' * 40, milestones=['verified'])),
+            realm_id='engineering', principal_id='instance:acceptance', actor_session_id='verifier',
+            actor_dispatch_id='verify-dispatch', idempotency_key='accept-updated')
+        await service._reconcile_merged_cards()
+        assert complete.call_count == 2
+        assert store.get_card(card.id, realm_id='engineering').lane == CardLane.DONE
+        await service._reconcile_merged_cards()
+        assert complete.call_count == 2

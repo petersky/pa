@@ -77,6 +77,14 @@ def _same_version(left: str | None, right: str | None) -> bool:
         return False
 
 
+def _normalized_completion_payload(payload: dict) -> dict:
+    result = dict(payload)
+    if "lane" not in result and "status" in result:
+        from pa.domain.models import lane_from_legacy_status
+        result["lane"] = lane_from_legacy_status(result["status"]).value
+    return result
+
+
 def protected_event_payload(current: dict, payload: dict, *, expected_version: str | None = None, field_intent: list[str] | None = None) -> dict:
     """Project incompatible completion claims safely without changing history.
 
@@ -87,9 +95,7 @@ def protected_event_payload(current: dict, payload: dict, *, expected_version: s
     requirement = current.get("completion_requirement")
     if not requirement:
         return result
-    if "lane" not in result and "status" in result:
-        from pa.domain.models import lane_from_legacy_status
-        result["lane"] = lane_from_legacy_status(result["status"]).value
+    result = _normalized_completion_payload(result)
     if not result.get("completion_requirement"):
         result["completion_requirement"] = requirement
     elif result["completion_requirement"] != requirement and (
@@ -116,8 +122,9 @@ def completion_history_effect(state: dict, event: Any) -> tuple[dict, str]:
         return {}, "applied"
     projected = protected_event_payload(state, event.payload, expected_version=event.causal_card_version, field_intent=event.field_intent)
     effect = "applied"
+    claimed = _normalized_completion_payload(event.payload)
     if state.get("completion_requirement") and any(
-        field in event.payload and projected.get(field) != event.payload[field]
+        field in claimed and projected.get(field) != claimed[field]
         for field in ("lane", "completion_requirement")
     ):
         effect = "completion_claim_preserved_pending"
