@@ -463,7 +463,7 @@ class Journal:
             db.execute('UPDATE actions SET state=?,result=? WHERE id=?', (state, encode(merged), action_id))
             group = db.execute('SELECT * FROM groups WHERE id=?', (old['group_id'],)).fetchone()
             data = {**json.loads(group['data']), **merged}
-            disposition = 'in_progress' if state == 'dispatched' and group['disposition'] in {'new', 'triaged', 'reopened'} else group['disposition']
+            disposition = group['disposition']
             data['phase'] = 'triaging' if state == 'dispatched' else state
             if state == 'terminal' and disposition == 'in_progress':
                 disposition = 'needs_input'
@@ -597,6 +597,19 @@ class Journal:
                     'members': [{'identity': r['identity'], 'hash': r['hash'], 'payload': json.loads(r['payload'])}
                                 for r in db.execute('SELECT * FROM inbox WHERE group_id=? ORDER BY seq DESC LIMIT 3', (group_id,))]}
 
+    def repair_action(self, group_id, *, expected_version, realms):
+        with self.connection() as db:
+            group = db.execute('SELECT * FROM groups WHERE id=?', (group_id,)).fetchone()
+            if not group or group['realm'] not in realms:
+                raise JournalError('group_not_found', 404)
+            if group['version'] != expected_version:
+                raise JournalError('assessment_version_conflict')
+            row = db.execute("SELECT * FROM actions WHERE group_id=? ORDER BY rowid DESC LIMIT 1", (group_id,)).fetchone()
+            if not row:
+                raise JournalError('repair_action_required')
+            return {**dict(row), 'payload': json.loads(row['payload']),
+                    'result': json.loads(row['result']) if row['result'] else {}}
+
     def reserve_effect(self, action_id, effect, payload, *, owner, fence):
         """Durably admit this exact effect under the fence before sending it.
 
@@ -611,7 +624,10 @@ class Journal:
                 raise JournalError('health_action_not_active')
             result = json.loads(row['result']) if row['result'] else {}
             effects = result.get('effects', {})
-            hashed = digest(sanitized(payload))
+            safe_payload = sanitized(payload)
+            if effect == 'requirement' and safe_payload != payload:
+                raise JournalError('repair_requirement_not_safely_replayable')
+            hashed = digest(safe_payload)
             if effect in effects:
                 if effects[effect]['hash'] != hashed:
                     raise JournalError('health_effect_payload_conflict')
@@ -619,7 +635,8 @@ class Journal:
             policy = self._fenced(db, owner, fence)
             receipt = {'id': f'health-{effect}:{action_id}', 'hash': hashed, 'fence': fence,
                        'epoch': policy['epoch'], 'authority_id': self.instance_id,
-                       'admitted_at': now(), 'state': 'admitted_outcome_pending'}
+                       'admitted_at': now(), 'state': 'admitted_outcome_pending',
+                       **({'payload': safe_payload} if effect == 'requirement' else {})}
             effects[effect] = receipt
             result['effects'] = effects
             db.execute('UPDATE actions SET result=? WHERE id=?', (encode(result), action_id))

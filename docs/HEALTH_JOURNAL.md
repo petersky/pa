@@ -68,11 +68,21 @@ Queued, permission-waiting and CI time never cause dispatch-age cancellation.
 The triage prompt requests a bounded assessment before edits; execution/followup
 budgets remain owned by existing PA/provider policy.
 
-Health-created cards declare explicit canonical acceptance, a verified milestone
-and criteria binding the health group to a build/scenario/affected instances. The
-initial declaration grants no automatic acceptance principals; normal supported
-human acceptance or an explicitly authorized canonical declaration update supplies
-that authority. Until an owner is declared, a verification attempt returns typed
+Health-created investigation cards initially use ordinary source-only completion.
+The same worker records a reasoned no-fix disposition and can finish that ordinary
+card with the existing no-integration Done outcome. It does not manufacture
+acceptance evidence or erase requirements on a previously protected repair.
+
+Before acknowledging reproduced, linked, in_progress or merged (or any transition
+supplying commit/PR evidence), PA installs or proves an explicit canonical
+verification requirement on the actual action's bound card and realm. It preserves
+existing owners, criteria and milestones and adds the health group verification
+scope. The exact normal API/CAS declaration is reserved in the existing durable
+action before submission; unknown/lost replies replay that request and cannot
+acknowledge repair permission. The prompt requires successful transition before
+edits/PR work. This is the authorized workflow contract, not an OS security boundary.
+The initial repair declaration grants no automatic acceptance principals.
+Until an owner is declared, a verification attempt returns typed
 `acceptance_owner_unconfigured`; declared but unaccepted work returns
 `awaiting_acceptance`. An already-authorized coordinator reads the group's retained action and the actual
 referenced durable dispatch record. Through the ordinary authorized current-card

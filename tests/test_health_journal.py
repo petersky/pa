@@ -346,7 +346,8 @@ async def test_actual_mcp_stdio_http_report_roundtrip(fleet, monkeypatch):
         listener.close()
 
 
-def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypatch):
+@pytest.mark.parametrize('decision', ['repair', 'no_fix'])
+def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypatch, decision):
     pytest.importorskip('pa.domain.completion', reason='Actual repair producer requires companion lifecycle declaration contract')
     from unittest.mock import AsyncMock
     from fastapi.testclient import TestClient
@@ -357,8 +358,9 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
     from pa.instance.agent_session import reset_instance_agent
     from tests.test_fleet_placement import _candidate
     reset_settings(); reset_store(); reset_instance_agent()
-    settings = Settings(data_dir=tmp_path/'owner', instance_id=str(uuid4()), agent_enabled=False,
-                        auth_required=True, subscribed_realms=['default'], peers=[])
+    settings = Settings(data_dir=tmp_path/'owner', workspace_root=tmp_path/'workspaces',
+                        instance_id=str(uuid4()), agent_enabled=False,
+                        auth_required=True, subscribed_realms=['default'], peers=[], sync_token='isolated-health-peer')
     from pa.domain.instance_config import update_instance_config
     update_instance_config(settings.data_dir, session_secret=settings.session_secret, instance_id=settings.instance_id)
     kernel = Kernel.boot(settings=settings)
@@ -405,29 +407,94 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             assert json.loads(action['result'])['dispatch_id'] == first.dispatch_id
             cards = [c for c in ctx.store.list_cards() if c.project_id == project.id]
             assert len(cards) == 1
-            assert cards[0].completion_requirement.mode == 'explicit_acceptance'
-            assert cards[0].completion_requirement.revision
-            assert 'verified' in cards[0].completion_requirement.milestones
+            assert cards[0].completion_requirement is None
             assert service.journal.status()['inbox_revisions'] == 1
             from pa.domain.models import CardUpdate, CompletionEvidence
             from pa.health_journal.acceptance import verify_acceptance
             card = cards[0]
             group = service.journal.groups(['default'])[0]
             commit = 'c'*40
+            with pytest.raises(JournalError, match='awaiting_acceptance'):
+                verify_acceptance(card, group, Assessment(expected_version=group['version'],
+                    disposition='deployed_verified', reason='No repair has been declared'))
+            user = UserDirectory(settings.data_dir).get('local')
+            if decision == 'no_fix':
+                from pa.domain.models import AgentSession
+                from pa.execution.dispatch import DispatchStore, CompletionOutbox
+                session = ctx.store.save_session(AgentSession(id='no-fix-worker', agent_name='codex',
+                    card_id=card.id, dispatch_id=first.dispatch_id, authority_instance_id=settings.instance_id,
+                    status='closed'))
+                ledger = ctx.require_service('dispatch_store')
+                record = ledger.put(first.model_copy(update={'session_id':session.id, 'state':'running'}))
+                nofix = client.patch('/api/health-journal/groups/'+group['id'],
+                    headers={'Authorization':f'Bearer {user.cli_token}'},
+                    json={'expected_version':group['version'], 'disposition':'no_fix',
+                          'reason':'Evidence describes expected behavior; no repository work needed'})
+                assert nofix.status_code == 200, nofix.text
+                target = DispatchStore(tmp_path/'no-fix-target')
+                try:
+                    target.put(record)
+                    assert target.queue_completion_payload(session.id, {'summary':'No fix required',
+                        'card_disposition':{'contract':'pa.card-disposition/v1', 'lane':'done',
+                            'outcome':'Reasoned no-fix investigation complete',
+                            'evidence':{'integration_required':False}}})
+                    outbox = CompletionOutbox(target, settings.sync_token)
+                    async def forward(url, **kwargs):
+                        return client.post(url, **kwargs)
+                    monkeypatch.setattr(outbox, '_http_client', lambda:SimpleNamespace(post=forward))
+                    asyncio.run(outbox._send(target.get(record.dispatch_id)))
+                    assert target.get(record.dispatch_id).completion_delivery_class == 'acknowledged'
+                    assert ctx.store.get_card(card.id).lane.value == 'done'
+                    assert ctx.store.get_card(card.id).completion_requirement is None
+                    actual = ledger.get(record.dispatch_id)
+                    assert actual.acknowledged_at is not None
+                    assert actual.reconciliation_state in {'applied', 'not_applicable', 'operator_state_preserved'}
+                    client.portal.call(service.cycle)
+                    assert not service.journal.status()['active_actions']
+                    assert service.journal.groups(['default'])[0]['disposition'] == 'no_fix'
+                finally:
+                    target.close()
+                return
+            # Every repair-entry disposition must protect the card before success.
+            original_api = service.local_api
+            lost_requirement = False
+            patches = []
+            async def lose_requirement_reply(action, method, path, **kwargs):
+                nonlocal lost_requirement
+                response = await original_api(action, method, path, **kwargs)
+                if method == 'PATCH' and '/api/cards/' in path:
+                    patches.append((kwargs['key'], kwargs['body']))
+                    if not lost_requirement:
+                        lost_requirement = True
+                        raise httpx.ReadError('Synthetic lost canonical declaration reply')
+                return response
+            monkeypatch.setattr(service, 'local_api', lose_requirement_reply)
+            assessment_body = {'expected_version':group['version'], 'disposition':'linked',
+                'reason':'Source fix ready; deployment owner is still undeclared',
+                'card_id':card.id, 'commit':commit, 'pr_url':'https://github.com/example/pa/pull/1'}
+            failed_transition = client.patch('/api/health-journal/groups/'+group['id'],
+                headers={'Authorization':f'Bearer {user.cli_token}'}, json=assessment_body)
+            assert lost_requirement, failed_transition.text
+            assert failed_transition.status_code >= 400
+            assert service.journal.groups(['default'])[0]['version'] == group['version']
+            protected_revision = ctx.store.get_card(card.id).completion_requirement.revision
+            for disposition in ('reproduced', 'linked', 'in_progress', 'merged'):
+                group = service.journal.groups(['default'])[0]
+                linked = client.patch('/api/health-journal/groups/'+group['id'],
+                    headers={'Authorization':f'Bearer {user.cli_token}'},
+                    json=assessment_body | {'expected_version':group['version'], 'disposition':disposition})
+                assert linked.status_code == 200, linked.text
+                assert ctx.store.get_card(card.id).completion_requirement.revision == protected_revision
+            assert all(patch == patches[0] for patch in patches)
+            group = service.journal.groups(['default'])[0]
+            card = ctx.store.get_card(card.id)
+            assert card.completion_requirement.mode == 'explicit_acceptance'
+            assert 'verified' in card.completion_requirement.milestones
+            assert group['data']['pr_url'].endswith('/pull/1')
+            assert not card.completion_status['accepted']
             with pytest.raises(JournalError, match='acceptance_owner_unconfigured'):
                 verify_acceptance(card, group, Assessment(expected_version=group['version'],
                     disposition='deployed_verified', reason='Owner must be explicitly declared'))
-            user = UserDirectory(settings.data_dir).get('local')
-            linked = client.patch('/api/health-journal/groups/'+group['id'],
-                headers={'Authorization':f'Bearer {user.cli_token}'},
-                json={'expected_version':group['version'], 'disposition':'linked',
-                    'reason':'Source fix ready; deployment owner is still undeclared',
-                    'card_id':card.id, 'commit':commit, 'pr_url':'https://github.com/example/pa/pull/1'})
-            assert linked.status_code == 200, linked.text
-            group = service.journal.groups(['default'])[0]
-            assert group['data']['pr_url'].endswith('/pull/1')
-            assert group['disposition'] == 'linked'
-            assert not card.completion_status['accepted']
             # The isolated provider stub binds the actual admitted repair dispatch.
             # The coordinator reads this durable evidence, never guesses an origin.
             from pa.domain.models import AgentSession
@@ -457,6 +524,25 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
                         'originating_dispatch_id':origin.dispatch_id}).model_dump(mode='json')})
             assert declaration.status_code == 200, declaration.text
             card = ctx.store.get_card(card.id)
+            declared = card.completion_requirement.model_dump(mode='json')
+            current_group = service.journal.groups(['default'])[0]
+            still_protected = client.patch('/api/health-journal/groups/'+current_group['id'],
+                headers={'Authorization':f'Bearer {user.cli_token}'}, json={
+                    'expected_version':current_group['version'], 'disposition':'linked',
+                    'reason':'Reuse protected repair with declared owner', 'card_id':card.id})
+            assert still_protected.status_code == 200, still_protected.text
+            assert ctx.store.get_card(card.id).completion_requirement.model_dump(mode='json') == declared
+            current_group = service.journal.groups(['default'])[0]
+            nofix = client.patch('/api/health-journal/groups/'+current_group['id'],
+                headers={'Authorization':f'Bearer {user.cli_token}'}, json={
+                    'expected_version':current_group['version'], 'disposition':'no_fix',
+                    'reason':'No additional source change; prior protected repair still needs acceptance'})
+            assert nofix.status_code == 200
+            from pa.domain.completion import completion_state
+            preserved = ctx.store.get_card(card.id)
+            assert preserved.completion_requirement.model_dump(mode='json') == declared
+            assert not completion_state(preserved.completion_requirement, preserved.completion_evidence)['accepted']
+            group = service.journal.groups(['default'])[0]
             evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
                 subject_revision=commit, milestones=['verified'], references=[f'health-group:{group["id"]}',
                     'scenario:synthetic-provider-smoke', f'instance:{settings.instance_id}'])
@@ -651,6 +737,11 @@ async def test_effect_admission_is_fenced_and_durable_across_pause(fleet):
     authority.journal.ingest(source.journal.page(realms=['default'])['items'][0], source_id=source.settings.instance_id,
                              realms=['default'], owner='coordinator', fence=lease['fence'])
     action = authority.journal.action(owner='coordinator', fence=lease['fence'])
+    with pytest.raises(JournalError, match='repair_requirement_not_safely_replayable'):
+        authority.journal.reserve_effect(action['id'], 'requirement',
+            {'criteria':'Authorization: Bearer synthetic-private-value'},
+            owner='coordinator', fence=lease['fence'])
+    assert 'requirement' not in json.loads(authority.journal.status()['active_actions'][0]['result'] or '{}').get('effects', {})
     admitted = authority.journal.reserve_effect(action['id'], 'card', {'exact':'payload'}, owner='coordinator', fence=lease['fence'])
     policy = authority.journal.status()['policy']
     authority.journal.configure(Policy.model_validate(policy).model_copy(update={'paused':True}), expected_version=policy['version'], actor='user:local')
@@ -766,10 +857,10 @@ async def test_journal_uses_current_canonical_acceptance_in_bound_realm(fleet, t
         'milestones':['verified'], 'acceptance_principals':['user:local'],
         'originating_session_id':'repair-session', 'originating_dispatch_id':'repair-dispatch'}))
     commit = 'a'*40
-    linked = await api(authority, 'PATCH', f'/groups/{group["id"]}', body={
-        'expected_version':group['version'], 'disposition':'linked', 'reason':'Canonical scoped repair', 'card_id':card.id, 'commit':commit})
-    assert linked.status_code == 200
-    body = {'expected_version':linked.json()['version'], 'disposition':'deployed_verified', 'reason':'Declared scenario verified',
+    linked = authority.journal.assess(group['id'], Assessment(
+        expected_version=group['version'], disposition='linked', reason='Canonical scoped repair',
+        card_id=card.id, commit=commit), actor='fixture:protected-repair', realms=['secondary'])
+    body = {'expected_version':linked['version'], 'disposition':'deployed_verified', 'reason':'Declared scenario verified',
         'card_id':card.id, 'commit':commit, 'accepted_subject_revision':commit,
         'acceptance_reference':'canonical-acceptance', 'acceptance_scenario':'journal-smoke',
         'accepted_instances':[source.settings.instance_id]}
@@ -938,10 +1029,10 @@ async def test_authenticated_custody_responses_cannot_regress_source(fleet, monk
     delayed = asyncio.create_task(api(source, 'POST', '/gathered', body={'receipt_id':current['receipt_id']}, headers=headers))
     try:
         await asyncio.wait_for(captured.wait(), 3)
-        updated = await api(authority, 'PATCH', f'/groups/{current["group_id"]}', body={
-            'expected_version':current['version'], 'disposition':'linked', 'reason':'Current repair owner',
-            'card_id':str(uuid4()), 'pr_url':'https://github.com/owner/pa/pull/7', 'commit':'d'*40})
-        assert updated.status_code == 200
+        authority.journal.assess(current['group_id'], Assessment(
+            expected_version=current['version'], disposition='linked', reason='Current repair owner',
+            card_id=str(uuid4()), pr_url='https://github.com/owner/pa/pull/7', commit='d'*40),
+            actor='fixture:protected-repair', realms=['default'])
         latest = await api(source, 'POST', '/gathered', body={'receipt_id':current['receipt_id']}, headers=headers)
         assert latest.status_code == 200 and latest.json()['custody'] == 'advanced'
         release.set()
@@ -1042,3 +1133,19 @@ async def test_large_inbox_receipt_lookup_uses_unique_index(fleet, monkeypatch):
         with journal.connection(write=True) as db:
             db.execute('INSERT INTO inbox(identity,hash,payload,receipt,group_id) VALUES(?,?,?,?,?)',
                 ('different-identity', row['hash'], row['payload'], row['receipt'], row['group_id']))
+
+
+@pytest.mark.asyncio
+async def test_all_repair_entries_require_bound_protection(fleet):
+    authority, source, _ = fleet
+    await api(source, 'POST', '/reports', body=observation())
+    await authority.service.cycle(manual=True)
+    group = authority.journal.groups(['default'])[0]
+    for disposition in ('reproduced', 'linked', 'in_progress', 'merged'):
+        denied = await api(authority, 'PATCH', f'/groups/{group["id"]}', body={
+            'expected_version':group['version'], 'disposition':disposition, 'reason':'Cannot bypass canonical protection'})
+        assert denied.status_code == 409 and denied.json()['detail']['code'] == 'repair_action_required'
+    denied = await api(authority, 'PATCH', f'/groups/{group["id"]}', body={
+        'expected_version':group['version'], 'disposition':'no_fix', 'reason':'Cannot smuggle a repair link', 'commit':'a'*40})
+    assert denied.status_code == 409
+    assert authority.journal.groups(['default'])[0] == group

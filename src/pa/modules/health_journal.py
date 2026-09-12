@@ -207,6 +207,8 @@ async def assess(request: Request, group_id: UUID, body: Assessment):
     if not admin:
         raise HTTPException(403, 'Administrator triage access required')
     accepted = False
+    if body.disposition in {'reproduced', 'linked', 'in_progress', 'merged'} or (body.disposition != 'deployed_verified' and (body.commit or body.pr_url)):
+        await service(request).protect_repair(str(group_id), body, realms=realms)
     if body.disposition == 'deployed_verified':
         from pa.health_journal.acceptance import verify_acceptance
         group = await service(request).call(service(request).journal.group, str(group_id), realms=realms)

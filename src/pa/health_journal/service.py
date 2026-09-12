@@ -36,6 +36,7 @@ class HealthService:
         self.app = None
         self._cycle = asyncio.Lock()
         self._producer = asyncio.Lock()
+        self._repair_transition = asyncio.Lock()
         self.scheduler_status = {'phase': 'not_started', 'last_error': None, 'next_wake_at': None}
 
     async def call(self, fn, *args, **kwargs):
@@ -218,6 +219,61 @@ class HealthService:
                                                         watches=watches, leases=leases, now=datetime.now(UTC))
         return None if decision in {'close', 'retire'} or reason == 'already_closed' else reason
 
+    async def protect_repair(self, group_id, assessment, *, realms):
+        """Establish canonical acceptance before acknowledging a repair transition.
+
+        This is the existing workflow's prerequisite, not an OS execution boundary.
+        The exact normal PATCH/CAS request is retained with the existing action so
+        an unknown reply cannot be replaced with a new declaration on retry.
+        """
+        from urllib.parse import quote
+        async with self._repair_transition:
+            action = await self.call(self.journal.repair_action, group_id,
+                                     expected_version=assessment.expected_version, realms=realms)
+            result = action['result']
+            card_id = result.get('card_id')
+            if not card_id or (assessment.card_id and assessment.card_id != card_id):
+                raise JournalError('repair_card_binding_conflict')
+            realm = action['payload']['realm']
+            path = f'/api/cards/{quote(card_id, safe="")}?realm={quote(realm, safe="")}'
+            async def current_card():
+                card = await self.local_api(action['payload'], 'GET', path)
+                return card.get('card') or card
+            def protected(card):
+                req = card.get('completion_requirement') or {}
+                return (req.get('mode') == 'explicit_acceptance' and req.get('revision')
+                        and 'verified' in req.get('milestones', [])
+                        and f'health-group:{group_id}' in req.get('criteria', ''))
+            saved = result.get('effects', {}).get('requirement')
+            if saved:
+                plan = saved.get('payload')
+                if not plan:
+                    raise JournalError('repair_requirement_outcome_unknown')
+                await self.local_api(action['payload'], plan['method'], plan['path'],
+                                     body=plan['body'], key=saved['id'])
+            else:
+                card = await current_card()
+                if protected(card):
+                    return
+                from pa.domain.models import CardUpdate
+                if 'completion_requirement' not in CardUpdate.model_fields:
+                    raise JournalError('repair_completion_contract_unavailable')
+                req = dict(card.get('completion_requirement') or {})
+                req.update(schema_version=1, mode='explicit_acceptance',
+                    milestones=list(dict.fromkeys([*req.get('milestones', []), 'verified'])),
+                    criteria=(req.get('criteria') or '') +
+                        f' Verify the declared repair build and scenario for health-group:{group_id}; retain exact canonical acceptance receipt and affected instance references.')
+                req.setdefault('acceptance_principals', [])
+                plan = {'method':'PATCH', 'path':path, 'body':{
+                    'expected_version':card['updated_at'], 'field_intent':['completion_requirement'],
+                    'completion_requirement':req}}
+                lease = await self.call(self.journal.lease, self.owner)
+                saved = await self.call(self.journal.reserve_effect, action['id'], 'requirement', plan,
+                                        owner=self.owner, fence=lease['fence'])
+                await self.local_api(action['payload'], 'PATCH', path, body=plan['body'], key=saved['id'])
+            if not protected(await current_card()):
+                raise JournalError('repair_requirement_not_current')
+
     async def effect(self, action, lease, name, method, path, *, body):
         key = f'health-{name}:{action["id"]}'
         receipt = await self.call(self.journal.reserve_effect, action['id'], name,
@@ -247,16 +303,10 @@ class HealthService:
             prompt = PROMPTS.render("health.triage", {'group_id': action['group_id'],
                                     'evidence': encode(payload['evidence'])}).text
             if not result.get('card_id'):
-                from pa.domain.models import CardCreate
-                if 'completion_requirement' not in CardCreate.model_fields:
-                    raise JournalError('repair_completion_contract_unavailable')
                 card = await self.effect(action, lease, 'card', 'POST', '/api/cards', body={
                         'title': f'Investigate PA problem {action["group_id"][:8]}',
                         'body': prompt, 'project_id': payload['project_id'], 'lane': 'active',
-                        'realm_id': payload['realm'], 'auto_enrich': False,
-                        'completion_requirement': {'schema_version': 1, 'mode': 'explicit_acceptance',
-                            'criteria': f'Verify the declared repair build and scenario for health-group:{action["group_id"]}; retain exact canonical acceptance receipt and affected instance references. A reasoned no-fix/duplicate disposition requires no manufactured deployment evidence.',
-                            'milestones': ['verified'], 'acceptance_principals': []}})
+                        'realm_id': payload['realm'], 'auto_enrich': False})
                 result['card_id'] = (card.get('card') or card)['id']
                 await self.call(self.journal.action_result, action['id'], state='card_created',
                                 result=result, owner=self.owner, fence=lease['fence'])
