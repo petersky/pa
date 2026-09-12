@@ -10435,6 +10435,7 @@ async def dispatch_fleet_work(request: Request, body: FleetDispatchBody) -> dict
                     "message": "The selected authority did not receive the routed request.",
                 },
             )
+        _require_completion_routing_compatibility(ctx, body.card_id, selected_authority, body.target_instance_id)
         forwarded = body.model_dump(mode="json")
         forwarded["authority_instance_id"] = selected_authority
         return await _peer_authority_json(
@@ -10885,6 +10886,20 @@ def _admit_with_workspace_guard(ctx, ledger, record, **kwargs):
     return ledger.admit(record, **kwargs)
 
 
+def _require_completion_routing_compatibility(ctx, card_id, *owners) -> None:
+    if not card_id:
+        return
+    required = ctx.store.card_completion_capabilities(card_id)
+    if not required:
+        return
+    fleet = ctx.require_service("fleet_registry")
+    for owner in set(owners) - {None}:
+        instance = fleet.get_instance(owner)
+        available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else (instance.capabilities if instance else [])
+        if not required.issubset(set(available)):
+            raise HTTPException(status_code=409, detail={"code": "completion_owner_incompatible", "instance_id": owner, "required_capabilities": sorted(required)})
+
+
 async def _admit_remote_agent_work(
     request: Request,
     instance_id: str,
@@ -10908,6 +10923,11 @@ async def _admit_remote_agent_work(
                     "message": "The selected authority did not receive the routed request.",
                 },
             )
+        if "dispatch_store" in ctx.services:
+            replay = await _existing_named_dispatch(request, instance_id, body, body.project_id)
+            if replay is not None:
+                return replay
+        _require_completion_routing_compatibility(ctx, body.card_id, selected_authority, instance_id)
         forwarded = body.model_dump(mode="json")
         forwarded["authority_instance_id"] = selected_authority
         return await _peer_authority_json(
@@ -10917,14 +10937,6 @@ async def _admit_remote_agent_work(
             f"instances/{instance_id}/agent/start",
             body=forwarded,
         )
-    if body.card_id:
-        required = ctx.store.card_completion_capabilities(body.card_id)
-        if required:
-            fleet = ctx.require_service("fleet_registry")
-            target = fleet.get_instance(instance_id)
-            available = completion_runtime_capabilities(settings.capabilities) if instance_id == settings.instance_id else (target.capabilities if target else [])
-            if not required.issubset(set(available)):
-                raise HTTPException(status_code=409, detail={"code": "completion_owner_incompatible", "required_capabilities": sorted(required)})
     _submitted_payload, submitted_fingerprint, idempotency_key = (
         _named_dispatch_identity(request, instance_id, body, body.project_id)
     )
@@ -10975,6 +10987,8 @@ async def _admit_remote_agent_work(
                 "job_id": existing.dispatch_id,
                 "dispatch": _dispatch_public(request, existing),
             }
+
+    _require_completion_routing_compatibility(ctx, body.card_id, selected_authority, instance_id)
 
     _bind_effective_goal_dispatch_provider(body, settings.agent_provider)
     _apply_dispatch_mode_default(body)

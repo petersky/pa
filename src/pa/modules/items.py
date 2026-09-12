@@ -2288,21 +2288,36 @@ def repair_legacy_card_history_api(request: Request, body: CardRepairRequest) ->
     }
 
 
-def _require_completion_owner_compatibility(request: Request, card_id: str, data: CardUpdate) -> None:
+def _require_completion_owner_compatibility(request: Request, card_id: str, data: CardUpdate, *, realm_id: str | None = None) -> None:
     """Do not add protection while an incompatible existing owner can clean up."""
     if not data.completion_requirement:
         return
     from pa.domain.completion import completion_capabilities, completion_runtime_capabilities
     ctx = request.app.state.ctx
-    current = ctx.store.get_card(card_id)
-    if current and current.completion_requirement == data.completion_requirement:
+    current = ctx.store.get_card(card_id, realm_id=realm_id or ctx.settings.primary_realm)
+    if current is None or current.completion_requirement == data.completion_requirement:
         return
     required = completion_capabilities(data.completion_requirement)
     fleet = ctx.services.get("fleet_registry")
-    owners = {session.origin_instance_id or ctx.settings.instance_id for session in ctx.store.list_sessions_for_cards({card_id})}
+    sessions = ctx.store.list_sessions_for_cards({card_id})
+    agent = ctx.services.get("instance_agent")
+    workspace_manager = getattr(agent, "workspace_manager", None)
+    leases = workspace_manager.list(card_id=card_id) if workspace_manager else []
+    # Only the existing workspace owner can supply authoritative cleanup proof.
+    # A closed session, expired lease, or Done card alone does not discharge it.
+    cleaned_sessions = set()
+    for session in sessions:
+        owned = [lease for lease in leases if lease.session_id == session.id]
+        if session.status == "closed" and owned and all(
+            lease.state == "cleaned" and lease.cleanup_decision in {"safe_remote_ancestry", "safe_non_ancestor"} and lease.cleanup_evidence
+            for lease in owned
+        ):
+            cleaned_sessions.add(session.id)
+    owners = {session.origin_instance_id or ctx.settings.instance_id for session in sessions if session.id not in cleaned_sessions}
     dispatch = ctx.services.get("dispatch_store")
     if dispatch:
-        owners.update(record.target_instance_id for record in dispatch.list(card_id=card_id))
+        from pa.execution.dispatch import TERMINAL_DISPATCH_STATES
+        owners.update(record.target_instance_id for record in dispatch.list(card_id=card_id, realm_id=realm_id or ctx.settings.primary_realm, limit=10000) if record.state not in TERMINAL_DISPATCH_STATES or record.session_id not in cleaned_sessions)
     for owner in owners:
         instance = fleet.get_instance(owner) if fleet else None
         available = completion_runtime_capabilities(ctx.settings.capabilities) if owner == ctx.settings.instance_id else (instance.capabilities if instance else [])
@@ -2311,7 +2326,9 @@ def _require_completion_owner_compatibility(request: Request, card_id: str, data
     watches = ctx.services.get("pr_supervisor_store")
     if watches:
         capabilities = {item.instance_id: set(item.capabilities) for item in watches.list_capabilities()}
-        for watch in watches.list_watches(card_id=card_id, include_retired=True):
+        for watch in watches.list_watches(card_id=card_id, realm_id=realm_id or ctx.settings.primary_realm, include_retired=True):
+            if (watch.terminal or watch.retired_at is not None) and watch.originating_session_id in cleaned_sessions:
+                continue
             # Terminal watches can still own local post-merge cleanup. Expiry
             # alone is not proof that an older completion worker is quiescent.
             for owner in {watch.owner_instance_id, watch.originating_instance_id} - {None}:
@@ -2353,7 +2370,7 @@ def update_card_api(
         return replay
     store = get_store()
     try:
-        _require_completion_owner_compatibility(request, card_id, data)
+        _require_completion_owner_compatibility(request, card_id, data, realm_id=realm_id)
         card = store.update_card(
             card_id,
             data,
