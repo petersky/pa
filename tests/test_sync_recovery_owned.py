@@ -567,3 +567,202 @@ async def test_completed_request_identity_is_fenced_to_its_head(tmp_path):
         assert not h.fetches
     finally:
         await h.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_head,other_failure", [(False, False), (True, True)])
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("unverified", [False, True])
+async def test_actual_startup_resumes_persisted_recovery(
+    tmp_path, monkeypatch, changed_head, other_failure, terminal, unverified
+):
+    from pa.core.context import AppContext
+    from pa.core.hooks import HookBus
+    from pa.core.live_updates import LiveUpdateBroker
+    from pa.modules.sync import SyncModule
+
+    h = Harness(tmp_path)
+    release, entered = threading.Event(), threading.Event()
+    original_verify = h.log.verify_index
+    try:
+        # Persist an operation produced by real incremental missing-event evidence
+        # and an actual timed-out API request, then simulate a process boundary.
+        h.fetch_release.clear()
+        h.diagnose()
+        response = await h.client.post(
+            "/api/sync/recovery", json={}, headers={"Idempotency-Key": "restart-key"}
+        )
+        assert response.json()["pending"]
+        operation = response.json()["recovery"]["operation_id"]
+        if terminal:
+            h.peer_response = lambda request: httpx.Response(503, request=request)
+            h.fetch_release.set()
+            assert not await h.recovery._jobs["default"]
+        persisted = h.recovery.path.read_text()
+        h.fetch_release.set()
+        await h.recovery.close()
+        # Normal object storage completes history after the old owner has drained.
+        h.objects.put(h.raw)
+        if changed_head:
+            _, commit = h.log.append_event(event("new head"))
+            target = commit.hash
+        else:
+            target = h.head
+        if unverified:
+            data = json.loads(persisted)
+            data["realms"]["default"].pop("reference_hash", None)
+            persisted = json.dumps(data)
+        h.recovery.path.write_text(persisted)
+        if other_failure:
+            data = json.loads(persisted)
+            data["realms"]["unsubscribed"] = {
+                "realm_id": "unsubscribed",
+                "state": "unrecoverable",
+                "code": "missing_event",
+                "head_hash": "a" * 64,
+            }
+            h.recovery.path.write_text(json.dumps(data))
+
+        passes = []
+
+        def slow_verify(realm, head):
+            passes.append(head)
+            entered.set()
+            assert release.wait(10)
+            return original_verify(realm, head)
+
+        original_ensure = h.log.ensure_indexed
+
+        def no_startup_prescan(*args, **kwargs):
+            assert release.is_set(), "startup must defer degraded history to its owner"
+            return original_ensure(*args, **kwargs)
+
+        monkeypatch.setattr(h.log, "ensure_indexed", no_startup_prescan)
+        monkeypatch.setattr(h.log, "verify_index", slow_verify)
+        # Only background discovery is disabled; use the real startup, owner,
+        # projection callback, AsyncRuntime, router, auth and admission middleware.
+        monkeypatch.setattr(SyncEngine, "start", lambda self: None)
+        monkeypatch.setattr(SyncEngine, "request_convergence", lambda self, realm: None)
+        h.services.update(
+            peer_table=PeerTable(tmp_path / "startup-peers"),
+            live_updates=LiveUpdateBroker(),
+        )
+        ctx = AppContext(h.settings, HookBus(), h.store, h.services)
+        module = SyncModule()
+        await module.on_startup(h.app, ctx)
+        h.app.state.ctx = ctx
+        recovery = ctx.require_service("sync_recovery")
+        recovery.request_timeout = 0.01
+        assert await asyncio.to_thread(entered.wait, 5)
+        assert not ctx.services["sync_startup_repaired"]
+        assert (await h.client.post("/api/ordinary", json={})).status_code == 503
+        current = recovery.public("default")
+        assert current["active_residual_worker"]
+        if changed_head:
+            assert current["operation_id"] != operation
+            assert current["previous_operation_id"] == operation
+            stale = await h.client.post(
+                "/api/sync/recovery",
+                json={},
+                headers={"Idempotency-Key": "restart-key"},
+            )
+            assert stale.status_code == 409
+        else:
+            assert current["operation_id"] == operation
+            assert current["resume_count"] == 1
+            replies = await asyncio.gather(
+                *(
+                    h.client.post(
+                        "/api/sync/recovery",
+                        json={},
+                        headers={"Idempotency-Key": "restart-key"},
+                    )
+                    for _ in range(3)
+                )
+            )
+            assert all(r.json()["pending"] for r in replies)
+            assert all(
+                r.json()["recovery"]["operation_id"] == operation for r in replies
+            )
+        release.set()
+        await asyncio.wait_for(ctx.services["sync_recovery_task"], 10)
+        assert recovery.public("default")["state"] == "healthy"
+        assert passes == [target]
+        assert (
+            h.log.get_head("default")
+            == h.store.get_projection_head("default")
+            == target
+        )
+        assert recovery.degraded() == other_failure
+        assert ctx.services["sync_startup_repaired"] == (not other_failure)
+        assert (await h.client.post("/api/ordinary", json={})).status_code == (
+            503 if other_failure else 200
+        )
+        assert (
+            json.loads(recovery.path.read_text())["realms"]["default"]["state"]
+            == "healthy"
+        )
+        await module.on_shutdown(h.app, ctx)
+    finally:
+        release.set()
+        await h.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("success", [False, True])
+async def test_terminal_same_key_receipt_survives_process_boundary(tmp_path, success):
+    h = Harness(tmp_path)
+    try:
+        if success:
+            h.objects.put(h.raw)
+        else:
+            h.peer_response = lambda request: httpx.Response(503, request=request)
+        h.recovery.request_timeout = 5
+        assert await h.recovery.retry("default", request_key="receipt") == success
+        operation = h.recovery.public("default")["operation_id"]
+        await h.recovery.close()
+        recovery = SyncRecovery(
+            h.settings,
+            h.engine,
+            h.recovery.projection_rebuilder,
+            projection_head=h.store.get_projection_head,
+        )
+
+        def unexpected(*args, **kwargs):
+            pytest.fail("terminal same-key replay must not start another scan")
+
+        h.log.verify_index = unexpected
+        assert await recovery.retry("default", request_key="receipt") == success
+        assert recovery.public("default")["operation_id"] == operation
+        await recovery.close()
+    finally:
+        await h.close()
+
+
+@pytest.mark.asyncio
+async def test_new_failure_evidence_cannot_rebind_previous_request_head(tmp_path):
+    h = Harness(tmp_path)
+    try:
+        h.objects.put(h.raw)
+        h.recovery.request_timeout = 5
+        assert await h.recovery.retry("default", request_key="old-generation")
+        previous = h.recovery.public("default")["operation_id"]
+        _, commit = h.log.append_event(event("next generation"))
+        event_hash = commit.event_hashes[0]
+        raw = h.objects.get(event_hash)
+        h.objects._path_for(event_hash).unlink()
+        h.peer_objects.put(raw)
+        with pytest.raises(EventHistoryObjectError):
+            h.store.catch_up_projection("default", commit.hash)
+        await asyncio.sleep(0)  # let the producer start its new owned generation
+        response = await h.client.post(
+            "/api/sync/recovery",
+            json={},
+            headers={"Idempotency-Key": "old-generation"},
+        )
+        assert response.status_code == 409
+        assert h.recovery.public("default")["previous_operation_id"] == previous
+        assert await h.recovery._jobs["default"]
+        assert h.log.get_head("default") == commit.hash
+    finally:
+        await h.close()

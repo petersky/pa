@@ -18,7 +18,7 @@ from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.domain.projection import CardProjection, MutationOperationConflict
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
-from pa.sync.event_log import EventHistoryError, EventLog
+from pa.sync.event_log import EventHistoryError, EventHistoryObjectError, EventLog
 from pa.sync.object_store import ObjectStore
 
 
@@ -192,8 +192,11 @@ class MutationReceiptCrashTests(unittest.TestCase):
         commit = self.log.get_commit(target).model_copy(update={"event_hashes": ["missing"]})
         get_commit = self.log.get_commit
         with patch.object(self.log, "get_commit", side_effect=lambda h: commit if h == target else get_commit(h)):
-            with self.assertRaisesRegex(ValueError, "missing event object"):
+            with self.assertRaises(EventHistoryObjectError) as caught:
                 self.projection.catch_up_projection("default", target)
+        self.assertEqual(caught.exception.code, "missing_event")
+        self.assertEqual(caught.exception.diagnostic["head_hash"], target)
+        self.assertEqual(caught.exception.diagnostic["reference_hash"], target)
         self.assertIsNone(self.projection.get_card("rolled-back"))
         self.assertEqual(self.projection.get_projection_head("default"), current)
 

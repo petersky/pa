@@ -22,8 +22,8 @@ repair. Neither parent links nor durable refs are changed. Legacy diagnostics
 without canonical reference evidence must first obtain evidence by verification.
 
 There is one process-owned task per realm. Its UUID identifies the recovery
-generation. Concurrent request keys join it (only bounded SHA256 digests of keys
-are retained). An HTTP wait expires independently: `recovered: null`,
+generation. Up to 64 concurrent request-key SHA256 digests can join it; raw
+keys are never retained. Retired key digests remain fenced to their prior head. An HTTP wait expires independently: `recovered: null`,
 `pending: true`, and the same `operation_id` describe unfinished work. A repeated
 key joins the job or returns its completed result without another scan. A new
 key can retry a terminal failure. Verification and reprojection use the actual
@@ -36,11 +36,24 @@ Completion checks the current durable head and projection head while holding the
 ref fence. Per-realm failure records prevent success in one realm from clearing
 another realm's gate. Diagnostics include operation identity, phase, bounded work
 counts, and whether owned work is still active, without payloads, URLs, request
-keys, or credentials. Process interruption is reported as interrupted recovery;
-it never claims a live in-memory worker survived process exit.
+keys, or credentials. Process interruption is reported as an interrupted phase with no live worker.
+Actual SyncModule startup automatically starts authoritative verification for
+persisted degraded subscribed realms, including terminal failures whose objects
+were subsequently restored. An interrupted same-head operation retains its UUID
+and key aliases, with an explicit resume count. Terminal same-key receipts also
+survive process exit. Startup verification may resume a failed operation; it does
+not claim historical success. A changed head starts a linked new generation,
+discards stale object evidence, and rejects keys belonging to the old head.
+Unsubscribed realm failures remain gated and are not silently erased. No saved
+scan cursor is trusted across process exit: a new process verifies canonical
+history again, while concurrent requests within that process join one owner.
 
 `tests/test_sync_recovery_owned.py` exercises the real merge/suffix producer,
 public router and admission middleware, authenticated peer endpoint, canonical
 object store and index, projection, and `AsyncRuntime`. Tiny caller deadlines
 cover concurrent calls, cancellation, late results, and same-operation retries;
 rejection cases cover hash/schema/realm/reference failures and head changes.
+Startup integration persists an actual timed-out or failed operation, restores
+complete canonical history, then runs SyncModule startup with the real runtime
+and public gate. It covers missing legacy proof, changed heads, unrelated realm
+failures, same-key restart receipts, and late automatic readiness.

@@ -1356,6 +1356,10 @@ class SyncModule(Module):
 
         def repair_local_projections() -> None:
             for realm in settings.subscribed_realms:
+                # Persisted degraded realms belong to the recovery owner. Do not
+                # put another startup history scan ahead of its exact repair.
+                if recovery.public(realm).get("state") not in {None, "healthy"}:
+                    continue
                 try:
                     durable_head = event_log.get_head(realm)
                     if durable_head:
@@ -1379,13 +1383,13 @@ class SyncModule(Module):
         if not failures:
             recovery.mark_healthy()
         engine.start()
-        if failures:
+        if failures or recovery.degraded():
             task = recovery.start(failures)
             ctx.register_service("sync_recovery_task", task)
 
             def completed(done) -> None:
                 try:
-                    if done.result():
+                    if done.result() and not recovery.degraded():
                         ctx.services["sync_startup_repaired"] = True
                 except Exception:
                     pass
