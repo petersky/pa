@@ -1760,3 +1760,82 @@ def test_coordinator_queued_effect_is_fenced_by_distinct_committed_quiesce(tmp_p
             release_host.set()
             await asyncio.gather(sweep, *list(manager._restart_handoff_tasks.values()))
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('cancel_sweep', [False, True])
+@pytest.mark.parametrize('blocked_at', ['mutation_lock', 'sqlite_write'])
+def test_blocked_restart_store_keeps_reads_and_quiesce_deadline_responsive(tmp_path, cancel_sweep, blocked_at):
+    import threading
+    import time
+    from pa.instance.quiesce import load_quiesce_snapshot
+
+    async def scenario():
+        store = CardProjection(tmp_path / 'pa.db')
+        manager = AgentSessionManager(Settings(data_dir=tmp_path, instance_id='owner'), store)
+        store.save_session(AgentSession(id='s', agent_name='codex', status='active'))
+        receipt = store.create_restart_handoff(RestartHandoff(session_id='s',
+            idempotency_key='blocked-write', continuation_prompt='',
+            continuation_prompt_id='exact-prompt', instance_id='owner'))
+        _advance_restart_fixture(store, receipt.id, status='restarting')
+        held, release, entered, finished = (threading.Event() for _ in range(4))
+        def hold_store():
+            if blocked_at == 'mutation_lock':
+                with store._mutation_lock:
+                    held.set()
+                    assert release.wait(5)
+            else:
+                import sqlite3
+                with sqlite3.connect(tmp_path / 'pa.db') as conn:
+                    conn.execute('BEGIN IMMEDIATE')
+                    held.set()
+                    assert release.wait(5)
+        holder = threading.Thread(target=hold_store)
+        holder.start()
+        assert await asyncio.to_thread(held.wait, 2)
+        original = store.update_restart_handoff
+        def blocked_update(*args, **kwargs):
+            entered.set()
+            try:
+                return original(*args, **kwargs)  # Actual global mutation lock wait.
+            finally:
+                finished.set()
+        sweep = None
+        try:
+            with patch.object(store, 'update_restart_handoff', side_effect=blocked_update):
+                sweep = asyncio.create_task(manager._resume_restart_handoffs())
+                assert await asyncio.to_thread(entered.wait, 2)
+                if cancel_sweep:
+                    sweep.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await sweep
+                ticks = []
+                async def heartbeat():
+                    for _ in range(4):
+                        assert manager.get('s') is None
+                        ticks.append(time.monotonic())
+                        await asyncio.sleep(.01)
+                pulse = asyncio.create_task(heartbeat())
+                started = time.monotonic()
+                with pytest.raises(TimeoutError, match='restart recovery write is still outstanding'):
+                    await manager.quiesce(reason='blocked-store', timeout=.1)
+                assert time.monotonic() - started < 1
+                await asyncio.wait_for(pulse, .5)
+                assert len(ticks) == 4
+                assert not finished.is_set()
+                assert manager._accepting and not manager.quiescing
+                assert load_quiesce_snapshot(tmp_path) is None
+                release.set()
+                assert await asyncio.to_thread(finished.wait, 2)
+                if not cancel_sweep:
+                    await sweep
+                await asyncio.sleep(0)
+                assert not manager.label_lock('restart-handoff-effect').locked()
+                # The write remains owned until completion; failed quiescence
+                # does not pretend it was cancelled or commit a restart snapshot.
+                assert store.get_restart_handoff(receipt.id).status == 'restart_completed'
+        finally:
+            release.set()
+            await asyncio.to_thread(holder.join, 2)
+            if sweep is not None and not sweep.done():
+                await sweep
+    asyncio.run(scenario())

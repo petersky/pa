@@ -4802,18 +4802,30 @@ class AgentSessionManager:
                 failure_stage=stage, reason_code=restart_reason_code(exc), expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
             )
 
-    def _advance_restart_recovery_if_accepting(self, *args, **kwargs):
-        """Order worker-side recovery inference against quiesce admission closure.
+    async def _offload_restart_recovery(self, operation, *args, **kwargs):
+        return await self._offload(
+            operation, self._advance_restart_recovery_if_accepting,
+            asyncio.get_running_loop(), *args, **kwargs,
+        )
 
-        This runs inside the offloaded worker, not before it is queued. Receipt
-        CAS alone cannot fence a different handoff quiescing this same process.
-        Exact completed turns and already accepted queue evidence use their
-        ordinary reconciliation writes instead of this admission check.
-        """
-        with self._runtime_lifecycle_lock:
+    def _advance_restart_recovery_if_accepting(self, loop, *args, **kwargs):
+        # Acquire the existing async owner lock only when the queued worker
+        # actually executes. Passive runtime reads never wait on a database.
+        async def admit():
+            lock = self.label_lock("restart-handoff-effect")
+            await lock.acquire()
             if self._should_abort_admission():
+                lock.release()
                 raise SessionAdmissionInProgress("Restart recovery admission is closed")
+            return lock
+
+        lock = asyncio.run_coroutine_threadsafe(admit(), loop).result()
+        try:
             return self.store.update_restart_handoff(*args, **kwargs)
+        finally:
+            # The worker retains ownership even if its awaiting sweep is
+            # cancelled; quiesce cannot commit over a residual database write.
+            loop.call_soon_threadsafe(lock.release)
 
     async def _resume_restart_handoffs(self, *, replay_only: bool = False) -> None:
         async with self.label_lock("restart-handoff-replay"):
@@ -4892,17 +4904,16 @@ class AgentSessionManager:
                 if self._should_abort_admission():
                     continue
                 if not handoff.continuation_prompt.strip():
-                    handoff = await self._offload(
+                    handoff = await self._offload_restart_recovery(
                         "sqlite.restart_handoff_no_continuation",
-                        self._advance_restart_recovery_if_accepting,
                         handoff.id,
                         status="restart_completed",
                         delivered=True, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id,
                     )
                     continue
                 if handoff.status != "continuation_queued":
-                    handoff = await self._offload(
-                        "sqlite.restart_handoff_resuming", self._advance_restart_recovery_if_accepting,
+                    handoff = await self._offload_restart_recovery(
+                        "sqlite.restart_handoff_resuming",
                         handoff.id, status="resuming", retry=transient_failure, increment_attempts=transient_failure, expected_status=handoff.status, expected_version=handoff.phase_version, owner_instance_id=self.settings.instance_id
                     )
                 if self._should_abort_admission():
@@ -6465,6 +6476,14 @@ class AgentSessionManager:
         try:
             await _emit("quiescing")
             deadline = asyncio.get_running_loop().time() + timeout
+            effect_lock = self.label_lock("restart-handoff-effect")
+            try:
+                await asyncio.wait_for(effect_lock.acquire(), timeout=max(0, deadline - asyncio.get_running_loop().time()))
+            except TimeoutError:
+                await _emit("timeout", done=True, error="Restart recovery write is still outstanding")
+                raise TimeoutError("Quiesce deadline: restart recovery write is still outstanding") from None
+            else:
+                effect_lock.release()
             while any(rt.prompting for rt in self._runtimes.values()):
                 if asyncio.get_running_loop().time() >= deadline:
                     await _emit(
