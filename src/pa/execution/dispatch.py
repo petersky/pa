@@ -77,6 +77,43 @@ DISPATCH_STAGES = {
     "cancelled",
 }
 TERMINAL_DISPATCH_STATES = {"failed", "completed", "cancelled"}
+DISPATCH_SUMMARY_FIELDS = {
+    "dispatch_id", "realm_id", "card_id", "project_id", "session_id",
+    "authority_instance_id", "authority_instance_name", "target_instance_id",
+    "target_instance_name", "state", "effective_state", "created_at", "updated_at",
+    "capacity_provider", "queue_position", "queue_wait_reason", "queue_blocked_code",
+    "last_error", "can_retry", "can_cancel", "queue", "card_completion",
+    "card_reconciliation", "dispatch_completion", "completion_outbox", "agent_turn",
+    "progress", "evaluated_outcome", "post_turn_evaluation",
+}
+
+
+def summarize_dispatch(data: dict[str, Any]) -> dict[str, Any]:
+    """Bound overview evidence; full plans/proofs remain in dispatch detail."""
+    def bounded(value):
+        if isinstance(value, str):
+            return value[:500]
+        if isinstance(value, list):
+            return [bounded(item) for item in value[:5]]
+        if isinstance(value, dict):
+            return {key: bounded(item) for key, item in value.items()}
+        return value
+
+    result = {key: bounded(value) for key, value in data.items() if key in DISPATCH_SUMMARY_FIELDS}
+    reconciliation = result.get("card_reconciliation")
+    if reconciliation:
+        result["card_reconciliation"] = {
+            key: value for key, value in reconciliation.items()
+            if key in {"state", "reason", "condition", "last_dependency_error",
+                       "disposition_error", "recoverable", "next_retry_at", "updated_at"}
+        }
+    progress = result.get("progress")
+    if progress:
+        result["progress"] = {
+            key: value for key, value in progress.items()
+            if key in {"latest", "heartbeat", "freshness", "reporting", "checkpoint_count"}
+        }
+    return result
 CAPACITY_RESERVATION_STATES = {
     "queued",
     "checking_sync",
@@ -320,9 +357,10 @@ class DispatchRecord(BaseModel):
             )
         )
 
-    def public_dict(self) -> dict[str, Any]:
+    def public_dict(self, *, summary: bool = False) -> dict[str, Any]:
         data = self.model_dump(
             mode="json",
+            include=DISPATCH_SUMMARY_FIELDS if summary else None,
             exclude={
                 "request_payload",
                 "card_snapshot",
@@ -553,7 +591,7 @@ class DispatchRecord(BaseModel):
                 else "lifecycle_only"
             ),
         }
-        return data
+        return summarize_dispatch(data) if summary else data
 
 
 def _normalized_sequence_ranges(ranges: list[list[int]]) -> list[list[int]]:
@@ -2124,6 +2162,9 @@ class DispatchStore:
         card_id: str | None = None,
         limit: int = 100,
         deep: bool = True,
+        exclude_states: set[str] | None = None,
+        reconciliation_states: set[str] | None = None,
+        reconciliation_due_at: datetime | None = None,
     ) -> list[DispatchRecord]:
         self._require_readable()
         self._yield_to_index_writer()
@@ -2140,6 +2181,16 @@ class DispatchStore:
             records = [record for record in records if record.realm_id == realm_id]
         if card_id:
             records = [record for record in records if record.card_id == card_id]
+        if exclude_states:
+            records = [record for record in records if record.state not in exclude_states]
+        if reconciliation_states:
+            records = [record for record in records if record.reconciliation_state in reconciliation_states]
+        if reconciliation_due_at:
+            records = [record for record in records if (
+                record.reconciliation_state == "prompted"
+                or record.reconciliation_next_retry_at is None
+                or record.reconciliation_next_retry_at <= reconciliation_due_at
+            )]
         selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[
             :limit
         ]
@@ -2184,6 +2235,14 @@ class DispatchStore:
                     or self._latest_card_records[card_id].realm_id == realm_id
                 )
             }
+
+    def presentation_card_ids(self, *, realm_id: str) -> set[str]:
+        """Card identities with dispatch evidence, without hydrating history."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            return {card_id for card_id, record in self._latest_card_records.items()
+                    if record.realm_id == realm_id}
 
     def history_counts(self, card_ids: set[str], *, realm_id: str) -> dict[str, int]:
         """Return maintained dispatch-history counts for bounded card ids."""

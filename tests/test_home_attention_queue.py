@@ -129,7 +129,8 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
     ) -> None:
         with (
             patch(
-                "pa.fleet.workshop.build_workshop_snapshot", return_value=_snapshot()
+                "pa.modules.items._home_work_projection",
+                return_value=(_snapshot()["work_orders"], {"attention": 9, "motion": 11, "outcome": 17, "quiet": 86}, 123)
             ),
             TestClient(self.app) as client,
         ):
@@ -157,7 +158,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         self.assertIn("Showing 6 of 9 actionable cards", response.text)
         self.assertIn("Showing 8 of 11 cards in motion", response.text)
         self.assertIn("Showing 6 of 17 completed cards", response.text)
-        self.assertIn("94 older cards are intentionally omitted", response.text)
+        self.assertIn("103 older cards are intentionally omitted", response.text)
         self.assertIn("attention=actionable", response.text)
         self.assertIn("attention=motion", response.text)
         self.assertIn("attention=outcome", response.text)
@@ -179,7 +180,8 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         }
         with (
             patch(
-                "pa.fleet.workshop.build_workshop_snapshot", return_value=snapshot
+                "pa.modules.items._home_work_projection",
+                return_value=(snapshot["work_orders"], snapshot["counts"]["presentations"], 250)
             ),
             TestClient(self.app) as client,
         ):
@@ -511,7 +513,8 @@ class HomeAttentionQueueManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
         app = Kernel.boot(settings=settings).build_app()
         with (
             patch(
-                "pa.fleet.workshop.build_workshop_snapshot", return_value=_snapshot()
+                "pa.modules.items._home_work_projection",
+                return_value=(_snapshot()["work_orders"], {"attention": 9, "motion": 11, "outcome": 17, "quiet": 86}, 123)
             ),
             TestClient(app) as client,
         ):

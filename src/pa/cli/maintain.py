@@ -15,6 +15,19 @@ def _print(payload) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 
 
+@maintain_app.command("compact")
+def compact() -> None:
+    """Reclaim unused pa.db pages. Stop the PA server before running this command."""
+    from pa.core.writer_lock import DataDirAlreadyOwnedError
+    from pa.instance.maintenance import compact_database
+
+    try:
+        _print(compact_database(get_settings()))
+    except (DataDirAlreadyOwnedError, OSError, RuntimeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+
 @maintain_app.command("status")
 def status() -> None:
     """Show the last maintenance sweep and retention settings."""
@@ -50,7 +63,7 @@ def run(
         ),
     ] = False,
 ) -> None:
-    """Prune closed-session transcripts, old mutation receipts, and dispatch evidence."""
+    """Run retention, SQLite integrity checks, optimization, checkpoints, and VACUUM."""
     if not local:
         try:
             _print(

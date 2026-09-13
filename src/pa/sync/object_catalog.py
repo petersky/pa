@@ -98,6 +98,28 @@ class ObjectCatalog:
                     ON objects(realm_id);
                 CREATE INDEX IF NOT EXISTS ix_objects_mtime
                     ON objects(mtime_ns);
+                CREATE TABLE IF NOT EXISTS object_totals (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    object_count INTEGER NOT NULL,
+                    total_bytes INTEGER NOT NULL
+                );
+                INSERT INTO object_totals
+                    SELECT 1, COUNT(*), COALESCE(SUM(size_bytes), 0) FROM objects
+                    HAVING NOT EXISTS (SELECT 1 FROM object_totals WHERE id=1);
+                CREATE TRIGGER IF NOT EXISTS objects_totals_insert AFTER INSERT ON objects
+                BEGIN
+                    UPDATE object_totals SET object_count=object_count+1,
+                        total_bytes=total_bytes+NEW.size_bytes WHERE id=1;
+                END;
+                CREATE TRIGGER IF NOT EXISTS objects_totals_delete AFTER DELETE ON objects
+                BEGIN
+                    UPDATE object_totals SET object_count=object_count-1,
+                        total_bytes=total_bytes-OLD.size_bytes WHERE id=1;
+                END;
+                CREATE TRIGGER IF NOT EXISTS objects_totals_update AFTER UPDATE OF size_bytes ON objects
+                BEGIN
+                    UPDATE object_totals SET total_bytes=total_bytes+NEW.size_bytes-OLD.size_bytes WHERE id=1;
+                END;
                 CREATE TABLE IF NOT EXISTS realm_stats (
                     realm_id TEXT PRIMARY KEY,
                     commit_count INTEGER NOT NULL DEFAULT 0,
@@ -144,7 +166,7 @@ class ObjectCatalog:
         return str(row[0]) if row else None
 
     def _meta_set(self, key: str, value: str) -> None:
-        with self._lock, self._conn() as conn:
+        with self._lock, self._db() as conn:
             conn.execute(
                 """INSERT INTO catalog_meta(key,value) VALUES(?,?)
                    ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
@@ -154,7 +176,7 @@ class ObjectCatalog:
     def request_cancel(self) -> None:
         self._cancel.set()
         try:
-            with self._lock, self._conn() as conn:
+            with self._lock, self._db() as conn:
                 conn.execute(
                     """INSERT INTO rebuild_checkpoint(
                            id,generation,cursor_hash,scanned,recorded,target_count,
@@ -173,7 +195,7 @@ class ObjectCatalog:
 
     def clear_cancel(self) -> None:
         self._cancel.clear()
-        with self._lock, self._conn() as conn:
+        with self._lock, self._db() as conn:
             conn.execute(
                 """UPDATE rebuild_checkpoint
                    SET cancel_requested=0, state=CASE WHEN state='cancelling' THEN 'idle' ELSE state END,
@@ -218,7 +240,7 @@ class ObjectCatalog:
         object_class, realm_id = self.classify_payload(raw)
         now = datetime.now(UTC).isoformat()
         stamp = mtime_ns if mtime_ns is not None else time.time_ns()
-        with self._lock, self._conn() as conn:
+        with self._lock, self._db() as conn:
             conn.execute(
                 """INSERT INTO objects(object_hash,size_bytes,mtime_ns,object_class,realm_id,recorded_at)
                    VALUES(?,?,?,?,?,?)
@@ -232,7 +254,7 @@ class ObjectCatalog:
             )
 
     def discard(self, object_hash: str) -> None:
-        with self._lock, self._conn() as conn:
+        with self._lock, self._db() as conn:
             conn.execute("DELETE FROM objects WHERE object_hash=?", (object_hash,))
 
     def has(self, object_hash: str) -> bool:
@@ -244,17 +266,18 @@ class ObjectCatalog:
 
     def count(self) -> int:
         with self._db() as conn:
-            return int(conn.execute("SELECT COUNT(*) FROM objects").fetchone()[0])
+            return int(conn.execute("SELECT object_count FROM object_totals WHERE id=1").fetchone()[0])
 
     def total_bytes(self) -> int:
         with self._db() as conn:
-            row = conn.execute("SELECT COALESCE(SUM(size_bytes),0) FROM objects").fetchone()
+            row = conn.execute("SELECT total_bytes FROM object_totals WHERE id=1").fetchone()
         return int(row[0])
 
     def age_bounds_ns(self) -> tuple[int | None, int | None]:
         with self._db() as conn:
             row = conn.execute(
-                "SELECT MIN(mtime_ns), MAX(mtime_ns) FROM objects"
+                "SELECT (SELECT mtime_ns FROM objects ORDER BY mtime_ns LIMIT 1), "
+                "(SELECT mtime_ns FROM objects ORDER BY mtime_ns DESC LIMIT 1)"
             ).fetchone()
         if row is None or row[0] is None:
             return None, None
@@ -262,10 +285,10 @@ class ObjectCatalog:
 
     def sample_growth(self) -> None:
         now = datetime.now(UTC).isoformat()
-        with self._lock, self._conn() as conn:
-            count = int(conn.execute("SELECT COUNT(*) FROM objects").fetchone()[0])
+        with self._lock, self._db() as conn:
+            count = int(conn.execute("SELECT object_count FROM object_totals WHERE id=1").fetchone()[0])
             total = int(
-                conn.execute("SELECT COALESCE(SUM(size_bytes),0) FROM objects").fetchone()[0]
+                conn.execute("SELECT total_bytes FROM object_totals WHERE id=1").fetchone()[0]
             )
             conn.execute(
                 """INSERT INTO growth_samples(sampled_at,object_count,total_bytes)
@@ -316,7 +339,7 @@ class ObjectCatalog:
         oldest_reachable_ns: int | None,
         newest_reachable_ns: int | None,
     ) -> None:
-        with self._lock, self._conn() as conn:
+        with self._lock, self._db() as conn:
             conn.execute(
                 """INSERT INTO realm_stats(
                        realm_id,commit_count,event_count,auxiliary_count,unreachable_count,
@@ -435,7 +458,7 @@ class ObjectCatalog:
         """
         hashes = sorted(store.list_hashes())
         now = datetime.now(UTC).isoformat()
-        with self._lock, self._conn() as conn:
+        with self._lock, self._db() as conn:
             checkpoint = conn.execute(
                 "SELECT * FROM rebuild_checkpoint WHERE id=1"
             ).fetchone()

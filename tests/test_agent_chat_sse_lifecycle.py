@@ -231,6 +231,7 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
               currentInstanceId: "local", apiBase: "/api/agent",
               root: {{ dataset: {{}}, closest: () => null }},
               els: {{ promote: null }}, drafts: null,
+              apiWithTimeout: () => Promise.resolve({{ events: [] }}),
               _setRecoveryControl: noop, showRecoveryActions: noop,
               setPlaceholder: noop, setComposerEnabled: noop,
               retryAfterStartupRecovery: () => false,
@@ -413,8 +414,8 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
                 if (snapshotBases[1] !== "/api/fleet/instances/monica-id/agent") {{
                   throw new Error("remote snapshot used wrong API base: " + snapshotBases[1]);
                 }}
-                if (historyLoads !== 0) {{
-                  throw new Error("live routing started a blocking durable-history request");
+                if (historyLoads !== 2) {{
+                  throw new Error("known-owner routing did not prefetch both histories");
                 }}
               }})
               .catch((error) => {{
@@ -814,6 +815,7 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
               }},
               els: {{ promote: null }},
               drafts: null,
+              apiWithTimeout: () => Promise.resolve({{ events: [] }}),
               liveStateRetryId: null,
               startupRetryId: null,
               routeAbortController: null,

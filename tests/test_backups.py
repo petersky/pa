@@ -453,6 +453,13 @@ class BackupTestCase(unittest.TestCase):
                 )
             ]
         self.assertEqual(values, ["backup"])
+        # A caller retaining the projection must reopen the restored inode,
+        # rather than reading or writing the pre-restore database connection.
+        with self.store._conn() as conn:
+            self.assertEqual(
+                [row[0] for row in conn.execute("SELECT value FROM restore_values ORDER BY rowid")],
+                ["backup"],
+            )
 
     def test_interrupted_restore_rolls_back_current_state(self) -> None:
         with _connect(self.settings.db_path) as conn:

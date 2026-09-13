@@ -73,6 +73,13 @@ def test_composite_write_does_not_renew_old_candidate(tmp_path):
 
 def test_cold_adapter_without_status_models_discovers_and_starts(wire_app):
     client, app = wire_app
+    # The server now warms its catalog at startup; make this fixture actually
+    # cold before exercising discovery from an adapter with no status models.
+    from pa.execution.selection_service import service_for
+    service = service_for(app.state.ctx)
+    client.portal.call(service.close)
+    with service.store.connect() as conn:
+        conn.execute("DELETE FROM catalog")
     original = FixtureProvider.status
 
     def cold_status(self, data_dir):

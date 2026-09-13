@@ -14,7 +14,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from pa.core.async_runtime import AsyncRuntime
@@ -1466,7 +1466,12 @@ def list_agent_sessions(
         for runtime in mgr.list_runtimes()
         if not runtime._closed
     }
-    sessions = {session.id: session for session in mgr.store.list_sessions()}
+    filters = (
+        {"purposes": ("chat",), "archived": archived} if view == "chats"
+        else {"purposes": ("automated_run", "one_shot_job")} if view == "activity"
+        else {"exclude_statuses": ("closed",)} if view == "active" else {}
+    )
+    sessions = {session.id: session for session in mgr.store.list_sessions(**filters)}
     sessions.update({session_id: runtime.session for session_id, runtime in runtimes.items()})
     # Filter durable metadata before reading transcripts, cards and dispatches.
     # Chats must not pay the inspection cost of every historical automated run.
@@ -2121,7 +2126,26 @@ def list_agent_session_history(
     return result
 
 
+class _EncodedPayload(dict):
+    """Internal callers retain a mapping; HTTP reuses bytes encoded off-loop."""
+
+    def __init__(self, payload, encoded):
+        super().__init__(payload)
+        self.encoded = encoded
+
+
 @router.get("/history/{session_id}")
+async def agent_session_history_response(
+    request: Request, session_id: str, after_seq: int | None = None,
+    before_seq: int | None = None, limit: int = TRANSCRIPT_WINDOW_LIMIT,
+    message_boundaries: bool = False,
+) -> Response:
+    payload = await get_agent_session_history(
+        request, session_id, after_seq, before_seq, limit, message_boundaries,
+    )
+    return Response(payload.encoded, media_type="application/json")
+
+
 async def get_agent_session_history(
     request: Request,
     session_id: str,
@@ -2208,6 +2232,13 @@ async def get_agent_session_history(
             next_before_seq=oldest if older else None,
             has_older=older, has_newer=newer, message_boundaries=True,
         )
+    return await _offload(
+        mgr, "agent.history_payload", _history_payload,
+        request, mgr, session, runtime, events, page, query_started,
+    )
+
+
+def _history_payload(request, mgr, session, runtime, events, page, query_started):
     query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
     session_payload = session.model_dump(mode="json")
@@ -2252,7 +2283,11 @@ async def get_agent_session_history(
         "payload_bytes": len(serialized),
         "event_count": len(events),
     }
-    return payload
+    # Append the small diagnostics object without re-encoding transcript data.
+    diagnostics = json.dumps(payload["diagnostics"], separators=(",", ":")).encode()
+    return _EncodedPayload(
+        payload, serialized[:-1] + b',"diagnostics":' + diagnostics + b"}"
+    )
 
 
 @router.post("/sessions/{session_id}/recover")
@@ -2358,7 +2393,19 @@ async def recover_session(
 
 
 @router.get("/sessions/{session_id}")
+async def session_snapshot_response(request: Request, session_id: str) -> Response:
+    payload = await get_session_snapshot(request, session_id)
+    return Response(payload.encoded, media_type="application/json")
+
+
 async def get_session_snapshot(request: Request, session_id: str) -> dict:
+    return await _offload(
+        _manager(request), "agent.snapshot_payload", _session_snapshot,
+        request, session_id,
+    )
+
+
+def _session_snapshot(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     snapshot = runtime.snapshot(include_transcript=False)
     normalized_config, confirmed = normalized_session_config_json(
@@ -2382,7 +2429,9 @@ async def get_session_snapshot(request: Request, session_id: str) -> dict:
         events=[],
     )
     snapshot["cards"] = _session_cards_payload(request, runtime.session)
-    return snapshot
+    return _EncodedPayload(
+        snapshot, json.dumps(snapshot, separators=(",", ":"), default=str).encode()
+    )
 
 
 @router.get("/sessions/{session_id}/prompts/{client_prompt_id}")

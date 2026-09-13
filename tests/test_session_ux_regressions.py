@@ -20,7 +20,7 @@ def test_session_listing_limits_hydration_and_retains_selection(view):
     if view == 'activity':
         for session in sessions:
             session.purpose = 'automated_run'
-    manager = SimpleNamespace(store=SimpleNamespace(list_sessions=lambda: sessions), list_runtimes=lambda: [])
+    manager = SimpleNamespace(store=SimpleNamespace(list_sessions=lambda **filters: sessions), list_runtimes=lambda: [])
     hydrated = []
 
     def item(request, session, **kwargs):

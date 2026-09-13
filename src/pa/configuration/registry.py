@@ -873,11 +873,12 @@ _DEFINITIONS = (
     _s(
         "maintenance_interval_seconds",
         "int",
-        6 * 60 * 60,
-        "How often local cruft cleanup runs.",
+        24 * 60 * 60,
+        "Database maintenance interval after the startup sweep.",
         "Retention",
         30,
-        "Prunes closed-session transcripts, old mutation receipts, and compactable dispatch evidence.",
+        "Prunes retained history, checks SQLite integrity, updates planner statistics, "
+        "checkpoints WAL files, and vacuums unused database pages. Runs at startup and daily by default.",
         apply="live",
         validator="range:60:604800",
     ),

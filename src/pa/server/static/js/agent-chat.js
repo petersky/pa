@@ -1064,13 +1064,29 @@
     return history;
   };
 
-  AgentChatWidget.prototype._loadRecentHistory = function (sessionId, generation) {
+  AgentChatWidget.prototype._recentHistory = function (sessionId, generation, prefetch) {
+    const cached = this._pendingRecentHistory;
+    if (cached && cached.sessionId === sessionId && cached.generation === generation && cached.apiBase === this.apiBase) {
+      this._pendingRecentHistory = null;
+      return cached.promise;
+    }
+    const entry = { sessionId: sessionId, generation: generation, apiBase: this.apiBase };
     const self = this;
-    return this.apiWithTimeout(
+    entry.promise = this.apiWithTimeout(
       "/history/" + encodeURIComponent(sessionId) +
         "?message_boundaries=true&limit=" + TRANSCRIPT_PAGE_LIMIT,
       LIVE_SNAPSHOT_TIMEOUT_MS
-    ).then(function (history) {
+    ).catch(function (error) {
+      if (self._pendingRecentHistory === entry) self._pendingRecentHistory = null;
+      throw error;
+    });
+    if (prefetch) this._pendingRecentHistory = entry;
+    return entry.promise;
+  };
+
+  AgentChatWidget.prototype._loadRecentHistory = function (sessionId, generation) {
+    const self = this;
+    return this._recentHistory(sessionId, generation).then(function (history) {
       return self._paintRecentHistory(history, generation);
     }).catch(function (error) {
       if (self._isCurrentSessionRequest(sessionId, generation)) {
@@ -1084,18 +1100,12 @@
   AgentChatWidget.prototype._loadLiveSnapshot = function (sessionId, generation) {
     const self = this;
     const restored = this._restoreSessionDomCache(sessionId);
-    const historyPromise = restored
-      ? Promise.resolve(null)
-      : this._loadRecentHistory(sessionId, generation).catch(function () { return null; });
-    return Promise.all([
-      historyPromise,
-      this.apiWithTimeout(
+    if (!restored) this._loadRecentHistory(sessionId, generation).catch(function () {});
+    return this.apiWithTimeout(
         "/sessions/" + encodeURIComponent(sessionId),
         LIVE_SNAPSHOT_TIMEOUT_MS
-      ),
-    ]).then(function (results) {
+      ).then(function (snap) {
       if (self.destroyed || generation !== self.subscriptionGeneration) return null;
-      const snap = results[1];
       if (self.liveStateRetryId) clearTimeout(self.liveStateRetryId);
       self.liveStateRetryId = null;
       self.liveStateRetryCount = 0;
@@ -1180,13 +1190,13 @@
     if (this.ownerInstanceId) {
       this.apiBase = this._apiBaseForOwner(this.ownerInstanceId);
       this.root.dataset.apiBase = this.apiBase;
+      // Fetch from the supplied owner while route resolution runs. Painting
+      // still follows canonical routing and validates owner + selection.
+      this._recentHistory(sessionId, generation, true).catch(function () {});
     }
     const loadDurableHistory = function () {
       if (!durableHistory) {
-        durableHistory = self.apiWithTimeout(
-          "/history/" + encodeURIComponent(sessionId) + "?message_boundaries=true&limit=" + TRANSCRIPT_PAGE_LIMIT,
-          LIVE_SNAPSHOT_TIMEOUT_MS
-        ).then(function (history) {
+        durableHistory = self._recentHistory(sessionId, generation).then(function (history) {
           return self._applyDurableHistory(sessionId, history, generation);
         });
       }

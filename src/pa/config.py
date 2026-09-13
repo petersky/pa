@@ -147,7 +147,7 @@ class Settings(BaseSettings):
     agent_session_sweep_seconds: float = Field(default=30.0, ge=1.0, le=3600)
     # Bounded local cruft cleanup. Does not delete cards, sessions, or objects/.
     maintenance_interval_seconds: int = Field(
-        default=6 * 60 * 60, ge=60, le=7 * 24 * 60 * 60
+        default=24 * 60 * 60, ge=60, le=7 * 24 * 60 * 60
     )
     transcript_retention_days: int = Field(default=14, ge=1, le=3650)
     mutation_operation_retention_days: int = Field(default=14, ge=1, le=3650)

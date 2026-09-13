@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -23,6 +24,8 @@ from pa.execution.selection import (
 )
 from pa.execution.selection_catalog import candidates_from_advertisement
 from pa.execution.selection_store import SelectionStore
+
+logger = logging.getLogger(__name__)
 
 
 def preference_layers(
@@ -195,14 +198,43 @@ class SelectionService:
         self._refresh_lock = asyncio.Lock()
         self.catalog_generation = 0
         self._last_forced_refresh = float("-inf")
+        self._catalog_task: asyncio.Task | None = None
+        self._refresh_task: asyncio.Task | None = None
+
+    def start(self) -> None:
+        """Keep admission evidence warm while the server is running."""
+        if self._catalog_task is None or self._catalog_task.done():
+            self._catalog_task = asyncio.create_task(self._maintain_catalog(), name="pa-selection-catalog")
+
+    async def close(self) -> None:
+        tasks = [task for task in (self._catalog_task, self._refresh_task) if task is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _refresh_catalog(self) -> None:
+        try:
+            await self.local_catalog(refresh=True)
+        except Exception:
+            logger.exception("Execution catalog refresh failed")
+
+    async def _maintain_catalog(self) -> None:
+        while True:
+            await self._refresh_catalog()
+            await asyncio.sleep(45)
 
     async def local_catalog(
-        self, *, refresh=False, force=False
+        self, *, refresh=False, force=False, stale_while_revalidate=False
     ) -> list[ExecutionCandidate]:
         generation = self.catalog_generation
         scope = self.settings.instance_id
         rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
         age = (datetime.now(UTC) - stamp).total_seconds() if stamp else None
+        if (stale_while_revalidate and not force and refresh and rows
+                and age is not None and 60 < age < 240):
+            if self._refresh_task is None or self._refresh_task.done():
+                self._refresh_task = asyncio.create_task(self._refresh_catalog(), name="pa-selection-refresh")
+            refresh = False
         if force or (refresh and (age is None or age > 60)):
             async with self._refresh_lock:
                 rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
