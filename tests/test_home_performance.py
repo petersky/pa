@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -36,7 +37,14 @@ def test_large_history_keeps_home_shell_small_and_sections_bounded() -> None:
             )
 
         shell = client.get("/")
-        sections = client.get("/partials/home/sections")
+        with (
+            patch.object(store, "list_cards", side_effect=AssertionError("Home loaded card bodies")),
+            patch.object(store, "get_session", side_effect=AssertionError("Home used a session N+1")),
+            patch("pa.fleet.overview.build_overview", side_effect=AssertionError("Home built fleet topology")),
+            patch("pa.fleet.workshop.build_workshop_snapshot", side_effect=AssertionError("Home built workshop")),
+            patch.object(client.app.state.ctx.services["dispatch_store"], "expire_capacity_reservations", side_effect=AssertionError("GET mutated reservations")),
+        ):
+            sections = client.get("/partials/home/sections")
 
         assert shell.status_code == 200
         assert "server-timing" in shell.headers
@@ -50,6 +58,7 @@ def test_large_history_keeps_home_shell_small_and_sections_bounded() -> None:
         assert sections.status_code == 200
         assert sections.text.count("data-attention-card") <= 20
         assert "historical home detail" not in sections.text
+        assert "Showing 6 of 250 completed cards" in sections.text
 
 
 def test_repeated_home_navigations_have_a_stable_server_budget() -> None:

@@ -79,6 +79,7 @@ class SyncEngine:
         self._projection_tasks: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._projection_stats: dict[str, dict[str, Any]] = {}
         self._states: dict[str, dict] = {}
+        self._peer_backoff: dict[tuple[str, str], tuple[int, float, dict]] = {}
         self._periodic_task: asyncio.Task | None = None
         self._rebuild_projection: Callable[[str], dict[str, Any] | None] | None = None
         self._client: httpx.AsyncClient | None = None
@@ -564,7 +565,7 @@ class SyncEngine:
         while True:
             try:
                 for realm_id in self.settings.subscribed_realms:
-                    await self.converge_realm(realm_id)
+                    await self.converge_realm(realm_id, background=True)
                 await asyncio.sleep(interval_seconds)
             except asyncio.CancelledError:
                 raise
@@ -652,7 +653,10 @@ class SyncEngine:
             catalog = getattr(self.store, "catalog", None)
             if local_hashes is None:
                 if catalog is not None:
-                    local_hashes = catalog.iter_hashes(limit=SYNC_HAVE_MAX_HASHES)
+                    local_hashes = await self._offload(
+                        "sync.object_inventory", catalog.iter_hashes,
+                        limit=SYNC_HAVE_MAX_HASHES,
+                    )
                 else:
                     local_hashes = []
             if local_hashes:
@@ -1337,10 +1341,19 @@ class SyncEngine:
             "object_batches": object_batches,
         }
 
-    async def converge_realm(self, realm_id: str, *, max_passes: int = 3) -> dict:
+    async def converge_realm(
+        self, realm_id: str, *, max_passes: int = 3, background: bool = False
+    ) -> dict:
         lock = self._locks.setdefault(realm_id, asyncio.Lock())
         async with lock:
             routes = self.peer_table.prefer_same_zone(realm_id, self.settings.zone)
+            deferred = {
+                route.target_url: entry[2]
+                for route in routes
+                if background
+                and (entry := self._peer_backoff.get((realm_id, route.target_url)))
+                and time.monotonic() < entry[1]
+            }
             started_at = self._now()
             self._set_state(
                 realm_id,
@@ -1379,7 +1392,8 @@ class SyncEngine:
                 local_hashes = None
                 fetched = await asyncio.gather(
                     *(
-                        self._fetch_peer(
+                        asyncio.sleep(0, result=dict(deferred[route.target_url]))
+                        if route.target_url in deferred else self._fetch_peer(
                             client, realm_id, route, local_hashes=local_hashes
                         )
                         for route in routes
@@ -1426,8 +1440,7 @@ class SyncEngine:
 
                 push_calls = [
                     asyncio.sleep(0, result=observed)
-                    if observed.get("status")
-                    in {"invalid_response", "unavailable"}
+                    if observed.get("status") != "reachable"
                     else self._push_peer(
                         client, realm_id, route, local_head
                     )
@@ -1489,6 +1502,18 @@ class SyncEngine:
                 if mismatched or push_conflict
                 else "converged"
             )
+            for route, observed in zip(routes, instances, strict=True):
+                key = (realm_id, route.target_url)
+                if route.target_url in deferred:
+                    continue
+                if observed.get("status") == "reachable":
+                    self._peer_backoff.pop(key, None)
+                else:
+                    failures = min(self._peer_backoff.get(key, (0, 0, {}))[0] + 1, 6)
+                    self._peer_backoff[key] = (
+                        failures, time.monotonic() + min(300.0, 10.0 * 2 ** (failures - 1)),
+                        dict(observed),
+                    )
             return self._set_state(
                 realm_id,
                 phase=phase,
@@ -1593,31 +1618,18 @@ class SyncEngine:
             if index_status.get("ready"):
                 commit_count = int(index_status.get("commit_count") or 0)
                 event_count = int(index_status.get("event_count") or 0)
-                expected = commit_count + event_count
-                coverage = catalog.coverage(expected_reachable=expected)
-                store_total = catalog.count()
-                # Only compute unreachable when the catalog covers the DAG.
-                unreachable = (
-                    max(0, store_total - expected)
-                    if coverage.get("ready")
-                    else 0
-                )
-                oldest, newest = catalog.age_bounds_ns()
-                catalog.publish_realm_stats(
-                    realm_id,
-                    commit_count=commit_count,
-                    event_count=event_count,
-                    auxiliary_count=0,
-                    unreachable_count=unreachable,
-                    reachable_bytes=0,
-                    head_hash=head,
-                    oldest_reachable_ns=oldest,
-                    newest_reachable_ns=newest,
-                )
             history = catalog.status_payload(
-                realm_id,
-                expected_reachable=commit_count + event_count,
+                realm_id, expected_reachable=commit_count + event_count,
             )
+            if index_status.get("ready"):
+                # Status is a read. Derived realm counts need no write/commit.
+                history["realm"]["reachable"].update(
+                    commits=commit_count, events=event_count,
+                )
+                if history["catalog"]["ready"]:
+                    history["realm"]["unreachable"]["count"] = max(
+                        0, history["object_count"] - commit_count - event_count
+                    )
             object_count = history["object_count"]
         else:
             history = None

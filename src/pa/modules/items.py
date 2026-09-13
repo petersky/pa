@@ -112,7 +112,6 @@ HOME_ATTENTION_LIMIT = 6
 HOME_MOTION_LIMIT = 8
 HOME_OUTCOME_LIMIT = 6
 HOME_FLEET_LIMIT = 50
-HOME_ROUTE_LIMIT = 200
 WORK_PRESENTATION_PAGE_LIMIT = 100
 WORK_FACET_LIMIT = 20
 MEMORY_PAGE_SIZE = 25
@@ -625,12 +624,16 @@ def _watches_for_cards(request: Request, card_ids: set[str]) -> dict[str, list]:
 def _presentation_context_for_cards(
     request: Request,
     cards: list,
+    *, include_progress: bool = True,
 ) -> tuple[dict, dict, dict, dict]:
     card_ids = {card.id for card in cards}
     store = get_store()
     sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     dispatches = dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
+    execution_sessions = {session.id: session for session in store.list_sessions(
+        session_ids={record.session_id for record in dispatches.values() if record.session_id}
+    )}
     watches = _watches_for_cards(request, card_ids)
     progress: dict[str, dict] = {}
     presentations: dict[str, dict] = {}
@@ -641,10 +644,10 @@ def _presentation_context_for_cards(
         # Associations include coordinators and older sessions. The dispatch's
         # exact execution identity must own both runtime evidence and its link.
         execution_session = (
-            store.get_session(record.session_id) if record and record.session_id
+            execution_sessions.get(record.session_id) if record and record.session_id
             else None if record else sessions.get(card.id)
         )
-        if record:
+        if record and include_progress:
             progress[card.id] = _progress_from_dispatch(ctx, record)
         presentations[card.id] = present_work_item(
             card,
@@ -1298,30 +1301,6 @@ def _card_activity_context(request: Request, card) -> dict:
     }
 
 
-def _canonical_presentation_counts(request: Request) -> dict[str, int]:
-    """Count every lifecycle group from fixed-size, body-free cached pages."""
-    store = get_store()
-    realm = _active_realm(request)
-    counts = {group: 0 for group in ("attention", "motion", "outcome", "quiet")}
-    offset = 0
-    while True:
-        page = store.list_card_work_projections(
-            realm_id=realm,
-            limit=WORK_PRESENTATION_PAGE_LIMIT,
-            offset=offset,
-        )
-        if not page:
-            break
-        _, _, presentations, _ = _presentation_context_for_cards(request, page)
-        for card in page:
-            group = presentations[card.id]["group"]
-            counts[group] = counts.get(group, 0) + 1
-        offset += len(page)
-        if len(page) < WORK_PRESENTATION_PAGE_LIMIT:
-            break
-    return counts
-
-
 def _bounded_attention_cards_context(
     request: Request,
     *,
@@ -1633,50 +1612,61 @@ def _home_context(request: Request) -> dict:
     return {"active_realm": _active_realm(request)}
 
 
-def _home_sections_context(request: Request) -> dict:
-    """Build Home sections from one bounded, cached-first operational projection."""
-    from pa.fleet.overview import build_overview
-    from pa.fleet.workshop import build_workshop_snapshot
+def _home_work_projection(request: Request) -> tuple[list[dict], dict[str, int], int]:
+    """Apply lifecycle evidence to SQL counts without building the fleet view."""
+    realm = _active_realm(request)
+    ctx = request.app.state.ctx
+    store = ctx.store
+    lane_counts, evidence_ids = store.home_card_inventory(realm)
+    total = sum(lane_counts.values())
+    dispatch_store = ctx.services.get("dispatch_store")
+    if dispatch_store:
+        evidence_ids.update(dispatch_store.presentation_card_ids(realm_id=realm))
+    supervisor = ctx.services.get("pr_supervisor_store")
+    if supervisor:
+        evidence_ids.update(supervisor.list_actionable_card_ids(realm_id=realm, limit=total))
+    canonical_counts = {
+        "attention": 0, "motion": 0,
+        "outcome": lane_counts.get("done", 0),
+        "quiet": total - lane_counts.get("done", 0),
+    }
+    # Plain cards are counted entirely in SQLite. Only cards with lifecycle
+    # evidence need the shared presenter, once, in body-free batches.
+    work_orders = []
+    ids = sorted(evidence_ids)
+    for offset in range(0, len(ids), 100):
+        cards = store.list_card_work_projections(
+            realm_id=realm, card_ids=set(ids[offset:offset + 100]), limit=100,
+        )
+        _, _, presentations, _ = _presentation_context_for_cards(
+            request, cards, include_progress=False,
+        )
+        for card in cards:
+            presentation = presentations[card.id]
+            baseline = "outcome" if card.lane == CardLane.DONE else "quiet"
+            canonical_counts[baseline] -= 1
+            canonical_counts[presentation["group"]] += 1
+            work_orders.append({"id": card.id, "title": card.title, "card": card,
+                                "updated_at": card.updated_at.isoformat(),
+                                "presentation": presentation})
+    for card in store.list_card_work_projections(
+        realm_id=realm, lane=CardLane.DONE, limit=HOME_OUTCOME_LIMIT,
+        exclude_card_ids=evidence_ids,
+    ):
+        work_orders.append({"id": card.id, "title": card.title, "card": card,
+                            "updated_at": card.updated_at.isoformat(),
+                            "presentation": present_work_item(card)})
 
+    return work_orders, canonical_counts, total
+
+
+def _home_sections_context(request: Request) -> dict:
     realm = _active_realm(request)
     ctx = request.app.state.ctx
     agent = ctx.services.get("instance_agent")
     fleet = ctx.services.get("fleet_registry")
-    peer_table = ctx.services.get("peer_table")
     fleet_instances = list(fleet.list_instances())[:HOME_FLEET_LIMIT] if fleet else []
-    routes = list(peer_table.all_routes())[:HOME_ROUTE_LIMIT] if peer_table else []
-    overview = (
-        build_overview(ctx, fleet_instances, routes)
-        if fleet_instances
-        else {"nodes": [], "edges": []}
-    )
-    snapshot = build_workshop_snapshot(ctx, overview, realm_id=realm)
-    canonical_counts = _canonical_presentation_counts(request)
-    snapshot_total = snapshot["counts"].get(
-        "total", snapshot.get("inventory", {}).get("total", 0)
-    )
-    if sum(canonical_counts.values()) != snapshot_total:
-        projected_counts = snapshot["counts"].get("presentations", {})
-        rendered_counts = {
-            group: sum(
-                1
-                for item in snapshot.get("work_orders", ())
-                if item.get("presentation", {}).get("group") == group
-            )
-            for group in ("attention", "motion", "outcome", "quiet")
-        }
-        canonical_counts = {
-            "attention": projected_counts.get(
-                "attention", rendered_counts["attention"]
-            ),
-            "motion": projected_counts.get("motion", rendered_counts["motion"]),
-            "outcome": snapshot["counts"].get("lanes", {}).get(
-                CardLane.DONE.value,
-                projected_counts.get("outcome", rendered_counts["outcome"]),
-            ),
-            "quiet": projected_counts.get("quiet", rendered_counts["quiet"]),
-        }
-    work_orders = list(snapshot["work_orders"])
+    work_orders, canonical_counts, total = _home_work_projection(request)
 
     def sort_key(item: dict) -> tuple[int, str, str]:
         presentation = item["presentation"]
@@ -1701,6 +1691,11 @@ def _home_sections_context(request: Request) -> dict:
         key=sort_key,
         reverse=True,
     )
+    loaded = (
+        min(len(attention), HOME_ATTENTION_LIMIT)
+        + min(len(in_motion), HOME_MOTION_LIMIT)
+        + min(len(outcomes), HOME_OUTCOME_LIMIT)
+    )
     return {
         "needs_attention": attention[:HOME_ATTENTION_LIMIT],
         "needs_attention_total": canonical_counts["attention"],
@@ -1708,7 +1703,10 @@ def _home_sections_context(request: Request) -> dict:
         "active_work_total": canonical_counts["motion"],
         "recent_outcomes": outcomes[:HOME_OUTCOME_LIMIT],
         "recent_outcomes_total": canonical_counts["outcome"],
-        "home_inventory": snapshot["inventory"],
+        "home_inventory": {
+            "loaded": loaded, "total": total,
+            "omitted": max(0, total - loaded), "truncated": total > loaded,
+        },
         "agent_connected": bool(agent and agent.connected),
         "fleet_instances": fleet_instances,
         "instance_id": ctx.settings.instance_id,

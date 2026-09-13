@@ -4414,6 +4414,12 @@ class AgentSessionManager:
         )
 
     async def start(self, *, resume: bool | None = None) -> None:
+        if self.settings.agent_enabled:
+            from pa.execution.selection_service import SelectionService
+
+            if getattr(self, "_selection_service", None) is None:
+                self._selection_service = SelectionService(self.settings, self.store, self)
+            self._selection_service.start()
         if resume is not None:
             self._resume_on_start = resume
         will_resume = self.settings.agent_enabled and self._resume_on_start
@@ -5619,7 +5625,7 @@ class AgentSessionManager:
                 await self._offload(
                     "selection.target_revalidation",
                     selection_service.resolve,
-                    candidates=await selection_service.local_catalog(refresh=True),
+                    candidates=await selection_service.local_catalog(refresh=True, stale_while_revalidate=True),
                     principal=effective_principal_id,
                     realm=realm_id or self.settings.primary_realm,
                     surface=surface_key,
@@ -5672,7 +5678,7 @@ class AgentSessionManager:
                 project_tool_config = (
                     selection_project.tool_config if selection_project else None
                 )
-            candidates = await selection_service.local_catalog(refresh=True)
+            candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
             receipt = await self._offload(
                 "selection.resolve",
                 selection_service.resolve,
@@ -6400,6 +6406,8 @@ class AgentSessionManager:
         )
 
     async def stop(self, *, fast: bool = False) -> None:
+        if service := getattr(self, "_selection_service", None):
+            await service.close()
         with self._runtime_lifecycle_lock:
             self._accepting = False
             self._quiescing = True

@@ -21,7 +21,7 @@ import httpx
 from pa.core.async_runtime import AsyncRuntime
 from pa.core.io import atomic_write_json
 from pa.domain.models import FleetInstance
-from pa.execution.dispatch import TERMINAL_DISPATCH_STATES, DispatchStore
+from pa.execution.dispatch import TERMINAL_DISPATCH_STATES, DispatchStore, summarize_dispatch
 from pa.execution.session_presentation import build_session_presentation
 from pa.fleet.capacity import (
     deduplicate_consumer_links,
@@ -242,11 +242,13 @@ class FleetOverviewCache:
 
     def __init__(self, data_dir: Path) -> None:
         self.path = data_dir / "fleet_overview_cache.json"
+        self.dimensions_path = data_dir / "fleet_overview_cache.d"
         self._lock = RLock()
         self._data: dict[str, dict[str, Any]] = {}
         self._revision = 0
         self._persist_lock = Lock()
         self._persisted_revision = 0
+        self._dirty: dict[tuple[str, str], int] = {}
         try:
             payload = json.loads(self.path.read_text())
             if isinstance(payload, dict):
@@ -254,21 +256,54 @@ class FleetOverviewCache:
                 self._revision = int(payload.get("revision") or 0)
         except OSError, ValueError, TypeError:
             pass
+        for path in self.dimensions_path.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text())
+                instance_id, dimension = payload["instance_id"], payload["dimension"]
+                current = self._data.setdefault(instance_id, {})
+                if payload["value"] is None:
+                    current.pop(dimension, None)
+                else:
+                    current[dimension] = payload["value"]
+                self._revision = max(self._revision, int(payload["revision"]))
+            except (OSError, ValueError, TypeError, KeyError):
+                logger.warning("Ignoring unreadable fleet dimension cache %s", path.name)
+        for dimensions in self._data.values():
+            if "activity" in dimensions:
+                dimensions["activity"] = self._compact_activity(dimensions["activity"])
         self._persisted_revision = self._revision
 
+    @staticmethod
+    def _compact_activity(value: dict[str, Any]) -> dict[str, Any]:
+        activity = value.get("value")
+        if not isinstance(activity, dict):
+            return value
+        return {**value, "value": {
+            **activity,
+            **{key: [summarize_dispatch(item) for item in activity[key]]
+               for key in ("dispatches", "reservations", "waiting_dispatches", "completion_work")
+               if isinstance(activity.get(key), list)},
+        }}
+
     def _persist(self) -> None:
-        # Disk/fsync latency must not hold the lock used by live overview reads.
-        # Concurrent dimension updates coalesce into the newest durable snapshot.
+        # Persist only changed dimensions. Tombstones override legacy cache
+        # entries on restart; disk/fsync never holds the live-read lock.
         import copy
         with self._persist_lock:
             with self._lock:
-                if self._persisted_revision >= self._revision:
-                    return
-                revision = self._revision
-                payload = {"version": 2, "revision": revision, "updated_at": _now(),
-                           "instances": copy.deepcopy(self._data)}
-            atomic_write_json(self.path, payload)
-            self._persisted_revision = revision
+                pending = [(key, revision, copy.deepcopy(
+                    self._data.get(key[0], {}).get(key[1])
+                )) for key, revision in self._dirty.items()]
+            for (instance_id, dimension), revision, value in pending:
+                name = hashlib.sha256(json.dumps([instance_id, dimension]).encode()).hexdigest()
+                atomic_write_json(self.dimensions_path / f"{name}.json", {
+                    "version": 3, "instance_id": instance_id, "dimension": dimension,
+                    "revision": revision, "value": value,
+                })
+                with self._lock:
+                    if self._dirty.get((instance_id, dimension)) == revision:
+                        self._dirty.pop((instance_id, dimension))
+                    self._persisted_revision = max(self._persisted_revision, revision)
 
     def get(self, instance_id: str, dimension: str) -> dict[str, Any] | None:
         with self._lock:
@@ -288,6 +323,8 @@ class FleetOverviewCache:
         *,
         attempt_id: int | None = None,
     ) -> bool:
+        if dimension == "activity":
+            value = self._compact_activity(value)
         with self._lock:
             current = self._data.setdefault(instance_id, {})
             previous = current.get(dimension)
@@ -314,6 +351,7 @@ class FleetOverviewCache:
                 }
             current[dimension] = value
             self._revision += 1
+            self._dirty[(instance_id, dimension)] = self._revision
         self._persist()
         return True
 
@@ -324,7 +362,9 @@ class FleetOverviewCache:
             for instance_id in list(self._data):
                 current = self._data[instance_id]
                 for dimension in dimensions:
-                    changed = current.pop(dimension, None) is not None or changed
+                    if current.pop(dimension, None) is not None:
+                        changed = True
+                        self._dirty[(instance_id, dimension)] = self._revision + 1
                 if not current:
                     self._data.pop(instance_id, None)
             if changed:
@@ -340,7 +380,9 @@ class FleetOverviewCache:
                 return
             changed = False
             for dimension in dimensions:
-                changed = current.pop(dimension, None) is not None or changed
+                if current.pop(dimension, None) is not None:
+                    changed = True
+                    self._dirty[(instance_id, dimension)] = self._revision + 1
             if not current:
                 self._data.pop(instance_id, None)
             if changed:
@@ -593,11 +635,11 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
     dispatches = []
     dispatch_store = ctx.services.get("dispatch_store")
     if dispatch_store:
-        dispatch_store.expire_capacity_reservations()
         dispatches = [
-            item.public_dict()
+            item.public_dict(summary=True)
             for item in dispatch_store.list(
-                realm_id=ctx.settings.primary_realm, limit=100
+                realm_id=ctx.settings.primary_realm, limit=100, deep=False,
+                exclude_states=TERMINAL_DISPATCH_STATES,
             )
             if item.state not in TERMINAL_DISPATCH_STATES
             and (

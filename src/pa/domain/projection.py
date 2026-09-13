@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -17,7 +17,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import ValidationError
 
-from pa.core.operation_budget import measured_lock, report_work_progress
+from pa.core.operation_budget import current_operation, measured_lock, report_work_progress
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -138,7 +138,7 @@ class CardProjection:
         self._legacy_integrity_upgrade_required = False
         self._operation_owner = str(uuid4())
         self._replaying_from_log = False
-        with sqlite3.connect(self.db_path, timeout=30) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=30)) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
         self._init_db()
@@ -245,16 +245,35 @@ class CardProjection:
     def _conn(
         self, *, busy_timeout_ms: int = 30000
     ) -> Iterator[sqlite3.Connection]:
-        current = getattr(self._connection_local, "connection", None)
-        if current is not None:
-            yield current
+        local = self._connection_local
+        conn = getattr(local, "connection", None)
+        if getattr(local, "active", False):
+            yield conn
             return
-        conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
-        conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.row_factory = sqlite3.Row
-        conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
-        self._connection_local.connection = conn
+        if conn is not None:
+            stat = self.db_path.stat()
+            if local.file_identity != (stat.st_dev, stat.st_ino):
+                # Offline restore replaces the database. Never keep reading or
+                # writing the old inode if this process is subsequently reused.
+                conn.close()
+                local.connection = conn = None
+        if conn is None:
+            conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.row_factory = sqlite3.Row
+            local.connection = conn
+            local.busy_timeout_ms = busy_timeout_ms
+            stat = self.db_path.stat()
+            local.file_identity = (stat.st_dev, stat.st_ino)
+        if local.busy_timeout_ms != busy_timeout_ms:
+            conn.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
+            local.busy_timeout_ms = busy_timeout_ms
+        # Ordinary reads need no Python callback in SQLite's inner loop. A
+        # budgeted operation still reports work using its current context.
+        budgeted = current_operation.get() is not None
+        if budgeted:
+            conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
+        local.active = True
         try:
             yield conn
             conn.commit()
@@ -262,8 +281,18 @@ class CardProjection:
             conn.rollback()
             raise
         finally:
-            del self._connection_local.connection
+            local.active = False
+            if budgeted:
+                conn.set_progress_handler(None, 0)
+
+    def close_thread_connection(self) -> None:
+        """Release this thread's idle connection (worker exit also releases it)."""
+        if getattr(self._connection_local, "active", False):
+            raise RuntimeError("Cannot close a projection transaction in progress")
+        conn = getattr(self._connection_local, "connection", None)
+        if conn is not None:
             conn.close()
+            del self._connection_local.connection
 
     @contextmanager
     def mutation(self) -> Iterator[None]:
@@ -815,6 +844,10 @@ class CardProjection:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_agent_sessions_status_updated "
             "ON agent_sessions(status, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_purpose_archive "
+            "ON agent_sessions(purpose, archived_at, updated_at DESC)"
         )
         conn.execute(
             """CREATE TABLE IF NOT EXISTS agent_restart_handoffs (
@@ -2842,6 +2875,30 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return {row["id"]: row["lane"] for row in rows}
 
+    def list_card_options(self, *, realm_id: str) -> list[Card]:
+        """Minimal card identities for session selectors; no bodies or evidence."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, realm_id, kind, title, lane, project_id, created_at, updated_at "
+                "FROM cards WHERE realm_id=? ORDER BY title, id",
+                (realm_id,),
+            ).fetchall()
+        return [Card(**dict(row)) for row in rows]
+
+    def home_card_inventory(self, realm_id: str) -> tuple[dict[str, int], set[str]]:
+        """Count lanes in SQL and return only cards with session evidence."""
+        with self._conn() as conn:
+            counts = {row["lane"]: row["n"] for row in conn.execute(
+                "SELECT lane, COUNT(*) AS n FROM cards WHERE realm_id=? GROUP BY lane",
+                (realm_id,),
+            )}
+            ids = {row[0] for row in conn.execute(
+                "SELECT DISTINCT links.card_id FROM agent_session_cards links "
+                "JOIN cards ON cards.id=links.card_id "
+                "WHERE cards.realm_id=? AND links.retired_at IS NULL", (realm_id,),
+            )}
+        return counts, ids
+
     def find_card_attachment(
         self, attachment_id: str, filename: str
     ) -> tuple[Card, CardAttachment] | None:
@@ -2966,6 +3023,8 @@ class CardProjection:
         updated_days: int | None = None,
         limit: int = 100,
         offset: int = 0,
+        card_ids: set[str] | None = None,
+        exclude_card_ids: set[str] | None = None,
     ) -> list[Card]:
         """Return a fixed-size, body-free page for lifecycle presentation."""
         where, params = self._card_work_clauses(
@@ -2981,7 +3040,15 @@ class CardProjection:
             tag_mode=tag_mode,
             updated_days=updated_days,
         )
+        if card_ids is not None:
+            if not card_ids:
+                return []
+            where += " AND id IN (" + ",".join("?" for _ in card_ids) + ")"
+            params.extend(sorted(card_ids))
         bounded_limit = max(1, min(int(limit), 100))
+        if exclude_card_ids:
+            where += " AND id NOT IN (" + ",".join("?" for _ in exclude_card_ids) + ")"
+            params.extend(sorted(exclude_card_ids))
         params.extend([bounded_limit, max(0, int(offset))])
         columns = """
             id, realm_id, kind, title, '' AS body,
@@ -2991,7 +3058,7 @@ class CardProjection:
             preferred_capabilities, execution_preferences, lease_holder_instance,
             lease_holder_principal, lease_expires_at,
             created_by_principal, created_by_instance,
-            created_at, updated_at
+            created_at, updated_at, completion_requirement, completion_evidence
         """
         sql = (
             f"SELECT {columns} FROM cards WHERE {where} "
@@ -5113,11 +5180,24 @@ class CardProjection:
         statuses: tuple[str, ...] | list[str] | None = None,
         exclude_statuses: tuple[str, ...] | list[str] | None = None,
         include_archived: bool = True,
+        purposes: tuple[str, ...] | None = None,
+        archived: bool | None = None,
+        session_ids: set[str] | None = None,
     ) -> list[AgentSession]:
         query = "SELECT * FROM agent_sessions WHERE 1=1"
         if not include_archived:
             query += " AND archived_at IS NULL"
         params: list[str] = []
+        if archived is not None:
+            query += " AND archived_at IS " + ("NOT NULL" if archived else "NULL")
+        if purposes:
+            query += " AND purpose IN (" + ",".join("?" for _ in purposes) + ")"
+            params.extend(purposes)
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            query += " AND id IN (" + ",".join("?" for _ in session_ids) + ")"
+            params.extend(sorted(session_ids))
         if label is not None:
             query += " AND label = ?"
             params.append(label)

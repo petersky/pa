@@ -1326,6 +1326,18 @@ class BackupService:
                 extract_root / "projection.sqlite3", record.manifest.verification_level
             )
 
+            # Idle persistent readers can leave a WAL behind even after the
+            # server writer has stopped. Drain it before replacing either DB,
+            # otherwise its old pages can be replayed over the restored file.
+            for database in (
+                self.settings.db_path,
+                self.settings.db_path.with_name(f"{self.settings.db_path.stem}.transcripts.db"),
+            ):
+                if database.exists():
+                    with contextlib.closing(sqlite3.connect(database, timeout=1)) as conn:
+                        if conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]:
+                            raise BackupError("database_busy", "Stop all database clients before restoring")
+
             for live in (
                 self.settings.db_path,
                 self.settings.db_path.with_name(f"{self.settings.db_path.stem}.transcripts.db"),

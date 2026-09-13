@@ -233,12 +233,20 @@ def _agent_context(request: Request) -> dict:
     live = [rt.session for rt in active_runtimes]
     runtimes_by_session = {rt.session.id: rt for rt in active_runtimes}
     live_ids = {session.id for session in live}
-    persisted = ctx.store.list_sessions()
+    requested_view = request.query_params.get("view", "chats")
+    filters = (
+        {"purposes": ("automated_run", "one_shot_job")} if requested_view == "activity"
+        else {} if requested_view == "all"
+        else {"purposes": ("chat",), "archived": requested_view == "archived"}
+    )
+    persisted = ctx.store.list_sessions(**filters)
     by_id = {session.id: session for session in persisted}
     by_id.update({session.id: session for session in live})
     all_sessions = list(by_id.values())
     selected_id = request.query_params.get("session")
     default = next((s for s in all_sessions if s.id == selected_id), None)
+    if selected_id and default is None:
+        default = ctx.store.get_session(selected_id)
     if not default and not selected_id:
         default = next(
             (
@@ -293,7 +301,7 @@ def _agent_context(request: Request) -> dict:
         selected_view = "chats"
         sessions = chat_sessions
     realm_id = ctx.settings.primary_realm
-    cards = {card.id: card for card in ctx.store.list_cards(realm_id=realm_id)}
+    cards = {card.id: card for card in ctx.store.list_card_options(realm_id=realm_id)}
     projects = {
         project.id: project for project in ctx.store.list_projects(realm_id=realm_id)
     }

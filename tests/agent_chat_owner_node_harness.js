@@ -45,5 +45,24 @@ const make=()=>{
  assert.equal(moving.externalEventTransport,false,'local multiplex cannot own remote session traffic');
  assert.equal(moving.esApiBase,moving.apiBase,'owner switch establishes the remote transport');
  moving.closeSSE('fixture-complete');
+ const fast=make(), owner=deferred(), slowHistory=deferred();let historyReads=0;
+ fast.resolveSessionRoute=()=>owner.promise;
+ fast._apiBaseForOwner=()=>'/api/agent';
+ fast._loadLiveSnapshot=Widget.prototype._loadLiveSnapshot;
+ fast._restoreSessionDomCache=()=>false;
+ fast._paintRecentHistory=noop;
+ fast.applySnapshot=()=>{fast.snapshotApplied=true;};
+ fast.refreshBrowserState=noop;fast.reconcilePendingSubmission=noop;
+ fast.apiWithTimeout=path=>{
+  if(path.startsWith('/history/')){historyReads++;return slowHistory.promise;}
+  return Promise.resolve({session:{id:'fast'}});
+ };
+ const opening=fast.openSession('fast','local');
+ assert.equal(historyReads,1,'known owner history starts before route resolution');
+ owner.resolve({live:true,api_base:'/api/agent'});await opening;
+ assert.equal(fast.snapshotApplied,true,'snapshot applies without waiting for history');
+ assert.ok(fast.es,'SSE connects while history is pending');
+ assert.equal(historyReads,1,'route and live view share prefetched history');
+ slowHistory.resolve({events:[]});await Promise.resolve();fast.closeSSE('fixture-complete');
  console.log('PASS delayed owner success/failure, reconnect, switching, stale history fallback, destruction');
 })().catch(e=>{console.error(e);process.exitCode=1;});

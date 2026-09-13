@@ -1378,7 +1378,10 @@ class AgentConnection:
             self._publish_mcp_startup(*self._mcp_observer)
             provider_failure = await self._client.wait_for_pa_mcp_startup_failure(
                 self.session.external_session_id,
-                timeout=2.0,
+                # Consume already-reported hard failures without adding a
+                # fixed grace period. The exact-session observer above keeps
+                # reporting pending/success/failure after admission.
+                timeout=0.0,
             )
             if provider_failure:
                 self._client._mcp_startup_failures[

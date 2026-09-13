@@ -364,6 +364,8 @@ class CompletionReconciler:
                 "reconciliation.dispatch_read",
                 self.dispatch_store.list,
                 limit=1000,
+                reconciliation_states={"pending", "blocked", "prompted"},
+                reconciliation_due_at=datetime.now(UTC),
             )
             now = datetime.now(UTC)
             for record in records:
