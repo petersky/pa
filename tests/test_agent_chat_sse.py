@@ -1912,6 +1912,39 @@ class AgentChatSseTests(unittest.TestCase):
         self.assertFalse(raised.exception.detail["retryable"])
         self.assertIn("close", raised.exception.detail["action"])
 
+    def test_explicit_retry_returns_current_recovery_failure_and_remedy(self) -> None:
+        for code, error, remedy in (
+            ("acp_internal_error", "Existing provider conversation could not be restored",
+             "Continue in a new linked chat to preserve saved history."),
+            ("provider_auth_required", "Credentials expired", "Sign in, then retry."),
+            ("future_failure", "New failure", None),
+        ):
+            with self.subTest(code=code):
+                blocked = AgentSession(
+                    id="sess-blocked", agent_name="codex", status="recovery_blocked",
+                    recovery_json={"blocked": True, "code": code,
+                                   "last_error": error, "remedy": remedy},
+                    config_json={"provisioning": {
+                        "state": "ready", "error_code": "old_project_error",
+                        "error": "Old project failure", "action": "Old project advice",
+                    }},
+                )
+                manager = MagicMock()
+                manager.retry_session = AsyncMock(side_effect=RuntimeError(error))
+                manager.store.get_session.return_value = blocked
+
+                async def run() -> dict:
+                    with patch("pa.modules.agent_chat._manager", return_value=manager):
+                        return await session_retry(MagicMock(), blocked.id)
+
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(run())
+
+                self.assertEqual(raised.exception.status_code, 409)
+                self.assertEqual(raised.exception.detail["code"], code)
+                self.assertEqual(raised.exception.detail["message"], error)
+                self.assertEqual(raised.exception.detail["action"], remedy)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1653,6 +1653,21 @@
     });
   };
 
+  function recoveryGuidance(snap) {
+    const session = snap.session || {};
+    const recovery = session.recovery_json || {};
+    const presentation = snap.presentation || {};
+    const presentedRecovery = presentation.recovery || {};
+    const provisioning = session.config_json && session.config_json.provisioning || {};
+    // Current recovery evidence takes precedence over an older workspace error.
+    // Keep provisioning guidance for peers without a durable recovery record.
+    const workspace = provisioning.state === "blocked" ? provisioning : {};
+    return recovery.remedy || presentedRecovery.remedy ||
+      recovery.last_error || presentedRecovery.last_error ||
+      workspace.action || workspace.error || presentation.explanation ||
+      "Recovery could not complete. Retry this session or inspect its diagnostics for details.";
+  }
+
   AgentChatWidget.prototype.updateEmptyChatStatus = function (snap) {
     snap = snap || this.lastSnapshot || {};
     if (this._hasTurnHistory()) {
@@ -1683,9 +1698,7 @@
           : "Provider configuration failed. Retry or end the session.")
       );
     } else if (status === "recovery_blocked" || provisioning.state === "blocked") {
-      this.setPlaceholder(
-        provisioning.action || "Session recovery is blocked. Retry or end the session."
-      );
+      this.setPlaceholder(recoveryGuidance(snap));
     } else if (snap.prompting) {
       this.setPlaceholder("The agent is working…");
     } else if (queue.length) {
@@ -1745,8 +1758,7 @@
     if (this.els.recovery) {
       this.els.recovery.hidden = !recoveryBlocked;
       if (this.els.recoveryAction) {
-        this.els.recoveryAction.textContent = provisioning.action ||
-          "Correct the project availability, then retry this session.";
+        this.els.recoveryAction.textContent = recoveryBlocked ? recoveryGuidance(snap) : "";
       }
       if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
     }
@@ -2244,6 +2256,7 @@
       "queue_reordered",
       "queue_paused",
       "queue_resumed",
+      "publication_fence_established",
       "cancelled",
       "session_started",
       "session_closed",
@@ -2528,6 +2541,7 @@
       case "queue_reordered":
       case "queue_paused":
       case "queue_resumed":
+      case "publication_fence_established":
         if (!replay) this.refreshQueue();
         break;
       case "cancelled":
@@ -4237,7 +4251,9 @@
       refreshSessionList(self.sessionId);
     }).catch(function (err) {
       const action = err.detail && err.detail.action;
-      if (self.els.recoveryAction && action) self.els.recoveryAction.textContent = action;
+      if (self.els.recoveryAction) {
+        self.els.recoveryAction.textContent = action || err.message || recoveryGuidance({});
+      }
       self.addBubble("system", "Recovery retry failed: " + err.message, new Date().toISOString(), { system: true, forceVisible: true });
     }).finally(function () {
       if (self.els.recoveryRetry) self.els.recoveryRetry.disabled = false;
@@ -4336,7 +4352,7 @@
     "session_started", "session_closed", "session_recovered",
     "user_message", "turn_waiting", "turn_completed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "prompt_failed", "connection_lost",
+    "queue_paused", "queue_resumed", "publication_fence_established", "prompt_failed", "connection_lost",
     "model_changed", "mode_changed", "current_mode_update", "config_changed",
     "configuration_changed",
     "config_option_update", "config_options_update", "permission_request",
@@ -4348,7 +4364,7 @@
     "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
     "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "session_started", "session_closed",
+    "queue_paused", "queue_resumed", "publication_fence_established", "session_started", "session_closed",
     "session_recovered", "connection_lost", "model_changed", "mode_changed",
     "current_mode_update", "config_changed", "configuration_changed", "config_option_update",
     "config_options_update", "permission_request", "permission_resolved",

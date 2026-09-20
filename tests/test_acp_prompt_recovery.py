@@ -13,9 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
+from pa.acp.client import AgentConnection
 from pa.config import Settings
 from pa.domain.models import AgentSession, TranscriptEvent
 from pa.instance.agent_session import AgentSessionManager
+from pa.instance.quiesce import QueuedPrompt, SessionSnapshot, load_quiesce_snapshot
 from pa.modules.agent_chat import get_prompt_acceptance_status
 
 ROOT = Path(__file__).parents[1]
@@ -46,15 +48,17 @@ class QuiesceAdmissionRestoreTests(unittest.IsolatedAsyncioTestCase):
             manager = AgentSessionManager(settings, store)
             manager._accepting = True
             manager._quiescing = False
+            manager._recovery_coordinator_task = MagicMock()
             manager._runtimes = {"s1": self._runtime()}
 
             with patch(
                 "pa.server.shutdown.is_shutting_down", return_value=False
-            ), self.assertRaises(TimeoutError):
+            ), patch.object(manager, "request_recovery") as recover, self.assertRaises(TimeoutError):
                 await manager.quiesce(timeout=0.05)
 
             self.assertTrue(manager._accepting)
             self.assertFalse(manager._quiescing)
+            recover.assert_called_once_with()
 
     async def test_quiesce_timeout_keeps_drain_when_shutdown_fence_active(
         self,
@@ -64,15 +68,74 @@ class QuiesceAdmissionRestoreTests(unittest.IsolatedAsyncioTestCase):
             manager = AgentSessionManager(settings, MagicMock())
             manager._accepting = True
             manager._quiescing = False
+            manager._recovery_coordinator_task = MagicMock()
             manager._runtimes = {"s1": self._runtime()}
 
             with patch(
                 "pa.server.shutdown.is_shutting_down", return_value=True
-            ), self.assertRaises(TimeoutError):
+            ), patch.object(manager, "request_recovery") as recover, self.assertRaises(TimeoutError):
                 await manager.quiesce(timeout=0.05)
 
             self.assertFalse(manager._accepting)
             self.assertTrue(manager._quiescing)
+            recover.assert_not_called()
+
+    async def test_child_exit_race_does_not_abort_quiesce_or_lose_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp))
+            store = MagicMock()
+            manager = AgentSessionManager(settings, store)
+            session = AgentSession(id="s1", agent_name="codex")
+            connection = AgentConnection(settings, store)
+            connection.session = session
+            connection._ctx = MagicMock()
+            connection._ctx.__aexit__ = AsyncMock(side_effect=ProcessLookupError)
+            queued = QueuedPrompt(id="queued-user-input", message="Continue")
+            runtime = MagicMock(session=session, connection=connection, prompting=False)
+            runtime.to_session_snapshot.return_value = SessionSnapshot(
+                session_id=session.id, agent_name="codex", queued_prompts=[queued]
+            )
+            runtime._drain_transcripts = AsyncMock()
+            manager._runtimes = {session.id: runtime}
+
+            await manager.quiesce()
+
+            snapshot = load_quiesce_snapshot(settings.data_dir)
+            self.assertEqual(snapshot.sessions[0].queued_prompts, [queued])
+            self.assertEqual(manager._runtimes, {})
+            self.assertTrue(manager.quiescing)
+
+    async def test_failed_quiesce_restarts_exited_recovery_coordinator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(data_dir=Path(tmp))
+            manager = AgentSessionManager(settings, MagicMock())
+            session = AgentSession(id="s1", agent_name="codex")
+            runtime = MagicMock(session=session, prompting=False)
+            runtime.to_session_snapshot.return_value = SessionSnapshot(
+                session_id=session.id, agent_name="codex"
+            )
+            runtime._drain_transcripts = AsyncMock()
+            coordinator = asyncio.create_task(asyncio.sleep(0))
+            await coordinator
+            manager._recovery_coordinator_task = coordinator
+            runtime.connection.disconnect = AsyncMock(side_effect=RuntimeError("transport failure"))
+            manager._runtimes = {session.id: runtime}
+            recovered = asyncio.Event()
+
+            async def recover():
+                recovered.set()
+
+            with patch("pa.server.shutdown.is_shutting_down", return_value=False), patch.object(
+                manager, "_recovery_loop", side_effect=recover
+            ):
+                with self.assertRaisesRegex(RuntimeError, "transport failure"):
+                    await manager.quiesce()
+                await asyncio.wait_for(recovered.wait(), timeout=1)
+
+            self.assertTrue(manager._accepting)
+            self.assertFalse(manager.quiescing)
+            self.assertIsNot(manager._recovery_coordinator_task, coordinator)
+            self.assertIsNone(load_quiesce_snapshot(settings.data_dir))
 
 
 class PromptAcceptanceStatusTests(unittest.IsolatedAsyncioTestCase):

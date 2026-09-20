@@ -10,6 +10,30 @@ from pathlib import Path
 
 
 class AgentChatSseLifecycleTests(unittest.TestCase):
+    def test_recovery_banner_uses_current_failure_guidance(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for recovery banner regression")
+        root = Path(__file__).parents[1]
+        result = subprocess.run(
+            [node, str(root / "tests/agent_chat_recovery_node_harness.js"),
+             str(root / "src/pa/server/static/js/agent-chat.js")],
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_interrupt_pause_enables_resume_on_live_event_streams(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is required for queue control regression")
+        root = Path(__file__).parents[1]
+        result = subprocess.run(
+            [node, str(root / "tests/agent_chat_queue_node_harness.js"),
+             str(root / "src/pa/server/static/js/agent-chat.js")],
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_owner_request_survives_transport_replacement(self) -> None:
         node = shutil.which("node")
         if not node:

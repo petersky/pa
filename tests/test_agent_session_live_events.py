@@ -673,6 +673,25 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             process.kill.assert_called()
             self.assertIsNone(connection._ctx)
 
+    def test_disconnect_finishes_cleanup_when_transport_child_already_exited(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
+            connection.session = AgentSession(id="exited-child", agent_name="codex")
+            context = MagicMock()
+            context.__aexit__ = AsyncMock(side_effect=ProcessLookupError)
+            connection._ctx = context
+            connection._proc = MagicMock(returncode=0)
+            connection._drain_wire_logs = AsyncMock()
+
+            asyncio.run(connection.disconnect())
+
+            self.assertIsNone(connection._ctx)
+            self.assertIsNone(connection._proc)
+            self.assertIsNone(connection._conn)
+            self.assertEqual(connection.session.status, "disconnected")
+            connection.store.mark_session_disconnected.assert_called_once()
+            connection._drain_wire_logs.assert_awaited_once()
+
     def test_mark_transport_dead_uses_disconnect_lock(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             connection = AgentConnection(Settings(data_dir=Path(tmp)), MagicMock())
