@@ -2244,6 +2244,7 @@
       "queue_reordered",
       "queue_paused",
       "queue_resumed",
+      "publication_fence_established",
       "cancelled",
       "session_started",
       "session_closed",
@@ -2528,6 +2529,7 @@
       case "queue_reordered":
       case "queue_paused":
       case "queue_resumed":
+      case "publication_fence_established":
         if (!replay) this.refreshQueue();
         break;
       case "cancelled":
@@ -4336,7 +4338,7 @@
     "session_started", "session_closed", "session_recovered",
     "user_message", "turn_waiting", "turn_completed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "prompt_failed", "connection_lost",
+    "queue_paused", "queue_resumed", "publication_fence_established", "prompt_failed", "connection_lost",
     "model_changed", "mode_changed", "current_mode_update", "config_changed",
     "configuration_changed",
     "config_option_update", "config_options_update", "permission_request",
@@ -4348,7 +4350,7 @@
     "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
     "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "session_started", "session_closed",
+    "queue_paused", "queue_resumed", "publication_fence_established", "session_started", "session_closed",
     "session_recovered", "connection_lost", "model_changed", "mode_changed",
     "current_mode_update", "config_changed", "configuration_changed", "config_option_update",
     "config_options_update", "permission_request", "permission_resolved",

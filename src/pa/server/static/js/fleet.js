@@ -269,7 +269,7 @@
     "tool_call", "tool_call_update", "plan", "permission_request",
     "permission_resolved", "turn_completed", "queue_enqueued",
     "queue_dequeued", "queue_removed", "queue_reordered", "queue_paused",
-    "queue_resumed", "cancelled", "session_started", "session_closed",
+    "queue_resumed", "publication_fence_established", "cancelled", "session_started", "session_closed",
     "session_recovered", "browser_attachment_changed", "connection_lost",
     "usage_update", "model_changed", "mode_changed", "config_changed",
     "config_option_update", "config_options_update", "current_mode_update",
@@ -746,7 +746,7 @@
       "session_started", "session_closed", "session_recovered", "user_message",
       "turn_waiting", "turn_completed", "cancelled", "queue_enqueued",
       "queue_dequeued", "queue_removed", "queue_reordered", "queue_paused",
-      "queue_resumed", "prompt_failed", "connection_lost", "model_changed",
+      "queue_resumed", "publication_fence_established", "prompt_failed", "connection_lost", "model_changed",
       "mode_changed", "current_mode_update", "config_changed",
       "config_option_update", "config_options_update", "permission_request",
       "permission_resolved", "elicitation_request", "elicitation_resolved", "error"
