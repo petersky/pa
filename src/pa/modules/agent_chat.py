@@ -3649,17 +3649,24 @@ async def session_retry(request: Request, session_id: str) -> dict:
             session_id,
         )
         if session and session.status == RECOVERY_BLOCKED_STATUS:
+            recovery = dict(session.recovery_json or {})
             provisioning = dict((session.config_json or {}).get("provisioning") or {})
+            # The retry may have failed for a different reason after its workspace
+            # was repaired. Prefer the current recovery record over old advice.
+            if recovery or provisioning.get("state") != "blocked":
+                provisioning = {}
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "code": provisioning.get("error_code")
+                    "code": recovery.get("code") or provisioning.get("error_code")
                     or "session_recovery_blocked",
-                    "message": provisioning.get("error") or str(exc),
+                    "message": (
+                        recovery.get("last_error") or provisioning.get("error") or str(exc)
+                    ),
                     "blocked": True,
                     "retryable": False,
                     "manual_retry": True,
-                    "action": provisioning.get("action"),
+                    "action": recovery.get("remedy") or provisioning.get("action"),
                 },
             ) from exc
         if session and session.status == "closed":

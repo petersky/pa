@@ -170,4 +170,4 @@ def test_blocked_session_surfaces_retry_and_close_guidance() -> None:
     assert "data-acw-recovery-action" in template
     assert "data-acw-retry" in template
     assert '"/sessions/" + this.sessionId + "/retry"' in script
-    assert "Correct the project availability" in script
+    assert "Correct the project availability" not in script
