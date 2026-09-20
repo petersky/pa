@@ -2124,6 +2124,11 @@ class AgentConnection:
                     await asyncio.wait_for(
                         ctx.__aexit__(None, None, None), timeout=max(0.1, timeout)
                     )
+                except ProcessLookupError:
+                    # The child can exit between the transport's shutdown
+                    # timeout and terminate(). It is already disconnected;
+                    # still finish persistence and wire-log cleanup below.
+                    pass
                 except TimeoutError:
                     if proc and getattr(proc, "returncode", None) is None:
                         try:

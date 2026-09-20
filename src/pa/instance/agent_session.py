@@ -6480,6 +6480,12 @@ class AgentSessionManager:
             with self._runtime_lifecycle_lock:
                 self._accepting = prior_accepting
                 self._quiescing = prior_quiescing
+            if (prior_accepting and not prior_quiescing
+                    and self._recovery_coordinator_task is not None):
+                # The coordinator may have exited while admission was fenced.
+                # Restart it so partially disconnected sessions and their
+                # durable queues recover after an aborted restart.
+                self.request_recovery()
 
         try:
             await _emit("quiescing")
