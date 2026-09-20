@@ -65,11 +65,11 @@
 <section class="panel command-section" aria-labelledby="recent-outcomes-title">
   <div class="panel-header">
     <div>
-      <p class="eyebrow">Terminal work</p>
+      <p class="eyebrow">Execution outcomes</p>
       <h2 id="recent-outcomes-title">Recent outcomes</h2>
     </div>
     <span class="section-count"
-          aria-label="Showing {{ recent_outcomes | length }} of {{ recent_outcomes_total }} completed cards">
+          aria-label="Showing {{ recent_outcomes | length }} of {{ recent_outcomes_total }} outcomes">
       {{ recent_outcomes | length }}{% if recent_outcomes_total > recent_outcomes | length %} / {{ recent_outcomes_total }}{% endif %}
     </span>
   </div>
@@ -82,7 +82,7 @@
   {% else %}
   <div class="empty-state compact-empty">
     <h3>No recent outcomes</h3>
-    <p class="muted">Terminal results will collect here without masquerading as active work.</p>
+    <p class="muted">Ended turns and completed cards will collect here with their recorded outcomes.</p>
   </div>
   {% endif %}
   <a class="section-route"

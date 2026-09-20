@@ -306,7 +306,7 @@ class AttachmentStore:
                 evidence.append(
                     {
                         **item.model_dump(mode="json"),
-                        "local_path": str((final / candidate).resolve()),
+                        "local_path": str((final / candidate).absolute()),
                     }
                 )
             atomic_write_json(
@@ -314,10 +314,21 @@ class AttachmentStore:
                 {"digest": manifest_digest(manifest), "attachments": evidence},
             )
             if final.exists():
+                if final.is_symlink():
+                    raise AttachmentError("materialization_corrupt", "Materialized attachment directory changed")
                 existing = final / "manifest.json"
                 if existing.is_file() and __import__("json").loads(
                     existing.read_text()
                 ).get("digest") == manifest_digest(manifest):
+                    # Replay verifies the actual paths given to the executor,
+                    # not just the source blobs and a previously written digest.
+                    for item in evidence:
+                        path = Path(str(item["local_path"]))
+                        if path.is_symlink() or not path.is_file() or path.stat().st_size != item["size"]:
+                            raise AttachmentError("materialization_corrupt", "Materialized attachment is missing or changed")
+                        with path.open("rb") as source:
+                            if hashlib.file_digest(source, "sha256").hexdigest() != item["sha256"]:
+                                raise AttachmentError("materialization_corrupt", "Materialized attachment failed SHA-256 verification")
                     shutil.rmtree(temporary)
                 else:
                     raise AttachmentError(

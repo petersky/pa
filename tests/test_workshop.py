@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from pa.config import Settings
@@ -620,12 +621,17 @@ def test_pre_session_reservation_is_in_motion_but_not_live_or_attention():
     }
 
 
-def test_completion_pending_retry_is_in_motion_not_live_or_attention():
+@pytest.mark.parametrize("scheduled", [False, True])
+def test_completion_pending_requires_a_schedule_for_motion(scheduled):
     pending = _Dispatch(
         session_id=None,
         state="completion_pending",
         effective_state="completion_pending",
         card_reconciliation={"state": "retrying", "reason": "Waiting for card"},
+        completion_outbox={
+            "pending": True,
+            "next_retry_at": "2026-07-28T20:02:00+00:00" if scheduled else None,
+        },
     )
 
     class CompletionStore:
@@ -643,7 +649,8 @@ def test_completion_pending_retry_is_in_motion_not_live_or_attention():
     assert row["dispatch_current"] is True
     assert row["live"] is False
     assert row["attention"] is False
-    assert row["presentation"]["group"] == "motion"
+    assert row["presentation"]["group"] == ("motion" if scheduled else "outcome")
+    assert row["presentation"]["state_label"] == "Completion pending"
     assert row["attention_reasons"] == []
 
 

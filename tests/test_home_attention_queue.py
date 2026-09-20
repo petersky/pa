@@ -157,7 +157,7 @@ class HomeAttentionQueueRouteTests(unittest.TestCase):
         self.assertEqual(response.text.count('data-attention-group="outcome"'), 6)
         self.assertIn("Showing 6 of 9 actionable cards", response.text)
         self.assertIn("Showing 8 of 11 cards in motion", response.text)
-        self.assertIn("Showing 6 of 17 completed cards", response.text)
+        self.assertIn("Showing 6 of 17 outcomes", response.text)
         self.assertIn("103 older cards are intentionally omitted", response.text)
         self.assertIn("attention=actionable", response.text)
         self.assertIn("attention=motion", response.text)

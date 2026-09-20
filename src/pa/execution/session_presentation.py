@@ -60,6 +60,68 @@ def _pending_interaction(session: Any, runtime: Any | None) -> dict[str, Any] | 
     return None
 
 
+def pending_completion_processing(dispatch: Any | None) -> dict[str, Any] | None:
+    """Keep authoritative obligations distinct from evidence of scheduled work."""
+    dispatch_state = str(_field(dispatch, "state", "") or "")
+    reconciliation = _field(dispatch, "card_reconciliation", {}) or {}
+    reconciliation_state = str(
+        _field(dispatch, "reconciliation_state") or _field(reconciliation, "state", "")
+    )
+    completion_pending = bool(
+        not _field(dispatch, "acknowledged_at") and (
+            dispatch_state == "completion_pending"
+            or _field(_field(dispatch, "completion_outbox", {}), "pending", False)
+        )
+        or any(
+            _field(turn, "state") == "ended"
+            and _field(turn, "delivery_state") in {"pending", "retrying"}
+            for turn in _field(dispatch, "followup_turns", []) or []
+        )
+    )
+    reconciliation_pending = bool(
+        reconciliation_state in {"pending", "prompted"}
+        or reconciliation_state in {"blocked", "failed", "exhausted"} and (
+            _field(dispatch, "reconciliation_next_retry_at")
+            or _field(reconciliation, "next_retry_at")
+        )
+    )
+    if not (completion_pending or reconciliation_pending):
+        return None
+    completion_scheduled = completion_pending and bool(
+        not _field(dispatch, "acknowledged_at") and (
+            _field(dispatch, "completion_next_retry_at")
+            or _field(_field(dispatch, "completion_outbox", {}), "next_retry_at")
+        )
+        or any(
+            _field(turn, "state") == "ended"
+            and _field(turn, "delivery_state") in {"pending", "retrying"}
+            and _field(turn, "next_retry_at")
+            for turn in _field(dispatch, "followup_turns", []) or []
+        )
+    )
+    reconciliation_scheduled = reconciliation_pending and bool(
+        _field(dispatch, "reconciliation_next_retry_at")
+        or _field(reconciliation, "next_retry_at")
+    )
+    next_action = (
+        "deliver_completion" if completion_scheduled else
+        "reconcile_card" if reconciliation_scheduled else None
+    )
+    return {
+        "display_status": "Completion pending" if completion_pending else "Reconciliation pending",
+        "explanation": (
+            "The turn ended; its recorded completion is awaiting delivery. "
+            if completion_pending else
+            "The turn ended; the authoritative card reconciliation remains pending. "
+        ) + (
+            "A retry is scheduled. No live agent turn is confirmed."
+            if next_action else
+            "No live agent turn or scheduled processing is confirmed; inspect the recorded obligation."
+        ),
+        "next_automatic_action": next_action,
+    }
+
+
 def build_session_presentation(
     session: Any,
     *,
@@ -112,6 +174,9 @@ def build_session_presentation(
     workflow_outcome = dict(getattr(session, "workflow_outcome", None) or {})
     initiating_workflow = dict(getattr(session, "initiating_workflow", None) or {})
     dispatch_state = str(_field(dispatch, "state", "") or "")
+    settlement = pending_completion_processing(dispatch)
+    settlement_pending = settlement is not None
+    obligations = obligations or settlement_pending
     if purpose in {"automated_run", "one_shot_job"} and workflow_state not in _TERMINAL_WORKFLOW_STATES:
         followups = list(_field(dispatch, "followup_turns", []) or [])
         dispatch_settled = bool(
@@ -140,6 +205,13 @@ def build_session_presentation(
             workflow_outcome = {**workflow_outcome, "evaluation": str(evaluated)}
     archived = getattr(session, "archived_at", None) is not None
     status = str(getattr(session, "status", "unknown") or "unknown")
+    # Recovery/lifecycle metadata can outlive a settled workflow. Actual prompts
+    # and decisions still win, including new follow-ups on a completed run.
+    settled = workflow_state in _TERMINAL_WORKFLOW_STATES and not (
+        prompting or in_flight or queue or interaction or settlement_pending
+    )
+    if settled:
+        obligations = False
 
     queue_reason = None
     if queue:
@@ -174,7 +246,11 @@ def build_session_presentation(
             interaction.get("action") or "Your input is required before work can continue.",
             "wait_for_user",
         )
-    elif status in _BLOCKED_SESSION_STATES or recovery.get("blocked"):
+    elif settlement_pending and not prompting and not queue and not in_flight:
+        display_status = settlement["display_status"]
+        explanation = settlement["explanation"]
+        next_action = settlement["next_automatic_action"]
+    elif not settled and (status in _BLOCKED_SESSION_STATES or recovery.get("blocked")):
         display_status, explanation, next_action = (
             "Recovery blocked",
             recovery.get("remedy")
@@ -183,11 +259,13 @@ def build_session_presentation(
             or "Correct the provider or workspace configuration, then retry.",
             None,
         )
-    elif quiescing or (not startup_complete and (obligations or status == "quiesced")):
+    elif not settled and (quiescing or (not startup_complete and (obligations or status == "quiesced"))):
         display_status, explanation, next_action = (
             "PA is restarting",
             "The durable session is preserved and intentional pauses will remain paused.",
-            "restore_after_restart" if obligations else None,
+            "restore_after_restart" if obligations and queue_reason not in {
+                "operator_paused", "automation_paused_for_takeover",
+            } else None,
         )
     elif (
         purpose in {"automated_run", "one_shot_job"}
@@ -218,6 +296,12 @@ def build_session_presentation(
         display_status = "Responding" if purpose == "chat" else "Running"
         explanation = "The provider is working on the current turn."
         next_action = "finish_current_turn"
+    elif queue_reason == "operator_paused":
+        display_status, explanation, next_action = (
+            "Paused",
+            "The queue is paused. Resume the queue to continue pending prompts.",
+            None,
+        )
     elif connected and queue:
         display_status = "Queued"
         explanation = {
@@ -303,6 +387,8 @@ def build_session_presentation(
             "state": (
                 "running"
                 if connected and (prompting or in_flight)
+                else "paused"
+                if queue_reason in {"operator_paused", "automation_paused_for_takeover"}
                 else "blocked"
                 if durable.get("lifecycle") == "admission_blocked"
                 else "queued"
