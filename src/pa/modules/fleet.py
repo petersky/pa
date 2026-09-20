@@ -1676,6 +1676,42 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
                 status_code=403,
                 detail={"code": "attachment_scope_mismatch", "recoverable": False},
             )
+    ledger = _dispatch_store(request)
+    recorded = ledger.get(body.dispatch_id)
+    if recorded:
+        # Validate replay identity before granting transfers or materializing
+        # bytes. Local admission and remote replay must bind the same snapshot.
+        if recorded.mutation_id != body.mutation_id:
+            raise HTTPException(status_code=409, detail={"code": "idempotency_conflict"})
+        if any((
+            recorded.authority_instance_id != body.authority_instance_id,
+            recorded.target_instance_id != body.target_instance_id,
+            recorded.realm_id != body.realm_id,
+            recorded.card_id != ((body.card or {}).get("id") or None),
+            recorded.card_version != body.card_version,
+            recorded.project_id != body.project_id,
+            recorded.materialization_plan != body.materialization_plan,
+        )):
+            raise HTTPException(status_code=409, detail={"code": "dispatch_snapshot_mismatch"})
+        expected_manifest = (recorded.card_snapshot or {}).get("attachments")
+        if expected_manifest is not None and recorded.goal_provenance is not None:
+            envelope = recorded.goal_provenance.materialization_envelope
+            if envelope is not None:
+                expected_manifest = [item for item in expected_manifest
+                                     if item["attachment_id"] in envelope.attachment_ids]
+        expected_digest = (
+            (recorded.attachment_evidence or {}).get("digest")
+            or (manifest_digest(expected_manifest) if expected_manifest is not None else None)
+        )
+        if expected_digest and expected_digest != manifest_digest(body.attachment_manifest):
+            raise HTTPException(status_code=409, detail={"code": "attachment_manifest_mismatch"})
+        if recorded.card_snapshot is not None:
+            expected_card = dict(recorded.card_snapshot)
+            if "attachments" in expected_card:
+                expected_card["attachments"] = expected_manifest
+            if expected_card != body.card:
+                raise HTTPException(status_code=409, detail={"code": "dispatch_snapshot_mismatch"})
+        target_provenance = _target_goal_execution_identity_transition(recorded, body)
     attachment_store = AttachmentStore(request.app.state.ctx.settings.data_dir)
     attachment_store.authorize_transfer(
         body.dispatch_id,
@@ -1706,7 +1742,6 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
     except AttachmentError as exc:
         raise HTTPException(status_code=409, detail=exc.detail()) from exc
 
-    ledger = _dispatch_store(request)
     progress_protocol_version = next(
         (
             version
@@ -1715,32 +1750,24 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         ),
         None,
     )
-    recorded = ledger.get(body.dispatch_id)
     if recorded:
-        if recorded.mutation_id != body.mutation_id:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "idempotency_conflict",
-                    "message": "dispatch id is already in use",
-                },
-            )
-        target_provenance = _target_goal_execution_identity_transition(recorded, body)
         # Local authority/target dispatches already share this admission record.
         # Negotiate on the authenticated materialization offer, even on replay.
         # Never replace an established version with an absent/incompatible offer.
-        if (
-            recorded.progress_protocol_version is None
-            and progress_protocol_version is not None
-            and recorded.authority_instance_id == body.authority_instance_id
-            and recorded.target_instance_id == body.target_instance_id
-            and recorded.realm_id == body.realm_id
-        ):
-            recorded.progress_protocol_version = progress_protocol_version
-            ledger.put(recorded)
-        if target_provenance != recorded.goal_provenance:
-            recorded.goal_provenance = target_provenance
-            ledger.put(recorded)
+        def preserve_materialization(current: DispatchRecord) -> bool:
+            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence)
+            if current.progress_protocol_version is None and progress_protocol_version is not None:
+                current.progress_protocol_version = progress_protocol_version
+            current.goal_provenance = target_provenance
+            current.attachment_evidence = attachment_evidence
+            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence)
+
+        try:
+            recorded = ledger.compare_and_mutate(recorded, preserve_materialization)
+        except DispatchCompareConflict as exc:
+            raise HTTPException(status_code=409, detail={
+                "code": "dispatch_materialization_changed", "recoverable": True,
+            }) from exc
         return {
             "dispatch_id": body.dispatch_id,
             "card_id": recorded.card_id,
@@ -1805,6 +1832,7 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         principal_id=body.principal_id,
         realm_id=body.realm_id,
         card_version=body.card_version,
+        card_snapshot=body.card,
         authority_instance_id=body.authority_instance_id,
         authority_instance_name=body.authority_instance_name,
         authority_url=body.authority_url,

@@ -130,7 +130,7 @@ def test_idle_runtime_is_not_presented_as_active_and_terminal_dispatch_wins() ->
     assert idle["group"] == "quiet"
     assert idle["state_label"] == "Agent idle"
     assert terminal["group"] == "outcome"
-    assert terminal["state_label"] == "Completed"
+    assert terminal["state_label"] == "Work unfinished"
 
 
 def test_stale_progress_on_current_dispatch_needs_inspection() -> None:
@@ -147,7 +147,6 @@ def test_stale_progress_on_current_dispatch_needs_inspection() -> None:
         ("waiting_capacity", "Waiting for capacity"),
         ("queued", "Queued"),
         ("checking_sync", "Checking fleet state"),
-        ("completion_pending", "Finishing"),
     ],
 )
 def test_stale_starting_dispatch_remains_autonomous_motion(
@@ -232,7 +231,7 @@ def test_delivery_and_reconciliation_failures_are_actionable(
     [
         ("completed", False, "outcome", "open_card"),
         ("failed", False, "outcome", "open_card"),
-        ("cancelled", True, "attention", "retry"),
+        ("cancelled", True, "attention", "inspect"),
     ],
 )
 def test_terminal_outcomes_and_explicit_retry_decisions(
@@ -361,7 +360,7 @@ def test_historical_dispatch_state_on_done_card_shows_completed_outcome(
     result = present(card=done_card, dispatch_value=value)
 
     assert result["group"] == "outcome"
-    assert result["state_label"] == "Completed"
+    assert result["state_label"] == ("Completion pending" if state == "completion_pending" else "Completed")
     assert result["attention"] is False
 
 
@@ -413,7 +412,7 @@ def test_missing_or_remote_runtime_does_not_claim_live_ownership(connection):
     result = present(dispatch_value=dispatch("running", progress={"schema_version": None}),
         session={"id": "session-1", "state": "available", "connection_state": connection})
     assert result["freshness"] == connection
-    assert result["occurred_at"] is None
+    assert result["occurred_at"] == (NOW - timedelta(seconds=20)).isoformat()
     assert "runtime is connected" not in result["summary"]
     assert not result["can_dispatch"]
 
@@ -462,3 +461,62 @@ def test_queued_followup_after_terminal_dispatch_prevents_duplicate_start():
     assert not result["can_dispatch"]
     assert result["action"]["kind"] == "open_agent"
     assert "no live turn is confirmed" in result["reason"]
+
+
+def test_later_checkpoint_blocker_outweighs_old_final_report():
+    value = dispatch("completed", phase="blocked", summary="New acceptance failed")
+    value["progress"]["latest"]["blockers"] = ["New measured acceptance failure"]
+    value["final_report"] = {"created_at": (NOW - timedelta(days=1)).isoformat(),
+                             "outcome": "Earlier feasibility passed", "blockers": []}
+    result = present(dispatch_value=value)
+    assert result["summary"] == "New measured acceptance failure"
+    assert result["attention_code"] == "explicit_blocker"
+
+
+@pytest.mark.parametrize("state,dependency", [("blocked", None), ("conflict_requires_resolution", None), ("failed", "Authority unavailable")])
+def test_new_disposition_does_not_retire_unresolved_dependency_or_conflict(state, dependency):
+    value = dispatch("completed", card_id=CARD["id"], card_reconciliation={
+        "state": state, "updated_at": (NOW - timedelta(days=1)).isoformat(),
+        "disposition_error": "Old parser failure", "last_dependency_error": dependency,
+    }, final_report={"created_at": NOW.isoformat(), "resulting_lane": "waiting",
+                     "outcome": "Waiting", "card_disposition": {
+                         "contract": "pa.card-disposition/v1", "lane": "waiting",
+                         "outcome": "Waiting", "evidence": {}}})
+    result = present(dispatch_value=value)
+    assert result["attention_code"] == "reconciliation_failure"
+    assert not result["historical_reconciliation"]
+
+
+def test_idle_historical_runtime_observation_does_not_refresh_outcome_date():
+    outcome_at = NOW - timedelta(days=3)
+    value = dispatch("completed", phase="completed", card_id=CARD["id"], final_report={
+        "created_at": outcome_at.isoformat(), "outcome": "Feasibility review ended.",
+    })
+    value["progress"] = {"freshness": {"state": "completed"}}
+    result = present(dispatch_value=value, session={
+        "id": "session-1", "state": "idle", "connected": True,
+        "connection_state": "connected", "observed_at": NOW.isoformat(),
+    })
+    assert result["occurred_at"] == outcome_at.isoformat()
+    assert result["relative_time"] == "3d ago"
+    assert result["signal_label"] == "Outcome recorded"
+    assert result["freshness"] == "completed"
+
+
+@pytest.mark.parametrize("state", ["pending", "prompted"])
+def test_unscheduled_reconciliation_is_inspectable_without_automatic_claim(state):
+    from pa.core.ui.work_presentation import present_reconciliation
+    result = present_reconciliation({"state": state, "next_retry_at": None, "prompt_id": "old"},
+                                    active_turn=True, active_prompt_id="unrelated")
+    assert result["label"] == "Completion check pending"
+    assert result["next_action"] == "Inspect completion check"
+    assert not result["needs_attention"]
+
+
+@pytest.mark.parametrize("extra,code", [
+    ({"completion_outbox": {"classification": "semantic_conflict", "last_error": "Authority rejected"}}, "delivery_failure"),
+    ({"card_reconciliation": {"state": "conflict_requires_resolution", "condition": "authority_conflict"}}, "reconciliation_failure"),
+])
+def test_done_lane_does_not_hide_unresolved_typed_completion_failure(extra, code):
+    result = present(card={**CARD, "lane": "done"}, dispatch_value=dispatch("completed", **extra))
+    assert result["attention_code"] == code

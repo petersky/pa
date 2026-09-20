@@ -58,7 +58,7 @@ def test_large_history_keeps_home_shell_small_and_sections_bounded() -> None:
         assert sections.status_code == 200
         assert sections.text.count("data-attention-card") <= 20
         assert "historical home detail" not in sections.text
-        assert "Showing 6 of 250 completed cards" in sections.text
+        assert "Showing 6 of 250 outcomes" in sections.text
 
 
 def test_repeated_home_navigations_have_a_stable_server_budget() -> None:

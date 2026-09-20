@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from pa.execution.session_presentation import pending_completion_processing
+
 ACTIVE_DISPATCH_STATES = {
     "waiting_capacity",
     "blocked",
@@ -326,9 +328,14 @@ def _session_facts(session: dict[str, Any] | None) -> dict[str, Any]:
         )
     )
     failed = classification == "failed_closed" or state in {"failed", "error"}
+    presentation = session.get("presentation") or {}
+    paused = turn_state == "paused" or (presentation.get("queue") or {}).get("reason") in {
+        "operator_paused", "automation_paused_for_takeover",
+    }
     return {
         "active": active,
-        "pending": not failed and (turn_state == "queued" or state in {"queued", "deferred"}),
+        "pending": not failed and not paused and (turn_state == "queued" or state in {"queued", "deferred"}),
+        "paused": paused,
         "quiet": quiet,
         "failed": failed,
         "state": state,
@@ -340,6 +347,29 @@ def _session_facts(session: dict[str, Any] | None) -> dict[str, Any]:
 
 def _action(kind: str, label: str, **values: Any) -> dict[str, Any]:
     return {"kind": kind, "label": label, **values}
+
+
+def _current_disposition(card: Any, dispatch: dict[str, Any]) -> dict[str, Any] | None:
+    """A dated, exact-execution report with a valid disposition for this lane.
+
+    A generic checkpoint, card edit, or another card's result cannot retire a
+    reconciliation failure. Neither does this report establish task acceptance.
+    """
+    from pa.execution.disposition import parse_card_disposition
+
+    if dispatch.get("card_id") != str(_value(card, "id", "")):
+        return None
+    report = dispatch.get("final_report") or {}
+    disposition, _error = parse_card_disposition(report.get("card_disposition"))
+    if not disposition or not _parsed_time(report.get("created_at")):
+        return None
+    lane = str(_enum_value(_value(card, "lane", "")))
+    if disposition.lane != lane or report.get("resulting_lane") != lane:
+        return None
+    revision = getattr(disposition, "completion_requirement_revision", None)
+    if revision and revision != _value(_value(card, "completion_requirement"), "revision"):
+        return None
+    return report
 
 
 def present_work_item(
@@ -379,10 +409,20 @@ def present_work_item(
     state = str(dispatch.get("effective_state") or dispatch.get("state") or "")
     latest_phase = str(latest.get("phase") or "")
     latest_summary = _text(latest.get("summary"))
+    report = dispatch.get("final_report") or {}
+    report_at = _parsed_time(report.get("created_at"))
+    checkpoint_at = _parsed_time(latest.get("occurred_at") or latest.get("last_activity_at"))
+    report_is_current = bool(report and (not checkpoint_at or report_at and report_at >= checkpoint_at))
+    outcome_summary = _text(report.get("outcome")) or _text(
+        (dispatch.get("post_turn_evaluation") or {}).get("operator_status_text")
+    )
+    current_disposition = _current_disposition(card, dispatch)
     timestamp = (
-        freshness.get("last_activity_at")
+        (report.get("created_at") if report_is_current else None)
         or latest.get("last_activity_at")
         or latest.get("occurred_at")
+        or report.get("created_at")
+        or freshness.get("last_activity_at")
         or dispatch.get("updated_at")
         or _value(card, "updated_at")
     )
@@ -392,15 +432,20 @@ def present_work_item(
     connection = (session or {}).get("connection_state") or (
         "connected" if (session or {}).get("connected") else "unavailable"
     )
-    if connection == "connected" or session_facts["active"]:
+    runtime_signal = bool(
+        session_facts["active"]
+        or connection == "connected" and (
+            session_facts["pending"]
+            or ((session or {}).get("presentation") or {}).get("pending_interaction")
+        )
+    )
+    if runtime_signal:
         freshness_state = "live"
-        timestamp = (session or {}).get("observed_at")
-    elif session is not None:
+        timestamp = (session or {}).get("observed_at") or timestamp
+    elif session is not None and state not in TERMINAL_DISPATCH_STATES:
         freshness_state = connection
-        timestamp = (session or {}).get("observed_at")
     elif freshness_state in {"unsupported", "unavailable", "disconnected", "delivery_error"}:
         freshness_state = "unavailable"
-        timestamp = None
     card_href = f"/?realm={realm_id}&card={card_id}" if card_id else "/work"
     agent_href = (
         f"/agent?session={session_id}" + (f"&instance={target_id}" if target_id else "")
@@ -423,7 +468,9 @@ def present_work_item(
     operator_prompt = _text(interaction.get("action")) or (
         _operator_prompt(latest) if state not in TERMINAL_DISPATCH_STATES else None
     )
-    blockers = [text for item in latest.get("blockers") or [] if (text := _text(item))]
+    blockers = [text for item in (report.get("blockers") if state in TERMINAL_DISPATCH_STATES
+                                 and report_is_current else latest.get("blockers")) or []
+                if (text := _text(item))]
     delivery = dispatch.get("completion_outbox") or {}
     delivery_class = str(delivery.get("classification") or "")
     delivery_error = _completion_delivery_error(dispatch)
@@ -431,9 +478,19 @@ def present_work_item(
     reconciliation_state = str(reconciliation.get("state") or "")
     reconciliation_reason = _text(
         reconciliation.get("last_dependency_error")
-        or reconciliation.get("disposition_error")
         or reconciliation.get("reason")
         or reconciliation.get("condition")
+    )
+    reconciliation_at = _parsed_time(reconciliation.get("updated_at"))
+    historical_reconciliation = bool(
+        state in {"completed", "acknowledged"}
+        and reconciliation_state == "failed"
+        and reconciliation.get("disposition_error")
+        and not reconciliation.get("last_dependency_error")
+        and not reconciliation.get("condition")
+        and not reconciliation.get("next_retry_at")
+        and current_disposition and reconciliation_at
+        and _parsed_time(current_disposition["created_at"]) > reconciliation_at
     )
     review = next(
         (
@@ -444,6 +501,7 @@ def present_work_item(
         ),
         None,
     )
+    settlement = pending_completion_processing(dispatch)
 
     # Pending operator input is already an operator-owned gate, even while
     # the provider keeps its turn open. Otherwise, a current turn or tool is
@@ -504,7 +562,29 @@ def present_work_item(
             external=bool(review_url),
         )
         action_explanation = None
-    elif lane == "done" and not session_facts["active"]:
+    elif (settlement
+          and not delivery_error and delivery_class not in FAILED_DELIVERY_CLASSES
+          and reconciliation_state not in FAILED_RECONCILIATION_STATES
+          and not blockers and not (latest_phase == "blocked" and not report_is_current)
+          and state != "blocked"):
+        scheduled = bool(settlement["next_automatic_action"])
+        group = "motion" if scheduled else "outcome"
+        state_code = settlement["display_status"].lower().replace(" ", "_")
+        state_label = settlement["display_status"]
+        summary = settlement["explanation"]
+        if not report_at and not checkpoint_at:
+            timestamp = (
+                reconciliation.get("updated_at") if state_label == "Reconciliation pending"
+                else dispatch.get("completion_received_at") or dispatch.get("acknowledged_at")
+            ) or timestamp
+        reason = "The authoritative dispatch records unfinished completion processing."
+        tone = "active" if scheduled else "muted"
+        priority = 80 if scheduled else 50
+        action = _action("inspect", "Inspect completion", href=card_href)
+        action_explanation = "Completion processing is distinct from a live agent turn."
+    elif (lane == "done" and not settlement
+          and not delivery_error and delivery_class not in FAILED_DELIVERY_CLASSES
+          and (reconciliation_state not in FAILED_RECONCILIATION_STATES or historical_reconciliation)):
         group = "outcome"
         state_code = "completed"
         state_label = "Completed"
@@ -533,7 +613,7 @@ def present_work_item(
         attention_code = "delivery_failure"
         action = _action("inspect", "Inspect delivery", href=card_href)
         action_explanation = None
-    elif reconciliation_state in FAILED_RECONCILIATION_STATES:
+    elif reconciliation_state in FAILED_RECONCILIATION_STATES and not historical_reconciliation:
         group = "attention"
         state_code = "reconciliation_failed"
         state_label = "Reconciliation blocked"
@@ -544,7 +624,7 @@ def present_work_item(
         attention_code = "reconciliation_failure"
         action = _action("inspect", "Inspect blocker", href=card_href)
         action_explanation = None
-    elif blockers or latest_phase == "blocked" or state == "blocked":
+    elif blockers or (latest_phase == "blocked" and not report_is_current) or state == "blocked":
         group = "attention"
         state_code = "blocked"
         state_label = "Blocked"
@@ -564,14 +644,20 @@ def present_work_item(
     elif state in {"failed", "cancelled"} and dispatch.get("can_retry"):
         group = "attention"
         state_code = "retry_required"
-        state_label = "Retry decision needed"
+        state_label = "Execution failed" if state == "failed" else "Execution cancelled"
         summary = _text(dispatch.get("last_error")) or f"Dispatch {state}."
-        reason = "The dispatch stopped and is explicitly safe to retry."
+        reason = "The attempt stopped. Retry is technically available; current work and dependencies must be reviewed before deciding whether it is useful."
         tone = "failed"
         priority = 102
         attention_code = "retry_decision"
-        action = _action("retry", "Retry", dispatch_id=dispatch_id)
+        action = _action("inspect", "Inspect attempt", href=card_href)
         action_explanation = None
+    elif session_facts["paused"]:
+        state_code = "paused"
+        state_label = "Paused"
+        summary = "Queued prompts are held until the queue is resumed."
+        reason = "An explicit pause prevents automatic recovery or execution."
+        action = _action("open_agent", "Open agent", href=agent_href)
     elif state in STARTING_DISPATCH_STATES:
         group = "motion"
         state_code = state
@@ -622,21 +708,17 @@ def present_work_item(
         attention_code = completion["reason_code"]
         action = _action("open_card", "Open card", href=card_href)
         action_explanation = "Review the current completion requirement."
-    elif state in {"completed", "acknowledged"} or lane == "done":
+    elif state in {"completed", "acknowledged"}:
         group = "outcome"
-        state_code = "completed"
-        state_label = "Completed"
-        evaluation = dispatch.get("post_turn_evaluation") or {}
-        summary = (
-            _text(evaluation.get("operator_status_text"))
-            or latest_summary
-            or "Work completed."
-        )
-        reason = "This is a terminal outcome, not active work."
-        tone = "success"
+        state_code = "turn_ended"
+        state_label = "Work unfinished"
+        summary = ((outcome_summary if report_is_current else latest_summary)
+                   or outcome_summary or latest_summary or "The execution turn ended.")
+        reason = "The execution turn ended; the card remains " + (lane.capitalize() or "unfinished") + "."
+        tone = "muted"
         priority = 50
         action = _action("open_card", "Open card", href=card_href)
-        action_explanation = "No operator action is required for this outcome."
+        action_explanation = "Review the recorded outcome and remaining acceptance work."
     elif state in TERMINAL_DISPATCH_STATES:
         group = "outcome"
         state_code = state
@@ -669,6 +751,7 @@ def present_work_item(
         "in_motion": group == "motion",
         "terminal": group == "outcome",
         "attention_code": attention_code,
+        "historical_reconciliation": historical_reconciliation,
         "priority": priority,
         "state": state_code,
         "state_label": state_label,
@@ -677,7 +760,15 @@ def present_work_item(
         "tone": tone,
         "freshness": freshness_state,
         "connection": connection,
-        "signal_label": "Runtime observed" if (session or {}).get("observed_at") else "Checkpoint" if timestamp else "Runtime signal",
+        "signal_label": (
+            "Runtime observed" if runtime_signal and (session or {}).get("observed_at")
+            else "Outcome recorded" if report_is_current and report_at
+            else "Checkpoint" if latest
+            else "Outcome recorded" if report_at
+            else "Completion updated" if settlement and not report_at and not checkpoint_at
+            else "Execution updated" if dispatch.get("updated_at")
+            else "Card updated" if timestamp else "Runtime signal"
+        ),
         "execution_label": "Latest execution" if state in TERMINAL_DISPATCH_STATES and not session_facts["active"] else "Execution",
         "checkpoint_state": checkpoint_state,
         "reporting": reporting,
@@ -693,7 +784,10 @@ def present_work_item(
         "active_prompt_id": (session or {}).get("active_prompt_id"),
         "provider": (session or {}).get("provider"),
         "model": (session or {}).get("model"),
-        "can_dispatch": not (state in ACTIVE_DISPATCH_STATES or session_facts["active"] or session_facts["pending"]),
+        "can_dispatch": not (
+            state in ACTIVE_DISPATCH_STATES or session_facts["active"] or session_facts["pending"]
+            or settlement is not None
+        ),
         "freshness_label": FRESHNESS_LABELS.get(
             freshness_state,
             freshness_state.replace("_", " ").capitalize(),
@@ -735,7 +829,9 @@ def present_reconciliation(
     """Describe automated extraction separately from its immutable diagnostics."""
     state = str(record.get("state") or "not_requested")
     resolved = state in {"resolved", "not_required", "already_satisfied", "completed"}
-    automatic = state in {"prompted", "pending"} or bool(record.get("next_retry_at"))
+    automatic = bool(record.get("next_retry_at")) or bool(
+        active_turn and active_prompt_id and active_prompt_id == record.get("prompt_id")
+    )
     if historical:
         label = "Earlier completion check"
         detail = (
@@ -758,21 +854,13 @@ def present_reconciliation(
         )
         next_action = "Finish the current completion check"
     elif automatic:
-        label = (
-            "Automatic completion check queued"
-            if state == "prompted" else "Automatic completion check pending"
-        )
-        detail = (
-            "The current agent turn is running. PA will process the queued "
-            "completion check when its turn is reached. "
-            if active_turn else "PA will extract the completion outcome automatically. "
-        )
-        detail += "No user action is needed."
-        next_action = (
-            "Wait for the queued check" if state == "prompted"
-            else "Retry automatically at the recorded time" if record.get("next_retry_at")
-            else "Run the automatic completion check"
-        )
+        label = "Automatic completion check scheduled"
+        detail = "A completion check retry is scheduled at the recorded time. No live agent turn is confirmed."
+        next_action = "Retry automatically at the recorded time"
+    elif state in {"pending", "prompted"}:
+        label = "Completion check pending"
+        detail = "The recorded check is unfinished; no queued, live, or scheduled check is confirmed."
+        next_action = "Inspect completion check"
     else:
         label = "Completion check needs attention"
         detail = (
@@ -784,7 +872,7 @@ def present_reconciliation(
         **record,
         "label": label,
         "detail": detail,
-        "needs_attention": not historical and not resolved and not automatic,
+        "needs_attention": not historical and not resolved and not automatic and state not in {"pending", "prompted"},
         "next_action": next_action,
         "active_turn": active_turn,
     }

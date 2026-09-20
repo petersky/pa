@@ -549,7 +549,7 @@ def _progress_from_dispatch(ctx: AppContext, record) -> dict:
     return progress
 
 
-def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
+def _session_presentation_signal(ctx: AppContext, session, *, dispatch=None) -> dict | None:
     if session is None:
         return None
     from pa.execution.session_presentation import build_session_presentation
@@ -560,6 +560,7 @@ def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
     presentation = build_session_presentation(
         session,
         runtime=runtime,
+        dispatch=dispatch,
         quiescing=bool(getattr(agent, "_quiescing", False)) if agent else False,
         startup_complete=bool(getattr(agent, "startup_complete", True)) if agent else True,
     )
@@ -572,7 +573,7 @@ def _session_presentation_signal(ctx: AppContext, session) -> dict | None:
         state = "completed"
     elif display in {"Failed", "Validation failed", "Recovery blocked"}:
         state = "failed"
-    elif display in {"Restoring your work", "PA is restarting"}:
+    elif display in {"Restoring your work", "PA is restarting"} and presentation["next_automatic_action"]:
         state = "deferred"
     else:
         state = "available"
@@ -652,7 +653,7 @@ def _presentation_context_for_cards(
         presentations[card.id] = present_work_item(
             card,
             dispatch=public,
-            session=_session_presentation_signal(ctx, execution_session),
+            session=_session_presentation_signal(ctx, execution_session, dispatch=public),
             watches=watches.get(card.id, ()),
             target_instance_name=(
                 public.get("target_instance_name") if public else None
@@ -765,7 +766,7 @@ def _card_summary_context(request: Request, card) -> dict:
                 },
                 active_turn=work["state"] == "working" and work["session_id"] == record.session_id,
                 active_prompt_id=work.get("active_prompt_id"),
-                historical=record.dispatch_id != work["dispatch_id"] or (record.state in {"completed", "acknowledged", "cancelled", "failed"} and record.reconciliation_state not in {"resolved", "not_required", "already_satisfied", "completed"}),
+                historical=record.dispatch_id != work["dispatch_id"] or work["historical_reconciliation"],
             ))
     return {
         "card": card,

@@ -137,7 +137,7 @@ def test_dispatch_turn_completion_does_not_invent_workflow_success() -> None:
     )
     view = build_session_presentation(run, dispatch=unsettled, now=NOW)
     assert view["workflow"]["state"] == "active"
-    assert view["display_status"] == "Limited information"
+    assert view["display_status"] == "Reconciliation pending"
 
     settled = SimpleNamespace(
         state="completed",
@@ -411,3 +411,75 @@ def test_historical_active_workflow_does_not_claim_running_or_success():
     assert view["next_automatic_action"] is None
     waiting = run.model_copy(update={"initiating_workflow": {"next_expected_event": "PR review"}})
     assert build_session_presentation(waiting, now=NOW)["display_status"] == "Waiting"
+
+
+@pytest.mark.parametrize("queue_size", [12, 5, 2])
+@pytest.mark.parametrize("connected", [False, True])
+def test_explicit_paused_queue_never_promises_automatic_recovery(queue_size, connected):
+    queue = [{"id": f"prompt-{i}", "source": "ui"} for i in range(queue_size)]
+    run = session(purpose="automated_run", control_mode="automation", workflow_state="succeeded",
+                  config_json={"durable_runtime": {"queued_prompts": queue, "queue_paused": True}},
+                  recovery_json={"next_retry_at": NOW.isoformat()})
+    runtime = SimpleNamespace(_closed=False, connected=True, prompting=False,
+                              _queue=queue, _queue_paused=True, _in_flight=None) if connected else None
+    view = build_session_presentation(run, runtime=runtime, now=NOW)
+    assert view["display_status"] == "Paused"
+    assert view["turn"]["state"] == "paused"
+    assert view["next_automatic_action"] is None
+    assert view["queue"] == {"count": queue_size, "reason": "operator_paused"}
+
+
+@pytest.mark.parametrize("lifecycle", ["recoverable_interrupted", "reconciliation_pending", "completion_pending"])
+@pytest.mark.parametrize("quiescing", [False, True])
+def test_closed_success_ignores_stale_recovery_without_hiding_actual_obligations(lifecycle, quiescing):
+    run = session(purpose="automated_run", control_mode="automation", workflow_state="succeeded",
+                  status="closed", config_json={"durable_runtime": {"lifecycle": lifecycle}},
+                  recovery_json={"blocked": True, "attempts": 3, "next_retry_at": NOW.isoformat()})
+    view = build_session_presentation(run, now=NOW, quiescing=quiescing)
+    assert view["display_status"] == "Completed"
+    assert view["next_automatic_action"] is None
+    assert view["recovery"]["attempts"] == 3  # history retained
+    assert run.config_json["durable_runtime"]["lifecycle"] == lifecycle
+    run.config_json["durable_runtime"]["pending_interaction"] = {"kind": "input", "action": "Choose."}
+    assert build_session_presentation(run, now=NOW)["display_status"] == "Needs you"
+
+
+@pytest.mark.parametrize("pending,expected", [
+    ({"state": "completion_pending"}, "Completion pending"),
+    ({"state": "completed", "reconciliation_state": "pending"}, "Reconciliation pending"),
+    ({"state": "completed", "reconciliation_state": "prompted"}, "Reconciliation pending"),
+    ({"state": "completed", "followup_turns": [{"state": "ended", "delivery_state": "pending"}]}, "Completion pending"),
+])
+def test_settled_workflow_preserves_authoritative_completion_obligations(pending, expected):
+    run = session(purpose="automated_run", control_mode="automation", workflow_state="succeeded", status="closed")
+    view = build_session_presentation(run, dispatch=pending, now=NOW)
+    assert view["display_status"] == expected
+    assert view["turn"]["state"] == "idle"
+    assert not view["connection"]["live_runtime"]
+    assert view["next_automatic_action"] is None
+
+
+def test_acknowledged_delivery_and_resolved_reconciliation_are_historical():
+    run = session(purpose="automated_run", control_mode="automation", workflow_state="succeeded", status="closed")
+    view = build_session_presentation(run, now=NOW, dispatch={
+        "state": "completion_pending", "acknowledged_at": NOW.isoformat(),
+        "completion_outbox": {"pending": True}, "reconciliation_state": "resolved",
+        "reconciliation_next_retry_at": NOW.isoformat(),
+    })
+    assert view["display_status"] == "Completed"
+    assert view["next_automatic_action"] is None
+
+
+@pytest.mark.parametrize("dispatch,action", [
+    ({"state": "completion_pending", "completion_next_retry_at": NOW}, "deliver_completion"),
+    ({"state": "completed", "reconciliation_state": "pending", "reconciliation_next_retry_at": NOW}, "reconcile_card"),
+    ({"state": "completed", "acknowledged_at": NOW, "followup_turns": [
+        {"state": "ended", "delivery_state": "retrying", "next_retry_at": NOW.isoformat()},
+    ]}, "deliver_completion"),
+])
+def test_recorded_completion_schedule_is_distinct_from_live_turn(dispatch, action):
+    run = session(purpose="automated_run", workflow_state="succeeded", status="closed")
+    view = build_session_presentation(run, dispatch=dispatch, now=NOW)
+    assert view["next_automatic_action"] == action
+    assert view["turn"]["state"] == "idle"
+    assert not view["connection"]["live_runtime"]
