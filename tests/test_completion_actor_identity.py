@@ -72,6 +72,9 @@ def test_shared_bearer_or_proxy_header_absence_is_not_human_identity(tmp_path):
     request.state.user_authenticated = True
     assert not _direct_human_card_action(request)  # CLI/shared bearer authentication
     request.state.authentication_method = 'browser_session'
+    assert not _direct_human_card_action(request)  # Session producer with browser cookies.
+    request.scope['headers'] = []
+    del request._headers
     assert _direct_human_card_action(request)
 
 

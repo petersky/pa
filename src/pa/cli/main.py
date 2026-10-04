@@ -923,17 +923,18 @@ def user_set_password(
         typer.Option(prompt=True, hide_input=True, confirmation_prompt=True),
     ],
 ) -> None:
-    """Set a user's password."""
-    from pa.auth.users import UserDirectory
+    """Set an operator password through the running local PA server."""
+    from urllib.parse import quote
 
-    users = UserDirectory(get_settings().data_dir)
-    users.ensure_default_user()
     try:
-        user = users.set_password(username, password)
-    except ValueError as exc:
+        _local_api_request(
+            get_settings(), "POST", f"/api/auth/users/{quote(username, safe='')}/password",
+            body={"password": password},
+        )
+    except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
-    typer.echo(f"Password updated for {user.username}")
+    typer.echo(f"Password updated for {username}. Sign in at /login on this instance.")
 
 
 def _fleet_api_base(settings: Settings) -> str:
@@ -954,7 +955,13 @@ def _local_api_request(
 
     from pa.auth.users import UserDirectory
 
-    user = UserDirectory(settings.data_dir).ensure_default_user()
+    users = UserDirectory(settings.data_dir).list_users()
+    if not users:
+        raise RuntimeError(
+            "No local PA administrator credential is configured. Initialize and start "
+            "PA for this PA_DATA_DIR; offline CLI writes are intentionally disabled."
+        )
+    user = users[0]
     try:
         response = httpx.request(
             method,

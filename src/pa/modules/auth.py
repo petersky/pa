@@ -4,6 +4,7 @@ import secrets
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field, SecretStr
 
 from pa.auth.cookies import use_secure_cookies
 from pa.auth.csrf import COOKIE_NAME, token_for_request
@@ -15,6 +16,38 @@ from pa.core.context import AppContext
 
 router = APIRouter()
 ui_router = APIRouter()
+
+
+class PasswordUpdate(BaseModel):
+    password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+@router.post("/auth/users/{username}/password")
+def set_user_password(request: Request, username: str, data: PasswordUpdate) -> dict:
+    # No-login identity is not a credential. Keep this operation in the running
+    # server so its user directory immediately sees the change (one writer).
+    user = require_user(request)
+    if (
+        not getattr(request.state, "user_authenticated", False)
+        or getattr(request.state, "instance_authenticated", False)
+        or user.role != "admin"
+        or any(request.headers.get(name) for name in (
+            "X-PA-MCP-Instance-ID", "X-PA-Completion-Producer",
+            "X-PA-Assigned-Session-ID", "X-PA-Assigned-Dispatch-ID",
+        ))
+        or (request.headers.get("Authorization")
+            and getattr(request.state, "authentication_method", None) == "browser_session")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="An authenticated administrator is required to set an operator password.",
+        )
+    users: UserDirectory = request.app.state.ctx.require_service("users")
+    try:
+        updated = users.set_password(username, data.password.get_secret_value())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="User not found") from exc
+    return {"user_id": updated.id, "username": updated.username}
 
 
 @router.post("/auth/login")
