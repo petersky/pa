@@ -183,6 +183,7 @@ class BrowserManager:
                 lambda: profile_dir.mkdir(parents=True, exist_ok=True),
             )
             process: asyncio.subprocess.Process | None = None
+            attachment: BrowserAttachment | None = None
             async with self._startup_slots:
                 try:
                     process = await asyncio.create_subprocess_exec(
@@ -272,8 +273,12 @@ class BrowserManager:
                     self._attachments[session_id] = attachment
                     return attachment
                 except BaseException:
-                    if process is not None:
-                        await self._terminate_process(process)
+                    try:
+                        if attachment is not None:
+                            await attachment.page.close()
+                    finally:
+                        if process is not None:
+                            await self._terminate_process(process)
                     raise
 
     async def _terminate_process(self, process: asyncio.subprocess.Process) -> None:
@@ -305,7 +310,10 @@ class BrowserManager:
             attachment = self._attachments.pop(session_id, None)
             if not attachment:
                 return
-            await self._terminate_process(attachment.process)
+            try:
+                await attachment.page.close()
+            finally:
+                await self._terminate_process(attachment.process)
 
     async def close(self) -> None:
         await asyncio.gather(
