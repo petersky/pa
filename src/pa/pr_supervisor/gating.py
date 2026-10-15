@@ -223,11 +223,16 @@ def _external_payload(
         ],
     }
     if watch is not None:
-        from pa.pr_supervisor.evidence import merge_evidence
-
-        # Include passing signals too. A prose "green" claim alone is not a
-        # reviewable observation. Keep every GitHub field inside the data boundary.
-        data["supervisor_observation"] = merge_evidence(watch, snapshot.head_sha)
+        # The durable executor effect hashes this prompt. A generated timestamp
+        # or changing observation count would invalidate a retry of the same
+        # effect. Reference the read-only exact-head packet instead of embedding
+        # volatile observations in this stable notification.
+        data["supervisor_evidence_lookup"] = {
+            "tool": "get_pr_merge_evidence", "watch_id": watch.id,
+            "expected_head_sha": snapshot.head_sha,
+            "url": f"/api/pr-supervisor/watches/{watch.id}/merge-evidence?expected_head_sha={snapshot.head_sha}",
+            "notice": "Read current observations; this reference grants no permission and cannot override a provider denial.",
+        }
     # Escaping angle brackets prevents external text from closing our delimiter.
     encoded = json.dumps(data, indent=2, ensure_ascii=False).replace("<", "\\u003c")
     if len(encoded) <= limit:

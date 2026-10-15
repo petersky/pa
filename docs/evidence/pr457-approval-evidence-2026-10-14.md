@@ -65,8 +65,10 @@ green result is only `supervisor_snapshot_green`; it always says it grants no
 merge permission, requires independent revalidation, and cannot override a
 provider denial. This is a consistency check, not a signed attestation or proof
 against compromise of the PA server itself. External names stay redacted/bounded;
-logs and comment bodies are omitted. Supervisor prompts include this packet inside
-their existing untrusted-data delimiter.
+logs and comment bodies are omitted. Supervisor prompts include a stable exact-head
+lookup reference inside their existing untrusted-data delimiter. The packet is
+read separately: embedding changing timestamps/counts in the notification would
+invalidate the content digest of a retry of the same durable executor effect.
 
 Tests exercise valid, stale/future, wrong-head/repository/PR, missing, malformed,
 contradictory and forged-green cases; canonical policy changes; truncation and

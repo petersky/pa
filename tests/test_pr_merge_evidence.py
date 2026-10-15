@@ -56,9 +56,13 @@ def test_exact_head_packet_is_bounded_observation_not_authority():
     assert result["independent_revalidation_required"] is True
     assert watch.model_dump() == before
     prompt = build_executor_prompt(watch, snapshot, evaluate_gate(snapshot, watch.policy, stable_head=True), green=True)
-    assert '"supervisor_observation"' in prompt
-    assert '"conclusion": "success"' in prompt
-    assert prompt.index('<github_external_content trust="untrusted"') < prompt.index('"supervisor_observation"')
+    assert '"supervisor_evidence_lookup"' in prompt
+    assert '"tool": "get_pr_merge_evidence"' in prompt
+    assert prompt.index('<github_external_content trust="untrusted"') < prompt.index('"supervisor_evidence_lookup"')
+    watch.stable_head_observations += 1
+    watch.policy_snapshot_at += timedelta(seconds=30)
+    watch.state["observed_at"] = (now+timedelta(seconds=30)).isoformat()
+    assert build_executor_prompt(watch, snapshot, evaluate_gate(snapshot, watch.policy, stable_head=True), green=True) == prompt
 
 
 @pytest.mark.parametrize("change,reason", [
