@@ -29,6 +29,7 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             status="prompting",
         )
         runtime.connection = None
+        runtime._seq = 4096
         runtime._queue_paused = False
         runtime._queue = []
         runtime._in_flight = None
@@ -62,3 +63,4 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(runtime._transcript_buffer), 4096)
         self.assertNotIn("transcript", snapshot)
         self.assertNotIn("transcript_page", snapshot)
+        self.assertEqual(snapshot["last_event_seq"], 4096)
