@@ -40,7 +40,7 @@
       if (root.dataset.selectionRealm) path += (path.includes("?") ? "&" : "?") + "realm=" + encodeURIComponent(root.dataset.selectionRealm);
       return api(path, method, body);
     }
-    function noticeText(message) { notice.textContent = message; }
+    function noticeText(message) { notice.textContent = [state.effortResetNotice, message].filter(Boolean).join(" "); }
     function effective(name) {
       var pref = name.indexOf("options.") === 0 ? (state.prefs.options || {})[name.slice(8)] : state.prefs[name];
       return pref && pref.intent !== "inherit" ? pref : state.inherited[name] || {intent: "automatic"};
@@ -54,6 +54,7 @@
           return !pref.value || c[parent] === pref.value;
         });
       });
+      if (name === "reasoning") return window.PANativeEffort ? window.PANativeEffort.evidence(allowed, {}, effective("model").value) : [];
       var values = [];
       allowed.forEach(function (c) {
         if (name === "reasoning" || name.indexOf("options.") === 0) {
@@ -118,10 +119,19 @@
         var value = document.createElement("select"); value.setAttribute("aria-label", label.textContent + " value");
         value.add(new Option("Choose an advertised value", ""));
         var vals = choices(name);
+        if (name === "reasoning" && state.catalogLoaded && state.defaultsLoaded) {
+          var previous = effective(name);
+          if (previous.value != null && !vals.includes(previous.value)) {
+            pref = state.prefs.reasoning = {intent: "automatic"};
+            intent.value = "automatic";
+            state.effortResetNotice = "Previous effort is unavailable for this model/routing. Reset to Automatic; review before saving.";
+            noticeText("");
+          }
+        }
         vals.forEach(function (v) {value.add(new Option(String(v), JSON.stringify(v)));});
-        if (pref.value !== undefined && pref.value !== null && !vals.includes(pref.value)) value.add(new Option(String(pref.value) + " — unavailable / unknown", JSON.stringify(pref.value)));
+        if (name !== "reasoning" && pref.value !== undefined && pref.value !== null && !vals.includes(pref.value)) value.add(new Option(String(pref.value) + " — unavailable / unknown", JSON.stringify(pref.value)));
         value.value = pref.value === undefined || pref.value === null ? "" : JSON.stringify(pref.value);
-        value.disabled = !["required", "preferred"].includes(pref.intent);
+        value.disabled = !["required", "preferred"].includes(pref.intent) || (name === "reasoning" && !vals.length);
         value.required = !value.disabled;
         var source = document.createElement("small"); source.className = "muted";
         var inherited = state.inherited[name] || {};
@@ -190,12 +200,15 @@
       sync();
     }
     function loadDefaults() {
+      var revision = state.defaultsRevision = (state.defaultsRevision || 0) + 1;
       var query = new URLSearchParams();
       if (root.dataset.selectionCard) query.set("card_id", root.dataset.selectionCard);
       if (root.dataset.selectionSurface) query.set("surface", root.dataset.selectionSurface);
       var project = form && form.elements.project_id;
       if (project && project.value) query.set("project_id", project.value);
       return scopedApi("/api/execution/defaults?" + query).then(function (data) {
+        if (revision !== state.defaultsRevision) return;
+        state.defaultsLoaded = true;
         var layers = data.layers || [];
         if (root.dataset.selectionPurpose !== "dispatch") layers = layers.filter(function (l) {return l.source !== "card";});
         state.inherited = {}; state.sources = {};
@@ -209,7 +222,10 @@
     }
     root.querySelector("[data-selection-refresh]").addEventListener("click", function () {
       noticeText("Refreshing local capability evidence…");
+      var revision = state.catalogRevision = (state.catalogRevision || 0) + 1;
       api("/api/execution/catalog/refresh", "POST", {}).then(function (data) {
+        if (revision !== state.catalogRevision) return;
+        state.catalogLoaded = true;
         var local = data.instance_id;
         state.candidates = state.candidates.filter(function (c) {return c.instance_id !== local;}).concat(data.candidates);
         render(); state.preview();
@@ -282,12 +298,16 @@
       } catch (e) {noticeText(e.message);} finally {preview.disabled = false;}
     });
     var embedded = readScript(root, "[data-selection-catalog]", []);
-    loadCatalog().then(function (data) {state.candidates = embedded.concat(data.candidates || []); render();
+    var initialCatalogRevision = state.catalogRevision = (state.catalogRevision || 0) + 1;
+    loadCatalog().then(function (data) {if (initialCatalogRevision !== state.catalogRevision) return; state.catalogLoaded = true; state.candidates = (data.candidates || []).concat(embedded.filter(c => !(data.candidates || []).some(n => n.instance_id === c.instance_id))); render();
       noticeText(state.candidates.length ? "Available choices checked; supported settings depend on the complete tuple. Provider confirmation happens after admission." : "No capability choices were discovered. Check provider status, then refresh.");
     }).catch(function (e) {noticeText(e.message); render();});
     state.reset = function () {
+      var revision = state.catalogRevision = (state.catalogRevision || 0) + 1;
+      state.effortResetNotice = "";
       loadCatalog().then(function (data) {
-        state.candidates = embedded.concat(data.candidates || []); render(); state.preview();
+        if (revision !== state.catalogRevision) return;
+        state.catalogLoaded = true; state.candidates = (data.candidates || []).concat(embedded.filter(c => !(data.candidates || []).some(n => n.instance_id === c.instance_id))); render(); state.preview();
       }).catch(function (e) {noticeText(e.message);});
       state.prefs = {};
       root.querySelectorAll("[data-selection-constraint]").forEach(function (input) {input.value = "";});
@@ -313,38 +333,54 @@
       panel._status = panel.querySelector("[data-native-settings-status]");
       function draw() {
         var container = panel.querySelector("[data-native-fields]"); container.replaceChildren();
-        var chosen = panel._prefs.model && panel._prefs.model.value || panel._view.requested.model;
+        var chosen = panel._prefs.model && panel._prefs.model.value ||
+          ((panel._view.provider_confirmation || {}).effective || {}).model_id || panel._view.requested.model;
+        if (window.PANativeEffort) chosen = window.PANativeEffort.model(chosen);
         var candidate = panel._catalog.find(function (c) {return c.model === chosen;});
         var models = Array.from(new Set(panel._catalog.map(function (c) {return c.model;}).filter(Boolean)));
         var rows = [{id: "model", label: "Model", values: models}];
-        if (candidate && candidate.reasoning.support === "supported") rows.push({id: "reasoning", label: "Native reasoning", values: candidate.reasoning.values});
+        var efforts = window.PANativeEffort ? window.PANativeEffort.evidence(panel._catalog, {}, chosen) : [];
+        rows.push({id: "reasoning", label: "Native reasoning", values: efforts});
+        var previousReasoning = panel._prefs.reasoning || {value: panel._view.requested.reasoning};
+        if (panel._catalogReady && previousReasoning.value != null && !efforts.includes(previousReasoning.value)) {
+          panel._prefs.reasoning = {intent: "automatic"};
+          panel._status.textContent = "Previous effort is unavailable for this model. Reset to Automatic; nothing has been applied.";
+        }
         Object.keys(candidate && candidate.options || {}).forEach(function (id) {
           var option = candidate.options[id]; if (option.support === "supported") rows.push({id: "options." + id, label: "Native option: " + id, values: option.values});
         });
         rows.forEach(function (row) {
           var label = document.createElement("label"); label.textContent = row.label;
           var select = document.createElement("select"); select.setAttribute("aria-label", "Session " + row.label);
-          select.add(new Option("Keep current / unspecified", ""));
+          select.add(new Option(row.id === "reasoning" ? "Automatic / provider default" : "Keep current / unspecified", ""));
+          if (row.id === "reasoning") select.disabled = !row.values.length;
           row.values.forEach(function (v) {select.add(new Option(String(v), JSON.stringify(v)));});
           var pref = row.id.indexOf("options.") === 0 ? (panel._prefs.options || {})[row.id.slice(8)] : panel._prefs[row.id];
-          select.value = pref && pref.value !== undefined ? JSON.stringify(pref.value) : "";
+          var prior = pref || (row.id === "reasoning" && panel._view.requested.reasoning ? {value: panel._view.requested.reasoning} : null);
+          select.value = prior && row.values.includes(prior.value) ? JSON.stringify(prior.value) : "";
           select.onchange = function () {
-            var value = select.value ? {intent: "required", value: JSON.parse(select.value)} : {intent: "inherit"};
+            var value = select.value ? {intent: "required", value: JSON.parse(select.value)} : {intent: row.id === "reasoning" ? "automatic" : "inherit"};
             if (row.id.indexOf("options.") === 0) {panel._prefs.options = panel._prefs.options || {}; panel._prefs.options[row.id.slice(8)] = value;}
             else panel._prefs[row.id] = value;
             if (row.id === "model") {
-              panel._prefs.reasoning = {intent: "automatic"}; panel._prefs.options = {};
+              var previousEffort = panel._prefs.reasoning || {intent: "required", value: panel._view.requested.reasoning};
+              var supported = window.PANativeEffort ? window.PANativeEffort.evidence(panel._catalog, {}, value.value) : [];
+              panel._prefs.reasoning = supported.includes(previousEffort.value) ? previousEffort : {intent: "automatic"}; panel._prefs.options = {};
               Object.keys(panel._view.requested.options || {}).forEach(function (id) {panel._prefs.options[id] = {intent: "automatic"};});
-              panel._status.textContent = "Model changed: reasoning and native options reset to Automatic. Choose supported values; nothing has been applied.";
+              panel._status.textContent = "Model changed: supported effort kept; incompatible effort and native options reset to Automatic. Nothing has been applied.";
               draw();
             }
           };
           label.append(select); container.append(label);
         });
       }
+      function valid() { return panel.isConnected && widget.sessionId === panel.dataset.sessionId && widget.apiBase === panel._base; }
+      panel._base = widget.apiBase;
       function refresh() {
+        var revision = panel._revision = (panel._revision || 0) + 1;
         return widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId) + "/execution-catalog").then(function (data) {
-          panel._catalog = data.candidates || []; draw();
+          if (!valid() || revision !== panel._revision) return;
+          panel._catalog = data.candidates || []; panel._catalogReady = true; draw();
         }).catch(function (e) {panel._status.textContent = e.message;});
       }
       panel.querySelector("[data-native-refresh]").onclick = refresh;
@@ -354,20 +390,22 @@
         try {
           var result = await widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId) + "/execution-settings", {method: "POST", body: JSON.stringify({
             execution_preferences: panel._prefs, expected_version: panel._snapshot.session.updated_at, idempotency_key: crypto.randomUUID(), defer: true})});
+          if (!valid()) return;
           panel._status.textContent = "Settings request: " + result.state + ". Card defaults, permission mode and collaboration mode were not changed.";
           panel._prefs = {}; draw();
-          var updated = await widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId)); widget.applyOptionSnapshot(updated);
+          var updated = await widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId)); if (valid()) widget.applyOptionSnapshot(updated);
         } catch (e) {panel._status.textContent = e.message;} finally {button.disabled = false;}
       };
       panel.querySelector("[data-native-cancel]").onclick = async function () {
         try {
           await widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId) + "/execution-settings/cancel", {method: "POST", body: JSON.stringify({
             idempotency_key: panel._view.pending_changes.id, expected_version: panel._snapshot.session.updated_at})});
+          if (!valid()) return;
           panel._status.textContent = "Pending change cancelled. No rollback or provider change was performed.";
-          var updated = await widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId)); widget.applyOptionSnapshot(updated);
+          var updated = await widget.api("/sessions/" + encodeURIComponent(panel.dataset.sessionId)); if (valid()) widget.applyOptionSnapshot(updated);
         } catch (e) {panel._status.textContent = e.message;}
       };
-      panel._refresh = refresh;
+      panel._refresh = refresh; panel._draw = draw;
     }
     panel.hidden = false; panel._view = view; panel._snapshot = snap;
     panel.querySelector("form").hidden = !!snap.selection_history_only;
@@ -382,7 +420,12 @@
       ". Harness/account changes require a linked context boundary, not in-place replacement.";
     panel.querySelector("pre").textContent = JSON.stringify(view, null, 2);
     panel.querySelector("[data-native-cancel]").hidden = !view.pending_changes || view.pending_changes.state !== "pending";
-    if (!panel._loaded && !snap.selection_history_only) {panel._loaded = true; panel._refresh();}
+    var catalogKey = JSON.stringify([snap.models, snap.config_options, snap.session.agent_name,
+      view.requested.connection, view.requested.model_provider]);
+    if (panel._catalogKey !== catalogKey && !snap.selection_history_only) {
+      panel._catalogKey = catalogKey; panel._catalog = []; panel._catalogReady = false;
+      panel._draw(); panel._refresh();
+    } else if (panel._draw) panel._draw();
   }
   function scan() {document.querySelectorAll("[data-execution-preferences]").forEach(init);}
   window.PAExecutionSelection = {scan: scan, api: api, renderSession: renderSession};

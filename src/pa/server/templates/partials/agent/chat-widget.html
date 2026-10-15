@@ -241,7 +241,9 @@
         <button type="button" class="ghost small" data-acw-queue-resume>Resume</button>
       </div>
     </div>
-    <ul class="acw-queue-list" data-acw-queue-list></ul>
+    <p class="acw-queue-status" data-acw-queue-status role="status" aria-live="polite" aria-atomic="true"></p>
+    <p class="acw-queue-help muted">Priority order; same-priority messages keep arrival order. Prioritizing or reordering can change what runs next.</p>
+    <ul class="acw-queue-list" data-acw-queue-list aria-label="Queued messages in server order"></ul>
   </div>
   {% endif %}
 
