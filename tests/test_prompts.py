@@ -33,6 +33,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.execution",
     "agent.context.interactions",
     "agent.context.conversation_branch",
+    "agent.context.conversation_work",
     "agent.context.memory",
     "agent.context.project",
     "agent.context.workspace_catalog",

@@ -342,6 +342,8 @@ def compose_session_prompt(
         realm_id=realm,
     )
     prompts = list(seed_prompts or [])
+    if session.purpose == "chat":
+        prompts.append(PROMPTS.render("agent.context.conversation_work", provider=provider))
     branch = session.initiating_workflow or {}
     if branch.get("kind") == "conversation_branch":
         prompts.append(PROMPTS.render("agent.context.conversation_branch", {

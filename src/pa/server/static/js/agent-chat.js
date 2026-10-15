@@ -2601,6 +2601,7 @@
         if (this.drafts && typeof this.drafts.observeAcceptance === "function") {
           this.drafts.observeAcceptance(payload.id, false);
         }
+        if (!replay) this.refreshQueue();
         const userText = payload.message || imageSummary(payload.images);
         // Skip duplicate if we already painted an optimistic bubble for this text.
         if (!this._isDuplicateUserBubble(userText)) {
@@ -3905,7 +3906,7 @@
       this.clearPendingImages();
     }
     this.setSubmissionState(result.status || (result.queued ? "queued" : "accepted"), false, { retryVisible: false });
-    if (result.queued) this.refreshQueue();
+    this.refreshQueue();
   };
 
   // Transport generations fence event/history streams. Durable receipts instead

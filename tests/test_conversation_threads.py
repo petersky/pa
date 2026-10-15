@@ -45,6 +45,15 @@ def test_copied_history_is_context_not_workspace_authority(setup):
     assert "Agent session: target" in prompt.text
 
 
+def test_chat_guidance_uses_durable_selected_work_without_authorizing_discussion(setup):
+    store, manager, _, _ = setup
+    prompt = compose_session_prompt(store, manager.settings, store.get_session("discussion"), "Discuss ten possible fixes.")
+    assert "listing issues are not authorization to execute" in prompt.text
+    assert "start_conversation_issues with one stable request ID" in prompt.text
+    assert "not task completion" in prompt.text
+    assert not store.list_cards()
+
+
 @pytest.mark.asyncio
 async def test_branch_retry_does_not_reuse_workspace_or_start_work(setup):
     store, manager, req, _ = setup
