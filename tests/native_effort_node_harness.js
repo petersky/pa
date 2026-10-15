@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const window={}; vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),{window,fetch:()=>{throw Error('unexpected fetch')}});
+const h=window.PANativeEffort;
+const c=(model,values,extra={})=>({instance_id:'one',harness:'codex',connection:'default',model_provider:null,model,default:model==='sol',reasoning:{support:'supported',values},...extra});
+const candidates=[c('sol',['high','ultra']),c('luna',['high']),c('luna',['ultra'],{instance_id:'other'}),c('luna',['ultra'],{connection:'other'}),c('luna',['ultra'],{model_provider:'other'})];
+const scope={instance_id:'one',harness:'codex',connection:'default',model_provider:null};
+assert.equal(JSON.stringify(h.evidence(candidates,scope,'luna[high]')),JSON.stringify(['high']));
+assert.equal(JSON.stringify(h.evidence(candidates,scope,'sol')),JSON.stringify(['high','ultra']));
+assert.equal(JSON.stringify(h.evidence(candidates,scope,'')),JSON.stringify(['high','ultra']));
+assert.equal(h.evidence(candidates,{},'luna').length,0,'ambiguous tuples cannot union levels');
+for(const extra of [{freshness:'stale'},{reasoning:{support:'unknown',values:['ultra']}},{reasoning:{support:'unsupported',values:[]}}]) assert.equal(h.evidence([c('sol',['ultra'],extra)],scope,'sol').length,0);
+assert.equal(h.evidence([c('sol',['high','ultra']),c('sol',['high'])],scope,'sol').join(','),'high');
+console.log('PASS exact routing, model pairs, defaults, stale/unknown/unsupported and conflicting evidence');

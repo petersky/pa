@@ -976,15 +976,23 @@
     }
   }
   async function loadDefaultOptions(container, useSaved) {
+    var revision = container._optionsRevision = (container._optionsRevision || 0) + 1;
+    var effort = container.querySelector("[data-settings-default-effort]");
+    if (window.PANativeEffort) window.PANativeEffort.fill(effort, [], "", "Checking model support…");
     var provider = container.querySelector("[data-settings-default-provider]");
     var isGlobal = container.dataset.settingsDefaultsScope === "global";
     var providerId = provider.value ||
       (isGlobal ? "" : form.user_provider.value) ||
       form.global_provider.value || form.dataset.instanceProvider || "";
     if (!providerId) return;
-    var response = await fetch("/api/agent/provider-options/" + encodeURIComponent(providerId), { credentials: "same-origin", headers: { Accept: "application/json" } });
-    if (!response.ok) return;
-    var snap = await response.json();
+    var results = await Promise.all([
+      fetch("/api/agent/provider-options/" + encodeURIComponent(providerId), { credentials: "same-origin", headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : {}),
+      window.PANativeEffort ? window.PANativeEffort.catalog().catch(() => ({})) : Promise.resolve({})
+    ]).catch(() => [{}, {}]);
+    if (revision !== container._optionsRevision) return;
+    var snap = results[0];
+    container._effortCatalog = results[1].candidates || [];
+    container._effortScope = window.PANativeEffort && window.PANativeEffort.localScope(results[1], providerId);
     var model = container.querySelector("[data-settings-default-model]");
     var mode = container.querySelector("[data-settings-default-mode]");
     var effort = container.querySelector("[data-settings-default-effort]");
@@ -998,10 +1006,19 @@
       var id = String(item && (item.id || item.configId || item.config_id || item.name) || "").toLowerCase().replace(/[_ -]/g, "");
       return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
     });
-    fill(effort, effortOption && (effortOption.options || effortOption.choices || effortOption.values) || [], ["value", "id"], useSaved ? effort.dataset.savedValue : "");
+    function updateEffort(wanted) {
+      if (!window.PANativeEffort) return;
+      var values = window.PANativeEffort.evidence(container._effortCatalog, container._effortScope, model.value);
+      var reset = window.PANativeEffort.fill(effort, values, wanted, values.length ? "Automatic / provider default" : "Provider default — effort support unknown or unavailable");
+      var note = container.querySelector("[data-effort-reset]");
+      if (!note) {note = document.createElement("p"); note.dataset.effortReset = ""; note.setAttribute("role", "status"); effort.parentNode.after(note);}
+      if (reset) note.textContent = "Previous effort is unavailable for this model. Reset to provider default; save to update defaults.";
+    }
+    updateEffort(useSaved ? effort.dataset.savedValue : "");
+    model.onchange = function () { updateEffort(); };
     var related = container.querySelector("[data-settings-default-related]");
     related.innerHTML = "";
-    raw.filter(function (item) { return item && item !== effortOption; }).forEach(function (item) {
+    raw.filter(function (item) { return item && item !== effortOption && (!window.PANativeEffort || window.PANativeEffort.kind(item) === "other"); }).forEach(function (item) {
       var id = item.id || item.configId || item.config_id;
       var choices = item.options || item.choices || item.values || [];
       if (!id || !choices.length) return;

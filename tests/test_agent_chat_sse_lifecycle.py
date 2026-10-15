@@ -322,6 +322,7 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
               sessionId: "session-old",
               ownerInstanceId: "local",
               settingsDirty: false,
+              els: {{}},
               transcriptEvents: [{{ seq: 1 }}],
               seenEvents: {{ "seq:1": true }},
               hasOlder: true,

@@ -460,6 +460,7 @@
     if (this.els.model) {
       this.els.model.addEventListener("change", function () {
         self.markSettingsDirty();
+        self.updateEffortChoices();
       });
     }
     if (this.els.mode) {
@@ -2091,6 +2092,11 @@
   };
 
   AgentChatWidget.prototype.applyOptionSnapshot = function (snap) {
+    if (snap.session && snap.session.id !== this.sessionId) return;
+    const previous = this.lastSnapshot;
+    if (previous && previous.session && snap.session && previous.session.id === snap.session.id &&
+        (Number(previous.last_event_seq || 0) > Number(snap.last_event_seq || 0) ||
+         Date.parse(previous.session.updated_at) > Date.parse(snap.session.updated_at))) return;
     this.lastSnapshot = snap;
     this.renderModelsModes(snap);
     this.renderConfigOptions(snap);
@@ -2890,8 +2896,12 @@
       case "config_changed":
       case "config_option_update":
       case "config_options_update":
+      case "configuration_changed":
         if (!replay) {
-          this.api("/sessions/" + this.sessionId).then(function (snap) {
+          const sid = this.sessionId, generation = this.subscriptionGeneration;
+          const revision = this.optionSnapshotRevision = (this.optionSnapshotRevision || 0) + 1;
+          this.api("/sessions/" + sid).then(function (snap) {
+            if (self.sessionId !== sid || self.subscriptionGeneration !== generation || self.optionSnapshotRevision !== revision) return;
             self.applyOptionSnapshot(snap);
             patchSessionListFromSnapshot(self.sessionId, snap);
             refreshSessionList(self.sessionId, true);
@@ -3658,6 +3668,7 @@
   };
 
   AgentChatWidget.prototype.renderModelsModes = function (snap) {
+    if (this.settingsDirty || this.settingsPending) return;
     if (this.showModel && this.els.model && this.els.modelWrap) {
       const models = (snap.models && (snap.models.availableModels || snap.models.available_models)) || [];
       const current = confirmedSessionFields(sessionRecordFromSnapshot(snap)).modelId ||
@@ -3703,7 +3714,7 @@
   AgentChatWidget.prototype.setSettingsPending = function (pending) {
     this.settingsPending = pending;
     [this.els.model, this.els.mode].concat(Array.from(this.els.config ? this.els.config.querySelectorAll("select,input") : []))
-      .filter(Boolean).forEach(function (control) { control.disabled = pending; });
+      .filter(Boolean).forEach(function (control) { control.disabled = pending || control.dataset.effortUnavailable === "true"; });
     if (this.els.settingsApply) {
       this.els.settingsApply.disabled = pending || !this.settingsDirty;
       this.els.settingsApply.textContent = pending ? "Applying…" : "Apply";
@@ -3725,67 +3736,98 @@
     }
   };
 
-  AgentChatWidget.prototype.applySettings = function () {
-    const self = this;
-    if (!this.settingsDirty || !this.sessionId) return Promise.resolve();
-    const snap = this.lastSnapshot || {};
+  AgentChatWidget.prototype.applySettings = async function () {
+    if (!this.settingsDirty || !this.sessionId || this.settingsPending) return;
+    const sid = this.sessionId, base = this.apiBase, generation = this.subscriptionGeneration;
+    const current = () => !this.destroyed && this.sessionId === sid && this.apiBase === base && this.subscriptionGeneration === generation;
+    const snap = this.lastSnapshot || {}, helper = window.PANativeEffort;
     const confirmed = confirmedSessionFields(sessionRecordFromSnapshot(snap));
-    const currentModel = confirmed.modelId || (snap.models && (snap.models.currentModelId || snap.models.current_model_id));
-    const currentMode = confirmed.modeId || (snap.modes && (snap.modes.currentModeId || snap.modes.current_mode_id));
-    const requests = [];
-    if (this.els.model && this.els.model.value && this.els.model.value !== currentModel) {
-      const modelId = this.els.model.value;
-      requests.push(function () { return self.putOption("model", { model_id: modelId }); });
-    }
-    if (this.els.mode && this.els.mode.value && this.els.mode.value !== currentMode) {
-      const modeId = this.els.mode.value;
-      requests.push(function () { return self.putOption("mode", { mode_id: modeId }); });
-    }
-    if (this.els.config) {
-      this.els.config.querySelectorAll("[data-acw-config-id]").forEach(function (input) {
-        const original = input.dataset.acwOriginal;
-        const value = input.type === "checkbox" ? input.checked : input.value;
-        if (String(value) !== String(original)) {
-          const configId = input.dataset.acwConfigId;
-          requests.push(function () { return self.putOption("config", { config_id: configId, value: value }); });
-        }
-      });
-    }
-    if (!requests.length) {
-      this.resetSettingsDraft();
-      if (this.els.settingsStatus) this.els.settingsStatus.textContent = "No changes to apply.";
-      return Promise.resolve();
-    }
+    const controls = Array.from(this.els.config ? this.els.config.querySelectorAll("[data-acw-config-id]") : []);
+    const modelControl = controls.find(c => c.dataset.nativeKind === "model") || this.els.model;
+    const effortControl = controls.find(c => c.dataset.nativeKind === "reasoning");
+    const model = modelControl && modelControl.value;
+    const modelChanged = !!model && (helper ? helper.model(model) : model) !== confirmed.modelId;
+    const effort = effortControl && effortControl.value;
+    const effortChanged = !!effortControl && (effort !== effortControl.dataset.acwOriginal || modelChanged);
+    const path = "/sessions/" + encodeURIComponent(sid);
+    const others = controls.filter(c => !["model", "reasoning"].includes(c.dataset.nativeKind) &&
+      String(c.type === "checkbox" ? c.checked : c.value) !== String(c.dataset.acwOriginal));
+    let fresh, outcome = "Applied successfully.";
     this.setSettingsPending(true);
-    const errors = [];
-    return requests.reduce(function (promise, request) {
-      return promise.then(function () {
-        return request().catch(function (error) { errors.push(error); });
-      });
-    }, Promise.resolve())
-      .then(function () { return self.api("/sessions/" + self.sessionId); })
-      .then(function (fresh) {
-        self.settingsDirty = false;
-        self.applyOptionSnapshot(fresh);
-        patchSessionListFromSnapshot(self.sessionId, fresh);
-        refreshSessionList(self.sessionId, true);
-        if (errors.length) throw new Error(errors.map(function (error) { return error.message; }).join("; "));
-        if (self.els.settingsStatus) {
-          self.els.settingsStatus.classList.remove("is-error");
-          self.els.settingsStatus.textContent = "Applied successfully.";
+    try {
+      if (effort && (!helper || !helper.evidence(this.effortCatalog || [], this.effortCatalogScope || {}, model || confirmed.modelId).includes(effort))) {
+        throw new Error("Effort support is unconfirmed for the selected model. Refresh choices before applying.");
+      }
+      if (snap.execution_selection && (modelChanged || effortChanged)) {
+        const prefs = {};
+        if (modelChanged) prefs.model = {intent: "required", value: helper ? helper.model(model) : model};
+        if (effortChanged) prefs.reasoning = effort ? {intent: "required", value: effort} : {intent: "automatic"};
+        const fingerprint = JSON.stringify([base, sid, prefs, snap.session.updated_at]);
+        if (!this.settingsRequestIdentity || this.settingsRequestIdentity.fingerprint !== fingerprint) {
+          this.settingsRequestIdentity = {fingerprint: fingerprint, key: crypto.randomUUID()};
         }
-      })
-      .catch(function (error) {
-        if (self.els.settingsStatus) {
-          self.els.settingsStatus.classList.add("is-error");
-          self.els.settingsStatus.textContent = "Could not apply settings: " + error.message;
+        const result = await this.api(path + "/execution-settings", {method: "POST", body: JSON.stringify({
+          execution_preferences: prefs, expected_version: snap.session.updated_at, idempotency_key: this.settingsRequestIdentity.key, defer: true})});
+        if (!current()) return;
+        if (!["applied", "pending"].includes(result.state)) throw new Error("Native settings request: " + (result.state || "unconfirmed"));
+        if (result.state === "pending") {
+          outcome = "Settings request: " + result.state + ". Waiting for native confirmation; other draft settings were not applied.";
+          fresh = await this.api(path);
+          return;
         }
-      })
-      .finally(function () { self.setSettingsPending(false); });
+      } else {
+        if (effortChanged && !effort && !modelChanged && effortControl.dataset.acwOriginal) {
+          throw new Error("This provider has no advertised effort-reset action. Choose a supported effort; no reset was applied.");
+        }
+        if (modelChanged) {
+          const configId = modelControl.dataset.acwConfigId;
+          await this.api(path + (configId ? "/config" : "/model"), {method: "PUT", body: JSON.stringify(
+            configId ? {config_id: configId, value: model} : {model_id: model})});
+          if (!current()) return;
+          fresh = await this.api(path);
+          if (!current()) return;
+          if (confirmedSessionFields(sessionRecordFromSnapshot(fresh)).modelId !== (helper ? helper.model(model) : model)) {
+            throw new Error("Model change is not confirmed. Effort has not been sent.");
+          }
+          if (effortChanged && !effort) outcome = "Model confirmed. No explicit effort was sent; provider-reported settings are shown.";
+        }
+        if (effortChanged && effort) {
+          const catalog = await this.api(path + "/execution-catalog");
+          if (!current()) return;
+          if (!helper.evidence(catalog.candidates || [], this.effortCatalogScope || {}, model || confirmed.modelId).includes(effort)) {
+            throw new Error("The provider no longer advertises that effort for this model.");
+          }
+          await this.api(path + "/config", {method: "PUT", body: JSON.stringify({config_id: effortControl.dataset.acwConfigId, value: effort})});
+          if (!current()) return;
+        }
+      }
+      if (!current()) return;
+      if (this.els.mode && this.els.mode.value && this.els.mode.value !== confirmed.modeId) {
+        await this.api(path + "/mode", {method: "PUT", body: JSON.stringify({mode_id: this.els.mode.value})});
+        if (!current()) return;
+      }
+      for (const input of others) {
+        await this.api(path + "/config", {method: "PUT", body: JSON.stringify({config_id: input.dataset.acwConfigId,
+          value: input.type === "checkbox" ? input.checked : input.value})});
+        if (!current()) return;
+      }
+      fresh = await this.api(path);
+    } catch (error) {
+      outcome = "Could not apply settings: " + error.message;
+      if (current() && this.els.settingsStatus) this.els.settingsStatus.classList.add("is-error");
+    } finally {
+      if (current()) {
+        this.settingsDirty = !fresh;
+        this.setSettingsPending(false);
+        if (fresh) { this.applyOptionSnapshot(fresh); patchSessionListFromSnapshot(sid, fresh); }
+        if (this.els.settingsStatus) this.els.settingsStatus.textContent = outcome;
+      }
+    }
   };
 
   AgentChatWidget.prototype.renderConfigOptions = function (snap) {
     if (!this.els.config) return;
+    if (this.settingsDirty || this.settingsPending) { this.refreshEffortCatalog(snap); return; }
     const self = this;
     const raw = snap.config_options ||
       (snap.session && snap.session.config_json && snap.session.config_json.options) ||
@@ -3855,24 +3897,76 @@
           select.appendChild(option);
         }
         select.dataset.acwConfigId = id;
+        if (window.PANativeEffort && window.PANativeEffort.kind(opt) === "model" && current != null) select.value = String(current);
         select.dataset.acwOriginal = current == null ? "" : String(current);
-        select.addEventListener("change", function () { self.markSettingsDirty(); });
+        select.dataset.nativeKind = window.PANativeEffort ? window.PANativeEffort.kind(opt) : "other";
+        if (select.dataset.nativeKind === "reasoning") select._effortWanted = current == null ? "" : String(current);
+        select.addEventListener("change", function () {
+          self.markSettingsDirty();
+          if (select.dataset.nativeKind === "reasoning") select._effortWanted = select.value;
+          if (select.dataset.nativeKind === "model") self.updateEffortChoices();
+        });
         wrap.appendChild(document.createTextNode(name + " "));
         wrap.appendChild(select);
       }
       self.els.config.appendChild(wrap);
     });
-    if (this.settingsPending) {
-      this.els.config.querySelectorAll("select,input").forEach(function (control) {
-        control.disabled = true;
-      });
+    this.refreshEffortCatalog(snap);
+  };
+
+  AgentChatWidget.prototype.refreshEffortCatalog = function (snap) {
+    if (!window.PANativeEffort || !snap.session || !this.sessionId) return;
+    const key = JSON.stringify([this.apiBase, this.sessionId, this.subscriptionGeneration,
+      snap.session.agent_name, snap.session.config_json && snap.session.config_json.execution_selection,
+      snap.models, snap.config_options]);
+    if (this.effortCatalogKey === key) { this.updateEffortChoices(); return; }
+    this.effortCatalogKey = key;
+    const selected = snap.session.config_json && snap.session.config_json.execution_selection && snap.session.config_json.execution_selection.selected || {};
+    this.effortCatalogScope = {harness: snap.session.agent_name, connection: selected.connection || "default"};
+    if (Object.prototype.hasOwnProperty.call(selected, "model_provider")) this.effortCatalogScope.model_provider = selected.model_provider;
+    const instance = this.ownerInstanceId || this.currentInstanceId;
+    if (instance) this.effortCatalogScope.instance_id = instance;
+    this.effortCatalog = null;
+    this.updateEffortChoices();
+    const self = this, sid = this.sessionId, generation = this.subscriptionGeneration;
+    this.api("/sessions/" + encodeURIComponent(sid) + "/execution-catalog").then(function (data) {
+      if (self.destroyed || self.sessionId !== sid || self.subscriptionGeneration !== generation || self.effortCatalogKey !== key) return;
+      self.effortCatalog = data.candidates || [];
+      self.updateEffortChoices();
+    }).catch(function () {
+      if (self.sessionId !== sid || self.subscriptionGeneration !== generation || self.effortCatalogKey !== key) return;
+      self.effortCatalog = []; self.updateEffortChoices();
+    });
+  };
+
+  AgentChatWidget.prototype.updateEffortChoices = function () {
+    const helper = window.PANativeEffort;
+    if (!helper || !this.els.config) return;
+    const select = this.els.config.querySelector('[data-native-kind="reasoning"]');
+    if (!select) return;
+    const model = this.els.config.querySelector('[data-native-kind="model"]') || this.els.model;
+    const snap = this.lastSnapshot || {};
+    const chosen = model && model.value || confirmedSessionFields(sessionRecordFromSnapshot(snap)).modelId;
+    const values = helper.evidence(this.effortCatalog || [], this.effortCatalogScope || {}, chosen);
+    const wanted = select._effortWanted == null ? select.value : select._effortWanted;
+    const reset = helper.fill(select, values, wanted, this.effortCatalog === null ? "Checking model support…" :
+      values.length ? "Automatic / provider default" : "Provider default — effort support unknown or unavailable");
+    if (this.effortCatalog !== null) {
+      select._effortWanted = select.value;
+      if (reset && this.els.settingsStatus) this.els.settingsStatus.textContent =
+        "Previous effort is unavailable for this model. Reset to Automatic / provider default; nothing has been applied.";
     }
+    if (this.settingsPending) select.disabled = true;
   };
 
   AgentChatWidget.prototype.switchSession = function (sessionId, live, ownerInstanceId, options) {
     if (!sessionId || (sessionId === this.sessionId && (!ownerInstanceId || ownerInstanceId === this.ownerInstanceId))) return;
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
+    this.setSettingsPending(false);
+    this.settingsDirty = false;
+    this.effortCatalogKey = null;
+    this.effortCatalog = null;
     this._stashSessionDomCache();
     this.closeSSE("session-switched");
     if (this.olderAbortController) this.olderAbortController.abort();
@@ -5605,8 +5699,7 @@
       const id = String(option && (option.id || option.configId || option.config_id || option.name) || "").toLowerCase().replace(/[_ -]/g, "");
       return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
     });
-    const effortChoices = effort && (effort.options || effort.choices || effort.values);
-    populateSelect(dialog.querySelector("[data-agent-new-effort]"), effortChoices && effortChoices.length ? effortChoices : [], ["value", "id"], "Provider default");
+    updateNewSessionEffort(dialog);
     const related = dialog.querySelector("[data-agent-new-related]");
     if (!related) return;
     related.innerHTML = "";
@@ -5642,26 +5735,41 @@
     return csrfFetch(path);
   }
 
+  function updateNewSessionEffort(dialog, wanted) {
+    const helper = window.PANativeEffort, select = dialog.querySelector("[data-agent-new-effort]");
+    if (!select || !helper) return;
+    const model = dialog.querySelector("[data-agent-new-model]");
+    const values = helper.evidence(dialog._effortCatalog || [], dialog._effortScope || {}, model && model.value);
+    const reset = helper.fill(select, values, wanted, values.length ? "Automatic / provider default" : "Provider default — effort support unknown or unavailable");
+    if (reset) {
+      const status = dialog.querySelector("[data-agent-new-status]");
+      if (status) {status.hidden = false; status.textContent = "Previous effort is unavailable for this model. Reset to provider default; review before starting.";}
+    }
+  }
+
   function refreshNewSessionOptions(dialog, widget) {
     const provider = dialog.querySelector("[data-agent-new-provider]");
     const modelProvider = dialog.querySelector("[data-agent-new-model-provider]");
     const providerId = provider ? provider.value : "";
-    const modelProviderId = modelProvider && !modelProvider.hidden && modelProvider.value
-      ? modelProvider.value
-      : "";
-    const requestId = Number(dialog._acwOptionsRequest || 0) + 1;
-    dialog._acwOptionsRequest = requestId;
+    const modelProviderId = modelProvider && !modelProvider.hidden && modelProvider.value ? modelProvider.value : "";
+    const requestId = dialog._acwOptionsRequest = Number(dialog._acwOptionsRequest || 0) + 1;
+    dialog._effortCatalog = [];
+    updateNewSessionEffort(dialog);
     setNewSessionBusy(dialog, true, "Loading session options…");
-    return newSessionSnapshotForProvider(widget, providerId, modelProviderId)
-      .then(function (snap) {
-        if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, snap);
+    return Promise.all([newSessionSnapshotForProvider(widget, providerId, modelProviderId),
+      window.PANativeEffort ? window.PANativeEffort.catalog().catch(() => ({})) : Promise.resolve({})])
+      .then(function (results) {
+        if (dialog._acwOptionsRequest !== requestId) return;
+        dialog._effortCatalog = results[1].candidates || [];
+        dialog._effortScope = window.PANativeEffort && window.PANativeEffort.localScope(results[1], providerId, modelProviderId);
+        populateNewSessionOptions(dialog, results[0]);
       })
       .catch(function () {
         if (dialog._acwOptionsRequest === requestId) populateNewSessionOptions(dialog, null);
       })
       .finally(function () {
         if (dialog._acwOptionsRequest !== requestId) return;
-        setNewSessionBusy(dialog, false);
+        setNewSessionBusy(dialog, false); updateNewSessionEffort(dialog);
       });
   }
 
@@ -5677,6 +5785,7 @@
       const select = dialog.querySelector(selector);
       if (!select) return;
       select.value = values[selector];
+      if (selector === "[data-agent-new-effort]") { updateNewSessionEffort(dialog, values[selector]); return; }
       if (values[selector] && select.value !== values[selector]) {
         const option = document.createElement("option");
         option.value = values[selector];
@@ -5923,6 +6032,8 @@
           refreshNewSessionOptions(dialog, document.querySelector("[data-agent-chat]"));
         });
       }
+      const draftModel = dialog.querySelector("[data-agent-new-model]");
+      if (draftModel) draftModel.addEventListener("change", function () { updateNewSessionEffort(dialog); });
       const modelProvider = dialog.querySelector("[data-agent-new-model-provider]");
       if (modelProvider && !modelProvider._acwBound) {
         modelProvider._acwBound = true;
