@@ -5743,7 +5743,10 @@ class AgentSessionManager:
                 await self._offload(
                     "selection.target_revalidation",
                     selection_service.resolve,
-                    candidates=await selection_service.local_catalog(refresh=True, stale_while_revalidate=True),
+                    # Authority admission may have newer support evidence than
+                    # this target's warm startup cache. Refresh before the first
+                    # target check; retain the exact receipt and all hard pins.
+                    candidates=await selection_service.local_catalog(refresh=True, force=True),
                     principal=effective_principal_id,
                     realm=realm_id or self.settings.primary_realm,
                     surface=surface_key,
