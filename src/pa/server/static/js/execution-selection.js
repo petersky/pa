@@ -320,13 +320,16 @@
   function renderSession(widget, snap) {
     var view = snap.execution_selection;
     var panel = widget.root.querySelector("[data-session-execution-selection]");
+    var host = widget.root.querySelector("[data-acw-execution-panel]");
+    if (host) host.querySelector("[data-selection-empty]").hidden = !!view;
     if (!view) {if (panel) panel.hidden = true; return;}
     if (panel && panel.dataset.sessionId !== snap.session.id) {panel.remove(); panel = null;}
     if (!panel) {
-      panel = document.createElement("details"); panel.dataset.sessionExecutionSelection = "";
+      panel = document.createElement(host ? "div" : "details"); panel.dataset.sessionExecutionSelection = "";
       panel.dataset.sessionId = snap.session.id; panel.className = "execution-selection-receipt";
-      panel.innerHTML = '<summary>Execution selection · requested and confirmed</summary><p data-selection-summary></p><p class="muted small" data-native-settings-status role="status"></p><form data-native-settings><div data-native-fields></div><button type="submit" class="small">Request settings (defer if busy)</button> <button type="button" class="ghost small" data-native-refresh>Refresh native choices</button> <button type="button" class="ghost small" data-native-cancel hidden>Cancel pending change</button></form><details><summary>Why this selection? Receipt and alternatives</summary><pre></pre></details>';
-      widget.root.querySelector(".acw-toolbar").after(panel);
+      panel.innerHTML = (host ? '' : '<summary>Execution selection · requested and confirmed</summary>') + '<p data-selection-summary></p><p class="muted small" data-native-settings-status role="status"></p><form data-native-settings><div data-native-fields></div><button type="submit" class="small">Request settings (defer if busy)</button> <button type="button" class="ghost small" data-native-refresh>Refresh native choices</button> <button type="button" class="ghost small" data-native-cancel hidden>Cancel pending change</button></form><details><summary>Why this selection? Receipt and alternatives</summary><pre></pre></details>';
+      if (host) host.appendChild(panel);
+      else widget.root.querySelector(".acw-toolbar").after(panel);
       panel._rows = [];
       panel._prefs = {};
       panel._catalog = [];

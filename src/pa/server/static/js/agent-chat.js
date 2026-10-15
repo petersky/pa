@@ -32,6 +32,74 @@
 
   const sessionDomCache = new Map();
   let libsPromise = null;
+  let detailTabsId = 0;
+
+  function bindDetailTabs(root) {
+    const group = root.querySelector("[data-acw-details]");
+    if (!group || group.dataset.tabsReady) return;
+    group.dataset.tabsReady = "1";
+    const disclosures = Array.from(group.children);
+    const panels = disclosures.map(function (disclosure) {
+      const panel = document.createElement("div");
+      disclosure.replaceWith(panel);
+      panel.appendChild(disclosure);
+      return panel;
+    });
+    const row = document.createElement("div");
+    row.className = "acw-detail-tabs";
+    row.setAttribute("role", "tablist");
+    row.setAttribute("aria-label", "Conversation details");
+    const prefix = "acw-details-" + (++detailTabsId);
+    const tabs = panels.map(function (panel, index) {
+      const summary = panel.querySelector("summary");
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "ghost small";
+      tab.id = prefix + "-tab-" + index;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", "false");
+      tab.setAttribute("aria-expanded", "false");
+      tab.tabIndex = index === 0 ? 0 : -1;
+      // Move the live issue count with its label; panel controls remain intact.
+      tab.append(...Array.from(summary.childNodes));
+      summary.hidden = true;
+      panel.id = prefix + "-panel-" + index;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", tab.id);
+      panel.tabIndex = 0;
+      disclosures[index].open = false;
+      panel.hidden = true;
+      tab.setAttribute("aria-controls", panel.id);
+      row.appendChild(tab);
+      return tab;
+    });
+    function select(index) {
+      const expand = !disclosures[index].open;
+      panels.forEach(function (panel, i) {
+        const selected = i === index && expand;
+        disclosures[i].open = selected; // Preserve lazy loading through native toggle events.
+        panel.hidden = !selected;
+        tabs[i].setAttribute("aria-selected", String(selected));
+        tabs[i].setAttribute("aria-expanded", String(selected));
+        tabs[i].tabIndex = i === index ? 0 : -1;
+      });
+    }
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener("click", function () { select(index); });
+      tab.addEventListener("keydown", function (event) {
+        let next;
+        if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+        else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = tabs.length - 1;
+        else return; // Native button Enter/Space clicks activate or collapse.
+        event.preventDefault();
+        tabs.forEach(function (item, i) { item.tabIndex = i === next ? 0 : -1; });
+        tabs[next].focus(); // Manual activation avoids fetching on arrow navigation.
+      });
+    });
+    group.prepend(row);
+  }
 
   function loadScript(src) {
     return new Promise(function (resolve, reject) {
@@ -341,6 +409,7 @@
     this.liveStateRetryId = null;
     this.liveStateRetryCount = 0;
     this._bind();
+    bindDetailTabs(root);
     this.issues = window.PAConversationIssues ? new window.PAConversationIssues(this) : null;
     this.threads = window.PAConversationThreads ? new window.PAConversationThreads(this) : null;
     this.renderSessionActions();
