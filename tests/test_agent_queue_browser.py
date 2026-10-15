@@ -65,8 +65,8 @@ async def test_queue_order_states_keyboard_and_mobile(operator_server, tmp_path)
         await wait('window.innerWidth===360')
         assert await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
         assert await page.evaluate(f'{rows}.every(r=>r.scrollWidth<=r.clientWidth)')
-        if os.environ.get('PA_TEST_EVIDENCE_DIR'):
-            evidence_dir=Path(os.environ['PA_TEST_EVIDENCE_DIR']); evidence_dir.mkdir(parents=True,exist_ok=True)
+        if os.environ.get('BROWSER_TEST_EVIDENCE_DIR'):
+            evidence_dir=Path(os.environ['BROWSER_TEST_EVIDENCE_DIR']); evidence_dir.mkdir(parents=True,exist_ok=True)
             (evidence_dir/'queue-mobile.png').write_bytes(await manager.screenshot(scope))
         assert await page.evaluate(f'{rows}.every(r=>[...r.querySelectorAll("button")].every(b=>!!b.getAttribute("aria-label")))')
         # Restoration fetches the same authoritative eligibility and ordering.

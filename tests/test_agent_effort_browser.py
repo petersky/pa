@@ -57,8 +57,8 @@ async def test_model_effort_drafts_acknowledgment_and_deferred_apply(operator_se
         await choose(effort,'high')
         await choose(model,'gpt-6-luna')
         assert await page.evaluate(f"document.querySelector('{effort}').value") == 'high'
-        if os.environ.get('PA_TEST_EVIDENCE_DIR'):
-            evidence_dir=Path(os.environ['PA_TEST_EVIDENCE_DIR']); evidence_dir.mkdir(parents=True,exist_ok=True)
+        if os.environ.get('BROWSER_TEST_EVIDENCE_DIR'):
+            evidence_dir=Path(os.environ['BROWSER_TEST_EVIDENCE_DIR']); evidence_dir.mkdir(parents=True,exist_ok=True)
             await page.evaluate("document.querySelector('.acw-settings-menu').open=true")
             (evidence_dir/'effort-luna.png').write_bytes(await manager.screenshot(scope))
             (evidence_dir/'effort-luna.json').write_text(json.dumps({'model':'gpt-6-luna','advertised_efforts':await values(),'selected':'high','provider_mutations':len(app.state.calls)}))
