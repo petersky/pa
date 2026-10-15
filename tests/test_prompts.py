@@ -32,6 +32,7 @@ EXPECTED_PROMPT_KEYS = {
     "agent.context.data_safety",
     "agent.context.execution",
     "agent.context.interactions",
+    "agent.context.conversation_branch",
     "agent.context.memory",
     "agent.context.project",
     "agent.context.workspace_catalog",

@@ -745,7 +745,21 @@ def present_work_item(
         tone = "failed"
         priority = 44
 
+    from pa.core.ui.next_actor import next_actor
+    if state_code == "completed":
+        actor = next_actor("none")
+    elif state_code == "review_gate":
+        actor = next_actor("reviewer", reason)
+    elif group == "attention" or state_code == "paused":
+        actor = next_actor("operator", action_explanation or reason)
+    elif state_code == "working":
+        actor = next_actor("provider", reason)
+    elif state_code in STARTING_DISPATCH_STATES or state_code == "session_queued" or (settlement and settlement["next_automatic_action"]):
+        actor = next_actor("pa", reason)
+    else:
+        actor = next_actor("unknown", action_explanation or reason)
     presentation = {
+        "next_actor": actor,
         "group": group,
         "attention": group == "attention",
         "in_motion": group == "motion",

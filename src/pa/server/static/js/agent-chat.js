@@ -338,6 +338,7 @@
     this.liveStateRetryCount = 0;
     this._bind();
     this.issues = window.PAConversationIssues ? new window.PAConversationIssues(this) : null;
+    this.threads = window.PAConversationThreads ? new window.PAConversationThreads(this) : null;
     this.renderSessionActions();
     if (root.dataset.newChat === "1") {
       const draftUrl = new URL(window.location.href);
@@ -725,7 +726,10 @@
   };
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
+    clearTimeout(this.queueRefreshTimer);
     if (this.issues) this.issues.reset();
+    if (this.threads) this.threads.reset();
+    this.submitAckMs = null;
     this.turnTiming = null; this.startupTiming = null; this.renderTimings();
     this.subscriptionGeneration += 1;
     this.closeSSE("session-cleared");
@@ -1216,7 +1220,10 @@
   };
 
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
+    clearTimeout(this.queueRefreshTimer);
     if (this.issues) this.issues.reset();
+    if (this.threads) this.threads.reset();
+    this.submitAckMs = null;
     this.turnTiming = null; this.startupTiming = null; this.renderTimings();
     const self = this;
     options = options || {};
@@ -1815,10 +1822,30 @@
     target.textContent = parts.join(" · ") || "Timings appear when PA accepts a message and the provider responds.";
   };
 
+  AgentChatWidget.prototype.recordSubmissionTiming = function (promptId) {
+    const timing = this.pendingSubmitTiming;
+    if (!timing || timing.promptId !== promptId || timing.sessionId !== this.sessionId ||
+        timing.generation !== this.subscriptionGeneration || timing.acknowledged) return;
+    timing.acknowledged = true;
+    this.submitAckMs = Date.now() - timing.startedAt;
+    this.renderTimings();
+  };
+
+  AgentChatWidget.prototype.renderPresentation = function (snap) {
+    const outcome = this.root.querySelector("[data-conversation-outcome]");
+    if (outcome) {
+      const presentation = snap.presentation || {}, actor = presentation.next_actor || {};
+      outcome.hidden = !presentation.display_status;
+      outcome.textContent = [presentation.display_status, actor.label ? "Next: " + actor.label : "", presentation.explanation].filter(Boolean).join(" · ");
+    }
+  };
+
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     if (this.issues) this.issues.ready();
+    if (this.threads) this.threads.ready();
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
+    this.renderPresentation(snap);
     const session = snap.session || {};
     this.renderTimings(session.metrics_json && session.metrics_json.turn_timing, session.config_json && session.config_json.startup_trace);
     if (session.agent_name) this.providerId = session.agent_name;
@@ -2432,7 +2459,9 @@
 
   AgentChatWidget.prototype.destroy = function (reason) {
     if (this.destroyed) return;
+    clearTimeout(this.queueRefreshTimer);
     if (this.issues) this.issues.reset();
+    if (this.threads) this.threads.reset();
     this._stashSessionDomCache();
     if (this.drafts) this.drafts.destroy();
     this.destroyed = true;
@@ -2629,14 +2658,17 @@
         break;
       case "permission_request":
         this.showPermission(payload);
+        if (!replay) this.refreshQueue();
         break;
       case "permission_resolved":
         this.hidePermission(payload.request_id);
+        if (!replay) this.refreshQueue();
         break;
       case "turn_completed":
         this.finalizeStreams(created);
         this.finalizeActivity();
         if (!replay) this.setTurnActive(false);
+        if (!replay) this.refreshQueue();
         if (payload.usage) this.renderMetrics({ last_usage: payload.usage });
         break;
       case "queue_enqueued":
@@ -3385,14 +3417,20 @@
   };
 
   AgentChatWidget.prototype.refreshQueue = function () {
-    const self = this;
+    const self = this, sid = this.sessionId, generation = this.subscriptionGeneration;
     if (!this.sessionId) return;
-    this.api("/sessions/" + this.sessionId).then(function (snap) {
-      self.lastSnapshot = Object.assign({}, self.lastSnapshot || {}, snap);
-      self.queuePaused = !!snap.queue_paused;
-      self.renderQueue(snap.queue || []);
-      self.updateEmptyChatStatus(snap);
-    }).catch(function () { /* ignore */ });
+    const revision = this.queueRefreshRevision = (this.queueRefreshRevision || 0) + 1;
+    clearTimeout(this.queueRefreshTimer);
+    this.queueRefreshTimer = setTimeout(function () {
+      self.api("/sessions/" + sid).then(function (snap) {
+        if (self.destroyed || sid !== self.sessionId || generation !== self.subscriptionGeneration || revision !== self.queueRefreshRevision) return;
+        self.lastSnapshot = Object.assign({}, self.lastSnapshot || {}, snap);
+        self.queuePaused = !!snap.queue_paused;
+        self.renderQueue(snap.queue || []);
+        self.renderPresentation(snap);
+        self.updateEmptyChatStatus(snap);
+      }).catch(function () { /* existing live/recovery UI owns connection errors */ });
+    }, 250);
   };
 
   AgentChatWidget.prototype.renderModelsModes = function (snap) {
@@ -3707,7 +3745,10 @@
     const self = this;
     if (this.els.working) this.els.working.hidden = !on;
     if (this.els.stop) this.els.stop.disabled = !on;
-    if (this.els.send) this.els.send.textContent = on ? "Queue" : "Send";
+    if (this.els.send) {
+      this.els.send.textContent = on ? "Queue for current work" : "Send";
+      this.els.send.title = on ? "Saved input runs after the active turn. This is not native steering." : "Send to this conversation";
+    }
     if (!on) {
       if (this.turnTimerId) clearInterval(this.turnTimerId);
       this.turnTimerId = null;
@@ -3781,7 +3822,7 @@
           ? "Sending…"
           : this.submissionState === "retryable"
             ? "Retry"
-            : "Send";
+            : this.turnActive ? "Queue for current work" : "Send";
     }
     this.root.querySelectorAll("[data-acw-action]").forEach(function (control) {
       control.disabled = disabled;
@@ -4254,6 +4295,7 @@
       client_prompt_id: promptId,
     };
     const submittedAt = Date.now();
+    this.pendingSubmitTiming = {promptId: promptId, sessionId: targetSessionId, generation: generation, startedAt: submittedAt};
     this.apiWithTimeout(
       "/sessions/" + targetSessionId + "/prompt",
       PROMPT_SUBMIT_TIMEOUT_MS,
@@ -4264,6 +4306,7 @@
       }
     )
       .then(function (res) {
+        if (res && res.accepted && self._matchesSubmissionResponse(scope, res)) self.recordSubmissionTiming(promptId);
         if (!self._isCurrentSubmission(scope)) return;
         if (!res || !res.accepted || !self._matchesSubmissionResponse(scope, res)) {
           const error = new Error("PA could not confirm durable prompt acceptance.");
@@ -4271,8 +4314,6 @@
           throw error;
         }
         self.markSubmissionAccepted(res, text, submittedImages, draftRawText, promptId);
-        self.submitAckMs = Date.now() - submittedAt;
-        self.renderTimings();
       })
       .catch(function (err) {
         if (!self._isCurrentSubmission(scope)) return;

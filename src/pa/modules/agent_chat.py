@@ -4134,8 +4134,9 @@ class AgentChatModule(Module):
     def api_routers(self):
         from pa.modules.execution_selection import router as selection_router
         from pa.modules.conversation_issues import router as issues_router
+        from pa.modules.conversation_threads import router as threads_router
 
-        return [("/api", router, ["agent"]), ("/api", selection_router, ["execution"]), ("/api", issues_router, ["agent"])]
+        return [("/api", router, ["agent"]), ("/api", selection_router, ["execution"]), ("/api", issues_router, ["agent"]), ("/api", threads_router, ["agent"])]
 
     def register_mcp(self, mcp, ctx) -> None:
         from pa.mcp.tools.agent_chat import register_mcp

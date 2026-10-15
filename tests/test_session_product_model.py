@@ -40,6 +40,7 @@ def test_presentation_contract_keeps_connection_turn_and_workflow_separate() -> 
     assert ready["display_status"] == "Ready"
     assert ready["connection"]["state"] == "not_started"
     assert ready["turn"]["state"] == "idle"
+    assert ready["next_actor"]["id"] == "operator"
     assert "recover" in ready["permitted_actions"]
 
     queued = chat.model_copy(
@@ -59,6 +60,7 @@ def test_presentation_contract_keeps_connection_turn_and_workflow_separate() -> 
         "reason": "waiting_for_recovery",
     }
     assert queued_view["connection"]["state"] == "disconnected"
+    assert queued_view["next_actor"]["id"] == "pa"
 
     disconnected_runtime = SimpleNamespace(
         _closed=False,

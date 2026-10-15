@@ -653,7 +653,7 @@ class AgentSessionRuntime:
         event_type = str(normalized.get("type") or "session_update")
         timing = getattr(self, "_turn_timing", None)
         if timing and not timing.get("first_useful_event_at") and (
-            event_type in {"tool_call", "plan"}
+            event_type == "tool_call" or event_type == "plan" and bool(normalized.get("entries"))
             or is_agent_message_type(event_type) and bool(normalized.get("text"))
         ):
             import time

@@ -1380,8 +1380,12 @@ class AgentConnection:
                     )
                 from pa.server.shutdown import wait_for_shutdown_or
 
+                workflow = existing_session.initiating_workflow if existing_session else {}
+                native_branch = workflow.get("kind") == "conversation_branch" and workflow.get("strategy") == "native"
+                method = "session/fork" if native_branch else "session/new"
                 stopping, acp_session = await wait_for_shutdown_or(
-                    self._conn.new_session(**new_session_kwargs)
+                    self._fork_conversation(existing_session, new_session_kwargs)
+                    if native_branch else self._conn.new_session(**new_session_kwargs)
                 )
                 if stopping:
                     await self._abort_connect_if_shutting_down(
@@ -1392,7 +1396,7 @@ class AgentConnection:
                 self._wire_log(
                     "out",
                     {
-                        "method": "session/new",
+                        "method": method,
                         "params": {"cwd": session_cwd},
                         "result": {"session_id": acp_session.session_id},
                     },
@@ -1483,6 +1487,37 @@ class AgentConnection:
             "sqlite.agent_session_save", self.store.save_session, self.session
         )
         return self.session
+
+    async def _fork_conversation(self, session: AgentSession, kwargs: dict[str, Any]):
+        """Fork only into the target's admitted workspace; never retry an unknown RPC."""
+        from pa.acp.conversation_capabilities import conversation_capabilities
+
+        if not conversation_capabilities(self._init_response)["fork"]:
+            raise RuntimeError("Target provider does not support session/fork; choose context copy explicitly")
+        workflow = session.initiating_workflow
+        source_id = workflow.get("source_external_id")
+        if not isinstance(source_id, str) or not source_id:
+            raise RuntimeError("Native branch has no source provider session")
+        selected = (session.config_json.get("execution_selection") or {}).get("selected") or {}
+        if selected.get("connection") != workflow.get("source_connection"):
+            raise RuntimeError("Native fork requires the source provider connection")
+        admission = (session.config_json or {}).get("branch_admission") or {}
+        if admission.get("state") in {"request_sent", "outcome_unknown", "forked"}:
+            raise RuntimeError("Native fork outcome requires recovery; PA will not issue a second fork")
+        session.config_json = {**session.config_json, "branch_admission": {"state": "request_sent"}}
+        await self._offload("sqlite.branch_admission", self.store.save_session, session)
+        try:
+            response = await self._conn.fork_session(session_id=source_id, **kwargs)
+            if not isinstance(response.session_id, str) or not response.session_id or response.session_id == source_id:
+                raise RuntimeError("Provider returned an invalid independent fork identity")
+        except BaseException:
+            session.config_json = {**session.config_json, "branch_admission": {"state": "outcome_unknown"}}
+            await self._offload("sqlite.branch_admission", self.store.save_session, session)
+            raise
+        session.external_session_id = response.session_id
+        session.config_json = {**session.config_json, "branch_admission": {"state": "forked"}}
+        await self._offload("sqlite.branch_admission", self.store.save_session, session)
+        return response
 
     def _apply_session_meta(self, meta: dict[str, Any]) -> None:
         if not self.session:

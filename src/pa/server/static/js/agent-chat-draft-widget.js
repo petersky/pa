@@ -400,6 +400,7 @@
     if (!receipt || !promptId || promptId !== receipt.id ||
         receipt.sessionId !== this.sessionId || receipt.instanceId !== this.instanceId ||
         receipt.principalId !== this.principalId) return false;
+    if (typeof this.widget.recordSubmissionTiming === "function") this.widget.recordSubmissionTiming(promptId);
     this.submissionAccepted({
       rawText: receipt.rawText,
       images: receipt.images,

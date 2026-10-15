@@ -342,6 +342,13 @@ def compose_session_prompt(
         realm_id=realm,
     )
     prompts = list(seed_prompts or [])
+    branch = session.initiating_workflow or {}
+    if branch.get("kind") == "conversation_branch":
+        prompts.append(PROMPTS.render("agent.context.conversation_branch", {
+            "source_session_id": branch["source_session_id"],
+            "strategy": branch["strategy"],
+            "saved_excerpt": branch.get("saved_excerpt") or "(No copied text; native provider history may be available.)",
+        }, provider=provider))
     boundary = (session.config_json or {}).get("execution_context_boundary_from")
     if boundary:
         prompts.append(

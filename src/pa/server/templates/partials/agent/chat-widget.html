@@ -118,6 +118,14 @@
   {% endif %}
 
   <details class="acw-timings"><summary>Timing details</summary><p class="muted small" data-acw-timings>Timings appear when PA accepts a message and the provider responds.</p></details>
+  <p class="muted small" data-conversation-outcome hidden></p>
+  <details class="acw-threads" data-conversation-threads>
+    <summary>Branch from here</summary>
+    <p class="muted small" data-thread-status role="status">Open to check branch support for this conversation.</p>
+    <a class="ghost small" href="/agent?new=1">New thread</a>
+    <button type="button" class="ghost small" data-thread-native disabled>Fork latest history</button>
+    <button type="button" class="ghost small" data-thread-copy disabled>Copy recent context</button>
+  </details>
 
   <div class="acw-recovery" data-acw-recovery hidden>
     <div>

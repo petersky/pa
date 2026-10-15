@@ -63,6 +63,14 @@ def present(*, card=CARD, dispatch_value=None, session=None, watches=()):
     )
 
 
+def test_next_actor_does_not_mark_a_finished_turn_as_task_completion():
+    unfinished = present(dispatch_value=dispatch("completed"))
+    assert unfinished["state"] == "turn_ended"
+    assert unfinished["next_actor"]["id"] == "unknown"
+    accepted = present(card={**CARD, "lane": "done"}, dispatch_value=dispatch("completed"))
+    assert accepted["next_actor"]["id"] == "none"
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected"),
     [

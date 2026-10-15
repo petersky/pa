@@ -14,6 +14,23 @@ def register_mcp(mcp, ctx) -> None:
     register_selection_mcp(mcp, ctx)
 
     @mcp.tool()
+    def get_conversation_capabilities(session_id: str) -> dict:
+        """Inspect negotiated native fork and steering safety for this conversation."""
+        return request_local_pa(ctx.settings, "GET", f"/api/agent/sessions/{session_id}/conversation-capabilities", timeout_seconds=15.0)
+
+    @mcp.tool()
+    def branch_conversation(session_id: str, request_id: str, strategy: str) -> dict:
+        """Create an explicitly requested independent conversation, never a second source workspace writer.
+
+        Choose native only when supported (latest provider history, not an exact
+        message checkpoint). Choose copy explicitly for bounded saved text.
+        Reuse request_id and strategy after timeout; do not silently fall back.
+        Creating a branch does not authorize executing new work.
+        """
+        return request_local_pa(ctx.settings, "POST", f"/api/agent/sessions/{session_id}/branch",
+            json={"request_id": request_id, "strategy": strategy}, headers={"Idempotency-Key": request_id}, timeout_seconds=60.0)
+
+    @mcp.tool()
     def get_conversation_issues(session_id: str) -> dict:
         """Read a compact running discussion list and durable work receipts."""
         return request_local_pa(ctx.settings, "GET", f"/api/agent/sessions/{session_id}/issues", timeout_seconds=15.0)

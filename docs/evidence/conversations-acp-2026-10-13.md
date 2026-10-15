@@ -1,4 +1,4 @@
-# Conversation entry, provider titles and Terminal — first slice
+# Conversation entry, provider titles, Terminal and independent work
 
 Execution: macbook `0c7d8ecb-7e45-4579-8fa0-35159492d3f1`; card
 `d2b9d8ef-4797-4764-b398-4302319ea2b6`; session
@@ -91,7 +91,7 @@ Jinja helper was corrected. The first browser attach returned ambiguous 503
 `c64f9e68-ed52-4ca7-86d5-5fadcf959c69`; a same-key retry attached successfully
 after outcome/state checks. These are not production acceptance claims.
 
-A–D checklist:
+A–D checklist at the first slice (superseded by the current checklist below):
 
 - A: chat entry, titles and Terminal implemented; outcome/next-actor copy and
   initial submission latency still need acceptance.
@@ -171,3 +171,103 @@ ASGI; dispatch is synthetic with a400ms delay. These measurements meet the propo
 500ms local-read and1s acknowledgement targets for this fixture only. Browser
 composer and live-provider generation are explicitly **not measured** by this
 benchmark. Startup/turn diagnostics support those subsequent measurements.
+
+## Independent threads and next actors (2026-10-14)
+
+New thread uses the existing independent conversation admission. Branch from here
+offers a negotiated native fork of the latest available provider history and an
+explicit Copy recent context alternative (last 100 saved events, at most 8000
+text characters). Source conversation/card/instance/provider identity and the
+copy's sequence boundary persist on the new session. Neither action sends a
+prompt or authorizes executing new work.
+
+The new target uses normal PA selection and workspace admission with the source's
+permission mode and explicit preferences. No source cwd, card execution binding,
+dispatch identity or replacement-context operation is reused. Native fork runs
+on the target connection with its own cwd and MCP configuration, after verifying
+the fork capability and source connection identity. `request_sent` is durable
+before the RPC; the returned provider identity is saved before later startup
+steps. A lost response remains `outcome_unknown`; retry never blindly forks again
+or silently copies context. Recovery of a known provider ID uses the existing
+required-restore path. An ambiguous fork requires inspection; the user may choose
+a separate context copy explicitly. Native fork was validated with protocol fakes,
+not a live provider invocation in this worker.
+
+Installed-source evidence: `forkSession` at bundle 43113 delegates to the fork
+creation path; app-server `threadFork` at 34654 uses the target cwd/config and
+`excludeTurns: true`. Generic session/fork does not expose a message-specific
+checkpoint; the AIR fork-point metadata is client-specific and is not used.
+
+The installed steering extension is advertised, but not safe to enable under PA's
+durable turn contract. Bundle 43837–44000 shows that an injection racing with turn
+completion calls `startNewTurnFromSteering`, which acknowledges start before the
+prompt completes. `parseSessionSteerParams` accepts sessionId/prompt, with no
+idempotent delivery ID or expected-turn fence. The reply has only `injected` or
+`startedNewTurn`; generic clients get no completion receipt for the latter.
+PA therefore exposes the advertised capability separately from availability and
+uses the clearly labeled Queue for current work fallback. Native Send to current
+work remains blocked, not implemented or claimed as accepted/injected.
+
+A supported extension needs an idempotent client delivery ID, an expected-turn
+ID plus an inject-only/no-new-turn option, and correlated durable result/status
+recovery. If it may start another turn, it also needs generic turn completion and
+error notifications keyed to that turn. PA can then record submitted → injected /
+queued / started-new-turn, reconcile uncertain receipts, and retain permission
+routing without competing session/prompt calls. This is a proposed provider
+contract change, not a protocol migration. PA problem
+`cbdacf92-1e66-416c-85d9-b2f85c47aa4f` records this limitation.
+
+Home/Work/card progress and conversation snapshots now expose the same next-actor
+vocabulary: You, Agent, PA, Reviewer, No action required, or Not confirmed. Existing
+completion evidence determines status; an ended provider turn remains unfinished
+work unless the existing completion requirements are satisfied. Queue/status
+refreshes coalesce over 250ms and reject obsolete thread/generation/revision
+responses. Composer text remains usable during work and branch admission.
+
+Browser operations `threads-receipt-v1`, `threads-new-target-evidence-v1`, and
+`threads-source-draft-restore-evidence-v1` verified explicit copy, independent
+target routing, an empty target draft, and the restored source draft. Backend and
+Node tests cover duplicate branch requests, owner isolation, bounded copied text,
+capability rejection, target fork parameters, uncertain native response recovery,
+late receipts, and stale queue-refresh isolation.
+
+## Browser timings and current checklist
+
+The real-template Chromium fixture (`tests.conversation_browser_fixture`) stores
+301 historical cards and uses synthetic provider responses. Thirty completed
+browser samples, excluding one warm-up, measured navigation → focused composer
+p95 **127.70ms** and synthetic prompt acknowledgement p95 **28ms**, with no missing
+samples. Raw samples are in `conversation-browser-timings-2026-10-14.json`;
+operation IDs are `browser-perf-fixed-0-v2` through `browser-perf-fixed-30-v2`.
+The synthetic prompt endpoint does not establish production durable prompt or
+provider-generation latency. The separate ASGI benchmark above exercises actual
+Start-selected admission and compact reads. Cold provider startup is still
+awaited by session creation and has no subsecond claim.
+
+The first browser measurement exposed missing timing when streamed acceptance
+beat the HTTP reply. Timing now records the first confirmed receipt through either
+path, keyed by session/generation/prompt, without changing durable acceptance.
+The initial incomplete run is excluded; the retained run waits for every sample's
+completion receipt. Minor status-refresh code changes caused asset revalidation
+during the retained run; no slow sample was discarded.
+
+Current A–D scope:
+
+- A implemented: direct focused New chat, provider/manual/automatic titles,
+  retained safe Terminal evidence and configurable 1000-character display limit.
+  Cold startup still requires provider readiness before the first send.
+- B implemented: inert running issue list, edit/group/defer/restore, stable
+  start-selected receipt and create/link/select/provision/dispatch delegation.
+  Recovery after a server restart uses explicit same-request retry.
+- C implemented: bounded summary discovery and phase/timing diagnostics; measured
+  301-card synthetic fixtures above. Live-provider latency remains unmeasured.
+- D implemented: shared next actors, coalesced thread-scoped status refreshes,
+  independent New thread and native/copy branch admission, retaining completion,
+  permission, prompt recovery and workspace fencing. Live native-fork acceptance
+  and native steering remain outstanding; steering needs the provider contract
+  change described above.
+
+Changes remain review-gated. The earlier automatic approval rejection of merging
+PR #457 is not bypassed by publishing more scoped review commits. Any approval
+for its old head is stale after a push. Integration and activation remain separate;
+this worker performs no production restart, release or activation.
