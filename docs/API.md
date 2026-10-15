@@ -14,6 +14,34 @@ Missing or invalid authentication returns `401`; an absent or mismatched CSRF
 token returns `403`. CLI user bearer tokens are CSRF-exempt. Fleet-internal and
 sync operations use the instance bearer token documented on those operations.
 
+## Local operator acceptance
+
+Local no-login access identifies the default account but does not authenticate a
+human. Selecting Done on a card whose completion requirements are pending returns
+`409 acceptance_pending` with sign-in instructions; it does not write a receipt.
+
+For an operator override, the instance owner runs `pa user set-password local`
+against the running instance (use its `PA_DATA_DIR`), enters a new password at the
+hidden prompt, and signs in at `/login`. There is no default password. The command
+uses the owner's existing administrator credential to call
+`POST /api/auth/users/{username}/password`; the server owns the write and updates
+its live user directory immediately. No restart is required. If the server is
+unavailable or rejects the request, the command fails without an offline write.
+Password setup does not create a browser session or accept a card.
+
+After signing in, review the card's current criteria and select Done. The existing
+completion policy records a durable `human_override` receipt with the signed-in
+principal, current requirement revision and prior card version. It preserves the
+criteria and earlier evidence. CLI bearer credentials, instance credentials,
+MCP producers and session producers cannot use this human path, including requests
+that mix their credentials or provenance markers with a browser cookie.
+
+Failed status changes show readable errors and read the current card to restore
+the selector. If the version changed, reload the card to review its latest details
+before retrying. If the read also fails, the last confirmed status remains visible
+and the selector is disabled until reload; a lost response is not treated as proof
+that the write failed or succeeded.
+
 ## Durable fleet onboarding
 
 `POST /api/fleet/bootstrap/discover` resolves an OpenSSH target and returns its

@@ -1880,42 +1880,125 @@
     restoreCardFromHistory();
   });
 
-  document.body.addEventListener("htmx:responseError", function (event) {
-    var source = (event.detail && event.detail.elt) ||
-      event.target;
-    var form = source && typeof source.matches === "function"
-      ? (source.matches("form") ? source : source.closest("form"))
-      : null;
-    var operation = form && form.dataset.operation;
-    var message = "Request failed";
-    var xhr = event.detail && event.detail.xhr;
-    var text = xhr && xhr.responseText;
-    var statusText = xhr && xhr.statusText;
-    if (text) {
-      try {
-        const data = JSON.parse(text);
-        message = data.detail || data.message || message;
-        if (Array.isArray(message)) {
-          message = message.map(function (item) {
-            var location = Array.isArray(item.loc) ? item.loc : [];
-            var field = location.filter(function (part) {
-              return part !== "body" && part !== "query" && part !== "path";
-            }).pop();
-            return (field ? field + ": " : "") + (item.msg || String(item));
-          }).join("; ");
-        }
-      } catch (_err) {
-        message = statusText || message;
+  function readableRequestError(value, fallback) {
+    if (typeof value === "string" && value.trim()) return value;
+    if (Array.isArray(value)) {
+      return value.map(function (item) {
+        var location = item && Array.isArray(item.loc) ? item.loc : [];
+        var field = location.filter(function (part) {
+          return part !== "body" && part !== "query" && part !== "path";
+        }).pop();
+        return (field ? field + ": " : "") + readableRequestError(item, fallback);
+      }).join("; ") || fallback;
+    }
+    if (value && typeof value === "object") {
+      var message = value.message || value.msg || value.detail;
+      if (message) return readableRequestError(message, fallback);
+      if (typeof value.code === "string") {
+        var known = {
+          acceptance_pending: "Done was not saved: completion acceptance is still required. Sign in with your operator password at /login to review and override it.",
+          stale_card_version: "The card changed after it was loaded. Review its current status before trying again."
+        };
+        return known[value.code] || value.code.replace(/_/g, " ") + ".";
       }
-    } else if (statusText) {
-      message = statusText;
+    }
+    return fallback;
+  }
+
+  function cardStatusForm(source) {
+    return source && source.closest ? source.closest("[data-card-status-form]") : null;
+  }
+
+  // A failed write (including a lost response) is never evidence of the lane.
+  // Restore the last snapshot immediately, then read the authoritative card.
+  async function restoreCardStatus(source, message) {
+    var form = cardStatusForm(source);
+    var card = form && form.closest("[data-card-detail]");
+    if (!card) return;
+    var select = form.querySelector('select[name="lane"]');
+    var error = card.querySelector("[data-card-status-error]");
+    select.value = card.dataset.cardLane;
+    select.disabled = true;
+    error.hidden = false;
+    error.textContent = message + " Checking the current status…";
+    var controller = new AbortController();
+    var timer = window.setTimeout(function () { controller.abort(); }, 10000);
+    try {
+      var response = await fetch("/api/cards/" + encodeURIComponent(card.dataset.cardId) +
+        "?realm=" + encodeURIComponent(card.dataset.cardRealm), {
+        headers: {Accept: "application/json"}, cache: "no-store", signal: controller.signal
+      });
+      if (!response.ok) throw new Error("Status refresh failed");
+      var current = await response.json();
+      if (current.id !== card.dataset.cardId || !current.updated_at ||
+          !Array.from(select.options).some(function (option) { return option.value === current.lane; })) {
+        throw new Error("Invalid card status");
+      }
+      if (!card.isConnected) return;
+      form.classList.remove("status-" + card.dataset.cardLane);
+      card.dataset.cardLane = current.lane;
+      form.classList.add("status-" + current.lane);
+      select.value = current.lane;
+      // Never attach a fresh version to stale criteria or other unsaved fields.
+      select.disabled = current.updated_at.replace(/Z$/, "+00:00") !== form.querySelector('[name="expected_version"]').value.replace(/Z$/, "+00:00");
+      error.textContent = message + " Current status: " + current.lane + ".";
+      if (select.disabled) addCardStatusReload(error, card);
+    } catch (_error) {
+      if (card.isConnected) {
+        error.textContent = message + " Current status could not be verified. Showing the last confirmed status; reload the card before trying again.";
+        addCardStatusReload(error, card);
+      }
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  function addCardStatusReload(error, card) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Reload card to review current details";
+    button.addEventListener("click", function () {
+      loadCardDetail(card.dataset.cardId, card.dataset.cardRealm, false, currentCardTab());
+    });
+    error.appendChild(document.createTextNode(" "));
+    error.appendChild(button);
+  }
+
+  document.body.addEventListener("htmx:beforeRequest", function (event) {
+    var form = cardStatusForm((event.detail && event.detail.elt) || event.target);
+    if (form) form.querySelector('select[name="lane"]').disabled = true;
+  });
+  document.body.addEventListener("htmx:afterRequest", function (event) {
+    var form = cardStatusForm((event.detail && event.detail.elt) || event.target);
+    if (form && event.detail.successful) form.querySelector('select[name="lane"]').disabled = false;
+  });
+
+  function handleRequestFailure(event) {
+    var source = (event.detail && event.detail.elt) || event.target;
+    var form = source && typeof source.matches === "function"
+      ? (source.matches("form") ? source : source.closest("form")) : null;
+    var operation = form && form.dataset.operation;
+    var networkFailure = event.type !== "htmx:responseError";
+    var message = networkFailure
+      ? "Connection failed. The request outcome could not be confirmed." : "Request failed";
+    var xhr = event.detail && event.detail.xhr;
+    if (xhr && xhr.responseText) {
+      try {
+        message = readableRequestError(JSON.parse(xhr.responseText), message);
+      } catch (_err) {
+        message = xhr.statusText || message;
+      }
     }
     if (operation) message = operation + " — " + message;
     showToast(message, "error");
+    restoreCardStatus(source, message);
     renderLoadFailure(source, message);
     if (homeRefreshFocusKey && isHomeRefreshSource(source)) {
       restoreHomeRefreshFocus("Home attention queue refresh failed.");
     }
+  }
+  ["htmx:responseError", "htmx:sendError", "htmx:timeout"].forEach(function (name) {
+    document.body.addEventListener(name, handleRequestFailure);
   });
 
   document.body.addEventListener("pa:navigationError", function (event) {

@@ -175,16 +175,40 @@ from pa.domain.completion import CompletionConflict
 def _direct_human_card_action(request: Request) -> bool:
     # MCP/instance proxies use the owner's token too; they cannot claim the
     # ordinary human override merely by presenting that credential.
-    return bool(getattr(request.state, "user_authenticated", False) is True and getattr(request.state, "authentication_method", None) == "browser_session" and get_principal_id(request).startswith("user:") and not request.headers.get("X-PA-MCP-Instance-ID") and not request.headers.get("X-PA-Completion-Producer") and not getattr(request.state, "instance_authenticated", False))
+    return bool(
+        getattr(request.state, "user_authenticated", False) is True
+        and getattr(request.state, "authentication_method", None) == "browser_session"
+        and get_principal_id(request).startswith("user:")
+        and not any(request.headers.get(name) for name in (
+            "Authorization", "X-PA-MCP-Instance-ID", "X-PA-Completion-Producer",
+            "X-PA-Assigned-Session-ID", "X-PA-Assigned-Dispatch-ID",
+        ))
+        and not getattr(request.state, "instance_authenticated", False)
+    )
+
+
+def _completion_conflict_detail(request: Request, code: str) -> dict:
+    detail = {"code": code, "message": code.replace("_", " ").capitalize() + "."}
+    if code in {"acceptance_pending", "completion_owner_unconfigured"}:
+        detail["message"] = "Done was not saved: this card still requires completion acceptance."
+        if not _direct_human_card_action(request):
+            detail["message"] += (
+                " For an audited operator override, sign in at /login with your operator password,"
+                " review the criteria, then select Done again. Local no-login access does not"
+                " verify a human operator. If no password is configured, the instance owner"
+                " must run `pa user set-password local` on this instance first."
+            )
+            detail["operator_login_url"] = "/login"
+    return detail
 
 
 def _update_card_from_ui(request: Request, card_id: str, data: CardUpdate, realm_id: str):
     try:
         return get_store().update_card(card_id, data, realm_id=realm_id, principal_id=get_principal_id(request), instance_id=request.app.state.ctx.settings.instance_id, direct_human=_direct_human_card_action(request))
     except CompletionConflict as exc:
-        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+        raise HTTPException(status_code=409, detail=_completion_conflict_detail(request, exc.code)) from exc
     except CardVersionConflict as exc:
-        raise HTTPException(status_code=409, detail={"code": "stale_card_version", "actual_version": exc.actual.isoformat()}) from exc
+        raise HTTPException(status_code=409, detail={"code": "stale_card_version", "actual_version": exc.actual.isoformat(), "message": "The card changed after it was loaded. Review its current status before trying again."}) from exc
 
 
 class CardProjectChangeRequest(BaseModel):
@@ -2092,7 +2116,7 @@ def create_card_api(
         return result
     except CompletionConflict as exc:
         store.fail_operation(key, exc.code)
-        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+        raise HTTPException(status_code=409, detail=_completion_conflict_detail(request, exc.code)) from exc
     except Exception as exc:
         store.fail_operation(key, type(exc).__name__)
         raise
@@ -2636,7 +2660,7 @@ def update_card_api(
         )
     except CompletionConflict as exc:
         store.fail_operation(key, exc.code)
-        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+        raise HTTPException(status_code=409, detail=_completion_conflict_detail(request, exc.code)) from exc
     except CardVersionConflict as exc:
         store.fail_operation(key, "stale_card_version")
         raise HTTPException(

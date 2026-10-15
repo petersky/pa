@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 import websockets
+from websockets.asyncio.client import ClientConnection
 
 
 class CdpError(RuntimeError):
@@ -50,6 +51,18 @@ class CdpPage:
         # A target is a single ordered CDP transport.  Keep commands serialized even
         # when callers accidentally overlap state/snapshot work.
         self._command_lock = asyncio.Lock()
+        # Emulation belongs to the CDP connection. Closing it after each command
+        # immediately discards a successful viewport override in Chromium.
+        self._websocket: ClientConnection | None = None
+
+    async def _disconnect(self) -> None:
+        websocket, self._websocket = self._websocket, None
+        if websocket is not None:
+            await websocket.close()
+
+    async def close(self) -> None:
+        async with self._command_lock:
+            await self._disconnect()
 
     async def command(
         self, method: str, params: dict[str, Any] | None = None
@@ -57,31 +70,40 @@ class CdpPage:
         async with self._command_lock:
             try:
                 async with asyncio.timeout(15):
-                    target = await page_target(self.endpoint, self.target_id)
-                    self.target_id = str(target["id"])
-                    websocket_url = str(target["webSocketDebuggerUrl"])
+                    if self._websocket is None:
+                        target = await page_target(self.endpoint, self.target_id)
+                        self.target_id = str(target["id"])
+                        self._websocket = await websockets.connect(
+                            str(target["webSocketDebuggerUrl"]),
+                            open_timeout=5,
+                            close_timeout=2,
+                        )
                     self._next_id += 1
                     command_id = self._next_id
-                    async with websockets.connect(
-                        websocket_url, open_timeout=5, close_timeout=2
-                    ) as ws:
-                        await ws.send(json.dumps({
-                            "id": command_id, "method": method, "params": params or {}
-                        }))
-                        while True:
-                            message = json.loads(await ws.recv())
-                            if message.get("id") != command_id:
-                                continue
-                            if "error" in message:
-                                raise CdpError(
-                                    str(message["error"].get("message") or message["error"])
-                                )
-                            return dict(message.get("result") or {})
+                    await self._websocket.send(json.dumps({
+                        "id": command_id, "method": method, "params": params or {}
+                    }))
+                    while True:
+                        message = json.loads(await self._websocket.recv())
+                        if message.get("id") != command_id:
+                            continue
+                        if "error" in message:
+                            raise CdpError(
+                                str(message["error"].get("message") or message["error"])
+                            )
+                        return dict(message.get("result") or {})
             except TimeoutError as exc:
+                await self._disconnect()
                 raise CdpError(
                     f"CDP command {method} timed out after 15 seconds "
                     f"(target_id={self.target_id or 'unresolved'}, command_id={self._next_id})"
                 ) from exc
+            except (asyncio.CancelledError, OSError, websockets.WebSocketException,
+                    json.JSONDecodeError):
+                # The command may already have taken effect. Drop the transport
+                # but never replay an ambiguous input/navigation automatically.
+                await self._disconnect()
+                raise
 
     async def evaluate(self, expression: str, *, await_promise: bool = True) -> Any:
         result = await self.command(
