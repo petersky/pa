@@ -2924,11 +2924,26 @@ code {
 }
 
 .acw-queue-text {
-  flex: 1;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.acw-queue-status, .acw-queue-help {
+  margin: 0 0 0.3rem;
+  font-size: 0.75rem;
+  flex: 0 0 auto;
+}
+
+.acw-queue-content { flex: 1; min-width: 0; }
+.acw-queue-source { font-weight: 600; }
+.acw-queue-eligibility { display: block; font-size: 0.75rem; }
+.acw-queue-order { min-width: 2.8rem; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.acw-queue-list li[data-next="true"] .acw-queue-order { font-weight: 700; }
+.acw-queue-row-actions { display: flex; flex-shrink: 0; }
+.acw-queue-row-actions button { min-width: 1.75rem; min-height: 1.75rem; padding: 0.2rem; }
+.acw-queue-row-actions button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 
 .acw-composer {
   display: flex;

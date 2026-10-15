@@ -2072,7 +2072,7 @@
     this.setTurnActive(!!snap.prompting, snap.turn_started_at);
     this.setStatus(this.prompting ? "working" : snap.connected ? "online" : "offline");
     this.renderMcpHealth(snap.pa_mcp);
-    this.renderQueue(snap.queue || []);
+    this.renderQueue(snap.queue || [], snap);
     this.renderModelsModes(snap);
     this.renderConfigOptions(snap);
     this.renderMetrics(snap.metrics || session.metrics_json || {});
@@ -2563,6 +2563,7 @@
       "queue_paused",
       "queue_resumed",
       "publication_fence_established",
+      "session_control_changed",
       "cancelled",
       "session_started",
       "session_closed",
@@ -2871,6 +2872,7 @@
       case "queue_paused":
       case "queue_resumed":
       case "publication_fence_established":
+      case "session_control_changed":
         if (!replay) this.refreshQueue();
         break;
       case "cancelled":
@@ -3551,9 +3553,19 @@
     if (!this.els.permissions.children.length) this.els.permissions.hidden = true;
   };
 
-  AgentChatWidget.prototype.renderQueue = function (queue) {
+  AgentChatWidget.prototype.renderQueue = function (queue, snapshot) {
     if (!this.showQueue || !this.els.queue || !this.els.queueList) return;
     const self = this;
+    const snap = snapshot || this.lastSnapshot || {};
+    const status = this.root.querySelector("[data-acw-queue-status]");
+    if (status) {
+      const waiting = this.queuePaused ? "Paused — queued messages wait for Resume." :
+        snap.prompting ? "Queued messages wait for the current reply." :
+        snap.connected === false ? "Queued messages wait for reconnection." :
+        queue.some(function (q) { return q.display && q.display.is_next; }) ? "Next eligible message is queued." :
+        queue.length ? "Queued messages wait for eligibility to be confirmed." : "Queue is empty.";
+      if (status.textContent !== waiting) status.textContent = waiting;
+    }
     this.els.queue.hidden = !queue.length && !this.queuePaused;
     const meta = this.root.querySelector("[data-acw-queue-meta]");
     if (meta) {
@@ -3566,16 +3578,43 @@
     const resumeBtn = this.root.querySelector("[data-acw-queue-resume]");
     if (pauseBtn) pauseBtn.disabled = !!this.queuePaused;
     if (resumeBtn) resumeBtn.disabled = !this.queuePaused;
+    const focused = document.activeElement;
+    const focusedRow = focused && focused.closest && focused.closest("[data-acw-queue-list] li");
+    const focusId = focusedRow && focusedRow.dataset.id;
+    const focusAction = focused && focused.dataset && focused.dataset.queueAction;
     this.els.queueList.innerHTML = "";
+    function reorder(from, to) {
+      if (!Number.isInteger(from) || from < 0 || from >= queue.length || to < 0 || to >= queue.length || from === to) return;
+      const ids = queue.map(function (q) { return q.id; });
+      ids.splice(to, 0, ids.splice(from, 1)[0]);
+      self.api("/sessions/" + self.sessionId + "/queue/reorder", {
+        method: "POST", body: JSON.stringify({ prompt_ids: ids }),
+      }).then(function () { self.refreshQueue(); });
+    }
     queue.forEach(function (item, index) {
       const li = document.createElement("li");
       li.draggable = true;
       li.dataset.id = item.id;
       const queueText = item.message || imageSummary(item.images);
+      const display = item.display || {};
+      const position = index + 1; // Preserve the server's array order, including held items.
+      const isNext = display.is_next === true && display.eligibility === "eligible";
+      const source = ["Human", "Response", "Automated", "Other"].includes(display.source) ? display.source : "Other";
+      const eligibility = {held: "Held during human control", checking: "Checking eligibility", admission_pending: "Awaiting admission"}[display.eligibility] || "";
+      const description = source + " message at queue position " + position;
+      li.dataset.next = String(isNext);
       li.innerHTML =
-        '<span class="acw-queue-text">' +
-        escapeHtml(queueText) +
-        '</span><button type="button" class="ghost small" data-remove>✕</button>';
+        '<span class="acw-queue-order" aria-label="' + (isNext ? "Next eligible, queue position " : "Queue position ") + position + '">' +
+        (isNext ? "Next · " : "") + position + '</span>' +
+        '<span class="acw-queue-content"><span class="acw-queue-source">' + source + '</span>' +
+        '<span class="acw-queue-text">' + escapeHtml(queueText) + '</span>' +
+        (eligibility ? '<span class="acw-queue-eligibility">' + eligibility + '</span>' : '') + '</span>' +
+        '<span class="acw-queue-row-actions">' +
+        '<button type="button" class="ghost small" data-queue-action="up" aria-label="Move ' + description + ' up"' + (index === 0 ? ' disabled' : '') + '>↑</button>' +
+        '<button type="button" class="ghost small" data-queue-action="down" aria-label="Move ' + description + ' down"' + (index === queue.length - 1 ? ' disabled' : '') + '>↓</button>' +
+        '<button type="button" class="ghost small" data-queue-action="remove" data-remove aria-label="Remove ' + description + '">✕</button></span>';
+      li.querySelector('[data-queue-action="up"]').addEventListener("click", function () { reorder(index, index - 1); });
+      li.querySelector('[data-queue-action="down"]').addEventListener("click", function () { reorder(index, index + 1); });
       li.querySelector("[data-remove]").addEventListener("click", function () {
         self.api("/sessions/" + self.sessionId + "/queue/" + item.id, { method: "DELETE" }).then(function () {
           self.refreshQueue();
@@ -3591,16 +3630,13 @@
         e.preventDefault();
         const from = Number(e.dataTransfer.getData("text/plain"));
         const to = index;
-        if (Number.isNaN(from) || from === to) return;
-        const ids = queue.map(function (q) { return q.id; });
-        const moved = ids.splice(from, 1)[0];
-        ids.splice(to, 0, moved);
-        self.api("/sessions/" + self.sessionId + "/queue/reorder", {
-          method: "POST",
-          body: JSON.stringify({ prompt_ids: ids }),
-        }).then(function () { self.refreshQueue(); });
+        reorder(from, to);
       });
       self.els.queueList.appendChild(li);
+      if (focusId === item.id && focusAction) {
+        const target = li.querySelector('[data-queue-action="' + focusAction + '"]');
+        (target && !target.disabled ? target : li.querySelector("[data-remove]")).focus();
+      }
     });
   };
 
@@ -3614,7 +3650,7 @@
         if (self.destroyed || sid !== self.sessionId || generation !== self.subscriptionGeneration || revision !== self.queueRefreshRevision) return;
         self.lastSnapshot = Object.assign({}, self.lastSnapshot || {}, snap);
         self.queuePaused = !!snap.queue_paused;
-        self.renderQueue(snap.queue || []);
+        self.renderQueue(snap.queue || [], snap);
         self.renderPresentation(snap);
         self.updateEmptyChatStatus(snap);
       }).catch(function () { /* existing live/recovery UI owns connection errors */ });
@@ -4700,7 +4736,7 @@
     "session_info_update", "session_started", "session_closed", "session_recovered",
     "user_message", "turn_waiting", "turn_completed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "publication_fence_established", "prompt_failed", "connection_lost",
+    "queue_paused", "queue_resumed", "publication_fence_established", "session_control_changed", "prompt_failed", "connection_lost",
     "model_changed", "mode_changed", "current_mode_update", "config_changed",
     "configuration_changed",
     "config_option_update", "config_options_update", "permission_request",
@@ -4712,7 +4748,7 @@
     "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
     "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
-    "queue_paused", "queue_resumed", "publication_fence_established", "session_started", "session_closed",
+    "queue_paused", "queue_resumed", "publication_fence_established", "session_control_changed", "session_started", "session_closed",
     "session_recovered", "connection_lost", "model_changed", "mode_changed",
     "current_mode_update", "config_changed", "configuration_changed", "config_option_update",
     "config_options_update", "permission_request", "permission_resolved",

@@ -2931,6 +2931,40 @@ class AgentSessionRuntime:
         self._flush_transcript()
         await self._drain_transcripts()
 
+    def queue_view(self) -> list[dict[str, Any]]:
+        """Read-only queue cues; never authorize delivery or change ordering.
+
+        Admission and restart validation can yield before dequeue. Until those
+        gates settle, do not promise that a later item will be next. Held items
+        are skipped using the same control-mode predicate as the drain loop.
+        """
+        rows = []
+        next_known = True
+        for position, item in enumerate(list(self._queue), 1):
+            source = (item.source or "").strip().casefold()
+            source_label = (
+                "Response" if source == "notification-response" else
+                "Automated" if _is_automatic_source(source) else
+                "Human" if source in {"api", "ui", "operator", "in_flight"}
+                or source.startswith("ui:") else "Other"
+            )
+            if self._needs_restart_validation(item):
+                eligibility = "checking"
+            elif not self._prompt_eligible(item):
+                eligibility = "held"
+            elif item.admission_pending:
+                eligibility = "admission_pending"
+            else:
+                eligibility = "eligible"
+            is_next = next_known and eligibility == "eligible"
+            if eligibility != "held":
+                next_known = False
+            rows.append({**item.public_dict(), "display": {
+                "position": position, "source": source_label,
+                "eligibility": eligibility, "is_next": is_next,
+            }})
+        return rows
+
     def snapshot(self, *, include_transcript: bool = True) -> dict[str, Any]:
         """Return runtime state, optionally including the bounded durable transcript.
 
@@ -2968,7 +3002,7 @@ class AgentSessionRuntime:
             "connected": self.connected,
             "prompting": self.prompting,
             "queue_paused": self._queue_paused,
-            "queue": [q.public_dict() for q in self._queue],
+            "queue": self.queue_view(),
             "in_flight": self._in_flight.model_dump(mode="json")
             if self._in_flight
             else None,
