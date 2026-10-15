@@ -103,3 +103,48 @@ A–D checklist:
   presentation and full ten-issue/retry/reload/permission acceptance remain.
 
 Integration and activation are separate. No activation is part of this worker.
+
+## Issue-list slice (2026-10-14)
+
+The conversation now has a bounded list (100 notes, up to 20 selected per request)
+with multiline addition, editing, grouping, defer/restore and Start selected.
+Discussion creates no cards and starts no workers. MCP exposes the same list;
+the start tool requires an explicit user fix/start request in its contract.
+
+Start selected freezes the exact issue revisions, grouping, source identity,
+permission mode, explicit selection preferences and conjunctive constraints in an
+instance-local receipt. Missing permission mode blocks admission rather than
+falling through to fleet's broader default. Each group uses stable child keys in
+the existing canonical card and fleet dispatch ledgers. Cards retain source
+completion requirements. Secondary session links preserve the discussion's own
+binding; dedicated work continues through existing selection and workspace
+provisioning. No cwd, capacity override or concurrent-writer permission is added.
+
+An owned mutation continues after HTTP disconnect, with a 250ms waiter budget.
+Reload exposes the saved request; retry uses the same identity and frozen inputs.
+Receipt states describe admission, never task completion. A blocked request keeps
+its evidence and card links for recovery. Automatic restart resumption is not
+claimed: after a server restart, Retry same request resumes admission through the
+existing ledgers. Work outcomes remain on their cards.
+
+Regression evidence includes inert ten-note discussions, stale-version and owner
+rejection, deferred/missing-mode rejection, preservation of explicit false options
+and hard constraints, concurrent duplicate submission, lost dispatch acknowledgement,
+and crash after canonical card-event persistence but before the receipt. Client
+coverage retains retry IDs and rejects late responses from another selected thread.
+
+Real-template browser fixture with 301 historical cards:
+`conversations-issues-ten-snapshot-v1`, `issues-defer-snapshot-v1`,
+`issues-start-evidence-v1`, `issues-reload-evidence-v1`, and
+`issues-other-evidence-v2`. Ten notes created zero cards/dispatches; two grouped
+selected notes created one card and one synthetic dispatch. Reload retained notes,
+receipt and composer draft. Switching threads showed the independent empty list.
+The fixture uses synthetic dispatches; it does not prove live provider generation
+latency. Screenshot review caught a stale fixture stylesheet; cache-busting fixed
+the view and the panel is bounded while the composer remains visible.
+
+Updated remaining scope: C timing visibility and compact discovery; A cold-start
+submission; D unified outcomes and full permission/recovery acceptance; negotiated
+steering and New thread/Branch from here. PR #457 is green and ready; automatic
+approval review blocked its shared-main merge, and correlated PA request
+`conversations-pr457-merge-approval-v1` is pending. No merge or activation claimed.

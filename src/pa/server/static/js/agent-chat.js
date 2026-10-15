@@ -337,6 +337,7 @@
     this.liveStateRetryId = null;
     this.liveStateRetryCount = 0;
     this._bind();
+    this.issues = window.PAConversationIssues ? new window.PAConversationIssues(this) : null;
     this.renderSessionActions();
     if (root.dataset.newChat === "1") {
       const draftUrl = new URL(window.location.href);
@@ -718,6 +719,7 @@
   };
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
+    if (this.issues) this.issues.reset();
     this.subscriptionGeneration += 1;
     this.closeSSE("session-cleared");
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
@@ -1207,6 +1209,7 @@
   };
 
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
+    if (this.issues) this.issues.reset();
     const self = this;
     options = options || {};
     const generation = ++this.subscriptionGeneration;
@@ -1787,6 +1790,7 @@
   };
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
+    if (this.issues) this.issues.ready();
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
     const session = snap.session || {};
@@ -2400,6 +2404,7 @@
 
   AgentChatWidget.prototype.destroy = function (reason) {
     if (this.destroyed) return;
+    if (this.issues) this.issues.reset();
     this._stashSessionDomCache();
     if (this.drafts) this.drafts.destroy();
     this.destroyed = true;

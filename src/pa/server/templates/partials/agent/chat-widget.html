@@ -142,6 +142,22 @@
     </div>
   </section>
 
+  <details class="acw-issues" data-conversation-issues>
+    <summary>Issues <span data-issues-count></span><span class="muted small">Discuss, group, or start selected work</span></summary>
+    <p class="muted small" data-issues-status role="status" aria-live="polite">Discussion notes do not start work.</p>
+    <ol data-issues-list></ol>
+    <label>Add issues, one per line<textarea rows="2" data-issues-add-text placeholder="What should we keep track of?"></textarea></label>
+    <div class="acw-issue-actions">
+      <button type="button" class="ghost small" data-issues-add>Add to list</button>
+      <input data-issues-group-name maxlength="80" placeholder="Group name (optional)" aria-label="Group name">
+      <button type="button" class="ghost small" data-issues-group>Group selected</button>
+      <button type="button" class="ghost small" data-issues-defer>Defer</button>
+      <button type="button" class="ghost small" data-issues-restore>Restore</button>
+      <button type="button" class="primary small" data-issues-start>Start selected</button>
+    </div>
+    <div class="small" data-issues-receipts></div>
+  </details>
+
   <div class="acw-chat-stage">
     <nav class="acw-activity-rail" aria-label="Session artifacts">
       <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle

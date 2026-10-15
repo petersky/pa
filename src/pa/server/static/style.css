@@ -5385,3 +5385,17 @@ a.ghost:hover {
 .acw-terminal-call { padding: 0.65rem 0; border-bottom: 1px solid var(--pa-border); }
 .acw-terminal-call small { display: block; overflow-wrap: anywhere; }
 .acw-terminal-call pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; }
+.acw-issues { flex: 0 0 auto; padding: .45rem .7rem; border-bottom: 1px solid var(--border); max-height: 42vh; overflow: auto; }
+.acw-issues summary { cursor: pointer; font-weight: 600; }
+.acw-issues summary span { margin-left: .6rem; font-weight: 400; }
+.acw-issues ol { margin: .4rem 0; padding: 0; list-style: none; max-height: 12rem; overflow: auto; }
+.acw-issues li { display: flex; gap: .4rem; align-items: center; margin: .2rem 0; }
+.acw-issues li input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+.acw-issues li input:not([type="checkbox"]) { flex: 1; min-width: 8rem; min-height: 0; height: 1.75rem; padding: .2rem; font-size: .85rem; }
+.acw-issues li small { max-width: 30%; }
+.acw-issues label { font-size: .8rem; }
+.acw-issues textarea { width: 100%; min-height: 3rem; }
+.acw-issue-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .4rem 0; }
+.acw-issue-actions input { width: 10rem; }
+.acw-issues [data-issues-receipts] > div { padding: .4rem; border-top: 1px solid var(--border); }
+.acw-issues [data-issues-receipts] p { margin: .2rem 0; }

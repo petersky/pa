@@ -442,6 +442,10 @@ class CardProjection:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS conversation_issues (
+                    session_id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS agent_restart_handoffs (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
