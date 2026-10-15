@@ -2,6 +2,7 @@
   "branch_conversation": "a92ca75af92ad46372b25e7f3b7ba8b6fef4b7ef5516d3ed64131c6b788c0fb0",
   "get_conversation_capabilities": "bb04220bf5b98264157f588db9503509b5feac018e047494272389d5e0f29687",
   "get_conversation_issues": "57f37cacbb113c208289157734e931fa3992603dfdedacd79030d1b88245e699",
+  "get_pr_merge_evidence": "b6f9cde79c8efed4a6b1fba832db94b6bea62cbb0994ad23e3b9452fe16fa73b",
   "list_card_summaries": "874b415c352890f78562b1aa3af4691ca2678a2efb30e308f3572c0e983a7edb",
   "start_conversation_issues": "83d8e8a87eb45798b06c56cfbdf26e0735366031889b9b8443511e9cd1a76462",
   "update_conversation_issues": "7fc07e137d09648a2e487756487c0ab3a858266c20ba154c45597306606bd7c8"

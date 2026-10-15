@@ -189,7 +189,7 @@ def redact_external_value(value: Any) -> Any:
 
 
 def _external_payload(
-    snapshot: PRSnapshot, gate: GateResult, *, limit: int = 48_000
+    snapshot: PRSnapshot, gate: GateResult, *, limit: int = 48_000, watch: PRWatch | None = None
 ) -> str:
     data = {
         "pull_request": {
@@ -222,6 +222,12 @@ def _external_payload(
             for thread in gate.unresolved_threads
         ],
     }
+    if watch is not None:
+        from pa.pr_supervisor.evidence import merge_evidence
+
+        # Include passing signals too. A prose "green" claim alone is not a
+        # reviewable observation. Keep every GitHub field inside the data boundary.
+        data["supervisor_observation"] = merge_evidence(watch, snapshot.head_sha)
     # Escaping angle brackets prevents external text from closing our delimiter.
     encoded = json.dumps(data, indent=2, ensure_ascii=False).replace("<", "\\u003c")
     if len(encoded) <= limit:
@@ -293,7 +299,7 @@ def build_executor_prompt_rendered(
                 "path": watch.executor_cwd or "resolve from the card/session context"
             },
             "supervisor": {"conditions": reasons},
-            "github": {"external_content": _external_payload(snapshot, gate)},
+            "github": {"external_content": _external_payload(snapshot, gate, watch=watch)},
         },
         provider=provider,
         reserve_context=True,

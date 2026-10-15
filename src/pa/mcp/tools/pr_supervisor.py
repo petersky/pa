@@ -42,6 +42,18 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    def get_pr_merge_evidence(watch_id: str, expected_head_sha: str) -> dict[str, Any]:
+        """Read compact exact-head supervisor facts, not permission to merge.
+
+        Missing, stale or contradictory evidence is marked insufficient. Revalidate
+        GitHub independently and obey user authority and provider approval decisions.
+        """
+        return request_local_pa(
+            ctx.settings, "GET", f"/api/pr-supervisor/watches/{watch_id}/merge-evidence",
+            params={"expected_head_sha": expected_head_sha},
+        )
+
+    @mcp.tool()
     async def create_pr_watch(
         repository: str,
         pr_number: int,
