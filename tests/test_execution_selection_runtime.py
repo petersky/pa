@@ -319,7 +319,8 @@ def test_linked_attempt_rejects_pending_queue_without_closing_source(wire_app):
     assert runtime._queue[0].message == "retained original prompt"
 
 
-def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_app):
+@pytest.mark.parametrize("incomplete_cache", [False, True])
+def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_app, incomplete_cache):
     from pa.execution.selection import (
         ExecutionPreferences,
         SelectionConstraints,
@@ -331,8 +332,10 @@ def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_a
 
     async def run():
         from pa.execution.selection_service import service_for
+        from pa.execution.selection import NativeOption
 
         service = service_for(app.state.ctx)
+        await service.close()
         candidates = await service.local_catalog(refresh=True)
         receipt = service.resolve(
             candidates=candidates,
@@ -353,6 +356,13 @@ def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_a
         receipt["decision_id"] = digest(
             {k: v for k, v in receipt.items() if k != "decision_id"}
         )
+        if incomplete_cache:
+            # Authority admission can observe support before the target's warm
+            # cache does. Known models alone must not prevent normal refresh.
+            service.store.save_catalog(manager.settings.instance_id, [
+                c.model_copy(update={"reasoning": NativeOption()}).model_dump(mode="json")
+                for c in candidates
+            ])
         target = await manager.create_session(
             label="materialized-target",
             principal_id="user:local",
@@ -360,6 +370,7 @@ def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_a
             execution_selection=receipt,
         )
         assert target.session.config_json["execution_selection"] == receipt
+        assert len(manager.list_runtimes()) == 1
         assert (
             target.snapshot()["execution_selection"]["provider_confirmation"][
                 "effective"
