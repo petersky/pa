@@ -9,7 +9,9 @@ from pa.release.runner import (
     cleanup_release_branch,
     create_release,
     ensure_release_pr,
+    github_release_exists,
     merge_release_pr,
+    publish_github_release,
     resolve_release_target,
 )
 
@@ -307,3 +309,31 @@ def test_cleanup_release_branch_retries_delete_when_ls_remote_fails() -> None:
     assert call(
         ["git", "branch", "-d", "release/v1.2.3"], cwd=ROOT
     ) not in capture.call_args_list
+
+
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    [
+        ('{"isDraft":true,"tagName":"untagged-cc8e45e417762fa6ea06"}', False),
+        ('{"isDraft":true,"tagName":"v1.2.3"}', False),
+        ('{"isDraft":false,"tagName":"untagged-cc8e45e417762fa6ea06"}', False),
+        ('{"isDraft":false,"tagName":"v1.2.3"}', True),
+    ],
+)
+def test_github_release_exists_requires_published_release_on_tag(
+    stdout: str, expected: bool
+) -> None:
+    completed = subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
+    with patch("pa.release.runner.subprocess.run", return_value=completed):
+        assert github_release_exists("v1.2.3") is expected
+
+
+def test_publish_github_release_pins_tag_on_edit(tmp_path) -> None:
+    notes = tmp_path / "v1.2.3.md"
+    completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    with patch("pa.release.runner.subprocess.run", return_value=completed) as run:
+        publish_github_release("v1.2.3", notes)
+
+    args = run.call_args.args[0]
+    assert args[:3] == ["gh", "release", "edit"]
+    assert args[args.index("--tag") + 1] == "v1.2.3"

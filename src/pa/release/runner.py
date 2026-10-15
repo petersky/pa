@@ -863,13 +863,24 @@ def tag_merged_release(tag: str, *, message: str | None = None, push: bool = Tru
 
 
 def github_release_exists(tag: str) -> bool:
-    """Return True if a GitHub release for the tag already exists."""
+    """Return True once CI has published the GitHub release under ``tag``.
+
+    ``gh release view`` also matches drafts by their pending tag, and CI
+    publishes via a draft whose ``tag_name`` is a placeholder (``untagged-*``).
+    Editing during that window writes the placeholder back over the real tag.
+    """
     result = subprocess.run(
-        ["gh", "release", "view", tag],
+        ["gh", "release", "view", tag, "--json", "isDraft,tagName"],
         capture_output=True,
         text=True,
     )
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+    return not data.get("isDraft") and data.get("tagName") == tag
 
 
 def wait_for_github_release(
@@ -919,6 +930,8 @@ def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -
                 "release",
                 "edit",
                 tag,
+                "--tag",
+                tag,
                 "--notes-file",
                 str(notes_path),
             ]
@@ -928,7 +941,7 @@ def publish_github_release(tag: str, notes_path: Path, *, amend: bool = False) -
     # Release may be created by CI on tag push; try edit first, then create.
     print(f"==> Publishing GitHub release notes for {tag}...", flush=True)
     edit = subprocess.run(
-        ["gh", "release", "edit", tag, "--notes-file", str(notes_path)],
+        ["gh", "release", "edit", tag, "--tag", tag, "--notes-file", str(notes_path)],
         capture_output=True,
         text=True,
     )

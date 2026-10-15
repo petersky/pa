@@ -162,7 +162,7 @@ def _wait_then_publish(tag: str, notes_path: Path, *, wait_ci: int) -> None:
     except RuntimeError as exc:
         print(f"warning: gh release publish failed: {exc}", file=sys.stderr)
         print(
-            f"  Try manually: gh release edit {tag} --notes-file {notes_path}",
+            f"  Try manually: gh release edit {tag} --tag {tag} --notes-file {notes_path}",
             file=sys.stderr,
         )
 
