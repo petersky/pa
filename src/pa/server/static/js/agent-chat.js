@@ -1805,7 +1805,7 @@
   };
 
   AgentChatWidget.prototype.renderTimings = function (turn, startup) {
-    const target = this.root && this.root.querySelector("[data-acw-timings]");
+    const target = this.root && typeof this.root.querySelector === "function" && this.root.querySelector("[data-acw-timings]");
     if (!target) return;
     if (turn) this.turnTiming = turn;
     if (startup) this.startupTiming = startup;
@@ -1832,7 +1832,7 @@
   };
 
   AgentChatWidget.prototype.renderPresentation = function (snap) {
-    const outcome = this.root.querySelector("[data-conversation-outcome]");
+    const outcome = this.root && typeof this.root.querySelector === "function" && this.root.querySelector("[data-conversation-outcome]");
     if (outcome) {
       const presentation = snap.presentation || {}, actor = presentation.next_actor || {};
       outcome.hidden = !presentation.display_status;

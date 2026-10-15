@@ -161,7 +161,7 @@
   <p class="attention-card-reason">{{ presentation.reason }}</p>
   <dl class="attention-card-context">
     <div><dt>Target</dt><dd>{{ presentation.target_instance_name }}</dd></div>
-    <div><dt>Next</dt><dd>{{ presentation.next_actor.label }}</dd></div>
+    <div><dt>Next</dt><dd>{{ (presentation.next_actor | default({})).label | default('Not confirmed') }}</dd></div>
   </dl>
   <footer class="attention-card-actions">
     {{ presentation_action(action, order.title, order.id, order.card.realm_id or 'default', "button small") }}

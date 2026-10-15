@@ -197,6 +197,7 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     actual = {t.name: hashlib.sha256(json.dumps(t.input_schema, sort_keys=True).encode()).hexdigest() for t in tools}
     baseline = json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_cb2588d3.json').read_text())
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_health_journal.json').read_text()))
+    baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_conversations.json').read_text()))
     # Status deliberately adds optional owner/operation/fingerprint selectors;
     # all other tool contracts remain frozen to the historical fixture.
     baseline['get_operation_outcome'] = '89e98961cba2c587d7c207dfee0e485297700204227ddd4100a23e7546524485'

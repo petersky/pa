@@ -21,13 +21,21 @@ class EventSource {
     this.listeners[type]({data: JSON.stringify(data)});
   }
 }
+let timerId = 0;
+const timers = new Map();
 vm.runInNewContext(fs.readFileSync(process.argv[2], 'utf8'), {
-  window, document, EventSource, console, URL, setTimeout: () => 1, clearTimeout: noop,
+  window, document, EventSource, console, URL,
+  setTimeout: (callback, delay) => {const id = ++timerId; timers.set(id, {callback, delay}); return id;},
+  clearTimeout: id => timers.delete(id),
 });
 const Widget = window.PAAgentChat.AgentChatWidget;
 const event = {seq: 1, session_id: 'paused-fixture', type: 'publication_fence_established',
   payload: {reason: 'operator_interrupt', queued_prompts_blocked: 1}};
-const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+const flush = async () => {
+  await Promise.resolve(); await Promise.resolve();
+  for (const [id, timer] of Array.from(timers)) if (timer.delay <= 250) {timers.delete(id); timer.callback();}
+  await Promise.resolve(); await Promise.resolve();
+};
 
 async function scenario(multiplex) {
   const pause = {}, resume = {}, meta = {};
