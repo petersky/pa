@@ -399,6 +399,7 @@
     if (this.els.messages) ["wheel", "touchstart", "keydown"].forEach(function (type) {
       self.els.messages.addEventListener(type, function () { self.historyUserIntent = true; }, {passive:true});
     });
+    this._bindHistoryScrolling();
     if (this.els.form) {
       this.els.form.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -1017,6 +1018,37 @@
     return String(sessionId || "") + "::" + String(this.apiBase || "");
   };
 
+  AgentChatWidget.prototype._bindHistoryScrolling = function () {
+    const self = this, messages = this.els.messages;
+    if (!messages) return;
+    let intent = null, touchY = null;
+    const loadAtTop = function () {
+      if (!intent || performance.now() > intent.until || intent.generation !== self.subscriptionGeneration) return;
+      if (messages.scrollTop > 80) return;
+      intent = null; // One page per gesture; prepend/restore scrolls cannot cascade.
+      if (!self.destroyed && !self.recentBootstrap && !self.loadingOlder && !self.olderError && self.hasOlder) self.loadOlderTranscript();
+    };
+    const gesture = function (upward) {
+      intent = upward && !self.recentBootstrap && !self.loadingOlder && !self.olderError
+        ? {generation:self.subscriptionGeneration, until:performance.now()+750} : null;
+      // Also handle an upward gesture when already at the top (no scroll event).
+      if (intent) (window.requestAnimationFrame || function(fn){setTimeout(fn,0);})(loadAtTop);
+    };
+    messages.addEventListener("wheel", function(e) { if (e.deltaY) gesture(e.deltaY < 0); }, {passive:true});
+    messages.addEventListener("keydown", function(e) {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (["ArrowUp", "PageUp", "Home"].includes(e.key) || (e.key === " " && e.shiftKey)) gesture(true);
+      else if (["ArrowDown", "PageDown", "End", " "].includes(e.key)) gesture(false);
+    });
+    messages.addEventListener("touchstart", function(e) { touchY = e.touches.length === 1 ? e.touches[0].clientY : null; }, {passive:true});
+    messages.addEventListener("touchmove", function(e) {
+      const next = e.touches.length === 1 ? e.touches[0].clientY : null;
+      if (touchY !== null && next !== null && next !== touchY) gesture(next > touchY);
+      touchY = next;
+    }, {passive:true});
+    messages.addEventListener("scroll", loadAtTop, {passive:true});
+  };
+
   AgentChatWidget.prototype._captureHistoryAnchor = function () {
     const container = this.els && this.els.messages;
     if (!container || !container.getBoundingClientRect) return null;
@@ -1206,6 +1238,7 @@
       const result = self._paintRecentHistory(history, generation);
       self.recentBootstrap = false;
       self.recentRetryCount = 0;
+      self.updateOlderControl();
       self._renderHistoryNotice();
       return result;
     }).catch(function (error) {
@@ -2083,6 +2116,7 @@
 
   AgentChatWidget.prototype.updateOlderControl = function () {
     if (!this.els.loadOlder) return;
+    const anchor = this._captureHistoryAnchor();
     this.els.loadOlder.hidden = !this.hasOlder && !this.olderError;
     this.els.loadOlder.disabled = this.loadingOlder;
     const label = this.loadingOlder ? "Loading older messages…"
@@ -2097,6 +2131,7 @@
       this.els.loadOlderStatus.hidden = !status;
       this.els.loadOlderStatus.textContent = status;
     }
+    this._restoreHistoryAnchor(anchor);
   };
 
   AgentChatWidget.prototype.updateNewerControl = function () {
@@ -2347,6 +2382,7 @@
       );
       const oldHeight = self.els.messages.scrollHeight;
       const oldTop = self.els.messages.scrollTop;
+      const anchor = self._captureHistoryAnchor();
       // Read transcriptEvents only after the request resolves. It may now include
       // SSE events that arrived while the durable page was in flight.
       const renderStarted = performance.now();
@@ -2360,6 +2396,7 @@
         oldHeight,
         self.els.messages.scrollHeight
       );
+      self._restoreHistoryAnchor(anchor);
       const totalMs = performance.now() - requestStarted;
       self.lastHistoryTiming = {
         total_ms: totalMs,

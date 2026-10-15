@@ -315,6 +315,37 @@ Reports `409aa01e-416c-4376-b760-597c2bc5fa7a` and
 correction addresses the reproduced recovery behavior; it does not establish or
 claim to repair an unobserved server-side cause of the initial request failure.
 
+Supplemental report `6b90feb9-c540-4ff7-bac1-70f2fa572e0c` concerns the same
+failure pattern in root `e5ca2e28-1af3-43c7-9f68-771b91de1e1d`. Its later
+successful HTTP read does not establish the original failure's status or cause.
+The existing bootstrap guard also prevents a connected snapshot from falsely
+displaying “send your first prompt” while the recent page is pending or failed.
+
+The follow-up adds older paging on upward wheel, touch or keyboard gestures near
+the top of the transcript. Programmatic scrolling, cache restoration and layout
+changes cannot initiate paging. One pending gesture requests one bounded page;
+errors retain the explicit retry control. Both prepending rows and changing the
+loading control preserve the visible message anchor. The browser regression
+exposed and now covers a 20 px shift from the loading control. Recent recovery also
+refreshes the button label from Retry recent messages to Load older messages.
+
+The committed browser journey delays the initial tail by 900 ms, fails it, delivers
+a real SSE message, then recovers the tail. It asserts no false first-prompt state,
+no `after_seq=0`, at most three initial recent-page requests, latest-message
+deduplication and no older-page request until an upward wheel gesture. That
+gesture fetches exactly one older page and preserves the original message's
+offset within 3 px; subsequent layout changes do not fetch another page. Existing
+Back/Forward, reload, cache, draft, live handoff and thread-switch checks remain.
+PA browser operations `reentry-upward-scroll-before-v1`,
+`reentry-upward-scroll-load-page-v1` and `reentry-upward-scroll-after-v1` record a
+manual check with 60 recent normalized events before the gesture and 193 after it.
+These are isolated fixtures, not production activation or provider-latency claims.
+Final focused validation passed all eight backend, Node and Chromium checks.
+The browser run made two initial recent-page requests and painted useful history
+243.1 ms after explicit recovery from the delayed failure. This is one measured
+sample, not a p95 result; the injected delay and the time before retry are excluded
+from that recovery measurement.
+
 The mobile Home New chat link moves into the page heading at widths up to 700px,
 preserving a single action to the composer and keeping sign-in/navigation clear.
 The actual auth/navigation journey passes in light/dark themes across 320–1920px.

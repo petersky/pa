@@ -26,8 +26,25 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
     scope = BrowserScope("user:test", "reentry-test", "reentry-test")
     client = httpx.AsyncClient(base_url=base)
     try:
-        await manager.attach(scope, url=base, width=1280, height=1000)
+        app.state.history_start_delay = .9
+        await manager.attach(scope, url="about:blank", width=1280, height=1000)
         page = manager.resolve(scope).page
+        await page.command("Page.enable")
+        await page.command("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (()=>{
+            window.historyPaint={falseEmpty:false,connectedWhilePending:false,firstUsefulMs:null};
+            new MutationObserver(()=>{
+              const root=document.querySelector('[data-agent-chat]'),w=root?._acw;if(!w)return;
+              const p=window.historyPaint;
+              p.falseEmpty ||= /first prompt/.test(root.querySelector('[data-acw-placeholder]')?.textContent||'');
+              p.connectedWhilePending ||= !!w.recentBootstrap && !!w.lastSnapshot?.connected;
+              if(p.firstUsefulMs===null && root.querySelector('.acw-bubble-agent')){
+                requestAnimationFrame(()=>requestAnimationFrame(()=>{p.firstUsefulMs ??= performance.now();}));
+              }
+            }).observe(document,{childList:true,subtree:true,characterData:true,attributes:true});
+          })();
+        """})
+        await page.navigate_and_wait(base)
         w = "document.querySelector('[data-agent-chat]')._acw"
         async def wait_for(expression):
             deadline = time.monotonic()+12
@@ -42,14 +59,26 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
             assert (await texts()).count(f"Newest fixture message {number}") == 1
 
         await wait_for(f"!!{w}.olderError && {w}.externalEventTransport")
+        assert await page.evaluate("window.historyPaint.connectedWhilePending")
+        assert not await page.evaluate("window.historyPaint.falseEmpty")
         assert (await texts()) == []
         await client.post("/fixture/append")
         await wait_for("document.querySelector('[data-acw-live-preview]').textContent.includes('Newest fixture message 1')")
         assert "partial" in await page.evaluate("document.querySelector('[data-acw-history-notice-text]').textContent")
         assert "first prompt" not in await page.evaluate("document.querySelector('[data-acw-placeholder]').textContent")
         assert not any(r["after"] == 0 for r in app.state.history_requests)
+        app.state.history_start_delay = 0
+        recovery_start = await page.evaluate("performance.now()")
         await manager.click(scope, selector="#recover")
         await latest(1)
+        await wait_for("window.historyPaint.firstUsefulMs!==null")
+        assert not await page.evaluate("window.historyPaint.falseEmpty")
+        # Recent reads are bounded; a failed initial page never walks the archive.
+        assert await page.evaluate("document.querySelector('[data-acw-load-older-label]').textContent") == "Load older messages"
+        assert len(app.state.history_requests) <= 3
+        assert all(r["before"] is None and r["after"] is None for r in app.state.history_requests)
+        print(json.dumps({"history_recovery_paint_ms":await page.evaluate("window.historyPaint.firstUsefulMs")-recovery_start,
+                          "initial_history_requests":len(app.state.history_requests),"retained_events":3442}))
         assert await page.evaluate(f"{w}.isNearBottom()")
 
         await manager.type_text(scope, selector="[data-acw-input]", text="Unsent source draft")
@@ -63,8 +92,24 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Unsent source draft"
         assert await page.evaluate(f"{w}.isNearBottom()")
 
-        await manager.click(scope, selector="[data-acw-load-older]")
+        # Restoration/layout alone cannot fetch older pages. An upward wheel at
+        # the top fetches one page and retains the first visible message anchor.
+        assert not any(r["before"] is not None for r in app.state.history_requests)
+        await page.evaluate(f"{w}.els.messages.scrollTop=0")
+        await asyncio.sleep(.15)
+        assert not any(r["before"] is not None for r in app.state.history_requests)
+        before_prepend = await page.evaluate(f"{w}._captureHistoryAnchor()")
+        await manager.scroll(scope, selector="[data-acw-messages]", delta_y=-80)
         await wait_for(f"!{w}.loadingOlder && {w}.historyPreserveWindow")
+        assert len([r for r in app.state.history_requests if r["before"] is not None]) == 1
+        # At the absolute top the older row may fill space previously occupied
+        # by the paging button. The original message must retain its position.
+        after_offset = await page.evaluate(f"""(()=>{{const c={w}.els.messages;
+          const row=[...c.querySelectorAll('.acw-msg[data-source-seq]')].find(e=>e.dataset.sourceSeq==={json.dumps(before_prepend['seq'])});
+          return row.getBoundingClientRect().top-c.getBoundingClientRect().top;}})()""")
+        assert abs(after_offset-before_prepend["offset"]) < 3
+        await asyncio.sleep(.2)
+        assert len([r for r in app.state.history_requests if r["before"] is not None]) == 1
         await page.evaluate(f"{w}.els.messages.scrollTop=45")
         anchor = await page.evaluate(f"{w}._captureHistoryAnchor()")
         await manager.click(scope, selector="#other")

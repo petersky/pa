@@ -23,6 +23,7 @@ def build_reentry_fixture(directory):
     manager._runtimes["live-fixture"] = AgentSessionRuntime(manager, manager.store.get_session("live-fixture"))
     app.state.history_fail = True
     app.state.history_delay = False
+    app.state.history_start_delay = 0
     app.state.history_requests = []
     app.state.append_count = 0
     env = Environment(loader=FileSystemLoader(Path(__file__).parents[1] / "src/pa/server/templates"))
@@ -59,6 +60,8 @@ def build_reentry_fixture(directory):
     async def history(request: Request, session_id: str, after_seq: int | None = None,
                       before_seq: int | None = None, limit: int = 250, message_boundaries: bool = False):
         app.state.history_requests.append({"session":session_id,"after":after_seq,"before":before_seq})
+        if session_id == "live-fixture" and app.state.history_start_delay:
+            await asyncio.sleep(app.state.history_start_delay)
         if session_id == "live-fixture" and app.state.history_fail:
             return JSONResponse({"detail":"Isolated fixture history unavailable"}, status_code=503)
         result = await get_agent_session_history(request, session_id, after_seq, before_seq, limit, message_boundaries)
