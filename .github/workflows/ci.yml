@@ -31,6 +31,14 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # A cold first Chrome launch on the runner takes several seconds to expose
+      # a page; under parallel test load it can exceed the 12s browser startup
+      # limit. Later launches take well under a second.
+      - name: Warm up Chrome
+        run: >
+          timeout 60 google-chrome --headless=new --no-first-run
+          --user-data-dir="$(mktemp -d)" --dump-dom about:blank >/dev/null 2>&1 || true
+
       - name: Test
         run: >
           uv run pytest -n auto --dist worksteal
