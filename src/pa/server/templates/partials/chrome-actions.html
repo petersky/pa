@@ -1,6 +1,7 @@
 {% from "macros/icons.html" import icon %}
 
 <div class="chrome-actions">
+  {% include "partials/account.html" %}
   {% if telemetry_enabled %}
   <div class="telemetry-header"
        data-telemetry-header

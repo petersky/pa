@@ -1120,6 +1120,37 @@ a:not([class]):hover { text-decoration: underline; }
 }
 
 .notification-chrome { position: relative; }
+.account-button {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+  min-height: max(44px, 2.75rem);
+  padding: 0.3rem 0.55rem;
+  border-color: var(--pa-border);
+  color: var(--pa-text);
+  line-height: 1.15;
+  list-style: none;
+  white-space: nowrap;
+}
+.account-button::-webkit-details-marker { display: none; }
+.account-button small { font-size: 0.7rem; color: var(--pa-text-muted); }
+.account-name { max-width: 5rem; overflow: hidden; text-overflow: ellipsis; }
+.account-panel {
+  position: fixed;
+  z-index: 150;
+  top: 4rem;
+  right: 0.5rem;
+  width: min(20rem, calc(100vw - 1rem));
+  padding: 1rem;
+  border: 1px solid var(--pa-border);
+  border-radius: var(--radius);
+  background: var(--pa-surface-raised);
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 0.2);
+  overflow-wrap: anywhere;
+}
+.account-panel p { margin: 0 0 0.75rem; }
+.account-panel button { min-height: max(44px, 2.75rem); }
 .notification-bell { position: relative; }
 .notification-badge {
   position: absolute; inset: -0.35rem -0.45rem auto auto; min-width: 1.15rem;
@@ -5042,7 +5073,11 @@ a.ghost:hover {
   .work-space .board-grid { grid-template-columns: repeat(2, minmax(14rem, 1fr)); }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1760px) {
+  .telemetry-header { display: none; }
+}
+
+@media (max-width: 1380px) {
   .top-nav { display: none; }
   .responsive-nav { display: block; }
   .telemetry-header { display: none; }

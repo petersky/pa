@@ -110,6 +110,7 @@ async def test_real_delegated_receipt_equivalence_and_foreign_realm_non_disclosu
 async def test_healthy_reconcile_ui_aliases_and_local_login_preserve_validation(tmp_path):
     from pa.modules.items import ui_router
     from pa.modules.auth import router as auth_router
+    from pa.modules.auth import ui_router as auth_ui_router
     h = Harness(tmp_path)
     h.settings.subscribed_realms.append("healthy")
     h.services["membership"].ensure_owner_membership("healthy", "local")
@@ -118,6 +119,7 @@ async def test_healthy_reconcile_ui_aliases_and_local_login_preserve_validation(
     app, auth = application(h)
     app.include_router(ui_router)
     app.include_router(auth_router, prefix="/api")
+    app.include_router(auth_ui_router)
     try:
         with patch("pa.modules.items.get_store", return_value=h.store), patch("pa.modules.sync.get_store", return_value=h.store):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local", headers=auth) as client:
@@ -141,5 +143,12 @@ async def test_healthy_reconcile_ui_aliases_and_local_login_preserve_validation(
                 assert login.status_code == 401, login.text
                 logout = await client.post("/api/auth/logout")
                 assert logout.status_code == 200, logout.text
+                # Cookie control remains possible during history recovery, but
+                # the native form still enforces its signed double-submit token.
+                denied_logout = await client.post("/logout")
+                assert denied_logout.status_code == 403
+                native_logout = await client.post("/logout", data={"csrf": client.cookies["pa_csrf"], "next": "/work"})
+                assert native_logout.status_code == 303
+                assert native_logout.headers["location"] == "/work"
     finally:
         await h.close()

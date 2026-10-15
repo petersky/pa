@@ -7,8 +7,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field, SecretStr
 
 from pa.auth.cookies import use_secure_cookies
-from pa.auth.csrf import COOKIE_NAME, token_for_request
-from pa.auth.middleware import require_user
+from pa.auth.csrf import COOKIE_NAME, inspect_token, token_for_request
+from pa.auth.middleware import _origin_allowed, require_user
+from pa.auth.navigation import local_return_path, sign_in_url
 from pa.auth.sessions import SessionManager
 from pa.auth.users import UserDirectory
 from pa.core.contracts import Module
@@ -86,6 +87,25 @@ def logout(request: Request, response: Response) -> dict:
     return {"ok": True}
 
 
+def _valid_form_csrf(request: Request, submitted: str) -> bool:
+    cookie = request.cookies.get(COOKIE_NAME, "")
+    settings = request.app.state.ctx.settings
+    return bool(
+        cookie and submitted and secrets.compare_digest(cookie.encode(), submitted.encode())
+        and inspect_token(cookie, settings.session_secret) == "valid"
+        and _origin_allowed(request, settings)
+    )
+
+
+@ui_router.post("/logout")
+def logout_form(request: Request, csrf: str = Form(""), next: str = Form("/")) -> Response:
+    if not _valid_form_csrf(request, csrf):
+        raise HTTPException(status_code=403, detail="Invalid session. Refresh the page and try signing out again.")
+    response = RedirectResponse(local_return_path(next), status_code=303)
+    logout(request, response)
+    return response
+
+
 @router.get("/auth/me")
 def me(request: Request) -> dict:
     user = require_user(request)
@@ -109,6 +129,7 @@ def login_page(request: Request) -> HTMLResponse:
             "csrf_token": token,
             "static_url": assets.url,
             "error": request.query_params.get("error"),
+            "return_to": local_return_path(request.query_params.get("next", "/")),
         },
     )
 
@@ -120,19 +141,21 @@ def login_form(
     username: str = Form(...),
     password: str = Form(...),
     csrf: str = Form(""),
+    next: str = Form("/"),
 ) -> Response:
-    cookie = request.cookies.get(COOKIE_NAME, "")
-    if not cookie or not csrf or not secrets.compare_digest(cookie, csrf):
-        return RedirectResponse("/login?error=Invalid+session", status_code=303)
+    return_to = local_return_path(next)
+    retry_url = sign_in_url(return_to)
+    if not _valid_form_csrf(request, csrf):
+        return RedirectResponse(retry_url + "&error=Invalid+session", status_code=303)
 
     users: UserDirectory = request.app.state.ctx.require_service("users")
     sessions: SessionManager = request.app.state.ctx.require_service("sessions")
     user = users.authenticate(username, password)
     if not user:
-        return RedirectResponse("/login?error=Invalid+credentials", status_code=303)
+        return RedirectResponse(retry_url + "&error=Invalid+credentials", status_code=303)
 
     token = sessions.create_token(user)
-    response = RedirectResponse("/", status_code=303)
+    response = RedirectResponse(return_to, status_code=303)
     settings = request.app.state.ctx.settings
     response.set_cookie(
         SessionManager.COOKIE_NAME,

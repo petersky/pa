@@ -67,6 +67,7 @@ CSRF_EXEMPT_PATHS = {
     "/api/intake/webhooks/telegram",
     "/api/intake/webhooks/discord",
     "/login",
+    "/logout",  # Native forms validate their signed double-submit token in-route.
 }
 
 
