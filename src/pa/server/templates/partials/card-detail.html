@@ -52,6 +52,9 @@
         </div>
       </div>
       <div class="card-detail-actions">
+        {% if card.completion_requirement and card.completion_status.missing and not browser_signed_in %}
+        <a class="button primary" href="{{ card_sign_in_url }}" data-sign-in data-sign-in-card="{{ card.id }}" data-sign-in-realm="{{ card.realm_id }}">Sign in to review and accept</a>
+        {% endif %}
         {% include "partials/card-primary-action.html" %}
         <button type="button" class="ghost danger"
                 hx-delete="/partials/cards/{{ card.id }}?realm={{ card.realm_id }}"
@@ -65,8 +68,8 @@
     <p class="muted" data-completion-reason="{{ card.completion_status.reason_code }}">
       {% if card.completion_status.missing %}Next: {{ card.completion_status.missing[0] | replace('_', ' ') }}.{% else %}Completion requirements satisfied.{% endif %}
       {{ card.completion_requirement.criteria }}
-      {% if not request.state.user_authenticated or request.state.authentication_method != 'browser_session' %}
-      For an audited operator override, <a href="/login">sign in with your operator password</a>, review the criteria, then select Done. Local no-login access cannot verify a human operator.
+      {% if not browser_signed_in %}
+      For an audited operator override, <a href="{{ card_sign_in_url }}" data-sign-in data-sign-in-card="{{ card.id }}" data-sign-in-realm="{{ card.realm_id }}">sign in with your operator password</a>, review the criteria, then select Done. Local no-login access cannot verify a human operator.
       {% endif %}
     </p>
     {% endif %}

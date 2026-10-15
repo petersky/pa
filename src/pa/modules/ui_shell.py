@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse
 from pa.acp.configuration import normalized_session_config_json
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
+from pa.auth.navigation import browser_signed_in, sign_in_url
 from pa.core.context import AppContext
 from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
@@ -89,6 +90,8 @@ def _shell_context(request: Request) -> dict:
         "asset_version": assets.version,
         "static_url": assets.url,
         "csrf_token": token_for_request(request),
+        "browser_signed_in": browser_signed_in(request),
+        "sign_in_url": sign_in_url(request.url.path + ("?" + request.url.query if request.url.query else "")),
         "telemetry_enabled": settings.telemetry_enabled,
         "telemetry_ui_refresh_seconds": settings.telemetry_ui_refresh_seconds,
         "telemetry_session_header": prefs.telemetry_session_header,

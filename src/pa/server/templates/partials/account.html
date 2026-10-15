@@ -1,0 +1,21 @@
+{% if browser_signed_in %}
+<details class="account-control" data-account-menu>
+  <summary class="nav-btn account-button" aria-label="Account: {{ request.state.user.username }}">
+    <span class="account-name">{{ request.state.user.username }}</span>
+    <small>Signed in</small>
+  </summary>
+  <div class="account-panel">
+    <p>Signed in as <strong>{{ request.state.user.display_name or request.state.user.username }}</strong><br><span class="muted">{{ request.state.user.username }}</span></p>
+    <form method="post" action="/logout" data-sign-out>
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="/">
+      <button type="submit" class="ghost">Sign out</button>
+    </form>
+  </div>
+</details>
+{% else %}
+<a href="{{ sign_in_url }}" class="nav-btn account-button" data-sign-in aria-label="Sign in; browsing without sign-in">
+  <span>Sign in</span>
+  <small>Not signed in</small>
+</a>
+{% endif %}

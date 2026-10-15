@@ -48,7 +48,7 @@ def classify_operation(method: str, path: str, *, endpoint=None) -> Dependency:
         return Dependency(OperationDependency.LOCAL_OPERATIONAL)
     if method == "POST" and path.startswith("/api/operation-recovery/"):
         return Dependency(OperationDependency.RECOVERY)
-    if method == "POST" and path in {"/api/auth/login", "/api/auth/logout", "/login"}:
+    if method == "POST" and path in {"/api/auth/login", "/api/auth/logout", "/login", "/logout"}:
         # Credential verification / cookie control only; ordinary auth policy
         # and the login form CSRF check still run. No user or grant mutation.
         return Dependency(OperationDependency.LOCAL_OPERATIONAL)

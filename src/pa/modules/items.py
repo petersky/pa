@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field
 from pa.attachments import AttachmentError, AttachmentStore, safe_filename
 from pa.auth.csrf import token_for_request
 from pa.auth.middleware import get_principal_id
+from pa.auth.navigation import browser_signed_in, sign_in_url
 from pa.config import get_settings
 from pa.core.context import AppContext
 from pa.core.contracts import Module
@@ -795,6 +796,8 @@ def _card_summary_context(request: Request, card) -> dict:
     return {
         "card": card,
         "summary_diagnostics": summary_service.diagnostics(),
+        "browser_signed_in": browser_signed_in(request),
+        "card_sign_in_url": sign_in_url("/?" + urlencode({"card": card.id, "realm": realm_id})),
         "project": project,
         "parent": (
             store.get_card(card.parent_id, realm_id=realm_id)
