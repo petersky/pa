@@ -25,7 +25,8 @@ let timerId = 0;
 const timers = new Map();
 vm.runInNewContext(fs.readFileSync(process.argv[2], 'utf8'), {
   window, document, EventSource, console, URL,
-  setTimeout: (callback, delay) => {const id = ++timerId; timers.set(id, {callback, delay}); return id;},
+  // Exercise queue coalescing; unrelated sidebar timers remain stubbed here.
+  setTimeout: (callback, delay) => {const id = ++timerId; if (delay === 250) timers.set(id, {callback, delay}); return id;},
   clearTimeout: id => timers.delete(id),
 });
 const Widget = window.PAAgentChat.AgentChatWidget;

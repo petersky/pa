@@ -5085,7 +5085,11 @@ a.ghost:hover {
   .chrome-actions > a.icon-btn { display: none; }
 }
 
+.page-heading > .home-new-chat { display: none; }
+
 @media (max-width: 700px) {
+  .chrome-actions .chrome-new-chat { display: none; }
+  .page-heading > .home-new-chat { display: inline-flex; min-height: 2.75rem; align-items: center; }
   .command-center,
   .work-space { padding: 0.75rem; }
   .page-heading { align-items: stretch; flex-direction: column; }
