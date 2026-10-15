@@ -69,6 +69,12 @@ def provider_execution_policy(provider_id: str, mode_id: str | None) -> dict[str
         "agent": {
             "sandbox": "workspace-write",
             "approval_policy": "on-request",
+            "approvals_reviewer": "auto_review",
+        },
+        "workspace-write": {
+            "sandbox": "workspace-write",
+            "approval_policy": "on-request",
+            "approvals_reviewer": "user",
         },
         "agent-full-access": {
             "sandbox": "danger-full-access",

@@ -49,16 +49,23 @@ from pa.modules.fleet import (
 
 
 class FleetRegistryReloadTests(unittest.TestCase):
-    def test_codex_and_cortex_dispatches_default_to_full_access(self) -> None:
-        for provider in ("codex", "cortex"):
+    def test_worker_dispatch_defaults_are_provider_specific(self) -> None:
+        for provider in ("codex", "openinterpreter"):
             with self.subTest(provider=provider):
                 body = RemoteAgentStartBody(provider=provider)
                 _apply_dispatch_mode_default(body)
-                self.assertEqual(body.mode_id, "agent-full-access")
+                self.assertEqual(body.mode_id, "workspace-write")
 
         explicit = RemoteAgentStartBody(provider="codex", mode_id="agent")
         _apply_dispatch_mode_default(explicit)
         self.assertEqual(explicit.mode_id, "agent")
+        for provider in ("cursor", "cortex"):
+            body = RemoteAgentStartBody(provider=provider)
+            _apply_dispatch_mode_default(body)
+            self.assertIsNone(body.mode_id)
+        resumed = RemoteAgentStartBody(provider="codex", resume_session_id="existing")
+        _apply_dispatch_mode_default(resumed)
+        self.assertIsNone(resumed.mode_id)
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

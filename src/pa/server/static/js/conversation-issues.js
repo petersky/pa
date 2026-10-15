@@ -102,7 +102,7 @@
       self.list.appendChild(row);
     });
     this.state.requests.forEach(function (receipt) {
-      const section = element("div"), label = {accepted: "Accepted · PA preparing work", admitting: "Preparing work · PA", admitted: "Work admitted · follow card progress", blocked: "Admission blocked · retry or inspect card"}[receipt.state] || receipt.state;
+      const section = element("div"), label = {accepted: "Accepted · PA preparing work", admitting: "Preparing work · PA is checking the saved request", admitted: "Work admitted · follow card progress", blocked: "Work could not start · see the reason below"}[receipt.state] || receipt.state;
       section.appendChild(element("strong", label));
       receipt.groups.forEach(function (group) {
         const line = element("p", group.title + " · " + group.state + " ");
@@ -110,7 +110,7 @@
         section.appendChild(line);
       });
       if (receipt.error) section.appendChild(element("p", typeof receipt.error === "string" ? receipt.error : receipt.error.message || receipt.error.code || "Admission needs recovery"));
-      if (receipt.state !== "admitted") self.retryButton(section, receipt.submission);
+      if (receipt.state === "blocked") self.retryButton(section, receipt.submission);
       self.receipts.appendChild(section);
     });
     try {

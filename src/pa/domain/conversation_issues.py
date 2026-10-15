@@ -25,6 +25,16 @@ class Issue(BaseModel):
     group: str = Field(default="", max_length=80)
     deferred: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def receipt_is_read_only(cls, value):
+        # Public issues can be round-tripped by tools. The durable notebook,
+        # never the caller, owns this one known receipt field. All other extra
+        # fields still fail strict validation, and edit() restores frozen IDs.
+        if isinstance(value, dict):
+            return {k: v for k, v in value.items() if k != "request_id"}
+        return value
+
     @field_validator("title")
     @classmethod
     def title_nonempty(cls, value):
@@ -151,8 +161,9 @@ class ConversationIssues:
     @staticmethod
     def public(state):
         # Execution inputs remain durable but are not repeated in compact reads.
-        return {"revision": state["revision"], "issues": state["issues"], "requests": [
+        return {"revision": state["revision"], "issues": state["issues"],
+                "editable_issues": [{k: v for k, v in i.items() if k != "request_id"} for i in state["issues"]], "requests": [
             {k: v for k, v in r.items() if k not in {"context", "fingerprint"}} | {
-                "groups": [{k: v for k, v in g.items() if k != "issues"} for g in r["groups"]]
+                "groups": [{k: v for k, v in g.items() if k not in {"issues", "dispatch_inputs"}} for g in r["groups"]]
             } for r in state["requests"]
         ]}

@@ -1916,7 +1916,10 @@ class AgentConnection:
                         collection_names=("availableModes", "available_modes"),
                         id_names=("id", "modeId", "mode_id"),
                     )
-                    if self.modes is not None and callable(set_mode):
+                    mode_option = find_option(options, "mode")
+                    if config_supported and mode_option is not None:
+                        bind_option("mode", mode_option, desired.mode_id)
+                    elif self.modes is not None and callable(set_mode):
                         if advertised_modes and desired.mode_id not in advertised_modes:
                             supported = ", ".join(sorted(advertised_modes))
                             raise ACPConfigurationError(
@@ -2088,6 +2091,9 @@ class AgentConnection:
                     effective_mode = (
                         option_current_value(mode_option) if mode_option else None
                     )
+                    if effective_mode is not None and isinstance(working_modes, dict):
+                        key = "currentModeId" if "currentModeId" in working_modes else "current_mode_id"
+                        working_modes[key] = effective_mode
                 if desired.reasoning:
                     reasoning_option = find_option(working_options, "reasoning")
                 effective_reasoning = (

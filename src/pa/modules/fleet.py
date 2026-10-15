@@ -7797,7 +7797,7 @@ async def _resolve_policy_placement(
     decision.execution_selector_provenance = {
         "provider": "explicit_dispatch" if requested_provider else "selected_target",
         "model": "explicit_dispatch" if requested_model_id else "provider_default",
-        "mode": "explicit_dispatch" if requested_mode_id else "provider_default",
+        "mode": "explicit_dispatch" if requested_mode_id else "existing_session" if body.resume_session_id else "purpose_default" if body.mode_id else "provider_default",
     }
     return decision, plan
 
@@ -8125,11 +8125,12 @@ def _bind_effective_goal_dispatch_provider(
 
 
 def _apply_dispatch_mode_default(body: RemoteAgentStartBody) -> None:
-    """Default agent-capable ACP dispatches to their explicit full-access mode."""
+    """A newly dispatched worker has its own purpose and permission default."""
+    from pa.acp.permission_modes import default_permission_mode
 
     provider = str(body.provider or "").strip().lower()
-    if body.mode_id is None and provider in {"codex", "cortex"}:
-        body.mode_id = "agent-full-access"
+    if body.mode_id is None and not body.resume_session_id:
+        body.mode_id = default_permission_mode(provider, "automated_run")
 
 
 def _goal_dispatch_placement_input(

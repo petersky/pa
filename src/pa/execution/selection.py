@@ -248,6 +248,9 @@ class ExecutionCandidate(StrictModel):
                 self.connection,
                 self.connection_revision,
                 self.model_provider,
+                self.native_model_provider,
+                self.account_label,
+                self.endpoint_label,
                 self.model,
                 self.model_version,
             ]
@@ -581,6 +584,8 @@ def resolve_selection(
             model_provider=candidate.model_provider,
             connection_revision=candidate.connection_revision,
             native_model_provider=candidate.native_model_provider,
+            account_label=candidate.account_label,
+            endpoint_label=candidate.endpoint_label,
             reasoning=None,
             options={},
             model_state=candidate.model_state,

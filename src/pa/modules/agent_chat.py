@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pa.core.async_runtime import AsyncRuntime
 from pa.acp.configuration import (
@@ -314,6 +314,14 @@ class CreateSessionBody(BaseModel):
     goal_provenance: GoalDispatchProvenance | None = None
     purpose: Literal["chat", "automated_run", "one_shot_job"] = "chat"
     initiating_workflow: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("mode_id", mode="before")
+    @classmethod
+    def omitted_legacy_mode(cls, value):
+        if value is None:
+            return None
+        mode = str(value).strip()
+        return None if not mode or mode.casefold() == "none" else mode
 
 
 def _config_option_id(runtime, requested: str) -> str:
@@ -672,7 +680,10 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     from pa.acp.surfaces import AgentInvocationContext, surface_for_label
     from pa.core.preferences import SurfaceAgentPrefs
 
-    surface = body.surface or surface_for_label(body.label, project_id=body.project_id)
+    surface = body.surface or (
+        "execution" if body.dispatch_id or body.purpose != "chat"
+        else surface_for_label(body.label, project_id=body.project_id)
+    )
     settings = request.app.state.ctx.settings
     surface_defaults = SurfaceAgentPrefs()
     with startup_trace.phase("preference_resolution"):

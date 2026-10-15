@@ -28,6 +28,8 @@ def register_mcp(mcp, ctx):
                 "label": "execution-mcp:" + idempotency_key,
                 "title": title,
                 "project_id": project_id,
+                "purpose": "automated_run",
+                "surface": "execution",
                 "execution_preferences": ExecutionPreferences.model_validate(
                     execution_preferences
                 ).model_dump(mode="json"),

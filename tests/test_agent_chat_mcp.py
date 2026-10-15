@@ -16,6 +16,18 @@ class FakeMcp:
         return register
 
 
+def test_mcp_standalone_execution_declares_worker_purpose():
+    from pa.mcp.tools.execution_selection import register_mcp
+    mcp = FakeMcp()
+    with patch("pa.mcp.local_api.request_local_pa", return_value={}) as api:
+        register_mcp(mcp, SimpleNamespace(settings=SimpleNamespace()))
+        mcp.functions["start_execution"]({}, "stable-worker")
+    body = api.call_args.kwargs["json"]
+    assert body["purpose"] == "automated_run" and body["surface"] == "execution"
+    assert body["label"] == "execution-mcp:stable-worker"
+    assert "mode_id" not in body
+
+
 def test_session_observability_tools_allow_bounded_server_collection_time() -> None:
     mcp = FakeMcp()
     settings = SimpleNamespace()

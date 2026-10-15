@@ -86,7 +86,13 @@ From upstream feature list (confirm with probe):
   those option ids and verifies their returned `currentValue`; selectors such as
   `gpt-5.6-sol[high]` are admitted as model `gpt-5.6-sol` plus reasoning `high`.
 - Slash commands: `/status`, `/mcp`, `/skills`, `/review`, `/review-branch`, `/review-commit`, `/compact`, `/logout`, plus configured skills.
-- Modes: `read-only`, `agent`, `agent-full-access` via `INITIAL_AGENT_MODE`.
+- Modes: `read-only`, `workspace-write`, `agent`, `agent-full-access` via `INITIAL_AGENT_MODE`.
+  New human chats default to `agent-full-access`; new card/background workers
+  default to `workspace-write`. Explicit selections and resumed sessions retain
+  their mode. `workspace-write` uses on-request approval with the user/ACP reviewer,
+  allowing PA's separate auto-approve preference to answer native permission requests.
+  `agent` uses Codex's native Auto review, whose decisions do not reach PA's ACP
+  permission callback. PA does not override that intentionally selected mode.
 
 ## Runtime env (common)
 
@@ -96,7 +102,7 @@ From upstream feature list (confirm with probe):
 | `CODEX_PATH` | Alternate Codex binary |
 | `CODEX_CONFIG` | JSON merged into Codex session config |
 | `MODEL_PROVIDER` | Model provider for new sessions |
-| `INITIAL_AGENT_MODE` | `read-only` \| `agent` \| `agent-full-access` |
+| `INITIAL_AGENT_MODE` | `read-only` \| `workspace-write` \| `agent` \| `agent-full-access` |
 | `NO_BROWSER` | Hide ChatGPT browser auth |
 | `APP_SERVER_LOGS` | Adapter log directory |
 

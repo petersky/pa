@@ -368,11 +368,11 @@ def test_collaboration_policy_uses_resolved_target_provider(
         assert decision["effective_mode"] == "plan"
         assert placement["requested_provider"] is None
         assert placement["resolved_provider"] == "codex"
-        assert placement["resolved_mode_id"] == "agent-full-access"
+        assert placement["resolved_mode_id"] == "workspace-write"
         assert placement["execution_selector_provenance"] == {
             "provider": "selected_target",
             "model": "provider_default",
-            "mode": "provider_default",
+            "mode": "purpose_default",
         }
 
 

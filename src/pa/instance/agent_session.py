@@ -5891,13 +5891,22 @@ class AgentSessionManager:
                 "agent.provider_resolve", resolve_provider_spec, timeout=30.0
             )
 
-        requested_mode = (
-            initial_configuration.mode_id
-            if initial_configuration is not None
-            else existing.mode_id
-            if existing
-            else None
+        from pa.acp.permission_modes import default_permission_mode
+
+        inferred_purpose = purpose or (
+            "automated_run"
+            if dispatch_id or source_card_id or surface_key == SURFACE_EXECUTION
+            else "chat"
         )
+        requested_mode = (initial_configuration.mode_id if initial_configuration else None)
+        if not requested_mode:
+            requested_mode = (
+                existing.mode_id if existing else default_permission_mode(provider_id, inferred_purpose)
+            )
+        if requested_mode:
+            initial_configuration = (initial_configuration or SessionConfigurationRequest()).merged(
+                SessionConfigurationRequest(mode_id=requested_mode)
+            )
         requested_model_provider = (
             initial_configuration.model_provider
             if initial_configuration is not None
@@ -5951,11 +5960,6 @@ class AgentSessionManager:
                     model=requested_model,
                 )
 
-        inferred_purpose = purpose or (
-            "automated_run"
-            if dispatch_id or surface_key == SURFACE_EXECUTION
-            else "chat"
-        )
         inferred_control = control_mode or (
             "automation" if inferred_purpose != "chat" else "human"
         )
