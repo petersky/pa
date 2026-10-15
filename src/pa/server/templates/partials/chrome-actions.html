@@ -20,9 +20,11 @@
   </div>
   {% endif %}
 
+  <a class="primary small chrome-new-chat" href="/agent?new=1" hx-get="/agent?new=1" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">New chat</a>
+
   <button type="button" class="new-card-button" data-new-card-open
           title="Create a new card" aria-label="Create a new card">
-    <span aria-hidden="true">+</span><span class="new-card-label">New</span>
+    <span aria-hidden="true">+</span><span class="new-card-label">New card</span>
   </button>
 
   <div class="notification-chrome" data-notification-chrome>

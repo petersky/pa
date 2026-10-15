@@ -62,12 +62,14 @@ from pa.acp.providers.base import AgentProviderSpec
 from pa.acp.providers.registry import DEFAULT_PROVIDER_ID, get_provider
 from pa.acp.providers.resolve import _spawn_overrides
 from pa.acp.sandbox_health import sandbox_health_registry
+from pa.acp.session_titles import apply_provider_title, clean_title
 from pa.acp.startup_trace import SessionStartupTrace
 from pa.acp.transport import spawn_agent
 from pa.config import Settings
 from pa.core.logging import redact_log_text
 from pa.domain.models import AgentSession
 from pa.domain.store import Store
+from pa.domain.transcript_storage import redact_payload
 from pa.instance.quiesce import ImageAttachment
 from pa.knowledge.capture import has_policy_memory_candidate
 from pa.packaging.paths import build_service_path, resolve_executable
@@ -244,8 +246,31 @@ def normalize_session_update(update: Any) -> dict[str, Any]:
             payload["kind"] = plain.get("kind")
             payload["content"] = plain.get("content")
             payload["locations"] = plain.get("locations")
-            payload["raw_input"] = plain.get("rawInput") or plain.get("raw_input")
-            payload["raw_output"] = plain.get("rawOutput") or plain.get("raw_output")
+            payload["name"] = plain.get("name")
+            payload["raw_input"] = plain.get("rawInput", plain.get("raw_input"))
+            payload["raw_output"] = plain.get("rawOutput", plain.get("raw_output"))
+            payload["provider_turn_id"] = plain.get("turnId", plain.get("turn_id"))
+            # Raw envelopes are intentionally omitted by transcript retention.
+            # Keep only canonical tool evidence, with the same redaction policy
+            # for live viewing and durable restore; never a second wire log.
+            payload["tool_input"] = redact_payload(payload["raw_input"])
+            payload["tool_output"] = redact_payload(payload["raw_output"])
+            meta = plain.get("_meta")
+            if isinstance(meta, dict):
+                payload["output_chunks"] = [
+                    redact_payload(chunk["data"])
+                    for field in ("terminal_output_delta", "terminal_output", "mcp_output_delta")
+                    if isinstance(chunk := meta.get(field), dict)
+                    and isinstance(chunk.get("data"), str)
+                    and chunk.get("terminal_id", payload["tool_call_id"]) == payload["tool_call_id"]
+                ]
+                exit_info = meta.get("terminal_exit")
+                if isinstance(exit_info, dict) and exit_info.get("terminal_id", payload["tool_call_id"]) == payload["tool_call_id"]:
+                    payload["terminal_exit"] = {"exit_code": exit_info.get("exit_code"), "signal": exit_info.get("signal")}
+
+        elif update_type == "session_info_update":
+            payload["title"] = clean_title(plain.get("title"))
+            payload["updated_at"] = plain.get("updatedAt", plain.get("updated_at"))
         elif update_type == "plan":
             payload["entries"] = plain.get("entries") or []
         elif update_type == "usage_update":
@@ -296,6 +321,10 @@ def extract_models_modes_config(response: Any) -> dict[str, Any]:
         result["mode_id"] = getattr(modes, "current_mode_id", None) or (
             modes.get("currentModeId") if isinstance(modes, dict) else None
         )
+    plain = _to_plain(response)
+    if isinstance(plain, dict):
+        result["title"] = clean_title(plain.get("title"))
+        result["updated_at"] = plain.get("updatedAt", plain.get("updated_at"))
     return result
 
 
@@ -345,6 +374,7 @@ class PAClient(Client):
         self.auto_approve = auto_approve
         self.async_runtime = async_runtime
         self._updates: list[Any] = []
+        self.session_titles: dict[str, dict] = {}
         self._mcp_startup_failures: dict[str, str] = {}
         self._mcp_startup_successes: set[str] = set()
         self._mcp_recovery_calls: dict[tuple[str, str], None] = {}
@@ -463,6 +493,10 @@ class PAClient(Client):
         self._updates.append(update)
         normalized = normalize_session_update(update)
         key = str(session_id)
+        if normalized.get("type") == "session_info_update" and normalized.get("title"):
+            self.session_titles[key] = normalized
+            if len(self.session_titles) > 128:
+                self.session_titles.pop(next(iter(self.session_titles)))
         call_id = str(normalized.get("tool_call_id") or "")
         call_key = (key, call_id)
         raw_input = normalized.get("raw_input")
@@ -1266,6 +1300,10 @@ class AgentConnection:
                             self._conn,
                             session_id=resume_external_id,
                             cwd=session_cwd,
+                            on_info=lambda info: self._client.session_titles.setdefault(resume_external_id, {
+                                "title": info.get("title") if isinstance(info, dict) else getattr(info, "title", None),
+                                "updated_at": info.get("updatedAt", info.get("updated_at")) if isinstance(info, dict) else getattr(info, "updated_at", None),
+                            }),
                         )
                         if resolved is None:
                             continue
@@ -1342,8 +1380,12 @@ class AgentConnection:
                     )
                 from pa.server.shutdown import wait_for_shutdown_or
 
+                workflow = existing_session.initiating_workflow if existing_session else {}
+                native_branch = workflow.get("kind") == "conversation_branch" and workflow.get("strategy") == "native"
+                method = "session/fork" if native_branch else "session/new"
                 stopping, acp_session = await wait_for_shutdown_or(
-                    self._conn.new_session(**new_session_kwargs)
+                    self._fork_conversation(existing_session, new_session_kwargs)
+                    if native_branch else self._conn.new_session(**new_session_kwargs)
                 )
                 if stopping:
                     await self._abort_connect_if_shutting_down(
@@ -1354,7 +1396,7 @@ class AgentConnection:
                 self._wire_log(
                     "out",
                     {
-                        "method": "session/new",
+                        "method": method,
                         "params": {"cwd": session_cwd},
                         "result": {"session_id": acp_session.session_id},
                     },
@@ -1426,6 +1468,12 @@ class AgentConnection:
             self.session.project_id = project_id
 
         self._apply_session_meta(session_meta)
+        info = self._client.session_titles.get(self.session.external_session_id) or session_meta
+        apply_provider_title(
+            self.session, info.get("title"),
+            external_session_id=self.session.external_session_id,
+            updated_at=info.get("updated_at", info.get("updatedAt")),
+        )
         config = dict(self.session.config_json or {})
         self._connection_id = str(uuid4())
         config["provider_connection_id"] = self._connection_id
@@ -1439,6 +1487,37 @@ class AgentConnection:
             "sqlite.agent_session_save", self.store.save_session, self.session
         )
         return self.session
+
+    async def _fork_conversation(self, session: AgentSession, kwargs: dict[str, Any]):
+        """Fork only into the target's admitted workspace; never retry an unknown RPC."""
+        from pa.acp.conversation_capabilities import conversation_capabilities
+
+        if not conversation_capabilities(self._init_response)["fork"]:
+            raise RuntimeError("Target provider does not support session/fork; choose context copy explicitly")
+        workflow = session.initiating_workflow
+        source_id = workflow.get("source_external_id")
+        if not isinstance(source_id, str) or not source_id:
+            raise RuntimeError("Native branch has no source provider session")
+        selected = (session.config_json.get("execution_selection") or {}).get("selected") or {}
+        if selected.get("connection") != workflow.get("source_connection"):
+            raise RuntimeError("Native fork requires the source provider connection")
+        admission = (session.config_json or {}).get("branch_admission") or {}
+        if admission.get("state") in {"request_sent", "outcome_unknown", "forked"}:
+            raise RuntimeError("Native fork outcome requires recovery; PA will not issue a second fork")
+        session.config_json = {**session.config_json, "branch_admission": {"state": "request_sent"}}
+        await self._offload("sqlite.branch_admission", self.store.save_session, session)
+        try:
+            response = await self._conn.fork_session(session_id=source_id, **kwargs)
+            if not isinstance(response.session_id, str) or not response.session_id or response.session_id == source_id:
+                raise RuntimeError("Provider returned an invalid independent fork identity")
+        except BaseException:
+            session.config_json = {**session.config_json, "branch_admission": {"state": "outcome_unknown"}}
+            await self._offload("sqlite.branch_admission", self.store.save_session, session)
+            raise
+        session.external_session_id = response.session_id
+        session.config_json = {**session.config_json, "branch_admission": {"state": "forked"}}
+        await self._offload("sqlite.branch_admission", self.store.save_session, session)
+        return response
 
     def _apply_session_meta(self, meta: dict[str, Any]) -> None:
         if not self.session:
@@ -2249,6 +2328,7 @@ async def _resolve_session_load_target(
     *,
     session_id: str,
     cwd: str,
+    on_info=None,
 ) -> tuple[str, str] | None:
     """Resolve session/load params, or None when the session should not be loaded.
 
@@ -2278,6 +2358,8 @@ async def _resolve_session_load_target(
     for info in sessions:
         if _session_info_id(info) != session_id:
             continue
+        if on_info:
+            on_info(info)
         return session_id, _session_info_cwd(info) or cwd
 
     logger.info(

@@ -3527,6 +3527,23 @@ async def session_unarchive(request: Request, session_id: str) -> dict:
     }
 
 
+class SessionTitleBody(BaseModel):
+    title: str | None = Field(default=None, max_length=512)
+    automatic: bool = False
+
+
+@router.put("/sessions/{session_id}/title")
+async def session_title(request: Request, session_id: str, body: SessionTitleBody) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        session = await mgr.name_session(session_id, title=body.title, automatic=body.automatic)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"session": session.model_dump(mode="json")}
+
+
 @router.put("/sessions/{session_id}/pin")
 async def session_pin(
     request: Request, session_id: str, body: SessionPinBody
@@ -4116,8 +4133,10 @@ class AgentChatModule(Module):
 
     def api_routers(self):
         from pa.modules.execution_selection import router as selection_router
+        from pa.modules.conversation_issues import router as issues_router
+        from pa.modules.conversation_threads import router as threads_router
 
-        return [("/api", router, ["agent"]), ("/api", selection_router, ["execution"])]
+        return [("/api", router, ["agent"]), ("/api", selection_router, ["execution"]), ("/api", issues_router, ["agent"]), ("/api", threads_router, ["agent"])]
 
     def register_mcp(self, mcp, ctx) -> None:
         from pa.mcp.tools.agent_chat import register_mcp

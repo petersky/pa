@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from pa.core.ui.next_actor import next_actor
+
 SESSION_PRESENTATION_SCHEMA = "pa.session-presentation"
 SESSION_PRESENTATION_VERSION = 1
 SESSION_PRESENTATION_CAPABILITY = "pa.session-presentation.v1"
@@ -364,6 +366,19 @@ def build_session_presentation(
     if prompting:
         actions.append("stop_turn")
 
+    if archived or settled:
+        actor = next_actor("none")
+    elif interaction or display_status in {"Recovery blocked", "Paused", "Taken over"}:
+        actor = next_actor("operator", explanation)
+    elif next_action == "finish_current_turn":
+        actor = next_actor("provider", explanation)
+    elif next_action in {"start_next_prompt", "retry_recovery", "restore_after_restart", "deliver_completion", "reconcile_card"}:
+        actor = next_actor("pa", explanation)
+    elif purpose == "chat" and display_status == "Ready":
+        actor = next_actor("operator", "Continue the conversation when ready.")
+    else:
+        actor = next_actor("unknown", explanation)
+
     return {
         "schema": SESSION_PRESENTATION_SCHEMA,
         "version": SESSION_PRESENTATION_VERSION,
@@ -373,6 +388,7 @@ def build_session_presentation(
         "display_status": display_status,
         "explanation": explanation,
         "next_automatic_action": next_action,
+        "next_actor": actor,
         "connection": {
             "state": (
                 "connected"

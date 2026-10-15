@@ -17,6 +17,7 @@
   </div>
   <strong>{{ presentation.summary }}</strong>
   <p class="muted small">{{ presentation.reason }}</p>
+  <p class="muted small">Next: {{ (presentation.next_actor | default({})).label | default('Not confirmed') }}</p>
   <p class="muted small">{{ presentation.reporting_label }}</p>
   <div class="card-work-state-context muted small">
     <span>{{ presentation.execution_label ~ ' instance' if presentation.session_id else 'Dispatch target' }} {{ presentation.target_instance_name }}</span>

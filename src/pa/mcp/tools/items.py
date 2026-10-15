@@ -51,6 +51,17 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
+    def list_card_summaries(realm: str | None = None, project_id: str | None = None,
+                            q: str = "", limit: int = 30, offset: int = 0) -> dict:
+        """Discover at most100 compact summaries; prefer this over full card lists.
+
+        Follow next_offset for another page. Fetch a card or its immutable history
+        only when needed; this read excludes bodies, transcripts and full evidence.
+        """
+        return request_local_pa(ctx.settings, "GET", "/api/cards/summaries",
+            params={"realm": realm, "project_id": project_id, "q": q, "limit": limit, "offset": offset})
+
+    @mcp.tool()
     def list_cards(
         realm: str | None = None,
         lane: CardLane | None = None,

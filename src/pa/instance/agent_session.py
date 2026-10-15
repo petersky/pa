@@ -52,6 +52,7 @@ from pa.browser.manager import BrowserManager
 from pa.config import Settings
 from pa.core.async_runtime import AsyncRuntimeClosed
 from pa.core.preferences import get_preferences_store
+from pa.acp.session_titles import apply_provider_title, clean_title
 from pa.domain.models import AgentSession, RestartHandoff, TranscriptEvent
 from pa.domain.store import Store
 from pa.execution.progress import sanitize_text
@@ -361,6 +362,11 @@ class AgentSessionRuntime:
             self.session.archived_at = persisted.archived_at
             self.session.archive_reason = persisted.archive_reason
             self.session.pinned_at = persisted.pinned_at
+            naming = (persisted.config_json or {}).get("naming") or {}
+            own_naming = (self.session.config_json or {}).get("naming") or {}
+            if naming.get("revision", 0) > own_naming.get("revision", 0):
+                self.session.title = persisted.title
+                self.session.config_json = {**self.session.config_json, "naming": naming}
         persisted_browser = dict(
             ((persisted.config_json or {}).get("browser") or {}) if persisted else {}
         )
@@ -635,6 +641,8 @@ class AgentSessionRuntime:
                 await result
 
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
+        if self.session.external_session_id and _external_session_id != self.session.external_session_id:
+            return
         normalized = normalize_session_update(update)
         if (
             normalized.get("type") in {"tool_call", "tool_call_update"}
@@ -643,6 +651,32 @@ class AgentSessionRuntime:
         ):
             normalized["pa_mcp"] = dict(self.connection.pa_mcp_health)
         event_type = str(normalized.get("type") or "session_update")
+        timing = getattr(self, "_turn_timing", None)
+        if timing and not timing.get("first_useful_event_at") and (
+            event_type == "tool_call" or event_type == "plan" and bool(normalized.get("entries"))
+            or is_agent_message_type(event_type) and bool(normalized.get("text"))
+        ):
+            import time
+            timing["first_useful_event_at"] = datetime.now(UTC).isoformat()
+            timing["provider_generation_ms"] = round((time.monotonic() - self._provider_started_monotonic) * 1000, 2)
+            timing["accept_to_useful_ms"] = round(timing["accept_to_provider_ms"] + timing["provider_generation_ms"], 2)
+            self.session.metrics_json = {**(self.session.metrics_json or {}), "turn_timing": dict(timing)}
+            self._append_transcript("prompt_timing", dict(timing))
+        if event_type == "session_info_update":
+            if not apply_provider_title(
+                self.session, normalized.get("title"),
+                external_session_id=_external_session_id,
+                updated_at=normalized.get("updated_at"),
+            ):
+                return
+            await self._save_session_preserving_external_browser_async()
+            normalized["title"] = self.session.title
+            normalized["title_version"] = self.session.config_json["naming"]["version"]
+        if event_type in {"tool_call", "tool_call_update"}:
+            if self.session.external_session_id and _external_session_id != self.session.external_session_id:
+                return
+            normalized["external_session_id"] = _external_session_id
+            normalized["turn_id"] = getattr(getattr(self, "_in_flight", None), "id", None)
         if event_type in _TURN_STREAM_EVENT_TYPES:
             self._turn_streamed = True
         if is_agent_message_type(event_type) and self._in_flight:
@@ -1198,12 +1232,18 @@ class AgentSessionRuntime:
             provider_id = DEFAULT_PROVIDER_ID
         self._connection_generation += 1
         self._runtime_observed_at = datetime.now(UTC)
+        generation = self._connection_generation
+
+        async def current_update(external_id, update):
+            if generation == self._connection_generation:
+                await self._on_acp_update(external_id, update)
+
         self.connection = AgentConnection(
             self.settings,
             self.store,
             agent_name=provider_id,
             provider_spec=provider_spec,
-            on_update=self._on_acp_update,
+            on_update=current_update,
             on_permission=self._on_permission,
             on_elicitation=self._on_elicitation,
             wire_path=wire_path,
@@ -2161,6 +2201,12 @@ class AgentSessionRuntime:
                 self.session.config_json = config
                 await self._save_session_preserving_external_browser_async()
                 if first_attempt:
+                    if not self.session.title and item.source != "system":
+                        fallback = clean_title(" ".join(item.message.split())[:80])
+                        if fallback:
+                            self.session.title = fallback
+                            await self._save_session_preserving_external_browser_async()
+                            self._append_transcript("session_info_update", {"title": fallback})
                     self._append_transcript(
                         "prompt_rendered", {"id": item.id, "prompts": prompt_audit}
                     )
@@ -2182,6 +2228,15 @@ class AgentSessionRuntime:
             import time
 
             selection_started = time.monotonic()
+            provider_at = datetime.now(UTC)
+            self._provider_started_monotonic = time.monotonic()
+            self._turn_timing = {
+                "prompt_id": item.id, "accepted_at": item.created_at.isoformat(),
+                "provider_started_at": provider_at.isoformat(),
+                "accept_to_provider_ms": round(max(0, (provider_at - item.created_at).total_seconds() * 1000), 2),
+            }
+            self.session.metrics_json = {**(self.session.metrics_json or {}), "turn_timing": dict(self._turn_timing)}
+            self._append_transcript("prompt_timing", dict(self._turn_timing))
             protocol_completed, selection_stop_reason = False, None
             try:
                 try:
@@ -2571,6 +2626,7 @@ class AgentSessionRuntime:
 
     def _finish_turn_state(self) -> None:
         self._in_flight = None
+        self._turn_timing = None
         self._turn_started_at = None
         self._turn_streamed = False
         self._checkpoint_runtime(lifecycle="ready")
@@ -2898,6 +2954,7 @@ class AgentSessionRuntime:
         from pa.execution.selection import selection_presentation
         snapshot = {
             "session": self.session.model_dump(mode="json"),
+            "last_event_seq": self._seq,
             "presentation": build_session_presentation(
                 self.session,
                 runtime=self,
@@ -4159,6 +4216,32 @@ class AgentSessionManager:
         await self._offload("sqlite.agent_session_save", self.store.save_session, session)
         return session
 
+    async def name_session(self, session_id: str, *, title: str | None, automatic: bool) -> AgentSession:
+        async with self.label_lock(f"naming:{session_id}"):
+            runtime = self._runtimes.get(session_id)
+            session = runtime.session if runtime else await self._offload(
+                "sqlite.agent_session_read", self.store.get_session, session_id
+            )
+            if not session:
+                raise LookupError("Session not found")
+            normalized = clean_title(title)
+            if not automatic and not normalized:
+                raise ValueError("Title must contain 1–512 characters")
+            config = dict(session.config_json or {})
+            naming = dict(config.get("naming") or {})
+            naming.update(
+                mode="automatic" if automatic else "manual",
+                revision=naming.get("revision", 0) + 1,
+                version=naming.get("version", 0) + 1,
+            )
+            session.title = (naming.get("provider_title") or session.title) if automatic else normalized
+            config["naming"] = naming
+            session.config_json = config
+            await self._offload("sqlite.agent_session_save", self.store.save_session, session)
+            if runtime:
+                runtime._append_transcript("session_info_update", {"title": session.title, "title_version": naming["version"]})
+            return session
+
     async def pin_session(self, session_id: str, *, pinned: bool) -> AgentSession:
         session = await self._offload(
             "sqlite.agent_session_read", self.store.get_session, session_id
@@ -5332,7 +5415,8 @@ class AgentSessionManager:
         )
         session.cwd = snap.cwd or session.cwd
         session.label = snap.label or session.label
-        session.title = snap.title or session.title
+        if not existing:
+            session.title = snap.title or session.title
         if snap.configuration and not (
             (session.config_json or {}).get("configuration")
         ):
@@ -5678,38 +5762,39 @@ class AgentSessionManager:
                 project_tool_config = (
                     selection_project.tool_config if selection_project else None
                 )
-            candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
-            receipt = await self._offload(
-                "selection.resolve",
-                selection_service.resolve,
-                candidates=candidates,
-                principal=effective_principal_id,
-                realm=realm_id or self.settings.primary_realm,
-                surface=surface_key,
-                card=selection_card,
-                project_config=project_tool_config,
-                overrides=prefs,
-                assessment=task_assessment,
-                constraints=[
-                    SelectionConstraints.model_validate(c)
-                    for c in (
-                        (_linked_boundary["source"].config_json or {}).get(
-                            "execution_selection"
-                        )
-                        or {}
-                    ).get("constraints", [])
-                ]
-                if _linked_boundary
-                else (),
-                legacy=legacy_preferences(
-                    provider=provider_override,
-                    model_id=explicit.model_id,
-                    model_provider=explicit.model_provider,
-                    effort=explicit.reasoning,
-                    config=explicit.config,
-                ),
-                persist=True,
-            )
+            with startup_trace.phase("execution_selection") if startup_trace else nullcontext():
+                candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
+                receipt = await self._offload(
+                    "selection.resolve",
+                    selection_service.resolve,
+                    candidates=candidates,
+                    principal=effective_principal_id,
+                    realm=realm_id or self.settings.primary_realm,
+                    surface=surface_key,
+                    card=selection_card,
+                    project_config=project_tool_config,
+                    overrides=prefs,
+                    assessment=task_assessment,
+                    constraints=[
+                        SelectionConstraints.model_validate(c)
+                        for c in (
+                            (_linked_boundary["source"].config_json or {}).get(
+                                "execution_selection"
+                            )
+                            or {}
+                        ).get("constraints", [])
+                    ]
+                    if _linked_boundary
+                    else (),
+                    legacy=legacy_preferences(
+                        provider=provider_override,
+                        model_id=explicit.model_id,
+                        model_provider=explicit.model_provider,
+                        effort=explicit.reasoning,
+                        config=explicit.config,
+                    ),
+                    persist=True,
+                )
             provider_override = receipt["selected"]["harness"]
             initial_configuration = selected_configuration(receipt, explicit)
         if _linked_boundary:
@@ -5871,6 +5956,8 @@ class AgentSessionManager:
             realm_id=realm_id or self.settings.primary_realm,
             item_id=card_id,
         )
+        if not existing and title:
+            session.config_json = {**session.config_json, "naming": {"mode": "manual", "revision": 1}}
         if existing:
             session.origin_instance_id = (
                 session.origin_instance_id or self.settings.instance_id

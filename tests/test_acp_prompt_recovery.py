@@ -679,7 +679,7 @@ for (let i = 1; i <= 200; i += 1) {
 widget._paintRecentHistory({
   events,
   page: { has_older: true, has_newer: false, oldest_seq: 1, newest_seq: 200, next_before_seq: 1 },
-  session: { agent_name: "codex" },
+  session: { id: "session-cache", agent_name: "codex" },
 }, 1);
 assert.strictEqual(widget.transcriptEvents.length, 200, 'complete derived page is not sliced mid-message');
 assert.strictEqual(widget.lastSeq, 200);

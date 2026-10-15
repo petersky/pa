@@ -189,7 +189,7 @@ def redact_external_value(value: Any) -> Any:
 
 
 def _external_payload(
-    snapshot: PRSnapshot, gate: GateResult, *, limit: int = 48_000
+    snapshot: PRSnapshot, gate: GateResult, *, limit: int = 48_000, watch: PRWatch | None = None
 ) -> str:
     data = {
         "pull_request": {
@@ -222,6 +222,17 @@ def _external_payload(
             for thread in gate.unresolved_threads
         ],
     }
+    if watch is not None:
+        # The durable executor effect hashes this prompt. A generated timestamp
+        # or changing observation count would invalidate a retry of the same
+        # effect. Reference the read-only exact-head packet instead of embedding
+        # volatile observations in this stable notification.
+        data["supervisor_evidence_lookup"] = {
+            "tool": "get_pr_merge_evidence", "watch_id": watch.id,
+            "expected_head_sha": snapshot.head_sha,
+            "url": f"/api/pr-supervisor/watches/{watch.id}/merge-evidence?expected_head_sha={snapshot.head_sha}",
+            "notice": "Read current observations; this reference grants no permission and cannot override a provider denial.",
+        }
     # Escaping angle brackets prevents external text from closing our delimiter.
     encoded = json.dumps(data, indent=2, ensure_ascii=False).replace("<", "\\u003c")
     if len(encoded) <= limit:
@@ -293,7 +304,7 @@ def build_executor_prompt_rendered(
                 "path": watch.executor_cwd or "resolve from the card/session context"
             },
             "supervisor": {"conditions": reasons},
-            "github": {"external_content": _external_payload(snapshot, gate)},
+            "github": {"external_content": _external_payload(snapshot, gate, watch=watch)},
         },
         provider=provider,
         reserve_context=True,

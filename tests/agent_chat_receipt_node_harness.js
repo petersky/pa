@@ -35,6 +35,13 @@ function settled(w,state){
  assert(!w.statusElement.textContent.includes('Checking'));if(state)assert.equal(w.submissionState,state);
 }
 (async()=>{
+ // A delayed queue/status refresh may not overwrite a newly selected thread.
+ const routing=make(),lateSnapshot=deferred();routing.api=()=>lateSnapshot.promise;
+ Widget.prototype.refreshQueue.call(routing);
+ await new Promise(resolve=>setTimeout(resolve,275));
+ routing.sessionId='another-thread';routing.subscriptionGeneration++;
+ lateSnapshot.resolve({queue:[{id:'old-thread-prompt'}]});await tick();
+ assert.equal(routing.lastSnapshot,undefined);
  // Real teardown before the later draft lifecycle flush preserves metadata.
  for(const reason of ['pagehide','htmx-before-swap']) for(const clear of [false,true]){
   const w=make();Object.assign(w,{_stashSessionDomCache:noop,closeSSE:noop,stopBrowserRefresh:noop,resetArtifacts:noop,toolTimers:{}});
@@ -63,11 +70,15 @@ function settled(w,state){
   const id=w.drafts.submissionId;
   assert.equal(w.drafts.restoringSubmission,false);
   assert.equal(w.drafts.observeAcceptance('wrong-id',queued),false);
+  assert.equal(w.submitAckMs,undefined);
   w.handleEvent({type:queued?'queue_enqueued':'user_message',seq:1,payload:{id,message:'submitted'}},false,false);settled(w,queued?'queued':'accepted');
   assert.equal(w.els.input.value,'');
   assert.equal(w.statusElement.textContent,'Prompt accepted.');
+  assert(Number.isFinite(w.submitAckMs), 'streamed acceptance records timing before the HTTP reply');
+  const acknowledgementMs=w.submitAckMs;
   w.els.input.value='next';w.drafts.changed();
   post.resolve({accepted:true,queued});await tick();assert.equal(w.els.input.value,'next');settled(w);
+  assert.equal(w.submitAckMs,acknowledgementMs,'late HTTP reply cannot overwrite the first receipt time');
   assert.equal(w.drafts.observeAcceptance(id,queued),false);
  }
  for(const reconnect of [false,true]){

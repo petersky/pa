@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from pa.auth.middleware import get_principal_id
@@ -369,6 +369,26 @@ def get_watch(request: Request, watch_id: str) -> dict[str, Any]:
         ],
         "notifications": _store(request).list_dispatches(watch_id),
     }
+
+
+@router.get("/pr-supervisor/watches/{watch_id}/merge-evidence")
+async def get_merge_evidence(
+    request: Request, watch_id: str,
+    expected_head_sha: str = Query(min_length=40, max_length=40, pattern=r"^[0-9a-f]{40}$"),
+) -> dict[str, Any]:
+    """Read bounded server-owned facts; this endpoint cannot authorize a merge."""
+    from pa.pr_supervisor.evidence import merge_evidence
+
+    watch = await _offload(request, "sqlite.pr_merge_evidence_read", _store(request).get_watch, watch_id)
+    if not watch:
+        raise HTTPException(status_code=404, detail="PR watch not found")
+    # Re-resolve canonical policy on a copy, without changing the watch, polling
+    # GitHub, or creating an effect authorization. The snapshot may be stale.
+    try:
+        current = await _service(request).freeze_canonical_policy(watch.model_copy(deep=True))
+    except ProvenanceValidationError as exc:
+        raise _provenance_http_error(exc) from exc
+    return merge_evidence(watch, expected_head_sha, current_policy_revision=current.policy_revision)
 
 
 @router.get("/pr-supervisor/provenance/issues")

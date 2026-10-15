@@ -70,6 +70,18 @@ async def test_discover_sign_in_return_accept_reopen_and_logout(navigation_card,
                 await manager.resize(scope, width=width, height=900)
                 measured = await layout(".chrome-actions [data-sign-in]")
                 assert measured["visible"] and measured["clickable"] and not measured["overflow"], (theme, width, measured)
+                # Conversation entry remains discoverable without displacing
+                # sign-in/navigation: Home heading on small screens, chrome otherwise.
+                entry = await page.evaluate('''(() => {
+                  const links=[...document.querySelectorAll('.chrome-new-chat,.home-new-chat')];
+                  const visible=links.filter(e=>e.getBoundingClientRect().width>0);
+                  if(visible.length!==1) return {ok:false, visible:visible.map(e=>e.className)};
+                  const e=visible[0], r=e.getBoundingClientRect();
+                  const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+                  return {ok:(top===e || e.contains(top)) && e.getAttribute('href')==='/agent?new=1',
+                    rect:{x:r.x,y:r.y,width:r.width,height:r.height}, coveredBy:top?.className};
+                })()''')
+                assert entry['ok'], (theme, width, entry)
 
         await manager.resize(scope, width=390, height=844)
         # Discover login on Home without knowing /login. Invalid credentials keep

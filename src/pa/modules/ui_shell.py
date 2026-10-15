@@ -95,6 +95,7 @@ def _shell_context(request: Request) -> dict:
         "telemetry_enabled": settings.telemetry_enabled,
         "telemetry_ui_refresh_seconds": settings.telemetry_ui_refresh_seconds,
         "telemetry_session_header": prefs.telemetry_session_header,
+        "terminal_output_char_limit": settings.terminal_output_char_limit,
         "pa_version": __import__("pa").__version__,
         "build_id": f"{__import__('pa').__version__}+{assets.version}",
         "agent_providers": provider_catalog(),
@@ -246,7 +247,8 @@ def _agent_context(request: Request) -> dict:
     by_id = {session.id: session for session in persisted}
     by_id.update({session.id: session for session in live})
     all_sessions = list(by_id.values())
-    selected_id = request.query_params.get("session")
+    new_chat = bool(request.query_params.get("new"))
+    selected_id = request.query_params.get("session") if not new_chat else None
     default = next((s for s in all_sessions if s.id == selected_id), None)
     if selected_id and default is None:
         default = ctx.store.get_session(selected_id)
@@ -452,7 +454,8 @@ def _agent_context(request: Request) -> dict:
         "session_view": selected_view,
         "activity_filter": activity_filter,
         "live_session_ids": live_ids,
-        "session_id": selected_id or (default.id if default else ""),
+        "new_chat": new_chat,
+        "session_id": "" if new_chat else selected_id or (default.id if default else ""),
         "session_instance_id": request.query_params.get("instance")
         or (default.origin_instance_id if default else None)
         or ctx.settings.instance_id,

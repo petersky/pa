@@ -13,7 +13,9 @@
     <h2>{{ 'Chats' if session_view == 'chats' else ('Activity' if session_view == 'activity' else ('Archived' if session_view == 'archived' else 'All sessions')) }}</h2>
     <div class="agent-session-header-actions">
       {% if agent_enabled and session_view == 'chats' %}
-      <button type="button" class="ghost small" data-agent-new-session title="New conversation">New chat</button>
+      <a class="ghost small" href="/agent?new=1" hx-get="/agent?new=1" hx-target="#app-view" hx-push-url="true">New chat</a>
+      <a class="ghost small" href="/agent?new=1" title="Start an independent conversation">New thread</a>
+      <button type="button" class="ghost small" data-agent-new-session title="Configure a new conversation">Options…</button>
       {% endif %}
     </div>
   </div>
@@ -48,7 +50,7 @@
         data-session-id="{{ s.id }}"
         data-session-instance="{{ s.origin_instance_id or '' }}"
         data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}">
-      {% set session_title = s.title or s.label or s.agent_name %}
+      {% set session_title = s.title or ('New chat' if s.purpose == 'chat' else s.label) or s.agent_name %}
       {% set state = detail.state or s.status or 'unknown' %}
       {% set presentation = detail.presentation or {} %}
       {% if session_view == 'activity' %}<div class="agent-activity-group">{{ detail.activity_group }}</div>{% endif %}
@@ -126,10 +128,10 @@
       <button type="button" class="ghost" data-agent-new-cancel aria-label="Close">×</button>
     </header>
     <label>
-      <span>Title</span>
-      <input name="title" value="Chat" autocomplete="off">
+      <span>Title (optional)</span>
+      <input name="title" placeholder="Automatic title" autocomplete="off">
     </label>
-    {% with selection_purpose='new-session', selection_surface='chat.default', selection_open=true %}
+    {% with selection_purpose='new-session', selection_surface='chat.default', selection_open=false %}
     {% include 'partials/execution-preferences.html' %}
     {% endwith %}
     <fieldset hidden disabled data-legacy-new-selection>
