@@ -38,7 +38,7 @@
     this.generation++; clearTimeout(this.timer); this.busy = false; this.state = null; this.selected.clear();
     if (!this.panel) return;
     this.list.replaceChildren(); this.receipts.replaceChildren(); this.addText.value = "";
-    this.panel.querySelector("[data-issues-count]").textContent = "";
+    this.widget.root.querySelector("[data-issues-count]").textContent = "";
     this.message("Open Issues to load this conversation's list.");
   };
   Controller.prototype.ready = function () { if (this.panel && this.panel.open && !this.state) this.load(); };
@@ -88,7 +88,7 @@
   };
   Controller.prototype.render = function () {
     const self = this;
-    this.panel.querySelector("[data-issues-count]").textContent = "(" + this.state.issues.length + ")";
+    this.widget.root.querySelector("[data-issues-count]").textContent = "(" + this.state.issues.length + ")";
     this.list.replaceChildren(); this.receipts.replaceChildren();
     this.state.issues.forEach(function (issue) {
       const row = element("li"), check = element("input"), title = element("input");

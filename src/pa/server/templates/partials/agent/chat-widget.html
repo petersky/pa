@@ -113,19 +113,41 @@
   </details>
   {% endif %}
 
+  <div class="acw-details" data-acw-details>
+    <details data-acw-execution-panel>
+      <summary>Execution selection</summary>
+      <p class="muted small" data-selection-empty>Execution selection is not available for this conversation.</p>
+    </details>
+    <details class="acw-timings"><summary>Timing details</summary><p class="muted small" data-acw-timings>Timings appear when PA accepts a message and the provider responds.</p></details>
+    <details class="acw-threads" data-conversation-threads>
+      <summary>Branch from here</summary>
+      <p class="muted small" data-thread-status role="status">Open to check branch support for this conversation.</p>
+      <a class="ghost small" href="/agent?new=1">New thread</a>
+      <button type="button" class="ghost small" data-thread-native disabled>Fork latest history</button>
+      <button type="button" class="ghost small" data-thread-copy disabled>Copy recent context</button>
+    </details>
+    <details class="acw-issues" data-conversation-issues>
+      <summary>Issues <span data-issues-count></span></summary>
+      <p class="muted small">Discuss, group, or start selected work</p>
+      <p class="muted small" data-issues-status role="status" aria-live="polite">Discussion notes do not start work.</p>
+      <ol data-issues-list></ol>
+      <label>Add issues, one per line<textarea rows="2" data-issues-add-text placeholder="What should we keep track of?"></textarea></label>
+      <div class="acw-issue-actions">
+        <button type="button" class="ghost small" data-issues-add>Add to list</button>
+        <input data-issues-group-name maxlength="80" placeholder="Group name (optional)" aria-label="Group name">
+        <button type="button" class="ghost small" data-issues-group>Group selected</button>
+        <button type="button" class="ghost small" data-issues-defer>Defer</button>
+        <button type="button" class="ghost small" data-issues-restore>Restore</button>
+        <button type="button" class="primary small" data-issues-start>Start selected</button>
+      </div>
+      <div class="small" data-issues-receipts></div>
+    </details>
+  </div>
+
   {% if show_metrics %}
   <div class="acw-metrics muted" data-acw-metrics hidden></div>
   {% endif %}
-
-  <details class="acw-timings"><summary>Timing details</summary><p class="muted small" data-acw-timings>Timings appear when PA accepts a message and the provider responds.</p></details>
   <p class="muted small" data-conversation-outcome hidden></p>
-  <details class="acw-threads" data-conversation-threads>
-    <summary>Branch from here</summary>
-    <p class="muted small" data-thread-status role="status">Open to check branch support for this conversation.</p>
-    <a class="ghost small" href="/agent?new=1">New thread</a>
-    <button type="button" class="ghost small" data-thread-native disabled>Fork latest history</button>
-    <button type="button" class="ghost small" data-thread-copy disabled>Copy recent context</button>
-  </details>
 
   <div class="acw-recovery" data-acw-recovery hidden>
     <div>
@@ -152,26 +174,10 @@
     </div>
   </section>
 
-  <details class="acw-issues" data-conversation-issues>
-    <summary>Issues <span data-issues-count></span><span class="muted small">Discuss, group, or start selected work</span></summary>
-    <p class="muted small" data-issues-status role="status" aria-live="polite">Discussion notes do not start work.</p>
-    <ol data-issues-list></ol>
-    <label>Add issues, one per line<textarea rows="2" data-issues-add-text placeholder="What should we keep track of?"></textarea></label>
-    <div class="acw-issue-actions">
-      <button type="button" class="ghost small" data-issues-add>Add to list</button>
-      <input data-issues-group-name maxlength="80" placeholder="Group name (optional)" aria-label="Group name">
-      <button type="button" class="ghost small" data-issues-group>Group selected</button>
-      <button type="button" class="ghost small" data-issues-defer>Defer</button>
-      <button type="button" class="ghost small" data-issues-restore>Restore</button>
-      <button type="button" class="primary small" data-issues-start>Start selected</button>
-    </div>
-    <div class="small" data-issues-receipts></div>
-  </details>
-
   <div class="acw-chat-stage">
     <nav class="acw-activity-rail" aria-label="Session artifacts">
       <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle
-              aria-label="Tool activity" title="Tool activity" aria-expanded="false">
+              aria-label="Tool activity" title="Tools" aria-expanded="false">
         <svg class="acw-gears" viewBox="0 0 24 24" aria-hidden="true">
           <g class="acw-gear acw-gear-a"><circle cx="7.5" cy="7.5" r="3"/><path d="M7.5 1.5v2m0 8v2m-6-6h2m8 0h2M3.3 3.3l1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
           <g class="acw-gear acw-gear-b"><circle cx="17" cy="7" r="2.5"/><path d="M17 2v1.5m0 7V12m-5-5h1.5m7 0H22m-8.5-3.5 1.1 1.1m4.9 4.9 1.1 1.1m0-7.1-1.1 1.1m-4.9 4.9-1.1 1.1"/></g>
@@ -179,9 +185,9 @@
         </svg>
       </button>
       <button type="button" class="ghost acw-rail-button acw-terminal-toggle" data-acw-terminal-toggle
-              aria-label="Terminal" title="Terminal" aria-expanded="false">Terminal</button>
+              aria-label="Terminal" title="Terminal" aria-expanded="false"><span aria-hidden="true">&gt;_</span></button>
       <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
-              aria-label="Session plans" title="Session plans" aria-expanded="false">
+              aria-label="Session plans" title="Plans" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
         <span class="acw-rail-badge" data-acw-plan-count hidden>0</span>
       </button>
