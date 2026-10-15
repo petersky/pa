@@ -13,7 +13,7 @@ from starlette.requests import Request
 from pa.config import Settings
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.conversation_issues import ConversationIssues, Issue, IssueConflict, IssueEdit, StartIssues
-from pa.domain.models import AgentSession, CardCreate
+from pa.domain.models import AgentSession, CardCreate, ProjectCreate
 from pa.domain.projection import CardProjection
 from pa.instance.agent_session import AgentSessionManager
 from pa.modules.conversation_issues import edit_issues, get_issues, start_issues, _preferences
@@ -66,7 +66,7 @@ async def test_grouped_start_exactly_once_and_restore_after_lost_dispatch_receip
         nonlocal lose_receipt
         key = request.headers["idempotency-key"]
         calls.append(body)
-        assert body.mode_id == "read-only"
+        assert body.mode_id is None  # The worker resolves its own purpose default.
         assert not body.cwd and not body.allow_concurrent and not body.capacity_override
         admitted.setdefault(key, "dispatch-one")
         if lose_receipt:
@@ -76,7 +76,7 @@ async def test_grouped_start_exactly_once_and_restore_after_lost_dispatch_receip
     monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
     body = StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0", "issue-1"])
     first = await start_issues(req(), "discussion", body)
-    assert first["requests"][0]["state"] == "blocked"
+    assert first["requests"][0]["state"] == "admitted"
     card_id = first["requests"][0]["groups"][0]["card_id"]
     assert len(store.list_cards()) == 1
     # Reload from persisted notebook, then retry the same request.
@@ -121,9 +121,9 @@ async def test_admission_ack_is_independent_of_slow_work_and_coalesces(setup, mo
 
 
 @pytest.mark.asyncio
-async def test_missing_mode_and_deferred_selection_cannot_start(setup, monkeypatch):
+async def test_legacy_missing_chat_mode_does_not_block_worker_default(setup, monkeypatch):
     store, _, req, _ = setup
-    dispatch = AsyncMock()
+    dispatch = AsyncMock(return_value={"dispatch_id": "legacy-worker"})
     monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
     await edit_issues(req(), "discussion", ten_issues())
     with pytest.raises(HTTPException):
@@ -131,10 +131,10 @@ async def test_missing_mode_and_deferred_selection_cannot_start(setup, monkeypat
     session = store.get_session("discussion")
     session.mode_id = None
     store.save_session(session)
-    with pytest.raises(HTTPException) as error:
-        await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"]))
-    assert error.value.detail["code"] == "conversation_mode_unknown"
-    assert not store.list_cards() and not dispatch.called
+    result = await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"]))
+    assert result["requests"][0]["state"] == "admitted"
+    assert dispatch.call_args.args[1].mode_id is None
+    assert store.get_session("discussion").mode_id is None
 
 
 def test_preferences_keep_explicit_false_and_all_hard_constraints():
@@ -148,6 +148,112 @@ def test_preferences_keep_explicit_false_and_all_hard_constraints():
     assert prefs["hard_constraints"]["instance_ids"] == ["b"]
     assert prefs["hard_constraints"]["max_cost_usd"] == 1
     assert prefs["hard_constraints"]["min_context_tokens"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_first_selected_work_inherits_primary_card_project_and_worker_default(setup, monkeypatch):
+    from pa.modules.fleet import _apply_dispatch_mode_default
+    store, _, req, _ = setup
+    project = store.create_project(ProjectCreate(title="PA Core"))
+    source = store.create_card(CardCreate(title="Canonical source", project_id=project.id, auto_enrich=False))
+    session = store.get_session("discussion")
+    session.card_id, session.mode_id = source.id, "agent-full-access"
+    session.model_id = "gpt-6.1-sol[xhigh]"
+    session.config_json = {"execution_selection": {"resolved_inputs": {
+        "model": {"intent": "required", "value": "gpt-6.1-sol"},
+        "reasoning": {"intent": "required", "value": "xhigh"},
+        "options.fast-mode": {"intent": "required", "value": "on"},
+    }}}
+    store.save_session(session)
+    await edit_issues(req(), "discussion", ten_issues())
+    seen = []
+    async def dispatch(request, body):
+        _apply_dispatch_mode_default(body)
+        seen.append(body)
+        assert body.project_id == project.id
+        assert body.mode_id == "workspace-write"
+        assert body.model_id == "gpt-6.1-sol[xhigh]"
+        assert body.execution_preferences.options["fast-mode"].value == "on"
+        return {"dispatch_id": "first-attempt"}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    body = StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"])
+    first = await start_issues(req(), "discussion", body)
+    assert first["requests"][0]["state"] == "admitted"
+    card = store.get_card(first["requests"][0]["groups"][0]["card_id"])
+    assert card.project_id == project.id and card.parent_id == source.id
+    await start_issues(req(), "discussion", body)
+    assert len(seen) == 1
+    assert store.get_session("discussion").mode_id == "agent-full-access"
+    assert store.get_session("discussion").project_id is None
+
+
+@pytest.mark.asyncio
+async def test_public_issue_round_trip_preserves_started_claims_and_strict_fields(setup, monkeypatch):
+    from pydantic import ValidationError
+    store, _, req, _ = setup
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", AsyncMock(return_value={"dispatch_id": "one"}))
+    await edit_issues(req(), "discussion", ten_issues())
+    await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"]))
+    state = await get_issues(req(), "discussion")
+    assert "request_id" not in state["editable_issues"][0]
+    state["issues"][1]["title"] = "Refined unstarted issue"
+    state["issues"][1]["request_id"] = "cannot-claim-work"
+    result = await edit_issues(req(), "discussion", IssueEdit(revision=state["revision"], issues=state["issues"]))
+    assert result["issues"][0]["request_id"] == "start-1234"
+    assert "request_id" not in result["issues"][1]
+    with pytest.raises(ValidationError):
+        IssueEdit(revision=0, issues=[{"id": "one", "title": "One", "unknown": True}])
+    result["issues"][0]["title"] = "Cannot edit frozen work"
+    with pytest.raises(HTTPException):
+        await edit_issues(req(), "discussion", IssueEdit(revision=result["revision"], issues=result["issues"]))
+    assert len(store.list_cards()) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("denied", [False, True])
+async def test_pending_admission_recovers_exact_identity_but_denial_is_not_retried(setup, monkeypatch, denied):
+    _, _, req, _ = setup
+    calls = []
+    async def dispatch(request, body):
+        calls.append((request.headers["idempotency-key"], body.model_dump(mode="json")))
+        if denied or len(calls) == 1:
+            raise HTTPException(409, {"code": "policy_denied" if denied else "dispatch_admission_in_progress", "dispatch_id": "same-dispatch"})
+        return {"dispatch_id": "same-dispatch"}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    await edit_issues(req(), "discussion", ten_issues())
+    result = await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"]))
+    assert result["requests"][0]["state"] == ("blocked" if denied else "admitted")
+    assert len(calls) == (1 if denied else 2)
+    assert all(call == calls[0] for call in calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing_dispatch", [False, True])
+async def test_legacy_frozen_chat_mode_normalizes_only_before_first_admission(setup, monkeypatch, existing_dispatch):
+    from pa.modules.conversation_issues import _start_context
+    store, manager, req, app = setup
+    await edit_issues(req(), "discussion", ten_issues())
+    body = StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"])
+    context = await _start_context(req(), manager, store.get_session("discussion"))
+    context["dispatch"]["mode_id"] = "agent-full-access"  # Pre-repair notebook.
+    notes = ConversationIssues(store)
+    notes.admit("discussion", body, context)
+    app.state.ctx.services["dispatch_store"] = SimpleNamespace(
+        by_authority_idempotency=lambda instance, key: object() if existing_dispatch else None)
+    calls = []
+    async def dispatch(request, data):
+        calls.append(data.model_dump(mode="json"))
+        if len(calls) == 1:
+            raise OSError("lost receipt")
+        return {"dispatch_id": "canonical"}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    result = await start_issues(req(), "discussion", body)
+    assert result["requests"][0]["state"] == "admitted"
+    assert len(calls) == 2 and calls[0] == calls[1]
+    assert calls[0]["mode_id"] == ("agent-full-access" if existing_dispatch else None)
+    assert "dispatch_inputs" not in result["requests"][0]["groups"][0]
+    await start_issues(req(), "discussion", body)
+    assert len(calls) == 2
 
 
 @pytest.mark.asyncio

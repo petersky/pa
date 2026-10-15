@@ -28,6 +28,34 @@ from pa.execution.selection_store import SelectionStore
 logger = logging.getLogger(__name__)
 
 
+def reconcile_candidates(candidates: list[ExecutionCandidate]) -> list[ExecutionCandidate]:
+    """Choose whole scoped observations, never union incompatible capabilities.
+
+    A session advertises generic settings only for its current model. Its
+    non-current model list proves availability, not the absence of settings.
+    Prefer fresh current-model observations over those incomplete rows. Between
+    equally scoped current observations, newer evidence wins (including removal).
+    """
+    now = datetime.now(UTC)
+
+    def rank(candidate):
+        fresh = candidate.freshness == "fresh" and (now - candidate.observed_at).total_seconds() <= 300
+        return (
+            fresh,
+            candidate.default,
+            candidate.observed_at,
+            candidate.catalog_version,
+            digest(candidate.model_dump(mode="json")),
+        )
+
+    selected = {}
+    for candidate in candidates:
+        previous = selected.get(candidate.key)
+        if previous is None or rank(candidate) > rank(previous):
+            selected[candidate.key] = candidate
+    return [selected[key] for key in sorted(selected)]
+
+
 def preference_layers(
     settings,
     *,
@@ -169,6 +197,14 @@ def status_candidates(
             )
         ]
         for catalog in catalogs:
+            stamp = catalog.get("observed_at") or observed_at
+            if isinstance(stamp, str):
+                stamp = datetime.fromisoformat(stamp)
+            # An advertisement cannot renew evidence beyond its enclosing probe.
+            stamp = min(stamp, observed_at)
+            catalog_freshness = catalog.get("freshness", freshness)
+            if freshness != "fresh" or (now - stamp).total_seconds() > 300:
+                catalog_freshness = "stale" if freshness == "stale" or (now - stamp).total_seconds() > 300 else "unknown"
             catalog_readiness = (
                 "ready" if catalog.get("source") == "live_acp_session" else readiness
             )
@@ -178,15 +214,15 @@ def status_candidates(
                     harness=harness,
                     advertisement=catalog,
                     readiness=catalog_readiness,
-                    observed_at=observed_at,
+                    observed_at=stamp,
                     source=catalog.get("source", "adapter_status"),
-                    freshness=freshness,
+                    freshness=catalog_freshness,
                     connection=catalog.get("connection", "default"),
                     model_provider=catalog.get("model_provider"),
                     health_evidence=status.get("auth_evidence") or [],
                 )
             )
-    return list({c.key: c for c in result}.values())
+    return reconcile_candidates(result)
 
 
 class SelectionService:
@@ -271,6 +307,20 @@ class SelectionService:
             else c
             for c in candidates
         ]
+        # Session config can change while the status cache is still warm.
+        # Read already-held live evidence during normal admission, without a
+        # provider probe or an operator refresh/retry ritual.
+        if self.manager is not None:
+            from pa.execution.selection_catalog import enrich_provider_catalogs
+
+            statuses = await asyncio.to_thread(
+                enrich_provider_catalogs,
+                [{"id": harness} for harness in sorted({r.session.agent_name for r in self.manager.list_runtimes()})],
+                self.manager,
+                self.settings.data_dir,
+            )
+            live = [status for status in statuses if status.get("execution_catalogs")]
+            candidates = reconcile_candidates(candidates + status_candidates(scope, live))
         return candidates
 
     def _current_connection_rows(self, rows):

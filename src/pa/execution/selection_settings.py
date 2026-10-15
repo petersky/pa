@@ -33,6 +33,8 @@ def live_candidates(runtime):
             "config_options": runtime.connection.config_options,
             "connection_revision": selected.get("connection_revision"),
             "native_model_provider": selected.get("native_model_provider"),
+            "account_label": selected.get("account_label"),
+            "endpoint_label": selected.get("endpoint_label"),
         },
         readiness="ready" if runtime.connected else "unavailable",
         observed_at=datetime.now(UTC),

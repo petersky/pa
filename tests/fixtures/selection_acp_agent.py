@@ -37,7 +37,7 @@ def advertised(harness="codex"):
                 "options": [{"value": e, "name": e} for e in efforts],
             }
         )
-    modes = ["default", "read-only", "agent", "agent-full-access"]
+    modes = ["default", "read-only", "workspace-write", "agent", "agent-full-access"]
     options.append(
         {
             "id": "mode",
@@ -110,6 +110,20 @@ def main():
                 "currentValue"
             ] = params["modeId"]
         elif method == "session/prompt":
+            if any("fixture-acp-permission-noop" in block.get("text", "") for block in params.get("prompt", [])):
+                # Exercise the real ACP callback with a tool-free permission
+                # request. Nothing is executed, read, or written by this agent.
+                print(json.dumps({"jsonrpc": "2.0", "id": "noop-permission", "method": "session/request_permission", "params": {
+                    "sessionId": sid,
+                    "toolCall": {"toolCallId": "noop", "title": "Tool-free approval check", "kind": "other", "status": "pending"},
+                    "options": [
+                        {"optionId": "deny-noop", "name": "Reject", "kind": "reject_once"},
+                        {"optionId": "allow-noop", "name": "Allow once", "kind": "allow_once"},
+                    ],
+                }}), flush=True)
+                response = json.loads(next(sys.stdin))
+                assert response["id"] == "noop-permission"
+                assert response["result"]["outcome"] == {"outcome": "selected", "optionId": "allow-noop"}
             print(
                 json.dumps(
                     {

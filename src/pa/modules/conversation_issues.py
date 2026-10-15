@@ -1,6 +1,7 @@
 """Discussion-only issue lists and explicit, durable work admission."""
 from __future__ import annotations
 
+import asyncio
 from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request
@@ -40,7 +41,11 @@ async def _call(manager, call, *args, **kwargs):
 async def get_issues(request: Request, session_id: str):
     started = perf_counter()
     manager, _, notes = await _context(request, session_id)
-    result = notes.public(await _call(manager, notes.read, session_id))
+    state = await _call(manager, notes.read, session_id)
+    for record in state["requests"]:
+        if record["state"] in {"accepted", "admitting"}:
+            state = await _run_request(request, session_id, record["request_id"], manager, notes)
+    result = notes.public(state)
     result["diagnostics"] = {"read_ms": round((perf_counter() - started) * 1000, 2)}
     return result
 
@@ -76,25 +81,24 @@ def _preferences(session):
 
 async def _start_context(request, manager, session):
     settings = request.app.state.ctx.settings
-    # The dispatch default may be broader than this conversation. Never invoke
-    # that fallback while transferring a human's discussion into bounded work.
-    if not session.mode_id:
-        raise HTTPException(409, {"code": "conversation_mode_unknown", "message": "Choose a permission mode in conversation settings before starting work."})
     if session.realm_id != settings.primary_realm:
         raise HTTPException(409, "Start work on the conversation's realm authority")
     source = await _call(manager, manager.store.get_card, session.card_id) if session.card_id else None
-    project = await _call(manager, manager.store.get_project, session.project_id) if session.project_id else None
-    if session.project_id and not project:
+    if session.card_id and (not source or source.realm_id != session.realm_id):
+        raise HTTPException(409, "The conversation's primary card is unavailable in this realm")
+    project_id = session.project_id or (source.project_id if source else None)
+    project = await _call(manager, manager.store.get_project, project_id) if project_id else None
+    if project_id and not project:
         raise HTTPException(409, "The conversation project is unavailable")
     if project and project.memberships and not any(m.principal_id == get_principal_id(request) for m in project.memberships) and getattr(require_user(request), "role", None) != "admin":
         raise HTTPException(403, "Project membership is required to start work")
     return {
-        "realm_id": session.realm_id, "project_id": session.project_id,
+        "realm_id": session.realm_id, "project_id": project_id,
         "source_session_id": session.id, "source_card_id": session.card_id,
         "principal_id": get_principal_id(request), "instance_id": settings.instance_id,
         "completion_requirement": source.completion_requirement.model_dump(mode="json") if source and source.completion_requirement else None,
         "dispatch": {"provider": session.agent_name, "model_id": session.model_id,
-                     "mode_id": session.mode_id, "execution_preferences": _preferences(session),
+                     "execution_preferences": _preferences(session),
                      "target_instance_id": settings.instance_id},
     }
 
@@ -147,10 +151,42 @@ async def _execute(request, session_id, request_id, manager, notes):
                 # binding; workers receive separate sessions/worktree leases.
                 await _call(manager, manager.store.link_session_card, session_id, group["card_id"], principal_id=context["principal_id"], make_primary=False)
                 if not group.get("dispatch_id"):
-                    body = FleetDispatchBody(**context["dispatch"], card_id=group["card_id"], project_id=context["project_id"],
+                    if "dispatch_inputs" not in group:
+                        inputs = dict(context["dispatch"])
+                        # Older notebooks froze the chat's mode, although the
+                        # start contract never accepted a worker-mode selection.
+                        # Normalize only before definitive first admission. An
+                        # existing/ambiguous dispatch retains its exact payload.
+                        ledger = request.app.state.ctx.services.get("dispatch_store")
+                        if inputs.get("mode_id") and ledger is not None:
+                            existing = await _call(manager, ledger.by_authority_idempotency,
+                                context["instance_id"], key + ":dispatch")
+                            if existing is None:
+                                inputs.pop("mode_id")
+                        group["dispatch_inputs"] = inputs
+                        await _call(manager, notes.update_request, session_id, request_id, groups=groups)
+                    body = FleetDispatchBody(**group["dispatch_inputs"], card_id=group["card_id"], project_id=context["project_id"],
                         message="Implement only the selected scope recorded on this card. Preserve its completion requirements and existing authorization. Source conversation: " + session_id,
                         idempotency_key=key + ":dispatch")
-                    result = await dispatch_fleet_work(_child_request(request, key + ":dispatch"), body)
+                    # Re-enter only the canonical idempotent admission, with the
+                    # frozen body and identity. Routine pending/transport states
+                    # get a bounded recovery; genuine selection/policy denials
+                    # are never retried here.
+                    while True:
+                        try:
+                            result = await dispatch_fleet_work(_child_request(request, key + ":dispatch"), body.model_copy(deep=True))
+                            break
+                        except Exception as exc:
+                            detail = exc.detail if isinstance(exc, HTTPException) else {}
+                            transient = isinstance(exc, (OSError, TimeoutError)) or (
+                                isinstance(detail, dict) and detail.get("code") == "dispatch_admission_in_progress"
+                            )
+                            attempts = group.get("automatic_retries", 0)
+                            if not transient or attempts >= 3:
+                                raise
+                            group["automatic_retries"] = attempts + 1
+                            await _call(manager, notes.update_request, session_id, request_id, groups=groups, state="admitting", error=None)
+                            await asyncio.sleep(0.1 * (attempts + 1))
                     group.update(dispatch_id=result["dispatch_id"], state="admitted")
                     await _call(manager, notes.update_request, session_id, request_id, groups=groups)
             state = await _call(manager, notes.update_request, session_id, request_id, groups=groups, state="admitted", error=None,
@@ -158,7 +194,7 @@ async def _execute(request, session_id, request_id, manager, notes):
         except Exception as exc:
             # Preserve evidence and the same request for safe resume. A provider
             # turn ending never turns this receipt into task completion.
-            detail = exc.detail if isinstance(exc, HTTPException) else {"code": type(exc).__name__, "message": "Admission needs recovery; retry this request to look up its durable outcome."}
+            detail = exc.detail if isinstance(exc, HTTPException) else {"code": type(exc).__name__, "message": "PA could not finish preparing this work. Its saved request and any created card are retained; the outcome is unconfirmed."}
             state = await _call(manager, notes.update_request, session_id, request_id, groups=groups, state="blocked", error=detail)
         return notes.public(state)
 
@@ -172,11 +208,17 @@ async def start_issues(request: Request, session_id: str, body: StartIssues):
     existing = next((r for r in previous["requests"] if r["request_id"] == body.request_id), None)
     context = existing["context"] if existing else await _start_context(request, manager, session)
     await _call(manager, notes.admit, session_id, body, context)
+    return notes.public(await _run_request(request, session_id, body.request_id, manager, notes))
+
+
+async def _run_request(request, session_id, request_id, manager, notes):
     executor = request.app.state.ctx.services.get("async_runtime")
     if isinstance(executor, AsyncRuntime):
         try:
-            return await executor.run_owned(f"conversation-work:{session_id}:{body.request_id}",
-                lambda: _execute(request, session_id, body.request_id, manager, notes), wait_timeout=0.25)
+            await executor.run_owned(f"conversation-work:{session_id}:{request_id}",
+                lambda: _execute(request, session_id, request_id, manager, notes), wait_timeout=0.25)
         except BlockingOperationTimeout:
-            return notes.public(await _call(manager, notes.read, session_id))
-    return await _execute(request, session_id, body.request_id, manager, notes)
+            pass
+    else:
+        await _execute(request, session_id, request_id, manager, notes)
+    return await _call(manager, notes.read, session_id)

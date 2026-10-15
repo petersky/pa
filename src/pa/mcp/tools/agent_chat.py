@@ -39,8 +39,9 @@ def register_mcp(mcp, ctx) -> None:
     def update_conversation_issues(session_id: str, revision: int, issues: list[dict]) -> dict:
         """Edit discussion notes without creating cards or executing work.
 
-        Supply the current revision and stable issue IDs; retain started issues.
+        Supply the current revision and editable_issues from get; retain started issues.
         Each issue has id, title, optional detail/group and deferred boolean.
+        Public request_id is read-only and ignored on input; other extras are rejected.
         """
         return request_local_pa(ctx.settings, "PUT", f"/api/agent/sessions/{session_id}/issues",
                                 json={"revision": revision, "issues": issues}, timeout_seconds=15.0)

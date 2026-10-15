@@ -278,6 +278,8 @@ def enrich_provider_catalogs(
                     "connection": selected.get("connection", "default"),
                     "connection_revision": selected.get("connection_revision"),
                     "native_model_provider": selected.get("native_model_provider"),
+                    "account_label": selected.get("account_label"),
+                    "endpoint_label": selected.get("endpoint_label"),
                     "model_provider": selected.get("model_provider")
                     or effective.get("model_provider"),
                     "models": getattr(conn, "models", None) or config.get("models"),

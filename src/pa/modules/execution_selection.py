@@ -368,8 +368,8 @@ async def session_boundary(request: Request, session_id: str, body: BoundaryBody
             realm_id=source.realm_id,
             title="Linked: " + (source.title or "conversation"),
             execution_preferences=body.execution_preferences,
-            purpose="chat",
-            control_mode="human",
+            purpose=source.purpose if source.purpose != "unknown" else "automated_run",
+            control_mode=source.control_mode,
         )
         return await manager._offload("selection.boundary_snapshot", runtime.snapshot)
     except SelectionError as exc:

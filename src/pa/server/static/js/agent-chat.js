@@ -5883,7 +5883,7 @@
       const linked = dialog.querySelector("[data-agent-new-linked]");
       if (linked) linked.disabled = !active || !active.session || !!active.session.dispatch_id;
       const modes = active && active.modes && (active.modes.availableModes || active.modes.available_modes);
-      populateSelect(dialog.querySelector("[data-agent-new-mode]"), modes || [], ["id", "modeId", "mode_id"], "Inherit permission mode");
+      populateSelect(dialog.querySelector("[data-agent-new-mode]"), modes || [], ["id", "modeId", "mode_id"], "Chat default (Full access for Codex)");
       setNewSessionBusy(dialog, false);
       return Promise.resolve(); // Selection controls read cached catalogs, never probe per dropdown.
     }
