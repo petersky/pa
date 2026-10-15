@@ -78,7 +78,7 @@ def test_local_refusal_then_password_sign_in_persists_one_receipt(operator_app, 
         assert refused.json()["detail"]["operator_login_url"] == "/login"
         assert app.state.ctx.store.get_card(card.id).model_dump(mode="json") == original
         page = client.get(f"/partials/cards/{card.id}/detail")
-        assert 'href="/login"' in page.text
+        assert 'href="/login?next=' in page.text
         assert "no default password" in client.get("/login").text
         configure_operator(client, app)
         sign_in(client)
