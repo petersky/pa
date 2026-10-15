@@ -196,6 +196,10 @@
       loadOlderStatus: root.querySelector("[data-acw-load-older-status]"),
       loadNewer: root.querySelector("[data-acw-load-newer]"),
       loadNewerStatus: root.querySelector("[data-acw-load-newer-status]"),
+      historyNotice: root.querySelector("[data-acw-history-notice]"),
+      historyNoticeText: root.querySelector("[data-acw-history-notice-text]"),
+      livePreview: root.querySelector("[data-acw-live-preview]"),
+      latest: root.querySelector("[data-acw-latest]"),
       placeholder: root.querySelector("[data-acw-placeholder]"),
       form: root.querySelector("[data-acw-form]"),
       input: root.querySelector("[data-acw-input]"),
@@ -387,6 +391,14 @@
         self.loadNewerTranscript();
       });
     }
+    if (this.els.latest) this.els.latest.addEventListener("click", function () {
+      self.historyPreserveWindow = false;
+      self.recentRetryCount = 0;
+      self._loadRecentHistory(self.sessionId, self.subscriptionGeneration).catch(function () {});
+    });
+    if (this.els.messages) ["wheel", "touchstart", "keydown"].forEach(function (type) {
+      self.els.messages.addEventListener(type, function () { self.historyUserIntent = true; }, {passive:true});
+    });
     if (this.els.form) {
       this.els.form.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -1005,8 +1017,25 @@
     return String(sessionId || "") + "::" + String(this.apiBase || "");
   };
 
+  AgentChatWidget.prototype._captureHistoryAnchor = function () {
+    const container = this.els && this.els.messages;
+    if (!container || !container.getBoundingClientRect) return null;
+    const top = container.getBoundingClientRect().top;
+    const row = Array.from(container.querySelectorAll(".acw-msg[data-source-seq]")).find(function(e) {
+      return e.getBoundingClientRect().bottom > top;
+    });
+    return row ? {seq:row.dataset.sourceSeq, offset:row.getBoundingClientRect().top-top} : null;
+  };
+
+  AgentChatWidget.prototype._restoreHistoryAnchor = function (anchor) {
+    const container = this.els && this.els.messages;
+    if (!anchor || !container || !container.getBoundingClientRect) return;
+    const row = Array.from(container.querySelectorAll(".acw-msg[data-source-seq]")).find(function(e) { return e.dataset.sourceSeq === anchor.seq; });
+    if (row) container.scrollTop += row.getBoundingClientRect().top - container.getBoundingClientRect().top - anchor.offset;
+  };
+
   AgentChatWidget.prototype._stashSessionDomCache = function () {
-    if (!this.sessionId || !this.els.messages) return;
+    if (!this.sessionId || !this.els || !this.els.messages) return;
     const key = this._cacheKey(this.sessionId);
     const messages = [];
     Array.from(this.els.messages.children).forEach(function (child) {
@@ -1035,7 +1064,10 @@
         return !node.dataset.sourceSeq;
       }).map(function (node) { return node.outerHTML; }).join(""),
       scrollTop: this.els.messages.scrollTop,
+      anchor: this._captureHistoryAnchor(),
       nearBottom: this.isNearBottom(),
+      recentPending: !!this.recentBootstrap,
+      readingOlder: !!this.historyPreserveWindow || (!!this.historyUserIntent && !this.isNearBottom()),
     });
     while (sessionDomCache.size > SESSION_DOM_CACHE_LIMIT) {
       const oldest = sessionDomCache.keys().next().value;
@@ -1059,6 +1091,7 @@
     this.hasNewer = !!entry.hasNewer;
     this.newerCursor = entry.newerCursor || null;
     this.providerId = entry.providerId || this.providerId;
+    this.historyPreserveWindow = !entry.recentPending && !!entry.readingOlder;
     this.renderTranscript(this.transcriptEvents, { scrollBottom: !!entry.nearBottom });
     if (entry.unsequencedHtml && this.els.messages) {
       const holder = document.createElement("div");
@@ -1074,7 +1107,8 @@
     if (!entry.nearBottom && this.els.messages) this.els.messages.scrollTop = entry.scrollTop || 0;
     this.updateOlderControl();
     this.updateNewerControl();
-    return this.transcriptEvents.length > 0 && !this.olderError;
+    if (this.historyPreserveWindow) this._restoreHistoryAnchor(entry.anchor);
+    return this.transcriptEvents.length > 0 && !entry.recentPending;
   };
 
   AgentChatWidget.prototype._validateHistoryPage = function (history) {
@@ -1097,6 +1131,16 @@
     this._validateHistoryPage(history);
     const events = history.events;
     const page = history.page;
+    if (history.session && history.session.id !== this.sessionId) throw new Error("History belongs to another session.");
+    this.olderError = "";
+    this.newerError = "";
+    if (this.historyPreserveWindow && this.transcriptEvents.length) {
+      const anchor = this._captureHistoryAnchor();
+      this.hasNewer = !!page.has_newer || (page.newest_seq || 0) > (this.newerCursor || this.lastSeq || 0);
+      this.updateOlderControl(); this.updateNewerControl();
+      this._restoreHistoryAnchor(anchor);
+      return history;
+    }
     const paint = events.slice();
     this.hasOlder = !!page.has_older;
     this.olderError = "";
@@ -1107,10 +1151,10 @@
       (paint.length ? paint[paint.length - 1].seq : null);
     if (history && history.session) this.providerId = history.session.agent_name || this.providerId;
     // A delayed history response must include live arrivals already painted.
-    const arrivals = this.transcriptEvents.filter(function (event) {
+    const arrivals = this.transcriptEvents.concat(Object.values(this.livePendingEvents || {})).filter(function (event) {
       return event.seq > (page.newest_seq || 0);
     });
-    this.renderTranscript(paint.concat(arrivals), { scrollBottom: true, recentFirst: true });
+    this.renderTranscript(paint, { scrollBottom: true, recentFirst: true });
     if (paint.length) {
       this.lastSeq = paint.reduce(function (max, event) {
         return event.seq && event.seq > max ? event.seq : max;
@@ -1119,6 +1163,9 @@
     if (history && history.session) {
       this.providerId = history.session.agent_name || this.providerId;
     }
+    this.recentBootstrap = false;
+    arrivals.sort(function(a,b){return a.seq-b.seq;}).forEach(function(event) { this.handleEvent(event, false, true); }, this);
+    this._clearResolvedLiveGap();
     return history;
   };
 
@@ -1144,21 +1191,95 @@
 
   AgentChatWidget.prototype._loadRecentHistory = function (sessionId, generation) {
     const self = this;
-    return this._recentHistory(sessionId, generation).then(function (history) {
-      return self._paintRecentHistory(history, generation);
+    const apiBase = this.apiBase;
+    const current = function () { return self._isCurrentSessionRequest(sessionId, generation) && self.apiBase === apiBase; };
+    const previous = this.recentLoad;
+    if (previous && previous.sessionId === sessionId && previous.generation === generation && previous.apiBase === apiBase) return previous.promise;
+    if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
+    this.recentRetryTimer = null;
+    this.recentBootstrap = true;
+    const entry = {sessionId:sessionId,generation:generation,apiBase:apiBase};
+    this.recentLoad = entry;
+    this._renderHistoryNotice();
+    entry.promise = this._recentHistory(sessionId, generation).then(function (history) {
+      if (!current()) return null;
+      const result = self._paintRecentHistory(history, generation);
+      self.recentBootstrap = false;
+      self.recentRetryCount = 0;
+      self._renderHistoryNotice();
+      return result;
     }).catch(function (error) {
-      if (self._isCurrentSessionRequest(sessionId, generation)) {
-        self.olderError = "History is temporarily unavailable. Retry loading messages.";
+      if (current()) {
+        self.olderError = "Recent history is temporarily unavailable. Retry recent messages.";
         self.updateOlderControl();
+        self.recentRetryCount = (self.recentRetryCount || 0) + 1;
+        self._renderHistoryNotice();
+        if (self.recentRetryCount <= 5) {
+          const timer = setTimeout(function () {
+            if (!current() || self.recentRetryTimer !== timer) return;
+            self.recentRetryTimer = null;
+            self._loadRecentHistory(sessionId, generation).catch(function () {});
+          }, Math.min(10000, 1000 * Math.pow(2, self.recentRetryCount - 1)));
+          if (timer && typeof timer.unref === "function") timer.unref();
+          self.recentRetryTimer = timer;
+        }
       }
       throw error;
+    }).finally(function () {
+      if (self.recentLoad === entry) self.recentLoad = null;
     });
+    return entry.promise;
+  };
+
+  AgentChatWidget.prototype._renderHistoryNotice = function () {
+    if (!this.els || !this.els.historyNotice) return;
+    const pending = Object.values(this.livePendingEvents || {}).sort(function(a,b){return a.seq-b.seq;});
+    const gap = !!this.recentBootstrap || !!this.newerError || (!this.historyPreserveWindow && this.liveGapTarget > this.lastSeq);
+    this.els.historyNotice.hidden = !gap && !this.historyPreserveWindow && !this.hasNewer;
+    this.els.historyNoticeText.textContent = gap
+      ? (this.olderError || "Loading recent history…") + " Live preview may be partial until history recovers."
+      : "Reading earlier messages. Recent messages are available separately.";
+    const useful = pending.filter(function(e) {
+      const p=e.payload||{}; return e.seq > Math.max(this.lastSeq || 0, this.initialLiveCursor || 0) &&
+        ((e.type === "agent_message_chunk" && p.text) || (e.type === "tool_call" && p.title));
+    }, this).slice(-8);
+    this.els.livePreview.textContent = useful.map(function(e) {
+      const p=e.payload||{}; return String(p.text || p.title || "").slice(-600);
+    }).join("\n");
+    this.els.livePreview.hidden = !useful.length;
+    if (!gap && useful.length) this.els.historyNoticeText.textContent += " Live preview may be partial.";
+    this.els.latest.textContent = gap ? "Retry recent messages" : "Jump to latest";
+  };
+
+  AgentChatWidget.prototype._holdHistoryEvent = function (event) {
+    this.liveGapTarget = Math.max(this.liveGapTarget || 0, event.seq || 0);
+    this.livePendingEvents = this.livePendingEvents || {};
+    this.livePendingEvents[event.seq] = event;
+    const keys = Object.keys(this.livePendingEvents).map(Number).sort(function(a,b){return a-b;});
+    if (keys.length > 2048) delete this.livePendingEvents[keys[0]];
+    // Permission controls and submission receipts are independent of transcript
+    // paging. Never wait for older text before presenting a current request.
+    const p = event.payload || {};
+    const controlKey = p.request_id ? "permission:" + p.request_id
+      : p.id && ["user_message", "queue_enqueued"].includes(event.type) ? "prompt:" + p.id : "turn";
+    this.heldControlSeq = this.heldControlSeq || {};
+    if (event.seq > Math.max(this.liveControlSeq || 0, this.heldControlSeq[controlKey] || 0)) {
+      if (event.type === "permission_request") this.showPermission(p);
+      if (event.type === "permission_resolved") this.hidePermission(p.request_id);
+      if (["turn_completed", "cancelled", "connection_lost", "prompt_failed"].includes(event.type)) this.setTurnActive(false);
+      if (event.type === "user_message") this.setTurnActive(true, event.created_at, true);
+      if ((event.type === "user_message" || event.type === "queue_enqueued") && this.drafts) this.drafts.observeAcceptance(p.id, event.type === "queue_enqueued");
+      if (["permission_request", "permission_resolved", "turn_completed", "cancelled", "connection_lost", "prompt_failed", "user_message", "queue_enqueued"].includes(event.type)) this.heldControlSeq[controlKey] = event.seq;
+    }
+    if (this.historyPreserveWindow) { this.hasNewer = true; this.updateNewerControl(); }
+    this._renderHistoryNotice();
   };
 
   AgentChatWidget.prototype._loadLiveSnapshot = function (sessionId, generation) {
     const self = this;
     const restored = this._restoreSessionDomCache(sessionId);
-    if (!restored) this._loadRecentHistory(sessionId, generation).catch(function () {});
+    // Cache is an immediate paint, never evidence that we are still at the tail.
+    this._loadRecentHistory(sessionId, generation).catch(function () {});
     return this.apiWithTimeout(
         "/sessions/" + encodeURIComponent(sessionId),
         LIVE_SNAPSHOT_TIMEOUT_MS
@@ -1220,6 +1341,9 @@
   };
 
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
+    if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
+    this.recentRetryTimer = null; this.recentRetryCount = 0;
+    this.recentBootstrap = true; this.historyPreserveWindow = false; this.historyUserIntent = false; this.liveControlSeq = 0; this.heldControlSeq = {}; this.initialLiveCursor = null;
     clearTimeout(this.queueRefreshTimer);
     if (this.issues) this.issues.reset();
     if (this.threads) this.threads.reset();
@@ -1764,6 +1888,10 @@
       this.setPlaceholder("Locating session owner…");
       return;
     }
+    if (this.recentBootstrap) {
+      this.setPlaceholder("Recent history is loading or unavailable. Live updates appear in the history notice while PA retries.");
+      return;
+    }
     const session = snap.session || {};
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const status = session.status || "";
@@ -1845,6 +1973,8 @@
     if (this.threads) this.threads.ready();
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
+    this.liveControlSeq = Math.max(this.liveControlSeq || 0, snap.last_event_seq || 0);
+    if (this.initialLiveCursor == null && typeof snap.last_event_seq === "number") this.initialLiveCursor = snap.last_event_seq;
     this.renderPresentation(snap);
     const session = snap.session || {};
     this.renderTimings(session.metrics_json && session.metrics_json.turn_timing, session.config_json && session.config_json.startup_trace);
@@ -1892,6 +2022,7 @@
       ((session.config_json || {}).naming || {}).version || 0);
     this.queuePaused = !!snap.queue_paused;
     if (Object.prototype.hasOwnProperty.call(snap, "transcript")) {
+      this.recentBootstrap = false;
       this.hasOlder = !!(snap.transcript_page && snap.transcript_page.has_older);
       this.olderCursor = snap.transcript_page && (
         snap.transcript_page.next_before_seq || snap.transcript_page.oldest_seq
@@ -1901,6 +2032,7 @@
       this.newerError = "";
       this.olderError = "";
       this.renderTranscript(snap.transcript || [], { scrollBottom: true });
+      this._renderHistoryNotice();
     }
     // Transcript replay includes historical turn-completed events. Apply the live
     // snapshot state afterward so replay cannot reset an active turn's timer.
@@ -1954,6 +2086,7 @@
     this.els.loadOlder.hidden = !this.hasOlder && !this.olderError;
     this.els.loadOlder.disabled = this.loadingOlder;
     const label = this.loadingOlder ? "Loading older messages…"
+      : this.recentBootstrap ? "Retry recent messages"
       : this.olderError ? "Retry loading older messages" : "Load older messages";
     if (this.els.loadOlderLabel) this.els.loadOlderLabel.textContent = label;
     else this.els.loadOlder.textContent = label;
@@ -2174,6 +2307,7 @@
   };
 
   AgentChatWidget.prototype.loadOlderTranscript = function () {
+    if (this.recentBootstrap) { this._loadRecentHistory(this.sessionId, this.subscriptionGeneration).catch(function(){}); return; }
     if (this.loadingOlder || (!this.hasOlder && !this.olderError) || !this.sessionId || !this.els.messages) return;
     const oldest = this.olderCursor || this.transcriptEvents.reduce(function (result, event) {
       return event.seq && (!result || event.seq < result) ? event.seq : result;
@@ -2183,6 +2317,8 @@
       return;
     }
     const self = this;
+    this.historyPreserveWindow = true;
+    this._renderHistoryNotice();
     const requestSessionId = this.sessionId;
     const requestGeneration = this.subscriptionGeneration;
     const requestedSession = this.sessionId;
@@ -2257,7 +2393,8 @@
   };
 
   AgentChatWidget.prototype.loadNewerTranscript = function () {
-    if (this.liveGapTarget > this.lastSeq) {
+    if (this.recentBootstrap) { this._loadRecentHistory(this.sessionId, this.subscriptionGeneration).catch(function(){}); return; }
+    if (!this.historyPreserveWindow && this.liveGapTarget > this.lastSeq) {
       this.liveGapRetryCount = 0;
       this.newerError = "";
       this._repairLiveGap();
@@ -2285,6 +2422,7 @@
       self._validateHistoryPage(data);
       const pageEvents = data.events;
       self.hasNewer = !!(data && data.page && data.page.has_newer);
+      if (!self.hasNewer) self.historyPreserveWindow = false;
       self.renderTranscript(self.transcriptEvents.concat(pageEvents), { scrollBottom: false });
       self.newerCursor = self.transcriptEvents.reduce(function (result, event) {
         return event.seq && event.seq > result ? event.seq : result;
@@ -2293,6 +2431,8 @@
         return event.seq && (!result || event.seq < result) ? event.seq : result;
       }, 0) || null;
       self.els.messages.scrollTop = Math.max(0, oldTop - Math.max(0, oldHeight - self.els.messages.scrollHeight));
+      self._renderHistoryNotice();
+      if (!self.hasNewer) self._repairLiveGap();
     }).catch(function (err) {
       if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
       self.newerError = "Could not load newer messages: " + err.message;
@@ -2463,6 +2603,8 @@
     if (this.issues) this.issues.reset();
     if (this.threads) this.threads.reset();
     this._stashSessionDomCache();
+    if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
+    this.recentRetryTimer = null;
     if (this.drafts) this.drafts.destroy();
     this.destroyed = true;
     if (this.routeAbortController) this.routeAbortController.abort();
@@ -2507,11 +2649,17 @@
     this.liveGapRetryCount = 0;
     this.newerError = "";
     this.updateNewerControl();
+    this._renderHistoryNotice();
     return true;
   };
 
   AgentChatWidget.prototype._repairLiveGap = function () {
     if (this.destroyed || !this.sessionId) return;
+    if (this.historyPreserveWindow) { this._renderHistoryNotice(); return; }
+    if (this.recentBootstrap) {
+      if ((this.recentRetryCount || 0) <= 5 && !this.recentRetryTimer && !this.recentLoad) this._loadRecentHistory(this.sessionId, this.subscriptionGeneration).catch(function(){});
+      return;
+    }
     // Live delivery can finish recovery before a retry timer or history read.
     if (this._clearResolvedLiveGap()) return;
     if (this.liveGapLoading && this.liveGapGeneration === this.subscriptionGeneration &&
@@ -2553,6 +2701,7 @@
         if (!isCurrent() || self._clearResolvedLiveGap()) return;
         self.newerError = "Live messages are waiting for history. Retrying…";
         self.updateNewerControl();
+        self._renderHistoryNotice();
         if (self.liveGapRetryCount >= 30) {
           self.newerError = "Live recovery is still pending. Retry loading newer messages.";
           self.updateNewerControl();
@@ -2579,11 +2728,12 @@
     // Retired dedupe keys are safe to discard because a live transport must
     // never apply a sequence at or behind the high-water mark again.
     if (!replay && seq && seq <= this.lastSeq) return;
+    if (!replay && !ordered && seq && (this.recentBootstrap || this.historyPreserveWindow)) {
+      this._holdHistoryEvent(event);
+      return;
+    }
     if (!replay && !ordered && seq > (this.lastSeq || 0) + 1 && this.sessionId) {
-      this.liveGapTarget = Math.max(this.liveGapTarget || 0, seq);
-      this.livePendingEvents = this.livePendingEvents || {};
-      // Bound memory during a long partition; older overflow remains durable.
-      if (Object.keys(this.livePendingEvents).length < 2048) this.livePendingEvents[seq] = event;
+      this._holdHistoryEvent(event);
       this._repairLiveGap();
       return;
     }
@@ -3650,6 +3800,7 @@
     if (!sessionId || (sessionId === this.sessionId && (!ownerInstanceId || ownerInstanceId === this.ownerInstanceId))) return;
     if (this.settingsDirty && !window.confirm("Discard unsaved Agent settings changes and switch sessions?")) return;
     if (this.settingsDirty) this.resetSettingsDraft();
+    this._stashSessionDomCache();
     this.closeSSE("session-switched");
     if (this.olderAbortController) this.olderAbortController.abort();
     this.olderAbortController = null;

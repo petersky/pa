@@ -5086,6 +5086,9 @@ a.ghost:hover {
 }
 
 .page-heading > .home-new-chat { display: none; }
+.acw-history-notice { flex: 0 0 auto; padding: .5rem .75rem; border-top: 1px solid var(--pa-border); font-size: .85rem; }
+.acw-history-notice > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.acw-history-notice pre { max-height: 7rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: .3rem 0 0; }
 
 @media (max-width: 700px) {
   .chrome-actions .chrome-new-chat { display: none; }

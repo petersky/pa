@@ -2954,6 +2954,7 @@ class AgentSessionRuntime:
         from pa.execution.selection import selection_presentation
         snapshot = {
             "session": self.session.model_dump(mode="json"),
+            "last_event_seq": self._seq,
             "presentation": build_session_presentation(
                 self.session,
                 runtime=self,

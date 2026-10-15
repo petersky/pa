@@ -271,3 +271,52 @@ Changes remain review-gated. The earlier automatic approval rejection of merging
 PR #457 is not bypassed by publishing more scoped review commits. Any approval
 for its old head is stale after a push. Integration and activation remain separate;
 this worker performs no production restart, release or activation.
+
+## Priority history reentry correction (2026-10-14)
+
+The user reported returning to root conversation `786444b2-5cfb-46b4-92c4-a87df6d2a865`
+and seeing its beginning from the previous day. Coordinator and worker browser
+checks independently observed history-unavailable/live-recovery warnings. The
+original transient HTTP error is **not established**: current bounded API reads
+returned 200 for root/worker in 502–941ms. Root `after_seq=0` returned the oldest
+page (1–289), whereas its recent read returned 3398–3931. No transcript loss was
+observed or inferred from the warnings.
+
+The client had two demonstrable recovery defects. A failed initial tail left its
+cursor at zero, so live gap repair could start painting the oldest pages. A
+successful cache restore also skipped checking the recent tail. Thread switching
+cleared the previous window without first caching its reading position.
+
+Recent-history bootstrap now retries a bounded **recent** request; it never uses
+an initial zero cursor to recover the tail. While unavailable, an explicitly
+partial live preview shows incoming text without pretending the old window is
+current. Full evidence stays durable. Current permission controls, submission
+receipts and turn status remain independent of missing history; the live snapshot
+cursor prevents old replay events from overriding current state. Recovery merges
+the recent page with retained incoming events in sequence and deduplicates them.
+
+Every cached reentry checks the tail. A deliberate older window keeps its
+message-relative anchor and exposes Jump to latest; normal reentry/reload shows
+recent messages. Requests and retry timers are fenced by session, owner API and
+generation. Drafts retain their existing per-session persistence.
+
+`tests/agent_chat_reentry_fixture.py` uses 3,442 synthetic retained events and PA's
+real multiplex SSE endpoint, in temporary data only. Backend/Node regressions and
+`test_agent_chat_reentry_browser.py` cover initial/tail failures, partial live
+preview, recovery, incoming messages while away, cached thread switches, draft
+isolation, older reading anchors, actual Back/Forward, reload, delayed responses,
+and unique ordered rows. PA browser operations `reentry-fixture-live-preview-evidence-v1`,
+`reentry-fixture-recovered-tail-evidence-v1`, `reentry-fixture-latest-reload-v2`, and
+`reentry-fixture-latest-scroll-v2` retain manual browser evidence. No production
+failure was injected; no transcript reset or service restart was used.
+
+Reports `409aa01e-416c-4376-b760-597c2bc5fa7a` and
+`8a1f4954-7e5d-4a93-9aec-fe55ed77aeda` remain linked to the investigation. The client
+correction addresses the reproduced recovery behavior; it does not establish or
+claim to repair an unobserved server-side cause of the initial request failure.
+
+The mobile Home New chat link moves into the page heading at widths up to 700px,
+preserving a single action to the composer and keeping sign-in/navigation clear.
+The actual auth/navigation journey passes in light/dark themes across 320–1920px.
+Approval-review ownership and the read-only exact-head evidence correction are
+recorded separately in `pr457-approval-evidence-2026-10-14.md`.

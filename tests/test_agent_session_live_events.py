@@ -751,6 +751,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         runtime = AgentSessionRuntime.__new__(AgentSessionRuntime)
         runtime.store = _TranscriptStore(events)
         runtime.session = AgentSession(id="session-long", agent_name="codex")
+        runtime._seq = 6001
         runtime.connection = None
         runtime._transcript_buffer = []
         runtime._queue_paused = False
@@ -763,6 +764,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         snapshot = runtime.snapshot()
 
         restored = snapshot["transcript"]
+        self.assertEqual(snapshot["last_event_seq"], 6001)
         self.assertEqual(len(restored), 1000)
         self.assertEqual(restored[0]["seq"], 5002)
         self.assertEqual(restored[-1]["seq"], 6001)

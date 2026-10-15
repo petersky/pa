@@ -238,5 +238,59 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.ok(rows.newerCursor<1300,'forward cursor does not skip DOM-evicted newer rows');
  rows.renderTranscript(rows.transcriptEvents.concat(messages.filter(e=>e.seq>rows.newerCursor)));
  assert.ok(texts(rows).includes('Message 649'),'forward paging restores newest row');
- console.log('PASS exact rendering, phases, snapshots, cache continuation, lifecycle replay, ordered gap repair, failed paging, live history control');
+ // A failed initial tail must never start recovering thousands of old events
+ // from zero. Live text stays visible as an explicitly incomplete preview.
+ virtualTimers=new Map();
+ const boot=make();Object.assign(boot.els,{historyNotice:new Element(),historyNoticeText:new Element(),livePreview:new Element(),latest:new Element()});
+ boot.recentBootstrap=true;const requests=[];let tailResponse;
+ boot.apiWithTimeout=path=>{requests.push(path);return requests.length===1?Promise.reject(new Error('503 fixture')):new Promise(resolve=>{tailResponse=resolve});};
+ await boot._loadRecentHistory('s',1).catch(()=>{});
+ boot.handleEvent({seq:6000,type:'agent_message_chunk',payload:{message_id:'recent',text:'live partial',content_mode:'delta'}});
+ boot._repairLiveGap();
+ assert.strictEqual(requests.length,1,'one bounded recent retry is scheduled');
+ assert.ok(requests.every(path=>!path.includes('after_seq')),'initial failure never requests oldest-first recovery');
+ assert.strictEqual(texts(boot).length,0,'oldest messages cannot masquerade as current');
+ assert.ok(boot.els.livePreview.textContent.includes('live partial'));
+ assert.ok(boot.els.historyNoticeText.textContent.includes('partial'));
+ const controls=make();controls.recentBootstrap=true;controls.liveControlSeq=100;controls.prompting=true;
+ const permissions=[];controls.showPermission=p=>permissions.push(p.request_id);controls.hidePermission=id=>permissions.push('resolved:'+id);
+ controls.handleEvent({seq:90,type:'turn_completed',payload:{}});
+ assert.strictEqual(controls.prompting,true,'replayed old completion cannot override current snapshot');
+ controls.handleEvent({seq:105,type:'permission_resolved',payload:{request_id:'q'}});
+ controls.handleEvent({seq:104,type:'permission_request',payload:{request_id:'q'}});
+ controls.handleEvent({seq:106,type:'permission_request',payload:{request_id:'new'}});
+ assert.deepStrictEqual(permissions,['resolved:q','new'],'current permission controls survive gaps without stale reopening');
+ controls.handleEvent({seq:108,type:'turn_completed',payload:{}});
+ assert.strictEqual(controls.prompting,false,'current completion is visible while history is unavailable');
+ const timer=boot.recentRetryTimer;virtualTimers.get(timer)();virtualTimers.delete(timer);
+ await settle();
+ const latest={events:[{seq:6000,type:'agent_message_chunk',payload:{message_id:'recent',text:'Complete recent message',content_mode:'snapshot'}}],page:{oldest_seq:6000,newest_seq:6000,has_older:true,has_newer:false}};
+ tailResponse(latest);await settle();
+ assert.deepStrictEqual(texts(boot),['Complete recent message']);
+ assert.strictEqual(boot.lastSeq,6000);assert.strictEqual(boot.els.historyNotice.hidden,true);
+ assert.strictEqual(boot.els.input.value,'UNSENT gap draft');
+ boot.handleEvent({seq:6001,type:'agent_message_chunk',payload:{message_id:'recent',text:'. Continued',content_mode:'delta'}});
+ assert.deepStrictEqual(texts(boot),['Complete recent message. Continued']);
+ // Same-session owner changes and delayed session switches cannot paint a tail.
+ for(const change of ['owner','session']){
+   const late=make();let finish;
+   late.apiWithTimeout=()=>new Promise(resolve=>{finish=resolve});
+   const pending=late._loadRecentHistory('s',1);
+   if(change==='owner')late.apiBase='/api/fleet/other/agent';else{late.sessionId='other';late.subscriptionGeneration++;}
+   finish(latest);await pending;
+   assert.deepStrictEqual(texts(late),[]);
+ }
+ // Cached latest views still refresh the tail; a deliberate older window keeps
+ // its text and position while advertising newer history independently.
+ const old=make();old.sessionId='older-reader';old.historyPreserveWindow=true;
+ old.renderTranscript([{seq:100,type:'agent_message_chunk',payload:{text:'Older anchor'}}]);
+ old.newerCursor=100;old.els.messages.scrollTop=35;old._stashSessionDomCache();
+ const restored=make();restored.sessionId='older-reader';assert.ok(restored._restoreSessionDomCache('older-reader'));
+ restored.apiWithTimeout=()=>Promise.resolve(latest);
+ await restored._loadRecentHistory('older-reader',1);
+ assert.deepStrictEqual(texts(restored),['Older anchor']);assert.strictEqual(restored.hasNewer,true);
+ restored.historyPreserveWindow=false;await restored._loadRecentHistory('older-reader',1);
+ assert.deepStrictEqual(texts(restored),['Complete recent message']);
+ assert.strictEqual(virtualTimers.size,0);virtualTimers=null;
+ console.log('PASS exact rendering, phases, snapshots, cache continuation, lifecycle replay, ordered gap repair, failed paging, recent bootstrap, preview and anchor isolation');
 })().catch(error=>{console.error(error);process.exitCode=1});
