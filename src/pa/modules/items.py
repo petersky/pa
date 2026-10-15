@@ -1885,6 +1885,31 @@ def list_cards_api(
     return [{**c.model_dump(mode="json"), "completion_status": c.completion_status} for c in cards]
 
 
+@router.get("/cards/summaries")
+def list_card_summaries_api(
+    request: Request, response: Response,
+    realm: str | None = None, project_id: str | None = None,
+    q: str = Query(default="", max_length=120),
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Discover bounded summaries; full card and history are explicit reads."""
+    started = time.perf_counter()
+    cards = request.app.state.ctx.store.list_card_work_projections(
+        realm_id=realm or request.app.state.ctx.settings.primary_realm,
+        project_id=project_id, query=q, limit=limit, offset=offset,
+    )
+    items = [{"id": c.id, "title": c.title[:300], "summary": c.summary[:1000],
+              "summary_truncated": len(c.summary) > 1000,
+              "summary_stale": c.summary_stale, "lane": c.lane.value,
+              "project_id": c.project_id, "updated_at": c.updated_at.isoformat(),
+              "detail_url": f"/api/cards/{c.id}", "history_url": f"/api/cards/{c.id}/history"} for c in cards]
+    elapsed = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["Server-Timing"] = f'card_summaries;dur={elapsed}'
+    return {"items": items, "next_offset": offset + len(items) if len(items) == limit else None,
+            "limit": limit, "diagnostics": {"read_ms": elapsed, "returned": len(items)}}
+
+
 @router.get("/cards/facets")
 def card_facets_api(
     request: Request,

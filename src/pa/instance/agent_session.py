@@ -641,6 +641,8 @@ class AgentSessionRuntime:
                 await result
 
     async def _on_acp_update(self, _external_session_id: str, update: Any) -> None:
+        if self.session.external_session_id and _external_session_id != self.session.external_session_id:
+            return
         normalized = normalize_session_update(update)
         if (
             normalized.get("type") in {"tool_call", "tool_call_update"}
@@ -649,6 +651,17 @@ class AgentSessionRuntime:
         ):
             normalized["pa_mcp"] = dict(self.connection.pa_mcp_health)
         event_type = str(normalized.get("type") or "session_update")
+        timing = getattr(self, "_turn_timing", None)
+        if timing and not timing.get("first_useful_event_at") and (
+            event_type in {"tool_call", "plan"}
+            or is_agent_message_type(event_type) and bool(normalized.get("text"))
+        ):
+            import time
+            timing["first_useful_event_at"] = datetime.now(UTC).isoformat()
+            timing["provider_generation_ms"] = round((time.monotonic() - self._provider_started_monotonic) * 1000, 2)
+            timing["accept_to_useful_ms"] = round(timing["accept_to_provider_ms"] + timing["provider_generation_ms"], 2)
+            self.session.metrics_json = {**(self.session.metrics_json or {}), "turn_timing": dict(timing)}
+            self._append_transcript("prompt_timing", dict(timing))
         if event_type == "session_info_update":
             if not apply_provider_title(
                 self.session, normalized.get("title"),
@@ -2215,6 +2228,15 @@ class AgentSessionRuntime:
             import time
 
             selection_started = time.monotonic()
+            provider_at = datetime.now(UTC)
+            self._provider_started_monotonic = time.monotonic()
+            self._turn_timing = {
+                "prompt_id": item.id, "accepted_at": item.created_at.isoformat(),
+                "provider_started_at": provider_at.isoformat(),
+                "accept_to_provider_ms": round(max(0, (provider_at - item.created_at).total_seconds() * 1000), 2),
+            }
+            self.session.metrics_json = {**(self.session.metrics_json or {}), "turn_timing": dict(self._turn_timing)}
+            self._append_transcript("prompt_timing", dict(self._turn_timing))
             protocol_completed, selection_stop_reason = False, None
             try:
                 try:
@@ -2604,6 +2626,7 @@ class AgentSessionRuntime:
 
     def _finish_turn_state(self) -> None:
         self._in_flight = None
+        self._turn_timing = None
         self._turn_started_at = None
         self._turn_streamed = False
         self._checkpoint_runtime(lifecycle="ready")
@@ -5738,38 +5761,39 @@ class AgentSessionManager:
                 project_tool_config = (
                     selection_project.tool_config if selection_project else None
                 )
-            candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
-            receipt = await self._offload(
-                "selection.resolve",
-                selection_service.resolve,
-                candidates=candidates,
-                principal=effective_principal_id,
-                realm=realm_id or self.settings.primary_realm,
-                surface=surface_key,
-                card=selection_card,
-                project_config=project_tool_config,
-                overrides=prefs,
-                assessment=task_assessment,
-                constraints=[
-                    SelectionConstraints.model_validate(c)
-                    for c in (
-                        (_linked_boundary["source"].config_json or {}).get(
-                            "execution_selection"
-                        )
-                        or {}
-                    ).get("constraints", [])
-                ]
-                if _linked_boundary
-                else (),
-                legacy=legacy_preferences(
-                    provider=provider_override,
-                    model_id=explicit.model_id,
-                    model_provider=explicit.model_provider,
-                    effort=explicit.reasoning,
-                    config=explicit.config,
-                ),
-                persist=True,
-            )
+            with startup_trace.phase("execution_selection") if startup_trace else nullcontext():
+                candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
+                receipt = await self._offload(
+                    "selection.resolve",
+                    selection_service.resolve,
+                    candidates=candidates,
+                    principal=effective_principal_id,
+                    realm=realm_id or self.settings.primary_realm,
+                    surface=surface_key,
+                    card=selection_card,
+                    project_config=project_tool_config,
+                    overrides=prefs,
+                    assessment=task_assessment,
+                    constraints=[
+                        SelectionConstraints.model_validate(c)
+                        for c in (
+                            (_linked_boundary["source"].config_json or {}).get(
+                                "execution_selection"
+                            )
+                            or {}
+                        ).get("constraints", [])
+                    ]
+                    if _linked_boundary
+                    else (),
+                    legacy=legacy_preferences(
+                        provider=provider_override,
+                        model_id=explicit.model_id,
+                        model_provider=explicit.model_provider,
+                        effort=explicit.reasoning,
+                        config=explicit.config,
+                    ),
+                    persist=True,
+                )
             provider_override = receipt["selected"]["harness"]
             initial_configuration = selected_configuration(receipt, explicit)
         if _linked_boundary:

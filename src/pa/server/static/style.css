@@ -5399,3 +5399,5 @@ a.ghost:hover {
 .acw-issue-actions input { width: 10rem; }
 .acw-issues [data-issues-receipts] > div { padding: .4rem; border-top: 1px solid var(--border); }
 .acw-issues [data-issues-receipts] p { margin: .2rem 0; }
+.acw-timings { flex: 0 0 auto; padding: .2rem .75rem; font-size: .75rem; color: var(--pa-text-muted); }
+.acw-timings p { margin: .3rem 0; }

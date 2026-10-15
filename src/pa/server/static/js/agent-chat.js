@@ -359,7 +359,13 @@
     if (root.dataset.newChat === "1") {
       this.updateTitle("New chat");
       this.setPlaceholder("What would you like to discuss?");
-      if (this.els.input) window.requestAnimationFrame(function () { self.els.input.focus(); });
+      if (this.els.input) window.requestAnimationFrame(function () {
+        self.els.input.focus();
+        if (window.performance) {
+          self.composerReadyMs = window.performance.now();
+          self.renderTimings();
+        }
+      });
     }
     if (this.autoStart) this.init();
     else {
@@ -720,6 +726,7 @@
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
     if (this.issues) this.issues.reset();
+    this.turnTiming = null; this.startupTiming = null; this.renderTimings();
     this.subscriptionGeneration += 1;
     this.closeSSE("session-cleared");
     if (this.liveStateRetryId) clearTimeout(this.liveStateRetryId);
@@ -1210,6 +1217,7 @@
 
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
     if (this.issues) this.issues.reset();
+    this.turnTiming = null; this.startupTiming = null; this.renderTimings();
     const self = this;
     options = options || {};
     const generation = ++this.subscriptionGeneration;
@@ -1789,11 +1797,30 @@
     }
   };
 
+  AgentChatWidget.prototype.renderTimings = function (turn, startup) {
+    const target = this.root && this.root.querySelector("[data-acw-timings]");
+    if (!target) return;
+    if (turn) this.turnTiming = turn;
+    if (startup) this.startupTiming = startup;
+    const parts = [], timing = this.turnTiming || {};
+    const ms = value => Math.round(value) + " ms";
+    if (Number.isFinite(this.composerReadyMs)) parts.push("Page navigation to composer focus: " + ms(this.composerReadyMs));
+    if (Number.isFinite(this.submitAckMs)) parts.push("Browser submit to PA receipt: " + ms(this.submitAckMs));
+    (this.startupTiming && this.startupTiming.phases || []).forEach(function (phase) {
+      const labels = {preference_resolution: "Preferences", execution_selection: "Selection", workspace_preparation: "Workspace", provider_launch: "Provider launch", provider_initialize: "Provider initialize", session_creation: "Provider session", response_readiness: "Ready"};
+      if (labels[phase.name]) parts.push(labels[phase.name] + ": " + ms(phase.duration_ms));
+    });
+    if (Number.isFinite(timing.accept_to_provider_ms)) parts.push("Queue and PA preparation: " + ms(timing.accept_to_provider_ms));
+    if (Number.isFinite(timing.provider_generation_ms)) parts.push("Provider to first useful event: " + ms(timing.provider_generation_ms));
+    target.textContent = parts.join(" · ") || "Timings appear when PA accepts a message and the provider responds.";
+  };
+
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     if (this.issues) this.issues.ready();
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
     const session = snap.session || {};
+    this.renderTimings(session.metrics_json && session.metrics_json.turn_timing, session.config_json && session.config_json.startup_trace);
     if (session.agent_name) this.providerId = session.agent_name;
     const provisioning = session.config_json && session.config_json.provisioning || {};
     const recoveryBlocked = session.status === "recovery_blocked" || provisioning.state === "blocked";
@@ -2320,6 +2347,7 @@
       "tool_call",
       "tool_call_update",
       "session_info_update",
+      "prompt_timing",
       "plan",
       "permission_request",
       "permission_resolved",
@@ -2581,6 +2609,9 @@
         break;
       case "session_info_update":
         if (!replay) this.updateTitle(payload.title, payload.title_version);
+        break;
+      case "prompt_timing":
+        this.renderTimings(payload);
         break;
       case "tool_call":
         // Cursor reuses a null messageId for the whole turn, so without this
@@ -4222,6 +4253,7 @@
       action: act,
       client_prompt_id: promptId,
     };
+    const submittedAt = Date.now();
     this.apiWithTimeout(
       "/sessions/" + targetSessionId + "/prompt",
       PROMPT_SUBMIT_TIMEOUT_MS,
@@ -4239,6 +4271,8 @@
           throw error;
         }
         self.markSubmissionAccepted(res, text, submittedImages, draftRawText, promptId);
+        self.submitAckMs = Date.now() - submittedAt;
+        self.renderTimings();
       })
       .catch(function (err) {
         if (!self._isCurrentSubmission(scope)) return;
@@ -4444,7 +4478,7 @@
   ];
   const SESSION_MULTIPLEX_EVENTS = [
     "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
-    "tool_call", "tool_call_update", "session_info_update", "plan", "usage_update", "card_disposition",
+    "tool_call", "tool_call_update", "session_info_update", "prompt_timing", "plan", "usage_update", "card_disposition",
     "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
     "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",

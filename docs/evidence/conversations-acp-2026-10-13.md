@@ -148,3 +148,26 @@ submission; D unified outcomes and full permission/recovery acceptance; negotiat
 steering and New thread/Branch from here. PR #457 is green and ready; automatic
 approval review blocked its shared-main merge, and correlated PA request
 `conversations-pr457-merge-approval-v1` is pending. No merge or activation claimed.
+
+## Discovery and latency evidence
+
+`GET /api/cards/summaries` and `list_card_summaries` use the existing body-free
+Work projection, returning 30 summaries by default and at most100. Summaries are
+display-bounded to1000 characters with a truncation flag; detail/history links
+load full evidence only when requested. No transcript fan-out occurs.
+
+Timing details show browser navigation→composer focus, submit→durable receipt,
+selection, workspace preparation, provider launch/initialize/session creation,
+queue+PA preparation, and provider call→first useful event. The latter begins at
+the prompt call and ends at the first nonempty assistant text/tool call/plan;
+thought-only events do not count. Timing events contain IDs/durations, no prompt
+text. They persist alongside existing transcript evidence and remain scoped to
+the provider session. Provider turn completion is unchanged.
+
+Repeatable command: `uv run python -m tests.conversation_performance_fixture`.
+On this macbook,30 samples against301 historical cards measured warm summary-read
+p95 **185.31ms** and Start-selected receipt p95 **257.25ms**. Transport is in-process
+ASGI; dispatch is synthetic with a400ms delay. These measurements meet the proposed
+500ms local-read and1s acknowledgement targets for this fixture only. Browser
+composer and live-provider generation are explicitly **not measured** by this
+benchmark. Startup/turn diagnostics support those subsequent measurements.

@@ -280,6 +280,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
         self.assertEqual(
             [phase["name"] for phase in phases],
             [
+                "execution_selection",
                 "provider_resolution",
                 "workspace_preparation",
                 "persistence_publication",
