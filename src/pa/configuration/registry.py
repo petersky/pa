@@ -883,6 +883,12 @@ _DEFINITIONS = (
         validator="range:60:604800",
     ),
     _s(
+        "terminal_output_char_limit", "int", 1000,
+        "Terminal output character limit.", "Conversation", 10,
+        "Characters displayed per tool output. Full transcript evidence follows retention settings.",
+        apply="live", validator="range:100:100000",
+    ),
+    _s(
         "transcript_retention_days",
         "int",
         14,

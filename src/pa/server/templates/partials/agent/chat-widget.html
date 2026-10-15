@@ -26,6 +26,8 @@
 
 <div class="agent-chat-widget{% if compact %} is-compact{% endif %}"
      data-agent-chat
+     data-new-chat="{{ '1' if new_chat | default(false) else '0' }}"
+     data-terminal-output-limit="{{ terminal_output_char_limit | default(1000) }}"
      data-session-id="{{ sid }}"
      data-owner-instance-id="{{ owner_id }}"
      data-current-instance-id="{{ current_id }}"
@@ -79,6 +81,9 @@
       <details class="acw-menu acw-session-menu">
         <summary>Session…</summary>
         <div class="acw-menu-body">
+          <label>Chat title <input type="text" maxlength="512" data-acw-rename-title></label>
+          <button type="button" class="ghost" data-acw-rename>Rename</button>
+          <button type="button" class="ghost" data-acw-auto-title>Use automatic title</button>
           <label><input type="checkbox" data-acw-toggle-system> Show system messages</label>
           <label><input type="checkbox" data-acw-toggle-raw> Raw text</label>
           <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
@@ -147,6 +152,8 @@
           <g class="acw-gear acw-gear-c"><circle cx="14" cy="16" r="3"/><path d="M14 10v2m0 8v2m-6-6h2m8 0h2m-10.2-4.2 1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
         </svg>
       </button>
+      <button type="button" class="ghost acw-rail-button acw-terminal-toggle" data-acw-terminal-toggle
+              aria-label="Terminal" title="Terminal" aria-expanded="false">Terminal</button>
       <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
               aria-label="Session plans" title="Session plans" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
@@ -159,6 +166,12 @@
       <div class="acw-flyout-body acw-tool-activity" data-acw-tool-activity>
         <p class="muted" data-acw-tool-empty>No tool activity yet.</p>
       </div>
+    </aside>
+
+    <aside class="acw-flyout acw-terminal" data-acw-terminal-flyout hidden aria-label="Terminal">
+      <header><strong>Terminal</strong><button type="button" class="ghost small" data-acw-flyout-close aria-label="Close Terminal">×</button></header>
+      <p class="muted small">Tool calls from loaded history. Read-only. <a href="/settings?section=configuration">Output limit: {{ terminal_output_char_limit | default(1000) }} characters · Settings</a></p>
+      <div class="acw-flyout-body" data-acw-terminal-output></div>
     </aside>
 
     <aside class="acw-flyout" data-acw-plan-flyout hidden aria-label="Session plans">

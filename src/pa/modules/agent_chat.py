@@ -3527,6 +3527,23 @@ async def session_unarchive(request: Request, session_id: str) -> dict:
     }
 
 
+class SessionTitleBody(BaseModel):
+    title: str | None = Field(default=None, max_length=512)
+    automatic: bool = False
+
+
+@router.put("/sessions/{session_id}/title")
+async def session_title(request: Request, session_id: str, body: SessionTitleBody) -> dict:
+    mgr = _require_session_traffic_ready(request)
+    try:
+        session = await mgr.name_session(session_id, title=body.title, automatic=body.automatic)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"session": session.model_dump(mode="json")}
+
+
 @router.put("/sessions/{session_id}/pin")
 async def session_pin(
     request: Request, session_id: str, body: SessionPinBody

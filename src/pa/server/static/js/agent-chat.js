@@ -236,6 +236,9 @@
       settingsApply: root.querySelector("[data-acw-settings-apply]"),
       settingsReset: root.querySelector("[data-acw-settings-reset]"),
       settingsStatus: root.querySelector("[data-acw-settings-status]"),
+      terminalToggle: root.querySelector("[data-acw-terminal-toggle]"),
+      terminalFlyout: root.querySelector("[data-acw-terminal-flyout]"),
+      terminalOutput: root.querySelector("[data-acw-terminal-output]"),
       toolToggle: root.querySelector("[data-acw-tool-toggle]"),
       toolFlyout: root.querySelector("[data-acw-tool-flyout]"),
       toolActivity: root.querySelector("[data-acw-tool-activity]"),
@@ -335,10 +338,28 @@
     this.liveStateRetryCount = 0;
     this._bind();
     this.renderSessionActions();
+    if (root.dataset.newChat === "1") {
+      const draftUrl = new URL(window.location.href);
+      let draftKey = draftUrl.searchParams.get("new");
+      if (!draftKey || !/^[0-9a-f-]{36}$/i.test(draftKey)) {
+        draftKey = crypto.randomUUID();
+        draftUrl.searchParams.set("new", draftKey);
+        window.history.replaceState({}, "", draftUrl);
+      }
+      root.dataset.draftPendingId = "pending:chat:" + draftKey;
+      this.createLabel = "chat:" + draftKey;
+      this.root.dataset.createLabel = this.createLabel;
+      this.newChat = true;
+    }
     this.drafts = window.PAAgentDrafts && window.PAAgentDrafts.installWidget
       ? window.PAAgentDrafts.installWidget(this) : null;
     const self = this;
     ensureMarkdown().then(function () { self.rerenderMarkdownBubbles(); });
+    if (root.dataset.newChat === "1") {
+      this.updateTitle("New chat");
+      this.setPlaceholder("What would you like to discuss?");
+      if (this.els.input) window.requestAnimationFrame(function () { self.els.input.focus(); });
+    }
     if (this.autoStart) this.init();
     else {
       this.setPlaceholder("Select or start a remote session.");
@@ -443,6 +464,21 @@
         }
       });
     }
+    const renameInput = this.root.querySelector("[data-acw-rename-title]");
+    [["[data-acw-rename]", false], ["[data-acw-auto-title]", true]].forEach(function (entry) {
+      const button = self.root.querySelector(entry[0]);
+      if (button) button.addEventListener("click", function () {
+        if (!self.sessionId) return;
+        const sessionId = self.sessionId;
+        self.api("/sessions/" + encodeURIComponent(sessionId) + "/title", {
+          method: "PUT", body: JSON.stringify({title: renameInput && renameInput.value, automatic: entry[1]})
+        }).then(function (snap) {
+          if (self.sessionId === sessionId) self.updateTitle(snap.session.title);
+          refreshSessionList(self.sessionId, true);
+        }).catch(function (error) { self.addBubble("system", error.message, null, {forceVisible: true}); });
+      });
+    });
+    if (this.els.terminalToggle) this.els.terminalToggle.addEventListener("click", function () { self.toggleFlyout("terminal"); });
     if (this.els.toolToggle) this.els.toolToggle.addEventListener("click", function () { self.toggleFlyout("tool"); });
     if (this.els.planToggle) this.els.planToggle.addEventListener("click", function () { self.toggleFlyout("plan"); });
     this.root.querySelectorAll("[data-acw-flyout-close]").forEach(function (button) {
@@ -830,13 +866,22 @@
       body: JSON.stringify(body),
     });
 
+    const generation = this.subscriptionGeneration;
     boot
       .then(function (snap) {
+        if (self.destroyed || generation !== self.subscriptionGeneration) return;
         self.startupRetryCount = 0;
         const sid = (snap.session && snap.session.id) || (snap.id) || self.sessionId;
         if (self.drafts) self.drafts.promoteSession(sid);
         self.sessionId = sid;
         self.root.dataset.sessionId = sid;
+        if (self.newChat) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("new");
+          url.searchParams.set("session", sid);
+          window.history.replaceState({}, "", url);
+          self.newChat = false;
+        }
         return self.openSession(sid, "", { replace: true });
       })
       .catch(function (err) {
@@ -1468,23 +1513,46 @@
     this.browserRefreshId = null;
   };
 
+  AgentChatWidget.prototype.renderTerminal = function () {
+    if (!window.PAAgentTerminal || !this.els.terminalOutput || !this.els.terminalFlyout || this.els.terminalFlyout.hidden) return;
+    const limit = Number(this.root.dataset.terminalOutputLimit) || 1000;
+    window.PAAgentTerminal.render(this.els.terminalOutput, this.transcriptEvents, this.sessionId, limit);
+  };
+
+  AgentChatWidget.prototype.updateTitle = function (title, version) {
+    if (this._titleSession !== this.sessionId) { this._titleSession = this.sessionId; this._titleVersion = 0; }
+    if (version != null && version < (this._titleVersion || 0)) return;
+    if (version != null) this._titleVersion = version;
+    if (typeof title !== "string" || !title.trim()) return;
+    if (this.els.title) this.els.title.textContent = title;
+    if (this.lastSnapshot && this.lastSnapshot.session) this.lastSnapshot.session.title = title;
+    const item = sessionListItem(this.sessionId);
+    if (item) {
+      const label = item.querySelector("[data-agent-session-title]");
+      if (label) { label.textContent = title; label.dataset.fullTitle = title; }
+      const tooltip = item.querySelector(".agent-session-title-tooltip");
+      if (tooltip) tooltip.textContent = title;
+      const opener = item.querySelector("[data-agent-session-open]");
+      if (opener) opener.setAttribute("aria-label", "Open session " + title);
+    }
+  };
+
   AgentChatWidget.prototype.toggleFlyout = function (kind) {
-    const target = kind === "plan" ? this.els.planFlyout : this.els.toolFlyout;
-    const other = kind === "plan" ? this.els.toolFlyout : this.els.planFlyout;
-    const toggle = kind === "plan" ? this.els.planToggle : this.els.toolToggle;
-    const otherToggle = kind === "plan" ? this.els.toolToggle : this.els.planToggle;
+    const target = this.els[kind + "Flyout"];
     const open = !!(target && target.hidden);
+    this.closeFlyouts();
     if (target) target.hidden = !open;
-    if (other) other.hidden = true;
+    const toggle = this.els[kind + "Toggle"];
     if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    if (otherToggle) otherToggle.setAttribute("aria-expanded", "false");
+    if (kind === "terminal" && open) this.renderTerminal();
   };
 
   AgentChatWidget.prototype.closeFlyouts = function () {
-    if (this.els.toolFlyout) this.els.toolFlyout.hidden = true;
-    if (this.els.planFlyout) this.els.planFlyout.hidden = true;
-    if (this.els.toolToggle) this.els.toolToggle.setAttribute("aria-expanded", "false");
-    if (this.els.planToggle) this.els.planToggle.setAttribute("aria-expanded", "false");
+    const self = this;
+    ["tool", "terminal", "plan"].forEach(function (kind) {
+      if (self.els[kind + "Flyout"]) self.els[kind + "Flyout"].hidden = true;
+      if (self.els[kind + "Toggle"]) self.els[kind + "Toggle"].setAttribute("aria-expanded", "false");
+    });
   };
 
   AgentChatWidget.prototype.setPlaceholder = function (text) {
@@ -1762,9 +1830,8 @@
       }
       if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
     }
-    if (this.els.title) {
-      this.els.title.textContent = session.title || session.label || "Agent";
-    }
+    this.updateTitle(session.title || (session.purpose === "chat" ? "New chat" : session.label) || "Agent",
+      ((session.config_json || {}).naming || {}).version || 0);
     this.queuePaused = !!snap.queue_paused;
     if (Object.prototype.hasOwnProperty.call(snap, "transcript")) {
       this.hasOlder = !!(snap.transcript_page && snap.transcript_page.has_older);
@@ -1795,6 +1862,7 @@
     (snap.pending_permissions || []).forEach(function (req) {
       if (req && typeof req === "object") self.showPermission(req);
     });
+    this.renderTerminal();
     this.updateEmptyChatStatus(snap);
     refreshSessionList(this.sessionId);
   };
@@ -2042,6 +2110,7 @@
       self.handleEvent(event, true, false);
     });
     this._rebuildSeenEvents();
+    this.renderTerminal();
     this._pruneMessageRows(!!options.keepOldest);
     if (options.scrollBottom) this.scrollToBottom();
   };
@@ -2246,6 +2315,7 @@
       "agent_thought_chunk",
       "tool_call",
       "tool_call_update",
+      "session_info_update",
       "plan",
       "permission_request",
       "permission_resolved",
@@ -2441,7 +2511,7 @@
   };
 
   AgentChatWidget.prototype.handleEvent = function (event, replay, record, ordered) {
-    if (!event) return;
+    if (!event || (event.session_id && event.session_id !== this.sessionId)) return;
     event = this._normalizeEvent(event);
     const seq = event.seq || 0;
     // Retired dedupe keys are safe to discard because a live transport must
@@ -2503,6 +2573,9 @@
         } else if (this.showThinking) {
           this.appendStream("thought", payload.message_id || "thought", payload.text || "", created, payload.content_mode);
         }
+        break;
+      case "session_info_update":
+        if (!replay) this.updateTitle(payload.title, payload.title_version);
         break;
       case "tool_call":
         // Cursor reuses a null messageId for the whole turn, so without this
@@ -2651,6 +2724,7 @@
         this.updateOlderControl();
       }
     }
+    if (!replay && (type === "tool_call" || type === "tool_call_update")) this.renderTerminal();
     if (seq) this.lastSeq = Math.max(this.lastSeq, seq);
     if (!replay && this.liveGapTarget > 0) this._clearResolvedLiveGap();
     if (!replay) this._pruneMessageRows(!!this.hasNewer);
@@ -3056,6 +3130,7 @@
   };
 
   AgentChatWidget.prototype.resetArtifacts = function () {
+    if (this.els.terminalOutput) this.els.terminalOutput.replaceChildren();
     this.currentActivity = null;
     this.activeExplanation = null;
     this.activityStreams = {};
@@ -4107,7 +4182,11 @@
     const literalLeadingSlash = rawText.indexOf("//") === 0;
     if (literalLeadingSlash) rawText = rawText.slice(1);
     const text = rawText.trim();
-    if ((!text && !this.pendingImages.length) || !this.sessionId) return;
+    if (!text && !this.pendingImages.length) return;
+    if (!this.sessionId) {
+      this.setPlaceholder("Preparing your conversation. Your draft is saved; send when ready.");
+      return;
+    }
     if (this.pendingImages.some(function (image) { return !image.data; })) {
       this.addBubble("system", "Please wait for the images to finish loading.", new Date().toISOString(), { system: true, forceVisible: true });
       return;
@@ -4349,7 +4428,7 @@
   let sessionListRecovery = null;
   let sessionListFreshness = null;
   const SESSION_LIST_REFRESH_EVENTS = [
-    "session_started", "session_closed", "session_recovered",
+    "session_info_update", "session_started", "session_closed", "session_recovered",
     "user_message", "turn_waiting", "turn_completed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
     "queue_paused", "queue_resumed", "publication_fence_established", "prompt_failed", "connection_lost",
@@ -4360,7 +4439,7 @@
   ];
   const SESSION_MULTIPLEX_EVENTS = [
     "user_message", "agent_message", "agent_message_chunk", "agent_thought_chunk",
-    "tool_call", "tool_call_update", "plan", "usage_update", "card_disposition",
+    "tool_call", "tool_call_update", "session_info_update", "plan", "usage_update", "card_disposition",
     "stream_recovery", "available_commands_update", "command_result", "browser_attachment_changed",
     "turn_waiting", "turn_completed", "prompt_failed", "cancelled",
     "queue_enqueued", "queue_dequeued", "queue_removed", "queue_reordered",
@@ -4559,7 +4638,7 @@
       const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
         ? window.PAInstanceIdentity.html(sessionInstanceId)
         : "";
-      const title = s.title || s.label || "Agent";
+      const title = s.title || (s.purpose === "chat" ? "New chat" : s.label) || "Agent";
       const state = sessionListState(s);
       const presentation = s.presentation || {};
       const stateLabel = state.label + (s.prompting && Number(s.queue_length || 0) > 0
@@ -5051,6 +5130,8 @@
     if (snap && Array.isArray(snap.config_options)) config.options = snap.config_options;
     return {
       id: nested.id || base.id,
+      title: nested.title || base.title,
+      label: nested.label || base.label,
       agent_name: nested.agent_name || base.agent_name,
       model_id: nested.model_id != null ? nested.model_id : base.model_id,
       mode_id: nested.mode_id != null ? nested.mode_id : base.mode_id,
