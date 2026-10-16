@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
+from uuid import uuid4
 
 from mcp.server.mcpserver import MCPServer
 from starlette.testclient import TestClient
@@ -13,6 +16,7 @@ from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.instance_config import InstanceConfig, save_instance_config
 from pa.modules.backups import BackupsModule
+from pa.backup.service import BackupError
 
 
 class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
@@ -35,6 +39,10 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
             }.issubset(tools)
         )
         self.assertIn("idempotency_key", tools["backup_run"].input_schema["required"])
+        listing = tools["backup_list"].input_schema
+        self.assertEqual(listing["properties"]["offset"]["default"], 0)
+        self.assertEqual(listing["properties"]["limit"]["default"], 50)
+        self.assertEqual(listing.get("required", []), [])
         self.assertIn(
             "confirm_instance_id",
             tools["backup_restore_initiate"].input_schema["required"],
@@ -42,6 +50,65 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BackupHttpAndUiContractTests(unittest.TestCase):
+    def test_backups_page_and_api_are_paginated_fast_and_do_not_open_archives(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = root / "backups"
+            destination.mkdir(mode=0o700)
+            for index in range(125):
+                (destination / f"archive-{uuid4()}.pa-backup.tgz").write_bytes(b"unverified fixture")
+            app = Kernel.boot(settings=Settings(
+                data_dir=root / "data", workspace_root=root / "workspaces",
+                backup_destination_dir=destination, backup_enabled=False,
+                agent_enabled=False,
+            )).build_app()
+            with TestClient(app) as client:
+                service = app.state.ctx.require_service("backup_service")
+                self.enterContext(patch.object(service, "_read_manifest", side_effect=AssertionError("no archive scan")))
+                with patch.object(service.backend, "list_archives", wraps=service.backend.list_archives) as inventory:
+                    started = time.monotonic()
+                    response = client.get("/settings?section=backups")
+                    elapsed = time.monotonic() - started
+                self.assertEqual(response.status_code, 200, response.text[:1000])
+                self.assertEqual(inventory.call_count, 1)
+                self.assertLess(elapsed, 2.0)
+                self.assertEqual(response.text.count("data-backup-verify="), 50)
+                self.assertIn("backup_offset=50", response.text)
+                self.assertIn("unverified", response.text)
+                self.assertIn("Select Verify to check integrity", response.text)
+                self.assertIn("Last known good recovery point", response.text)
+                page = client.get("/api/backups?offset=100&limit=50")
+                self.assertEqual(page.status_code, 200)
+                self.assertEqual(len(page.json()), 25)
+                self.assertTrue(all("manifest" not in row for row in page.json()))
+                self.assertEqual(client.get("/api/backups?limit=201").status_code, 422)
+                self.assertEqual(client.get("/api/backups?offset=-1").status_code, 422)
+                status = client.get("/api/backups/status")
+                self.assertEqual(status.status_code, 200)
+                self.assertEqual(status.json()["backup_count"], 125)
+
+    def test_repeated_backup_failure_creates_one_durable_notification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = root / "backups"
+            destination.mkdir(mode=0o700)
+            app = Kernel.boot(settings=Settings(
+                data_dir=root / "data", workspace_root=root / "workspaces",
+                backup_destination_dir=destination, backup_enabled=False,
+                backup_alert_after_failures=2, agent_enabled=False,
+            )).build_app()
+            with TestClient(app):
+                service = app.state.ctx.require_service("backup_service")
+                self.enterContext(patch.object(service, "_snapshot", side_effect=BackupError("fixture", "isolated failure")))
+                service.run_backup(idempotency_key="one")
+                service.run_backup(idempotency_key="two")
+                service.run_backup(idempotency_key="three")
+                notices = app.state.ctx.store.list_notifications(realm_id="default", notification_type="service_health")
+                self.assertEqual(len(notices), 1)
+                self.assertEqual(notices[0].coalesced_count, 1)
+                self.assertEqual(notices[0].actions[0].href, "/settings?section=backups")
+                self.assertTrue(service.status()["automatic_backups_paused"])
+
     def test_api_routes_include_status_crud_export_and_guarded_restore(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

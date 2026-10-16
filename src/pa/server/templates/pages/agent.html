@@ -18,7 +18,7 @@
     <div class="agent-session-header-actions">
       {% if agent_enabled and session_view == 'chats' %}
       <a class="ghost small" href="/agent?new=1" hx-get="/agent?new=1" hx-target="#app-view" hx-push-url="true">New chat</a>
-      <a class="ghost small" href="/agent?new=1" title="Start an independent conversation">New thread</a>
+      <button type="button" class="ghost small" data-agent-new-thread disabled title="Start an empty parallel thread in this chat">New thread</button>
       <button type="button" class="ghost small" data-agent-new-session title="Configure a new conversation">Options…</button>
       {% endif %}
     </div>
@@ -95,7 +95,7 @@
       {% for card in detail.cards or [] %}{% if not detail.card or card.id != detail.card.id %}<a class="agent-session-chip" href="/work?card={{ card.id }}">Card · {{ card.title }}</a>{% endif %}{% endfor %}
       {% for watch in pr_watches_by_session.get(s.id, []) %}<a class="agent-session-chip" href="/pull-requests?watch={{ watch.id }}"
          title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
-        PR #{{ watch.pr_number }} · {{ watch.status.value }}
+        PR #{{ watch.pr_number }} · {{ watch.status.value if watch.status.value is defined else watch.status }}
       </a>{% endfor %}
       </div>
       <details class="agent-session-details">

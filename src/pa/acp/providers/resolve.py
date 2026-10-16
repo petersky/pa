@@ -260,6 +260,7 @@ async def list_provider_summaries_bounded(
     manager: Any | None = None,
     async_runtime: AsyncRuntime | None = None,
     timeout: float = 3.5,
+    provider_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Probe providers independently so one optional integration cannot block peers."""
     evidence = provider_session_evidence(manager)
@@ -297,7 +298,8 @@ async def list_provider_summaries_bounded(
     from pa.execution.selection_catalog import enrich_provider_catalogs
 
     statuses = list(
-        await asyncio.gather(*(one(provider) for provider in list_providers()))
+        await asyncio.gather(*(one(provider) for provider in list_providers()
+                               if provider_ids is None or provider.id in provider_ids))
     )
     if async_runtime is not None:
         return await async_runtime.run_blocking(

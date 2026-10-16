@@ -18,10 +18,21 @@ from pathlib import Path
 from typing import Any
 
 from pa.domain.models import CardEvent, SyncCommit
+from pa.core.sqlite_metrics import ObservedConnection, derived_connection
+from pa.core.performance import current_observation
 
 
 SCHEMA_VERSION = 2
 _REBUILD_BATCH = 250
+
+
+def _hash_set_result(raw: str | None) -> set[str]:
+    values = json.loads(raw or "[]")
+    observation = current_observation.get()
+    if observation is not None:
+        observation.sqlite_aggregate_items += len(values)
+        observation.sqlite_aggregate_bytes += len((raw or "[]").encode("utf-8"))
+    return {str(value) for value in values}
 
 
 class DagIndex:
@@ -35,23 +46,25 @@ class DagIndex:
         self._initialize()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=5.0)
+        conn = sqlite3.connect(self.path, timeout=5.0, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
+        # This disposable index is rebuilt from canonical objects. Unlike WAL,
+        # synchronous is connection-local: setting it only during initialization
+        # left every later short-lived connection at SQLite's FULL default.
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        conn = self._conn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with derived_connection(self, self._conn) as conn:
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     def _initialize(self) -> None:
         with self._db() as conn:
@@ -88,8 +101,12 @@ class DagIndex:
                     parent_order INTEGER NOT NULL,
                     PRIMARY KEY (realm_id, commit_hash, parent_order)
                 );
+                CREATE INDEX IF NOT EXISTS ix_commits_hash
+                    ON commits(commit_hash, realm_id);
                 CREATE INDEX IF NOT EXISTS ix_commit_parent
                     ON commit_parents(realm_id, parent_hash, commit_hash);
+                CREATE INDEX IF NOT EXISTS ix_commit_edges_forward
+                    ON commit_parents(realm_id, commit_hash, parent_hash);
                 CREATE TABLE IF NOT EXISTS reachability (
                     realm_id TEXT NOT NULL,
                     descendant_hash TEXT NOT NULL,
@@ -155,27 +172,47 @@ class DagIndex:
                 (realm_id, commit_hash),
             ).fetchone() is not None
 
+    def ancestors(self, head: str) -> set[str] | None:
+        """Reuse verified topology; incomplete/rebuilding indexes are not evidence."""
+        with self._db() as conn:
+            row = conn.execute(
+                """SELECT c.realm_id, m.indexed_head FROM commits c
+                   JOIN index_meta m ON m.realm_id=c.realm_id
+                   WHERE c.commit_hash=? AND m.state='ready' LIMIT 1""",
+                (head,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row[1] == head:
+                # A ready generation contains exactly this head's ancestry.
+                raw = conn.execute(
+                    "SELECT json_group_array(commit_hash) FROM commits WHERE realm_id=?", (row[0],)
+                ).fetchone()[0]
+                return _hash_set_result(raw)
+            return self._ancestor_hashes(conn, str(row[0]), head)
+
     @staticmethod
     def _ancestor_hashes(
         conn: sqlite3.Connection, realm_id: str, head: str, *, limit: int = 100_000
     ) -> set[str]:
-        parents: dict[str, list[str]] = {}
-        for row in conn.execute(
-            """SELECT commit_hash,parent_hash FROM commit_parents
-               WHERE realm_id=? ORDER BY commit_hash,parent_order""",
-            (realm_id,),
-        ):
-            parents.setdefault(str(row[0]), []).append(str(row[1]))
-        found: set[str] = set()
-        stack = [head]
-        while stack:
-            current = stack.pop()
-            if current in found:
-                continue
-            found.add(current)
-            if len(found) > limit:
-                raise RuntimeError("indexed ancestry limit exceeded")
-            stack.extend(reversed(parents.get(current, [])))
+        # Walk only this head's indexed edges. UNION deduplicates merge ancestry
+        # and terminates cycles; the bound retains the authoritative walk limit.
+        # Keep the frontier outermost and use its forward covering index. A
+        # freely reordered join otherwise scans the entire realm per node.
+        raw = conn.execute(
+            """WITH RECURSIVE ancestry(hash) AS (
+                   SELECT ? UNION
+                   SELECT p.parent_hash FROM ancestry a CROSS JOIN commit_parents p
+                   WHERE p.realm_id=? AND p.commit_hash=a.hash
+                   LIMIT ?
+               ) SELECT json_group_array(hash) FROM ancestry""",
+            (head, realm_id, limit + 1),
+        ).fetchone()[0]
+        # One cursor row avoids a SQLite/Python/GIL handoff per retained hash.
+        # Every logical hash and result byte is still counted explicitly.
+        found = _hash_set_result(raw)
+        if len(found) > limit:
+            raise RuntimeError("indexed ancestry limit exceeded")
         return found
 
     def status(self, realm_id: str, durable_head: str | None = None) -> dict[str, Any]:
@@ -340,8 +377,18 @@ class DagIndex:
                     "WHERE realm_id=? AND state='ready'",
                     (realm_id,),
                 ).fetchone()
-                if current and current[0] == head and not force:
-                    return
+                if current and not force:
+                    # Another builder can publish a descendant after our
+                    # incremental preflight loses its old-head fence. Its ready
+                    # generation already proves this immutable target. Do not
+                    # erase it and replay retained history just to move the
+                    # disposable index back to an older covered head.
+                    covered = conn.execute(
+                        "SELECT 1 FROM commits WHERE realm_id=? AND commit_hash=?",
+                        (realm_id, head),
+                    ).fetchone()
+                    if covered is not None:
+                        return
 
                 checkpoint = conn.execute(
                     "SELECT * FROM rebuild_checkpoint WHERE realm_id=?",
@@ -508,7 +555,7 @@ class DagIndex:
         present are skipped; only novel descendants are inserted. Returns False
         when the published index is not exactly ``from_head``.
         """
-        with self._build_lock, self._conn() as conn:
+        with self._build_lock, self._db() as conn:
             meta = conn.execute(
                 "SELECT indexed_head, commit_count, event_count FROM index_meta "
                 "WHERE realm_id=? AND state='ready'",
@@ -562,24 +609,27 @@ class DagIndex:
 
     def reset_realm(self, realm_id: str) -> None:
         """Discard one realm's derived records; canonical objects are untouched."""
-        with self._build_lock, self._conn() as conn:
+        with self._build_lock, self._db() as conn:
             for table in ("entity_events", "reachability", "commit_parents", "commits"):
                 conn.execute(f"DELETE FROM {table} WHERE realm_id=?", (realm_id,))
             conn.execute("DELETE FROM index_meta WHERE realm_id=?", (realm_id,))
 
     def entity_rows(
-        self, realm_id: str, head: str, entity: str, entity_id: str
+        self, realm_id: str, head: str, entity: str, entity_id: str,
+        *, limit: int | None = None,
     ) -> list[sqlite3.Row] | None:
         if not self.contains_commit(realm_id, head):
             return None
         with self._db() as conn:
+            bounded = " LIMIT ?" if limit is not None else ""
+            bound_args = (max(0, limit),) if limit is not None else ()
             current = conn.execute(
                 "SELECT indexed_head FROM index_meta WHERE realm_id=? AND state='ready'",
                 (realm_id,),
             ).fetchone()
             if current and current[0] == head:
                 return conn.execute(
-                    """SELECT e.*, c.position, c.instance_id, c.author_principal,
+                    f"""SELECT e.*, c.position, c.instance_id, c.author_principal,
                               c.timestamp,
                               (SELECT GROUP_CONCAT(parent_hash, char(31)) FROM (
                                  SELECT parent_hash FROM commit_parents cp
@@ -590,12 +640,12 @@ class DagIndex:
                        FROM entity_events e JOIN commits c
                          ON c.realm_id=e.realm_id AND c.commit_hash=e.commit_hash
                        WHERE e.realm_id=? AND e.entity_type=? AND e.entity_id=?
-                       ORDER BY c.position,e.event_order""",
-                    (realm_id, entity, entity_id),
+                       ORDER BY c.position,e.event_order{bounded}""",
+                    (realm_id, entity, entity_id, *bound_args),
                 ).fetchall()
             ancestors = self._ancestor_hashes(conn, realm_id, head)
             rows = conn.execute(
-                """SELECT e.*, c.position, c.instance_id, c.author_principal,
+                f"""SELECT e.*, c.position, c.instance_id, c.author_principal,
                           c.timestamp,
                           (SELECT GROUP_CONCAT(parent_hash, char(31)) FROM (
                              SELECT parent_hash FROM commit_parents cp
@@ -606,10 +656,11 @@ class DagIndex:
                    FROM entity_events e JOIN commits c
                      ON c.realm_id=e.realm_id AND c.commit_hash=e.commit_hash
                    WHERE e.realm_id=? AND e.entity_type=? AND e.entity_id=?
-                   ORDER BY c.position,e.event_order""",
-                (realm_id, entity, entity_id),
+                     AND e.commit_hash IN (SELECT value FROM json_each(?))
+                   ORDER BY c.position,e.event_order{bounded}""",
+                (realm_id, entity, entity_id, json.dumps(list(ancestors)), *bound_args),
             ).fetchall()
-            return [row for row in rows if str(row["commit_hash"]) in ancestors]
+            return rows
 
     def operation_rows(self, realm_id: str, head: str, key: str) -> list[sqlite3.Row] | None:
         if not self.contains_commit(realm_id, head):

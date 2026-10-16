@@ -99,6 +99,13 @@
     </div>
   </div>
 
+  <nav class="acw-thread-navigation" data-thread-navigation aria-label="Threads in this chat" hidden>
+    <strong>Threads</strong>
+    <div class="acw-thread-list" data-thread-list></div>
+    <button type="button" class="ghost small" data-thread-empty disabled>New thread</button>
+    <span class="muted small" data-thread-list-status role="status"></span>
+  </nav>
+
   {% if telemetry_enabled and telemetry_session_header != 'hidden' %}
   <details class="acw-resource-header"
            data-session-telemetry
@@ -122,7 +129,6 @@
     <details class="acw-threads" data-conversation-threads>
       <summary>Branch from here</summary>
       <p class="muted small" data-thread-status role="status">Open to check branch support for this conversation.</p>
-      <a class="ghost small" href="/agent?new=1">New thread</a>
       <button type="button" class="ghost small" data-thread-native disabled>Fork latest history</button>
       <button type="button" class="ghost small" data-thread-copy disabled>Copy recent context</button>
     </details>

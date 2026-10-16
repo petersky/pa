@@ -18,7 +18,7 @@ import threading
 import time
 import zlib
 from collections import Counter, defaultdict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from itertools import islice
 from pathlib import Path
@@ -26,6 +26,7 @@ from typing import Any, Iterator
 
 from pa.core.operation_budget import measured_lock, report_work_progress
 from pa.core.performance import PerformanceMetrics
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.domain.models import TranscriptEvent
 
 SCHEMA_VERSION = 1
@@ -91,7 +92,7 @@ class TranscriptStorage:
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         from pa.core.operation_budget import current_operation
         if current_operation.get() is not None:
@@ -307,9 +308,15 @@ class TranscriptStorage:
                     self.performance.record("sqlite_row_changes_attempted", conn.total_changes - changes)
         return mirrors
 
-    def recent_lifecycle_summary(self, session_id: str, *, limit: int = 100) -> dict:
-        """Sidebar metadata without hydrating compressed transcript bodies."""
+    def recent_lifecycle_summaries(self, session_ids: list[str], *, limit: int = 100) -> dict:
+        """Reuse one read connection for a page's bounded lifecycle lookups."""
         with self._conn() as conn:
+            return {session_id: self.recent_lifecycle_summary(session_id, limit=limit, _connection=conn)
+                    for session_id in session_ids}
+
+    def recent_lifecycle_summary(self, session_id: str, *, limit: int = 100, _connection=None) -> dict:
+        """Sidebar metadata without hydrating compressed transcript bodies."""
+        with (nullcontext(_connection) if _connection is not None else self._conn()) as conn:
             rows = conn.execute(
                 """SELECT event_type, hot_payload FROM (
                     SELECT event_type, hot_payload, seq FROM transcript_events

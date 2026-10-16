@@ -209,6 +209,11 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline["dispatch_card_to_instance"] = "ac1a5bd9d43373ae735a21b82c3165f9c297a8b46364c1f82553b4bd307fc9b7"
     # Optional bounded polling projection; legacy full response is the default.
     baseline["get_dispatch"] = "33a5751dbc0bd0c0a0034e9368fa7bdd871c9da84a5a824dd94773ea7aadccab"
+    # Backup inventory adds optional paging; verify and the array response remain.
+    baseline["backup_list"] = "fa1414e72ac2022397d6b0ca45d7ea312ed5eff07190cffc3bc4a891192bd94c"
+    # Attachment uploads add an optional stable retry key; existing arguments
+    # and response shape are preserved. Canonical events now carry its receipt.
+    baseline["create_card_attachment"] = "d1c942d1cb5cd840e8c4b2c9649de9972d2e3c9adbbde5ee93f7f1b6e52071f0"
     assert actual == baseline
 
 

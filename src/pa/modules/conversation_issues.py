@@ -102,6 +102,50 @@ async def _start_context(request, manager, session):
     }
 
 
+async def _prepare_card(request, manager, context, group):
+    """Settle missing metadata before freezing the first admission payload."""
+    from pa.domain.card_enrichment import enrich_card, referenced_projects
+    from pa.domain.models import CardUpdate
+
+    ctx = request.app.state.ctx
+    card = await _call(manager, manager.store.get_card, group["card_id"], realm_id=context["realm_id"])
+    if not card:
+        raise HTTPException(409, {"code": "conversation_card_unavailable", "message": "The saved card is unavailable. Restore it before reviewing this start."})
+    if not card.project_id:
+        matches = await _call(manager, referenced_projects, manager.store, card)
+        if len(matches) > 1:
+            raise HTTPException(409, {"code": "conversation_project_required", "message": "More than one project matches. Choose the project on the saved card, then review this start."})
+        if len(matches) == 1:
+            # This is the canonical CAS update, not a planner-only assignment.
+            await _check_project(request, manager, matches[0].id, card.realm_id)
+            await _call(manager, manager.store.update_card, card.id,
+                CardUpdate(project_id=matches[0].id, expected_version=card.updated_at),
+                realm_id=card.realm_id, principal_id=context["principal_id"], instance_id=context["instance_id"])
+        else:
+            # Use the normal conservative enrichment pipeline, awaited. Other
+            # selected content/preferences and completion authority stay frozen.
+            projects = await _call(manager, manager.store.list_projects, realm_id=card.realm_id)
+            eligible = {p.id for p in projects if not p.memberships
+                or any(m.principal_id == get_principal_id(request) for m in p.memberships)
+                or getattr(require_user(request), "role", None) == "admin"}
+            await enrich_card(ctx, card.id, card.realm_id,
+                {"title", "body", "kind", "tags", "preferred_capabilities"}, initial_card=card, project_ids=eligible)
+        card = await _call(manager, manager.store.get_card, card.id, realm_id=card.realm_id)
+    if not card or not card.project_id:
+        raise HTTPException(409, {"code": "conversation_project_required", "message": "Project not resolved. Choose a project on the saved card, then review this start."})
+    await _check_project(request, manager, card.project_id, card.realm_id)
+    return card.project_id
+
+
+async def _check_project(request, manager, project_id, realm_id):
+    project = await _call(manager, manager.store.get_project, project_id, realm_id=realm_id)
+    if not project or project.status != "active":
+        raise HTTPException(409, {"code": "conversation_project_unavailable", "message": "The selected project is unavailable. Choose an active project on the card."})
+    if project.memberships and not any(m.principal_id == get_principal_id(request) for m in project.memberships) and getattr(require_user(request), "role", None) != "admin":
+        raise HTTPException(403, {"code": "project_membership_required", "message": "Project membership is required to start this work."})
+    return project
+
+
 def _create_card(store, context, group, key):
     # This is the same canonical event/operation ledger used by POST /cards.
     # Replay recovers a committed event even if the process died before receipt
@@ -143,6 +187,8 @@ async def _execute(request, session_id, request_id, manager, notes):
         context, groups = record["context"], record["groups"]
         started = perf_counter()
         try:
+            if context["realm_id"] != request.app.state.ctx.settings.primary_realm or context["instance_id"] != request.app.state.ctx.settings.instance_id:
+                raise HTTPException(409, "Resume the saved request on its realm authority")
             for index, group in enumerate(groups):
                 key = f"conversation:{session_id}:{request_id}:{index}"
                 if not group.get("card_id"):
@@ -152,6 +198,14 @@ async def _execute(request, session_id, request_id, manager, notes):
                 # binding; workers receive separate sessions/worktree leases.
                 await _call(manager, manager.store.link_session_card, session_id, group["card_id"], principal_id=context["principal_id"], make_primary=False)
                 if not group.get("dispatch_id"):
+                    ledger = request.app.state.ctx.services.get("dispatch_store")
+                    existing = await _call(manager, ledger.by_authority_idempotency,
+                        context["instance_id"], key + ":dispatch") if ledger is not None else None
+                    # A frozen payload may have committed even without a local
+                    # receipt. Only definitively unadmitted work may be enriched.
+                    if "dispatch_inputs" not in group or ledger is not None and existing is None:
+                        group["project_id"] = await _prepare_card(request, manager, context, group)
+                        await _call(manager, notes.update_request, session_id, request_id, groups=groups)
                     if "dispatch_inputs" not in group:
                         inputs = dict(context["dispatch"])
                         # Older notebooks froze the chat's mode, although the
@@ -166,7 +220,10 @@ async def _execute(request, session_id, request_id, manager, notes):
                                 inputs.pop("mode_id")
                         group["dispatch_inputs"] = inputs
                         await _call(manager, notes.update_request, session_id, request_id, groups=groups)
-                    body = FleetDispatchBody(**group["dispatch_inputs"], card_id=group["card_id"], project_id=context["project_id"],
+                    project_id = group.get("project_id", context["project_id"])
+                    if project_id:
+                        await _check_project(request, manager, project_id, context["realm_id"])
+                    body = FleetDispatchBody(**group["dispatch_inputs"], card_id=group["card_id"], project_id=project_id,
                         message="Implement only the selected scope recorded on this card. Preserve its completion requirements and existing authorization. Source conversation: " + session_id,
                         idempotency_key=key + ":dispatch")
                     # Re-enter only the canonical idempotent admission, with the

@@ -29,7 +29,7 @@ from pa.core.contracts import Module
 from pa.core.preferences import get_preferences_store
 from pa.core.ui.instance_identity import current_instance_name
 from pa.domain.models import AgentSession, TranscriptEvent
-from pa.execution.dispatch import GoalDispatchProvenance
+from pa.execution.dispatch import DispatchStore, GoalDispatchProvenance
 from pa.execution.observability import (
     SESSION_OBSERVABILITY_CAPABILITY,
     SESSION_OBSERVABILITY_VERSION,
@@ -104,10 +104,12 @@ async def _drain_runtime_transcripts(runtime, *, wait_for_completion: bool = Fal
             await runtime._drain_transcripts()
 
 
-def _session_pr_watches(request: Request, session) -> list[dict[str, Any]]:
+def _session_pr_watches(request: Request, session, *, summary: bool = False) -> list[dict[str, Any]]:
     store = request.app.state.ctx.services.get("pr_supervisor_store")
     if not store:
         return []
+    if summary:
+        return store.session_watch_summaries(session)
     return [
         watch.model_dump(mode="json")
         for watch in store.list_watches(include_retired=True)
@@ -130,6 +132,10 @@ def _session_project_payload(request: Request, session: AgentSession) -> dict | 
 
 def _session_reconciliation(request: Request, session_id: str) -> dict[str, Any]:
     store = request.app.state.ctx.services.get("dispatch_store")
+    if isinstance(store, DispatchStore):
+        return store.reconciliation_by_session(session_id) or {
+            "state": "not_requested", "reason": None, "recoverable": False,
+        }
     record = store.by_session(session_id) if store else None
     if not record:
         return {
@@ -1462,7 +1468,6 @@ def request_session_diagnostics(
     }
 
 
-@router.get("/sessions")
 def list_agent_sessions(
     request: Request,
     view: Literal["active", "chats", "activity", "all"] = "active",
@@ -1470,6 +1475,7 @@ def list_agent_sessions(
     activity_filter: Literal["all", "needs_you", "running", "completed"] = "all",
     limit: int = 250,
     selected_session_id: str | None = None,
+    detail: Literal["summary", "full"] = "summary",
 ) -> list[dict]:
     mgr = _require_session_traffic_ready(request)
     runtimes = {
@@ -1574,13 +1580,56 @@ def list_agent_sessions(
         )
         if selected is not None:
             bounded[-1] = selected
+    watch_summaries = None
+    card_summaries = None
+    if request is not None and detail == "summary":
+        from pa.domain.projection import CardProjection
+        from pa.pr_supervisor.store import PRSupervisorStore
+        store = request.app.state.ctx.store
+        if isinstance(store, CardProjection):
+            card_summaries = store.list_session_card_summaries([item["id"] for item in bounded])
+        supervisor = request.app.state.ctx.services.get("pr_supervisor_store")
+        if isinstance(supervisor, PRSupervisorStore):
+            watch_summaries = supervisor.session_watch_summaries_for_sessions(
+                [sessions[item["id"]] for item in bounded]
+            )
     return [
         _session_list_item(
             request, sessions[item["id"]], runtime=runtimes.get(item["id"]),
             include_diagnostics=False,
+            summary=detail == "summary",
+            watch_summaries=watch_summaries,
+            card_summaries=card_summaries,
         )
         for item in bounded
     ]
+
+
+@router.get("/sessions")
+async def list_agent_sessions_http(
+    request: Request,
+    view: Literal["active", "chats", "activity", "all"] = "active",
+    archived: bool = False,
+    activity_filter: Literal["all", "needs_you", "running", "completed"] = "all",
+    limit: int = 250,
+    selected_session_id: str | None = None,
+    detail: Literal["summary", "full"] = "summary",
+) -> Response:
+    manager = _manager(request)
+    def encoded():
+        items = list_agent_sessions(
+            request, view, archived, activity_filter, limit, selected_session_id, detail
+        )
+        started = perf_counter()
+        body = json.dumps(items, default=str).encode()
+        runtime = getattr(manager, "async_runtime", None)
+        if isinstance(runtime, AsyncRuntime):
+            runtime.work_metrics.record("http.session_list.serialization_ms", (perf_counter() - started) * 1000)
+            runtime.work_metrics.record("http.session_list.rows_returned", len(items))
+            runtime.work_metrics.record("http.session_list.response_bytes", len(body))
+        return body
+    body = await _offload(manager, "http.session_list", encoded)
+    return Response(body, media_type="application/json")
 
 
 @router.get("/prompt-capabilities")
@@ -1827,6 +1876,11 @@ def _presentation(
         candidate = mgr.get(session.id)
         runtime = candidate if candidate and not candidate._closed else None
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
+    if isinstance(dispatch_store, DispatchStore):
+        return dispatch_store.session_presentation(
+            session, runtime=runtime, quiescing=mgr.quiescing,
+            startup_complete=mgr.startup_complete,
+        )
     return build_session_presentation(
         session,
         runtime=runtime,
@@ -1842,6 +1896,9 @@ def _session_list_item(
     *,
     runtime: AgentSessionRuntime | None = None,
     include_diagnostics: bool = True,
+    summary: bool = False,
+    watch_summaries: dict[str, list[dict]] | None = None,
+    card_summaries: dict[str, list[dict]] | None = None,
 ) -> dict:
     config, confirmed = normalized_session_config_json(
         session.config_json,
@@ -1856,7 +1913,10 @@ def _session_list_item(
     )
     durable = config.get("durable_runtime", {})
     queued = durable.get("queued_prompts") or []
-    associated_cards = request.app.state.ctx.store.list_cards_for_session(session.id)
+    associated_cards = (card_summaries.get(session.id, []) if card_summaries is not None else [
+        {"id": card.id, "title": card.title, "project_id": card.project_id}
+        for card in request.app.state.ctx.store.list_cards_for_session(session.id)
+    ])
     # Sidebar rows need durable metadata, not decompressed transcript bodies.
     # Full diagnostics remain available on the session/history endpoints.
     events = request.app.state.ctx.store.list_transcript_events_before(
@@ -1868,9 +1928,21 @@ def _session_list_item(
         None,
     )
     primary_card = next(
-        (card for card in associated_cards if card.id == session.card_id),
+        (card for card in associated_cards if card["id"] == session.card_id),
         associated_cards[0] if associated_cards else None,
     )
+    if summary:
+        # List rows expose settings and repository labels. Prompt queues,
+        # admission proofs and execution plans remain in session details.
+        config = {
+            "values": config.get("values", {}),
+            "configuration": {key: value for key, value in configuration.items()
+                              if key in {"state", "requested", "effective"}},
+            "execution_context": {"repositories": [
+                {key: repo.get(key) for key in ("repository_url", "branch")}
+                for repo in (config.get("execution_context") or {}).get("repositories", [])
+            ]},
+        }
     return {
         "id": session.id,
         "title": session.title,
@@ -1888,7 +1960,7 @@ def _session_list_item(
         "status": session.status,
         "purpose": session.purpose,
         "activity_group": (
-            primary_card.title
+            primary_card["title"]
             if primary_card
             else str((session.initiating_workflow or {}).get("kind") or "Other activity")
             .replace("_", " ")
@@ -1913,14 +1985,12 @@ def _session_list_item(
         "project": _session_project_payload(request, session),
         "cards": [
             {
-                "id": card.id,
-                "title": card.title,
-                "project_id": card.project_id,
-                "primary": card.id == session.card_id,
+                **card,
+                "primary": card["id"] == session.card_id,
             }
             for card in associated_cards
         ],
-        "card_ids": [card.id for card in associated_cards],
+        "card_ids": [card["id"] for card in associated_cards],
         "requested_model_id": configuration.get("requested", {}).get("model_id"),
         "requested_reasoning": configuration.get("requested", {}).get("reasoning"),
         "effective_reasoning": confirmed.get("reasoning"),
@@ -1937,7 +2007,8 @@ def _session_list_item(
         "queue_length": len(runtime._queue) if runtime else len(queued),
         "last_seq": runtime._seq if runtime else durable.get("last_event_cursor", 0),
         "updated_at": session.updated_at.isoformat(),
-        "pr_watches": _session_pr_watches(request, session),
+        "pr_watches": (watch_summaries.get(session.id, []) if watch_summaries is not None
+                       else _session_pr_watches(request, session, summary=summary)),
         "card_reconciliation": _session_reconciliation(request, session.id),
         "observability": observability,
         "presentation": _presentation(request, session, runtime),

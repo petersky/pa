@@ -554,6 +554,12 @@ class AgentSessionRuntime:
     async def _write_transcripts(self) -> None:
         while not self._transcript_queue.empty():
             batch = await self._transcript_queue.get()
+            batches = 1
+            # Coalesce already queued work without a timer or extra latency.
+            # Preserve immutable IDs, order and join accounting across retries.
+            while len(batch) < 64 and not self._transcript_queue.empty():
+                batch = batch + self._transcript_queue.get_nowait()
+                batches += 1
             delay = 0.05
             try:
                 while True:
@@ -591,7 +597,8 @@ class AgentSessionRuntime:
                 self._transcript_buffer = batch + self._transcript_buffer
                 raise
             finally:
-                self._transcript_queue.task_done()
+                for _ in range(batches):
+                    self._transcript_queue.task_done()
             self._flush_transcript()
 
     async def _drain_transcripts(
@@ -1811,8 +1818,9 @@ class AgentSessionRuntime:
             self._queue = [queued for queued in self._queue if queued.id != item.id]
             raise
         self._flush_transcript()
-        if not _is_automatic_source(source):
-            self._checkpoint_runtime(lifecycle="queued")
+        # The checkpoint above already includes human activity, the complete
+        # queue and the assigned transcript cursor. Flushing only schedules
+        # those same events; it does not change recoverable runtime state.
         if (
             not self._queue_paused
             and not _defer_drain
@@ -2222,7 +2230,7 @@ class AgentSessionRuntime:
                 self._flush_transcript()
                 await self._drain_transcripts()
             except BaseException:
-                self._finish_turn_state()
+                await self._finish_turn_state()
                 raise
             stall_task = asyncio.create_task(self._watch_turn_waiting(item))
             import time
@@ -2253,8 +2261,8 @@ class AgentSessionRuntime:
                     from pa.acp.errors import classify_acp_failure, format_acp_error
 
                     if self._is_connection_loss(exc):
-                        self._finish_turn_state()
-                        self._notify_connection_lost(item, exc)
+                        await self._finish_turn_state()
+                        await self._notify_connection_lost(item, exc)
                         await self._drain_transcripts()
                         return "connection_lost"
                     classified = classify_acp_failure(
@@ -2282,7 +2290,7 @@ class AgentSessionRuntime:
                 # Clear snapshot-visible turn state before publishing the
                 # terminal event. A page refresh after turn_completed must see
                 # prompting=false and no per-turn start time.
-                self._finish_turn_state()
+                await self._finish_turn_state()
                 self._append_transcript(
                     "turn_completed",
                     {
@@ -2419,7 +2427,7 @@ class AgentSessionRuntime:
                     await stall_task
                 except asyncio.CancelledError:
                     pass
-                self._finish_turn_state()
+                await self._finish_turn_state()
                 if selection_attempt:
                     try:
                         from pa.execution.selection_audit import finish_prompt
@@ -2624,12 +2632,12 @@ class AgentSessionRuntime:
             )
             self._flush_transcript()
 
-    def _finish_turn_state(self) -> None:
+    async def _finish_turn_state(self) -> None:
         self._in_flight = None
         self._turn_timing = None
         self._turn_started_at = None
         self._turn_streamed = False
-        self._checkpoint_runtime(lifecycle="ready")
+        await self._checkpoint_runtime_async(lifecycle="ready")
 
     def _is_connection_loss(self, exc: BaseException) -> bool:
         if isinstance(exc, ConnectionError):
@@ -2642,7 +2650,7 @@ class AgentSessionRuntime:
             or "chunk exceed the limit" in msg
         )
 
-    def _notify_connection_lost(self, item: QueuedPrompt, exc: BaseException) -> None:
+    async def _notify_connection_lost(self, item: QueuedPrompt, exc: BaseException) -> None:
         logger.warning(
             "ACP connection lost for session %s during prompt %s: %s",
             self.session_id,
@@ -2658,7 +2666,7 @@ class AgentSessionRuntime:
             },
         )
         self.session.status = "recoverable_interrupted"
-        self._checkpoint_runtime(lifecycle="recoverable_interrupted")
+        await self._checkpoint_runtime_async(lifecycle="recoverable_interrupted")
         self._flush_transcript()
         self.manager.request_recovery(self.session_id)
 
@@ -5746,7 +5754,9 @@ class AgentSessionManager:
                     # Authority admission may have newer support evidence than
                     # this target's warm startup cache. Refresh before the first
                     # target check; retain the exact receipt and all hard pins.
-                    candidates=await selection_service.local_catalog(refresh=True, force=True),
+                    candidates=await selection_service.local_catalog(
+                        refresh=True, force=True, required_harness=selected["harness"]
+                    ),
                     principal=effective_principal_id,
                     realm=realm_id or self.settings.primary_realm,
                     surface=surface_key,
@@ -5800,7 +5810,21 @@ class AgentSessionManager:
                     selection_project.tool_config if selection_project else None
                 )
             with startup_trace.phase("execution_selection") if startup_trace else nullcontext():
-                candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
+                required_harness = await self._offload(
+                    "selection.catalog_scope", selection_service.required_catalog_harness,
+                    principal=effective_principal_id,
+                    realm=realm_id or self.settings.primary_realm, surface=surface_key,
+                    card=selection_card, project_config=project_tool_config, overrides=prefs,
+                    legacy=legacy_preferences(
+                        provider=provider_override, model_id=explicit.model_id,
+                        model_provider=explicit.model_provider, effort=explicit.reasoning,
+                        config=explicit.config,
+                    ),
+                )
+                catalog_args = ({"required_harness": required_harness} if required_harness else {})
+                candidates = await selection_service.local_catalog(
+                    refresh=True, stale_while_revalidate=True, **catalog_args
+                )
                 receipt = await self._offload(
                     "selection.resolve",
                     selection_service.resolve,

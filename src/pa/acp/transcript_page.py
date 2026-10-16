@@ -1,6 +1,16 @@
 """Derived message-complete browser pages; durable events remain unchanged."""
 
+from dataclasses import dataclass
+
 from pa.domain.models import TranscriptEvent
+
+
+@dataclass
+class _ChunkGroup:
+    event: TranscriptEvent
+    parts: list[str]
+    first_seq: object
+    merged: bool = False
 
 
 def stream_key(event: TranscriptEvent) -> tuple | None:
@@ -12,7 +22,7 @@ def stream_key(event: TranscriptEvent) -> tuple | None:
 
 def compact_chunks(events: list[TranscriptEvent]) -> list[TranscriptEvent]:
     """Compact message deltas, retaining exact text and the source sequence span."""
-    result: list[TranscriptEvent | None] = []
+    result: list[TranscriptEvent | _ChunkGroup | None] = []
     positions: dict[tuple, int] = {}
     for event in events:
         key = stream_key(event)
@@ -24,20 +34,39 @@ def compact_chunks(events: list[TranscriptEvent]) -> list[TranscriptEvent]:
             positions = {key: value for key, value in positions.items() if key[1]}
         if key is not None and key in positions:
             previous = result[positions[key]]
-            assert previous is not None
+            assert isinstance(previous, _ChunkGroup)
             result[positions[key]] = None
-            payload = dict(event.payload)
-            mode = str(payload.get("content_mode") or "delta").lower()
-            text = str(payload.get("text") or "")
-            if mode not in {"snapshot", "replace", "replacement", "accumulated"}:
-                text = str(previous.payload.get("text") or "") + text
-            payload.update(text=text, content_mode="snapshot")
-            payload["source_first_seq"] = previous.payload.get("source_first_seq", previous.seq)
-            event = event.model_copy(update={"payload": payload})
+            mode = str(event.payload.get("content_mode") or "delta").lower()
+            text = str(event.payload.get("text") or "")
+            if mode in {"snapshot", "replace", "replacement", "accumulated"}:
+                previous.parts = [text]
+            else:
+                previous.parts.append(text)
+            previous.event = event
+            previous.merged = True
+            entry = previous
+        elif key is not None:
+            entry = _ChunkGroup(event, [str(event.payload.get("text") or "")],
+                                event.payload.get("source_first_seq", event.seq))
+        else:
+            entry = event
         if key is not None:
             positions[key] = len(result)
-        result.append(event)
-    return [event for event in result if event is not None]
+        result.append(entry)
+    compacted = []
+    for entry in result:
+        if entry is None:
+            continue
+        if isinstance(entry, _ChunkGroup):
+            event = entry.event
+            if entry.merged:
+                payload = {**event.payload, "text": "".join(entry.parts),
+                           "content_mode": "snapshot", "source_first_seq": entry.first_seq}
+                event = event.model_copy(update={"payload": payload})
+            compacted.append(event)
+        else:
+            compacted.append(entry)
+    return compacted
 
 
 def complete_page(store, session_id: str, events: list[TranscriptEvent], *, forward: bool):

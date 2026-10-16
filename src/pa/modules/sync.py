@@ -201,6 +201,7 @@ def _apply_sync_push_local(
     metrics.record_pull(len(imported))
 
     head_changed = False
+    index_after_publication = False
     projection = {"commits_applied": 0, "rebuilt": False, "reason": "identical"}
     if head_hash:
         if not log.get_commit(head_hash):
@@ -220,8 +221,9 @@ def _apply_sync_push_local(
                         # Catch up before publishing the durable tip so a failed
                         # projection rebuild cannot leave head ahead of SQLite.
                         projection = store.catch_up_projection(realm_id, head_hash)
-                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                        log.advance_ref(realm_id, head_hash, expected_head=local_head, update_index=False)
                         head_changed = True
+                        index_after_publication = True
                     elif log.is_ancestor(head_hash, local_head):
                         head_hash = local_head
                     else:
@@ -249,14 +251,17 @@ def _apply_sync_push_local(
                             automatic_resolutions=health.get(
                                 "automatic_resolutions", []
                             ),
+                            update_index=False,
                         )
                         head_hash = merge.hash
                         projection = store.catch_up_projection(realm_id, head_hash)
                         head_changed = True
+                        index_after_publication = True
                 elif local_head != head_hash:
                     projection = store.catch_up_projection(realm_id, head_hash)
-                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                    log.advance_ref(realm_id, head_hash, expected_head=local_head, update_index=False)
                     head_changed = True
+                    index_after_publication = True
             except StaleSyncHeadError as exc:
                 raise HTTPException(
                     status_code=409,
@@ -268,6 +273,12 @@ def _apply_sync_push_local(
                         "actual_head": exc.actual,
                     },
                 ) from exc
+    if index_after_publication:
+        # The canonical projection and CAS-fenced ref are already durable.
+        # Derived index I/O must not convoy local session provenance writes.
+        # Concurrent canonical writers still ensure/fence their own indexed
+        # parent; ensure_indexed coalesces under the index's builder lock.
+        log.ensure_indexed(realm_id, head_hash)
     return {
         "imported": len(imported),
         "head": head_hash,
@@ -1412,7 +1423,29 @@ class SyncModule(Module):
             )
             return result
 
-        engine.on_head_advanced(rebuild_projection)
+        def publish_projection_head(
+            realm_id: str, target_head: str, *, expected_head: str | None,
+        ) -> dict[str, Any]:
+            # Incoming targets are not yet the durable ref. Serialize the
+            # projection/CAS handoff with canonical writers, while recovery
+            # retains its strict already-published-tip callback above.
+            with store.mutation():
+                current = event_log.get_head(realm_id)
+                if current != expected_head:
+                    raise StaleSyncHeadError(realm_id, expected_head, current)
+                result = store.catch_up_projection(realm_id, target_head)
+                event_log.advance_ref(realm_id, target_head,
+                                      expected_head=expected_head, update_index=False)
+            # Derived indexing follows publication outside primary admission,
+            # just like normal push; failure remains visible and recoverable.
+            event_log.ensure_indexed(realm_id, target_head)
+            live_updates.publish(realm_id, {
+                "type": "cards_changed", "realm_id": realm_id,
+                "head": event_log.get_head(realm_id), "source": "sync",
+            })
+            return result
+
+        engine.on_head_advanced(rebuild_projection, publish_head=publish_projection_head)
         runtime = ctx.require_service("async_runtime")
 
         from pa.sync.recovery import SyncRecovery

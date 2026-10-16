@@ -208,8 +208,11 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         realm: str = "default",
         filename: str | None = None,
         media_type: str = "application/octet-stream",
+        idempotency_key: str | None = None,
     ) -> dict:
-        """Attach a local file through PA's authenticated API; bytes become a durable fleet blob."""
+        """Attach a durable fleet blob. Supply a stable key for recoverable retries."""
+        if idempotency_key is not None and not idempotency_key.strip():
+            raise ValueError("idempotency_key cannot be empty")
         path = Path(source_path).expanduser().resolve()
         if not path.is_file():
             raise ValueError("source_path must be an existing regular file")
@@ -219,6 +222,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                 "POST",
                 f"/api/cards/{card_id}/attachments",
                 params={"realm": realm},
+                headers={"Idempotency-Key": idempotency_key.strip()} if idempotency_key else None,
                 files={
                     "file": (
                         safe_filename(filename or path.name),

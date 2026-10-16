@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.pr_supervisor.models import (
+    ACTIONABLE_PR_WATCH_STATUSES,
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
     PR_WATCH_PROTOCOL_VERSION,
     GitHubCapability,
@@ -46,7 +48,7 @@ class PRSupervisorStore:
 
     @contextmanager
     def _conn(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 30000")
         conn.execute("PRAGMA journal_mode = WAL")
@@ -120,6 +122,8 @@ class PRSupervisorStore:
                     ON pr_watches(card_id);
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_realm_card_updated
                     ON pr_watches(realm_id, card_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_pr_watches_realm_session
+                    ON pr_watches(realm_id, originating_session_id);
 
                 CREATE TABLE IF NOT EXISTS pr_watch_events (
                     id TEXT PRIMARY KEY,
@@ -417,6 +421,42 @@ class PRSupervisorStore:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
+
+    def session_watch_summaries(self, session) -> list[dict]:
+        """Sidebar links without hydrating watch observations or policy proofs."""
+        return self.session_watch_summaries_for_sessions([session])[session.id]
+
+    def session_watch_summaries_for_sessions(self, sessions) -> dict[str, list[dict]]:
+        result = {session.id: [] for session in sessions}
+        # Bound SQL parameters and avoid an all-watch hydration for each row.
+        with self._conn() as conn:
+            for offset in range(0, len(sessions), 250):
+                batch = sessions[offset:offset + 250]
+                for realm in {session.realm_id for session in batch}:
+                    selected = [session for session in batch if session.realm_id == realm]
+                    ids = [session.id for session in selected]
+                    cards = [session.card_id for session in selected]
+                    by_card: dict[str, set[str]] = {}
+                    for session in selected:
+                        if session.card_id:
+                            by_card.setdefault(session.card_id, set()).add(session.id)
+                    session_ids = set(ids)
+                    placeholders = ",".join("?" for _ in selected)
+                    rows = conn.execute(
+                        f"""SELECT id, repository, pr_number, status, originating_session_id, card_id
+                            FROM pr_watches WHERE realm_id=? AND
+                            (originating_session_id IN ({placeholders}) OR card_id IN ({placeholders}))
+                            ORDER BY updated_at DESC""",
+                        [realm, *ids, *cards],
+                    ).fetchall()
+                    for row in rows:
+                        summary = {key: row[key] for key in ("id", "repository", "pr_number", "status")}
+                        linked = set(by_card.get(row["card_id"], ()))
+                        if row["originating_session_id"] in session_ids:
+                            linked.add(row["originating_session_id"])
+                        for session_id in linked:
+                            result[session_id].append(dict(summary))
+        return result
 
     def list_card_completion_due(self, *, now: datetime | None = None, limit: int = 100) -> list[PRWatch]:
         """Select bounded bookkeeping work; parked acceptance wakes on card change."""
@@ -1456,28 +1496,41 @@ class PRSupervisorStore:
                 (name, amount, now),
             )
 
+    def watch_inventory(self, *, owner_instance_id: str | None = None) -> dict[str, int]:
+        """Count lifecycle/lease metadata without decoding retained watch proofs."""
+        active = tuple(sorted(ACTIONABLE_PR_WATCH_STATUSES))
+        terminal = tuple(sorted(GITHUB_TERMINAL_PR_WATCH_STATUSES))
+        live = "retired_at IS NULL AND status IN (" + ",".join("?" for _ in active) + ")"
+        terminal_pending = "retired_at IS NULL AND status IN (" + ",".join("?" for _ in terminal) + ")"
+        with self._conn() as conn:
+            row = conn.execute(
+                f"""SELECT COUNT(*) AS total,
+                           COALESCE(SUM(CASE WHEN {live} THEN 1 ELSE 0 END), 0) AS active,
+                           COALESCE(SUM(retired_at IS NOT NULL), 0) AS archived,
+                           COALESCE(SUM(CASE WHEN {terminal_pending} THEN 1 ELSE 0 END), 0) AS backlog,
+                           COALESCE(SUM(CASE WHEN {live} AND owner_instance_id = ? THEN 1 ELSE 0 END), 0) AS owned,
+                           COALESCE(MAX(CASE WHEN {live} THEN fence_token END), 0) AS max_fence
+                    FROM pr_watches""",
+                (*active, *terminal, *active, owner_instance_id, *active),
+            ).fetchone()
+        return {
+            "active_watches": int(row["active"]),
+            "historical_watches": int(row["total"] - row["active"]),
+            "archived_watches": int(row["archived"]),
+            "terminal_retirement_backlog": int(row["backlog"]),
+            "locally_owned_watches": int(row["owned"]),
+            "max_fence_token": int(row["max_fence"]),
+        }
+
     def metrics(self) -> dict[str, int]:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT name, value FROM pr_supervisor_metrics"
             ).fetchall()
         values = {row["name"]: row["value"] for row in rows}
-        watches = self.list_watches(include_retired=True)
-        values["active_watches"] = len([watch for watch in watches if watch.actionable])
-        values["historical_watches"] = len(
-            [watch for watch in watches if not watch.actionable]
-        )
-        values["archived_watches"] = len(
-            [watch for watch in watches if watch.retired_at is not None]
-        )
-        values["terminal_retirement_backlog"] = len(
-            [
-                watch
-                for watch in watches
-                if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
-                and watch.retired_at is None
-            ]
-        )
+        inventory = self.watch_inventory()
+        for name in ("active_watches", "historical_watches", "archived_watches", "terminal_retirement_backlog"):
+            values[name] = inventory[name]
         return values
 
     @staticmethod

@@ -115,7 +115,11 @@ async def test_selected_dispatch_result_budget_releases_index_and_preserves_conf
         with patch("pa.modules.items.get_store", return_value=h.store):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://local", headers=auth) as client:
                 with patch.object(dispatch_module, "_copy_operation_receipt", side_effect=paused_copy):
-                    reader = asyncio.create_task(client.get("/api/operations/selected", params={"owner": "dispatch"}))
+                    # Deliberately pin the selected copy until a real producer
+                    # finishes. Test that storage fence directly: on a busy CI
+                    # host this controlled pause can exceed the HTTP500ms
+                    # deadline, which must continue returning a truthful504.
+                    reader = asyncio.create_task(asyncio.to_thread(ledger.read_operation_receipts, "selected"))
                     assert await asyncio.to_thread(entered.wait, 2)
                     assert ledger._index_lock.acquire(blocking=False), "selected copy retained the shared index lock"
                     ledger._index_lock.release()
@@ -125,10 +129,11 @@ async def test_selected_dispatch_result_budget_releases_index_and_preserves_conf
                     await asyncio.wait_for(asyncio.to_thread(ledger.put, record), 3)
                     release.set()
                     observed = await reader
-                    assert observed.status_code == 200, observed.text
-                    assert observed.json()["result"]["response"]["marker"] == "old"
+                    assert len(observed) == 1 and observed[0][0] == "dispatch.followup"
+                    assert observed[0][1].followup_operations["selected"]["response"]["marker"] == "old"
 
                 current = await client.get("/api/operations/selected", params={"owner": "dispatch"})
+                assert current.status_code == 200, current.text
                 assert current.json()["result"]["response"]["marker"] == "new"
                 oversized = await client.get("/api/operations/large", params={"owner": "dispatch"})
                 assert oversized.status_code == 504

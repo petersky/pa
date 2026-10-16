@@ -24,6 +24,28 @@ FIELD_DESCRIPTIONS = {
 }
 
 
+def referenced_projects(store: Any, card: Any) -> list[Any]:
+    """Exact catalog references only; semantic suggestions use enrichment.
+
+    A unique project title, repository name or URL can resolve a clear request
+    without a provider round trip. Multiple matches remain an explicit choice.
+    """
+    text = card.title + "\n" + card.body
+    matches = []
+    for project in store.list_projects(realm_id=card.realm_id):
+        if project.status != "active":
+            continue
+        references = [project.title, *(repo.url for repo in project.repos)]
+        for repo, _ in store.list_project_repositories(project.id, realm_id=card.realm_id):
+            if repo.status == "active":
+                references.extend([repo.url, repo.name])
+        if any(ref and len(ref.strip()) >= 2 and re.search(
+            r"(?<![\w])" + re.escape(ref.strip()) + r"(?![\w])", text, re.IGNORECASE
+        ) for ref in references):
+            matches.append(project)
+    return matches
+
+
 def advertised_capability_catalog(ctx: Any) -> frozenset[str]:
     """Return the capability vocabulary currently advertised by this fleet."""
     catalog: set[str] = set()
@@ -135,7 +157,7 @@ def build_enrichment_update(
     return CardUpdate(**changes)
 
 
-def enrichment_request(ctx: Any, card: Any, explicit_fields: Collection[str]):
+def enrichment_request(ctx: Any, card: Any, explicit_fields: Collection[str], *, project_ids: Collection[str] | None = None):
     """Build an extensible field-specific schema and role-separated context."""
     from pa.domain.card_summary_service import (
         StructuredCardRequest,
@@ -148,6 +170,7 @@ def enrichment_request(ctx: Any, card: Any, explicit_fields: Collection[str]):
         project
         for project in ctx.store.list_projects(realm_id=card.realm_id)
         if project.status == "active"
+        and (project_ids is None or project.id in project_ids)
     ]
     catalog = []
     for project in projects:
@@ -273,6 +296,7 @@ async def enrich_card(
     explicit_fields: set[str],
     *,
     initial_card=None,
+    project_ids: Collection[str] | None = None,
 ) -> None:
     """Attempt enrichment without launching an executor or overwriting edits."""
     from pa.domain.projection import CardVersionConflict
@@ -295,7 +319,7 @@ async def enrich_card(
     if protected >= _ENRICHABLE:
         return
     try:
-        request, projects, capabilities = enrichment_request(ctx, card, protected)
+        request, projects, capabilities = enrichment_request(ctx, card, protected, project_ids=project_ids)
         service = ctx.require_service("card_summary_service")
         response = await service.suggest_card_fields(card, request)
         if response is None:

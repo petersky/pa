@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator
+from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 
 SCHEMA_VERSION = 1
 
@@ -56,22 +57,23 @@ class ObjectCatalog:
         self._initialize()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=5.0)
+        conn = sqlite3.connect(self.path, timeout=5.0, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=5000")
+        # Derived, rebuildable metadata uses the initialization policy on every
+        # connection; synchronous is not a persistent database setting.
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        conn = self._conn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with derived_connection(self, self._conn) as conn:
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     def _initialize(self) -> None:
         conn = self._conn()

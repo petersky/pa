@@ -11,6 +11,8 @@ def preferred_sessions_by_card(
     """Select the newest open session per card, falling back to the newest closed one."""
     selected: dict[str, AgentSession] = {}
     for session in sessions:
+        if session.purpose == "chat":
+            continue
         if not session.card_id:
             continue
         current = selected.get(session.card_id)

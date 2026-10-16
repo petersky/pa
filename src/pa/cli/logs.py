@@ -117,7 +117,7 @@ def parse_line(line: str, source: str, fallback: datetime) -> LogRecord:
             stamp,
             source,
             match.group("message"),
-            match.group("level").replace("WARN", "WARNING"),
+            "WARNING" if match.group("level") == "WARN" else match.group("level"),
             match.group("logger"),
         )
     # Uvicorn's legacy output uses ``INFO: logger`` and access lines have no level.

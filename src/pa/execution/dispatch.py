@@ -15,6 +15,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
@@ -33,6 +34,7 @@ from pa.core.async_runtime import (
 from pa.core.background import BackgroundTaskSupervisor
 from pa.core.io import atomic_write_json, atomic_write_text
 from pa.core.performance import PerformanceMetrics
+from pa.core.operation_budget import measured_lock
 from pa.execution.post_turn import (
     ActionReceiptStatus,
     ActionReceiptV1,
@@ -112,8 +114,15 @@ def summarize_dispatch(data: dict[str, Any]) -> dict[str, Any]:
     if progress:
         result["progress"] = {
             key: value for key, value in progress.items()
-            if key in {"latest", "heartbeat", "freshness", "reporting", "checkpoint_count"}
+            if key in {"latest", "heartbeat", "freshness", "reporting", "checkpoint_count",
+                       "sequence_gap", "delivery_error", "conflicts", "late_arrivals",
+                       "highest_accepted_sequence"}
         }
+        # Protocol gaps are correctness evidence, not expandable proof bodies.
+        # Preserve the complete numeric ranges so compact lists cannot hide
+        # missing/compacted sequences or turn a warning into a healthy row.
+        for key in ("missing_ranges", "compacted_ranges"):
+            result["progress"][key] = data["progress"].get(key, [])
     return result
 CAPACITY_RESERVATION_STATES = {
     "queued",
@@ -145,6 +154,14 @@ class DispatchEvent(BaseModel):
     message: str
     detail: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
+class ReconciliationCandidate:
+    """Read-only scheduling hint; mutations reload the current durable record."""
+    dispatch_id: str
+    reconciliation_state: str
+    reconciliation_next_retry_at: datetime | None
 
 
 class GoalDispatchProvenance(BaseModel):
@@ -358,6 +375,35 @@ class DispatchRecord(BaseModel):
             )
         )
 
+    def public_reconciliation(self) -> dict[str, Any]:
+        """Exact reconciliation evidence without serializing the full dispatch."""
+        return {
+            "state": self.reconciliation_state,
+            "reason": self.reconciliation_reason,
+            "disposition_error": self.card_disposition_error,
+            "condition": self.reconciliation_condition,
+            "last_dependency_error": self.reconciliation_last_dependency_error,
+            "recovery_action": self.reconciliation_recovery_action,
+            "recoverable": self.reconciliation_recoverable,
+            "attempts": self.reconciliation_attempts,
+            "prompt_count": self.reconciliation_prompt_count,
+            "prompt_id": self.reconciliation_prompt_id,
+            "prompt_ids": list(self.reconciliation_prompt_ids),
+            "parse_errors": list(self.reconciliation_parse_errors),
+            "final_excerpt": self.reconciliation_final_excerpt,
+            "next_retry_at": (
+                self.reconciliation_next_retry_at.isoformat()
+                if self.reconciliation_next_retry_at
+                else None
+            ),
+            "updated_at": (
+                self.reconciliation_updated_at.isoformat()
+                if self.reconciliation_updated_at
+                else None
+            ),
+            "current_card": self.reconciliation_current_card,
+        }
+
     def public_dict(self, *, summary: bool = False) -> dict[str, Any]:
         data = self.model_dump(
             mode="json",
@@ -461,32 +507,7 @@ class DispatchRecord(BaseModel):
             "reason": self.card_disposition_reason,
             "extraction_error": self.card_disposition_error,
         }
-        data["card_reconciliation"] = {
-            "state": self.reconciliation_state,
-            "reason": self.reconciliation_reason,
-            "disposition_error": self.card_disposition_error,
-            "condition": self.reconciliation_condition,
-            "last_dependency_error": self.reconciliation_last_dependency_error,
-            "recovery_action": self.reconciliation_recovery_action,
-            "recoverable": self.reconciliation_recoverable,
-            "attempts": self.reconciliation_attempts,
-            "prompt_count": self.reconciliation_prompt_count,
-            "prompt_id": self.reconciliation_prompt_id,
-            "prompt_ids": list(self.reconciliation_prompt_ids),
-            "parse_errors": list(self.reconciliation_parse_errors),
-            "final_excerpt": self.reconciliation_final_excerpt,
-            "next_retry_at": (
-                self.reconciliation_next_retry_at.isoformat()
-                if self.reconciliation_next_retry_at
-                else None
-            ),
-            "updated_at": (
-                self.reconciliation_updated_at.isoformat()
-                if self.reconciliation_updated_at
-                else None
-            ),
-            "current_card": self.reconciliation_current_card,
-        }
+        data["card_reconciliation"] = self.public_reconciliation()
         latest_evaluation = (
             self.post_turn_evaluations[-1] if self.post_turn_evaluations else None
         )
@@ -1029,7 +1050,7 @@ class DispatchStore:
     def promote_writer(self) -> None:
         """Upgrade the facade only after the process owns the PA data-dir writer lock."""
 
-        with self._lock:
+        with measured_lock(self._lock):
             if not self._read_only:
                 return
             was_deferred = self._deferred_read_only
@@ -1721,7 +1742,7 @@ class DispatchStore:
     def _publish_records_locked(self, records: list[DispatchRecord]) -> None:
         self._index_writer_waiting = True
         try:
-            with self._index_lock:
+            with measured_lock(self._index_lock):
                 for source in records:
                     candidate = self._snapshot(source)
                     previous = self._records.get(candidate.dispatch_id)
@@ -2164,7 +2185,7 @@ class DispatchStore:
     def get(self, dispatch_id: str) -> DispatchRecord | None:
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             record = self._records.get(dispatch_id)
             return self._snapshot(record) if record else None
 
@@ -2172,23 +2193,83 @@ class DispatchStore:
         """Detached presentation projection without copying plans or history."""
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             record = self._records.get(dispatch_id)
             if not record:
                 return None
-            data = record.public_dict(summary=True)
-            data["card_version"] = record.card_version
-            data["events"] = [{"state": record.events[-1].state,
-                               "message": record.events[-1].message[:500]}] if record.events else []
-            data["materialization_plan"] = {"summary": str((record.materialization_plan or {}).get("summary") or "")[:500]}
-            data["placement_decision"] = {"tie_breaking_reason": str((record.placement_decision or {}).get("tie_breaking_reason") or "")[:500]}
-            data["view"] = "status"
-            return data
+            return self._public_status_record(record)
+
+    @staticmethod
+    def _public_status_record(record: DispatchRecord) -> dict[str, Any]:
+        data = record.public_dict(summary=True)
+        data["card_version"] = record.card_version
+        data["events"] = [{"state": record.events[-1].state,
+                           "message": record.events[-1].message[:500]}] if record.events else []
+        data["materialization_plan"] = {"summary": str((record.materialization_plan or {}).get("summary") or "")[:500]}
+        data["placement_decision"] = {"tie_breaking_reason": str((record.placement_decision or {}).get("tie_breaking_reason") or "")[:500]}
+        data["stale_session_recovery"] = {
+            "eligible_candidate": record.state in {"running", "dispatching", "queued"} and bool(record.session_id),
+            "recovered": any(item.get("kind") == "stale_closed_session_dispatch_recovered"
+                             for item in record.lifecycle_inconsistencies),
+        }
+        latest = record.post_turn_evaluations[-1] if record.post_turn_evaluations else None
+        data["followup_state"] = {"scheduled": bool(latest and any(
+            action.status.value in {"approved", "executed"}
+            and action.name.value not in {"no_action", "record_turn_outcome"}
+            for action in latest.recommended_actions
+        ))}
+        degraded = (record.sync_evidence or {}).get("degraded_peers") or []
+        data["sync_evidence"] = {"degraded_peer_count": len(degraded)}
+        data["view"] = "status"
+        return data
+
+    def public_statuses(self, *, target_instance_id: str | None = None,
+                        limit: int = 100) -> list[dict[str, Any]]:
+        """Detached list rows without copying stored plans/proofs or histories."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            self._refresh_queue_positions_locked()
+            records = (record for record in self._records.values()
+                       if not target_instance_id or record.target_instance_id == target_instance_id)
+            selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [self._public_status_record(record) for record in selected]
+
+    def topology_statuses(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Preserve active topology detail without copying terminal proofs.
+
+        Keep the existing newest-record window and take each detached public
+        projection under the ledger's index lock. No shallow mutable record
+        escapes, and no terminal plan/history needs hydration for an edge that
+        will be discarded immediately.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted(self._records.values(), key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [record.public_dict() for record in selected if record.state not in TERMINAL_DISPATCH_STATES]
+
+    def reconciliation_candidates(self, *, due_at: datetime,
+                                  limit: int = 1000) -> list[ReconciliationCandidate]:
+        """Select due identities without copying retained plans and turn history."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted((record for record in self._records.values() if (
+                record.reconciliation_state == "prompted" or (
+                    record.reconciliation_state in {"pending", "blocked"}
+                    and (record.reconciliation_next_retry_at is None
+                         or record.reconciliation_next_retry_at <= due_at)
+                )
+            )), key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [ReconciliationCandidate(record.dispatch_id, record.reconciliation_state,
+                                            record.reconciliation_next_retry_at)
+                    for record in selected]
 
     def waiting_count(self) -> int:
         """Scalar queue health; no record copies, SQL or writer lock."""
         self._require_readable()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return sum(record.state in QUEUE_CONSUMING_STATES for record in self._records.values())
 
     def list(
@@ -2205,7 +2286,7 @@ class DispatchStore:
     ) -> list[DispatchRecord]:
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             self._refresh_queue_positions_locked()
             records = list(self._records.values())
         if target_instance_id:
@@ -2242,7 +2323,7 @@ class DispatchStore:
 
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             records = [
                 self._snapshot(record)
                 for record in self._goal_lifecycle_records.values()
@@ -2262,7 +2343,7 @@ class DispatchStore:
         if not card_ids:
             return {}
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return {
                 card_id: self._snapshot(self._latest_card_records[card_id])
                 for card_id in card_ids
@@ -2277,7 +2358,7 @@ class DispatchStore:
         """Card identities with dispatch evidence, without hydrating history."""
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return {card_id for card_id, record in self._latest_card_records.items()
                     if record.realm_id == realm_id}
 
@@ -2285,7 +2366,7 @@ class DispatchStore:
         """Return maintained dispatch-history counts for bounded card ids."""
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return {
                 card_id: self._history_counts.get((realm_id, card_id), 0)
                 for card_id in card_ids
@@ -2299,7 +2380,7 @@ class DispatchStore:
         if not session_ids:
             return {}
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return {
                 session_id: self._snapshot(
                     self._latest_session_records[(realm_id, session_id)]
@@ -2312,7 +2393,7 @@ class DispatchStore:
         """Return bounded card ids with current dispatch work in one realm."""
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             records = [
                 record
                 for record in self._latest_card_records.values()
@@ -2330,7 +2411,7 @@ class DispatchStore:
         if not self._read_only:
             self.expire_capacity_reservations(target_instance_id=target_instance_id)
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             records = self._capacity_records_by_target.get(target_instance_id, ())
             reservations = [
                 record
@@ -2374,15 +2455,32 @@ class DispatchStore:
     def by_session(self, session_id: str) -> DispatchRecord | None:
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             record = self._latest_session_records_global.get(session_id)
             return self._snapshot(record) if record else None
+
+    def session_presentation(self, session, **kwargs) -> dict[str, Any]:
+        """Build detached presentation without copying plans, prompts or history."""
+        from pa.execution.session_presentation import build_session_presentation
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            return build_session_presentation(
+                session, dispatch=self._latest_session_records_global.get(session.id), **kwargs
+            )
+
+    def reconciliation_by_session(self, session_id: str) -> dict[str, Any] | None:
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            record = self._latest_session_records_global.get(session_id)
+            return copy.deepcopy(record.public_reconciliation()) if record else None
 
     def queue_completion_payload(
         self, session_id: str, payload: dict[str, Any]
     ) -> bool:
         """Atomically queue completion against the latest durable session record."""
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._latest_session_records_global.get(session_id)
             record = self._snapshot(stored) if stored else None
@@ -2485,7 +2583,7 @@ class DispatchStore:
     ) -> DispatchRecord | None:
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             record = max(
                 (
                     record
@@ -2503,7 +2601,7 @@ class DispatchStore:
     ) -> DispatchRecord | None:
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             record = max(
                 (
                     record
@@ -2612,7 +2710,7 @@ class DispatchStore:
         """Find a durable dispatch admission or control operation by its key."""
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             matches: list[tuple[str, DispatchRecord]] = []
             for record in self._records.values():
                 if realm_id is not None and record.realm_id != realm_id:
@@ -2818,7 +2916,7 @@ class DispatchStore:
         capacity: CapacityAdmission | None = None,
     ) -> tuple[DispatchRecord, bool]:
         """Atomically deduplicate and prevent unsafe concurrent card dispatch."""
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             if idempotency_scope == "target":
                 existing = next(
@@ -3017,7 +3115,7 @@ class DispatchStore:
             return self._snapshot(self._records[record.dispatch_id]), False
 
     def put(self, record: DispatchRecord) -> DispatchRecord:
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             existing = self._records.get(record.dispatch_id)
             if existing and existing.mutation_id != record.mutation_id:
@@ -3206,7 +3304,7 @@ class DispatchStore:
         receipt: ActionReceiptV1,
     ) -> tuple[DispatchRecord, ActionReceiptV1, bool]:
         """Atomically install a durable started receipt and fencing token."""
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             now = datetime.now(UTC)
             with self._transaction(durability="full") as conn:
@@ -3243,7 +3341,7 @@ class DispatchStore:
         receipt: ActionReceiptV1,
     ) -> DispatchRecord:
         """Finalize only the exact currently fenced action claim."""
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             with self._transaction(durability="full") as conn:
                 row = conn.execute(
@@ -3280,7 +3378,7 @@ class DispatchStore:
         preserve a concurrently committed terminal-repair reservation.
         """
 
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(dispatch_id)
             if stored is None:
@@ -3310,7 +3408,7 @@ class DispatchStore:
         callbacks alike.
         """
 
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(expected.dispatch_id)
             if stored is None:
@@ -3362,7 +3460,7 @@ class DispatchStore:
     ) -> tuple[DispatchRecord, bool]:
         """Atomically create or replay one scoped pre-admission trace."""
 
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             if idempotency_scope == "target":
                 existing = next(
@@ -3416,7 +3514,7 @@ class DispatchStore:
     ) -> DispatchRecord:
         """Atomically renew the same target reservation for a safe retry."""
 
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             control_payload = {"capacity": capacity.model_dump(mode="json")}
             replayed = self._replay_control_receipt(
@@ -3517,7 +3615,7 @@ class DispatchStore:
 
     def allocate_progress_sequence(self, dispatch_id: str) -> int:
         """Allocate a durable per-dispatch sequence across restarts and callbacks."""
-        with self._lock:
+        with measured_lock(self._lock):
             stored = self._records.get(dispatch_id)
             if not stored:
                 raise ValueError("dispatch not found")
@@ -3591,7 +3689,7 @@ class DispatchStore:
         authority_version: str | None,
     ) -> DispatchRecord:
         """Fence future events to a new authority without rewriting provenance."""
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(dispatch_id)
             if not stored:
@@ -3661,7 +3759,7 @@ class DispatchStore:
     ) -> ProgressIngestResult:
         """Idempotently retain a bounded, safely reorderable checkpoint history."""
         sanitized = sanitize_progress_event(event)
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(sanitized.dispatch_id)
             if not stored:
@@ -3814,7 +3912,7 @@ class DispatchStore:
     ) -> ProgressIngestResult:
         """Replace the freshness signal without appending activity history."""
         sanitized = sanitize_heartbeat(heartbeat)
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(sanitized.dispatch_id)
             if not stored:
@@ -3891,7 +3989,7 @@ class DispatchStore:
                 DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
             ]
         ] = []
-        with self._lock:
+        with measured_lock(self._lock):
             for record in self._records.values():
                 if record.target_instance_id != originating_instance_id:
                     continue
@@ -3919,7 +4017,7 @@ class DispatchStore:
         )
 
     def mark_progress_delivered(self, dispatch_id: str, idempotency_key: str) -> None:
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(dispatch_id)
             if not stored:
@@ -3957,7 +4055,7 @@ class DispatchStore:
     def mark_progress_delivery_failed(
         self, dispatch_id: str, idempotency_key: str, error: str
     ) -> None:
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(dispatch_id)
             if not stored:
@@ -3996,7 +4094,7 @@ class DispatchStore:
         self, dispatch_id: str, result: dict[str, Any]
     ) -> CompletionReportV1 | None:
         self._require_readable()
-        with self._lock:
+        with measured_lock(self._lock):
             record = self._records.get(dispatch_id)
             if not record:
                 return None
@@ -4047,7 +4145,7 @@ class DispatchStore:
     def set_final_report(
         self, dispatch_id: str, report: CompletionReportV1
     ) -> DispatchRecord:
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(dispatch_id)
             if not stored:
@@ -4167,7 +4265,7 @@ class DispatchStore:
 
         checked_at = now or datetime.now(UTC)
         expired: list[DispatchRecord] = []
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             candidates = (
                 self._capacity_records_by_target.get(target_instance_id, ())
@@ -4218,7 +4316,7 @@ class DispatchStore:
 
     def waiting(self) -> list[DispatchRecord]:
         self._require_readable()
-        with self._lock:
+        with measured_lock(self._lock):
             self._refresh_queue_positions_locked()
             waiting = [
                 self._snapshot(record)
@@ -4240,7 +4338,7 @@ class DispatchStore:
     ) -> bool:
         """Atomically consume a newly free slot without changing target contract."""
 
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(record.dispatch_id)
             if not stored or stored.state not in QUEUE_CONSUMING_STATES:
@@ -4302,7 +4400,7 @@ class DispatchStore:
     def block_waiting(
         self, record: DispatchRecord, *, code: str, reason: str
     ) -> DispatchRecord:
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(record.dispatch_id)
             if not stored or stored.state not in QUEUE_CONSUMING_STATES:
@@ -4323,7 +4421,7 @@ class DispatchStore:
         principal_id: str,
         idempotency_key: str,
     ) -> DispatchRecord:
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             control_payload = {"priority": priority, "principal_id": principal_id}
             replayed = self._replay_control_receipt(
@@ -4430,7 +4528,7 @@ class DispatchStore:
 
     def storage_metrics(self) -> dict[str, Any]:
         """Expose bounded ledger health without deserializing historical payloads."""
-        with self._lock:
+        with measured_lock(self._lock):
             if self._deferred_read_only:
                 counts = {
                     "available": False,
@@ -4562,7 +4660,7 @@ class DispatchStore:
 
     def checkpoint(self, *, truncate: bool = False) -> dict[str, Any]:
         """Run an explicit observable WAL checkpoint outside mutation commits."""
-        with self._lock:
+        with measured_lock(self._lock):
             conn = self._require_writer()
             started = time.perf_counter()
             row = conn.execute(
@@ -4584,7 +4682,7 @@ class DispatchStore:
         cutoff = current - timedelta(days=self.RECEIPT_REPLAY_DAYS)
         removed_events = 0
         removed_receipts = 0
-        with self._lock:
+        with measured_lock(self._lock):
             self._require_writer()
             safe: list[DispatchRecord] = []
             for stored in self._records.values():
@@ -4665,7 +4763,7 @@ class DispatchStore:
         conn = self._require_writer()
         if destination.resolve() in {self.path.resolve(), self.backup_path.resolve()}:
             raise ValueError("refusing to overwrite migration source or verified backup")
-        with self._lock:
+        with measured_lock(self._lock):
             payload: dict[str, Any] = {}
             for dispatch_id, record in self._records.items():
                 data = record.model_dump(mode="json")
@@ -4694,7 +4792,7 @@ class DispatchStore:
 
     def close(self) -> None:
         """Drain committed WAL state and close the store without dropping writes."""
-        with self._lock:
+        with measured_lock(self._lock):
             if getattr(self, "_conn", None) is None:
                 return
             if not self._read_only:
@@ -4711,7 +4809,7 @@ class DispatchStore:
                 self.promote_waiting(record)
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return [
                 self._snapshot(record)
                 for record in self._records.values()
@@ -4721,7 +4819,7 @@ class DispatchStore:
     def pending(self) -> list[DispatchRecord]:
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             return [
                 self._snapshot(record)
                 for record in self._records.values()
@@ -4733,7 +4831,7 @@ class DispatchStore:
         now = datetime.now(UTC)
         self._require_readable()
         self._yield_to_index_writer()
-        with self._index_lock:
+        with measured_lock(self._index_lock):
             candidates = [
                 record
                 for record in self._records.values()

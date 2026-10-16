@@ -18,6 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from pydantic import ValidationError
 
 from pa.core.operation_budget import current_operation, measured_lock, report_work_progress
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -258,7 +259,7 @@ class CardProjection:
                 conn.close()
                 local.connection = conn = None
         if conn is None:
-            conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
+            conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000, factory=ObservedConnection)
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.row_factory = sqlite3.Row
             local.connection = conn
@@ -784,6 +785,10 @@ class CardProjection:
                         "UPDATE agent_sessions SET lifecycle_owner = 'dispatch' "
                         "WHERE dispatch_id IS NOT NULL"
                     )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_chat_group "
+            "ON agent_sessions(json_extract(initiating_workflow_json, '$.chat_group_id'))"
+        )
         # Purpose migration uses structured creation provenance first.  Labels
         # are deliberately only migration evidence; anything ambiguous remains
         # visible as ``unknown`` in All sessions.
@@ -2702,6 +2707,7 @@ class CardProjection:
         idempotency_key: str | None = None,
         request_fingerprint: str | None = None,
         direct_human: bool = False,
+        initial_summary_state: dict | None = None,
     ) -> Card:
         now = datetime.now(UTC)
         supplied_summary = data.summary.strip()
@@ -2729,6 +2735,11 @@ class CardProjection:
             created_by_principal=principal_id,
             created_by_instance=instance_id,
         )
+        if initial_summary_state:
+            # The creation event and replay result must contain the same
+            # settled metadata. A post-create system write would race the
+            # version returned to the caller and add an unnecessary commit.
+            card = Card.model_validate({**card.model_dump(), **initial_summary_state})
         if card.completion_requirement:
             from pa.domain.completion import CompletionConflict, bind_verification_authority
             card.completion_requirement = bind_verification_authority(card.completion_requirement, instance_id)
@@ -2759,7 +2770,9 @@ class CardProjection:
 
     @serialized_mutation
     def add_attachment(
-        self, attachment: CardAttachment, *, principal_id: str, instance_id: str
+        self, attachment: CardAttachment, *, principal_id: str, instance_id: str,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
     ) -> Card:
         card = self.get_card(attachment.card_id, realm_id=attachment.realm_id)
         if not card:
@@ -2780,6 +2793,10 @@ class CardProjection:
             author_principal=principal_id,
             author_instance=instance_id,
             payload=payload,
+            source_operation="card.attachment.create",
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            operation_result=attachment.model_dump(mode="json") if idempotency_key else None,
         )
         self.commit_event(event)
         return self.get_card(attachment.card_id, realm_id=attachment.realm_id)
@@ -4758,6 +4775,7 @@ class CardProjection:
     def delete_item(self, item_id: str, **kwargs) -> bool:
         return self.delete_card(item_id, **kwargs)
 
+    @serialized_mutation
     def save_session(
         self, session: AgentSession, *, expected_connection_id: str | None = None
     ) -> AgentSession:
@@ -4880,6 +4898,7 @@ class CardProjection:
                 )
         return session
 
+    @serialized_mutation
     def mark_session_disconnected(
         self, session_id: str, *, expected_connection_id: str | None = None
     ) -> None:
@@ -5164,6 +5183,23 @@ class CardProjection:
             ).fetchall()
         return [self._row_to_card(row) for row in rows]
 
+    def list_session_card_summaries(self, session_ids: list[str]) -> dict[str, list[dict]]:
+        """Batch sidebar links without hydrating card bodies or acceptance proofs."""
+        result = {session_id: [] for session_id in session_ids}
+        with self._conn() as conn:
+            for offset in range(0, len(session_ids), 500):
+                batch = session_ids[offset:offset + 500]
+                rows = conn.execute(
+                    """SELECT links.session_id, cards.id, cards.title, cards.project_id
+                       FROM agent_session_cards links JOIN cards ON cards.id=links.card_id
+                       WHERE links.retired_at IS NULL AND links.session_id IN ("""
+                    + ",".join("?" for _ in batch) + ") ORDER BY links.linked_at, cards.id",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    result[row["session_id"]].append({key: row[key] for key in ("id", "title", "project_id")})
+        return result
+
     def list_session_card_history(self, session_id: str) -> list[dict]:
         """Return active and retired card links with their full provenance."""
         with self._conn() as conn:
@@ -5190,11 +5226,17 @@ class CardProjection:
         purposes: tuple[str, ...] | None = None,
         archived: bool | None = None,
         session_ids: set[str] | None = None,
+        chat_group_id: str | None = None,
     ) -> list[AgentSession]:
         query = "SELECT * FROM agent_sessions WHERE 1=1"
         if not include_archived:
             query += " AND archived_at IS NULL"
         params: list[str] = []
+        if chat_group_id is not None:
+            # A root's durable session ID is its group ID, including legacy
+            # chats. Children record that root in their immutable provenance.
+            query += " AND (id = ? OR json_extract(initiating_workflow_json, '$.chat_group_id') = ?)"
+            params.extend((chat_group_id, chat_group_id))
         if archived is not None:
             query += " AND archived_at IS " + ("NOT NULL" if archived else "NULL")
         if purposes:
@@ -5798,7 +5840,11 @@ class CardProjection:
         if not events:
             return events
         mirrors = self.transcripts.append(events)
-        with self._conn() as conn:
+        # Canonical mutation/binding writes use this same admission boundary.
+        # Serialize only the short compatibility transaction, after cold object
+        # publication, rather than let local SQLite writers repeatedly overtake
+        # one another in the busy handler.
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO agent_transcript_events
@@ -5821,6 +5867,9 @@ class CardProjection:
 
     def transcript_lifecycle_summary(self, session_id: str) -> dict:
         return self.transcripts.recent_lifecycle_summary(session_id)
+
+    def transcript_lifecycle_summaries(self, session_ids: list[str]) -> dict:
+        return self.transcripts.recent_lifecycle_summaries(session_ids)
 
     def list_transcript_events(
         self,
@@ -6234,6 +6283,10 @@ class CardProjection:
         if not self.event_log:
             return
         head = self.event_log.get_head(realm_id)
+        self._rebuild_from_log_head(realm_id, head)
+
+    def _rebuild_from_log_head(self, realm_id: str, head: str | None) -> None:
+        """Replay an explicit canonical target while the caller owns mutation."""
         if not head:
             return
         # Keep the destructive reset, complete replay, and head checkpoint in
@@ -6341,18 +6394,20 @@ class CardProjection:
                 "reason": "identical",
                 "sqlite_ms": 0.0,
             }
-        if not self.event_log.get_commit(target_head):
+        target_commit = self.event_log.get_commit(target_head)
+        if not target_commit:
             raise ValueError(f"missing projection target {target_head}")
         if current is None or not self.event_log.get_commit(current):
-            self.rebuild_from_log(realm_id)
+            self._rebuild_from_log_head(realm_id, target_head)
             return {
                 "commits_applied": 0,
                 "rebuilt": True,
                 "reason": "missing_projection_head",
                 "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
             }
-        if not self.event_log.is_ancestor(current, target_head):
-            self.rebuild_from_log(realm_id)
+        direct_child = target_commit.parent_hashes == [current]
+        if not direct_child and not self.event_log.is_ancestor(current, target_head):
+            self._rebuild_from_log_head(realm_id, target_head)
             return {
                 "commits_applied": 0,
                 "rebuilt": True,
@@ -6363,7 +6418,9 @@ class CardProjection:
         # A merge's other parents can reach ancestors of the current head
         # without passing through that head. Exclude the complete projected
         # ancestry, or old effects and completed operation receipts are replayed.
-        projected = self.event_log._ancestors(current)
+        # One-parent direct children have no side ancestry to exclude. General
+        # suffixes and merges still require the complete projected ancestry.
+        projected = {current} if direct_child else self.event_log._ancestors(current)
         applied = 0
         with self._conn():
             for commit_hash, commit in self.event_log._iter_commits_parent_first(

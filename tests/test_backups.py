@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fcntl
+import hashlib
+import io
 import json
 import os
 import sqlite3
@@ -13,7 +15,8 @@ import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from pa.backup.service import (
     BackupError,
@@ -21,6 +24,7 @@ from pa.backup.service import (
     config_from_settings,
     validate_destination,
 )
+from pa.backup.models import MAX_MANIFEST_BYTES, BackupManifest, ManifestFile
 from pa.config import Settings, get_settings, reset_settings
 from pa.domain.models import CardCreate, TranscriptEvent
 from pa.domain.store import Store
@@ -253,9 +257,10 @@ class BackupTestCase(unittest.TestCase):
         self.service.apply_config(config)
         records = self.service.list_backups()
         old = datetime(2000, 1, 1, tzinfo=UTC)
-        records[0].manifest.created_at = old
-        # The archive remains immutable; pruning uses its verified manifest and
-        # still preserves a single recovery point regardless of age/size.
+        records[0].created_at = old
+        # Even an expired archive exceeding the size budget remains protected.
+        with patch.object(self.service, "list_backups", return_value=records):
+            self.assertEqual(self.service.prune(), [])
         self.assertEqual(self.service.prune(), [])
         self.assertEqual(self.service.list_backups()[0].backup_id, only.backup_id)
 
@@ -555,6 +560,227 @@ class BackupTestCase(unittest.TestCase):
         self.assertEqual(status["sources"]["interval_seconds"], "default")
         self.assertFalse(status["alerting"]["active"])
 
+    def test_large_v1_manifest_round_trips_real_object_inventory(self) -> None:
+        # v1's real per-object paths/size/hash entries exceed the former 2 MiB
+        # bound at realistic histories, even with tiny immutable payloads.
+        for index in range(12_000):
+            payload = f"isolated backup object {index}".encode()
+            digest = hashlib.sha256(payload).hexdigest()
+            path = self.settings.objects_dir / digest[:2] / digest[2:]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+        for compressed in (True, False):
+            with self.subTest(compressed=compressed):
+                self.service.config.compression = compressed
+                # Durability is covered by the small atomic-publication tests;
+                # avoid 24,000 physical fsyncs in the scale regression fixture.
+                with patch("pa.backup.service.os.fsync"):
+                    result = self._run(f"large-{compressed}")
+                record = self.service.list_backups()[0]
+                self.assertEqual(record.backup_id, result.backup_id)
+                self.assertTrue(record.verified)
+                with tarfile.open(record.path, "r:*") as archive:
+                    member = archive.next()
+                    self.assertEqual(member.name, "manifest.json")
+                    self.assertGreater(member.size, 2 * 1024 * 1024)
+                    self.assertLessEqual(member.size, MAX_MANIFEST_BYTES)
+                manifest = self.service._read_manifest(record.path)
+                self.assertGreaterEqual(len(manifest.files), 12_002)
+
+    def test_manifest_writer_limit_fails_before_publication_preserving_good(self) -> None:
+        good = self._run("before-limit")
+        with patch("pa.backup.service.MAX_MANIFEST_BYTES", 512):
+            failed = self.service.run_backup(idempotency_key="over-limit")
+        self.assertEqual(failed.status, "failed")
+        self.assertIn("manifest_limit_exceeded", failed.failure_reason)
+        self.assertEqual([item.backup_id for item in self.service.list_backups()], [good.backup_id])
+        self.assertEqual(set(self.service._state.verifications), {good.backup_id})
+
+    def test_reader_rejects_declared_oversized_manifest_without_reading_payload(self) -> None:
+        path = self.root / "oversize.tar"
+        member = tarfile.TarInfo("manifest.json")
+        member.size = MAX_MANIFEST_BYTES + 1
+        path.write_bytes(member.tobuf() + bytes(1024))
+        with self.assertRaisesRegex(BackupError, "byte limit"):
+            self.service._read_manifest(path)
+
+    def test_inventory_never_opens_archives_and_invalidates_changed_bytes(self) -> None:
+        good = self._run("inventory-good")
+        record = self.service.list_backups()[0]
+        restarted = BackupService(self.settings, self.store)
+        with patch("pa.backup.service.tarfile.open", side_effect=AssertionError("inventory must not open archives")):
+            self.assertTrue(restarted.list_backups()[0].verified)
+            self.assertEqual(restarted.status()["last_known_good"]["backup_id"], good.backup_id)
+            record.path.write_bytes(b"damaged")
+            changed = restarted.list_backups()[0]
+            self.assertFalse(changed.verified)
+            self.assertEqual(changed.verification_status, "unverified")
+            self.assertIsNone(restarted.status()["last_known_good"])
+        failed = restarted.verify_backup(good.backup_id)
+        self.assertEqual(failed.verification_status, "failed")
+        self.assertIn("archive_unreadable", restarted.list_backups()[0].verification_error)
+
+    def test_cold_legacy_and_unknown_inventory_is_unverified_without_scan(self) -> None:
+        backup_id = str(uuid4())
+        path = self.destination / f"old-{backup_id}.pa-backup.tgz"
+        path.write_bytes(b"unknown bytes")
+        unknown = self.destination / "imported.pa-backup.tar"
+        unknown.write_bytes(b"damaged import")
+        self.service._state.verifications[backup_id] = {"verified": True}
+        with patch.object(self.service, "_read_manifest", side_effect=AssertionError("no implicit scan")):
+            self.assertTrue(all(item.verification_status == "unverified" for item in self.service.list_backups()))
+            self.assertEqual(self.service.prune(), [])
+        self.assertEqual(self.service.verify_backup(f"unreadable:{unknown.name}").verification_status, "failed")
+        self.assertEqual(len(self.service.list_backups()), 2)
+
+    def test_status_is_fast_and_bounded_with_legacy_failure_history(self) -> None:
+        for index in range(200):
+            (self.destination / f"archive-{uuid4()}.pa-backup.tgz").write_bytes(b"fixture")
+        self.service._state.verifications = {str(uuid4()): {"verified": False, "error": "old temporary failure"} for _ in range(2000)}
+        before = self.service.state_path.read_bytes() if self.service.state_path.exists() else None
+        with patch.object(self.service, "_read_manifest", side_effect=AssertionError("no scan")):
+            started = time.monotonic()
+            overview = self.service.overview(limit=50)
+            elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(overview["status"]["backup_count"], 200)
+        self.assertEqual(len(overview["records"]), 50)
+        self.assertEqual(overview["pagination"]["next_offset"], 50)
+        self.assertNotIn("verifications", overview["status"])
+        self.assertLess(len(json.dumps(overview)), 60_000)
+        self.assertEqual(before, self.service.state_path.read_bytes() if self.service.state_path.exists() else None)
+
+    def test_concurrent_verification_reports_in_progress_without_blocking_status(self) -> None:
+        good = self._run("concurrent-verification")
+        entered, release = threading.Event(), threading.Event()
+        original = self.service._read_manifest
+        def blocked(path):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return original(path)
+        with patch.object(self.service, "_read_manifest", side_effect=blocked):
+            thread = threading.Thread(target=self.service.verify_backup, args=(good.backup_id,))
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                self.assertEqual(self.service.list_backups()[0].verification_status, "in_progress")
+                self.assertEqual(self.service.status()["backup_count"], 1)
+                with self.assertRaisesRegex(BackupError, "already being verified"):
+                    self.service.verify_backup(good.backup_id)
+            finally:
+                release.set()
+                thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(self.service.list_backups()[0].verified)
+
+    def test_failure_threshold_pauses_automatic_attempts_and_notifies_once(self) -> None:
+        notifier = Mock()
+        self.service.failure_notifier = notifier
+        with patch.object(self.service, "_snapshot", side_effect=BackupError("injected", "fixture failure")) as snapshot:
+            for index in range(3):
+                self.assertEqual(self.service.run_backup(trigger="scheduled", idempotency_key=f"fail-{index}").status, "failed")
+            for index in range(5):
+                self.assertEqual(self.service.run_backup(trigger="scheduled").status, "skipped")
+            self.assertEqual(snapshot.call_count, 3)
+        notifier.assert_called_once()
+        paused = self.service.status()
+        self.assertTrue(paused["automatic_backups_paused"])
+        self.assertIsNone(paused["next_scheduled_run"])
+        self.assertEqual(paused["next_actor"], "Administrator")
+        restarted = BackupService(self.settings, self.store)
+        restarted.failure_notifier = notifier
+        self.assertEqual(restarted.run_backup(trigger="startup").status, "skipped")
+        notifier.assert_called_once()
+        self.assertEqual(restarted.run_backup(idempotency_key="manual-recovery").status, "success")
+        self.assertFalse(restarted.status()["automatic_backups_paused"])
+        self.assertIsNotNone(restarted.status()["next_scheduled_run"])
+
+    def test_offline_failure_pause_does_not_suppress_later_server_notification(self) -> None:
+        self.service._state.consecutive_failures = self.service.config.alert_after_failures
+        self.service._notify_repeated_failure()
+        self.assertIsNone(self.service._state.failure_alert_key)
+        notifier = Mock()
+        self.service.failure_notifier = notifier
+        self.service._notify_repeated_failure()
+        self.service._notify_repeated_failure()
+        notifier.assert_called_once()
+
+    def test_manifest_rejects_duplicate_paths_traversal_and_bad_hash(self) -> None:
+        record = self.service.inspect_backup(self._run("manifest-validation").backup_id)
+        raw = record.manifest.model_dump()
+        raw["files"].append(dict(raw["files"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            BackupManifest.model_validate(raw)
+        for path in ("../escape", "/absolute", "objects/../escape", "./relative"):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                ManifestFile(path=path, size_bytes=0, sha256="a" * 64)
+        with self.assertRaises(ValueError):
+            ManifestFile(path="projection.sqlite3", size_bytes=0, sha256="invalid")
+
+    def test_legacy_manifest_order_is_compatible_and_duplicate_members_fail(self) -> None:
+        good = self._run("legacy-order")
+        record = self.service.inspect_backup(good.backup_id)
+        # v1 permits metadata after payloads. Preserve that compatibility while
+        # rejecting duplicate archive members without relaxing content checks.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with tarfile.open(record.path, "r:*") as archive:
+                archive.extractall(root, filter="data")
+            with tarfile.open(record.path, "w:gz") as archive:
+                for path in sorted(root.rglob("*"), key=lambda item: (item.name == "manifest.json", item.as_posix())):
+                    archive.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
+            self.assertTrue(self.service.verify_backup(good.backup_id).verified)
+            with tarfile.open(record.path, "w:gz") as archive:
+                for path in sorted(root.rglob("*")):
+                    archive.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
+                archive.add(root / "projection.sqlite3", arcname="projection.sqlite3")
+            failed = self.service.verify_backup(good.backup_id)
+            self.assertFalse(failed.verified)
+            self.assertIn("duplicate", failed.verification_error)
+
+    def test_change_during_verification_cannot_be_cached_as_verified(self) -> None:
+        good = self._run("changing-archive")
+        record = self.service.list_backups()[0]
+        from pa.backup.service import _integrity
+        changed = False
+        def mutate_after_extract(path, level):
+            nonlocal changed
+            _integrity(path, level)
+            if not changed:
+                changed = True
+                record.path.write_bytes(b"changed while verifying")
+        with patch("pa.backup.service._integrity", side_effect=mutate_after_extract):
+            result = self.service.verify_backup(good.backup_id)
+        self.assertFalse(result.verified)
+        self.assertIn("archive_changed", result.verification_error)
+        self.assertFalse(self.service.list_backups()[0].verified)
+
+    def test_verification_preserves_path_link_file_set_and_checksum_guards(self) -> None:
+        good = self._run("guard-fixture")
+        record = self.service.list_backups()[0]
+        with tarfile.open(record.path, "r:*") as archive:
+            payloads = [
+                (member, archive.extractfile(member).read() if member.isfile() else None)
+                for member in archive.getmembers()
+            ]
+        for guard in ("traversal", "symlink", "unexpected_file", "checksum"):
+            with self.subTest(guard=guard):
+                with tarfile.open(record.path, "w:gz") as archive:
+                    for member, payload in payloads:
+                        if guard == "checksum" and member.name == "sync_refs.json":
+                            payload = b"x" * len(payload)
+                        archive.addfile(member, io.BytesIO(payload) if payload is not None else None)
+                    if guard != "checksum":
+                        extra = tarfile.TarInfo("../escape" if guard == "traversal" else "extra")
+                        if guard == "symlink":
+                            extra.type = tarfile.SYMTYPE
+                            extra.linkname = "projection.sqlite3"
+                        archive.addfile(extra)
+                failed = self.service.verify_backup(good.backup_id)
+                self.assertFalse(failed.verified)
+                expected = "archive_unsafe" if guard in {"traversal", "symlink"} else "archive_file_set_mismatch" if guard == "unexpected_file" else "archive_checksum_mismatch"
+                self.assertIn(expected, failed.verification_error)
+
     def test_service_environment_uses_explicit_data_dir_on_macos_and_linux(
         self,
     ) -> None:
@@ -642,6 +868,26 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.sleep(0)
         self.assertIsNotNone(self.service.status()["next_scheduled_run"])
+
+    async def test_paused_scheduler_waits_without_startup_or_scrub_until_manual_recovery(self) -> None:
+        self.service._state.consecutive_failures = self.service.config.alert_after_failures
+        self.service._state.next_scrub_run = datetime.now(UTC) - timedelta(days=1)
+        self.service.config.run_on_startup = True
+        self.service.failure_notifier = Mock()
+        with patch.object(self.service, "_run_maintenance") as maintenance:
+            # No maintenance job is admitted while the persisted failure streak
+            # awaits an administrator, including a previously overdue scrub.
+            await self.service.start(None)
+            await asyncio.sleep(0.02)
+            maintenance.assert_not_called()
+            self.assertFalse(self.service._scheduler_task.done())
+            self.service._state.next_scrub_run = datetime.now(UTC) + timedelta(days=7)
+            result = await asyncio.to_thread(self.service.run_backup, idempotency_key="recover-paused-scheduler")
+            self.assertEqual(result.status, "success", result.failure_reason)
+            await asyncio.sleep(0.02)
+            self.assertFalse(self.service._config_event.is_set())
+            self.assertFalse(self.service._scheduler_task.done())
+            self.assertIsNotNone(self.service.status()["next_scheduled_run"])
 
     async def test_startup_minimum_age_controls_startup_run(self) -> None:
         calls: list[str] = []

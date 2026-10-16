@@ -1,0 +1,27 @@
+{
+  "scope": "disposable derived index; identical returned ancestry; no canonical or installed data changes",
+  "cases": [
+    {
+      "edges": 1000,
+      "old_recursive_vm_instructions": 5027000,
+      "forward_index_only_vm_instructions": 5027000,
+      "forward_index_and_frontier_join_vm_instructions": 27000
+    },
+    {
+      "edges": 2000,
+      "old_recursive_vm_instructions": 20054000,
+      "forward_index_and_frontier_join_vm_instructions": 54000
+    }
+  ],
+  "counting": "SQLite progress handler every100VM instructions; rounded to100",
+  "before_plan": [
+    "SEARCH p USING COVERING INDEX ix_commit_parent (realm_id=?)",
+    "SCAN a"
+  ],
+  "after_plan": [
+    "SCAN a",
+    "SEARCH p USING COVERING INDEX ix_commit_edges_forward (realm_id=? AND commit_hash=?)"
+  ],
+  "extra_derived_index_entries_per_parent_edge": 1,
+  "production_upgrade_build_cost": "unmeasured"
+}

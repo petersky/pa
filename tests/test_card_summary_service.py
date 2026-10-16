@@ -39,6 +39,32 @@ from pa.domain.projection import CardProjection
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+@pytest.mark.asyncio
+async def test_summary_worker_revalidates_manual_edit_after_executor_wait(tmp_path):
+    ctx, _ = context(str(tmp_path), None)
+    card = ctx.store.create_card(CardCreate(title="Original input"))
+    service = CardSummaryService(ctx)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = service._offload
+
+    async def queued(operation, call, *args, **kwargs):
+        entered.set()
+        await release.wait()
+        return await original(operation, call, *args, **kwargs)
+
+    service._offload = queued
+    pending = asyncio.create_task(service._update_async(
+        card, summary="Old generated text", summary_status="ready"))
+    await entered.wait()
+    ctx.store.update_card(card.id, CardUpdate(
+        summary="Operator supplied summary", summary_source="manual", summary_status="ready"))
+    release.set()
+    assert await pending is False
+    current = ctx.store.get_card(card.id)
+    assert current.summary == "Operator supplied summary"
+    assert current.summary_source.value == "manual"
+
+
 def context(tmp: str, provider):
     settings = Settings(
         data_dir=Path(tmp),

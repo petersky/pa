@@ -1,0 +1,111 @@
+{
+  "before": {
+    "scope": "100retained watches,30metrics calls,64KBproof per watch; disposable, no provider/peer work",
+    "latency_ms": {
+      "p50": 86.40212495811284,
+      "p95": 94.06099998159334,
+      "p99": 101.04845801834017,
+      "max": 101.04845801834017
+    },
+    "hydration": {
+      "hydrated_rows": 3000,
+      "state_policy_bytes": 193086000
+    },
+    "result": {
+      "active_watches": 34,
+      "historical_watches": 66,
+      "archived_watches": 15,
+      "terminal_retirement_backlog": 34
+    }
+  },
+  "after_sequential": {
+    "scope": "100 retained watches, 30 metrics calls, 64 KB proof per watch; disposable, no provider/peer work",
+    "source_store_sha256": "516a63e4db57ed38942698cfb5c0d54261fd0f922718ef415e83a4dbc68a59b3",
+    "latency_ms": {
+      "max": 10.29462501173839,
+      "p50": 6.525042001157999,
+      "p95": 8.666832989547402,
+      "p99": 10.29462501173839
+    },
+    "hydration": {
+      "hydrated_rows": 0,
+      "state_policy_bytes": 0
+    },
+    "result": {
+      "active_watches": 34,
+      "historical_watches": 66,
+      "archived_watches": 15,
+      "terminal_retirement_backlog": 34
+    }
+  },
+  "diagnostic_initial_after_overlapped_startup": {
+    "scope": "100retained watches,30metrics calls,64KBproof per watch; disposable, no provider/peer work",
+    "latency_ms": {
+      "p50": 7.04183301422745,
+      "p95": 8.291415986604989,
+      "p99": 9.373540990054607,
+      "max": 9.373540990054607
+    },
+    "hydration": {
+      "hydrated_rows": 0,
+      "state_policy_bytes": 0
+    },
+    "result": {
+      "active_watches": 34,
+      "historical_watches": 66,
+      "archived_watches": 15,
+      "terminal_retirement_backlog": 34
+    }
+  },
+  "scope": "30same-workload metrics calls,100retained watches; one host comparison, no deployed/whole-PA acceptance",
+  "validation": "99new/existing PR tests passed before final maximum precision;5final inventory tests passed after it. Full headCI still required.",
+  "script": "scripts/benchmark_pr_inventory.py",
+  "source": {
+    "scope": "supplemental source evidence captured during mixed run; application files unchanged since import and will be checked after run",
+    "captured_at": "2026-10-16T10:37:32.781538+00:00",
+    "files": {
+      "src/pa/pr_supervisor/store.py": "0a3744fac5c0134c5d99435d70beb6757ea532b72b7a4902942f6a9ab2bd0cb8",
+      "src/pa/pr_supervisor/service.py": "851c670390593c8213ab12219c101d4b2e97830d0fe1ef187760a38b43243145"
+    },
+    "unchanged_at_completion": true,
+    "note": "These additional files were captured during the run and unchanged through completion. Subsequent script versions include both modules in the built-in source hash list."
+  },
+  "prior_clean_after_before_final_fence_precision": {
+    "scope": "100 retained watches, 30 metrics calls, 64 KB proof per watch; disposable, no provider/peer work",
+    "source_store_sha256": "0a3744fac5c0134c5d99435d70beb6757ea532b72b7a4902942f6a9ab2bd0cb8",
+    "latency_ms": {
+      "max": 7.27508298587054,
+      "p50": 6.318625004496425,
+      "p95": 7.0143750053830445,
+      "p99": 7.27508298587054
+    },
+    "hydration": {
+      "hydrated_rows": 0,
+      "state_policy_bytes": 0
+    },
+    "result": {
+      "active_watches": 34,
+      "historical_watches": 66,
+      "archived_watches": 15,
+      "terminal_retirement_backlog": 34
+    }
+  },
+  "final_source_module_sha256": {
+    "pa.core.async_runtime": "7a09e8e9be1149eddfa8878d033a63fee1ab84e021a3094435f8152b5a86c35c",
+    "pa.core.performance": "1e3245aa474f6e18aed1e517697c946f21fd27072fbdc3fa2089ac4152285786",
+    "pa.core.sqlite_metrics": "2c9b9f4e634bb6a2241e3d3a64c15335ff6bb5722642d0590ab296b98e68125c",
+    "pa.domain.projection": "518a98d4058a6da758935da75ba82f56ec8fe36447febd2aaf76fed9bdde3d83",
+    "pa.domain.transcript_storage": "7c05377db647186cae9ec05722e32cfb3f171614da967d8300b72cec097fde46",
+    "pa.domain.card_summary_service": "a9c3b6154de1cbdd5b259a2d3b1128e0d0337a182cd856156c90cbc45f5eb2de",
+    "pa.modules.items": "f082347f25b6b2f4a765232decd880d6d8869cf26cb4635e58f69a1854f19419",
+    "pa.execution.dispatch": "1baeb22df825a377ef8125a39cb31ec326194856d36783fe9de733ccf9ea9c7e",
+    "pa.fleet.overview": "37ae0480776b87c55caeb0643f52b9ba4713891dac1fabce68d4ed8b50864337",
+    "pa.sync.engine": "4cdc98f6e11e8c3df7f90a19c7c20a38b6d5f520fcea28901552b27431791549",
+    "pa.sync.event_log": "6a111121e824014047482e5a2160445b073b67dcc38446ea52c3644750017270",
+    "pa.sync.dag_index": "6d921c69f30e9029a8d610e749d347bc4c26274dd2e663f529d47b053729aca0",
+    "pa.acp.transcript_page": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382",
+    "pa.instance.agent_session": "59f2050a878fe473c88e8b0688920804065204fcf3f44da02e709829c5037da9",
+    "pa.pr_supervisor.store": "516a63e4db57ed38942698cfb5c0d54261fd0f922718ef415e83a4dbc68a59b3",
+    "pa.pr_supervisor.service": "851c670390593c8213ab12219c101d4b2e97830d0fe1ef187760a38b43243145"
+  }
+}

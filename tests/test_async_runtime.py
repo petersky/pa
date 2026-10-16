@@ -6,6 +6,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 from pa.core.async_runtime import (
     AsyncRuntime,
     BlockingOperationTimeout,
@@ -202,3 +204,23 @@ class AsyncRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+@pytest.mark.asyncio
+async def test_slow_invocation_phases_are_bounded_numeric_and_exclude_payload():
+    runtime = AsyncRuntime(max_workers=1, slow_call_seconds=0)
+    private = "private-call-argument-not-diagnostics"
+    try:
+        for _ in range(70):
+            assert await runtime.run_blocking("fixture.numeric", lambda value: value, private) == private
+        snapshot = runtime.snapshot()
+        window = snapshot["slow_operations"]
+        assert window["capacity"] == 64
+        assert len(window["observations"]) == 64
+        assert snapshot["operations"]["fixture.numeric"]["slow_calls"] == 70
+        for observation in window["observations"]:
+            assert observation["operation"] == "fixture.numeric"
+            assert all(isinstance(value, (int, float)) and value >= 0
+                       for key, value in observation.items() if key != "operation")
+            assert "worker_service_ms" in observation and "queue_wait_ms" in observation
+        assert private not in repr(snapshot)
+    finally:
+        await runtime.close()
