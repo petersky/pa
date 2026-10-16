@@ -149,6 +149,35 @@ def test_failed_start_uses_real_retry_and_card_apis_with_protection(selection_ap
         assert ctx.store.get_card(card.id).completion_requirement.model_dump(mode="json") == protected
 
 
+@pytest.mark.parametrize("change", [{"body":"Concurrent new scope"}, {"summary_status":"pending"}])
+def test_admission_rechecks_preview_after_placement_probe(selection_app, monkeypatch, change):
+    from tests.test_fleet_placement import _candidate
+
+    client, app, _service = selection_app
+    ctx = app.state.ctx
+    worker = ctx.require_service("dispatch_worker")
+    client.portal.call(worker.close)
+    monkeypatch.setattr(worker, "start", lambda:None)
+    monkeypatch.setattr(worker, "wake", lambda:None)
+    card = ctx.store.create_card(CardCreate(title="Original task", auto_enrich=False))
+
+    async def probe(*args, **kwargs):
+        ctx.store.update_card(card.id, CardUpdate(**change))
+        return [_candidate("local", local=True)]
+
+    with patch("pa.modules.fleet._placement_candidates", probe):
+        result = client.post("/api/fleet/dispatch", headers={"Idempotency-Key":"probe-race"}, json={
+            "card_id":card.id, "target_instance_id":"local", "message":"Perform the original task",
+            "expected_execution_version":card.execution_version,
+            "execution_contract":{"version":1, "profile":"research", "confirmed":True, "requirements":{}}})
+    if "body" in change:
+        assert result.status_code == 409, result.text
+        assert result.json()["detail"]["code"] == "stale_card_preferences"
+        assert not ctx.require_service("dispatch_store").list(card_id=card.id)
+    else:
+        assert result.status_code == 202, result.text
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("delivery", ["accepted", "lost_reply", "unknown", "rejected", "started"])
 async def test_health_failed_start_is_bounded_and_never_creates_a_second_worker(fleet, monkeypatch, delivery):

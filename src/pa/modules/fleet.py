@@ -7548,6 +7548,17 @@ def _placement_materialization_plan(
     return plan, repository_ids
 
 
+def _check_dispatch_preview(body: RemoteAgentStartBody, card) -> None:
+    if body.expected_card_version is not None and (
+        card is None or card.updated_at != body.expected_card_version
+    ):
+        raise PlacementError("stale_card_preferences", "Card changed since preview. Refresh the preview before dispatching.", recoverable=True)
+    if body.expected_execution_version is not None and (
+        card is None or card.execution_version != body.expected_execution_version
+    ):
+        raise PlacementError("stale_card_preferences", "The task or its execution requirements changed. Refresh the preview before dispatching.", recoverable=True)
+
+
 async def _resolve_policy_placement(
     request: Request,
     body: FleetDispatchBody,
@@ -7557,14 +7568,7 @@ async def _resolve_policy_placement(
     project_id: str | None,
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
-    if body.expected_card_version is not None and (
-        card is None or card.updated_at != body.expected_card_version
-    ):
-        raise PlacementError("stale_card_preferences", "Card changed since preview. Refresh the preview before dispatching.", recoverable=True)
-    if body.expected_execution_version is not None and (
-        card is None or card.execution_version != body.expected_execution_version
-    ):
-        raise PlacementError("stale_card_preferences", "The task or its execution requirements changed. Refresh the preview before dispatching.", recoverable=True)
+    _check_dispatch_preview(body, card)
     requested_provider = (body.provider or "").strip().lower() or None
     requested_model_id = body.model_id
     requested_mode_id = body.mode_id
@@ -11094,6 +11098,15 @@ async def _admit_remote_agent_work(
         error = _dispatch_lookup_error("card", body.card_id)
         await _reject_goal_dispatch_admission(request, preadmission_record, error)
         raise error
+    try:
+        # Placement probes yield to other card mutations. Consume the preview
+        # against the authoritative snapshot used for admission, not the older
+        # snapshot that started placement. Receipt replays already returned above.
+        _check_dispatch_preview(body, card)
+    except PlacementError as exc:
+        error = _placement_http_error(exc)
+        await _reject_goal_dispatch_admission(request, preadmission_record, error)
+        raise error from exc
     project_id = body.project_id or (card.project_id if card else None)
     project = (
         await _offload_request(
