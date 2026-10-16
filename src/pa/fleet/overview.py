@@ -616,6 +616,7 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
         sessions.append(
             {
                 "id": session.id,
+                "purpose": session.purpose,
                 "realm_id": session.realm_id,
                 "title": session.title or session.label or session.id,
                 "card_id": session.card_id or session.item_id,

@@ -27,6 +27,7 @@ def _session_payload(session: Any) -> dict[str, Any]:
     requested = dict((config.get("configuration") or {}).get("requested") or {})
     return {
         "id": str(_value(session, "id", "")),
+        "purpose": _value(session, "purpose", "unknown"),
         "title": _value(session, "title") or _value(session, "label") or "Card agent",
         "status": str(_value(session, "status", "unknown")),
         "provider": _value(session, "agent_name") or "Unknown provider",
@@ -96,6 +97,7 @@ def build_card_execution_index(
         for session in sessions
         if (payload := _session_payload(session))["id"]
     }
+    sources = [s for s in by_session.values() if s["purpose"] == "chat"]
     executions: list[dict[str, Any]] = []
     consumed_sessions: set[str] = set()
 
@@ -154,7 +156,7 @@ def build_card_execution_index(
         )
 
     for session_id, session in by_session.items():
-        if session_id in consumed_sessions:
+        if session_id in consumed_sessions or session["purpose"] == "chat":
             continue
         owner = session["owner_instance_id"] or ctx.settings.instance_id
         local = owner == ctx.settings.instance_id
@@ -201,6 +203,7 @@ def build_card_execution_index(
         executions[0]["primary_action"] if executions else {"kind": "dispatch", "label": "Dispatch"}
     )
     return {
+        "source_conversations": sources,
         "executions": executions,
         "active": active,
         "exclusive_active": bool(active),

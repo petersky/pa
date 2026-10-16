@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import Enum
+import re
 from typing import Any
 
 from pa.execution.session_presentation import pending_completion_processing
@@ -377,6 +378,7 @@ def present_work_item(
     *,
     dispatch: dict[str, Any] | None = None,
     session: dict[str, Any] | None = None,
+    start_receipt: dict[str, Any] | None = None,
     watches: Iterable[Any] = (),
     target_instance_name: str | None = None,
     now: datetime | None = None,
@@ -387,6 +389,9 @@ def present_work_item(
     A Waiting lane is metadata only and never creates attention by itself.
     """
     dispatch = dispatch or {}
+    # Association is provenance, not proof that the conversation is a worker.
+    if session and session.get("purpose") == "chat":
+        session = None
     if session and dispatch.get("session_id") and (session.get("id") or session.get("session_id")) not in {None, dispatch["session_id"]}:
         session = None
     progress = dispatch.get("progress") or {}
@@ -697,6 +702,31 @@ def present_work_item(
             else _action("open_card", "Open card", href=card_href)
         )
         action_explanation = "Inspect the linked execution before considering another dispatch."
+    elif not dispatch_id and start_receipt and start_receipt.get("state") != "admitted":
+        blocked_start = start_receipt.get("state") == "blocked"
+        group = "attention" if blocked_start else "motion"
+        state_code = "start_blocked" if blocked_start else "start_pending"
+        state_label = "Start blocked" if blocked_start else "Preparing work"
+        error = start_receipt.get("error") or {}
+        code = error.get("code") if isinstance(error, dict) else None
+        summary = {
+            "materialization_preflight_required": "Review the project and workspace requirements.",
+            "conversation_project_required": "Choose the project for this work.",
+            "conversation_repository_required": "Link a repository to the selected project.",
+        }.get(code) or _text(error) or "PA is preparing the saved request."
+        reason = "The saved start has not admitted a card worker."
+        tone = "blocked" if blocked_start else "active"
+        priority = 105 if blocked_start else 80
+        attention_code = "start_blocked" if blocked_start else None
+        action = _action("recover_start", "Review start" if blocked_start else "View start",
+                         href=f"/agent?session={start_receipt['session_id']}&issues=1")
+        action_explanation = "Review current constraints, then resume the same saved request."
+    elif not dispatch_id and not session_id and lane == "inbox":
+        state_code, state_label = "not_started", "Not started"
+        summary = "No card worker has started."
+        reason = "The card has no admitted execution."
+        action = _action("dispatch", "Start work", href=card_href)
+        action_explanation = None
     elif _value(card, "completion_requirement") and lane != "done" and not completion["accepted"]:
         group = "attention"
         state_code = completion["reason_code"]
@@ -753,20 +783,50 @@ def present_work_item(
         tone = "failed"
         priority = 44
 
+    # Compact surfaces show a result and one action. Keep the full explanation
+    # above for diagnostics; never expose machine tokens as the main result.
+    outcome = summary
+    if state_code in {"delivery_failed", "reconciliation_failed", "blocked", "retry_required", "failed", "start_blocked"}:
+        if re.search(r"\b[a-zA-Z]+_[a-zA-Z_]+\b", outcome or ""):
+            outcome = {
+                "delivery_failed": "The turn result could not be delivered.",
+                "reconciliation_failed": "The card could not be updated safely.",
+                "start_blocked": "Work has not started. Review its saved request.",
+            }.get(state_code, "The attempt stopped before the work was finished.")
+    if state_code == "working" and session_facts["tool"]:
+        outcome = latest_summary or "Agent turn in progress."
+    if state_code == "not_started":
+        outcome = _card_summary(card) if str(_enum_value(_value(card, "summary_status"))) == "ready" else None
+    if state_code == "completed":
+        outcome = outcome_summary or latest_summary
+    if outcome in {state_label, "Work completed.", "No current execution signal."}:
+        outcome = None
+    stage_labels = {"integrated": "Merged", "published": "Published", "active": "Activated", "verified": "Verified"}
+    stages = [label for name, label in stage_labels.items() if name in completion["satisfied"]]
+    if _enum_value(_value(_value(card, "completion_requirement"), "mode")) == "explicit_acceptance" and completion["accepted"]:
+        stages.append("Accepted")
+    if stages:
+        outcome = " · ".join(stages)
+        if completion["missing"]:
+            missing_labels = {"integrated": "merge", "active": "activation", "verified": "verification", "published": "publication"}
+            outcome += " · Pending: " + missing_labels.get(completion["missing"][0], completion["missing"][0].replace("_", " "))
+
     from pa.core.ui.next_actor import next_actor
     if state_code == "completed":
         actor = next_actor("none")
     elif state_code == "review_gate":
         actor = next_actor("reviewer", reason)
-    elif group == "attention" or state_code == "paused":
+    elif group == "attention" or state_code in {"paused", "not_started"}:
         actor = next_actor("operator", action_explanation or reason)
     elif state_code == "working":
         actor = next_actor("provider", reason)
-    elif state_code in STARTING_DISPATCH_STATES or state_code == "session_queued" or (settlement and settlement["next_automatic_action"]):
+    elif state_code in STARTING_DISPATCH_STATES or state_code in {"session_queued", "start_pending"} or (settlement and settlement["next_automatic_action"]):
         actor = next_actor("pa", reason)
     else:
         actor = next_actor("unknown", action_explanation or reason)
     presentation = {
+        "outcome": outcome,
+        "start_receipt": start_receipt,
         "next_actor": actor,
         "group": group,
         "attention": group == "attention",
@@ -829,11 +889,8 @@ def present_work_item(
         for part in (
             card_title,
             state_label,
-            summary,
-            reason,
-            f"Target {presentation['target_instance_name']}",
-            f"{presentation['freshness_label']}, {presentation['relative_time']}",
-            presentation["reporting_label"],
+            outcome,
+            presentation["relative_time"],
             action.get("label"),
         )
         if part

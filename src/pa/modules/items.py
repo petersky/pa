@@ -577,7 +577,7 @@ def _progress_from_dispatch(ctx: AppContext, record) -> dict:
 
 
 def _session_presentation_signal(ctx: AppContext, session, *, dispatch=None) -> dict | None:
-    if session is None:
+    if session is None or session.purpose == "chat":
         return None
     from pa.execution.session_presentation import build_session_presentation
 
@@ -606,6 +606,7 @@ def _session_presentation_signal(ctx: AppContext, session, *, dispatch=None) -> 
         state = "available"
     return {
         "id": session.id,
+        "purpose": session.purpose,
         "instance_id": session.origin_instance_id or ctx.settings.instance_id,
         "provider": session.agent_name,
         "model": (session.config_json or {}).get("model"),
@@ -657,6 +658,8 @@ def _presentation_context_for_cards(
     card_ids = {card.id for card in cards}
     store = get_store()
     sessions = preferred_sessions_by_card(store.list_sessions_for_cards(card_ids))
+    from pa.domain.conversation_issues import ConversationIssues
+    starts = ConversationIssues(store).starts_for_cards(card_ids, realm_id=_active_realm(request))
     dispatch_store = request.app.state.ctx.services.get("dispatch_store")
     dispatches = dispatch_store.latest_by_card(card_ids) if dispatch_store else {}
     execution_sessions = {session.id: session for session in store.list_sessions(
@@ -679,6 +682,7 @@ def _presentation_context_for_cards(
             progress[card.id] = _progress_from_dispatch(ctx, record)
         presentations[card.id] = present_work_item(
             card,
+            start_receipt=starts.get(card.id),
             dispatch=public,
             session=_session_presentation_signal(ctx, execution_session, dispatch=public),
             watches=watches.get(card.id, ()),
@@ -895,6 +899,7 @@ def _card_agent_context(request: Request, card) -> dict:
     session_views = [
         _card_session_view(session, ctx.settings.instance_id)
         for session in related_sessions
+        if session.purpose != "chat"
     ]
     # Store order is updated_at DESC. Prefer the most recently updated active
     # local session, then the most recently updated closed-but-resumable one.

@@ -2,7 +2,7 @@
 <div class="card-tab-loaded" data-card-tab-loaded data-execution-index-provenance="{{ execution_index.provenance }}">
   <span class="sr-only">Resume session</span>
   <div class="section-heading-inline">
-    <div><h3>Agent execution</h3><p class="muted">Selecting a card never starts work. Durable dispatches and local or remote ACP sessions are shown as one execution.</p></div>
+    <div><h3>Card workers</h3></div>
     {% if agent_enabled | default(true) %}<div class="button-row">
       {% set primary = execution_index.primary_action %}
       {% if primary.get('href') %}<a class="button" href="{{ primary.href }}" aria-label="{{ primary.label }}{% if execution_index.active %} on {{ execution_index.active[0].host }}, {{ execution_index.active[0].phase }}, freshness {{ execution_index.active[0].freshness }}{% endif %}">{{ primary.label }}</a>
@@ -13,6 +13,7 @@
       {% else %}<button type="button" data-card-agent-start-new>Start new session</button>{% endif %}
     </div>{% endif %}
   </div>
+  {% for source in execution_index.source_conversations %}<p><a href="/agent?session={{ source.id }}{% if source.owner_instance_id %}&instance={{ source.owner_instance_id }}{% endif %}">Source conversation</a></p>{% endfor %}
   {% if card_executions %}<div class="agent-session-list">
     {% for execution in card_executions %}{% set session = execution.session or {} %}{% set instance = {'id': execution.owner_instance_id} %}<article class="agent-session-card" data-execution-id="{{ execution.id }}" data-dispatch-id="{{ execution.dispatch_id or '' }}" data-session-id="{{ execution.session_id or '' }}">
       <div class="section-heading-inline"><div><h4>{% if execution.exact_href %}<a href="{{ execution.exact_href }}">{{ execution.session.title if execution.session else 'Durable remote execution' }}</a>{% else %}Durable dispatch{% endif %}</h4><p><span class="status status-{{ 'active' if execution.active else execution.state }}">{{ execution.state | replace('_', ' ') }}</span></p>{% if execution.diagnostic %}<p class="muted" role="status">{{ execution.diagnostic }}</p>{% endif %}</div>{% if execution.last_activity_at %}<time datetime="{{ execution.last_activity_at.isoformat() if execution.last_activity_at.isoformat is defined else execution.last_activity_at }}">{{ execution.last_activity_at }}</time>{% endif %}</div>

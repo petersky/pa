@@ -24,11 +24,11 @@ def operator_server(operator_app):
     server = uvicorn.Server(uvicorn.Config(operator_app, host="127.0.0.1", port=port, log_level="error"))
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 20
-    while not server.started:
-        assert thread.is_alive() and time.monotonic() < deadline
-        time.sleep(.02)
     try:
+        deadline = time.monotonic() + 60
+        while not server.started:
+            assert thread.is_alive() and time.monotonic() < deadline
+            time.sleep(.02)
         yield operator_app, f"http://127.0.0.1:{port}"
     finally:
         server.should_exit = True

@@ -22,6 +22,45 @@ CARD = {
 }
 
 
+def test_source_chat_never_becomes_card_work_and_blocked_start_has_recovery():
+    card = {**CARD, "lane": "inbox"}
+    chat = {"id": "source", "purpose": "chat", "state": "working", "turn": {"state": "running"}}
+    result = present_work_item(card, session=chat)
+    assert result["state_label"] == "Not started"
+    assert result["session_id"] is None and result["next_actor"]["id"] == "operator"
+    assert result["action"]["kind"] == "dispatch"
+    receipt = {"session_id": "source", "request_id": "saved-request", "state": "blocked",
+               "error": {"code": "materialization_preflight_required"}}
+    blocked = present_work_item(card, session=chat, start_receipt=receipt)
+    assert blocked["state_label"] == "Start blocked"
+    assert blocked["action"] == {"kind": "recover_start", "label": "Review start", "href": "/agent?session=source&issues=1"}
+    assert blocked["start_receipt"]["request_id"] == "saved-request"
+    assert blocked["outcome"] == "Review the project and workspace requirements."
+
+
+def test_compact_failure_keeps_raw_diagnostics_in_details():
+    result = present_work_item(CARD, dispatch={"dispatch_id": "failed", "state": "failed", "can_retry": True,
+        "last_error": "workspace_preflight_failed: missing_worktree_lease"})
+    assert "missing_worktree_lease" in result["summary"]
+    assert "missing_worktree_lease" not in result["outcome"]
+    assert result["action"]["label"] == "Inspect attempt"
+
+
+def test_compact_result_keeps_merge_activation_and_acceptance_distinct():
+    requirement = {"schema_version": 1, "revision": "v1", "mode": "explicit_acceptance",
+                   "milestones": ["integrated", "active", "verified"], "acceptance_principals": ["user:reviewer"]}
+    integration = {"requirement_revision": "v1", "subject_revision": "build-a", "actor": "supervisor",
+                   "recorded_at": NOW.isoformat(), "outcome": "integrated", "milestones": ["integrated"]}
+    card = {**CARD, "completion_requirement": requirement, "completion_evidence": [integration]}
+    assert present_work_item(card)["outcome"] == "Merged · Pending: activation"
+    active = {**integration, "actor": "activator", "outcome": "observed", "milestones": ["active"]}
+    card["completion_evidence"].append(active)
+    assert present_work_item(card)["outcome"] == "Merged · Activated · Pending: verification"
+    accepted = {**active, "actor": "independent-reviewer", "outcome": "accepted", "milestones": ["verified"]}
+    card["completion_evidence"].append(accepted)
+    assert present_work_item(card)["outcome"] == "Merged · Activated · Verified · Accepted"
+
+
 def dispatch(
     state: str,
     *,

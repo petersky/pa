@@ -4437,6 +4437,12 @@ a.ghost:hover {
 .card-work-state-heading { justify-content: space-between; }
 .card-live-progress > p { margin: 0; overflow-wrap: anywhere; }
 .card-live-progress > strong { overflow-wrap: anywhere; }
+.work-outcome { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.work-evidence { min-width: 0; overflow-wrap: anywhere; }
+.work-evidence[open] { max-height: min(14rem, 35dvh); overflow: auto; }
+.work-evidence summary { cursor: pointer; }
+.work-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.compact-card-progress { min-width: 0; overflow-wrap: anywhere; }
 
 .compact-card-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .compact-card {
@@ -4467,7 +4473,7 @@ a.ghost:hover {
   font-weight: 600;
 }
 .compact-card h3 { margin: 0.35rem 0 0.2rem; font-size: 0.95rem; line-height: 1.3; text-transform: none; }
-.compact-card h3 a { color: var(--pa-text); }
+.compact-card h3 a { color: var(--pa-text); overflow-wrap: anywhere; }
 .compact-card h3 a:hover { color: var(--pa-accent); text-decoration: underline; }
 .compact-card.is-title-only { padding: 0.5rem 0.6rem; }
 .compact-card.is-title-only h3 { margin: 0; }

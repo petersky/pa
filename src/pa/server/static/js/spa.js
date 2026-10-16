@@ -2134,7 +2134,7 @@
         detailLink.dataset.cardId,
         detailLink.dataset.cardRealm || "default",
         true,
-        "summary"
+        detailLink.dataset.cardDetailTab || "summary"
       );
       return;
     }

@@ -13,7 +13,7 @@ from starlette.requests import Request
 from pa.config import Settings
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.conversation_issues import ConversationIssues, Issue, IssueConflict, IssueEdit, StartIssues
-from pa.domain.models import AgentSession, CardCreate, ProjectCreate
+from pa.domain.models import AgentSession, CardCreate, ProjectCreate, RepositoryCreate
 from pa.domain.projection import CardProjection
 from pa.instance.agent_session import AgentSessionManager
 from pa.modules.conversation_issues import edit_issues, get_issues, start_issues, _preferences
@@ -27,7 +27,8 @@ def setup(tmp_path):
     store = CardProjection(tmp_path / "pa.db", log)
     settings = Settings(data_dir=tmp_path / "data", workspace_root=tmp_path / "worktrees", instance_id="test")
     manager = AgentSessionManager(settings, store)
-    store.save_session(AgentSession(id="discussion", agent_name="codex", purpose="chat", principal_id="user:test", mode_id="read-only"))
+    project = store.create_project(ProjectCreate(title="Default project"))
+    store.save_session(AgentSession(id="discussion", agent_name="codex", purpose="chat", principal_id="user:test", mode_id="read-only", project_id=project.id))
     app = FastAPI()
     app.state.ctx = SimpleNamespace(settings=settings, store=store, services={}, require_service=lambda _: manager)
     def request(key="start-1234", principal="user:test"):
@@ -161,6 +162,7 @@ async def test_first_selected_work_inherits_primary_card_project_and_worker_defa
         completion_requirement={'mode':'explicit_acceptance', 'criteria':'Verify health-group:unrelated',
                                 'milestones':['verified'], 'originating_session_id':'parent-repair'}))
     session = store.get_session("discussion")
+    session.project_id = None
     session.card_id, session.mode_id = source.id, "agent-full-access"
     session.model_id = "gpt-6.1-sol[xhigh]"
     session.config_json = {"execution_selection": {"resolved_inputs": {
@@ -302,3 +304,128 @@ def test_restored_receipt_exposes_frozen_realm_without_execution_context():
     assert "context" not in receipt and "fingerprint" not in receipt
     assert receipt["groups"] == [{"card_id": "existing-card"}]
     assert "realm_id" not in state["requests"][0]  # no migration of retained notebooks
+
+
+@pytest.mark.asyncio
+async def test_unbound_pa_implementation_resolves_catalog_before_repository_preflight(setup, monkeypatch):
+    from pa.execution.profiles import resolve_materialization_plan
+    store, _, req, _ = setup
+    session = store.get_session("discussion")
+    session.project_id = None
+    store.save_session(session)
+    project = store.create_project(ProjectCreate(title="PA Core"))
+    repo = store.create_repository(RepositoryCreate(name="pa", url="https://github.com/petersky/pa"))
+    store.link_project_repository(project.id, repo.id, branch="main")
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="fix-pa", title="Implement PA status and actions")]))
+    async def dispatch(request, body):
+        card = store.get_card(body.card_id)
+        assert body.project_id == card.project_id == project.id
+        plan = resolve_materialization_plan(requested=None, card=card, project=store.get_project(card.project_id),
+            project_repositories=store.list_project_repositories(card.project_id), explicit_repositories=[], target_instance_id="test")
+        assert plan.admissible and plan.profile.value == "repository"
+        assert plan.repositories[0]["repository_id"] == repo.id
+        assert plan.workspace["leased"] and plan.repositories[0]["worktree_required"]
+        return {"dispatch_id": "pa-worker"}
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    result = await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["fix-pa"]))
+    assert result["requests"][0]["state"] == "admitted"
+    assert store.get_session("discussion").project_id is None
+
+
+@pytest.mark.asyncio
+async def test_enrichment_settles_before_admission_and_ambiguity_recovers_same_card(setup, monkeypatch):
+    from pa.domain.models import CardUpdate
+    store, _, req, _ = setup
+    session = store.get_session("discussion")
+    session.project_id = None
+    store.save_session(session)
+    project = store.create_project(ProjectCreate(title="PA Core"))
+    await edit_issues(req(), "discussion", ten_issues())
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def enrich(ctx, card_id, realm, protected, **kwargs):
+        assert {"title", "body", "kind", "tags", "preferred_capabilities"} <= protected
+        entered.set()
+        await release.wait()
+        # An uncertain provider response must not silently admit research work.
+    monkeypatch.setattr("pa.domain.card_enrichment.enrich_card", enrich)
+    dispatch = AsyncMock(return_value={"dispatch_id": "resolved-worker"})
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    body = StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"])
+    pending = asyncio.create_task(start_issues(req(), "discussion", body))
+    await entered.wait()
+    assert dispatch.await_count == 0
+    release.set()
+    first = await pending
+    assert first["requests"][0]["state"] == "blocked"
+    assert first["requests"][0]["error"]["code"] == "conversation_project_required"
+    card_id = first["requests"][0]["groups"][0]["card_id"]
+    receipt = ConversationIssues(store).starts_for_cards({card_id}, realm_id="default")[card_id]
+    assert receipt["request_id"] == body.request_id and receipt["state"] == "blocked"
+    assert not ConversationIssues(store).starts_for_cards({card_id}, realm_id="another-realm")
+    store.update_card(card_id, CardUpdate(project_id=project.id))
+    again = await start_issues(req(), "discussion", body)
+    assert again["requests"][0]["state"] == "admitted"
+    assert again["requests"][0]["groups"][0]["card_id"] == card_id
+    assert len(store.list_cards()) == 1 and dispatch.await_count == 1
+    assert dispatch.call_args.args[1].project_id == project.id
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_project_references_never_choose_arbitrarily(setup, monkeypatch):
+    store, _, req, _ = setup
+    session = store.get_session("discussion")
+    session.project_id = None
+    store.save_session(session)
+    store.create_project(ProjectCreate(title="PA Core"))
+    store.create_project(ProjectCreate(title="PA Docs"))
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="two", title="Implement PA Core and PA Docs integration")]))
+    dispatch = AsyncMock()
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    result = await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["two"]))
+    assert result["requests"][0]["error"]["code"] == "conversation_project_required"
+    assert dispatch.await_count == 0
+    assert store.list_cards()[0].project_id is None
+
+
+@pytest.mark.asyncio
+async def test_project_resolution_checks_membership_before_assigning(setup, monkeypatch):
+    from pa.domain.models import ProjectUpdate
+    store, _, req, _ = setup
+    session = store.get_session("discussion")
+    session.project_id = None
+    store.save_session(session)
+    project = store.create_project(ProjectCreate(title="Restricted PA"))
+    store.update_project(project.id, ProjectUpdate(memberships=[{"principal_id": "user:other"}]))
+    await edit_issues(req(), "discussion", IssueEdit(revision=0, issues=[Issue(id="private", title="Implement Restricted PA")]))
+    dispatch = AsyncMock()
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    result = await start_issues(req(), "discussion", StartIssues(request_id="start-1234", revision=1, issue_ids=["private"]))
+    assert result["requests"][0]["error"]["code"] == "project_membership_required"
+    assert dispatch.await_count == 0 and store.list_cards()[0].project_id is None
+
+
+@pytest.mark.asyncio
+async def test_successful_enrichment_is_awaited_before_freezing_dispatch(setup, monkeypatch):
+    from pa.domain.models import CardUpdate
+    store, _, req, _ = setup
+    session = store.get_session("discussion")
+    session.project_id = None
+    store.save_session(session)
+    project = store.create_project(ProjectCreate(title="Semantic catalog match"))
+    await edit_issues(req(), "discussion", ten_issues())
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def enrich(ctx, card_id, realm, protected, **kwargs):
+        entered.set()
+        await release.wait()
+        store.update_card(card_id, CardUpdate(project_id=project.id))
+    monkeypatch.setattr("pa.domain.card_enrichment.enrich_card", enrich)
+    dispatch = AsyncMock(return_value={"dispatch_id": "enriched-worker"})
+    monkeypatch.setattr("pa.modules.fleet.dispatch_fleet_work", dispatch)
+    body = StartIssues(request_id="start-1234", revision=1, issue_ids=["issue-0"])
+    pending = asyncio.create_task(start_issues(req(), "discussion", body))
+    await entered.wait()
+    assert dispatch.await_count == 0
+    release.set()
+    result = await pending
+    assert result["requests"][0]["state"] == "admitted"
+    assert dispatch.call_args.args[1].project_id == project.id

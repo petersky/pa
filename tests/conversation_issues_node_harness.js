@@ -4,7 +4,8 @@ const vm = require("node:vm");
 const memory = new Map();
 const window = {};
 function element(tag) {
-  return {tag, children: [], appendChild(child) {this.children.push(child);}, replaceChildren() {this.children = [];}};
+  return {tag, children: [], events: {}, addEventListener(name, callback) {this.events[name] = callback;},
+    append(...children) {this.children.push(...children);}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children = [];}};
 }
 vm.runInNewContext(fs.readFileSync("src/pa/server/static/js/conversation-issues.js", "utf8"), {
   window, console, document: {createElement: element}, setTimeout: () => 1, clearTimeout() {},
@@ -68,4 +69,13 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     "/work?card=legacy-card",
   ]);
   assert.ok(links.every(link => link.textContent === "Open card"));
+  const parent = element("div"), recovery = controller(() => {throw new Error("review cannot start work");});
+  let resumed;
+  recovery.start = value => {resumed = value;};
+  recovery.retryButton(parent, body);
+  parent.children[0].events.click();
+  assert.equal(resumed, undefined, "review is separate from resuming the request");
+  assert.equal(parent.children.at(-1).textContent, "Resume saved request");
+  parent.children.at(-1).events.click();
+  assert.equal(resumed, body, "recovery retains the original request and selection");
 })().catch(error => {console.error(error); process.exitCode = 1;});

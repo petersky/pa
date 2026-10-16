@@ -65,6 +65,7 @@
     </div>
 
     {% if card.completion_requirement %}
+    <details class="work-evidence"><summary>Completion requirements</summary>
     <p class="muted" data-completion-reason="{{ card.completion_status.reason_code }}">
       {% if card.completion_status.reason_code == 'verification_pending' %}PA is arranging independent verification.{% elif card.completion_status.missing %}Next: {{ card.completion_status.missing[0] | replace('_', ' ') }}.{% else %}Completion requirements satisfied.{% endif %}
       {{ card.completion_requirement.criteria }}
@@ -72,6 +73,7 @@
       For an audited operator override, <a href="{{ card_sign_in_url }}" data-sign-in data-sign-in-card="{{ card.id }}" data-sign-in-realm="{{ card.realm_id }}">sign in with your operator password</a>, review the criteria, then select Done. Local no-login access cannot verify a human operator.
       {% endif %}
     </p>
+    </details>
     {% endif %}
     {% include "partials/card-progress.html" %}
 
@@ -116,8 +118,7 @@
              data-card-tab-panel="summary">
       <section class="card-detail-section" aria-labelledby="card-summary-title">
         <div class="section-heading-inline">
-          <h3 id="card-summary-title">Summary</h3>
-          <span class="muted">{{ card.summary_status.value }}{% if card.summary_status.value == 'ready' %} · {{ card.summary_source.value }}{% endif %}{% if card.summary_updated_at %} · {{ card.summary_updated_at.strftime('%b %-d, %Y') }}{% endif %}</span>
+          <h3 id="card-summary-title" class="sr-only">Summary</h3>
         </div>
         <div class="inline-edit-field" data-inline-edit-field>
           <div class="inline-edit-trigger inline-edit-block" data-inline-edit-open tabindex="0" aria-label="Edit summary">

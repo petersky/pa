@@ -1090,7 +1090,7 @@ def test_no_session_card_keeps_lane_dispatch_activity_and_outcome_separate():
 
     assert row["lane_label"] == "Inbox"
     assert row["dispatch_label"] == "Not dispatched"
-    assert row["activity_label"] == "Not in motion"
+    assert row["activity_label"] == "Not started"
     assert row["freshness_label"] == "No session signal"
     assert row["outcome_label"] == "No outcome yet"
     assert row["card"]["can_dispatch"] is True
