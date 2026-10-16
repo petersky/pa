@@ -340,7 +340,7 @@ class VerificationService:
                     if not any(r.startswith(prefix) and len(r) > len(prefix) for r in evidence.references):
                         raise CompletionConflict('verification_runtime_evidence_required')
                 if instance == self.ctx.settings.instance_id:
-                    build = packet['runtime_build'].get('source_revision')
+                    build = packet['runtime_build'].get('source_revision') or packet['runtime_build'].get('package_identity')
                     if not build:
                         raise CompletionConflict('verification_loaded_build_unknown')
                     refs |= {'runtime-build:' + instance + ':' + build,

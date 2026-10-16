@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import csv
+import hashlib
+import io
+import base64
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
@@ -55,3 +59,34 @@ def running_source_revision() -> str | None:
         return None
     revision = vcs_info.get("commit_id")
     return str(revision).lower() if revision else None
+
+
+def running_package_identity() -> str | None:
+    """Hash a wheel's verified package manifest, without claiming a VCS revision.
+
+    Capture once at process startup. Mutable install.json and release labels
+    cannot prove which bytes the running distribution loaded.
+    """
+    try:
+        dist = distribution('pa')
+        if (dist.version != __version__ or
+                Path(__file__).resolve() != Path(dist.locate_file('pa/install/metadata.py')).resolve()):
+            return None
+        record = dist.read_text('RECORD')
+        if not record:
+            return None
+        entries = []
+        for path, checksum, _size in csv.reader(io.StringIO(record)):
+            if not path.startswith('pa/'):
+                continue
+            if '..' in Path(path).parts or not checksum.startswith('sha256='):
+                return None
+            actual = hashlib.sha256(dist.locate_file(path).read_bytes()).digest()
+            if base64.urlsafe_b64encode(actual).decode().rstrip('=') != checksum.removeprefix('sha256='):
+                return None
+            entries.append((path, checksum))
+        if not entries:
+            return None
+        return 'sha256:' + hashlib.sha256(json.dumps(sorted(entries), separators=(',', ':')).encode()).hexdigest()
+    except (PackageNotFoundError, OSError, csv.Error, TypeError, ValueError):
+        return None

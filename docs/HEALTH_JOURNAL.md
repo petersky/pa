@@ -108,6 +108,10 @@ snapshot and inbox watermark, loaded runtime identity, and excluded origins.
 Only the existing bound acceptance producer certifies success. A deployed build
 mismatch or incomplete/offline scope must remain pending. Source integration,
 source scenario tests, deployment and runtime verification are distinct facts.
+Release wheels identify their actual package bytes with a verified wheel manifest
+hash captured at startup. This identity is distinct from a VCS source revision;
+the verifier still reconciles the published artifact with the source subject and
+scenario. Changed, missing, mismatched or unrecorded bytes stay unknown.
 An unchanged failed scenario does not spawn another verifier. A definitive
 pre-session selection failure can retry the same dispatch after a meaningful
 provider readiness/catalog change; unknown delivery keeps the same receipt key.
