@@ -195,6 +195,7 @@ def _settings_context(request: Request) -> dict:
         },
         "backup_status": None,
         "backup_records": [],
+        "backup_pagination": None,
     }
     if section == "prompts":
         result["prompt_catalog"] = PROMPTS.catalog(provider=settings.agent_provider)
@@ -213,12 +214,15 @@ def _settings_context(request: Request) -> dict:
         result["configuration"] = configuration_snapshot(settings)
     elif section == "backups":
         backup_service = ctx.services.get("backup_service")
-        result["backup_status"] = backup_service.status() if backup_service else None
-        result["backup_records"] = (
-            [item.public_dict() for item in backup_service.list_backups()]
-            if backup_service
-            else []
-        )
+        if backup_service:
+            try:
+                offset = max(0, int(request.query_params.get("backup_offset", "0")))
+            except ValueError:
+                offset = 0
+            overview = backup_service.overview(offset=offset)
+            result["backup_status"] = overview["status"]
+            result["backup_records"] = overview["records"]
+            result["backup_pagination"] = overview["pagination"]
     elif section == "instance":
         from pa.status.info import build_status_snapshot
 
