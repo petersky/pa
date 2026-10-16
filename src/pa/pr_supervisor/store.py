@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.pr_supervisor.models import (
+    ACTIONABLE_PR_WATCH_STATUSES,
     GITHUB_TERMINAL_PR_WATCH_STATUSES,
     PR_WATCH_PROTOCOL_VERSION,
     GitHubCapability,
@@ -46,7 +48,7 @@ class PRSupervisorStore:
 
     @contextmanager
     def _conn(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 30000")
         conn.execute("PRAGMA journal_mode = WAL")
@@ -1494,28 +1496,41 @@ class PRSupervisorStore:
                 (name, amount, now),
             )
 
+    def watch_inventory(self, *, owner_instance_id: str | None = None) -> dict[str, int]:
+        """Count lifecycle/lease metadata without decoding retained watch proofs."""
+        active = tuple(sorted(ACTIONABLE_PR_WATCH_STATUSES))
+        terminal = tuple(sorted(GITHUB_TERMINAL_PR_WATCH_STATUSES))
+        live = "retired_at IS NULL AND status IN (" + ",".join("?" for _ in active) + ")"
+        terminal_pending = "retired_at IS NULL AND status IN (" + ",".join("?" for _ in terminal) + ")"
+        with self._conn() as conn:
+            row = conn.execute(
+                f"""SELECT COUNT(*) AS total,
+                           COALESCE(SUM(CASE WHEN {live} THEN 1 ELSE 0 END), 0) AS active,
+                           COALESCE(SUM(retired_at IS NOT NULL), 0) AS archived,
+                           COALESCE(SUM(CASE WHEN {terminal_pending} THEN 1 ELSE 0 END), 0) AS backlog,
+                           COALESCE(SUM(CASE WHEN {live} AND owner_instance_id = ? THEN 1 ELSE 0 END), 0) AS owned,
+                           COALESCE(MAX(CASE WHEN {live} THEN fence_token END), 0) AS max_fence
+                    FROM pr_watches""",
+                (*active, *terminal, *active, owner_instance_id, *active),
+            ).fetchone()
+        return {
+            "active_watches": int(row["active"]),
+            "historical_watches": int(row["total"] - row["active"]),
+            "archived_watches": int(row["archived"]),
+            "terminal_retirement_backlog": int(row["backlog"]),
+            "locally_owned_watches": int(row["owned"]),
+            "max_fence_token": int(row["max_fence"]),
+        }
+
     def metrics(self) -> dict[str, int]:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT name, value FROM pr_supervisor_metrics"
             ).fetchall()
         values = {row["name"]: row["value"] for row in rows}
-        watches = self.list_watches(include_retired=True)
-        values["active_watches"] = len([watch for watch in watches if watch.actionable])
-        values["historical_watches"] = len(
-            [watch for watch in watches if not watch.actionable]
-        )
-        values["archived_watches"] = len(
-            [watch for watch in watches if watch.retired_at is not None]
-        )
-        values["terminal_retirement_backlog"] = len(
-            [
-                watch
-                for watch in watches
-                if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
-                and watch.retired_at is None
-            ]
-        )
+        inventory = self.watch_inventory()
+        for name in ("active_watches", "historical_watches", "archived_watches", "terminal_retirement_backlog"):
+            values[name] = inventory[name]
         return values
 
     @staticmethod
