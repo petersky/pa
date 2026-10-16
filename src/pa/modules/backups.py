@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -62,11 +62,16 @@ def backup_status(request: Request) -> dict[str, Any]:
 
 
 @router.get("/backups")
-def list_backups(request: Request, verify: bool = False) -> list[dict[str, Any]]:
+def list_backups(
+    request: Request, verify: bool = False,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict[str, Any]]:
     if verify:
         _admin(request)
     return [
-        item.public_dict() for item in _service(request).list_backups(verify=verify)
+        item.public_dict(exclude_manifest=True)
+        for item in _service(request).list_backups(verify=verify, offset=offset, limit=limit)
     ]
 
 
@@ -265,7 +270,34 @@ class BackupsModule(Module):
         ctx.register_service("backup_service", BackupService(ctx.settings, ctx.store))
 
     async def on_startup(self, app, ctx: AppContext) -> None:
-        await ctx.require_service("backup_service").start(
+        service = ctx.require_service("backup_service")
+
+        def notify_failure(key: str, failures: int) -> None:
+            from pa.domain.notifications import NotificationAction, NotificationCreate
+
+            ctx.require_service("notifications").create(
+                NotificationCreate(
+                    realm_id=next(iter(ctx.settings.subscribed_realms), "default"),
+                    type="service_health", severity="error", priority="high",
+                    title="Automatic backups paused after repeated failures",
+                    body=(
+                        f"{ctx.settings.instance_name}: {failures} consecutive backup failures. "
+                        "Inspect the Backups page, correct the cause, then run a manual backup. "
+                        "A successful manual backup resumes automatic attempts."
+                    ),
+                    source_instance_id=ctx.settings.instance_id,
+                    source_instance_name=ctx.settings.instance_name,
+                    deduplication_key=key,
+                    actions=[NotificationAction(
+                        id="backups", kind="navigate", label="Review backups",
+                        href="/settings?section=backups",
+                    )],
+                ),
+                principal_id=f"instance:{ctx.settings.instance_id}",
+            )
+
+        service.failure_notifier = notify_failure
+        await service.start(
             ctx.require_service("async_runtime")
         )
 

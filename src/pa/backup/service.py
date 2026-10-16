@@ -24,6 +24,8 @@ from uuid import uuid4
 from pa import __version__
 from pa.backup.backend import LocalFilesystemBackend
 from pa.backup.models import (
+    MAX_MANIFEST_BYTES,
+    MAX_MANIFEST_FILES,
     BackupConfig,
     BackupManifest,
     BackupRecord,
@@ -247,6 +249,9 @@ class BackupService:
         self.audit_path = settings.data_dir / "backup_audit.jsonl"
         self._run_lock = threading.Lock()
         self._state_lock = threading.RLock()
+        self._verifying: set[str] = set()
+        self.failure_notifier: Any = None
+        self._failure_log_key: str | None = None
         self._stop_event: asyncio.Event | None = None
         self._config_event: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -497,6 +502,10 @@ class BackupService:
         files: list[ManifestFile] = []
         for path in sorted(staging.rglob("*")):
             if path.is_file():
+                if len(files) >= MAX_MANIFEST_FILES:
+                    raise BackupError(
+                        "manifest_limit_exceeded", "backup exceeds the manifest file limit"
+                    )
                 files.append(
                     ManifestFile(
                         path=path.relative_to(staging).as_posix(),
@@ -510,6 +519,10 @@ class BackupService:
             manifest.model_dump(mode="json"),
             mode=0o600,
         )
+        if (staging / "manifest.json").stat().st_size > MAX_MANIFEST_BYTES:
+            raise BackupError(
+                "manifest_limit_exceeded", "backup exceeds the manifest byte limit"
+            )
         return manifest
 
     def _archive(
@@ -534,7 +547,12 @@ class BackupService:
             archive_started = time.monotonic()
             mode = "w:gz" if self.config.compression else "w"
             with tarfile.open(temporary, mode, format=tarfile.PAX_FORMAT) as archive:
+                # New archives expose metadata before compressed payloads. Old v1
+                # archives remain readable through the streaming reader below.
+                archive.add(staging / "manifest.json", arcname="manifest.json")
                 for path in sorted(staging.rglob("*")):
+                    if path == staging / "manifest.json":
+                        continue
                     archive.add(
                         path,
                         arcname=path.relative_to(staging).as_posix(),
@@ -559,6 +577,7 @@ class BackupService:
                 )
             publish_started = time.monotonic()
             published = self.backend.publish(temporary, name)
+            self._remember_verification(published, manifest.backup_id, manifest, None)
             if phase_seconds is not None:
                 phase_seconds["publish"] = round(
                     time.monotonic() - publish_started, 6
@@ -584,6 +603,12 @@ class BackupService:
                 )
                 if existing:
                     return existing
+        if trigger in {"scheduled", "startup"} and self._automatic_paused():
+            self._notify_repeated_failure()
+            return BackupRun(
+                trigger=trigger, status="skipped", finished_at=datetime.now(UTC),
+                failure_reason="automatic backups paused after repeated failures; administrator action required",
+            )
         if not self._run_lock.acquire(blocking=False):
             run = BackupRun(
                 trigger=trigger,
@@ -637,6 +662,7 @@ class BackupService:
             with self._state_lock:
                 self._state.last_success = datetime.now(UTC)
                 self._state.consecutive_failures = 0
+                self._state.failure_alert_key = None
             self._metric("backup_success_total")
             self._metric("backup_bytes_total", run.size_bytes)
             self._audit(
@@ -699,6 +725,12 @@ class BackupService:
             run.duration_seconds = round(time.monotonic() - started, 6)
             self._record_finished(run)
             self._run_lock.release()
+        if run.status == "failed":
+            self._notify_repeated_failure()
+        elif run.status == "success" and self.config.enabled:
+            self._schedule_next()
+            if self._loop and self._config_event:
+                self._loop.call_soon_threadsafe(self._config_event.set)
         return run
 
     def _record_finished(self, run: BackupRun) -> None:
@@ -717,16 +749,23 @@ class BackupService:
 
     def _read_manifest(self, path: Path) -> BackupManifest:
         try:
-            with tarfile.open(path, "r:*") as archive:
-                member = archive.getmember("manifest.json")
-                if not member.isfile() or member.size > 2 * 1024 * 1024:
-                    raise BackupError(
-                        "manifest_invalid", "manifest is missing or too large"
+            with tarfile.open(path, "r|*") as archive:
+                for member in archive:
+                    self._validate_member(member)
+                    if member.name != "manifest.json":
+                        continue
+                    if not member.isfile() or not 0 < member.size <= MAX_MANIFEST_BYTES:
+                        raise BackupError(
+                            "manifest_invalid",
+                            "manifest exceeds the supported byte limit or is not a file",
+                        )
+                    handle = archive.extractfile(member)
+                    if handle is None:
+                        raise BackupError("manifest_invalid", "manifest is unreadable")
+                    return BackupManifest.model_validate_json(
+                        handle.read(MAX_MANIFEST_BYTES + 1)
                     )
-                handle = archive.extractfile(member)
-                if handle is None:
-                    raise BackupError("manifest_invalid", "manifest is unreadable")
-                return BackupManifest.model_validate_json(handle.read())
+            raise BackupError("manifest_invalid", "manifest is missing")
         except (tarfile.TarError, KeyError, ValueError, OSError) as exc:
             if isinstance(exc, BackupError):
                 raise
@@ -735,16 +774,9 @@ class BackupService:
             ) from exc
 
     def _path_for_backup(self, backup_id: str) -> Path:
-        matches: list[Path] = []
-        for path in self.backend.list_archives():
-            try:
-                manifest = self._read_manifest(path)
-            except BackupError:
-                if _backup_id_from_name(path) == backup_id:
-                    matches.append(path)
-                continue
-            if manifest.backup_id == backup_id:
-                matches.append(path)
+        matches = [
+            item.path for item in self.list_backups() if item.backup_id == backup_id
+        ]
         if not matches:
             raise BackupError("backup_not_found", f"backup {backup_id} was not found")
         if len(matches) > 1:
@@ -765,10 +797,22 @@ class BackupService:
         self, backup_id: str, *, path: Path | None = None
     ) -> BackupRecord:
         path = path or self._path_for_backup(backup_id)
+        with self._state_lock:
+            if backup_id in self._verifying:
+                raise BackupError("verification_in_progress", "this backup is already being verified")
+            self._verifying.add(backup_id)
+        try:
+            return self._verify_backup(backup_id, path)
+        finally:
+            with self._state_lock:
+                self._verifying.discard(backup_id)
+
+    def _verify_backup(self, backup_id: str, path: Path) -> BackupRecord:
         manifest: BackupManifest | None = None
+        identity = self._archive_identity(path)
         try:
             manifest = self._read_manifest(path)
-            if manifest.backup_id != backup_id:
+            if manifest.backup_id != backup_id and backup_id != f"unreadable:{path.name}":
                 raise BackupError(
                     "backup_id_mismatch", "archive manifest ID does not match"
                 )
@@ -785,11 +829,22 @@ class BackupService:
                     for member in members:
                         self._validate_member(member)
                     names = {m.name for m in members if m.isfile()}
+                    if len({m.name for m in members}) != len(members):
+                        raise BackupError("archive_unsafe", "archive contains duplicate member names")
                     if names != set(expected) | {"manifest.json"}:
                         raise BackupError(
                             "archive_file_set_mismatch",
                             "archive file set differs from the signed manifest",
                         )
+                    for member in members:
+                        if (
+                            member.isfile() and member.name != "manifest.json"
+                            and member.size != expected[member.name].size_bytes
+                        ):
+                            raise BackupError(
+                                "archive_checksum_mismatch",
+                                "archive member size differs from manifest",
+                            )
                     archive.extractall(root, members=members, filter="data")
                 for relative, item in expected.items():
                     candidate = root / relative
@@ -853,14 +908,10 @@ class BackupService:
                         "durable refs differ from the manifest",
                     )
                 _verify_event_graph(root / "objects", refs)
+            if self._archive_identity(path) != identity:
+                raise BackupError("archive_changed", "archive changed during verification; verify it again")
             self._metric("backup_verification_success_total")
-            with self._state_lock:
-                self._state.verifications[backup_id] = {
-                    "verified": True,
-                    "verified_at": datetime.now(UTC).isoformat(),
-                    "error": None,
-                }
-                self._save_state()
+            self._remember_verification(path, backup_id, manifest, None, identity=identity)
             self._audit("backup_verified", backup_id=backup_id)
             return BackupRecord(
                 backup_id=backup_id,
@@ -868,6 +919,7 @@ class BackupService:
                 created_at=manifest.created_at,
                 size_bytes=path.stat().st_size,
                 verified=True,
+                verification_status="verified",
                 manifest=manifest,
             )
         except Exception as exc:  # noqa: BLE001 - restore must always roll back
@@ -877,13 +929,7 @@ class BackupService:
                 else f"{type(exc).__name__}: {exc}"
             )
             self._metric("backup_verification_failure_total")
-            with self._state_lock:
-                self._state.verifications[backup_id] = {
-                    "verified": False,
-                    "verified_at": datetime.now(UTC).isoformat(),
-                    "error": reason,
-                }
-                self._save_state()
+            self._remember_verification(path, backup_id, manifest, reason, identity=identity)
             self._audit(
                 "backup_verification_failed", backup_id=backup_id, reason=reason
             )
@@ -895,46 +941,86 @@ class BackupService:
                 else datetime.fromtimestamp(path.stat().st_mtime, UTC),
                 size_bytes=path.stat().st_size,
                 verified=False,
+                verification_status="failed",
                 verification_error=reason,
                 manifest=manifest,
             )
 
-    def list_backups(self, *, verify: bool = False) -> list[BackupRecord]:
+    @staticmethod
+    def _archive_identity(path: Path) -> dict[str, int]:
+        stat = path.stat()
+        return {
+            key: getattr(stat, "st_" + key)
+            for key in ("dev", "ino", "size", "mtime_ns", "ctime_ns")
+        }
+
+    def _remember_verification(
+        self, path: Path, backup_id: str, manifest: BackupManifest | None,
+        error: str | None, *, identity: dict[str, int] | None = None,
+    ) -> None:
+        # Temporary failures are run history, never retained recovery points.
+        if not path.name.endswith((".pa-backup.tgz", ".pa-backup.tar")):
+            return
+        with self._state_lock:
+            self._state.verifications[backup_id] = {
+                "verified": error is None, "error": error,
+                "verified_at": datetime.now(UTC).isoformat(),
+                "created_at": manifest.created_at.isoformat() if manifest else None,
+                "filename": path.name, "destination": str(path.parent.resolve()),
+                "identity": identity or self._archive_identity(path),
+            }
+            self._save_state()
+
+    def list_backups(
+        self, *, verify: bool = False, offset: int = 0, limit: int | None = None,
+    ) -> list[BackupRecord]:
+        """Stat-only inventory. Manifest/integrity reads require explicit verification.
+
+        Legacy verification entries without file identity are unverified until
+        checked again; retention must never trust a replaced archive by UUID alone.
+        """
         records: list[BackupRecord] = []
+        with self._state_lock:
+            cached_records = dict(self._state.verifications)
+            verifying = set(self._verifying)
         for path in self.backend.list_archives():
             try:
-                manifest = self._read_manifest(path)
-                if verify:
-                    record = self.verify_backup(manifest.backup_id, path=path)
-                else:
-                    cached = self._state.verifications.get(manifest.backup_id, {})
-                    record = BackupRecord(
-                        backup_id=manifest.backup_id,
-                        path=path,
-                        created_at=manifest.created_at,
-                        size_bytes=path.stat().st_size,
-                        verified=bool(cached.get("verified")),
-                        verification_error=cached.get("error")
-                        or (
-                            None
-                            if cached.get("verified")
-                            else "verification has not been recorded"
-                        ),
-                        manifest=manifest,
-                    )
-            except BackupError as exc:
-                record = BackupRecord(
-                    backup_id=_backup_id_from_name(path) or f"unreadable:{path.name}",
-                    path=path,
-                    created_at=datetime.fromtimestamp(path.stat().st_mtime, UTC),
-                    size_bytes=path.stat().st_size,
-                    verified=False,
-                    verification_error=f"{exc.code}: {exc}",
-                )
+                identity = self._archive_identity(path)
+            except FileNotFoundError:
+                continue  # concurrent publication/pruning; next read reconciles
+            backup_id = _backup_id_from_name(path) or f"unreadable:{path.name}"
+            cached = cached_records.get(backup_id, {})
+            current = (
+                cached.get("identity") == identity
+                and cached.get("destination") == str(path.parent.resolve())
+                and cached.get("filename") == path.name
+            )
+            state = "unverified"
+            reason = "Verification has not been recorded for these archive bytes. Select Verify to check integrity."
+            if current:
+                state = "verified" if cached.get("verified") else "failed"
+                reason = cached.get("error")
+            elif cached:
+                reason = "Archive changed or has no recorded file identity. Select Verify to check integrity."
+            if backup_id in verifying:
+                state, reason = "in_progress", "Verification is running. PA will record the result."
+            record = BackupRecord(
+                backup_id=backup_id, path=path,
+                created_at=(
+                    cached["created_at"] if current and cached.get("created_at")
+                    else datetime.fromtimestamp(identity["mtime_ns"] / 1e9, UTC)
+                ),
+                size_bytes=identity["size"], verified=state == "verified",
+                verification_status=state, verification_error=reason,
+            )
             records.append(record)
-        return sorted(
+        records = sorted(
             records, key=lambda item: (item.created_at, item.backup_id), reverse=True
         )
+        page = records[offset:None if limit is None else offset + limit]
+        if verify:
+            return [self.verify_backup(item.backup_id, path=item.path) for item in page]
+        return page
 
     def prune(self, *, protected_backup_ids: set[str] | None = None) -> list[str]:
         protected_backup_ids = protected_backup_ids or set()
@@ -943,7 +1029,16 @@ class BackupService:
         # only needs that durable verification record; re-extracting every
         # retained archive here makes each scheduled backup scale with the
         # entire backup history (and can saturate a worker for minutes).
-        records = [item for item in self.list_backups() if item.verified]
+        inventory = self.list_backups()
+        retained_ids = {item.backup_id for item in inventory}
+        with self._state_lock:
+            # Older versions recorded temporary attempts as archive verifications.
+            # Compact only during maintenance, never as a side effect of status.
+            self._state.verifications = {
+                key: value for key, value in self._state.verifications.items()
+                if key in retained_ids
+            }
+        records = [item for item in inventory if item.verified]
         records.sort(key=lambda item: (item.created_at, item.backup_id))
         if len(records) <= 1:
             return []
@@ -1085,12 +1180,38 @@ class BackupService:
             raise BackupError("backup_not_verified", "backup is not safe to export")
         return record.path
 
-    def status(self) -> dict[str, Any]:
-        health = self.backend.health()
-        backups = self.list_backups()
+    def status(self, *, backups: list[BackupRecord] | None = None) -> dict[str, Any]:
+        health = self.backend.health(probe=False)
+        backups = self.list_backups() if backups is None else backups
         used = sum(item.size_bytes for item in backups)
         with self._state_lock:
-            state = self._state.model_dump(mode="json")
+            state = self._state.model_dump(
+                mode="json",
+                exclude={"verifications", "idempotency", "last_scrub_results", "failure_alert_key"},
+            )
+            paused = self._automatic_paused()
+            running = bool(self._verifying) or any(
+                run.status == "running" for run in self._state.runs
+            )
+        if paused or not self.config.enabled:
+            state["next_scheduled_run"] = None
+        good = next((item for item in backups if item.verified), None)
+        failed = next(
+            (run for run in reversed(state["runs"]) if run["status"] == "failed"), None
+        )
+        if running:
+            next_actor, next_action = "PA", "Wait for the running backup and verification result."
+        elif paused:
+            next_actor = "Administrator"
+            next_action = (
+                "Inspect the failure reason, correct the cause, then select Back up now. "
+                "A successful backup resumes automatic attempts."
+            )
+        elif self.config.enabled:
+            next_actor, next_action = "PA", "Wait for the next scheduled backup."
+        else:
+            next_actor = "Administrator"
+            next_action = "Enable scheduled backups or select Back up now."
         sources = self._config_sources()
         return {
             "instance_id": self.settings.instance_id,
@@ -1101,14 +1222,61 @@ class BackupService:
             "storage_used_bytes": used,
             "backup_count": len(backups),
             "verified_backup_count": sum(1 for item in backups if item.verified),
+            "last_known_good": good.public_dict() if good else None,
+            "backup_state": "in_progress" if running else "failed" if paused else "idle",
+            "automatic_backups_paused": paused,
+            "next_actor": next_actor,
+            "next_action": next_action,
+            "latest_failure_reason": failed["failure_reason"] if failed else None,
             "alerting": {
-                "active": self._state.consecutive_failures
-                >= self.config.alert_after_failures,
+                "active": paused,
                 "threshold": self.config.alert_after_failures,
-                "consecutive_failures": self._state.consecutive_failures,
+                "consecutive_failures": state["consecutive_failures"],
             },
             **state,
         }
+
+    def overview(self, *, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        records = self.list_backups()
+        return {
+            "status": self.status(backups=records),
+            "records": [item.public_dict() for item in records[offset:offset + limit]],
+            "pagination": {
+                "offset": offset, "limit": limit, "total": len(records),
+                "previous_offset": max(0, offset - limit) if offset else None,
+                "next_offset": offset + limit if offset + limit < len(records) else None,
+            },
+        }
+
+    def _automatic_paused(self) -> bool:
+        with self._state_lock:
+            return self._state.consecutive_failures >= self.config.alert_after_failures
+
+    def _notify_repeated_failure(self) -> None:
+        with self._state_lock:
+            if not self._automatic_paused():
+                return
+            key = f"backup-failures:{self.settings.instance_id}:{self._state.last_success or 'never'}"
+            if self._state.failure_alert_key == key:
+                return
+            failure_count = self._state.consecutive_failures
+        if self.failure_notifier is None:
+            # Offline callers can pause scheduling, but must not suppress the
+            # durable notification when the server next acquires this state.
+            if self._failure_log_key != key:
+                logger.error("backup.automatic_attempts_paused failures=%s next_actor=administrator", failure_count)
+                self._failure_log_key = key
+            return
+        self._audit("backup_attention_required", consecutive_failures=failure_count, next_actor="administrator")
+        try:
+            self.failure_notifier(key, failure_count)
+            with self._state_lock:
+                self._state.failure_alert_key = key
+                self._state.next_scheduled_run = None
+                self._save_state()
+        except Exception:
+            # Keep the pause effective even if the notification backend is down.
+            logger.exception("backup.failure_notification_failed")
 
     def _config_sources(self) -> dict[str, str]:
         persisted: dict[str, Any] = {}
@@ -1505,6 +1673,7 @@ class BackupService:
             last = self._state.last_success
             startup_due = (
                 self.config.enabled
+                and not self._automatic_paused()
                 and self.config.run_on_startup
                 and (
                     last is None
@@ -1520,18 +1689,20 @@ class BackupService:
                     idempotency_key=f"startup:{self.settings.instance_id}:{now.date()}",
                 )
             while self._stop_event and not self._stop_event.is_set():
-                if self.config.enabled:
+                if self._automatic_paused():
+                    self._notify_repeated_failure()
+                if self.config.enabled and not self._automatic_paused():
                     next_run = self._state.next_scheduled_run or self._schedule_next()
                 else:
                     with self._state_lock:
                         self._state.next_scheduled_run = None
                         self._save_state()
                     next_run = None
-                scrub_run = self._state.next_scrub_run
+                scrub_run = None if self._automatic_paused() else self._state.next_scrub_run
                 due_times = [item for item in (next_run, scrub_run) if item is not None]
                 timeout = max(
                     0.0, (min(due_times) - datetime.now(UTC)).total_seconds()
-                )
+                ) if due_times else None
                 outcome = await self._wait_for_schedule_change(timeout)
                 if outcome == "stop":
                     break
@@ -1554,7 +1725,8 @@ class BackupService:
                     )
                     # Coalesce downtime or a slow job into one attempt instead of
                     # replaying every elapsed interval in a restart storm.
-                    self._schedule_next(base=max(next_run, datetime.now(UTC)))
+                    if not self._automatic_paused():
+                        self._schedule_next(base=max(next_run, datetime.now(UTC)))
 
         self._scheduler_task = asyncio.create_task(
             scheduler(), name="pa-metadata-backup-scheduler"

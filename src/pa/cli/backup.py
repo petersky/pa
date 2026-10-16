@@ -48,6 +48,8 @@ def status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
         f"Stored:        {data['backup_count']} backups / {data['storage_used_bytes']} bytes"
     )
     typer.echo(f"Failures:      {data['consecutive_failures']}")
+    typer.echo(f"Next actor:    {data.get('next_actor', 'PA')}")
+    typer.echo(f"Next action:   {data.get('next_action', '—')}")
 
 
 @backup_app.command("run")
@@ -69,9 +71,11 @@ def run(
 def list_cmd(
     verify: Annotated[bool, typer.Option(help="Re-run full verification")] = False,
     as_json: Annotated[bool, typer.Option("--json")] = False,
+    offset: Annotated[int, typer.Option(min=0)] = 0,
+    limit: Annotated[int, typer.Option(min=1, max=200)] = 50,
 ) -> None:
     """List retained backups and verification status."""
-    records = _api("GET", "/api/backups", params={"verify": verify})
+    records = _api("GET", "/api/backups", params={"verify": verify, "offset": offset, "limit": limit})
     if as_json:
         _json(records)
         return
@@ -79,11 +83,13 @@ def list_cmd(
         typer.echo("No backups.")
         return
     for item in records:
-        state = "verified" if item["verified"] else "CORRUPT"
+        state = item.get("verification_status", "verified" if item["verified"] else "unverified")
         typer.echo(
             f"{item['backup_id']}  {item['created_at']}  "
             f"{item['size_bytes']} bytes  {state}"
         )
+        if item.get("verification_error"):
+            typer.echo(f"  {item['verification_error']}")
 
 
 @backup_app.command("inspect")
