@@ -11,6 +11,32 @@ from pa.execution.dispatch import DispatchRecord, DispatchStore
 PROMPT_IDENTITY_PROTOCOL = "pa.dispatch-prompt.v1"
 
 
+def dispatch_followup_pending(record: DispatchRecord) -> bool:
+    """Primary completion never discharges later prompt/turn obligations."""
+    ended = set()
+    for turn in record.followup_turns:
+        if turn.get('state') != 'ended' or turn.get('delivery_state') != 'acknowledged':
+            return True
+        ended.update({turn.get('prompt_id'), turn.get('idempotency_key')})
+    ended.discard(None)
+    for key, operation in record.followup_operations.items():
+        response = operation.get('response') or {}
+        response = response if isinstance(response, dict) else {}
+        prompt = operation.get('prompt_id') or response.get('prompt_id')
+        if prompt in ended or key in ended:
+            continue
+        error = operation.get('error') or {}
+        error = error if isinstance(error, dict) else {}
+        if operation.get('state') == 'delivery_not_admitted' and not response.get('accepted'):
+            continue
+        if (operation.get('state') == 'failed' and not response.get('accepted')
+                and error.get('recoverable') is False and isinstance(error.get('status'), int)
+                and 400 <= error['status'] < 500):
+            continue
+        return True
+    return False
+
+
 def prompt_fingerprint(message: str, action: str) -> str:
     import hashlib
 

@@ -19,6 +19,7 @@ from pa.core.operation_dependencies import local_operational
 from pa.health_journal.models import Assessment, Observation, Policy, Strict
 from pa.health_journal.service import HealthService
 from pa.health_journal.store import Journal, JournalError
+from pydantic import Field
 
 class JournalRoute(APIRoute):
     def get_route_handler(self):
@@ -112,6 +113,66 @@ class Transfer(Strict):
 class Configure(Strict):
     expected_version: int
     policy: Policy
+
+
+class CompletionMigration(Strict):
+    realm: str = Field(default='default', min_length=1, max_length=80)
+    kind: Literal['system_health', 'inherited_child']
+    requirement_revision: str = Field(min_length=1, max_length=100)
+    expected_version: str = Field(min_length=1, max_length=80)
+    apply: bool = False
+
+
+def verification_service(request):
+    current = request.app.state.ctx.services.get('verification')
+    if current is None:
+        raise HTTPException(503, {'code': 'verification_storage_unavailable'})
+    return current
+
+
+@router.get('/verification-readiness/{dispatch_id}')
+async def verification_readiness(request: Request, dispatch_id: str):
+    # Fresh, bounded target-owned lifecycle evidence; never permission contents.
+    if getattr(request.state, 'instance_authenticated', False):
+        peer_only(request)
+    else:
+        admin_only(request)
+    current = verification_service(request)
+    record = await current.call(current.ctx.services['dispatch_store'].get, dispatch_id)
+    if not record or record.realm_id not in current.ctx.settings.subscribed_realms:
+        raise HTTPException(404, 'Dispatch unavailable')
+    return await current.origin_readiness(record)
+
+
+@router.post('/completion-migrations/{card_id}')
+async def completion_migration(request: Request, card_id: UUID, body: CompletionMigration,
+                               key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=160)]):
+    admin_only(request)
+    if body.realm not in request.app.state.ctx.settings.subscribed_realms:
+        raise HTTPException(403, 'Realm unavailable')
+    from pa.domain.completion import CompletionConflict
+    try:
+        return await verification_service(request).migrate(str(card_id), body.realm,
+            body.kind, body.requirement_revision, body.expected_version, key=key, apply=body.apply,
+            principal=get_principal_id(request))
+    except CompletionConflict as exc:
+        raise HTTPException(409, {'code': exc.code}) from exc
+
+
+@router.get('/verification-intents')
+async def verification_intents(request: Request, card_id: str = Query(min_length=1, max_length=80), realm: str = Query('default', min_length=1, max_length=80)):
+    admin_only(request)
+    if realm not in request.app.state.ctx.settings.subscribed_realms:
+        raise HTTPException(403, 'Realm unavailable')
+    current = verification_service(request)
+    card = await current.call(current.ctx.store.get_card, card_id, realm_id=realm)
+    req = card.completion_requirement if card else None
+    authority = None
+    if req:
+        authority = {'instance_id': await current.call(current.authority_id, req), 'paused': req.verification_paused,
+                     'revision': req.revision, 'local_owner': await current.call(current.owns_authority, card),
+                     'fence': await current.call(current.store.authority_fence, card_id, realm, req.revision)}
+    return {'items': await current.call(current.store.list, card_id, realm), 'authority': authority, 'last_error': current.last_error}
 
 
 @router.post('/reports', status_code=201)
@@ -360,12 +421,25 @@ class HealthJournalModule(Module):
             return
         ctx.register_service('health_journal', HealthService(ctx, journal))
         current = ctx.require_service('health_journal')
+        from pa.execution.verification import VerificationService, VerificationStore
+        import asyncio
+        try:
+            verification = VerificationService(ctx, current, VerificationStore(ctx.settings.data_dir / 'verification.db'))
+        except (sqlite3.Error, OSError):
+            verification = None
+            ctx.register_service('verification_error', 'verification_storage_unavailable')
+        else:
+            ctx.register_service('verification', verification)
         supervisor = ctx.services.get('pr_supervisor')
         if supervisor is not None and hasattr(supervisor, 'eligibility_journal_hook'):
             supervisor.eligibility_journal_hook = current.eligibility_hook
         await current.start(app)
+        if verification:
+            verification.task = asyncio.create_task(verification.run(), name='pa-verification')
 
     async def on_shutdown(self, app, ctx):
+        if ctx.services.get('verification'):
+            await ctx.services['verification'].stop()
         if ctx.services.get('health_journal'):
             await ctx.services['health_journal'].stop()
 

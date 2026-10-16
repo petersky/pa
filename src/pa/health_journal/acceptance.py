@@ -39,8 +39,8 @@ def verify_acceptance(card, group, assessment, *, repair_sessions=(), repair_dis
         raise JournalError('acceptance_subject_superseded')
     required_refs = {f'health-group:{group["id"]}', f'scenario:{assessment.acceptance_scenario}',
                      *(f'instance:{i}' for i in assessment.accepted_instances)}
-    origin_sessions = set(repair_sessions) | {requirement.get('originating_session_id')}
-    origin_dispatches = set(repair_dispatches) | {requirement.get('originating_dispatch_id'), group['data'].get('dispatch_id')}
+    origin_sessions = set(repair_sessions) | set(requirement.get('originating_session_ids', [])) | {requirement.get('originating_session_id')}
+    origin_dispatches = set(repair_dispatches) | set(requirement.get('originating_dispatch_ids', [])) | {requirement.get('originating_dispatch_id'), group['data'].get('dispatch_id')}
     origin_sessions.difference_update({None, ""})
     origin_dispatches.difference_update({None, ""})
     for receipt in current:

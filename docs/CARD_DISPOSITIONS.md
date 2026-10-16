@@ -61,3 +61,40 @@ does not silently reopen cards that were already Done before this contract.
 Completion remains idempotent. Replaying the same acknowledged mutation returns
 the recorded disposition result, while a stale authority card version or a
 mismatched mutation, target, card, realm, or session is still rejected.
+
+## Autonomous verification
+
+An explicitly declared `independent_agent_v1` verification policy uses the same
+completion planner as system-generated health gates. Integration-only work keeps
+its ordinary integration route. Independent verification remains bound to the
+exact card, realm, requirement revision, source subject, eligible principal,
+assigned dispatch/session, and complete excluded repair lineage. Its receipt must
+reference the current `verification-intent:<id>` and required scenario/instance
+scope. A changed declaration, build or membership invalidates a pending assignment.
+Explicit external/user authority stays declared and is never replaced by an agent.
+Repair lineage comes from exact declarations, journal actions and source PR
+provenance. An unrelated conversation issue's generic parent relationship cannot
+block verification or disqualify its agent. Source readiness uses the owning
+instance's lifecycle guards, including queued follow-ups and pending permissions;
+PA waits without changing those interactions or admitting another verifier.
+
+Ordinary declarations persist `verification_authority_instance_id` (bound to the
+creating server when omitted) and `verification_paused`. Only that authority may
+schedule, retry, validate agent acceptance, or edit the declaration. Health gates use the configured
+journal authority. Requirement edits on the owner durably revoke the old revision
+before the canonical CAS write; admission/retry claims serialize against that
+same revocation fence. Changing authority requires all previously admitted or
+uncertain verifier work to settle. A stale projection or a restarted old owner
+cannot admit work for its revoked revision. A failed/unknown metadata write leaves
+that revision safely fenced; recover/replay the original canonical operation key.
+The verification-intents API exposes the current authority, pause and fence.
+
+PA displays these routine gates as verification pending and schedules the work;
+it does not ask the user to arrange an approver. Only current canonical successful
+evidence permits completion. See [the journal workflow](HEALTH_JOURNAL.md) for
+onboarding and migration APIs. Selected conversation issues receive their own
+completion scope; parent repair requirements are not copied. Before placement of
+a reopened card, PA runs the ordinary guarded lifecycle reconciliation for that
+card so a finished idle automated run can close and expire its old lease on the
+first attempt. Live prompts, interactions, dirty workspaces and unsettled outcomes
+continue to retain their owners.

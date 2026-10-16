@@ -12,7 +12,7 @@ COMPLETION_CAPABILITY = "completion-requirements:v1"
 def completion_runtime_capabilities(configured) -> list[str]:
     # Advertise implemented support without persisting it into user configuration
     # (which could survive a downgrade to an incompatible binary).
-    return sorted(set(configured) | {COMPLETION_CAPABILITY})
+    return sorted(set(configured) | {COMPLETION_CAPABILITY, "completion-agent-verification:v1"})
 
 
 def completion_capabilities(requirement: Any) -> set[str]:
@@ -20,13 +20,24 @@ def completion_capabilities(requirement: Any) -> set[str]:
     if not requirement:
         return set()
     version = _dict(requirement).get("schema_version", 1)
-    return {f"completion-requirements:v{version}"}
+    required = {f"completion-requirements:v{version}"}
+    if _dict(requirement).get('verification_policy') == 'independent_agent_v1':
+        required.add('completion-agent-verification:v1')
+    return required
 
 
 class CompletionConflict(ValueError):
     def __init__(self, code: str):
         self.code = code
         super().__init__(code)
+
+
+def bind_verification_authority(requirement, instance_id):
+    """Persist the scheduling owner in the canonical declaration, never elect it."""
+    if (requirement and requirement.verification_policy == 'independent_agent_v1'
+            and requirement.provenance != 'system_health' and not requirement.verification_authority_instance_id):
+        return requirement.model_copy(update={'verification_authority_instance_id': instance_id})
+    return requirement
 
 
 def completion_state(requirement: Any, evidence: Any = ()) -> dict:
@@ -61,6 +72,8 @@ def completion_state(requirement: Any, evidence: Any = ()) -> dict:
     if human:
         missing = []
     owner_missing = bool(missing and not requirement.get("acceptance_principals") and (requirement.get("mode") == "explicit_acceptance" or set(missing) - {"integrated"}))
+    if missing and requirement.get('verification_policy') == 'independent_agent_v1':
+        return {"reason_code": "verification_pending", "missing": missing, "satisfied": satisfied, "accepted": False}
     return {"reason_code": "completion_owner_unconfigured" if owner_missing else "requirements_satisfied" if not missing else "acceptance_pending", "missing": missing, "satisfied": satisfied, "accepted": not missing}
 
 

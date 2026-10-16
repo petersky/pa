@@ -22,6 +22,7 @@ from pa.prompts import (
 )
 
 EXPECTED_PROMPT_KEYS = {
+    "completion.verify",
     "health.problem_reporting",
     "health.triage",
     "agent.context.execution_boundary",

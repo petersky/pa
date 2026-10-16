@@ -52,7 +52,7 @@
         </div>
       </div>
       <div class="card-detail-actions">
-        {% if card.completion_requirement and card.completion_status.missing and not browser_signed_in %}
+        {% if card.completion_requirement and card.completion_status.missing and not browser_signed_in and card.completion_requirement.verification_policy != 'independent_agent_v1' %}
         <a class="button primary" href="{{ card_sign_in_url }}" data-sign-in data-sign-in-card="{{ card.id }}" data-sign-in-realm="{{ card.realm_id }}">Sign in to review and accept</a>
         {% endif %}
         {% include "partials/card-primary-action.html" %}
@@ -66,9 +66,9 @@
 
     {% if card.completion_requirement %}
     <p class="muted" data-completion-reason="{{ card.completion_status.reason_code }}">
-      {% if card.completion_status.missing %}Next: {{ card.completion_status.missing[0] | replace('_', ' ') }}.{% else %}Completion requirements satisfied.{% endif %}
+      {% if card.completion_status.reason_code == 'verification_pending' %}PA is arranging independent verification.{% elif card.completion_status.missing %}Next: {{ card.completion_status.missing[0] | replace('_', ' ') }}.{% else %}Completion requirements satisfied.{% endif %}
       {{ card.completion_requirement.criteria }}
-      {% if not browser_signed_in %}
+      {% if not browser_signed_in and card.completion_requirement.verification_policy != 'independent_agent_v1' %}
       For an audited operator override, <a href="{{ card_sign_in_url }}" data-sign-in data-sign-in-card="{{ card.id }}" data-sign-in-realm="{{ card.realm_id }}">sign in with your operator password</a>, review the criteria, then select Done. Local no-login access cannot verify a human operator.
       {% endif %}
     </p>

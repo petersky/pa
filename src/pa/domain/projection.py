@@ -2730,7 +2730,8 @@ class CardProjection:
             created_by_instance=instance_id,
         )
         if card.completion_requirement:
-            from pa.domain.completion import CompletionConflict
+            from pa.domain.completion import CompletionConflict, bind_verification_authority
+            card.completion_requirement = bind_verification_authority(card.completion_requirement, instance_id)
             if card.completion_requirement.schema_version != 1:
                 raise CompletionConflict("unsupported_completion_requirement")
             if card.lane == CardLane.DONE:
@@ -3561,6 +3562,8 @@ class CardProjection:
             if updates["completion_requirement"] is None:
                 raise CompletionConflict("completion_requirement_cannot_be_erased")
             requirement = CompletionRequirement.model_validate(updates["completion_requirement"])
+            from pa.domain.completion import bind_verification_authority
+            requirement = bind_verification_authority(requirement, instance_id)
             if requirement.schema_version != 1:
                 raise CompletionConflict("unsupported_completion_requirement")
             requirement = requirement.model_copy(update={"revision": str(uuid4())})
@@ -3587,7 +3590,7 @@ class CardProjection:
                     raise CompletionConflict("completion_owner_unconfigured")
                 if not actor_session_id or not actor_dispatch_id:
                     raise CompletionConflict("completion_actor_unbound")
-                if actor_session_id == requirement.originating_session_id or actor_dispatch_id == requirement.originating_dispatch_id:
+                if actor_session_id in {requirement.originating_session_id, *requirement.originating_session_ids} or actor_dispatch_id in {requirement.originating_dispatch_id, *requirement.originating_dispatch_ids}:
                     raise CompletionConflict("completion_self_acceptance_forbidden")
             if not direct_human and principal_id not in requirement.acceptance_principals:
                 raise CompletionConflict("completion_acceptance_unauthorized")

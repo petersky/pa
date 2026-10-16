@@ -96,7 +96,6 @@ async def _start_context(request, manager, session):
         "realm_id": session.realm_id, "project_id": project_id,
         "source_session_id": session.id, "source_card_id": session.card_id,
         "principal_id": get_principal_id(request), "instance_id": settings.instance_id,
-        "completion_requirement": source.completion_requirement.model_dump(mode="json") if source and source.completion_requirement else None,
         "dispatch": {"provider": session.agent_name, "model_id": session.model_id,
                      "execution_preferences": _preferences(session),
                      "target_instance_id": settings.instance_id},
@@ -111,7 +110,9 @@ def _create_card(store, context, group, key):
     data = CardCreate(
         title=group["title"], body=detail + "\n\nSource conversation: " + context["source_session_id"],
         summary=group["title"], realm_id=context["realm_id"], project_id=context["project_id"],
-        parent_id=context["source_card_id"], completion_requirement=context["completion_requirement"],
+        # A selected issue is a new deliverable. Parent acceptance is scoped to
+        # its subject, repair origin and authority; it is never inheritable.
+        parent_id=context["source_card_id"],
         execution_preferences=context["dispatch"]["execution_preferences"], auto_enrich=False,
     )
     digest = fingerprint(data.model_dump(mode="json"))

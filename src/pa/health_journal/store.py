@@ -75,6 +75,7 @@ class Journal:
               id TEXT PRIMARY KEY, group_id TEXT NOT NULL,
               payload TEXT NOT NULL, state TEXT NOT NULL, result TEXT);
             CREATE INDEX IF NOT EXISTS actions_group ON actions(group_id);
+            CREATE INDEX IF NOT EXISTS inbox_group_seq ON inbox(group_id,seq);
             ''')
             for key, value in [('incarnation', str(uuid4())), ('instance_id', instance_id),
                                ('policy', encode(Policy().model_dump())),
@@ -438,6 +439,10 @@ class Journal:
                         'result': json.loads(active['result']) if active['result'] else None}
             if not policy['project_id'] or not policy['principal_id']:
                 return None
+            # Novel observations of an already merged owner belong to its
+            # durable verification obligation. They change its scope digest;
+            # they do not reopen ordinary triage of an unchanged repair.
+            db.execute("UPDATE inbox SET triaged=1 WHERE triaged=0 AND group_id IN (SELECT id FROM groups WHERE disposition IN ('merged','awaiting_acceptance') AND json_extract(data,'$.verification_intent') IS NOT NULL)")
             group = db.execute("SELECT g.* FROM groups g JOIN inbox i ON i.group_id=g.id WHERE i.triaged=0 ORDER BY i.seq LIMIT 1").fetchone()
             if not group:
                 return None
@@ -447,11 +452,13 @@ class Journal:
                 db.execute('UPDATE inbox SET triaged=1 WHERE seq=?', (row['seq'],))
             action_id = str(uuid4())
             db.execute("UPDATE groups SET disposition=CASE WHEN disposition IN ('new','reopened') THEN 'triaged' ELSE disposition END,version=version+1 WHERE id=?", (group['id'],))
-            self._history(db, group['id'], {'disposition': 'triaged', 'action_id': action_id, 'at': now()})
+            self._history(db, group['id'], {'disposition': group['disposition'] if group['disposition'] in {'merged', 'awaiting_acceptance'} else 'triaged', 'action_id': action_id, 'at': now()})
             payload = {'id': action_id, 'group_id': group['id'], 'realm': group['realm'],
                        'epoch': policy['epoch'], 'project_id': policy['project_id'],
                        'principal_id': policy['principal_id'], 'evidence': entries,
                        'created_at': now()}
+            if group['disposition'] in {'merged', 'awaiting_acceptance'}:
+                payload['route'] = 'verification'
             # A fresh evidence generation keeps the canonical repair-card owner.
             # Normal dispatch admission validates that existing card and its scope.
             card_id = json.loads(group['data']).get('card_id')
@@ -476,6 +483,8 @@ class Journal:
             data = {**original_data, **merged}
             disposition = group['disposition']
             data['phase'] = 'triaging' if state == 'dispatched' else state
+            if state == 'terminal' and merged.get('verification_intent'):
+                data['phase'] = 'awaiting_acceptance'
             if disposition not in {'new', 'reopened', 'triaged'} and (
                     state != 'terminal' or disposition in {'deployed_verified', 'no_fix', 'duplicate'}):
                 # A collector checkpoint racing an explicit repair assessment
@@ -617,6 +626,19 @@ class Journal:
                     'members': [{'identity': r['identity'], 'hash': r['hash'], 'payload': json.loads(r['payload'])}
                                 for r in db.execute('SELECT * FROM inbox WHERE group_id=? ORDER BY seq DESC LIMIT 3', (group_id,))]}
 
+    def verification_scope(self, group_id, *, realms):
+        with self.connection() as db:
+            group = db.execute('SELECT realm FROM groups WHERE id=?', (group_id,)).fetchone()
+            if not group or group['realm'] not in realms:
+                raise JournalError('group_not_found', 404)
+            rows = db.execute('SELECT seq,hash,payload FROM inbox WHERE group_id=? ORDER BY seq DESC LIMIT 3', (group_id,)).fetchall()
+            instances = sorted(r[0] for r in db.execute("SELECT DISTINCT json_extract(payload,'$.source_instance_id') FROM inbox WHERE group_id=? LIMIT 33", (group_id,)))
+            if len(instances) > 32:
+                raise JournalError('verification_scope_bound_exceeded')
+            return {'instances': instances, 'watermark': max((r['seq'] for r in rows), default=0),
+                    'evidence_digest': digest([r['hash'] for r in rows]),
+                    'observations': [json.loads(r['payload']) for r in rows]}
+
     def repair_action(self, group_id, *, expected_version, realms):
         with self.connection() as db:
             group = db.execute('SELECT * FROM groups WHERE id=?', (group_id,)).fetchone()
@@ -629,6 +651,14 @@ class Journal:
                 raise JournalError('repair_action_required')
             return {**dict(row), 'payload': json.loads(row['payload']),
                     'result': json.loads(row['result']) if row['result'] else {}}
+
+    def repair_actions(self, group_id, *, expected_version, realms):
+        self.repair_action(group_id, expected_version=expected_version, realms=realms)
+        with self.connection() as db:
+            rows = db.execute('SELECT * FROM actions WHERE group_id=? ORDER BY rowid LIMIT 33', (group_id,)).fetchall()
+        if len(rows) > 32:
+            raise JournalError('acceptance_origin_bound_exceeded')
+        return [{**dict(r), 'payload': json.loads(r['payload']), 'result': json.loads(r['result'] or '{}')} for r in rows]
 
     def reserve_effect(self, action_id, effect, payload, *, owner, fence):
         """Durably admit this exact effect under the fence before sending it.

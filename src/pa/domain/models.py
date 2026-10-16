@@ -409,6 +409,14 @@ class CompletionRequirement(BaseModel):
     acceptance_principals: list[str] = Field(default_factory=list)
     originating_session_id: str | None = None
     originating_dispatch_id: str | None = None
+    provenance: Literal["explicit", "system_health", "inherited_repair_correction"] = "explicit"
+    source_reference: str | None = Field(default=None, max_length=200)
+    verification_policy: Literal["declared", "independent_agent_v1"] = "declared"
+    verification_principal: str | None = Field(default=None, max_length=100)
+    verification_authority_instance_id: str | None = Field(default=None, max_length=80)
+    verification_paused: bool = False
+    originating_session_ids: list[str] = Field(default_factory=list, max_length=100)
+    originating_dispatch_ids: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def integration_mode_requires_integration(self):

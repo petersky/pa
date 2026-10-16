@@ -530,6 +530,7 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             ctx.store.link_project_repository(project.id, repository.id)
             candidate = _candidate(settings.instance_id, local=True, repositories=[repository.id])
             candidate.capabilities.append('completion-requirements:v1')
+            candidate.capabilities.append('completion-agent-verification:v1')
             monkeypatch.setattr('pa.modules.fleet._placement_candidates', AsyncMock(return_value=[candidate]))
             service = ctx.require_service('health_journal')
             supervisor = ctx.require_service('pr_supervisor')
@@ -717,7 +718,9 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             assert 'verified' in card.completion_requirement.milestones
             assert group['data']['pr_url'].endswith('/pull/1')
             assert not card.completion_status['accepted']
-            with pytest.raises(JournalError, match='acceptance_owner_unconfigured'):
+            assert card.completion_requirement.acceptance_principals == ['user:local']
+            assert card.completion_requirement.verification_policy == 'independent_agent_v1'
+            with pytest.raises(JournalError, match='awaiting_acceptance'):
                 verify_acceptance(card, group, Assessment(expected_version=group['version'],
                     disposition='deployed_verified', reason='Owner must be explicitly declared'))
             # The isolated provider stub binds the actual admitted repair dispatch.
@@ -738,13 +741,14 @@ def test_real_card_and_dispatch_admission_recovers_lost_reply(tmp_path, monkeypa
             origin = ledger.get(origin_ids[0])
             assert origin.goal_provenance is None
             assert not card.completion_requirement.originating_session_id
-            assert not card.completion_requirement.originating_dispatch_id
+            assert card.completion_requirement.originating_dispatch_id == first.dispatch_id
             user = UserDirectory(settings.data_dir).get('local')
             declaration = client.patch('/api/cards/'+card.id, params={'realm':'default'},
                 headers={'Authorization':f'Bearer {user.cli_token}', 'Idempotency-Key':'synthetic-owner-declaration'},
                 json={'expected_version':card.updated_at.isoformat(), 'field_intent':['completion_requirement'],
                     'completion_requirement':card.completion_requirement.model_copy(update={
                         'acceptance_principals':['user:local'],
+                        'verification_policy':'declared',
                         'originating_session_id':origin.session_id,
                         'originating_dispatch_id':origin.dispatch_id}).model_dump(mode='json')})
             assert declaration.status_code == 200, declaration.text

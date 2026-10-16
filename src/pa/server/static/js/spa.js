@@ -1898,6 +1898,7 @@
       if (message) return readableRequestError(message, fallback);
       if (typeof value.code === "string") {
         var known = {
+          verification_pending: "Done was not saved: PA is arranging independent verification.",
           acceptance_pending: "Done was not saved: completion acceptance is still required. Sign in with your operator password at /login to review and override it.",
           stale_card_version: "The card changed after it was loaded. Review its current status before trying again."
         };

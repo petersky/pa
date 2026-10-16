@@ -433,7 +433,7 @@ class PRSupervisorStore:
                 f"""SELECT * FROM pr_watches
                    WHERE status='merged' AND card_id IS NOT NULL
                      AND COALESCE(json_extract(state_json, '$.card_lane'), '') != 'done'
-                     AND (COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured')
+                     AND (COALESCE(json_extract(state_json, '$.card_disposition.reason_code'), '') NOT IN ('acceptance_pending', 'completion_owner_unconfigured', 'verification_pending')
                           OR {changed})
                      AND (json_extract(state_json, '$.card_completion_retry.next_retry_at') IS NULL
                           OR json_extract(state_json, '$.card_completion_retry.next_retry_at') <= ?)
