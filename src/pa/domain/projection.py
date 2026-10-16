@@ -784,6 +784,10 @@ class CardProjection:
                         "UPDATE agent_sessions SET lifecycle_owner = 'dispatch' "
                         "WHERE dispatch_id IS NOT NULL"
                     )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_chat_group "
+            "ON agent_sessions(json_extract(initiating_workflow_json, '$.chat_group_id'))"
+        )
         # Purpose migration uses structured creation provenance first.  Labels
         # are deliberately only migration evidence; anything ambiguous remains
         # visible as ``unknown`` in All sessions.
@@ -5190,11 +5194,17 @@ class CardProjection:
         purposes: tuple[str, ...] | None = None,
         archived: bool | None = None,
         session_ids: set[str] | None = None,
+        chat_group_id: str | None = None,
     ) -> list[AgentSession]:
         query = "SELECT * FROM agent_sessions WHERE 1=1"
         if not include_archived:
             query += " AND archived_at IS NULL"
         params: list[str] = []
+        if chat_group_id is not None:
+            # A root's durable session ID is its group ID, including legacy
+            # chats. Children record that root in their immutable provenance.
+            query += " AND (id = ? OR json_extract(initiating_workflow_json, '$.chat_group_id') = ?)"
+            params.extend((chat_group_id, chat_group_id))
         if archived is not None:
             query += " AND archived_at IS " + ("NOT NULL" if archived else "NULL")
         if purposes:

@@ -3,7 +3,7 @@ const fs = require("node:fs"), vm = require("node:vm"), memory = new Map(), wind
 vm.runInNewContext(fs.readFileSync("src/pa/server/static/js/conversation-threads.js", "utf8"), {
   window, crypto: {randomUUID: () => "stable-branch-id"},
   localStorage: {getItem: k => memory.get(k), setItem: (k,v) => memory.set(k,v), removeItem: k => memory.delete(k)},
-  document: {createElement: () => ({addEventListener() {}})},
+  document: {querySelectorAll: () => [], createElement: () => ({addEventListener() {}})},
 });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function controller(api) {
@@ -27,4 +27,15 @@ function controller(api) {
   retry.branch("copy"); await tick(); retry.branch("copy"); await tick();
   assert.equal(calls[1].options.headers["Idempotency-Key"], calls[2].options.headers["Idempotency-Key"]);
   assert.match(retry.status.textContent, /no automatic fallback/);
+  const selected = [];
+  const empty = controller(() => Promise.resolve({session: {id: "empty-sibling", origin_instance_id: "owner"}}));
+  empty.widget.switchSession = (...args) => selected.push(args);
+  empty.branch("empty"); await tick();
+  assert.deepEqual(selected, [["empty-sibling", true, "owner"]]);
+  assert.equal(memory.has("pa:conversation-branch:source:empty"), false);
+  const late = controller(() => new Promise(resolve => {finish = resolve;}));
+  late.widget.switchSession = () => {throw Error("Late receipt routed another thread");};
+  late.branch("empty"); late.widget.sessionId = "different"; late.generation++;
+  finish({session: {id: "late-sibling"}}); await tick();
+  assert.equal(memory.get("pa:conversation-branch:source:empty"), "stable-branch-id");
 })().catch(error => {console.error(error); process.exitCode = 1;});

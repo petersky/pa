@@ -2108,7 +2108,7 @@
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     if (this.issues) this.issues.ready();
-    if (this.threads) this.threads.ready();
+    if (this.threads) this.threads.ready(snap);
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
     this.liveControlSeq = Math.max(this.liveControlSeq || 0, snap.last_event_seq || 0);
@@ -2756,7 +2756,7 @@
     if (this.destroyed) return;
     clearTimeout(this.queueRefreshTimer);
     if (this.issues) this.issues.reset();
-    if (this.threads) this.threads.reset();
+    if (this.threads) this.threads.destroy();
     this._stashSessionDomCache();
     if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
     this.recentRetryTimer = null;
@@ -5966,6 +5966,14 @@
 
   function bindSessionSidebar(scope) {
     const root = scope || document;
+    root.querySelectorAll("[data-agent-new-thread]").forEach(function (button) {
+      if (button._acwBound) return;
+      button._acwBound = true;
+      button.addEventListener("click", function () {
+        const widget = document.querySelector("[data-agent-chat]");
+        if (widget && widget._acw && widget._acw.threads) widget._acw.threads.branch("empty");
+      });
+    });
     const list = root.querySelector("[data-agent-session-list]");
     if (list && !list._acwBound) {
       list._acwBound = true;

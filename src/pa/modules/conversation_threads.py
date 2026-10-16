@@ -11,6 +11,7 @@ from pa.acp.configuration import SessionConfigurationRequest
 from pa.acp.conversation_capabilities import conversation_capabilities
 from pa.auth.middleware import get_principal_id
 from pa.core.async_runtime import AsyncRuntime
+from pa.domain.models import AgentSession
 from pa.modules.conversation_issues import _call, _context, _preferences
 
 router = APIRouter(prefix="/agent/sessions")
@@ -19,7 +20,43 @@ router = APIRouter(prefix="/agent/sessions")
 class BranchConversation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: str = Field(min_length=8, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
-    strategy: Literal["native", "copy"]
+    strategy: Literal["native", "copy", "empty"]
+
+
+def chat_group_id(session: AgentSession) -> str:
+    """New chats are roots; siblings retain a root without sharing a runtime."""
+    root = session.initiating_workflow.get("chat_group_id")
+    return root if isinstance(root, str) and root else session.id
+
+
+@router.get("/{session_id}/threads")
+async def list_conversation_threads(request: Request, session_id: str):
+    from pa.modules.agent_chat import _presentation
+
+    manager, source, _ = await _context(request, session_id)
+    group_id = chat_group_id(source)
+    sessions = await _call(manager, manager.store.list_sessions,
+                           purposes=("chat",), chat_group_id=group_id)
+    threads = []
+    for saved in sorted(sessions, key=lambda s: (s.created_at, s.id)):
+        # Group membership never grants access to another principal or realm.
+        if saved.realm_id != source.realm_id or saved.principal_id != source.principal_id:
+            continue
+        runtime = manager.get(saved.id)
+        session = runtime.session if runtime and not runtime._closed else saved
+        workflow = session.initiating_workflow
+        durable = session.config_json.get("durable_runtime") or {}
+        threads.append({
+            "id": session.id, "title": session.title or ("Main thread" if session.id == group_id else "New thread"),
+            "origin_instance_id": session.origin_instance_id,
+            "source_session_id": workflow.get("source_session_id"),
+            "strategy": workflow.get("strategy"), "request_id": workflow.get("request_id"),
+            "context": {"native": "Latest provider history", "copy": "Copied recent context", "empty": "Empty context"}.get(workflow.get("strategy"), "Original conversation"),
+            "presentation": _presentation(request, session, runtime),
+            "queue_length": len(runtime._queue) if runtime and not runtime._closed else len(durable.get("queued_prompts") or []),
+            "archived": bool(session.archived_at),
+        })
+    return {"chat_group_id": group_id, "threads": threads}
 
 
 @router.get("/{session_id}/conversation-capabilities")
@@ -53,7 +90,8 @@ async def _branch(request, source_id, body):
             user = request.state.user
             if project.memberships and not any(m.principal_id == principal for m in project.memberships) and getattr(user, "role", None) != "admin":
                 raise HTTPException(403, "Project membership is required to branch")
-        workflow = {"kind": "conversation_branch", "strategy": body.strategy, "request_id": body.request_id,
+        workflow = {"kind": "conversation_thread" if body.strategy == "empty" else "conversation_branch",
+                    "chat_group_id": chat_group_id(source), "strategy": body.strategy, "request_id": body.request_id,
                     "source_session_id": source.id, "source_card_id": source.card_id,
                     "source_instance_id": source.origin_instance_id, "source_external_id": source.external_session_id}
         workflow["source_connection"] = ((source.config_json or {}).get("execution_selection") or {}).get("selected", {}).get("connection")
@@ -61,7 +99,7 @@ async def _branch(request, source_id, body):
             capabilities = await get_conversation_capabilities(request, source_id)
             if not capabilities["native_branch_available"]:
                 raise HTTPException(409, "Native fork is unavailable. Choose Copy recent context explicitly to create an independent conversation.")
-        else:
+        elif body.strategy == "copy":
             events = await _call(manager, manager.store.list_transcript_events_before, source.id, limit=100)
             texts = []
             for event in events:
