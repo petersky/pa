@@ -18,6 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from pydantic import ValidationError
 
 from pa.core.operation_budget import current_operation, measured_lock, report_work_progress
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.domain.models import (
     AgentSession,
     Card,
@@ -258,7 +259,7 @@ class CardProjection:
                 conn.close()
                 local.connection = conn = None
         if conn is None:
-            conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000)
+            conn = sqlite3.connect(self.db_path, timeout=busy_timeout_ms / 1000, factory=ObservedConnection)
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.row_factory = sqlite3.Row
             local.connection = conn
@@ -4762,6 +4763,7 @@ class CardProjection:
     def delete_item(self, item_id: str, **kwargs) -> bool:
         return self.delete_card(item_id, **kwargs)
 
+    @serialized_mutation
     def save_session(
         self, session: AgentSession, *, expected_connection_id: str | None = None
     ) -> AgentSession:
@@ -4884,6 +4886,7 @@ class CardProjection:
                 )
         return session
 
+    @serialized_mutation
     def mark_session_disconnected(
         self, session_id: str, *, expected_connection_id: str | None = None
     ) -> None:
@@ -5167,6 +5170,23 @@ class CardProjection:
                 (session_id,),
             ).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def list_session_card_summaries(self, session_ids: list[str]) -> dict[str, list[dict]]:
+        """Batch sidebar links without hydrating card bodies or acceptance proofs."""
+        result = {session_id: [] for session_id in session_ids}
+        with self._conn() as conn:
+            for offset in range(0, len(session_ids), 500):
+                batch = session_ids[offset:offset + 500]
+                rows = conn.execute(
+                    """SELECT links.session_id, cards.id, cards.title, cards.project_id
+                       FROM agent_session_cards links JOIN cards ON cards.id=links.card_id
+                       WHERE links.retired_at IS NULL AND links.session_id IN ("""
+                    + ",".join("?" for _ in batch) + ") ORDER BY links.linked_at, cards.id",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    result[row["session_id"]].append({key: row[key] for key in ("id", "title", "project_id")})
+        return result
 
     def list_session_card_history(self, session_id: str) -> list[dict]:
         """Return active and retired card links with their full provenance."""
@@ -5808,7 +5828,11 @@ class CardProjection:
         if not events:
             return events
         mirrors = self.transcripts.append(events)
-        with self._conn() as conn:
+        # Canonical mutation/binding writes use this same admission boundary.
+        # Serialize only the short compatibility transaction, after cold object
+        # publication, rather than let local SQLite writers repeatedly overtake
+        # one another in the busy handler.
+        with measured_lock(self._mutation_lock), self._conn() as conn:
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO agent_transcript_events
@@ -5831,6 +5855,9 @@ class CardProjection:
 
     def transcript_lifecycle_summary(self, session_id: str) -> dict:
         return self.transcripts.recent_lifecycle_summary(session_id)
+
+    def transcript_lifecycle_summaries(self, session_ids: list[str]) -> dict:
+        return self.transcripts.recent_lifecycle_summaries(session_ids)
 
     def list_transcript_events(
         self,

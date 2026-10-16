@@ -319,6 +319,12 @@ def _agent_context(request: Request) -> dict:
     from pa.execution.session_presentation import build_session_presentation
 
     dispatch_store = ctx.services.get("dispatch_store")
+    from pa.domain.projection import CardProjection
+    from pa.execution.dispatch import DispatchStore
+    card_summaries = (ctx.store.list_session_card_summaries([session.id for session in sessions])
+                      if isinstance(ctx.store, CardProjection) else None)
+    lifecycle_summaries = (ctx.store.transcript_lifecycle_summaries([session.id for session in sessions])
+                           if isinstance(ctx.store, CardProjection) else None)
     # Only the selected view is rendered. Reading 100 transcript bodies for
     # every retained automation session made a warm Chats page proportional to
     # the entire installation's history (including cold tool payloads).
@@ -343,13 +349,19 @@ def _agent_context(request: Request) -> dict:
             (session.metrics_json or {}).get("pending_approval")
             or config.get("pending_approval")
         )
-        presentation = build_session_presentation(
-            session,
-            runtime=runtime,
-            dispatch=dispatch_store.by_session(session.id) if dispatch_store else None,
-            quiescing=agent.quiescing,
-            startup_complete=agent.startup_complete,
-        )
+        if isinstance(dispatch_store, DispatchStore):
+            presentation = dispatch_store.session_presentation(
+                session, runtime=runtime, quiescing=agent.quiescing,
+                startup_complete=agent.startup_complete,
+            )
+        else:
+            presentation = build_session_presentation(
+                session,
+                runtime=runtime,
+                dispatch=dispatch_store.by_session(session.id) if dispatch_store else None,
+                quiescing=agent.quiescing,
+                startup_complete=agent.startup_complete,
+            )
         state = presentation["display_status"].casefold().replace(" ", "_")
         execution = dict(config.get("execution_context") or {})
         repositories = list(execution.get("repositories") or [])
@@ -360,8 +372,10 @@ def _agent_context(request: Request) -> dict:
             repository_name = repository_name[:-4]
         metrics = dict(session.metrics_json or {})
         usage = dict(metrics.get("last_usage") or metrics.get("usage") or {})
-        associated_cards = ctx.store.list_cards_for_session(session.id)
-        lifecycle = ctx.store.transcript_lifecycle_summary(session.id)
+        associated_cards = (card_summaries.get(session.id, []) if card_summaries is not None
+                            else ctx.store.list_cards_for_session(session.id))
+        lifecycle = (lifecycle_summaries[session.id] if lifecycle_summaries is not None
+                     else ctx.store.transcript_lifecycle_summary(session.id))
         session_details[session.id] = {
             "card": cards.get(session.card_id),
             "cards": associated_cards,
@@ -419,7 +433,10 @@ def _agent_context(request: Request) -> dict:
         sessions = activity_sessions
     watches_by_session: dict[str, list] = {session.id: [] for session in all_sessions}
     supervisor_store = ctx.services.get("pr_supervisor_store")
-    if supervisor_store:
+    from pa.pr_supervisor.store import PRSupervisorStore
+    if isinstance(supervisor_store, PRSupervisorStore):
+        watches_by_session = supervisor_store.session_watch_summaries_for_sessions(sessions)
+    elif supervisor_store:
         for watch in supervisor_store.list_watches(include_retired=True):
             for session in all_sessions:
                 if watch.originating_session_id == session.id or (

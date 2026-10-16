@@ -267,7 +267,7 @@ def test_agent_page_does_not_hydrate_hidden_sessions_or_cold_bodies(tmp_path):
     request = SimpleNamespace(query_params={}, app=SimpleNamespace(state=SimpleNamespace(ctx=ctx)))
     durations = []
     with patch.object(store.transcripts, "_payload", side_effect=AssertionError("cold body hydration")), patch.object(
-        store, "transcript_lifecycle_summary", wraps=store.transcript_lifecycle_summary
+        store, "transcript_lifecycle_summaries", wraps=store.transcript_lifecycle_summaries
     ) as summary:
         for _ in range(5):
             started = time.perf_counter()
@@ -275,7 +275,9 @@ def test_agent_page_does_not_hydrate_hidden_sessions_or_cold_bodies(tmp_path):
             durations.append(time.perf_counter() - started)
     assert len(result["sessions"]) == 3
     assert set(result["session_details"]) == {"session-0", "session-1", "session-2"}
-    assert summary.call_count == 15
+    assert summary.call_count == 5
+    assert all(set(call.args[0]) == {"session-0", "session-1", "session-2"}
+               for call in summary.call_args_list)
     assert max(durations) < 1.0
 
 

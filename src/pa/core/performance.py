@@ -14,6 +14,13 @@ SAMPLE_LIMIT = 256
 class OperationObservation:
     python_lock_wait_ms: float = 0.0
     python_lock_hold_ms: float = 0.0
+    worker_started_at: float = 0.0
+    worker_finished_at: float = 0.0
+    thread_cpu_ms: float = 0.0
+    sqlite_statement_ms: float = 0.0
+    sqlite_commit_ms: float = 0.0
+    sqlite_calls: int = 0
+    sqlite_busy_failures: int = 0
 
 
 current_observation: ContextVar[OperationObservation | None] = ContextVar("pa_performance", default=None)
@@ -23,6 +30,7 @@ def distribution(values) -> dict:
     ordered = sorted(values)
     return {
         "samples": len(ordered),
+        "max": round(ordered[-1], 3) if ordered else None,
         **{f"p{p}": round(ordered[math.ceil(len(ordered) * p / 100) - 1], 3)
            if ordered else None for p in (50, 95, 99)},
     }

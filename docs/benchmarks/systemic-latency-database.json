@@ -1,0 +1,196 @@
+{
+  "fixture": {
+    "dispatches": 200,
+    "samples": 30,
+    "mixed_batches": 50
+  },
+  "runtime_snapshot": {
+    "p50_ms": 0.393,
+    "p95_ms": 0.872,
+    "p99_ms": 0.979,
+    "json_bytes": 2137,
+    "serialization": {
+      "p50_ms": 0.346,
+      "p95_ms": 0.748,
+      "p99_ms": 1.041
+    },
+    "peak_allocated_bytes": 22528
+  },
+  "dispatch_full": {
+    "p50_ms": 0.95,
+    "p95_ms": 2.15,
+    "p99_ms": 2.59,
+    "json_bytes": 134157,
+    "serialization": {
+      "p50_ms": 1.327,
+      "p95_ms": 3.254,
+      "p99_ms": 3.632
+    },
+    "peak_allocated_bytes": 277327
+  },
+  "dispatch_status": {
+    "p50_ms": 0.271,
+    "p95_ms": 1.645,
+    "p99_ms": 2.433,
+    "json_bytes": 1901,
+    "serialization": {
+      "p50_ms": 0.225,
+      "p95_ms": 0.564,
+      "p99_ms": 0.846
+    },
+    "peak_allocated_bytes": 15304
+  },
+  "status_dispatch_commits": 0,
+  "status_sql_statements": {},
+  "duplicate_placement_subtree_bytes": 64248,
+  "mixed": {
+    "transcript": {
+      "p50_ms": 38.044,
+      "p95_ms": 59.367,
+      "p99_ms": 116.979,
+      "metadata_row_changes": 500
+    },
+    "session": {
+      "p50_ms": 0.646,
+      "p95_ms": 13.782,
+      "p99_ms": 29.464,
+      "metadata_row_changes": 50
+    },
+    "card": {
+      "p50_ms": 1.283,
+      "p95_ms": 12.807,
+      "p99_ms": 39.424,
+      "metadata_row_changes": 50
+    },
+    "read": {
+      "p50_ms": 0.679,
+      "p95_ms": 6.717,
+      "p99_ms": 8.327,
+      "metadata_row_changes": 0
+    }
+  },
+  "mixed_sql_statements": {
+    "BEGIN": 201,
+    "INSERT": 1601,
+    "COMMIT": 201,
+    "PRAGMA": 104,
+    "SELECT": 150
+  },
+  "transcript_diagnostics": {
+    "schema_version": 1,
+    "events": 500,
+    "audit_evidence": 0,
+    "objects": 500,
+    "uncompressed_bytes": 4007900,
+    "compressed_bytes": 30733,
+    "references": 500,
+    "deduplicated_references": 0,
+    "missing_objects": 0,
+    "journal_mode": "wal",
+    "integrity": "ok",
+    "redaction_policy": "canonical-v1",
+    "hot_payload_limit": 2048,
+    "compatibility_rows": 500,
+    "migration": "complete",
+    "migration_examined": 0,
+    "migration_changed": 0,
+    "migration_error": null,
+    "measured_at": "2026-10-16T06:17:41.500551+00:00",
+    "measurement_state": "measured"
+  },
+  "transcript_performance": {
+    "window": "last_256_observations_per_metric",
+    "metrics": {
+      "prepare_ms": {
+        "samples": 50,
+        "max": 28.011,
+        "p50": 7.812,
+        "p95": 13.865,
+        "p99": 28.011,
+        "count": 50,
+        "total": 436.496
+      },
+      "input_rows": {
+        "samples": 50,
+        "max": 10,
+        "p50": 10,
+        "p95": 10,
+        "p99": 10,
+        "count": 50,
+        "total": 500
+      },
+      "canonical_payload_bytes": {
+        "samples": 50,
+        "max": 80160,
+        "p50": 80160,
+        "p95": 80160,
+        "p99": 80160,
+        "count": 50,
+        "total": 4007900
+      },
+      "python_lock_wait_ms": {
+        "samples": 50,
+        "max": 1.417,
+        "p50": 0.02,
+        "p95": 0.086,
+        "p99": 1.417,
+        "count": 50,
+        "total": 2.609
+      },
+      "object_publish_ms": {
+        "samples": 50,
+        "max": 77.01,
+        "p50": 17.739,
+        "p95": 35.454,
+        "p99": 77.01,
+        "count": 50,
+        "total": 1054.068
+      },
+      "sqlite_writer_acquire_ms": {
+        "samples": 50,
+        "max": 0.126,
+        "p50": 0.022,
+        "p95": 0.078,
+        "p99": 0.126,
+        "count": 50,
+        "total": 1.385
+      },
+      "lookup_rows_returned": {
+        "samples": 50,
+        "max": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "count": 50,
+        "total": 0
+      },
+      "sqlite_rows_committed": {
+        "samples": 50,
+        "max": 20,
+        "p50": 20,
+        "p95": 20,
+        "p99": 20,
+        "count": 50,
+        "total": 1000
+      },
+      "transaction_hold_ms": {
+        "samples": 50,
+        "max": 12.89,
+        "p50": 2.981,
+        "p95": 6.664,
+        "p99": 12.89,
+        "count": 50,
+        "total": 174.704
+      },
+      "sqlite_row_changes_attempted": {
+        "samples": 50,
+        "max": 20,
+        "p50": 20,
+        "p95": 20,
+        "p99": 20,
+        "count": 50,
+        "total": 1000
+      }
+    }
+  }
+}

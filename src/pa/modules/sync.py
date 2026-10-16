@@ -201,6 +201,7 @@ def _apply_sync_push_local(
     metrics.record_pull(len(imported))
 
     head_changed = False
+    index_after_publication = False
     projection = {"commits_applied": 0, "rebuilt": False, "reason": "identical"}
     if head_hash:
         if not log.get_commit(head_hash):
@@ -220,8 +221,9 @@ def _apply_sync_push_local(
                         # Catch up before publishing the durable tip so a failed
                         # projection rebuild cannot leave head ahead of SQLite.
                         projection = store.catch_up_projection(realm_id, head_hash)
-                        log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                        log.advance_ref(realm_id, head_hash, expected_head=local_head, update_index=False)
                         head_changed = True
+                        index_after_publication = True
                     elif log.is_ancestor(head_hash, local_head):
                         head_hash = local_head
                     else:
@@ -268,6 +270,12 @@ def _apply_sync_push_local(
                         "actual_head": exc.actual,
                     },
                 ) from exc
+    if index_after_publication:
+        # The canonical projection and CAS-fenced ref are already durable.
+        # Derived index I/O must not convoy local session provenance writes.
+        # Concurrent canonical writers still ensure/fence their own indexed
+        # parent; ensure_indexed coalesces under the index's builder lock.
+        log.ensure_indexed(realm_id, head_hash)
     return {
         "imported": len(imported),
         "head": head_hash,

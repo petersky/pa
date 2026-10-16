@@ -120,6 +120,8 @@ class PRSupervisorStore:
                     ON pr_watches(card_id);
                 CREATE INDEX IF NOT EXISTS idx_pr_watches_realm_card_updated
                     ON pr_watches(realm_id, card_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_pr_watches_realm_session
+                    ON pr_watches(realm_id, originating_session_id);
 
                 CREATE TABLE IF NOT EXISTS pr_watch_events (
                     id TEXT PRIMARY KEY,
@@ -417,6 +419,42 @@ class PRSupervisorStore:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
+
+    def session_watch_summaries(self, session) -> list[dict]:
+        """Sidebar links without hydrating watch observations or policy proofs."""
+        return self.session_watch_summaries_for_sessions([session])[session.id]
+
+    def session_watch_summaries_for_sessions(self, sessions) -> dict[str, list[dict]]:
+        result = {session.id: [] for session in sessions}
+        # Bound SQL parameters and avoid an all-watch hydration for each row.
+        with self._conn() as conn:
+            for offset in range(0, len(sessions), 250):
+                batch = sessions[offset:offset + 250]
+                for realm in {session.realm_id for session in batch}:
+                    selected = [session for session in batch if session.realm_id == realm]
+                    ids = [session.id for session in selected]
+                    cards = [session.card_id for session in selected]
+                    by_card: dict[str, set[str]] = {}
+                    for session in selected:
+                        if session.card_id:
+                            by_card.setdefault(session.card_id, set()).add(session.id)
+                    session_ids = set(ids)
+                    placeholders = ",".join("?" for _ in selected)
+                    rows = conn.execute(
+                        f"""SELECT id, repository, pr_number, status, originating_session_id, card_id
+                            FROM pr_watches WHERE realm_id=? AND
+                            (originating_session_id IN ({placeholders}) OR card_id IN ({placeholders}))
+                            ORDER BY updated_at DESC""",
+                        [realm, *ids, *cards],
+                    ).fetchall()
+                    for row in rows:
+                        summary = {key: row[key] for key in ("id", "repository", "pr_number", "status")}
+                        linked = set(by_card.get(row["card_id"], ()))
+                        if row["originating_session_id"] in session_ids:
+                            linked.add(row["originating_session_id"])
+                        for session_id in linked:
+                            result[session_id].append(dict(summary))
+        return result
 
     def list_card_completion_due(self, *, now: datetime | None = None, limit: int = 100) -> list[PRWatch]:
         """Select bounded bookkeeping work; parked acceptance wakes on card change."""
