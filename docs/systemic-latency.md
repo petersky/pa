@@ -56,6 +56,11 @@ Transcript writers combine already queued batches before the next durable append
 without a timer. A normal 512-event burst uses eight writes of 64 events instead
 of 64 writes of eight events. Immutable event IDs, order, retry ownership,
 cancellation recovery, compatibility rows and queue join accounting remain intact.
+Primary session saves/disconnects and transcript compatibility transactions now
+share the existing metadata mutation admission boundary. Only the short metadata
+transaction is serialized; cold payload preparation/publication precedes it.
+This removed the measured successful SQLite contention tails: before this change,
+statement service reached 550 ms while commit service remained below 10 ms.
 
 ## Bounded measurements
 
@@ -120,4 +125,69 @@ It registers synthetic advertisements for all harnesses, so no installed provide
 or model account is probed. It measures PA orchestration; real provider/MCP/network
 initialization is outside this fixture's latency claim.
 
-Results and integration checks are recorded below after final validation.
+## Acceptance results
+
+Measured on this arm64 host with 10 logical CPUs and Python 3.14.2. The source
+for the measured mixed scenario is `7e578095b990f35a7107a62082ca8d583339c846`.
+The subsequent required-harness cache follow-up preserves warm full-catalog
+evidence and has separate regression coverage.
+
+| Path | Baseline p95 / max, ms | Final p50 / p95 / p99 / max, ms |
+| --- | ---: | ---: |
+| Sync push | 3,934.652 / 6,379.538 | 149.933 / 475.143 / 485.452 / 485.452 |
+| Startup row + audited binding | 3,890.812 / 6,343.104 | 32.087 / 233.832 / 341.509 / 341.509 |
+| Transcript drain | 447.306 / 739.386 | 95.089 / 242.715 / 373.651 / 373.651 |
+| Session list | 802.010 / 858.263 | 33.418 / 82.336 / 97.507 / 97.507 |
+| Agent page | 539.722 / 623.020 | 54.963 / 292.184 / 293.364 / 293.364 |
+| Progress sequence | 29.727 / 980.444 | 5.464 / 33.302 / 44.175 / 44.175 |
+| Progress checkpoint | 15.602 / 24.714 | 7.977 / 24.150 / 45.358 / 45.358 |
+| Fleet cache read | 11.227 / 17.248 | 2.205 / 10.542 / 18.714 / 18.714 |
+
+The final mixed scenario recorded **zero** off-loop warnings, end-to-end
+threshold violations, startup timeouts, drain timeouts, failed/rejected workload
+calls or missing transcript events. Both sources retained all 2,880 transcript
+events and consistent canonical/projection heads. Intermediate fixed runs still
+had 2–5 slow-operation warnings; they failed acceptance and motivated further
+instrumentation and writer admission changes. Thresholds and deadlines were not
+raised. Individual unaffected small operations can vary or increase under host
+contention; this is not a universal speedup for every microbenchmark.
+The baseline's initial samples overlapped the tail of local regression work;
+the final mixed run had no competing validation process from this session.
+Other host activity was uncontrolled. Compare structural reads/bytes directly;
+latency ratios include that scheduling uncertainty.
+
+Canonical object reads fell from 184,074 / 78,681,559 bytes to 330 / 128,530 bytes.
+SQL SELECT calls fell from 35,868 to 2,324. Fixture BEGIN/COMMIT counts fell from
+659 to 278; durable transcript event/mirror rows were preserved. Session lists
+fell from 3,955,888 to 75,522 bytes; final serialization p95 is recorded in the
+numeric artifact. Statement counts are affected by ordinary lifecycle workers
+and run duration, so they are workload observations rather than per-event
+amplification constants.
+
+Ten real tool-free ACP starts completed with zero failed/timed-out/slow
+off-loop calls. The first complete start and drain took 392.207 ms; subsequent
+starts ranged up to 158.064 ms (median 145.010 ms). The separate cold-object
+database fixture retained all 500 cold objects/references and compatibility rows,
+reported no missing objects, and passed SQLite integrity. Its cold append p95
+was 59.367 ms and maximum 116.979 ms.
+
+Nearest-rank p99 over 30 observations equals the maximum; drain has 90 samples.
+These are finite local scenarios on shared hardware, not production SLOs or
+guarantees for arbitrary retained data, deep recovery/rebuild, automatic discovery
+across optional integrations, slow disks, external provider/MCP/GitHub/network
+latency, or unlimited concurrent agents. Fixture seeding can produce warnings
+before the measurement window; the artifacts distinguish lifetime counters from
+scenario deltas. No installed service was deployed or restarted for these tests.
+
+Numeric evidence: [baseline](benchmarks/systemic-latency-baseline.json),
+[final mixed workload](benchmarks/systemic-latency-after.json), and
+[cold starts](benchmarks/systemic-latency-cold-start.json), plus the
+[cold-object database fixture](benchmarks/systemic-latency-database.json).
+
+Targeted suites passed: 63 sync/storage cases plus five subtests; 122 session and
+transcript cases plus seven subtests; 167 presentation/supervision cases plus 12
+subtests; 90 sync/selection cases plus five subtests; and 95 final metadata,
+ordering, cancellation and CAS cases. One existing 40 ms maximum loop-lag check
+failed at 129.389 ms while concurrent local work ran, then passed alone. Its
+threshold was preserved. Isolated boot smoke and wheel/source builds passed.
+The final full-suite and supervised integration results follow the PR record.

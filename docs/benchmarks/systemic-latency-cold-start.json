@@ -1,0 +1,686 @@
+{
+  "fixture": "tool-free ACP process, real admission/configuration/workspace/binding/transcript paths",
+  "latency_ms": {
+    "samples": 10,
+    "max": 392.207,
+    "p50": 145.01,
+    "p95": 392.207,
+    "p99": 392.207
+  },
+  "first_start_ms": 392.207,
+  "subsequent_ms": {
+    "samples": 9,
+    "max": 158.064,
+    "p50": 145.01,
+    "p95": 158.064,
+    "p99": 158.064
+  },
+  "samples_ms": [
+    392.20670895883814,
+    145.40945802582428,
+    145.0102090020664,
+    158.06429099757224,
+    138.57420900603756,
+    146.2936250027269,
+    148.40883400756866,
+    138.48445797339082,
+    131.6496250219643,
+    128.05370800197124
+  ],
+  "phases": [
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:30.278822+00:00",
+        "completed_at": "2026-10-16T06:17:30.305987+00:00",
+        "duration_ms": 27.144,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:30.306546+00:00",
+        "completed_at": "2026-10-16T06:17:30.307249+00:00",
+        "duration_ms": 0.702,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:30.308579+00:00",
+        "completed_at": "2026-10-16T06:17:30.322473+00:00",
+        "duration_ms": 13.9,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:30.331137+00:00",
+        "completed_at": "2026-10-16T06:17:30.346751+00:00",
+        "duration_ms": 15.63,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:30.346962+00:00",
+        "completed_at": "2026-10-16T06:17:30.407095+00:00",
+        "duration_ms": 60.156,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:30.407366+00:00",
+        "completed_at": "2026-10-16T06:17:30.410251+00:00",
+        "duration_ms": 2.878,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:30.413085+00:00",
+        "completed_at": "2026-10-16T06:17:30.430033+00:00",
+        "duration_ms": 16.959,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:30.445177+00:00",
+        "completed_at": "2026-10-16T06:17:30.446501+00:00",
+        "duration_ms": 1.31,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:30.655325+00:00",
+        "completed_at": "2026-10-16T06:17:30.655345+00:00",
+        "duration_ms": 0.027,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:30.685510+00:00",
+        "completed_at": "2026-10-16T06:17:30.696517+00:00",
+        "duration_ms": 10.997,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:30.696776+00:00",
+        "completed_at": "2026-10-16T06:17:30.697329+00:00",
+        "duration_ms": 0.554,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:30.697483+00:00",
+        "completed_at": "2026-10-16T06:17:30.710573+00:00",
+        "duration_ms": 13.097,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:30.715829+00:00",
+        "completed_at": "2026-10-16T06:17:30.726614+00:00",
+        "duration_ms": 10.81,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:30.726989+00:00",
+        "completed_at": "2026-10-16T06:17:30.795240+00:00",
+        "duration_ms": 68.271,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:30.795466+00:00",
+        "completed_at": "2026-10-16T06:17:30.801245+00:00",
+        "duration_ms": 5.797,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:30.804299+00:00",
+        "completed_at": "2026-10-16T06:17:30.820095+00:00",
+        "duration_ms": 15.812,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:30.828872+00:00",
+        "completed_at": "2026-10-16T06:17:30.830155+00:00",
+        "duration_ms": 1.281,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:30.830421+00:00",
+        "completed_at": "2026-10-16T06:17:30.830427+00:00",
+        "duration_ms": 0.01,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:30.851956+00:00",
+        "completed_at": "2026-10-16T06:17:30.860561+00:00",
+        "duration_ms": 8.607,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:30.860927+00:00",
+        "completed_at": "2026-10-16T06:17:30.861458+00:00",
+        "duration_ms": 0.529,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:30.861572+00:00",
+        "completed_at": "2026-10-16T06:17:30.871897+00:00",
+        "duration_ms": 10.335,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:30.877462+00:00",
+        "completed_at": "2026-10-16T06:17:30.889260+00:00",
+        "duration_ms": 11.806,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:30.889432+00:00",
+        "completed_at": "2026-10-16T06:17:30.963413+00:00",
+        "duration_ms": 74.007,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:30.963603+00:00",
+        "completed_at": "2026-10-16T06:17:30.966153+00:00",
+        "duration_ms": 2.557,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:30.969647+00:00",
+        "completed_at": "2026-10-16T06:17:30.983847+00:00",
+        "duration_ms": 14.212,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:30.994461+00:00",
+        "completed_at": "2026-10-16T06:17:30.996230+00:00",
+        "duration_ms": 1.76,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:30.996550+00:00",
+        "completed_at": "2026-10-16T06:17:30.996560+00:00",
+        "duration_ms": 0.017,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:31.026462+00:00",
+        "completed_at": "2026-10-16T06:17:31.041125+00:00",
+        "duration_ms": 14.654,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:31.041935+00:00",
+        "completed_at": "2026-10-16T06:17:31.042834+00:00",
+        "duration_ms": 0.901,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:31.043056+00:00",
+        "completed_at": "2026-10-16T06:17:31.055795+00:00",
+        "duration_ms": 12.744,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:31.064094+00:00",
+        "completed_at": "2026-10-16T06:17:31.075438+00:00",
+        "duration_ms": 11.375,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:31.075740+00:00",
+        "completed_at": "2026-10-16T06:17:31.140665+00:00",
+        "duration_ms": 64.941,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:31.141429+00:00",
+        "completed_at": "2026-10-16T06:17:31.144692+00:00",
+        "duration_ms": 3.218,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:31.147110+00:00",
+        "completed_at": "2026-10-16T06:17:31.164195+00:00",
+        "duration_ms": 17.106,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:31.181882+00:00",
+        "completed_at": "2026-10-16T06:17:31.183637+00:00",
+        "duration_ms": 1.746,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:31.183891+00:00",
+        "completed_at": "2026-10-16T06:17:31.183897+00:00",
+        "duration_ms": 0.011,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:31.207203+00:00",
+        "completed_at": "2026-10-16T06:17:31.220473+00:00",
+        "duration_ms": 13.258,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:31.220728+00:00",
+        "completed_at": "2026-10-16T06:17:31.221292+00:00",
+        "duration_ms": 0.569,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:31.221404+00:00",
+        "completed_at": "2026-10-16T06:17:31.233082+00:00",
+        "duration_ms": 11.687,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:31.237903+00:00",
+        "completed_at": "2026-10-16T06:17:31.251578+00:00",
+        "duration_ms": 13.686,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:31.251784+00:00",
+        "completed_at": "2026-10-16T06:17:31.313517+00:00",
+        "duration_ms": 61.762,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:31.313696+00:00",
+        "completed_at": "2026-10-16T06:17:31.315855+00:00",
+        "duration_ms": 2.166,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:31.318715+00:00",
+        "completed_at": "2026-10-16T06:17:31.329276+00:00",
+        "duration_ms": 10.567,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:31.343273+00:00",
+        "completed_at": "2026-10-16T06:17:31.344860+00:00",
+        "duration_ms": 1.585,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:31.345134+00:00",
+        "completed_at": "2026-10-16T06:17:31.345140+00:00",
+        "duration_ms": 0.01,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:31.374049+00:00",
+        "completed_at": "2026-10-16T06:17:31.388289+00:00",
+        "duration_ms": 14.246,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:31.388892+00:00",
+        "completed_at": "2026-10-16T06:17:31.389458+00:00",
+        "duration_ms": 0.562,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:31.390163+00:00",
+        "completed_at": "2026-10-16T06:17:31.404289+00:00",
+        "duration_ms": 14.133,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:31.411496+00:00",
+        "completed_at": "2026-10-16T06:17:31.423840+00:00",
+        "duration_ms": 12.361,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:31.424082+00:00",
+        "completed_at": "2026-10-16T06:17:31.488293+00:00",
+        "duration_ms": 64.218,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:31.488471+00:00",
+        "completed_at": "2026-10-16T06:17:31.493333+00:00",
+        "duration_ms": 4.876,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:31.497282+00:00",
+        "completed_at": "2026-10-16T06:17:31.509465+00:00",
+        "duration_ms": 12.192,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:31.518769+00:00",
+        "completed_at": "2026-10-16T06:17:31.519685+00:00",
+        "duration_ms": 0.91,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:31.519846+00:00",
+        "completed_at": "2026-10-16T06:17:31.519850+00:00",
+        "duration_ms": 0.007,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:31.538305+00:00",
+        "completed_at": "2026-10-16T06:17:31.550463+00:00",
+        "duration_ms": 12.174,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:31.550877+00:00",
+        "completed_at": "2026-10-16T06:17:31.551429+00:00",
+        "duration_ms": 0.551,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:31.551558+00:00",
+        "completed_at": "2026-10-16T06:17:31.562955+00:00",
+        "duration_ms": 11.412,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:31.570804+00:00",
+        "completed_at": "2026-10-16T06:17:31.585681+00:00",
+        "duration_ms": 14.89,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:31.585871+00:00",
+        "completed_at": "2026-10-16T06:17:31.653576+00:00",
+        "duration_ms": 67.72,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:31.653713+00:00",
+        "completed_at": "2026-10-16T06:17:31.655733+00:00",
+        "duration_ms": 2.024,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:31.658740+00:00",
+        "completed_at": "2026-10-16T06:17:31.671071+00:00",
+        "duration_ms": 12.33,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:31.684554+00:00",
+        "completed_at": "2026-10-16T06:17:31.686106+00:00",
+        "duration_ms": 1.542,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:31.686362+00:00",
+        "completed_at": "2026-10-16T06:17:31.686371+00:00",
+        "duration_ms": 0.014,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:31.712311+00:00",
+        "completed_at": "2026-10-16T06:17:31.728251+00:00",
+        "duration_ms": 15.961,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:31.728724+00:00",
+        "completed_at": "2026-10-16T06:17:31.729296+00:00",
+        "duration_ms": 0.568,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:31.729423+00:00",
+        "completed_at": "2026-10-16T06:17:31.738445+00:00",
+        "duration_ms": 9.034,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:31.743878+00:00",
+        "completed_at": "2026-10-16T06:17:31.755806+00:00",
+        "duration_ms": 11.922,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:31.755950+00:00",
+        "completed_at": "2026-10-16T06:17:31.813692+00:00",
+        "duration_ms": 57.767,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:31.813868+00:00",
+        "completed_at": "2026-10-16T06:17:31.816718+00:00",
+        "duration_ms": 2.88,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:31.819833+00:00",
+        "completed_at": "2026-10-16T06:17:31.835593+00:00",
+        "duration_ms": 15.786,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:31.847926+00:00",
+        "completed_at": "2026-10-16T06:17:31.850022+00:00",
+        "duration_ms": 2.097,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:31.850345+00:00",
+        "completed_at": "2026-10-16T06:17:31.850355+00:00",
+        "duration_ms": 0.015,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:31.871125+00:00",
+        "completed_at": "2026-10-16T06:17:31.880683+00:00",
+        "duration_ms": 9.568,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:31.881198+00:00",
+        "completed_at": "2026-10-16T06:17:31.881915+00:00",
+        "duration_ms": 0.717,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:31.882021+00:00",
+        "completed_at": "2026-10-16T06:17:31.891299+00:00",
+        "duration_ms": 9.302,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:31.898994+00:00",
+        "completed_at": "2026-10-16T06:17:31.912827+00:00",
+        "duration_ms": 13.931,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:31.913245+00:00",
+        "completed_at": "2026-10-16T06:17:31.974274+00:00",
+        "duration_ms": 61.039,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:31.974429+00:00",
+        "completed_at": "2026-10-16T06:17:31.976781+00:00",
+        "duration_ms": 2.366,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:31.979590+00:00",
+        "completed_at": "2026-10-16T06:17:31.990138+00:00",
+        "duration_ms": 10.558,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:32.000962+00:00",
+        "completed_at": "2026-10-16T06:17:32.002190+00:00",
+        "duration_ms": 1.217,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:32.002431+00:00",
+        "completed_at": "2026-10-16T06:17:32.002440+00:00",
+        "duration_ms": 0.014,
+        "status": "ok"
+      }
+    ],
+    [
+      {
+        "name": "execution_selection",
+        "started_at": "2026-10-16T06:17:32.026033+00:00",
+        "completed_at": "2026-10-16T06:17:32.036777+00:00",
+        "duration_ms": 10.746,
+        "status": "ok"
+      },
+      {
+        "name": "provider_resolution",
+        "started_at": "2026-10-16T06:17:32.037099+00:00",
+        "completed_at": "2026-10-16T06:17:32.037599+00:00",
+        "duration_ms": 0.507,
+        "status": "ok"
+      },
+      {
+        "name": "workspace_preparation",
+        "started_at": "2026-10-16T06:17:32.037748+00:00",
+        "completed_at": "2026-10-16T06:17:32.049520+00:00",
+        "duration_ms": 11.783,
+        "status": "ok"
+      },
+      {
+        "name": "provider_launch",
+        "started_at": "2026-10-16T06:17:32.054782+00:00",
+        "completed_at": "2026-10-16T06:17:32.067183+00:00",
+        "duration_ms": 12.407,
+        "status": "ok"
+      },
+      {
+        "name": "provider_initialize",
+        "started_at": "2026-10-16T06:17:32.067366+00:00",
+        "completed_at": "2026-10-16T06:17:32.123169+00:00",
+        "duration_ms": 55.829,
+        "status": "ok"
+      },
+      {
+        "name": "session_creation",
+        "started_at": "2026-10-16T06:17:32.123371+00:00",
+        "completed_at": "2026-10-16T06:17:32.125777+00:00",
+        "duration_ms": 2.415,
+        "status": "ok"
+      },
+      {
+        "name": "session_configuration",
+        "started_at": "2026-10-16T06:17:32.129208+00:00",
+        "completed_at": "2026-10-16T06:17:32.140241+00:00",
+        "duration_ms": 11.074,
+        "status": "ok"
+      },
+      {
+        "name": "persistence_publication",
+        "started_at": "2026-10-16T06:17:32.152375+00:00",
+        "completed_at": "2026-10-16T06:17:32.153490+00:00",
+        "duration_ms": 1.108,
+        "status": "ok"
+      },
+      {
+        "name": "response_readiness",
+        "started_at": "2026-10-16T06:17:32.153667+00:00",
+        "completed_at": "2026-10-16T06:17:32.153674+00:00",
+        "duration_ms": 0.01,
+        "status": "ok"
+      }
+    ]
+  ],
+  "source_commit": "7e578095b990f35a7107a62082ca8d583339c846",
+  "operation_failures": 0,
+  "operation_timeouts": 0,
+  "slow_calls": 0
+}
