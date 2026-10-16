@@ -3,6 +3,7 @@
          data-selection-surface="{{ selection_surface | default('execution') }}"
          data-selection-card="{{ card.id if card is defined else '' }}"
          data-selection-realm="{{ card.realm_id if card is defined else realm | default('') }}"
+         data-selection-execution-version="{{ card.execution_version if card is defined else '' }}"
          data-selection-version="{{ card.updated_at.isoformat() if card is defined else '' }}">
   <summary>{{ 'Agent and model' if selection_purpose | default('create') == 'new-session' else ('One-run execution preferences' if selection_purpose | default('create') == 'dispatch' else 'Execution defaults (optional)') }}</summary>
   {% if selection_purpose | default('create') == 'new-session' %}<p data-selection-effective role="status" aria-live="polite">Agent and model follow your defaults.</p>{% endif %}

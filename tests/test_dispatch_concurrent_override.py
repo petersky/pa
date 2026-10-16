@@ -69,6 +69,32 @@ def test_same_session_resume_does_not_require_allow_concurrent() -> None:
     assert second.session_id == "session-live"
 
 
+@pytest.mark.parametrize("allow", [False, True])
+def test_retry_rechecks_card_ownership_atomically(tmp_path, allow):
+    from tests.test_dispatch_queue import capacity
+
+    store = DispatchStore(tmp_path)
+    try:
+        failed = _record("failed-start", "one", allow=allow)
+        failed.state, failed.recoverable = "failed", True
+        store.put(failed)
+        owner, _ = store.admit(_record("new-owner", "two", allow=False))
+        admitted_capacity = capacity()
+        if allow:
+            retried = store.retry_with_capacity(failed, admitted_capacity, idempotency_key="one-retry")
+            assert retried.dispatch_id == failed.dispatch_id and retried.state == "queued"
+            replayed = store.retry_with_capacity(failed, admitted_capacity, idempotency_key="one-retry")
+            assert replayed.dispatch_id == retried.dispatch_id
+        else:
+            with pytest.raises(ConcurrentCardDispatch) as conflict:
+                store.retry_with_capacity(failed, admitted_capacity, idempotency_key="one-retry")
+            assert conflict.value.existing.dispatch_id == owner.dispatch_id
+            unchanged = store.get(failed.dispatch_id)
+            assert unchanged.state == "failed" and not unchanged.control_operations
+    finally:
+        store.close()
+
+
 def test_second_session_on_the_same_card_still_requires_allow_concurrent() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         store = DispatchStore(Path(tmp))

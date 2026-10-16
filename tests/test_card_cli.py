@@ -41,7 +41,9 @@ def test_dispatch_resolves_instance_infers_project_and_sends_options(
     def request(method: str, url: str, **kwargs) -> httpx.Response:
         calls.append({"method": method, "url": url, **kwargs})
         if url.endswith("/api/cards/card-1"):
-            return _response(200, {"id": "card-1", "project_id": "project-1"})
+            return _response(200, {"id": "card-1", "project_id": "project-1",
+                                   "execution_version":"card-execution/v1:" + "a"*64,
+                                   "updated_at":"2026-10-15T00:00:00+00:00"})
         if url.endswith("/api/fleet/instances"):
             return _response(
                 200,
@@ -101,6 +103,7 @@ def test_dispatch_resolves_instance_infers_project_and_sends_options(
     assert admission["headers"]["Idempotency-Key"] == "attempt-1"
     assert admission["timeout"] == 30.0
     assert admission["json"] == {
+        "expected_execution_version":"card-execution/v1:" + "a"*64,
         "card_id": "card-1",
         "project_id": "project-1",
         "provider": "codex",

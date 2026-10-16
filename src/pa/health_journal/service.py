@@ -195,6 +195,19 @@ class HealthService:
         from pa.execution.reconciliation import RECONCILIATION_TERMINAL_STATES
         if record.state not in TERMINAL_DISPATCH_STATES:
             return 'dispatch_active'
+        if (record.state in {'failed', 'cancelled'} and not record.session_id
+                and not record.prompt_acknowledged_at and not record.initial_prompt_operation):
+            others = await self.canonical_call(ledger.list, card_id=record.card_id,
+                realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=1)
+            if others:
+                return 'canonical_repair_active'
+            watches = await self.canonical_call(supervisor.list_watches_for_cards, {result['card_id']},
+                realm_id=payload['realm'], per_card_limit=5)
+            if watches:
+                return 'actionable_pr_watch'
+            # There is no turn/card disposition to reconcile when selection
+            # failed before session admission. Keep recovery on this dispatch.
+            return 'pre_session_failed'
         if record.state == 'completed' and (not record.acknowledged_at or record.completion_delivery_class != 'acknowledged'):
             return 'completion_delivery_pending'
         if record.reconciliation_state not in RECONCILIATION_TERMINAL_STATES:
@@ -218,6 +231,115 @@ class HealthService:
             decision, reason = await lifecycle._decision(session, sessions=[session], dispatches=[record],
                                                         watches=watches, leases=leases, now=datetime.now(UTC))
         return None if decision in {'close', 'retire'} or reason == 'already_closed' else reason
+
+    async def failure_card(self, action, lease, summary, *, lane='waiting'):
+        """Reflect a definitive failed start through the ordinary card API/CAS.
+
+        Never overwrite a user's lane or a canonical verification requirement.
+        Retain the exact PATCH for replay after an unknown reply.
+        """
+        from urllib.parse import quote
+        result, payload = action['result'], action['payload']
+        path = f'/api/cards/{quote(result["card_id"], safe="")}?realm={quote(payload["realm"], safe="")}'
+        card = await self.local_api(payload, 'GET', path)
+        card = card.get('card') or card
+        if card.get('summary') == summary and card.get('lane') == lane:
+            return
+        prior_summaries = {effect.get('payload', {}).get('body', {}).get('summary')
+                          for name, effect in result.get('effects', {}).items()
+                          if name.startswith('failed_start_card_')}
+        if card.get('lane') != 'active' and not (
+                card.get('lane') == 'waiting' and card.get('summary') in prior_summaries):
+            return
+        if lane == 'active' and card.get('summary') not in prior_summaries:
+            return
+        from pa.health_journal.models import digest
+        effect_name = 'failed_start_card_' + digest({'summary':summary, 'lane':lane})[:16]
+        saved = result.get('effects', {}).get(effect_name)
+        if saved:
+            plan = saved['payload']
+        else:
+            plan = {'method':'PATCH', 'path':path, 'body':{
+                'expected_version':card['updated_at'],
+                'field_intent':['lane', 'summary'], 'lane':lane, 'summary':summary}}
+            saved = await self.call(self.journal.reserve_effect, action['id'], effect_name, plan,
+                                    owner=self.owner, fence=lease['fence'])
+        await self.local_api(payload, plan['method'], plan['path'], body=plan['body'], key=saved['id'])
+
+    async def failed_start(self, action, lease, durable):
+        """One same-dispatch retry; unknown delivery replays the same key, bounded.
+
+        Normal retry admission rechecks placement and the target revalidates the
+        exact selected tuple. This collector never chooses a replacement agent,
+        creates a second card, or releases an ambiguous workflow obligation.
+        """
+        group = await self.call(self.journal.group, action['group_id'], realms=[action['payload']['realm']])
+        if group['disposition'] != 'triaged':
+            # A human/repair worker has taken ownership since triage. Preserve
+            # that assessment and its verification gate; do not start a rival.
+            return
+        result = action['result']
+        retry_key = f'health-start_retry:{action["id"]}'
+        admitted = (durable.get('control_operations') or {}).get(retry_key) == 'retry'
+        attempted = result.get('start_retry', False)
+        retryable = (durable.get('state') == 'failed' and durable.get('recoverable')
+                     and durable.get('error_code') == 'no_compatible_execution')
+        exhausted = admitted or (attempted and not result.get('retry_pending'))
+        transmissions = result.get('retry_transmissions', 0)
+        unknown = result.get('retry_pending') and not admitted and transmissions >= 3
+        retryable = retryable and not exhausted and not unknown
+        reason = ('The automatic investigation could not start. PA will retry the same dispatch once; '
+                  'no agent is currently investigating.' if retryable else
+                  'The automatic investigation could not start. Review the selected agent connection and settings, '
+                  'then retry the existing dispatch. No agent is currently investigating.')
+        if unknown:
+            reason = ('PA could not confirm the investigation retry after three delivery attempts. '
+                      'Check the existing dispatch outcome before retrying; a second investigation was not created.')
+        if durable.get('state') == 'cancelled':
+            reason = 'The investigation was cancelled before an agent started. The project owner can review the existing dispatch.'
+        await self.failure_card(action, lease, reason)
+        if not retryable:
+            values = {'reason':reason, 'next_actor':'project_owner',
+                      'next_action':'inspect_existing_dispatch' if unknown or durable.get('state') == 'cancelled' else 'retry_existing_dispatch',
+                      'next_retry_at':None,
+                      'dispatch_state':durable['state'], 'retry_outcome':'unknown' if unknown else 'failed'}
+            if action['state'] != 'blocked' or any(result.get(k) != v for k, v in values.items()):
+                await self.call(self.journal.action_result, action['id'], state='blocked', result=values,
+                                owner=self.owner, fence=lease['fence'])
+            return
+        if not attempted:
+            await self.call(self.journal.action_result, action['id'], state='retry_wait', result={
+                'start_retry':True, 'retry_pending':True, 'retry_transmissions':0,
+                'next_retry_at':time.time() + 30, 'reason':reason,
+                'next_actor':'pa', 'next_action':'retry_existing_dispatch'},
+                owner=self.owner, fence=lease['fence'])
+            return
+        if result.get('next_retry_at', 0) > time.time():
+            return
+        path = f'/api/fleet/dispatch-jobs/{result["dispatch_id"]}/retry'
+        plan = {'method':'POST', 'path':path, 'body':{}}
+        saved = await self.call(self.journal.reserve_effect, action['id'], 'start_retry', plan,
+                                owner=self.owner, fence=lease['fence'])
+        await self.call(self.journal.action_result, action['id'], state='retry_pending', result={
+            'retry_transmissions':transmissions + 1, 'next_retry_at':time.time() + 30},
+            owner=self.owner, fence=lease['fence'])
+        try:
+            response = await self.local_api(action['payload'], 'POST', path, body={}, key=saved['id'])
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                await self.call(self.journal.action_result, action['id'], state='blocked', result={
+                    'retry_pending':False, 'retry_outcome':'rejected', 'next_actor':'project_owner',
+                    'reason':'The investigation retry was rejected. Review the existing dispatch and selected agent settings.',
+                    'next_action':'inspect_existing_dispatch'}, owner=self.owner, fence=lease['fence'])
+            raise
+        current = response.get('dispatch') or response
+        if current.get('dispatch_id') != result['dispatch_id']:
+            raise JournalError('repair_retry_identity_mismatch')
+        await self.call(self.journal.action_result, action['id'], state='dispatched', result={
+            'retry_pending':False, 'next_retry_at':None, 'retry_outcome':'admitted',
+            'reason':'The same investigation dispatch was queued for its one automatic retry.',
+            'next_actor':'pa', 'next_action':'start_investigation'},
+            owner=self.owner, fence=lease['fence'])
 
     async def protect_repair(self, group_id, assessment, *, realms):
         """Establish canonical acceptance before acknowledging a repair transition.
@@ -294,8 +416,30 @@ class HealthService:
                 record = await self.local_api(payload, 'GET', f'/api/fleet/dispatch-jobs/{result["dispatch_id"]}')
                 durable = record.get('dispatch') or record
                 state = durable.get('state')
+                if (durable.get('session_id') and state not in {'completed', 'failed', 'cancelled', 'acknowledged'}
+                        and result.get('start_retry') and result.get('started_session_id') != durable['session_id']):
+                    group = await self.call(self.journal.group, action['group_id'], realms=[payload['realm']])
+                    if group['disposition'] == 'triaged':
+                        reason = 'The automatic investigation is running. Its diagnosis and any repair acceptance are still pending.'
+                        await self.failure_card(action, lease, reason, lane='active')
+                        await self.call(self.journal.action_result, action['id'], state='dispatched', result={
+                            'started_session_id':durable['session_id'], 'reason':reason,
+                            'next_actor':'agent', 'next_action':'finish_investigation'},
+                            owner=self.owner, fence=lease['fence'])
+                if (result.get('retry_pending') and state not in {'failed', 'cancelled'}
+                        and (durable.get('control_operations') or {}).get(f'health-start_retry:{action["id"]}') == 'retry'):
+                    group = await self.call(self.journal.group, action['group_id'], realms=[payload['realm']])
+                    if group['disposition'] == 'triaged':
+                        await self.call(self.journal.action_result, action['id'], state='dispatched', result={
+                            'retry_pending':False, 'retry_outcome':'admitted', 'next_retry_at':None,
+                            'reason':'The existing investigation retry was confirmed by its durable dispatch receipt.',
+                            'next_actor':'pa', 'next_action':'finish_investigation'},
+                            owner=self.owner, fence=lease['fence'])
                 if state in {'completed', 'failed', 'cancelled', 'acknowledged'}:
                     obligation = await self.repair_obligation(action)
+                    if obligation == 'pre_session_failed':
+                        await self.failed_start(action, lease, durable)
+                        return
                     if obligation:
                         await self.call(self.journal.source_status, 'repair', code=obligation, phase='retained_normal_workflow')
                         return
@@ -309,6 +453,7 @@ class HealthService:
                 card = await self.effect(action, lease, 'card', 'POST', '/api/cards', body={
                         'title': f'Investigate PA problem {action["group_id"][:8]}',
                         'body': prompt, 'project_id': payload['project_id'], 'lane': 'active',
+                        'summary':'Investigate a reported PA failure and record a diagnosis. No repair has started yet.',
                         'realm_id': payload['realm'], 'auto_enrich': False})
                 result['card_id'] = (card.get('card') or card)['id']
                 await self.call(self.journal.action_result, action['id'], state='card_created',

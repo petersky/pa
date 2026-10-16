@@ -476,6 +476,23 @@ class Card(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property
+    def execution_version(self) -> str:
+        """Dispatch snapshot, independent of asynchronous summary bookkeeping.
+
+        Keep the ordinary updated_at CAS for edits. Every other durable field
+        remains in this snapshot, including scope, routing, ownership, lane,
+        attachments and completion requirements; unknown future fields fail
+        closed by participating automatically.
+        """
+        from pa.execution.selection import digest
+
+        excluded = {name for name in type(self).model_fields
+                    if name == "summary" or name.startswith("summary_")}
+        return "card-execution/v1:" + digest(
+            self.model_dump(mode="json", exclude=excluded | {"updated_at"})
+        )
+
+    @property
     def completion_status(self) -> dict:
         from pa.domain.completion import completion_state
         return completion_state(self.completion_requirement, self.completion_evidence)

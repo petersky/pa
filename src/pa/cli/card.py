@@ -446,7 +446,10 @@ def dispatch_card(
                 )
             except ValueError as exc:
                 raise CardCommandError(f"Invalid execution preferences: {exc}") from exc
-        body["expected_card_version"] = card.get("updated_at")
+        if card.get("execution_version"):
+            body["expected_execution_version"] = card["execution_version"]
+        else:
+            body["expected_card_version"] = card.get("updated_at")
         body = {name: value for name, value in body.items() if value is not None}
         if preview:
             body["target_instance_id"] = target["instance_id"]

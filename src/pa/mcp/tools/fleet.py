@@ -370,9 +370,10 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         execution_preferences: dict | None = None,
         task_assessment: dict | None = None,
         expected_card_version: str | None = None,
+        expected_execution_version: str | None = None,
         context_source_session_id: str | None = None,
     ) -> dict:
-        """Resolve and explain candidates without admitting a dispatch."""
+        """Preview placement. Echo card_execution_version as expected_execution_version at dispatch; summary bookkeeping does not invalidate it. updated_at remains the strict edit CAS."""
         if instance_id and group_id:
             raise ValueError("named preview cannot also specify group_id")
         return request_local_pa(
@@ -394,6 +395,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                         "execution_preferences": execution_preferences,
                         "task_assessment": task_assessment,
                         "expected_card_version": expected_card_version,
+                        "expected_execution_version": expected_execution_version,
                         "context_source_session_id": context_source_session_id,
                     }.items()
                     if value is not None
@@ -442,6 +444,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         execution_preferences: dict | None = None,
         task_assessment: dict | None = None,
         expected_card_version: str | None = None,
+        expected_execution_version: str | None = None,
         context_source_session_id: str | None = None,
         mode_id: str | None = None,
         collaboration_mode: CollaborationMode | None = None,
@@ -459,7 +462,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         priority: int = 0,
         resume_session_id: str | None = None,
     ) -> dict:
-        """Resolve a concrete target or policy and durably dispatch a card."""
+        """Durably dispatch a card. Echo preview card_execution_version as expected_execution_version; legacy expected_card_version is the strict updated_at CAS."""
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key cannot be empty")
@@ -487,6 +490,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                         "execution_preferences": execution_preferences,
                         "task_assessment": task_assessment,
                         "expected_card_version": expected_card_version,
+                        "expected_execution_version": expected_execution_version,
                         "context_source_session_id": context_source_session_id,
                     }.items()
                     if v is not None
@@ -532,6 +536,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         execution_preferences: dict | None = None,
         task_assessment: dict | None = None,
         expected_card_version: str | None = None,
+        expected_execution_version: str | None = None,
         context_source_session_id: str | None = None,
         mode_id: str | None = None,
         collaboration_mode: CollaborationMode | None = None,
@@ -551,7 +556,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         priority: int = 0,
         resume_session_id: str | None = None,
     ) -> dict:
-        """Durably and idempotently dispatch an authoritative card to a fleet instance."""
+        """Idempotently dispatch to an instance. Echo preview card_execution_version as expected_execution_version; retain the same request identity on recovery."""
         key = idempotency_key.strip()
         if not key:
             raise ValueError("idempotency_key cannot be empty")
@@ -568,6 +573,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                     "execution_preferences": execution_preferences,
                     "task_assessment": task_assessment,
                     "expected_card_version": expected_card_version,
+                    "expected_execution_version": expected_execution_version,
                     "context_source_session_id": context_source_session_id,
                 }.items()
                 if v is not None

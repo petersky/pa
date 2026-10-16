@@ -1064,10 +1064,12 @@
   function cardDispatchPayload(form, detail) {
     var target = form.elements.dispatch_target.value;
     var profile = form.elements.execution_profile.value;
+    var selectionData = (form.querySelector("[data-execution-preferences]") || {dataset: {}}).dataset;
     var payload = {
       card_id: detail.dataset.cardId,
       execution_preferences: form.elements.execution_preferences ? JSON.parse(form.elements.execution_preferences.value || "{}") : {},
-      expected_card_version: (form.querySelector("[data-execution-preferences]") || {dataset: {}}).dataset.selectionVersion || null,
+      expected_execution_version: selectionData.selectionExecutionVersion || null,
+      expected_card_version: selectionData.selectionExecutionVersion ? null : selectionData.selectionVersion || null,
       provider: !form.elements.execution_preferences && form.elements.provider ? form.elements.provider.value.trim() || null : null,
       model_id: !form.elements.execution_preferences && form.elements.model_id && form.elements.model_id.value !== "None" ? form.elements.model_id.value.trim() || null : null,
       execution_contract: {

@@ -588,6 +588,7 @@ class SelectionService:
             "policy_instance_id": self.settings.instance_id,
             "card_id": card.id if card else None,
             "card_version": card.updated_at.isoformat() if card else None,
+            "card_execution_version": card.execution_version if card else None,
         }
         receipt["decision_id"] = digest(
             {k: v for k, v in receipt.items() if k != "decision_id"}

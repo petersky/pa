@@ -53,6 +53,25 @@ The card's durable project is authoritative: a different request project cannot
 substitute its defaults or restrictions. New admission fails if the originating
 card/project policy has not been materialized on the execution instance.
 
+Dispatch previews expose `card_execution_version`; card GET exposes the same
+token as `execution_version`. Send it as `expected_execution_version` on preview
+or admission. It hashes the durable card except generated summary fields and
+`updated_at`, so background summary retries do not reject an unchanged task.
+Scope, preferences, project, attachments, lane, ownership and completion changes
+still invalidate it. Legacy `expected_card_version` remains the strict timestamp
+CAS, as do normal card edits. If both preconditions are supplied, both must pass.
+Keep the original dispatch request and idempotency key when reconciling an
+unknown result; refreshing a preview does not establish non-admission.
+
+The health collector keeps one canonical repair card and dispatch. A definitive
+selection failure before session admission has no turn disposition to reconcile.
+While triage still owns the work, PA may retry that same dispatch once through
+normal retry admission after a delay. Unknown retry delivery reuses one durable
+control key, with at most three delivery attempts. Exhausted or rejected recovery
+shows Waiting and identifies the project owner and existing dispatch as the next
+step. An explicit repair assessment prevents competing automatic investigation;
+the canonical verification requirement remains in force.
+
 ## Catalogs, connections, and readiness
 
 A candidate is scoped to an instance, harness, connection revision/account/endpoint,
