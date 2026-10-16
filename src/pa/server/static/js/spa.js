@@ -883,7 +883,7 @@
     window.clearTimeout(detail._cardDispatchPollTimer);
     detail._cardDispatchPollTimer = window.setTimeout(function () {
       if (!document.contains(detail)) return;
-      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(dispatchId), {
+      fetch("/api/fleet/dispatch-jobs/" + encodeURIComponent(dispatchId) + "?view=status", {
         credentials: "same-origin",
       })
         .then(function (response) {

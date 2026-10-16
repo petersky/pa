@@ -72,12 +72,19 @@ class _ResponsivenessMiddleware:
 
         started = time.perf_counter()
         status = 500
-        path = str(scope.get("path") or "")
+        response_bytes = 0
+        streaming = False
 
         async def send_wrapper(message):
-            nonlocal status
+            nonlocal status, response_bytes, streaming
             if message["type"] == "http.response.start":
                 status = int(message.get("status") or 500)
+                streaming = any(
+                    key.lower() == b"content-type" and value.lower().startswith(b"text/event-stream")
+                    for key, value in message.get("headers", [])
+                )
+            elif message["type"] == "http.response.body":
+                response_bytes += len(message.get("body", b""))
             await send(message)
 
         try:
@@ -92,7 +99,9 @@ class _ResponsivenessMiddleware:
             runtime = self.runtime_getter()
             if runtime:
                 runtime.record_request(
-                    path, status, (time.perf_counter() - started) * 1000
+                    getattr(scope.get("route"), "path", "__unmatched__"),
+                    status, (time.perf_counter() - started) * 1000,
+                    response_bytes=response_bytes, streaming=streaming,
                 )
 
 

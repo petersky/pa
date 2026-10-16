@@ -622,9 +622,10 @@ def register_mcp(mcp, ctx: AppContext) -> None:
 
     @mcp.tool()
     def get_dispatch(
-        dispatch_id: str, authority_instance_id: str | None = None
+        dispatch_id: str, authority_instance_id: str | None = None,
+        view: Literal["full", "status"] = "full",
     ) -> dict | None:
-        """Get normalized durable dispatch, session, authority, target, and card-version state."""
+        """Get durable dispatch state. Use view=status for bounded polling; full includes plans and history."""
         return request_local_pa(
             ctx.settings,
             "GET",
@@ -632,7 +633,7 @@ def register_mcp(mcp, ctx: AppContext) -> None:
                 f"/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}"
                 if authority_instance_id
                 else f"/api/fleet/dispatch-jobs/{dispatch_id}"
-            ),
+            ) + ("?view=status" if view == "status" else ""),
             allow_not_found=True,
         )
 

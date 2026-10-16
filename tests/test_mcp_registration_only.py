@@ -207,6 +207,8 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline["preview_fleet_placement"] = "2a47f1f27fbe19f5b8c1274692cabb123e2b3f626db65f1d8995573e4e4fbce8"
     baseline["dispatch_card"] = "44129e76e13baa10125497aa8162be7666e5b045920f989c58dde86490888edc"
     baseline["dispatch_card_to_instance"] = "ac1a5bd9d43373ae735a21b82c3165f9c297a8b46364c1f82553b4bd307fc9b7"
+    # Optional bounded polling projection; legacy full response is the default.
+    baseline["get_dispatch"] = "33a5751dbc0bd0c0a0034e9368fa7bdd871c9da84a5a824dd94773ea7aadccab"
     assert actual == baseline
 
 

@@ -5,6 +5,7 @@ import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass
+from pa.core.performance import current_observation
 
 
 @dataclass(frozen=True)
@@ -89,12 +90,19 @@ def report_work_progress():
 @contextmanager
 def measured_lock(lock):
     deadline = current_operation.get()
+    observation = current_observation.get()
+    started = time.monotonic() if observation else 0
     if deadline:
         deadline.lock_wait(time.monotonic())
     lock.acquire()
     if deadline:
         deadline.lock_acquired(time.monotonic())
+    acquired = time.monotonic() if observation else 0
+    if observation:
+        observation.python_lock_wait_ms += (acquired - started) * 1000
     try:
         yield
     finally:
         lock.release()
+        if observation:
+            observation.python_lock_hold_ms += (time.monotonic() - acquired) * 1000

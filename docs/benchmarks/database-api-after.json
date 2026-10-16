@@ -1,0 +1,186 @@
+{
+  "fixture": {
+    "dispatches": 200,
+    "samples": 30,
+    "mixed_batches": 50
+  },
+  "runtime_snapshot": {
+    "p50_ms": 0.278,
+    "p95_ms": 0.624,
+    "p99_ms": 0.636,
+    "json_bytes": 2022,
+    "serialization": {
+      "p50_ms": 0.297,
+      "p95_ms": 0.582,
+      "p99_ms": 0.666
+    },
+    "peak_allocated_bytes": 22250
+  },
+  "dispatch_full": {
+    "p50_ms": 0.632,
+    "p95_ms": 1.038,
+    "p99_ms": 1.162,
+    "json_bytes": 134157,
+    "serialization": {
+      "p50_ms": 1.128,
+      "p95_ms": 1.766,
+      "p99_ms": 1.817
+    },
+    "peak_allocated_bytes": 277327
+  },
+  "dispatch_status": {
+    "p50_ms": 0.218,
+    "p95_ms": 0.334,
+    "p99_ms": 0.339,
+    "json_bytes": 1901,
+    "serialization": {
+      "p50_ms": 0.169,
+      "p95_ms": 0.229,
+      "p99_ms": 0.295
+    },
+    "peak_allocated_bytes": 14936
+  },
+  "status_dispatch_commits": 0,
+  "status_sql_statements": {},
+  "duplicate_placement_subtree_bytes": 64248,
+  "mixed": {
+    "transcript": {
+      "p50_ms": 17.996,
+      "p95_ms": 23.736,
+      "p99_ms": 42.237,
+      "metadata_row_changes": 500
+    },
+    "session": {
+      "p50_ms": 0.22,
+      "p95_ms": 3.988,
+      "p99_ms": 80.876,
+      "metadata_row_changes": 50
+    },
+    "card": {
+      "p50_ms": 0.532,
+      "p95_ms": 3.2,
+      "p99_ms": 4.32,
+      "metadata_row_changes": 50
+    },
+    "read": {
+      "p50_ms": 0.463,
+      "p95_ms": 2.299,
+      "p99_ms": 2.839,
+      "metadata_row_changes": 0
+    }
+  },
+  "mixed_sql_statements": {
+    "BEGIN": 201,
+    "INSERT": 1601,
+    "COMMIT": 201,
+    "PRAGMA": 104,
+    "SELECT": 150
+  },
+  "transcript_diagnostics": {
+    "schema_version": 1,
+    "events": 500,
+    "audit_evidence": 0,
+    "objects": 500,
+    "uncompressed_bytes": 4007900,
+    "compressed_bytes": 30733,
+    "references": 500,
+    "deduplicated_references": 0,
+    "missing_objects": 0,
+    "journal_mode": "wal",
+    "integrity": "ok",
+    "redaction_policy": "canonical-v1",
+    "hot_payload_limit": 2048,
+    "compatibility_rows": 500,
+    "migration": "complete",
+    "migration_examined": 0,
+    "migration_changed": 0,
+    "migration_error": null,
+    "measured_at": "2026-10-16T01:58:15.707599+00:00",
+    "measurement_state": "measured"
+  },
+  "transcript_performance": {
+    "window": "last_256_observations_per_metric",
+    "metrics": {
+      "prepare_ms": {
+        "samples": 50,
+        "p50": 5.35,
+        "p95": 7.392,
+        "p99": 10.562,
+        "count": 50,
+        "total": 273.189
+      },
+      "input_rows": {
+        "samples": 50,
+        "p50": 10,
+        "p95": 10,
+        "p99": 10,
+        "count": 50,
+        "total": 500
+      },
+      "canonical_payload_bytes": {
+        "samples": 50,
+        "p50": 80160,
+        "p95": 80160,
+        "p99": 80160,
+        "count": 50,
+        "total": 4007900
+      },
+      "python_lock_wait_ms": {
+        "samples": 50,
+        "p50": 0.024,
+        "p95": 0.035,
+        "p99": 0.045,
+        "count": 50,
+        "total": 1.224
+      },
+      "object_publish_ms": {
+        "samples": 50,
+        "p50": 7.316,
+        "p95": 10.791,
+        "p99": 23.169,
+        "count": 50,
+        "total": 399.432
+      },
+      "sqlite_writer_acquire_ms": {
+        "samples": 50,
+        "p50": 0.017,
+        "p95": 0.043,
+        "p99": 0.233,
+        "count": 50,
+        "total": 1.259
+      },
+      "lookup_rows_returned": {
+        "samples": 50,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "count": 50,
+        "total": 0
+      },
+      "sqlite_rows_committed": {
+        "samples": 50,
+        "p50": 20,
+        "p95": 20,
+        "p99": 20,
+        "count": 50,
+        "total": 1000
+      },
+      "transaction_hold_ms": {
+        "samples": 50,
+        "p50": 1.546,
+        "p95": 2.241,
+        "p99": 2.743,
+        "count": 50,
+        "total": 80.972
+      },
+      "sqlite_row_changes_attempted": {
+        "samples": 50,
+        "p50": 20,
+        "p95": 20,
+        "p99": 20,
+        "count": 50,
+        "total": 1000
+      }
+    }
+  }
+}
