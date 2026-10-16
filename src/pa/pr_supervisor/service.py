@@ -1630,6 +1630,9 @@ class PRSupervisor:
         return stored
 
     async def refresh_watch(self, watch_id: str) -> PRWatch | None:
+        current = await self._offload('sqlite.pr_supervisor_watch_read', self.store.get_watch, watch_id)
+        if current and current.status == PRWatchStatus.MERGED:
+            return await self._refresh_merged_evidence(current)
         # Operator refresh is an explicit retry: cancel stale shared work and
         # clear cached grants, denial backoff, and failure attempts first.
         self._forget_watch(watch_id)
@@ -1644,6 +1647,33 @@ class PRSupervisor:
         )
         await self._replicate(watch)
         return watch
+
+    async def _refresh_merged_evidence(self, watch):
+        """The existing per-watch refresh also reconciles legacy terminal proof."""
+        if watch.authority_instance_id != self.settings.instance_id:
+            raise ValueError('terminal_green_refresh_requires_watch_authority')
+        if not watch.state.get('stable_green_evidence'):
+            from pa.pr_supervisor.green_evidence import recover_green
+            canonical = await self.freeze_canonical_policy(watch.model_copy(deep=True))
+            if canonical.policy_revision != watch.policy_revision:
+                raise ValueError('terminal_green_policy_changed')
+            snapshot = await self._observe('http.github_snapshot', self.github.snapshot(
+                watch.repository, watch.pr_number, policy=watch.policy), timeout=60.0)
+            events = await self._offload('sqlite.pr_supervisor_events_read', self.store.list_events, watch.id, limit=1001)
+            if len(events) > 1000:
+                raise ValueError('terminal_green_audit_bound_exceeded')
+            proof = recover_green(watch, snapshot, events)
+            canonical = await self.freeze_canonical_policy(watch.model_copy(deep=True))
+            if canonical.policy_revision != watch.policy_revision:
+                raise ValueError('terminal_green_policy_changed')
+            await self._audit(watch, 'terminal_green_revalidated',
+                f'{watch.id}:terminal-green:{watch.head_sha}:{watch.policy_revision}', payload=proof)
+            watch = await self._offload('sqlite.pr_supervisor_watch_write', self.store.set_terminal,
+                watch.id, PRWatchStatus.MERGED, expected_updated_at=watch.updated_at,
+                state={**watch.state, 'stable_green_evidence':proof})
+            await self._replicate(watch)
+        await self._complete_merged_card(watch)
+        return await self._offload('sqlite.pr_supervisor_watch_read', self.store.get_watch, watch.id)
 
     async def retire_watch(self, watch_id: str) -> PRWatch | None:
         current = await self._offload(
@@ -1976,6 +2006,16 @@ class PRSupervisor:
             attempt = 0 if changed else min(watch.poll_attempt + 1, 16)
             next_poll = self._next_poll(watch.policy, attempt)
             observation_state = self._safe_snapshot(snapshot, gate)
+            from pa.pr_supervisor.green_evidence import check_identity, green_fingerprint, preserved_green
+            if gate.green and green_fingerprint(snapshot, watch.policy) == gate.fingerprint:
+                observation_state['stable_green_evidence'] = {
+                    'green':True, 'head_sha':snapshot.head_sha, 'fingerprint':gate.fingerprint,
+                    'policy_revision':watch.policy_revision, 'observed_at':snapshot.observed_at.isoformat(),
+                    'checks':check_identity(snapshot),
+                    'observations':watch.stable_head_observations + 1,
+                    'stable_head_since':watch.stable_head_since.isoformat() if watch.stable_head_since else now.isoformat()}
+            elif gate.reasons == ['merge state is unknown'] and (proof := preserved_green(watch, snapshot)):
+                observation_state['stable_green_evidence'] = proof
             prior_hold = dict((watch.state or {}).get("publication_fence") or {})
             hold_active = bool(snapshot.draft)
             hold_version = int((watch.state or {}).get("review_hold_version") or 0)
@@ -2454,14 +2494,22 @@ class PRSupervisor:
         state = self._safe_snapshot(snapshot)
         prior_state = watch.state or {}
         prior_gate = prior_state.get("gate") or {}
+        from pa.pr_supervisor.green_evidence import green_fingerprint, preserved_green
+        if proof := preserved_green(watch, snapshot):
+            state['stable_green_evidence'] = proof
         if (
+            'stable_green_evidence' not in state
+            and
             prior_state.get("head_sha") == snapshot.head_sha
             and prior_gate.get("green") is True
+            and green_fingerprint(snapshot, watch.policy) == prior_gate.get('fingerprint')
+            and prior_state.get('policy_revision') == watch.policy_revision
         ):
             state["stable_green_evidence"] = {
                 "green": True,
                 "head_sha": snapshot.head_sha,
                 "fingerprint": watch.condition_fingerprint,
+                "policy_revision": watch.policy_revision,
                 "observed_at": prior_state.get("observed_at"),
                 "observations": watch.stable_head_observations,
                 "stable_head_since": watch.stable_head_since.isoformat()

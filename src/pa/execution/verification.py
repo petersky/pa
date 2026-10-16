@@ -127,7 +127,6 @@ class VerificationStore:
 class VerificationService:
     def __init__(self, ctx, health, store):
         self.ctx, self.health, self.store = ctx, health, store
-        self.task = None
         self.lock = asyncio.Lock()
         self.offset = 0
         self.last_error = None
@@ -701,16 +700,3 @@ class VerificationService:
                 if time.monotonic() >= deadline:
                     break
             self.offset = self.offset + processed if processed < len(cards) or len(cards) == 32 else 0
-
-    async def run(self):
-        while True:
-            try:
-                await self.cycle()
-            except Exception as exc:
-                self.last_error = getattr(exc, 'code', type(exc).__name__)
-            await asyncio.sleep(30)
-
-    async def stop(self):
-        if self.task:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)

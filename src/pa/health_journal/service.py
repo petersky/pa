@@ -559,6 +559,14 @@ class HealthService:
                 self.scheduler_status.update(phase='backoff', last_error=getattr(exc, 'code', type(exc).__name__), diagnostic_persistence='unknown')
             else:
                 self.scheduler_status.update(phase='idle', diagnostic_persistence='not_needed')
+            # Ordinary verification remains active when health collection is
+            # disabled. One existing service loop owns both kinds of work.
+            verification = self.ctx.services.get('verification')
+            if verification:
+                try:
+                    await verification.cycle()
+                except Exception as exc:
+                    verification.last_error = getattr(exc, 'code', type(exc).__name__)
             self.scheduler_status['next_wake_at'] = time.time() + interval
             await asyncio.sleep(interval)
 

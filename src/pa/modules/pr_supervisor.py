@@ -422,7 +422,10 @@ async def repair_provenance(
 
 @router.post("/pr-supervisor/watches/{watch_id}/refresh")
 async def refresh_watch(request: Request, watch_id: str) -> dict[str, Any]:
-    watch = await _service(request).refresh_watch(watch_id)
+    try:
+        watch = await _service(request).refresh_watch(watch_id)
+    except (ValueError, StaleFenceError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not watch:
         raise HTTPException(status_code=404, detail="Active PR watch not found")
     return {"scheduled": True, "watch_id": watch_id}

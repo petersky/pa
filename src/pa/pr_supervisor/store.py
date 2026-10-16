@@ -1132,6 +1132,7 @@ class PRSupervisorStore:
         fence_token_baseline: int | None = None,
         retirement_reason: str | None = None,
         retired_at: datetime | None = None,
+        expected_updated_at: datetime | None = None,
     ) -> PRWatch | None:
         now = utcnow()
         with self._conn(immediate=True) as conn:
@@ -1141,6 +1142,8 @@ class PRSupervisorStore:
             if not row:
                 return None
             watch = self._row_to_watch(row)
+            if expected_updated_at is not None and watch.updated_at != expected_updated_at:
+                raise StaleFenceError(f"watch changed during terminal reconciliation {watch_id}")
             if owner_instance_id is not None and (
                 watch.owner_instance_id != owner_instance_id
                 or watch.fence_token != fence_token

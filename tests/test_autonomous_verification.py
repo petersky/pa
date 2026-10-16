@@ -30,7 +30,7 @@ def system(tmp_path):
     ctx.services['dispatch_store'] = DispatchStore(tmp_path/'dispatch')
     ctx.services['pr_supervisor_store'] = PRSupervisorStore(tmp_path/'prs.db')
     health = HealthService(ctx, Journal(tmp_path/'health.db', settings.instance_id))
-    service = VerificationService(ctx, health, VerificationStore(tmp_path/'verification.db'))
+    service = VerificationService(ctx, health, VerificationStore(health.journal.path))
     ctx.services.update(health_journal=health, verification=service)
     from pa.instance.session_lifecycle import SessionLifecyclePolicy
     runtimes = {}
@@ -92,6 +92,38 @@ def ordinary(system, **changes):
             requirement_revision=card.completion_requirement.revision, subject_revision='a'*40, outcome='integrated'),
         idempotency_key='integrated')
     return card, record
+
+
+@pytest.mark.asyncio
+async def test_existing_health_loop_runs_verification_when_collection_disabled(system, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(system.health, 'cycle', AsyncMock())
+    monkeypatch.setattr(system.service, 'cycle', AsyncMock())
+    monkeypatch.setattr('pa.health_journal.service.asyncio.sleep', AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        await system.health.run()
+    system.service.cycle.assert_awaited_once()
+    system.health.cycle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unreleased_verification_file_keeps_its_existing_obligations(system, monkeypatch):
+    from unittest.mock import AsyncMock
+    from pa.modules.health_journal import HealthJournalModule
+    card, _ = ordinary(system)
+    system.ctx.settings.data_dir.mkdir(exist_ok=True)
+    legacy = VerificationStore(system.ctx.settings.data_dir/'verification.db')
+    job = legacy.reserve(system.service.packet(card))
+    legacy.update(job['id'], 'admission_pending')
+    monkeypatch.setattr(HealthService, 'start', AsyncMock())
+    await HealthJournalModule().on_startup(SimpleNamespace(), system.ctx)
+    current = system.ctx.services['verification']
+    try:
+        assert current.store.path == legacy.path
+        assert current.store.get(job['id'])['state'] == 'admission_pending'
+    finally:
+        await system.ctx.services['health_journal'].stop()
 
 
 @pytest.mark.asyncio
@@ -296,37 +328,18 @@ def test_agent_policy_requires_new_owner_capability(system):
 
 
 @pytest.mark.parametrize('deliverable', ['code','design'])
-def test_child_migration_only_corrects_proven_copy_and_preserves_explicit_edits(system, deliverable):
-    from pa.domain.conversation_issues import ConversationIssues, IssueEdit, StartIssues
-    from pa.domain.models import AgentSession
+def test_child_requirements_are_never_rewritten_by_health_onboarding(system, deliverable):
     parent = system.ctx.store.create_card(CardCreate(title='Parent', completion_requirement={
         'mode':'explicit_acceptance', 'criteria':'Verify health-group:unrelated', 'milestones':['verified']}))
-    system.ctx.store.save_session(AgentSession(id='conversation', agent_name='codex'))
-    notes = ConversationIssues(system.ctx.store)
-    notes.edit('conversation', IssueEdit(revision=0, issues=[{'id':'child','title':'Unrelated repair'}]))
-    req = parent.completion_requirement.model_dump(mode='json')
-    context = {'source_card_id':parent.id, 'realm_id':'default', 'completion_requirement':req}
-    state = notes.admit('conversation', StartIssues(request_id='selection', revision=1, issue_ids=['child']), context)
-    child = system.ctx.store.create_card(CardCreate(title='Design-only proposal' if deliverable == 'design' else 'Source fix', parent_id=parent.id,
-        body='Source conversation: conversation', completion_requirement=req))
-    groups = state['requests'][0]['groups']
-    groups[0]['card_id'] = child.id
-    notes.update_request('conversation','selection',groups=groups)
-    with pytest.raises(CompletionConflict, match='inherited_child_deliverable_unconfirmed'):
+    child = system.ctx.store.create_card(CardCreate(title=deliverable, parent_id=parent.id,
+        completion_requirement=parent.completion_requirement))
+    if deliverable == 'code':
+        system.ctx.services['pr_supervisor_store'].upsert_watch(PRWatch(repository='test/child', pr_number=1,
+            pr_url='https://github.com/test/child/pull/1', card_id=child.id, head_sha='c'*40, provenance_version=1))
+    with pytest.raises(CompletionConflict, match='unknown_completion_migration'):
         migration_plan(system.service, child, 'inherited_child')
-    assert system.ctx.store.get_card(child.id).completion_requirement == child.completion_requirement
-    if deliverable == 'design':
-        assert not child.completion_status['accepted'] and child.lane != 'done'
-        return
-    system.ctx.services['pr_supervisor_store'].upsert_watch(PRWatch(repository='test/child', pr_number=1,
-        pr_url='https://github.com/test/child/pull/1', card_id=child.id, head_sha='c'*40, provenance_version=1))
-    corrected = migration_plan(system.service, child, 'inherited_child')
-    assert corrected.mode == 'integration_only' and corrected.milestones == ['integrated']
-    assert system.ctx.store.get_card(child.id).completion_requirement == child.completion_requirement
-    changed = system.ctx.store.update_card(child.id, CardUpdate(expected_version=child.updated_at,
-        field_intent=['completion_requirement'], completion_requirement=child.completion_requirement.model_copy(update={'criteria':'Explicit child verification'})))
-    with pytest.raises(CompletionConflict, match='explicit_requirement_preserved'):
-        migration_plan(system.service, changed, 'inherited_child')
+    assert system.ctx.store.get_card(child.id) == child
+    assert child.completion_requirement.milestones == ['verified']
 
 
 @pytest.mark.asyncio
@@ -437,13 +450,15 @@ def test_real_dispatch_and_bound_http_acceptance_use_current_assignment(tmp_path
     reset_store(); reset_instance_agent()
     monkeypatch.setattr(SessionLifecyclePolicy, 'start', lambda self:None)
     async def manual_scheduler(self): pass
-    monkeypatch.setattr(VerificationService, 'run', manual_scheduler)
+    monkeypatch.setattr(VerificationService, 'cycle', manual_scheduler)
     settings = Settings(data_dir=tmp_path/'data', workspace_root=tmp_path/'workspaces', agent_enabled=False,
                         instance_id='authority', auth_required=True, peers=[])
     app = Kernel.boot(settings=settings).build_app()
     try:
         with TestClient(app) as client:
             ctx = app.state.ctx
+            assert ctx.require_service('verification').store.path == ctx.require_service('health_journal').journal.path
+            assert not (settings.data_dir/'verification.db').exists()
             client.portal.call(ctx.require_service('dispatch_worker').close)
             project = ctx.store.create_project(ProjectCreate(title='Verification project'))
             repo = ctx.store.create_repository(RepositoryCreate(url='https://example.test/test/pa.git'))

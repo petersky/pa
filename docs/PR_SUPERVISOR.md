@@ -69,6 +69,15 @@ relationships, updates only the watch projection, and appends a
 same workflow as `diagnose_pr_watch_provenance` and
 `repair_pr_watch_provenance`.
 
+Green evidence survives a transient GitHub mergeability-unknown observation only
+while the head, policy, checks and reviews remain identical. For an older merged
+watch missing this proof, its existing `POST .../watches/WATCH_ID/refresh` operation
+can reconcile immutable stable-green observations with a fresh GitHub snapshot.
+It runs only on the watch authority, rejects missing or contradictory history,
+records the exact source observation IDs, and updates the original terminal watch
+with a version check. It then uses normal card completion and preserves existing
+acceptance receipts. A merge alone never creates historical green evidence.
+
 ## Lease authority and worker failover
 
 `PA_PR_SUPERVISOR_AUTHORITY_URL` (or the persisted

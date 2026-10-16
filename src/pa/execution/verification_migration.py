@@ -4,7 +4,6 @@ from __future__ import annotations
 import re
 
 from pa.domain.completion import CompletionConflict
-from pa.domain.conversation_issues import ConversationIssues
 from pa.domain.models import CompletionRequirement
 
 
@@ -18,37 +17,6 @@ def migration_plan(service, card, kind):
         raise CompletionConflict('completion_migration_not_eligible')
     events = service.ctx.store.event_log.entity_history(card.realm_id, 'card', card.id)
     history = [r['event'] for r in events if r.get('projection_effect') != 'ignored_duplicate_create']
-    if kind == 'inherited_child':
-        # The frozen notebook proves the server copied this parent declaration.
-        # A later deliberate edit is never eligible, even if text is identical.
-        match = re.search(r'Source conversation: ([a-zA-Z0-9-]+)\s*$', card.body)
-        if not match or not card.parent_id or not history or history[0]['type'] != 'card_created':
-            raise CompletionConflict('inherited_requirement_provenance_unconfirmed')
-        if any('completion_requirement' in (e.get('field_intent') or []) or e['type'] == 'card_upserted' for e in history[1:]):
-            raise CompletionConflict('explicit_requirement_preserved')
-        state = ConversationIssues(service.ctx.store).read(match[1])
-        frozen = [r for r in state['requests'] if r['context'].get('source_card_id') == card.parent_id
-                  and any(g.get('card_id') == card.id for g in r['groups'])]
-        if len(frozen) != 1 or not frozen[0]['context'].get('completion_requirement'):
-            raise CompletionConflict('inherited_requirement_provenance_unconfirmed')
-        original = frozen[0]['context']['completion_requirement']
-        created = history[0]['payload'].get('completion_requirement')
-        if not created or comparable(original) != comparable(created) or comparable(created) != comparable(req):
-            raise CompletionConflict('explicit_requirement_preserved')
-        if 'health-group:' not in req.criteria:
-            raise CompletionConflict('unrelated_health_requirement_required')
-        supervisor = service.ctx.services.get('pr_supervisor_store')
-        watches = supervisor.list_watches(card_id=card.id, realm_id=card.realm_id, include_retired=True) if supervisor else []
-        source_evidence = any(e.outcome == 'integrated' and e.actor_kind == 'integration' for e in card.completion_evidence)
-        source_evidence = source_evidence or any(w.provenance_version >= 1 and w.head_sha
-            and str(w.status) in {'active','blocked','merged'} for w in watches)
-        if not source_evidence:
-            # A design/research issue has no source-integration producer. Keep
-            # its declaration pending for an evidence-based scope correction.
-            raise CompletionConflict('inherited_child_deliverable_unconfirmed')
-        return CompletionRequirement(mode='integration_only', milestones=['integrated'],
-            provenance='inherited_repair_correction', source_reference='card:' + card.parent_id,
-            criteria='Integrate this card’s source changes. Unrelated inherited health acceptance was corrected; the original declaration remains in immutable history.')
     if kind != 'system_health':
         raise CompletionConflict('unknown_completion_migration')
     groups = re.findall(r'health-group:([a-zA-Z0-9-]+)', req.criteria)
