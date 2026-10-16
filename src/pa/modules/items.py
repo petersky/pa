@@ -2685,6 +2685,13 @@ def update_card_api(
                     raise CompletionConflict("verification_services_unavailable")
                 verification.validate_acceptance(current, record, data.completion_acceptance)
         _require_completion_owner_compatibility(request, card_id, data, realm_id=realm_id)
+        if data.completion_requirement:
+            current = store.get_card(card_id, realm_id=realm_id)
+            verification = request.app.state.ctx.services.get('verification')
+            if current and current.completion_requirement and current.completion_requirement.verification_policy == 'independent_agent_v1':
+                if verification is None:
+                    raise CompletionConflict('verification_services_unavailable')
+                verification.fence_requirement_edit(current, data, key)
         card = store.update_card(
             card_id,
             data,

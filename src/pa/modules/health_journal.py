@@ -151,7 +151,14 @@ async def verification_intents(request: Request, card_id: str = Query(min_length
     if realm not in request.app.state.ctx.settings.subscribed_realms:
         raise HTTPException(403, 'Realm unavailable')
     current = verification_service(request)
-    return {'items': await current.call(current.store.list, card_id, realm), 'last_error': current.last_error}
+    card = await current.call(current.ctx.store.get_card, card_id, realm_id=realm)
+    req = card.completion_requirement if card else None
+    authority = None
+    if req:
+        authority = {'instance_id': await current.call(current.authority_id, req), 'paused': req.verification_paused,
+                     'revision': req.revision, 'local_owner': await current.call(current.owns_authority, card),
+                     'fence': await current.call(current.store.authority_fence, card_id, realm, req.revision)}
+    return {'items': await current.call(current.store.list, card_id, realm), 'authority': authority, 'last_error': current.last_error}
 
 
 @router.post('/reports', status_code=201)

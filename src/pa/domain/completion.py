@@ -32,6 +32,14 @@ class CompletionConflict(ValueError):
         super().__init__(code)
 
 
+def bind_verification_authority(requirement, instance_id):
+    """Persist the scheduling owner in the canonical declaration, never elect it."""
+    if (requirement and requirement.verification_policy == 'independent_agent_v1'
+            and requirement.provenance != 'system_health' and not requirement.verification_authority_instance_id):
+        return requirement.model_copy(update={'verification_authority_instance_id': instance_id})
+    return requirement
+
+
 def completion_state(requirement: Any, evidence: Any = ()) -> dict:
     requirement = _dict(requirement)
     if not requirement:

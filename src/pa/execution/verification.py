@@ -30,6 +30,7 @@ class VerificationStore:
             db.execute("CREATE INDEX IF NOT EXISTS verification_card ON intents(card_id,realm)")
             db.execute("CREATE TABLE IF NOT EXISTS migrations(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, plan TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS recoveries(intent TEXT NOT NULL, dependency TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(intent,dependency))")
+            db.execute("CREATE TABLE IF NOT EXISTS authority_fences(card_id TEXT NOT NULL, realm TEXT NOT NULL, revision TEXT NOT NULL, operation_key TEXT NOT NULL, PRIMARY KEY(card_id,realm,revision))")
         self.path.chmod(0o600)
 
     @contextmanager
@@ -66,7 +67,44 @@ class VerificationStore:
 
     def claim_admission(self, key):
         with self.connection() as db:
-            return db.execute("UPDATE intents SET state='admission_pending' WHERE id=? AND state IN ('pending','blocked','admission_pending')", (key,)).rowcount == 1
+            return db.execute("""UPDATE intents SET state='admission_pending' WHERE id=?
+                AND state IN ('pending','blocked','admission_pending') AND NOT EXISTS (
+                    SELECT 1 FROM authority_fences f WHERE f.card_id=intents.card_id AND f.realm=intents.realm
+                    AND f.revision=json_extract(intents.packet,'$.requirement_revision'))""", (key,)).rowcount == 1
+
+    def authority_fenced(self, card_id, realm, revision):
+        return self.authority_fence(card_id, realm, revision) is not None
+
+    def authority_fence(self, card_id, realm, revision):
+        with self.connection() as db:
+            row = db.execute('SELECT * FROM authority_fences WHERE card_id=? AND realm=? AND revision=?', (card_id, realm, revision)).fetchone()
+        return dict(row) if row else None
+
+    def claim_retry(self, key):
+        with self.connection() as db:
+            return db.execute("""UPDATE intents SET state='admission_pending' WHERE id=?
+                AND state IN ('failed','dispatched','admission_pending') AND NOT EXISTS (
+                    SELECT 1 FROM authority_fences f WHERE f.card_id=intents.card_id AND f.realm=intents.realm
+                    AND f.revision=json_extract(intents.packet,'$.requirement_revision'))""", (key,)).rowcount == 1
+
+    def pending_recoveries(self, key):
+        with self.connection() as db:
+            return [r[0] for r in db.execute("SELECT dependency FROM recoveries WHERE intent=? AND state='pending'", (key,))]
+
+    def fence_authority(self, card_id, realm, revision, key, *, require_idle, settled):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if require_idle:
+                rows = db.execute('SELECT * FROM intents WHERE card_id=? AND realm=?', (card_id, realm)).fetchall()
+                for row in rows:
+                    if row['state'] == 'admission_pending' or db.execute("SELECT 1 FROM recoveries WHERE intent=? AND state='pending' LIMIT 1", (row['id'],)).fetchone():
+                        raise CompletionConflict('verification_authority_has_pending_work')
+                    unadmitted = not row['dispatch_id'] and (row['state'] in {'pending','superseded'} or row['diagnostic'] in {
+                        'verification_principal_unconfigured','waiting_for_integration_or_origin','repair_workflow_pending',
+                        'verification_realm_authority_required'})
+                    if row['id'] not in settled and not unadmitted:
+                        raise CompletionConflict('verification_authority_has_pending_work')
+            db.execute('INSERT OR IGNORE INTO authority_fences VALUES(?,?,?,?)', (card_id, realm, revision, key))
 
     def migration(self, key, fingerprint, plan=None):
         with self.connection() as db:
@@ -92,6 +130,54 @@ class VerificationService:
         self.lock = asyncio.Lock()
         self.offset = 0
         self.last_error = None
+
+    def authority_id(self, requirement):
+        if requirement.provenance == 'system_health':
+            return self.health.journal.status()['policy']['authority_id'] or None
+        return requirement.verification_authority_instance_id
+
+    def owns_authority(self, card):
+        req = card.completion_requirement
+        if not req or req.verification_paused:
+            return False
+        if req.provenance == 'system_health':
+            policy = self.health.journal.status()['policy']
+            owned = policy['authority_id'] == self.ctx.settings.instance_id and policy['enabled'] and not policy['paused']
+        else:
+            owned = req.verification_authority_instance_id == self.ctx.settings.instance_id
+        return owned and not self.store.authority_fenced(card.id, card.realm_id, req.revision)
+
+    def fence_requirement_edit(self, card, data, key):
+        """Owner-only handoff; a durable revocation precedes canonical mutation.
+
+        Admission claims and this fence serialize in the same local transaction.
+        A failed/unknown canonical edit leaves the old revision safely fenced;
+        the normal operation receipt and exact request own its recovery.
+        """
+        req, replacement = card.completion_requirement, data.completion_requirement
+        if not req or req.verification_policy != 'independent_agent_v1' or not replacement or req == replacement:
+            return
+        authority = self.authority_id(req) or card.created_by_instance
+        if authority != self.ctx.settings.instance_id:
+            raise CompletionConflict('verification_authority_remote')
+        if data.expected_version != card.updated_at or 'completion_requirement' not in (data.field_intent or []):
+            raise CompletionConflict('stale_completion_requirement')
+        replacement_authority = self.authority_id(replacement) or authority
+        settled = set()
+        ledger = self.ctx.services['dispatch_store']
+        for job in self.store.list(card.id, card.realm_id):
+            record = ledger.get(job['dispatch_id']) if job['dispatch_id'] else ledger.by_authority_idempotency(
+                self.ctx.settings.instance_id, 'verification:' + job['id'])
+            if record and record.state in TERMINAL_DISPATCH_STATES:
+                for dependency in self.store.pending_recoveries(job['id']):
+                    if record.control_operations.get('verification-retry:' + job['id'] + ':' + dependency) == 'retry':
+                        self.store.recovery(job['id'], dependency, 'confirmed')
+                if (not record.session_id and not record.initial_prompt_operation and not record.prompt_acknowledged_at
+                        or record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
+                        and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES and not record.recoverable):
+                    settled.add(job['id'])
+        self.store.fence_authority(card.id, card.realm_id, req.revision, key,
+            require_idle=replacement_authority != authority, settled=settled)
 
     def packet(self, card):
         """One planner for all agent-verifiable declarations. No policy inference."""
@@ -195,6 +281,8 @@ class VerificationService:
         req = card.completion_requirement
         if not req or req.verification_policy != 'independent_agent_v1':
             return
+        if not self.owns_authority(card) or record.authority_instance_id != self.ctx.settings.instance_id:
+            raise CompletionConflict('verification_authority_not_current')
         packet = self.packet(card)
         key = digest(packet)
         job = self.store.get(key)
@@ -275,6 +363,8 @@ class VerificationService:
 
     async def process(self, card):
         req = card.completion_requirement
+        if req and req.verification_policy == 'independent_agent_v1' and not await self.call(self.owns_authority, card):
+            return
         if req and card.lane == CardLane.DONE and card.completion_status['accepted']:
             # Recover a lost final lane-write reply from the immutable bound
             # receipt, including after restart. This finishes that old intent;
@@ -387,6 +477,8 @@ class VerificationService:
         if digest(await self.call(self.packet, fresh)) != key:
             await self.ensure(fresh)
             return
+        if not await self.call(self.owns_authority, fresh):
+            return
         if not await self.call(self.store.claim_admission, key):
             return
         try:
@@ -410,11 +502,16 @@ class VerificationService:
         if not (record.state == 'failed' and record.recoverable and record.error_code == 'no_compatible_execution'
                 and not record.session_id and not record.prompt_acknowledged_at and not record.initial_prompt_operation):
             return
+        current = await self.call(self.ctx.store.get_card, job['card_id'], realm_id=job['realm'])
+        if not current or not await self.call(self.owns_authority, current) or current.completion_requirement.revision != job['packet']['requirement_revision']:
+            return
         dependency, ready = await self.provider_dependency()
         state = await self.call(self.store.recovery, job['id'], dependency)
         if not ready or state in {'baseline', 'rejected', 'confirmed'}:
             return
         key = 'verification-retry:' + job['id'] + ':' + dependency
+        if not await self.call(self.store.claim_retry, job['id']):
+            return
         await self.call(self.store.recovery, job['id'], dependency, 'pending')
         try:
             result = await self.health.local_api({'principal_id': job['packet']['principal']}, 'POST',
@@ -422,6 +519,7 @@ class VerificationService:
         except httpx.HTTPStatusError as exc:
             if 400 <= exc.response.status_code < 500:
                 await self.call(self.store.recovery, job['id'], dependency, 'rejected')
+                await self.call(self.store.update, job['id'], 'failed')
             return
         except Exception:
             return  # Unknown delivery reuses the same normal retry identity.

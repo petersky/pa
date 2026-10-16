@@ -73,6 +73,17 @@ reference the current `verification-intent:<id>` and required scenario/instance
 scope. A changed declaration, build or membership invalidates a pending assignment.
 Explicit external/user authority stays declared and is never replaced by an agent.
 
+Ordinary declarations persist `verification_authority_instance_id` (bound to the
+creating server when omitted) and `verification_paused`. Only that authority may
+schedule, retry, validate agent acceptance, or edit the declaration. Health gates use the configured
+journal authority. Requirement edits on the owner durably revoke the old revision
+before the canonical CAS write; admission/retry claims serialize against that
+same revocation fence. Changing authority requires all previously admitted or
+uncertain verifier work to settle. A stale projection or a restarted old owner
+cannot admit work for its revoked revision. A failed/unknown metadata write leaves
+that revision safely fenced; recover/replay the original canonical operation key.
+The verification-intents API exposes the current authority, pause and fence.
+
 PA displays these routine gates as verification pending and schedules the work;
 it does not ask the user to arrange an approver. Only current canonical successful
 evidence permits completion. See [the journal workflow](HEALTH_JOURNAL.md) for

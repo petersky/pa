@@ -413,6 +413,8 @@ class CompletionRequirement(BaseModel):
     source_reference: str | None = Field(default=None, max_length=200)
     verification_policy: Literal["declared", "independent_agent_v1"] = "declared"
     verification_principal: str | None = Field(default=None, max_length=100)
+    verification_authority_instance_id: str | None = Field(default=None, max_length=80)
+    verification_paused: bool = False
     originating_session_ids: list[str] = Field(default_factory=list, max_length=100)
     originating_dispatch_ids: list[str] = Field(default_factory=list, max_length=100)
 

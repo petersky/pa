@@ -69,6 +69,7 @@ def ordinary(system, **changes):
     req = {'mode': 'explicit_acceptance', 'milestones': ['integrated', 'verified'],
            'acceptance_principals': ['user:local'], 'verification_policy': 'independent_agent_v1',
            'verification_principal': 'user:local', 'originating_session_id': 'implementation-session', **changes}
+    req.setdefault('verification_authority_instance_id', system.ctx.settings.instance_id)
     card = system.ctx.store.create_card(CardCreate(title='Independent check', lane='waiting', completion_requirement=req))
     record = origin(system, card.id)
     card = system.ctx.store.update_card(card.id, CardUpdate(expected_version=card.updated_at),
@@ -418,7 +419,8 @@ def test_real_dispatch_and_bound_http_acceptance_use_current_assignment(tmp_path
             card = ctx.store.create_card(CardCreate(title='Ready for verification', lane='waiting', project_id=project.id,
                 completion_requirement={'mode':'explicit_acceptance', 'milestones':['integrated','verified'],
                     'acceptance_principals':['user:local'], 'verification_policy':'independent_agent_v1',
-                    'verification_principal':'user:local', 'originating_dispatch_id':'implementation'}))
+                    'verification_principal':'user:local', 'originating_dispatch_id':'implementation',
+                    'verification_authority_instance_id':settings.instance_id}))
             ledger = ctx.require_service('dispatch_store')
             ledger.put(DispatchRecord(dispatch_id='implementation', mutation_id='implementation', card_id=card.id,
                 authority_instance_id=settings.instance_id, target_instance_id=settings.instance_id,
@@ -430,6 +432,17 @@ def test_real_dispatch_and_bound_http_acceptance_use_current_assignment(tmp_path
             candidate.capabilities.extend(['completion-requirements:v1','completion-agent-verification:v1'])
             monkeypatch.setattr('pa.modules.fleet._placement_candidates', AsyncMock(return_value=[candidate]))
             service = ctx.require_service('verification')
+            user = UserDirectory(settings.data_dir).get('local')
+            for paused in (True, False):
+                response = client.patch('/api/cards/'+card.id, headers={'Authorization':'Bearer '+user.cli_token,
+                    'Idempotency-Key':'pause-policy-'+str(paused)}, json={'expected_version':card.updated_at.isoformat(),
+                        'field_intent':['completion_requirement'], 'completion_requirement':
+                            card.completion_requirement.model_copy(update={'verification_paused':paused}).model_dump(mode='json')})
+                assert response.status_code == 200, response.text
+                card = ctx.store.get_card(card.id)
+                if paused:
+                    client.portal.call(service.process, card)
+                    assert not service.store.list(card.id)
             client.portal.call(service.process, card)
             job = service.store.list(card.id)[0]
             assert job['state'] == 'dispatched', job
@@ -592,3 +605,111 @@ async def test_unknown_repair_retry_keeps_collector_and_verification_fenced(syst
     system.ctx.services['dispatch_store'].put(record)
     await system.health.dispatch_one(lease)
     assert not journal.status()['active_actions']
+
+
+@pytest.mark.asyncio
+async def test_two_instances_share_one_declared_authority_across_race_restart_pause_and_handoff(system, tmp_path):
+    import asyncio
+    from pa.domain.models import CardEvent, EventType
+    root = tmp_path/'peer'
+    root.mkdir()
+    settings = Settings(data_dir=root/'data', workspace_root=root/'workspaces', instance_id='instance-b')
+    ctx = AppContext(settings, HookBus(), projection(root))
+    ledger = DispatchStore(root/'dispatch')
+    ctx.services.update(dispatch_store=ledger, pr_supervisor_store=PRSupervisorStore(root/'prs.db'))
+    health = HealthService(ctx, Journal(root/'health.db', settings.instance_id))
+    peer = VerificationService(ctx, health, VerificationStore(root/'verification.db'))
+    admissions = []
+    async def admit(actor, method, path, *, body=None, key=None):
+        assert path == '/api/fleet/dispatch'
+        previous = ledger.by_authority_idempotency(settings.instance_id, key)
+        if previous:
+            return {'dispatch_id':previous.dispatch_id}
+        record = ledger.put(DispatchRecord(mutation_id=str(uuid4()), idempotency_key=key,
+            card_id=body['card_id'], principal_id=actor['principal_id'], authority_instance_id=settings.instance_id,
+            target_instance_id=settings.instance_id, authority_url='http://peer', state='running', session_id=str(uuid4())))
+        admissions.append(record.dispatch_id)
+        return {'dispatch_id':record.dispatch_id}
+    health.local_api = admit
+    def replicate(target, card):
+        before = target.get_card(card.id)
+        target.commit_event(CardEvent(type=EventType.CARD_UPDATED if before else EventType.CARD_CREATED,
+            card_id=card.id, realm_id=card.realm_id, author_instance='authority-fixture', author_principal='user:local',
+            causal_card_version=before.updated_at.isoformat() if before else None,
+            field_intent=['completion_requirement'], payload=card.model_dump(mode='json')))
+        return target.get_card(card.id)
+    def edit(service, card, **changes):
+        data = CardUpdate(expected_version=card.updated_at, field_intent=['completion_requirement'],
+            completion_requirement=card.completion_requirement.model_copy(update=changes))
+        service.fence_requirement_edit(card, data, str(uuid4()))
+        return service.ctx.store.update_card(card.id, data, instance_id=service.ctx.settings.instance_id)
+    try:
+        card, repair = ordinary(system)
+        ledger.put(repair)
+        stale = card
+        remote = replicate(ctx.store, card)
+        # Even with the same realm, evidence, principal and packet, only A owns admission.
+        await asyncio.gather(system.service.ensure(card), peer.process(remote))
+        assert not admissions and not peer.store.list()
+        with pytest.raises(CompletionConflict, match='authority_remote'):
+            edit(peer, remote, verification_authority_instance_id='instance-b')
+        # Handoff before admission durably fences A's old revision, including a
+        # stale local projection on A after the new authority has received it.
+        card = edit(system.service, card, verification_authority_instance_id='instance-b')
+        remote = replicate(ctx.store, card)
+        await asyncio.gather(system.service.process(stale), peer.process(remote))
+        assert len(admissions) == 1 and not system.calls
+        peer = VerificationService(ctx, health, VerificationStore(peer.store.path))
+        restarted = VerificationService(system.ctx, system.health, VerificationStore(system.service.store.path))
+        await asyncio.gather(restarted.process(stale), peer.process(remote))
+        assert len(admissions) == 1 and not system.calls
+        job = peer.store.list(remote.id)[0]
+        record = ledger.get(job['dispatch_id'])
+        evidence = CompletionEvidence(requirement_revision=remote.completion_requirement.revision,
+            subject_revision='a'*40, milestones=['verified'], references=['verification-intent:'+job['id']])
+        peer.validate_acceptance(remote, record, evidence)
+        with pytest.raises(CompletionConflict, match='authority_not_current'):
+            restarted.validate_acceptance(remote, record, evidence)
+        with pytest.raises(CompletionConflict, match='has_pending_work'):
+            edit(peer, remote, verification_authority_instance_id='instance-a')
+        remote = edit(peer, remote, verification_paused=True)
+        card = replicate(system.ctx.store, remote)
+        with pytest.raises(CompletionConflict, match='authority_not_current'):
+            peer.validate_acceptance(remote, record, evidence)
+        await asyncio.gather(restarted.process(card), peer.process(remote))
+        assert len(admissions) == 1 and not system.calls
+        record.state, record.recoverable = 'completed', False
+        record.acknowledged_at = datetime.now(UTC)
+        record.completion_delivery_class, record.reconciliation_state = 'acknowledged', 'not_required'
+        ledger.put(record)
+        remote = edit(peer, remote, verification_paused=False, verification_authority_instance_id='instance-a')
+        card = replicate(system.ctx.store, remote)
+        await asyncio.gather(restarted.process(card), peer.process(remote))
+        assert len(system.calls) == 1 and len(admissions) == 1
+        assert ledger.get(admissions[0]).state == 'completed'  # No overlapping verifier.
+        assert peer.store.authority_fenced(remote.id, remote.realm_id, evidence.requirement_revision)
+    finally:
+        ledger.close()
+        health.pool.shutdown(wait=True)
+
+
+def test_admission_claim_and_authority_handoff_are_atomic(system):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    card, _ = ordinary(system)
+    job = system.service.store.reserve(system.service.packet(card))
+    barrier = Barrier(2)
+    def claim():
+        barrier.wait()
+        return system.service.store.claim_admission(job['id'])
+    def fence():
+        barrier.wait()
+        try:
+            system.service.store.fence_authority(card.id, card.realm_id, card.completion_requirement.revision,
+                'handoff', require_idle=True, settled=set())
+            return True
+        except CompletionConflict:
+            return False
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        admitted, handed_off = pool.submit(claim), pool.submit(fence)
+        assert admitted.result() != handed_off.result()
