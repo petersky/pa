@@ -16,10 +16,13 @@ import math
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field, fields
 from typing import Any, Awaitable, Callable, TypeVar
 
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
+from pa.core.performance import (
+    SAMPLE_LIMIT, OperationObservation, current_observation, distribution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,10 @@ class OperationMetrics:
     total_lock_wait_ms: float = 0.0
     total_runtime_ms: float = 0.0
     max_runtime_ms: float = 0.0
+    runtime_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    queue_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    python_lock_wait_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    python_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
 
 
 class AsyncRuntime:
@@ -118,6 +125,10 @@ class AsyncRuntime:
         self._request_total_ms = 0.0
         self._request_max_ms = 0.0
         self._request_slow: deque[dict[str, Any]] = deque(maxlen=50)
+        self._request_samples_ms: deque[float] = deque(maxlen=SAMPLE_LIMIT)
+        self._request_bytes = 0
+        self._request_routes: dict[str, dict] = {}
+        self._stream_requests = 0
 
     async def start(self) -> None:
         if self._lag_task and not self._lag_task.done():
@@ -230,15 +241,20 @@ class AsyncRuntime:
             self._active += 1
             metrics.active += 1
             metrics.max_active = max(metrics.max_active, metrics.active)
-            metrics.total_queue_ms += (started_at - queued_at) * 1000
+            queue_ms = (started_at - queued_at) * 1000
+            metrics.total_queue_ms += queue_ms
+            metrics.queue_samples_ms.append(queue_ms)
 
         if evidence:
             evidence.execution_started(time.monotonic())
+        observation = OperationObservation()
         def invoke():
             token = current_operation.set(evidence)
+            observation_token = current_observation.set(observation)
             try:
                 return call(*args, **kwargs)
             finally:
+                current_observation.reset(observation_token)
                 current_operation.reset(token)
         context = contextvars.copy_context()
         bound = functools.partial(context.run, invoke)
@@ -251,7 +267,7 @@ class AsyncRuntime:
         if evidence:
             self._active_evidence[future] = (operation, evidence)
         future.add_done_callback(
-            lambda done: self._finish_submission(operation, done, runtime_started_at, evidence)
+            lambda done: self._finish_submission(operation, done, runtime_started_at, evidence, observation)
         )
         if on_commit is not None:
             def committed(done):
@@ -368,6 +384,7 @@ class AsyncRuntime:
             metrics.active -= 1
             metrics.total_runtime_ms += elapsed_ms
             metrics.max_runtime_ms = max(metrics.max_runtime_ms, elapsed_ms)
+            metrics.runtime_samples_ms.append(elapsed_ms)
 
     def _finish_submission(
         self,
@@ -375,10 +392,14 @@ class AsyncRuntime:
         future: asyncio.Future[Any] | None,
         started_at: float,
         evidence: OperationDeadline | None = None,
+        observation: OperationObservation | None = None,
     ) -> None:
         metrics = self._operations[operation]
         if evidence:
             metrics.total_lock_wait_ms += evidence.lock_wait_seconds * 1000
+        if observation:
+            metrics.python_lock_wait_ms.append(observation.python_lock_wait_ms)
+            metrics.python_lock_hold_ms.append(observation.python_lock_hold_ms)
         if future is not None:
             self._pending.discard(future)
             self._active_evidence.pop(future, None)
@@ -388,6 +409,7 @@ class AsyncRuntime:
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         metrics.total_runtime_ms += elapsed_ms
         metrics.max_runtime_ms = max(metrics.max_runtime_ms, elapsed_ms)
+        metrics.runtime_samples_ms.append(elapsed_ms)
         if future is None:
             metrics.failed += 1
             return
@@ -419,10 +441,31 @@ class AsyncRuntime:
             self._lag_samples_ms.append(lag_ms)
             self._lag_max_ms = max(self._lag_max_ms, lag_ms)
 
-    def record_request(self, path: str, status: int, elapsed_ms: float) -> None:
+    def record_request(
+        self, path: str, status: int, elapsed_ms: float, *,
+        response_bytes: int = 0, streaming: bool = False,
+    ) -> None:
+        if streaming:
+            self._stream_requests += 1
+            return
         self._request_count += 1
         self._request_total_ms += elapsed_ms
         self._request_max_ms = max(self._request_max_ms, elapsed_ms)
+        self._request_samples_ms.append(elapsed_ms)
+        self._request_bytes += response_bytes
+        # HTTP middleware supplies route templates, never card/session IDs or
+        # query strings. Cap cardinality even for third-party routes.
+        if path not in self._request_routes and len(self._request_routes) >= 127:
+            path = "__other__"
+        route = self._request_routes.setdefault(path, {
+            "count": 0, "response_bytes": 0,
+            "latencies": deque(maxlen=SAMPLE_LIMIT),
+            "sizes": deque(maxlen=SAMPLE_LIMIT),
+        })
+        route["count"] += 1
+        route["response_bytes"] += response_bytes
+        route["latencies"].append(elapsed_ms)
+        route["sizes"].append(response_bytes)
         if elapsed_ms >= self.slow_call_seconds * 1000:
             self._request_slow.append(
                 {"path": path, "status": status, "elapsed_ms": round(elapsed_ms, 3)}
@@ -439,7 +482,12 @@ class AsyncRuntime:
     def snapshot(self) -> dict[str, Any]:
         operations = {}
         for name, metrics in sorted(self._operations.items()):
-            data = asdict(metrics)
+            data = {item.name: getattr(metrics, item.name) for item in fields(metrics)
+                    if item.name not in {"runtime_samples_ms", "queue_samples_ms", "python_lock_wait_ms", "python_lock_hold_ms"}}
+            data["runtime_ms"] = distribution(list(metrics.runtime_samples_ms))
+            data["queue_ms"] = distribution(list(metrics.queue_samples_ms))
+            data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
+            data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)
             data["max_runtime_ms"] = round(data["max_runtime_ms"], 3)
@@ -463,6 +511,7 @@ class AsyncRuntime:
                 "max_lag_ms": round(self._lag_max_ms, 3),
             },
             "requests": {
+                "window": "last_256_non_sse_requests_per_route",
                 "count": self._request_count,
                 "average_ms": round(
                     self._request_total_ms / self._request_count
@@ -472,6 +521,14 @@ class AsyncRuntime:
                 ),
                 "max_ms": round(self._request_max_ms, 3),
                 "slow": list(self._request_slow),
+                "latency_ms": distribution(list(self._request_samples_ms)),
+                "response_bytes": self._request_bytes,
+                "excluded_sse_requests": self._stream_requests,
+                "routes": {path: {
+                    "count": item["count"], "response_bytes": item["response_bytes"],
+                    "latency_ms": distribution(list(item["latencies"])),
+                    "response_size_bytes": distribution(list(item["sizes"])),
+                } for path, item in list(self._request_routes.items())},
             },
             "owned_mutations": {"pending": len(self._owned)},
             "active_operations": [

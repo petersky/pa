@@ -292,10 +292,12 @@ def _runtime_status_snapshot(ctx) -> dict:
     if progress_service:
         snapshot["progress_backpressure"] = progress_service.snapshot()
     dispatch_store = ctx.services.get("dispatch_store")
-    if dispatch_store and hasattr(dispatch_store, "storage_metrics"):
-        snapshot["dispatch_storage"] = dispatch_store.storage_metrics()
+    if dispatch_store and hasattr(dispatch_store, "storage_status"):
+        snapshot["dispatch_storage"] = dispatch_store.storage_status()
     if hasattr(ctx.store, "transcript_storage_status"):
         snapshot["transcript_storage"] = ctx.store.transcript_storage_status()
+    if hasattr(ctx.store, "transcripts"):
+        snapshot["transcript_performance"] = ctx.store.transcripts.performance.snapshot()
     provider_gate = ctx.services.get("provider_action_gate")
     if provider_gate:
         snapshot["queues"]["provider_actions"] = provider_gate.snapshot()
@@ -306,8 +308,12 @@ def _runtime_status_snapshot(ctx) -> dict:
 
 
 @router.get("/runtime")
-async def async_runtime_status(request: Request) -> dict:
+async def async_runtime_status(request: Request, section: Literal["all", "sse"] = "all") -> dict:
     """Runtime telemetry assembled off the event loop."""
+    if section == "sse":
+        from pa.core.sse_observability import sse_connections
+
+        return {"sse_connections": sse_connections.snapshot()}
     ctx = request.app.state.ctx
     runtime = ctx.require_service("async_runtime")
     return await runtime.run_blocking(

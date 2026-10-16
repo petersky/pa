@@ -32,6 +32,7 @@ from pa.core.async_runtime import (
 )
 from pa.core.background import BackgroundTaskSupervisor
 from pa.core.io import atomic_write_json, atomic_write_text
+from pa.core.performance import PerformanceMetrics
 from pa.execution.post_turn import (
     ActionReceiptStatus,
     ActionReceiptV1,
@@ -956,6 +957,8 @@ class DispatchStore:
         self._index_writer_waiting = False
         self._fault_injector = fault_injector
         self._commit_latencies_ms: deque[float] = deque(maxlen=4096)
+        self.performance = PerformanceMetrics()
+        self._storage_diagnostic: dict[str, Any] | None = None
         self._checkpoint_latencies_ms: deque[float] = deque(maxlen=256)
         self._commits = 0
         self._write_rows = 0
@@ -1073,7 +1076,16 @@ class DispatchStore:
         try:
             if durability == "full":
                 conn.execute("PRAGMA synchronous=FULL")
-            conn.execute("BEGIN IMMEDIATE")
+            acquiring = time.perf_counter()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as exc:
+                if (getattr(exc, "sqlite_errorcode", 0) & 0xFF) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+                    self.performance.record("sqlite_busy_failures", 1)
+                raise
+            finally:
+                self.performance.record("sqlite_writer_acquire_ms", (time.perf_counter() - acquiring) * 1000)
+            holding = time.perf_counter()
             try:
                 yield conn
                 self._fault("commit_before")
@@ -1086,6 +1098,8 @@ class DispatchStore:
                 else:
                     conn.rollback()
                 raise
+            finally:
+                self.performance.record("transaction_hold_ms", (time.perf_counter() - holding) * 1000)
         finally:
             if durability == "full":
                 conn.execute("PRAGMA synchronous=NORMAL")
@@ -2153,6 +2167,29 @@ class DispatchStore:
         with self._index_lock:
             record = self._records.get(dispatch_id)
             return self._snapshot(record) if record else None
+
+    def public_status(self, dispatch_id: str) -> dict[str, Any] | None:
+        """Detached presentation projection without copying plans or history."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with self._index_lock:
+            record = self._records.get(dispatch_id)
+            if not record:
+                return None
+            data = record.public_dict(summary=True)
+            data["card_version"] = record.card_version
+            data["events"] = [{"state": record.events[-1].state,
+                               "message": record.events[-1].message[:500]}] if record.events else []
+            data["materialization_plan"] = {"summary": str((record.materialization_plan or {}).get("summary") or "")[:500]}
+            data["placement_decision"] = {"tie_breaking_reason": str((record.placement_decision or {}).get("tie_breaking_reason") or "")[:500]}
+            data["view"] = "status"
+            return data
+
+    def waiting_count(self) -> int:
+        """Scalar queue health; no record copies, SQL or writer lock."""
+        self._require_readable()
+        with self._index_lock:
+            return sum(record.state in QUEUE_CONSUMING_STATES for record in self._records.values())
 
     def list(
         self,
@@ -4339,6 +4376,7 @@ class DispatchStore:
             )
             for item in waiting
         ]
+        records = self.list(limit=1000, deep=False)
         wait_times = [
             max(
                 0.0,
@@ -4347,10 +4385,9 @@ class DispatchStore:
                     - (item.queue_admitted_at or item.created_at)
                 ).total_seconds(),
             )
-            for item in self.list(limit=1000)
+            for item in records
             if item.queue_admitted_at
         ]
-        records = self.list(limit=1000)
         admissions = sum(item.queue_admitted_at is not None for item in records)
         launches = sum(item.queue_launched_at is not None for item in records)
         launch_failures = sum(
@@ -4460,7 +4497,7 @@ class DispatchStore:
                 if self._deferred_read_only
                 else self._migration_meta() or {"state": "unknown"}
             )
-            return {
+            result = {
                 "schema_version": self.SCHEMA_VERSION,
                 "mode": (
                     "deferred_read_only"
@@ -4484,6 +4521,7 @@ class DispatchStore:
                     "queue_depth": self._queued_writers,
                     "latency_ms": {
                         "p50": self._percentile(self._commit_latencies_ms, 0.50),
+                        "p95": self._percentile(self._commit_latencies_ms, 0.95),
                         "p99": self._percentile(self._commit_latencies_ms, 0.99),
                         "max": round(max(self._commit_latencies_ms, default=0.0), 3),
                     },
@@ -4506,6 +4544,21 @@ class DispatchStore:
                 },
                 "migration": migration,
             }
+            self._storage_diagnostic = copy.deepcopy({**result, "measured_at": datetime.now(UTC).isoformat()})
+            return result
+
+    def storage_status(self) -> dict[str, Any]:
+        """Read numeric telemetry without taking the writer lock or scanning SQL.
+
+        Row/file totals are the last explicit diagnostic, with its timestamp;
+        transaction observations continue to update after that diagnostic.
+        """
+        diagnostic = self._storage_diagnostic
+        return {
+            "measurement_state": "measured" if diagnostic else "not_measured",
+            "last_diagnostic": copy.deepcopy(diagnostic),
+            "performance": self.performance.snapshot(),
+        }
 
     def checkpoint(self, *, truncate: bool = False) -> dict[str, Any]:
         """Run an explicit observable WAL checkpoint outside mutation commits."""
@@ -5115,7 +5168,7 @@ class DispatchWorker:
             if self.last_failure_type
             else None,
             "queued_dispatch_count": self.queued_dispatch_count,
-            "waiting_dispatch_count": self.store.queue_snapshot()["total"],
+            "waiting_dispatch_count": self.store.waiting_count(),
             "oldest_queued_age_seconds": round(age, 3) if age is not None else None,
             "active_dispatch_count": len(self._active),
             "poll_failures": self.poll_failures,

@@ -11632,8 +11632,15 @@ def update_dispatch_priority(
 
 
 @router.get("/fleet/dispatch-jobs/{dispatch_id}")
-def get_dispatch(request: Request, dispatch_id: str) -> dict[str, Any]:
+def get_dispatch(
+    request: Request, dispatch_id: str, view: Literal["full", "status"] = "full"
+) -> dict[str, Any]:
     require_user(request)
+    if view == "status":
+        public = _dispatch_store(request).public_status(dispatch_id)
+        if public is None:
+            raise HTTPException(status_code=404, detail="Dispatch not found")
+        return canonicalize_dispatch_public(request.app.state.ctx, public, public=public)
     record = _dispatch_store(request).get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
@@ -14254,11 +14261,12 @@ def cancel_dispatch(
 
 @router.get("/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}")
 async def authority_dispatch_status(
-    request: Request, authority_instance_id: str, dispatch_id: str
+    request: Request, authority_instance_id: str, dispatch_id: str,
+    view: Literal["full", "status"] = "full",
 ) -> dict[str, Any]:
     require_user(request)
     if authority_instance_id == request.app.state.ctx.settings.instance_id:
-        return get_dispatch(request, dispatch_id)
+        return get_dispatch(request, dispatch_id, view=view)
     if getattr(request.state, "instance_authenticated", False) is True:
         raise HTTPException(
             status_code=409,
@@ -14268,7 +14276,8 @@ async def authority_dispatch_status(
             },
         )
     return await _peer_authority_json(
-        request, authority_instance_id, "GET", f"dispatch-jobs/{dispatch_id}"
+        request, authority_instance_id, "GET",
+        f"dispatch-jobs/{dispatch_id}" + ("?view=status" if view == "status" else ""),
     )
 
 

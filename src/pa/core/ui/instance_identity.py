@@ -78,12 +78,18 @@ def current_instance_name(
     return str(snapshot_name or identity["display_name"])
 
 
-def canonicalize_dispatch_public(ctx: Any, record: Any) -> dict[str, Any]:
+def canonicalize_dispatch_public(
+    ctx: Any, record: Any, *, public: dict | None = None
+) -> dict[str, Any]:
     """Present current names while retaining explicitly-labelled snapshots."""
-    public = record.public_dict()
+    public = record.public_dict() if public is None else public
     for role in ("authority", "target"):
-        instance_id = getattr(record, f"{role}_instance_id", None)
-        snapshot = getattr(record, f"{role}_instance_name", None)
+        if isinstance(record, dict):
+            instance_id = record.get(f"{role}_instance_id")
+            snapshot = record.get(f"{role}_instance_name")
+        else:
+            instance_id = getattr(record, f"{role}_instance_id", None)
+            snapshot = getattr(record, f"{role}_instance_name", None)
         public[f"{role}_instance_name"] = current_instance_name(
             ctx, instance_id, snapshot
         )

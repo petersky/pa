@@ -15,13 +15,16 @@ import os
 import re
 import sqlite3
 import threading
+import time
 import zlib
+from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
 from pa.core.operation_budget import measured_lock, report_work_progress
+from pa.core.performance import PerformanceMetrics
 from pa.domain.models import TranscriptEvent
 
 SCHEMA_VERSION = 1
@@ -79,6 +82,7 @@ class TranscriptStorage:
         self.objects_dir = metadata_db_path.parent / "transcript_objects"
         self.objects_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self.performance = PerformanceMetrics()
         with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
@@ -88,12 +92,17 @@ class TranscriptStorage:
     def _conn(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
-        conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
+        from pa.core.operation_budget import current_operation
+        if current_operation.get() is not None:
+            conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA synchronous=NORMAL")
         try:
             yield conn
             conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -147,12 +156,11 @@ class TranscriptStorage:
     def _object_path(self, digest: str) -> Path:
         return self.objects_dir / digest[:2] / f"{digest[2:]}.zlib"
 
-    def _put_object(self, conn: sqlite3.Connection, raw: bytes, now: str) -> str:
-        digest = hashlib.sha256(raw).hexdigest()
+    def _prepare_object(self, digest: str, compressed: bytes) -> int:
+        """Publish bytes before acquiring SQLite's writer, under the GC lock."""
         path = self._object_path(digest)
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
-            compressed = zlib.compress(raw, level=9)
             tmp = path.with_suffix(f".tmp-{os.getpid()}-{threading.get_ident()}")
             try:
                 with tmp.open("xb") as handle:
@@ -164,14 +172,7 @@ class TranscriptStorage:
                 pass
             finally:
                 tmp.unlink(missing_ok=True)
-        size = path.stat().st_size
-        conn.execute(
-            """INSERT INTO transcript_objects(hash,codec,uncompressed_bytes,compressed_bytes,ref_count,created_at)
-               VALUES(?, 'zlib', ?, ?, 1, ?)
-               ON CONFLICT(hash) DO UPDATE SET ref_count=ref_count+1""",
-            (digest, len(raw), size, now),
-        )
-        return digest
+        return path.stat().st_size
 
     def _release_object(self, conn: sqlite3.Connection, digest: str | None) -> None:
         if digest:
@@ -185,50 +186,124 @@ class TranscriptStorage:
         return marker
 
     def append(self, events: list[TranscriptEvent]) -> list[tuple[TranscriptEvent, dict]]:
+        if not events:
+            return []
+        started = time.perf_counter()
+        prepared = []
+        objects = {}
+        input_bytes = 0
+        for event in events:
+            payload = redact_payload(event.payload)
+            raw = _canonical_json(payload)
+            input_bytes += len(raw)
+            payload_hash = hashlib.sha256(raw).hexdigest()
+            cold_hash = payload_hash if len(raw) > MAX_HOT_PAYLOAD_BYTES else None
+            hot = payload
+            if cold_hash:
+                if cold_hash not in objects:
+                    objects[cold_hash] = (len(raw), zlib.compress(raw, level=9), event.created_at.isoformat())
+                hot = {"storage": "cold", "payload_hash": payload_hash,
+                       "bytes": len(raw), "preview": self._preview(payload)}
+            prepared.append((event, payload, payload_hash, cold_hash, _canonical_json(hot).decode()))
+        self.performance.record("prepare_ms", (time.perf_counter() - started) * 1000)
+        self.performance.record("input_rows", len(events))
+        self.performance.record("canonical_payload_bytes", input_bytes)
         mirrors: list[tuple[TranscriptEvent, dict]] = []
-        with measured_lock(self._lock), self._conn() as conn:
-            cold_batch_counts: dict[str, int] = {}
-            existing: dict[tuple[str, int], str | None] = {}
-            for session_id in {event.session_id for event in events}:
-                seqs = [event.seq for event in events if event.session_id == session_id]
-                for row in conn.execute(
-                    "SELECT session_id,seq,cold_hash FROM transcript_events WHERE session_id=? AND seq BETWEEN ? AND ?",
-                    (session_id, min(seqs), max(seqs)),
-                ):
-                    existing[(row["session_id"], int(row["seq"]))] = row["cold_hash"]
-            for event in events:
-                payload = redact_payload(event.payload)
-                raw = _canonical_json(payload)
-                payload_hash = hashlib.sha256(raw).hexdigest()
-                cold_hash = None
-                old_hash = existing.get((event.session_id, event.seq))
-                hot_payload = payload
-                if len(raw) > MAX_HOT_PAYLOAD_BYTES:
-                    digest = hashlib.sha256(raw).hexdigest()
-                    if digest in cold_batch_counts:
-                        cold_hash = digest
-                    else:
-                        cold_hash = self._put_object(conn, raw, event.created_at.isoformat())
-                    cold_batch_counts[digest] = cold_batch_counts.get(digest, 0) + 1
-                    hot_payload = {
-                        "storage": "cold", "payload_hash": payload_hash,
-                        "bytes": len(raw), "preview": self._preview(payload),
-                    }
-                conn.execute(
-                    """INSERT OR REPLACE INTO transcript_events
-                       (id,session_id,seq,event_type,hot_payload,payload_hash,cold_hash,created_at,schema_version)
-                       VALUES(?,?,?,?,?,?,?,?,?)""",
-                    (event.id, event.session_id, event.seq, event.event_type,
-                     _canonical_json(hot_payload).decode(), payload_hash, cold_hash,
-                     event.created_at.isoformat(), SCHEMA_VERSION),
-                )
-                if old_hash:
-                    self._release_object(conn, old_hash)
-                canonical = event.model_copy(update={"payload": payload})
-                mirrors.append((canonical, self.compatibility_payload(payload, payload_hash, cold_hash)))
-            for digest, count in cold_batch_counts.items():
-                if count > 1:
-                    conn.execute("UPDATE transcript_objects SET ref_count=ref_count+? WHERE hash=?", (count - 1, digest))
+        waiting = time.perf_counter()
+        with measured_lock(self._lock):
+            self.performance.record("python_lock_wait_ms", (time.perf_counter() - waiting) * 1000)
+            file_started = time.perf_counter()
+            sizes = {digest: self._prepare_object(digest, compressed)
+                     for digest, (_, compressed, _) in objects.items()}
+            self.performance.record("object_publish_ms", (time.perf_counter() - file_started) * 1000)
+            with self._conn() as conn:
+                acquiring = time.perf_counter()
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                except sqlite3.OperationalError as exc:
+                    if (getattr(exc, "sqlite_errorcode", 0) & 0xFF) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+                        self.performance.record("sqlite_busy_failures", 1)
+                    raise
+                finally:
+                    # Includes SQLite busy-handler wait and BEGIN execution;
+                    # this is acquisition latency, not an exact busy-only timer.
+                    self.performance.record("sqlite_writer_acquire_ms", (time.perf_counter() - acquiring) * 1000)
+                holding = time.perf_counter()
+                changes = conn.total_changes
+                try:
+                    existing = {}
+                    by_id = {}
+                    seqs = defaultdict(set)
+                    for event in events:
+                        seqs[event.session_id].add(event.seq)
+                    lookup_rows = 0
+                    def remember(rows):
+                        nonlocal lookup_rows
+                        for row in rows:
+                            lookup_rows += 1
+                            key = (row["session_id"], int(row["seq"]))
+                            existing[key] = (row["id"], row["cold_hash"])
+                            by_id[row["id"]] = key
+                    for session_id, sequences in seqs.items():
+                        values = sorted(sequences)
+                        for offset in range(0, len(values), 500):
+                            chunk = values[offset:offset + 500]
+                            marks = ",".join("?" for _ in chunk)
+                            remember(conn.execute(
+                                f"SELECT id,session_id,seq,cold_hash FROM transcript_events WHERE session_id=? AND seq IN ({marks})",
+                                [session_id, *chunk],
+                            ))
+                    ids = list({event.id for event in events})
+                    for offset in range(0, len(ids), 500):
+                        chunk = ids[offset:offset + 500]
+                        marks = ",".join("?" for _ in chunk)
+                        remember(conn.execute(
+                            f"SELECT id,session_id,seq,cold_hash FROM transcript_events WHERE id IN ({marks})", chunk,
+                        ))
+                    self.performance.record("lookup_rows_returned", lookup_rows)
+                    deltas = Counter()
+                    for event, payload, payload_hash, cold_hash, hot_json in prepared:
+                        key = (event.session_id, event.seq)
+                        replaced = {key}
+                        if event.id in by_id:
+                            replaced.add(by_id[event.id])
+                        for old_key in replaced:
+                            old = existing.pop(old_key, None)
+                            if old:
+                                by_id.pop(old[0], None)
+                                if old[1]:
+                                    deltas[old[1]] -= 1
+                        existing[key] = (event.id, cold_hash)
+                        by_id[event.id] = key
+                        if cold_hash:
+                            deltas[cold_hash] += 1
+                        conn.execute(
+                            """INSERT OR REPLACE INTO transcript_events
+                               (id,session_id,seq,event_type,hot_payload,payload_hash,cold_hash,created_at,schema_version)
+                               VALUES(?,?,?,?,?,?,?,?,?)""",
+                            (event.id, event.session_id, event.seq, event.event_type,
+                             hot_json, payload_hash, cold_hash, event.created_at.isoformat(), SCHEMA_VERSION),
+                        )
+                        canonical = event.model_copy(update={"payload": payload})
+                        mirrors.append((canonical, self.compatibility_payload(payload, payload_hash, cold_hash)))
+                    for digest, delta in deltas.items():
+                        if delta > 0:
+                            raw_size, _, now = objects[digest]
+                            conn.execute(
+                                """INSERT INTO transcript_objects(hash,codec,uncompressed_bytes,compressed_bytes,ref_count,created_at)
+                                   VALUES(?, 'zlib', ?, ?, ?, ?)
+                                   ON CONFLICT(hash) DO UPDATE SET ref_count=ref_count+excluded.ref_count""",
+                                (digest, raw_size, sizes[digest], delta, now),
+                            )
+                        elif delta < 0:
+                            conn.execute("UPDATE transcript_objects SET ref_count=ref_count+? WHERE hash=?", (delta, digest))
+                    conn.commit()
+                    self.performance.record("sqlite_rows_committed", conn.total_changes - changes)
+                finally:
+                    if conn.in_transaction:
+                        conn.rollback()
+                    self.performance.record("transaction_hold_ms", (time.perf_counter() - holding) * 1000)
+                    self.performance.record("sqlite_row_changes_attempted", conn.total_changes - changes)
         return mirrors
 
     def recent_lifecycle_summary(self, session_id: str, *, limit: int = 100) -> dict:
@@ -375,12 +450,15 @@ class TranscriptStorage:
         return changed
 
     def collect_unreferenced_objects(self) -> int:
-        with self._conn() as conn: live = {r[0] for r in conn.execute("SELECT hash FROM transcript_objects WHERE ref_count>0")}
-        removed = 0
-        for path in self.objects_dir.glob("*/*.zlib"):
-            digest = path.parent.name + path.stem
-            if digest not in live: path.unlink(missing_ok=True); removed += 1
-        return removed
+        # Shares the publication lock so GC cannot remove newly published
+        # bytes in the interval before their reference transaction commits.
+        with measured_lock(self._lock):
+            with self._conn() as conn: live = {r[0] for r in conn.execute("SELECT hash FROM transcript_objects WHERE ref_count>0")}
+            removed = 0
+            for path in self.objects_dir.glob("*/*.zlib"):
+                digest = path.parent.name + path.stem
+                if digest not in live: path.unlink(missing_ok=True); removed += 1
+            return removed
 
     def metrics(self) -> dict[str, Any]:
         with self._conn() as conn:

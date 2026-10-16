@@ -1018,7 +1018,7 @@
     var summary = $("[data-fleet-stream-summary]");
     var details = $("[data-fleet-stream-details]");
     if (!summary || !details || !remoteOperationsSectionActive) return;
-    api("/api/runtime").then(function (runtime) {
+    api("/api/runtime?section=sse").then(function (runtime) {
       var streams = runtime && runtime.sse_connections || {};
       var paired = streams.paired || {};
       summary.textContent = String(streams.active || 0) +

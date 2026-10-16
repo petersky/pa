@@ -253,6 +253,12 @@ class FleetMcpTests(unittest.TestCase):
             "/api/fleet/dispatch-jobs/dispatch-1",
             allow_not_found=True,
         )
+        self.mcp.functions["get_dispatch"]("dispatch-1", authority_instance_id="authority", view="status")
+        self.local_api.assert_called_with(
+            self.ctx.settings, "GET",
+            "/api/fleet/instances/authority/dispatch-jobs/dispatch-1?view=status",
+            allow_not_found=True,
+        )
 
         self.mcp.functions["retry_dispatch"]("dispatch-1", idempotency_key="retry-1")
         self.local_api.assert_called_with(

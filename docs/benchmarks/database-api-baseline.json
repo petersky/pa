@@ -1,0 +1,91 @@
+{
+  "fixture": {
+    "dispatches": 200,
+    "samples": 30,
+    "mixed_batches": 50
+  },
+  "runtime_snapshot": {
+    "p50_ms": 128.074,
+    "p95_ms": 163.984,
+    "p99_ms": 184.781,
+    "json_bytes": 2137,
+    "serialization": {
+      "p50_ms": 0.377,
+      "p95_ms": 0.495,
+      "p99_ms": 0.568
+    },
+    "peak_allocated_bytes": 1557184
+  },
+  "dispatch_full": {
+    "p50_ms": 0.606,
+    "p95_ms": 0.949,
+    "p99_ms": 0.959,
+    "json_bytes": 134157,
+    "serialization": {
+      "p50_ms": 1.101,
+      "p95_ms": 1.662,
+      "p99_ms": 1.846
+    },
+    "peak_allocated_bytes": 277327
+  },
+  "status_dispatch_commits": 0,
+  "status_sql_statements": {
+    "SELECT": 310
+  },
+  "duplicate_placement_subtree_bytes": 64248,
+  "mixed": {
+    "transcript": {
+      "p50_ms": 23.228,
+      "p95_ms": 661.923,
+      "p99_ms": 884.249,
+      "metadata_row_changes": 500
+    },
+    "session": {
+      "p50_ms": 1.885,
+      "p95_ms": 125.077,
+      "p99_ms": 240.251,
+      "metadata_row_changes": 50
+    },
+    "card": {
+      "p50_ms": 2.094,
+      "p95_ms": 104.796,
+      "p99_ms": 210.926,
+      "metadata_row_changes": 50
+    },
+    "read": {
+      "p50_ms": 56.515,
+      "p95_ms": 127.062,
+      "p99_ms": 147.919,
+      "metadata_row_changes": 0
+    }
+  },
+  "mixed_sql_statements": {
+    "BEGIN": 201,
+    "INSERT": 1601,
+    "COMMIT": 201,
+    "PRAGMA": 104,
+    "SELECT": 600
+  },
+  "transcript_diagnostics": {
+    "schema_version": 1,
+    "events": 500,
+    "audit_evidence": 0,
+    "objects": 500,
+    "uncompressed_bytes": 4007900,
+    "compressed_bytes": 30733,
+    "references": 500,
+    "deduplicated_references": 0,
+    "missing_objects": 0,
+    "journal_mode": "wal",
+    "integrity": "ok",
+    "redaction_policy": "canonical-v1",
+    "hot_payload_limit": 2048,
+    "compatibility_rows": 500,
+    "migration": "complete",
+    "migration_examined": 0,
+    "migration_changed": 0,
+    "migration_error": null,
+    "measured_at": "2026-10-16T01:58:05.883375+00:00",
+    "measurement_state": "measured"
+  }
+}
