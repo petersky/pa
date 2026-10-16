@@ -20,6 +20,7 @@ import zlib
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime
+from itertools import islice
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -451,14 +452,23 @@ class TranscriptStorage:
 
     def collect_unreferenced_objects(self) -> int:
         # Shares the publication lock so GC cannot remove newly published
-        # bytes in the interval before their reference transaction commits.
-        with measured_lock(self._lock):
-            with self._conn() as conn: live = {r[0] for r in conn.execute("SELECT hash FROM transcript_objects WHERE ref_count>0")}
-            removed = 0
-            for path in self.objects_dir.glob("*/*.zlib"):
-                digest = path.parent.name + path.stem
-                if digest not in live: path.unlink(missing_ok=True); removed += 1
-            return removed
+        # bytes before reference commit. Walk outside that lock, then recheck
+        # only each bounded batch; never hydrate the entire live object index.
+        removed = 0
+        paths = self.objects_dir.glob("*/*.zlib")
+        while batch := list(islice(paths, 128)):
+            digests = [path.parent.name + path.stem for path in batch]
+            with measured_lock(self._lock), self._conn() as conn:
+                marks = ",".join("?" for _ in digests)
+                live = {row[0] for row in conn.execute(
+                    f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
+                )}
+                for path in batch:
+                    digest = path.parent.name + path.stem
+                    if digest not in live:
+                        path.unlink(missing_ok=True)
+                        removed += 1
+        return removed
 
     def metrics(self) -> dict[str, Any]:
         with self._conn() as conn:

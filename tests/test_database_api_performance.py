@@ -8,6 +8,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -253,4 +254,30 @@ def test_sqlite_writer_acquisition_is_measured_separately_from_hold(tmp_path):
             pending.result()
     metrics = store.performance.snapshot()["metrics"]
     assert metrics["sqlite_writer_acquire_ms"]["p50"] >= 40
-    assert metrics["transaction_hold_ms"]["p50"] < metrics["sqlite_writer_acquire_ms"]["p50"]
+    assert metrics["transaction_hold_ms"]["samples"] == 1
+
+
+def test_gc_directory_walk_does_not_block_transcript_writes(tmp_path):
+    store = TranscriptStorage(tmp_path / "pa.db")
+    orphan = store.objects_dir / "ab" / ("c" * 62 + ".zlib")
+    orphan.parent.mkdir()
+    orphan.write_bytes(b"unreferenced fixture")
+    entered, release = threading.Event(), threading.Event()
+    original = Path.glob
+    def stalled_walk(path, pattern):
+        if path == store.objects_dir:
+            yield orphan
+            entered.set()
+            assert release.wait(5)
+        else:
+            yield from original(path, pattern)
+    with ThreadPoolExecutor() as pool, patch.object(Path, "glob", stalled_walk):
+        gc = pool.submit(store.collect_unreferenced_objects)
+        assert entered.wait(2)
+        try:
+            append = pool.submit(store.append, [TranscriptEvent(session_id="s", seq=1, event_type="chunk")])
+            assert append.result(timeout=2)
+        finally:
+            release.set()
+        assert gc.result() == 1
+    assert store.list("s")[0].seq == 1

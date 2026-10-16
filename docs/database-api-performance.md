@@ -36,7 +36,9 @@ and compression now precede the Python writer lock; object publication precedes
 `BEGIN IMMEDIATE`. The object publication/GC lock still protects the interval
 between filesystem publication and reference commit. A failed transaction can
 leave an unreferenced content-addressed file, which the existing collector can
-remove. Event identity, sequence replacement, reference counts, and their rollback
+remove. GC walks outside the publication lock and rechecks at most 128 object
+keys per locked batch, avoiding a full live-index read or directory walk while
+blocking ingestion. Event identity, sequence replacement, reference counts, and their rollback
 remain one SQLite transaction. The separate metadata compatibility mirror retains
 its existing post-commit behavior.
 
