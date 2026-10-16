@@ -95,7 +95,7 @@
       {% for card in detail.cards or [] %}{% if not detail.card or card.id != detail.card.id %}<a class="agent-session-chip" href="/work?card={{ card.id }}">Card · {{ card.title }}</a>{% endif %}{% endfor %}
       {% for watch in pr_watches_by_session.get(s.id, []) %}<a class="agent-session-chip" href="/pull-requests?watch={{ watch.id }}"
          title="{{ watch.repository }}#{{ watch.pr_number }} PR supervision">
-        PR #{{ watch.pr_number }} · {{ watch.status.value }}
+        PR #{{ watch.pr_number }} · {{ watch.status.value if watch.status.value is defined else watch.status }}
       </a>{% endfor %}
       </div>
       <details class="agent-session-details">

@@ -21,7 +21,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
 from pa.core.performance import (
-    SAMPLE_LIMIT, OperationObservation, current_observation, distribution,
+    SAMPLE_LIMIT, OperationObservation, PerformanceMetrics, current_observation, distribution,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,10 +73,15 @@ class OperationMetrics:
     total_lock_wait_ms: float = 0.0
     total_runtime_ms: float = 0.0
     max_runtime_ms: float = 0.0
+    slow_calls: int = 0
     runtime_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     queue_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     python_lock_wait_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     python_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    worker_service_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    executor_dispatch_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    completion_delivery_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    thread_cpu_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
 
 
 class AsyncRuntime:
@@ -129,6 +134,7 @@ class AsyncRuntime:
         self._request_bytes = 0
         self._request_routes: dict[str, dict] = {}
         self._stream_requests = 0
+        self.work_metrics = PerformanceMetrics()
 
     async def start(self) -> None:
         if self._lag_task and not self._lag_task.done():
@@ -249,11 +255,15 @@ class AsyncRuntime:
             evidence.execution_started(time.monotonic())
         observation = OperationObservation()
         def invoke():
+            observation.worker_started_at = time.perf_counter()
+            cpu_started = time.thread_time()
             token = current_operation.set(evidence)
             observation_token = current_observation.set(observation)
             try:
                 return call(*args, **kwargs)
             finally:
+                observation.thread_cpu_ms = (time.thread_time() - cpu_started) * 1000
+                observation.worker_finished_at = time.perf_counter()
                 current_observation.reset(observation_token)
                 current_operation.reset(token)
         context = contextvars.copy_context()
@@ -400,6 +410,17 @@ class AsyncRuntime:
         if observation:
             metrics.python_lock_wait_ms.append(observation.python_lock_wait_ms)
             metrics.python_lock_hold_ms.append(observation.python_lock_hold_ms)
+            if observation.worker_finished_at:
+                metrics.worker_service_ms.append(
+                    (observation.worker_finished_at - observation.worker_started_at) * 1000
+                )
+                metrics.executor_dispatch_ms.append(
+                    (observation.worker_started_at - started_at) * 1000
+                )
+                metrics.completion_delivery_ms.append(
+                    (time.perf_counter() - observation.worker_finished_at) * 1000
+                )
+                metrics.thread_cpu_ms.append(observation.thread_cpu_ms)
         if future is not None:
             self._pending.discard(future)
             self._active_evidence.pop(future, None)
@@ -426,6 +447,7 @@ class AsyncRuntime:
             operation, self.slow_call_seconds
         )
         if elapsed_ms >= warning_seconds * 1000:
+            metrics.slow_calls += 1
             logger.warning(
                 "Slow off-loop operation operation=%s elapsed_ms=%.1f",
                 operation,
@@ -483,11 +505,13 @@ class AsyncRuntime:
         operations = {}
         for name, metrics in sorted(self._operations.items()):
             data = {item.name: getattr(metrics, item.name) for item in fields(metrics)
-                    if item.name not in {"runtime_samples_ms", "queue_samples_ms", "python_lock_wait_ms", "python_lock_hold_ms"}}
+                    if not isinstance(getattr(metrics, item.name), deque)}
             data["runtime_ms"] = distribution(list(metrics.runtime_samples_ms))
             data["queue_ms"] = distribution(list(metrics.queue_samples_ms))
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
+            for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms"):
+                data[phase] = distribution(list(getattr(metrics, phase)))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)
             data["max_runtime_ms"] = round(data["max_runtime_ms"], 3)
@@ -531,6 +555,7 @@ class AsyncRuntime:
                 } for path, item in list(self._request_routes.items())},
             },
             "owned_mutations": {"pending": len(self._owned)},
+            "work": self.work_metrics.snapshot(),
             "active_operations": [
                 {"operation": name, "phase": evidence.phase,
                  "elapsed_ms": round((time.monotonic() - evidence.accepted_at) * 1000, 3),

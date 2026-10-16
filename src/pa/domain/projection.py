@@ -5168,6 +5168,23 @@ class CardProjection:
             ).fetchall()
         return [self._row_to_card(row) for row in rows]
 
+    def list_session_card_summaries(self, session_ids: list[str]) -> dict[str, list[dict]]:
+        """Batch sidebar links without hydrating card bodies or acceptance proofs."""
+        result = {session_id: [] for session_id in session_ids}
+        with self._conn() as conn:
+            for offset in range(0, len(session_ids), 500):
+                batch = session_ids[offset:offset + 500]
+                rows = conn.execute(
+                    """SELECT links.session_id, cards.id, cards.title, cards.project_id
+                       FROM agent_session_cards links JOIN cards ON cards.id=links.card_id
+                       WHERE links.retired_at IS NULL AND links.session_id IN ("""
+                    + ",".join("?" for _ in batch) + ") ORDER BY links.linked_at, cards.id",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    result[row["session_id"]].append({key: row[key] for key in ("id", "title", "project_id")})
+        return result
+
     def list_session_card_history(self, session_id: str) -> list[dict]:
         """Return active and retired card links with their full provenance."""
         with self._conn() as conn:
@@ -5831,6 +5848,9 @@ class CardProjection:
 
     def transcript_lifecycle_summary(self, session_id: str) -> dict:
         return self.transcripts.recent_lifecycle_summary(session_id)
+
+    def transcript_lifecycle_summaries(self, session_ids: list[str]) -> dict:
+        return self.transcripts.recent_lifecycle_summaries(session_ids)
 
     def list_transcript_events(
         self,

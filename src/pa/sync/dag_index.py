@@ -88,6 +88,8 @@ class DagIndex:
                     parent_order INTEGER NOT NULL,
                     PRIMARY KEY (realm_id, commit_hash, parent_order)
                 );
+                CREATE INDEX IF NOT EXISTS ix_commits_hash
+                    ON commits(commit_hash, realm_id);
                 CREATE INDEX IF NOT EXISTS ix_commit_parent
                     ON commit_parents(realm_id, parent_hash, commit_hash);
                 CREATE TABLE IF NOT EXISTS reachability (
@@ -155,27 +157,41 @@ class DagIndex:
                 (realm_id, commit_hash),
             ).fetchone() is not None
 
+    def ancestors(self, head: str) -> set[str] | None:
+        """Reuse verified topology; incomplete/rebuilding indexes are not evidence."""
+        with self._db() as conn:
+            row = conn.execute(
+                """SELECT c.realm_id, m.indexed_head FROM commits c
+                   JOIN index_meta m ON m.realm_id=c.realm_id
+                   WHERE c.commit_hash=? AND m.state='ready' LIMIT 1""",
+                (head,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row[1] == head:
+                # A ready generation contains exactly this head's ancestry.
+                return {str(item[0]) for item in conn.execute(
+                    "SELECT commit_hash FROM commits WHERE realm_id=?", (row[0],)
+                )}
+            return self._ancestor_hashes(conn, str(row[0]), head)
+
     @staticmethod
     def _ancestor_hashes(
         conn: sqlite3.Connection, realm_id: str, head: str, *, limit: int = 100_000
     ) -> set[str]:
-        parents: dict[str, list[str]] = {}
-        for row in conn.execute(
-            """SELECT commit_hash,parent_hash FROM commit_parents
-               WHERE realm_id=? ORDER BY commit_hash,parent_order""",
-            (realm_id,),
-        ):
-            parents.setdefault(str(row[0]), []).append(str(row[1]))
-        found: set[str] = set()
-        stack = [head]
-        while stack:
-            current = stack.pop()
-            if current in found:
-                continue
-            found.add(current)
-            if len(found) > limit:
-                raise RuntimeError("indexed ancestry limit exceeded")
-            stack.extend(reversed(parents.get(current, [])))
+        # Walk only this head's indexed edges. UNION deduplicates merge ancestry
+        # and terminates cycles; the bound retains the authoritative walk limit.
+        found = {str(row[0]) for row in conn.execute(
+            """WITH RECURSIVE ancestry(hash) AS (
+                   SELECT ? UNION
+                   SELECT p.parent_hash FROM commit_parents p
+                   JOIN ancestry a ON p.commit_hash=a.hash WHERE p.realm_id=?
+                   LIMIT ?
+               ) SELECT hash FROM ancestry""",
+            (head, realm_id, limit + 1),
+        )}
+        if len(found) > limit:
+            raise RuntimeError("indexed ancestry limit exceeded")
         return found
 
     def status(self, realm_id: str, durable_head: str | None = None) -> dict[str, Any]:

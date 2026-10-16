@@ -554,6 +554,12 @@ class AgentSessionRuntime:
     async def _write_transcripts(self) -> None:
         while not self._transcript_queue.empty():
             batch = await self._transcript_queue.get()
+            batches = 1
+            # Coalesce already queued work without a timer or extra latency.
+            # Preserve immutable IDs, order and join accounting across retries.
+            while len(batch) < 64 and not self._transcript_queue.empty():
+                batch = batch + self._transcript_queue.get_nowait()
+                batches += 1
             delay = 0.05
             try:
                 while True:
@@ -591,7 +597,8 @@ class AgentSessionRuntime:
                 self._transcript_buffer = batch + self._transcript_buffer
                 raise
             finally:
-                self._transcript_queue.task_done()
+                for _ in range(batches):
+                    self._transcript_queue.task_done()
             self._flush_transcript()
 
     async def _drain_transcripts(

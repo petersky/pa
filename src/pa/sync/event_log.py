@@ -220,9 +220,9 @@ class EventLog:
         return self.index.status(realm_id, self.get_head(realm_id))
 
     def _authoritative_index_records(
-        self, head: str, realm_id: str | None = None
+        self, head: str, realm_id: str | None = None, *, stop: set[str] | None = None
     ) -> Iterator[tuple[str, SyncCommit, list[tuple[str, CardEvent]]]]:
-        for commit_hash, commit in self._iter_commits_parent_first(head):
+        for commit_hash, commit in self._iter_commits_parent_first(head, stop=stop):
             if realm_id is not None and commit.realm_id != realm_id:
                 raise EventHistoryObjectError("corrupt_object", commit_hash, "commit")
             events: list[tuple[str, CardEvent]] = []
@@ -257,7 +257,9 @@ class EventLog:
                     realm_id,
                     indexed,
                     requested,
-                    self._authoritative_index_records(requested, realm_id),
+                    self._authoritative_index_records(
+                        requested, realm_id, stop=self._ancestors(indexed)
+                    ),
                     _event_entity,
                 )
                 if advanced:
@@ -1657,6 +1659,9 @@ class EventLog:
         return records[: max(1, min(int(limit), HISTORY_PAGE_LIMIT))]
 
     def _ancestors(self, head: str) -> set[str]:
+        indexed = self.index.ancestors(head)
+        if indexed is not None:
+            return indexed
         return {
             commit_hash for commit_hash, _ in self._iter_commits_parent_first(head)
         }
@@ -1701,9 +1706,21 @@ class EventLog:
             indexed = self.index.is_ancestor(str(row[0]), ancestor, descendant)
             if indexed is not None:
                 return indexed
+        projected = self.index.ancestors(ancestor)
+        if projected is None:
+            # Unknown ancestry must still validate every canonical reference,
+            # including the sought object itself, with the original traversal.
+            return any(
+                commit_hash == ancestor
+                for commit_hash, _ in self._iter_commits_parent_first(descendant)
+            )
+        # Previously verified ancestry needs no repeated object decoding. Other
+        # merge parents still participate in the bounded, cycle-checked walk.
         return any(
-            commit_hash == ancestor
-            for commit_hash, _ in self._iter_commits_parent_first(descendant)
+            ancestor in commit.parent_hashes
+            for _, commit in self._iter_commits_parent_first(
+                descendant, stop=projected
+            )
         )
 
     @staticmethod
