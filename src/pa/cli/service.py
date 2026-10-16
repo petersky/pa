@@ -1106,9 +1106,25 @@ def tail_logs(
 ) -> None:
     """Display service logs; retained as the compatibility API for callers."""
     from pa.cli.logs import show_logs
+    from pa.domain.instance_config import load_instance_config
+
+    settings = Settings()
+    configured = load_instance_config(settings.data_dir)
+    # Log provenance describes this data directory, not the transient UUID of
+    # this auxiliary CLI process. Read only identity fields; do not initialize
+    # missing configuration or publish a randomly generated identity.
+    identity = {}
+    for field in ("instance_id", "instance_name"):
+        if field not in settings.model_fields_set:
+            identity[field] = (
+                getattr(configured, field)
+                if configured is not None and field in configured.model_fields_set
+                else "unknown"
+            )
+    settings = settings.model_copy(update=identity)
 
     show_logs(
-        settings=Settings(),
+        settings=settings,
         sources=sources or ["stdout", "stderr", "structured", "supervisor"],
         lines=lines,
         follow=follow,

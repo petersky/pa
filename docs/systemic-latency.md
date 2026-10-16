@@ -214,3 +214,58 @@ max 2,064.922 ms; there is no claim that every loop percentile improved.
 All four required CI shards and the smoke/build/packaged-MCP job passed on
 `a2802e7`. The final evidence commit and supervised integration results follow
 [PR #484](https://github.com/petersky/pa/pull/484).
+
+## Broader retained-log inventory and follow-up
+
+The card's expanded inventory remains Active. The declared fixture above does
+not establish whole-PA or production/fleet acceptance. A separate actual-log
+scan on 2026-10-16 read 16 active/retained files, including seven gzip archives
+and five numbered structured rotations: 86,440,227 source bytes at open,
+100,754,466 decoded bytes and 570,983 physical lines. Known timestamps span
+2026-10-08T03:25:05.396667Z–2026-10-16T07:10:18.520347Z; 3,200 records have no
+attributable timezone-aware timestamp. Active-file growth is recorded, so this
+is not an atomic snapshot or proof of exhaustive retention/fleet coverage.
+
+All retained files yielded 110 slow-operation names across 22 prefix families,
+with 18,115 raw slow emissions. A separate supported CLI 24-hour request returned
+238,343 records and 106 names (12,658 raw slow emissions); its one-million-line
+cap was not reached. Cross-sink duplicates remain possible; these are not
+distinct-incident counts. Log percentiles describe logged slow calls, while
+runtime percentiles use rolling windows and process maxima span process life.
+
+Reviewable HTML, complete JSON and per-operation CSV are durable attachments on
+card `7894e44b-eef9-4da8-9f7f-7d3ae82c0b54`: HTML
+`5ca38a7337ef44e6a4bf43300a41ca9f`, JSON
+`861e8a6e7ea14651918f84a557851d5f` (SHA256
+`d797858e312a10168f438b248e49680e4c3a66b6583c4e31e51a4d3f83bd5345`),
+CSV `6b413b471c734f409a8247f2fab11bd6`. They include every leaf/family's
+count/p50/p95/p99/max/time range, safe examples, file manifest, page/startup/error
+tables, HTTP access counts separated from SSE-like paths, and the dated runtime
+route/operation inventory. Individual access-log durations and per-route maxima
+are unavailable and are not inferred from aggregate process maxima.
+
+Further findings include reconcile max 305.8 s, card-write max 159.9 s,
+transcript-append max 40.8 s, provider initialization max 39.7 s, and 492 raw
+completion-reconciler no-progress/restart error emissions. Peer failure causes,
+logging loss/identity gaps, progress backlog, stale transcript integrity
+diagnostics, provider/workspace paths and remaining leaf causes are explicitly
+unverified. Backup ownership and the canonical database/API card are preserved.
+No deployed repair or production retest is inferred from these logs.
+
+The follow-up fixes corroborated CLI provenance/severity defects: auxiliary
+`pa logs` used a new process UUID rather than configured source identity, and
+`WARN` replacement transformed `WARNING` into `WARNINGING`, impairing severity
+filtering and cross-sink deduplication. Identity reads now preserve explicit
+settings and never initialize missing configuration; unknown identity is labelled
+unknown. Warning normalization preserves severity.
+
+Dispatch-job lists also serialized full plans/proofs. The default list now uses
+detached status projections, with explicit `view=full` retaining full evidence.
+Encoding runs in the bounded executor; rows/bytes/serialization are measured.
+Protocol gap/compaction ranges, recovery controls and degraded-peer counts remain
+visible. No durable plans, receipts, progress or execution state are removed.
+An isolated 50-record/20-request fixture measured response bytes
+20,275,331 → 123,140 and p50/p95/p99/max latency
+38.304/63.564/79.788/79.788 → 10.693/14.569/15.768/15.768 ms. Its loop probe
+includes the same-process ASGI client's JSON decode and is not a production
+server-only loop SLO. These fixes do not resolve the remaining inventory.
