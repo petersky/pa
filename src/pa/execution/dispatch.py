@@ -2859,27 +2859,7 @@ class DispatchStore:
             self.expire_capacity_reservations()
             record = self._snapshot(record)
 
-            if record.card_id and not record.allow_concurrent:
-                active = next(
-                    (
-                        item
-                        for item in self._records.values()
-                        if item.dispatch_id != record.dispatch_id
-                        and item.card_id == record.card_id
-                        and item.realm_id == record.realm_id
-                        and item.state
-                        not in {"failed", "completed", "cancelled", "acknowledged"}
-                    ),
-                    None,
-                )
-                same_session_resume = bool(
-                    record.resume_requested
-                    and record.resume_session_id
-                    and active is not None
-                    and active.session_id == record.resume_session_id
-                )
-                if active and not same_session_resume:
-                    raise ConcurrentCardDispatch(self._snapshot(active))
+            self._check_card_concurrency_locked(record)
 
             admission_state = "queued"
             if capacity:
@@ -3379,6 +3359,17 @@ class DispatchStore:
             self._save(record, durability="full")
             return self._snapshot(self._records[record.dispatch_id]), True
 
+    def _check_card_concurrency_locked(self, record: DispatchRecord) -> None:
+        if not record.card_id or record.allow_concurrent:
+            return
+        for item in self._records.values():
+            if (item.dispatch_id == record.dispatch_id or item.card_id != record.card_id
+                    or item.realm_id != record.realm_id or item.state in TERMINAL_DISPATCH_STATES | {'acknowledged'}):
+                continue
+            if record.resume_requested and record.resume_session_id and item.session_id == record.resume_session_id:
+                continue
+            raise ConcurrentCardDispatch(self._snapshot(item))
+
     def retry_with_capacity(
         self,
         record: DispatchRecord,
@@ -3406,6 +3397,9 @@ class DispatchStore:
                 raise ValueError("dispatch changed before retry admission")
             if current.state not in {"failed", "cancelled"} or not current.recoverable:
                 raise ValueError(f"dispatch in {current.state} is not retryable")
+            # Another dispatch may have taken ownership while this attempt was
+            # terminal. Reuse the same atomic gate as new admission on retry.
+            self._check_card_concurrency_locked(current)
             now = datetime.now(UTC)
             execution_full, queue_full, queue_count, reserved, queue_max = (
                 self._constraint_counts_locked(

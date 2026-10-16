@@ -339,6 +339,14 @@ class Journal:
             if row['version'] != assessment.expected_version:
                 raise JournalError('assessment_version_conflict')
             data = {**json.loads(row['data']), **sanitized(assessment.model_dump(exclude_none=True))}
+            phases = {'reproduced':'reproduced', 'linked':'linked', 'in_progress':'repairing',
+                      'merged':'awaiting_acceptance', 'deployed_verified':'verified',
+                      'needs_input':'waiting', 'no_fix':'no_fix', 'duplicate':'duplicate', 'reopened':'reopened'}
+            data['phase'] = phases[assessment.disposition]
+            data['next_actor'] = ('acceptance_owner' if assessment.disposition == 'merged' else
+                                  'repair_owner' if assessment.disposition in {'reproduced', 'linked', 'in_progress'} else
+                                  'project_owner' if assessment.disposition == 'needs_input' else 'none')
+            data.pop('next_action', None)
             if assessment.disposition == 'deployed_verified':
                 affected = db.execute("SELECT DISTINCT json_extract(payload,'$.source_instance_id') FROM inbox WHERE group_id=? LIMIT 33", (group_id,)).fetchall()
                 if len(affected) > 32 or not {r[0] for r in affected} <= set(assessment.accepted_instances):
@@ -452,7 +460,7 @@ class Journal:
                        (action_id, group['id'], encode(payload), 'reserved', encode(result) if result else None))
             return {'id': action_id, 'group_id': group['id'], 'payload': payload, 'state': 'reserved', 'result': result}
 
-    def action_result(self, action_id, *, state, result, owner, fence):
+    def action_result(self, action_id, *, state, result, owner, fence, expected_group_version=None):
         with self.connection(write=True) as db:
             self._fenced(db, owner, fence)
             old = db.execute('SELECT * FROM actions WHERE id=?', (action_id,)).fetchone()
@@ -462,9 +470,21 @@ class Journal:
                 merged['effects'] = previous['effects']
             db.execute('UPDATE actions SET state=?,result=? WHERE id=?', (state, encode(merged), action_id))
             group = db.execute('SELECT * FROM groups WHERE id=?', (old['group_id'],)).fetchone()
-            data = {**json.loads(group['data']), **merged}
+            if expected_group_version is not None and group['version'] != expected_group_version:
+                raise JournalError('assessment_version_conflict')
+            original_data = json.loads(group['data'])
+            data = {**original_data, **merged}
             disposition = group['disposition']
             data['phase'] = 'triaging' if state == 'dispatched' else state
+            if disposition not in {'new', 'reopened', 'triaged'} and (
+                    state != 'terminal' or disposition in {'deployed_verified', 'no_fix', 'duplicate'}):
+                # A collector checkpoint racing an explicit repair assessment
+                # cannot take ownership back or replace its explanation.
+                for key in ('phase', 'reason', 'next_actor', 'next_action'):
+                    if key in original_data:
+                        data[key] = original_data[key]
+                    else:
+                        data.pop(key, None)
             if state == 'terminal' and disposition == 'in_progress':
                 disposition = 'needs_input'
                 data['reason'] = 'Repair dispatch ended; declared acceptance or a reasoned disposition is still required.'
@@ -633,10 +653,14 @@ class Journal:
                     raise JournalError('health_effect_payload_conflict')
                 return effects[effect]
             policy = self._fenced(db, owner, fence)
+            if effect == 'start_retry':
+                group = db.execute('SELECT disposition FROM groups WHERE id=?', (row['group_id'],)).fetchone()
+                if group['disposition'] != 'triaged':
+                    raise JournalError('repair_owned')
             receipt = {'id': f'health-{effect}:{action_id}', 'hash': hashed, 'fence': fence,
                        'epoch': policy['epoch'], 'authority_id': self.instance_id,
                        'admitted_at': now(), 'state': 'admitted_outcome_pending',
-                       **({'payload': safe_payload} if effect == 'requirement' else {})}
+                       **({'payload': safe_payload} if effect in {'requirement', 'start_retry'} or effect.startswith('failed_start_card_') else {})}
             effects[effect] = receipt
             result['effects'] = effects
             db.execute('UPDATE actions SET result=? WHERE id=?', (encode(result), action_id))

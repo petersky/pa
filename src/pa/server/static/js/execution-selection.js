@@ -217,6 +217,9 @@
           if (!state.inherited[name] && p && p.intent !== "inherit") {state.inherited[name] = p; state.sources[name] = layer.source;}
         });});
         if (data.card_version) root.dataset.selectionVersion = data.card_version;
+        // Refreshing defaults must not silently approve a different task than
+        // the card snapshot used to open this dispatch dialog.
+        if (data.card_execution_version && !root.dataset.selectionExecutionVersion) root.dataset.selectionExecutionVersion = data.card_execution_version;
         render();
       }).catch(function (e) {noticeText(e.message);});
     }
@@ -250,7 +253,9 @@
         var saved = await scopedApi("/api/cards/" + root.dataset.selectionCard, "PATCH", {execution_preferences: prefs,
           updated_at: root.dataset.selectionVersion, field_intent: ["execution_preferences"]});
         root.dataset.selectionVersion = saved.updated_at;
-        await loadDefaults(); noticeText("Card defaults saved. Existing attempts and runtime settings were not changed.");
+        await loadDefaults(); noticeText(root.dataset.selectionPurpose === "dispatch"
+          ? "Card defaults saved. Reopen the dispatch dialog to review the updated card before starting."
+          : "Card defaults saved. Existing attempts and runtime settings were not changed.");
       } catch (e) {noticeText(e.message);} finally {save.disabled = false;}
     });
     if (form) form.addEventListener("change", function (event) {

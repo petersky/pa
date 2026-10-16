@@ -158,6 +158,7 @@ class FleetMcpTests(unittest.TestCase):
             self.local_api.call_args.kwargs["json"]["resume_session_id"],
             "session-live",
         )
+
         self.assertEqual(
             self.local_api.call_args.args[2],
             "/api/fleet/instances/target/agent/start",
@@ -177,6 +178,20 @@ class FleetMcpTests(unittest.TestCase):
             self.local_api.call_args.kwargs["json"]["resume_session_id"],
             "session-live",
         )
+
+    def test_preview_and_dispatch_forward_execution_snapshot_separately_from_edit_cas(self) -> None:
+        token = "card-execution/v1:" + "a" * 64
+        self.mcp.functions["preview_fleet_placement"](
+            PlacementPolicy.BEST_MATCH, card_id="card-1", expected_execution_version=token)
+        self.assertEqual(self.local_api.call_args.kwargs["json"]["expected_execution_version"], token)
+        self.mcp.functions["dispatch_card"](
+            "card-1", "same-key", instance_id="target", expected_execution_version=token)
+        self.assertEqual(self.local_api.call_args.kwargs["json"]["expected_execution_version"], token)
+        self.mcp.functions["dispatch_card_to_instance"](
+            "card-1", "target", "same-key", expected_execution_version=token)
+        payload = self.local_api.call_args.kwargs["json"]
+        self.assertEqual(payload["expected_execution_version"], token)
+        self.assertNotIn("expected_card_version", payload)
 
     def test_concurrent_dispatch_reason_reaches_http_validation(self) -> None:
         from pydantic import ValidationError

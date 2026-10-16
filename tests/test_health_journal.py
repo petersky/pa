@@ -1041,9 +1041,13 @@ async def test_normal_lifecycle_obligations_keep_single_health_slot(fleet):
             assert authority.journal.action(owner=authority.service.owner, fence=lease['fence'])['id'] == action['id']
         record.state = 'failed'
         ledger.put(record)
+        assert await authority.service.repair_obligation(action) == 'pre_session_failed'
+        record.session_id = 'existing-provider-session'
+        ledger.put(record)
         assert await authority.service.repair_obligation(action) == 'dispatch_recoverable'
         assert authority.journal.action(owner=authority.service.owner, fence=lease['fence'])['id'] == action['id']
         record.state = 'completed'
+        record.session_id = None
         record.recoverable = False
         record.acknowledged_at = datetime.now(UTC)
         record.completion_delivery_class = 'acknowledged'

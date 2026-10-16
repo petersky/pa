@@ -324,6 +324,10 @@ async def journal_page(request: Request, cursor: str | None = Query(None, max_le
         parts.append(f'<p>Custodian: {esc(custody.get("authority_id", "pending"))}</p>')
         parts.append(f'<a href="/api/health-journal/reports/{payload["report_id"]}">Immutable observation history</a>')
         fix = custody.get('fix') or {}
+        actors = {'pa':'PA', 'agent':'Agent', 'project_owner':'Project owner', 'repair_owner':'Repair owner',
+                  'acceptance_owner':'Acceptance owner', 'none':'No action required'}
+        if fix.get('next_actor'):
+            parts.append(f'<p>Next: {esc(actors.get(fix["next_actor"], "Project owner"))}</p>')
         if fix.get('card_id'):
             try:
                 card_id = str(UUID(fix['card_id']))

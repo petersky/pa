@@ -319,7 +319,7 @@ def test_linked_attempt_rejects_pending_queue_without_closing_source(wire_app):
     assert runtime._queue[0].message == "retained original prompt"
 
 
-@pytest.mark.parametrize("incomplete_cache", [False, True])
+@pytest.mark.parametrize("incomplete_cache", [False, True, "unavailable"])
 def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_app, incomplete_cache):
     from pa.execution.selection import (
         ExecutionPreferences,
@@ -360,7 +360,8 @@ def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_a
             # Authority admission can observe support before the target's warm
             # cache does. Known models alone must not prevent normal refresh.
             service.store.save_catalog(manager.settings.instance_id, [
-                c.model_copy(update={"reasoning": NativeOption()}).model_dump(mode="json")
+                c.model_copy(update={"readiness":"unavailable", "health_evidence":[]}
+                             if incomplete_cache == "unavailable" else {"reasoning": NativeOption()}).model_dump(mode="json")
                 for c in candidates
             ])
         target = await manager.create_session(
@@ -391,6 +392,36 @@ def test_remote_authority_receipt_reaches_real_target_without_reselection(wire_a
             rt.session.label == "policy-changed-target"
             for rt in manager.list_runtimes()
         )
+
+    client.portal.call(run)
+
+
+def test_target_refresh_does_not_replace_unavailable_required_provider(wire_app):
+    from pa.execution.selection import ExecutionPreferences, SelectionError
+    from pa.execution.selection_service import service_for
+
+    client, app = wire_app
+    manager = app.state.ctx.services["instance_agent"]
+    original_status = FixtureProvider.status
+
+    def unavailable(self, data_dir):
+        status = original_status(self, data_dir)
+        return status.model_copy(update={"available":False, "auth_state":"signed_out"}) if self.id == "codex" else status
+
+    async def run():
+        service = service_for(app.state.ctx)
+        await service.close()
+        rows = await service.local_catalog(refresh=True)
+        receipt = service.resolve(candidates=rows, principal="user:local", realm="default", surface="execution",
+            overrides=ExecutionPreferences.model_validate({"harness":required("codex"), "connection":required("default")}))
+        # Another harness is ready, but this admitted attempt owns Codex/default.
+        assert any(row.harness == "cursor" and row.readiness == "ready" for row in rows)
+        with patch.object(FixtureProvider, "status", unavailable):
+            with pytest.raises(SelectionError) as failure:
+                await manager.create_session(label="unavailable-required-provider", principal_id="user:local",
+                    realm_id="default", execution_selection=receipt)
+        assert "readiness_unavailable" in failure.value.receipt["recovery"]["rejections"]
+        assert not manager.list_runtimes()
 
     client.portal.call(run)
 

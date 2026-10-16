@@ -122,6 +122,10 @@ class McpDomainSchemaTests(IsolatedAsyncioTestCase):
         self.assertIn(
             "resume_session_id", self.schemas["dispatch_card"]["properties"]
         )
+        for name in ("preview_fleet_placement", "dispatch_card", "dispatch_card_to_instance"):
+            self.assertIn("expected_execution_version", self.schemas[name]["properties"])
+            self.assertNotIn("expected_execution_version", self.schemas[name].get("required", []))
+            self.assertIn("expected_card_version", self.schemas[name]["properties"])
 
         followup = self.schemas["prompt_dispatch_session"]
         self.assertTrue(

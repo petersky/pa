@@ -2515,7 +2515,8 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
     card = get_store().get_card(card_id, realm_id=realm_id)
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    return {**card.model_dump(mode="json"), "completion_status": card.completion_status}
+    return {**card.model_dump(mode="json"), "completion_status": card.completion_status,
+            "execution_version": card.execution_version}
 
 
 @router.get("/cards/{card_id}/history")

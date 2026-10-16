@@ -86,6 +86,7 @@ class PreviewBody(BaseModel):
     )
     task_assessment: TaskAssessment | None = None
     expected_card_version: datetime | None = None
+    expected_execution_version: str | None = Field(default=None, max_length=100)
     replace_card_preferences: bool = False
 
 
@@ -169,6 +170,13 @@ async def preview(request: Request, body: PreviewBody):
                 "message": "Card changed; refresh before dispatch.",
             },
         )
+    if body.expected_execution_version is not None and (
+        not card or card.execution_version != body.expected_execution_version
+    ):
+        raise HTTPException(409, detail={
+            "code": "stale_card_preferences",
+            "message": "The task or its execution requirements changed. Refresh the preview.",
+        })
     if card and body.replace_card_preferences:
         card = card.model_copy(
             update={"execution_preferences": body.execution_preferences}
@@ -239,6 +247,7 @@ async def defaults(
         "values": values,
         "provenance": sources,
         "card_version": card.updated_at.isoformat() if card else None,
+        "card_execution_version": card.execution_version if card else None,
         "layers": [
             {"source": s, "preferences": p.model_dump(mode="json")} for s, p in layers
         ],
