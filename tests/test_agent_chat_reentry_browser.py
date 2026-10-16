@@ -162,6 +162,74 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         seqs = await page.evaluate(f"{w}.transcriptEvents.map(e=>e.seq)")
         assert seqs == sorted(set(seqs))
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Unsent source draft"
+
+        # Buffered character-sized live chunks form one readable preview while
+        # reading older history, then move into one bubble on a normal scroll
+        # back to the tail. Exercise the same long-lived widget at both widths.
+        for number, width in ((6, 1280), (7, 390)):
+            await manager.resize(scope, width=width, height=1000)
+            await page.evaluate(f"{w}.els.messages.scrollTop=0")
+            await manager.scroll(scope, selector="[data-acw-messages]", delta_y=-80)
+            await wait_for(f"!{w}.loadingOlder && {w}.historyPreserveWindow")
+            anchor = await page.evaluate(f"{w}._captureHistoryAnchor()")
+            await client.post("/fixture/append?fragmented=true")
+            expected = f"Newest fixture message {number}"
+            await wait_for("document.querySelector('[data-acw-live-preview]').textContent===" + json.dumps(expected))
+            held_anchor = await page.evaluate(f"{w}._captureHistoryAnchor()")
+            assert held_anchor["seq"] == anchor["seq"]
+            assert abs(held_anchor["offset"]-anchor["offset"]) < 3
+            assert await page.evaluate("""(()=>{const p=document.querySelector('[data-acw-live-preview]');
+              return p.clientWidth>250 && p.scrollWidth<=p.clientWidth+1 && p.getBoundingClientRect().height<50;})()""")
+            assert expected not in await texts()
+            await manager.scroll(scope, selector="[data-acw-messages]", delta_y=100000)
+            await latest(number)
+            await wait_for(f"!{w}.historyPreserveWindow && document.querySelector('[data-acw-history-notice]').hidden")
+            assert await page.evaluate(f"{w}.isNearBottom()")
+            assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Unsent source draft"
+            await manager.click(scope, selector="#other")
+            await wait_for(f"{w}.sessionId==='other-fixture' && !{w}.recentBootstrap")
+            await manager.click(scope, selector="#source")
+            await latest(number)
+            assert not await page.evaluate(f"{w}.historyPreserveWindow")
+
+        # Jump to latest supersedes an older request already in flight. Its late
+        # completion cannot prepend old content or restore an obsolete anchor.
+        await client.post("/fixture/control", json={"delay":True})
+        await page.evaluate(f"{w}.els.messages.scrollTop=0")
+        await manager.scroll(scope, selector="[data-acw-messages]", delta_y=-80)
+        await wait_for(f"{w}.loadingOlder")
+        await manager.click(scope, selector="[data-acw-latest]")
+        await latest(7)
+        await asyncio.sleep(.7)
+        assert await page.evaluate(f"!{w}.historyPreserveWindow && !{w}.loadingOlder && {w}.isNearBottom()")
+        assert await page.evaluate("document.querySelector('[data-acw-history-notice]').hidden")
+
+        # Reconnect on the same widget retains ordered message ownership.
+        await client.post("/fixture/disconnect")
+        await wait_for("[...document.querySelectorAll('.acw-bubble-agent')].some(e=>e.dataset.markdown==='Fixture reconnect: retained final replayed exactly once.')")
+        await client.post("/fixture/append?fragmented=true")
+        await latest(8)
+        assert (await texts()).count("Fixture reconnect: retained final replayed exactly once.") == 1
+        seqs = await page.evaluate(f"{w}.transcriptEvents.map(e=>e.seq)")
+        assert seqs == sorted(set(seqs))
+        assert await page.evaluate("document.querySelector('[data-acw-history-notice]').hidden")
+
+        # Deep paging eventually evicts the tail from the bounded window. The
+        # bottom of that window remains older history until explicitly resumed.
+        await page.evaluate(f"{w}.els.messages.scrollTop=0")
+        for _ in range(20):
+            await page.evaluate(f"{w}.loadOlderTranscript()")
+            await wait_for(f"!{w}.loadingOlder")
+            if await page.evaluate(f"{w}.hasNewer"):
+                break
+        assert await page.evaluate(f"{w}.hasNewer")
+        await manager.scroll(scope, selector="[data-acw-messages]", delta_y=100000)
+        await asyncio.sleep(.15)
+        assert await page.evaluate(f"{w}.historyPreserveWindow")
+        assert not await page.evaluate("document.querySelector('[data-acw-history-notice]').hidden")
+        await manager.click(scope, selector="[data-acw-latest]")
+        await latest(8)
+        assert await page.evaluate(f"!{w}.hasNewer && !{w}.historyPreserveWindow")
     finally:
         await client.aclose()
         await manager.close()

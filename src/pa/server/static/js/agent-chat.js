@@ -461,7 +461,13 @@
       });
     }
     if (this.els.latest) this.els.latest.addEventListener("click", function () {
+      if (self.olderAbortController) self.olderAbortController.abort();
+      self.olderAbortController = null;
+      self.loadingOlder = false;
+      self.historyNavigationGeneration = (self.historyNavigationGeneration || 0) + 1;
+      self.loadingNewer = false;
       self.historyPreserveWindow = false;
+      self.historyUserIntent = false;
       self.recentRetryCount = 0;
       self._loadRecentHistory(self.sessionId, self.subscriptionGeneration).catch(function () {});
     });
@@ -1116,7 +1122,23 @@
       if (touchY !== null && next !== null && next !== touchY) gesture(next > touchY);
       touchY = next;
     }, {passive:true});
-    messages.addEventListener("scroll", loadAtTop, {passive:true});
+    messages.addEventListener("scroll", function () {
+      loadAtTop();
+      self._resumeHistoryAtTail();
+    }, {passive:true});
+  };
+
+  AgentChatWidget.prototype._resumeHistoryAtTail = function () {
+    // hasNewer describes a paged/evicted window, not buffered live arrivals.
+    // Its bottom is still older history; only a window containing the tail can
+    // resume live delivery without replacing the reader's position.
+    if (!this.historyPreserveWindow || this.hasNewer || this.recentBootstrap ||
+        this.loadingOlder || this.loadingNewer || !this.isNearBottom()) return;
+    this.historyPreserveWindow = false;
+    this.historyUserIntent = false;
+    this.updateNewerControl();
+    this._renderHistoryNotice();
+    this._repairLiveGap();
   };
 
   AgentChatWidget.prototype._captureHistoryAnchor = function () {
@@ -1169,7 +1191,7 @@
       anchor: this._captureHistoryAnchor(),
       nearBottom: this.isNearBottom(),
       recentPending: !!this.recentBootstrap,
-      readingOlder: !!this.historyPreserveWindow || (!!this.historyUserIntent && !this.isNearBottom()),
+      readingOlder: !!this.hasNewer || (!this.isNearBottom() && (!!this.historyPreserveWindow || !!this.historyUserIntent)),
     });
     while (sessionDomCache.size > SESSION_DOM_CACHE_LIMIT) {
       const oldest = sessionDomCache.keys().next().value;
@@ -1193,7 +1215,7 @@
     this.hasNewer = !!entry.hasNewer;
     this.newerCursor = entry.newerCursor || null;
     this.providerId = entry.providerId || this.providerId;
-    this.historyPreserveWindow = !entry.recentPending && !!entry.readingOlder;
+    this.historyPreserveWindow = !entry.recentPending && !!entry.readingOlder && (!entry.nearBottom || !!entry.hasNewer);
     this.renderTranscript(this.transcriptEvents, { scrollBottom: !!entry.nearBottom });
     if (entry.unsequencedHtml && this.els.messages) {
       const holder = document.createElement("div");
@@ -1342,15 +1364,28 @@
     this.els.historyNoticeText.textContent = gap
       ? (this.olderError || "Loading recent history…") + " Live preview may be partial until history recovers."
       : "Reading earlier messages. Recent messages are available separately.";
-    const useful = pending.filter(function(e) {
-      const p=e.payload||{}; return e.seq > Math.max(this.lastSeq || 0, this.initialLiveCursor || 0) &&
-        ((e.type === "agent_message_chunk" && p.text) || (e.type === "tool_call" && p.title));
-    }, this).slice(-8);
-    this.els.livePreview.textContent = useful.map(function(e) {
-      const p=e.payload||{}; return String(p.text || p.title || "").slice(-600);
-    }).join("\n");
-    this.els.livePreview.hidden = !useful.length;
-    if (!gap && useful.length) this.els.historyNoticeText.textContent += " Live preview may be partial.";
+    const useful = [], streams = new Map();
+    pending.forEach(function(e) {
+      if (e.seq <= Math.max(this.lastSeq || 0, this.initialLiveCursor || 0)) return;
+      const p = e.payload || {};
+      if (e.type === "agent_message_chunk") {
+        const key = JSON.stringify([p.message_id || "agent", p.phase || ""]);
+        let stream = streams.get(key);
+        if (!stream) { stream = {text:""}; streams.set(key, stream); useful.push(stream); }
+        const next = String(p.text || "");
+        if (["snapshot", "replace", "replacement", "accumulated"].includes(p.content_mode)) stream.text = next;
+        else stream.text += (p.content_mode ? "" : streamChunkSeparator(stream.text, next)) + next;
+        stream.text = stream.text.slice(-600);
+      } else if (e.type === "tool_call") {
+        // Tools end anonymous text streams, just as they do in the transcript.
+        streams.delete(JSON.stringify(["agent", ""]));
+        if (p.title) useful.push({text:String(p.title)});
+      } else if (["turn_completed", "cancelled", "prompt_failed", "connection_lost"].includes(e.type)) streams.clear();
+    }, this);
+    const preview = useful.filter(function(item) { return item.text; }).slice(-8);
+    this.els.livePreview.textContent = preview.map(function(item) { return item.text.slice(-600); }).join("\n\n");
+    this.els.livePreview.hidden = !preview.length;
+    if (!gap && preview.length) this.els.historyNoticeText.textContent += " Live preview may be partial.";
     this.els.latest.textContent = gap ? "Retry recent messages" : "Jump to latest";
   };
 
@@ -1374,7 +1409,7 @@
       if ((event.type === "user_message" || event.type === "queue_enqueued") && this.drafts) this.drafts.observeAcceptance(p.id, event.type === "queue_enqueued");
       if (["permission_request", "permission_resolved", "turn_completed", "cancelled", "connection_lost", "prompt_failed", "user_message", "queue_enqueued"].includes(event.type)) this.heldControlSeq[controlKey] = event.seq;
     }
-    if (this.historyPreserveWindow) { this.hasNewer = true; this.updateNewerControl(); }
+    if (this.historyPreserveWindow) this.updateNewerControl();
     this._renderHistoryNotice();
   };
 
@@ -2211,7 +2246,8 @@
 
   AgentChatWidget.prototype.updateNewerControl = function () {
     if (!this.els || !this.els.loadNewer) return;
-    this.els.loadNewer.hidden = !this.hasNewer && !this.newerError;
+    const pending = this.historyPreserveWindow && this.liveGapTarget > this.lastSeq;
+    this.els.loadNewer.hidden = !this.hasNewer && !this.newerError && !pending;
     this.els.loadNewer.disabled = this.loadingNewer;
     this.els.loadNewer.textContent = this.loadingNewer
       ? "Loading…"
@@ -2501,6 +2537,7 @@
       ) return;
       self.loadingOlder = false;
       self.updateOlderControl();
+      self._resumeHistoryAtTail();
     });
   };
 
@@ -2512,7 +2549,8 @@
       this._repairLiveGap();
       return;
     }
-    if (this.loadingNewer || (!this.hasNewer && !this.newerError) || !this.sessionId || !this.els.messages) return;
+    const pending = this.historyPreserveWindow && this.liveGapTarget > this.lastSeq;
+    if (this.loadingNewer || (!this.hasNewer && !this.newerError && !pending) || !this.sessionId || !this.els.messages) return;
     const newest = this.newerCursor || this.transcriptEvents.reduce(function (result, event) {
       return event.seq && event.seq > result ? event.seq : result;
     }, 0);
@@ -2520,6 +2558,7 @@
     const self = this;
     const requestSessionId = this.sessionId;
     const requestGeneration = this.subscriptionGeneration;
+    const requestNavigation = this.historyNavigationGeneration;
     const oldHeight = this.els.messages.scrollHeight;
     const oldTop = this.els.messages.scrollTop;
     this.loadingNewer = true;
@@ -2530,7 +2569,8 @@
       "?message_boundaries=true&after_seq=" + newest + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
       LIVE_SNAPSHOT_TIMEOUT_MS
     ).then(function (data) {
-      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration ||
+          self.historyNavigationGeneration !== requestNavigation) return;
       self._validateHistoryPage(data);
       const pageEvents = data.events;
       self.hasNewer = !!(data && data.page && data.page.has_newer);
@@ -2546,10 +2586,12 @@
       self._renderHistoryNotice();
       if (!self.hasNewer) self._repairLiveGap();
     }).catch(function (err) {
-      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration ||
+          self.historyNavigationGeneration !== requestNavigation) return;
       self.newerError = "Could not load newer messages: " + err.message;
     }).finally(function () {
-      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration) return;
+      if (self.destroyed || self.sessionId !== requestSessionId || self.subscriptionGeneration !== requestGeneration ||
+          self.historyNavigationGeneration !== requestNavigation) return;
       self.loadingNewer = false;
       self.updateNewerControl();
     });
@@ -2792,7 +2834,7 @@
     this.apiWithTimeout("/history/" + encodeURIComponent(sessionId) +
       "?message_boundaries=true&after_seq=" + after + "&limit=" + TRANSCRIPT_PAGE_LIMIT,
       LIVE_SNAPSHOT_TIMEOUT_MS).then(function (history) {
-        if (!isCurrent() || self._clearResolvedLiveGap()) return;
+        if (!isCurrent() || self.historyPreserveWindow || self._clearResolvedLiveGap()) return;
         const events = history.events || [];
         events.forEach(function (event) { self.handleEvent(event, false, true, true); });
         const pending = self.livePendingEvents || {};
@@ -2811,7 +2853,7 @@
         self.liveGapRetryTimer = null;
         self.updateNewerControl();
       }).catch(function (error) {
-        if (!isCurrent() || self._clearResolvedLiveGap()) return;
+        if (!isCurrent() || self.historyPreserveWindow || self._clearResolvedLiveGap()) return;
         self.newerError = "Live messages are waiting for history. Retrying…";
         self.updateNewerControl();
         self._renderHistoryNotice();

@@ -282,7 +282,7 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  }
  // Cached latest views still refresh the tail; a deliberate older window keeps
  // its text and position while advertising newer history independently.
- const old=make();old.sessionId='older-reader';old.historyPreserveWindow=true;
+ const old=make();old.sessionId='older-reader';old.historyPreserveWindow=true;old.isNearBottom=()=>false;
  old.renderTranscript([{seq:100,type:'agent_message_chunk',payload:{text:'Older anchor'}}]);
  old.newerCursor=100;old.els.messages.scrollTop=35;old._stashSessionDomCache();
  const restored=make();restored.sessionId='older-reader';assert.ok(restored._restoreSessionDomCache('older-reader'));
@@ -291,6 +291,63 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.deepStrictEqual(texts(restored),['Older anchor']);assert.strictEqual(restored.hasNewer,true);
  restored.historyPreserveWindow=false;await restored._loadRecentHistory('older-reader',1);
  assert.deepStrictEqual(texts(restored),['Complete recent message']);
+ // Returning to the tail releases buffered chunks into the normal transcript.
+ // The same scroll at the end of an evicted/paged window must keep its anchor.
+ const tail=make();Object.assign(tail.els,{historyNotice:new Element(),historyNoticeText:new Element(),livePreview:new Element(),latest:new Element()});
+ tail.lastSeq=10;tail.historyPreserveWindow=true;tail.isNearBottom=()=>false;
+ tail.handleEvent(chunk(11,'A'));tail.handleEvent(chunk(12,'B'));
+ assert.strictEqual(tail.hasNewer,undefined,'buffered live events do not imply a paged window');
+ assert.strictEqual(tail.els.loadNewer.hidden,false,'buffered events remain explicitly loadable');
+ tail._resumeHistoryAtTail();assert.strictEqual(tail.historyPreserveWindow,true);
+ tail.isNearBottom=()=>true;tail.hasNewer=true;
+ tail._resumeHistoryAtTail();assert.strictEqual(tail.historyPreserveWindow,true,'bottom of older page is not latest');
+ tail.hasNewer=false;tail.loadingOlder=true;
+ tail._resumeHistoryAtTail();assert.strictEqual(tail.historyPreserveWindow,true,'prepend must settle before tail reconciliation');
+ tail.loadingOlder=false;tail.apiWithTimeout=()=>Promise.resolve({events:[chunk(11,'A'),chunk(12,'B')]});
+ tail._resumeHistoryAtTail();await settle();
+ assert.strictEqual(tail.historyPreserveWindow,false);assert.deepStrictEqual(texts(tail),['AB']);
+ assert.strictEqual(tail.els.historyNotice.hidden,true);assert.strictEqual(tail.els.livePreview.hidden,true);
+ tail.handleEvent(chunk(12,'B'));tail.handleEvent(chunk(13,'C'));
+ assert.deepStrictEqual(texts(tail),['ABC'],'subsequent live chunks render once in the bubble');
+ // An immediately cached tail cannot revive a sticky preservation flag; an
+ // older page at its own bottom still restores as an older window.
+ tail.sessionId='tail-cache';tail.historyPreserveWindow=true;tail._stashSessionDomCache();
+ const cachedTail=make();cachedTail.sessionId='tail-cache';cachedTail._restoreSessionDomCache('tail-cache');
+ assert.strictEqual(cachedTail.historyPreserveWindow,false);
+ tail.hasNewer=true;tail._stashSessionDomCache();
+ const cachedPage=make();cachedPage.sessionId='tail-cache';cachedPage._restoreSessionDomCache('tail-cache');
+ assert.strictEqual(cachedPage.historyPreserveWindow,true);
+ // Preview assembly precedes message/character limits. Token fragments,
+ // interleaved tools, phases and replacement snapshots use transcript semantics.
+ const preview=make();Object.assign(preview.els,{historyNotice:new Element(),historyNoticeText:new Element(),livePreview:new Element(),latest:new Element()});
+ preview.historyPreserveWindow=true;preview.lastSeq=10;
+ for(let n=0;n<12;n++)preview.handleEvent({seq:11+n,type:'agent_message_chunk',payload:{message_id:'words',phase:'commentary',content_mode:'delta',text:n===0?'Readable':' words'}});
+ assert.strictEqual(preview.els.livePreview.textContent,'Readable'+' words'.repeat(11),'more than eight chunks form a coherent preview');
+ preview.handleEvent({seq:23,type:'tool_call_update',payload:{}});
+ preview.handleEvent({seq:24,type:'agent_message_chunk',payload:{message_id:'words',phase:'commentary',content_mode:'snapshot',text:'Replacement'}});
+ preview.handleEvent({seq:25,type:'agent_message_chunk',payload:{message_id:'words',phase:'commentary',content_mode:'delta',text:' continues.'}});
+ preview.handleEvent({seq:26,type:'agent_message_chunk',payload:{message_id:'words',phase:'final',content_mode:'delta',text:'Final paragraph.'}});
+ assert.strictEqual(preview.els.livePreview.textContent,'Replacement continues.\n\nFinal paragraph.');
+ preview.handleEvent({seq:27,type:'turn_completed',payload:{}});
+ preview.handleEvent({seq:28,type:'agent_message_chunk',payload:{message_id:'words',phase:'final',text:'Next turn.'}});
+ assert.strictEqual(preview.els.livePreview.textContent,'Replacement continues.\n\nFinal paragraph.\n\nNext turn.');
+ assert.strictEqual(texts(preview).length,0,'preview assembly does not mutate older transcript');
+ // A gap repair started before older paging cannot append into the anchored
+ // window when its HTTP response arrives. Returning to latest repairs it once.
+ const anchorRace=make();anchorRace.lastSeq=10;const gapResponses=[];
+ anchorRace.apiWithTimeout=()=>new Promise(resolve=>gapResponses.push(resolve));
+ anchorRace.handleEvent(chunk(12,'B'));anchorRace.historyPreserveWindow=true;
+ gapResponses[0]({events:[chunk(11,'A'),chunk(12,'B')]});await settle();
+ assert.strictEqual(anchorRace.lastSeq,10);assert.deepStrictEqual(texts(anchorRace),[]);
+ anchorRace._resumeHistoryAtTail();gapResponses[1]({events:[chunk(11,'A'),chunk(12,'B')]});await settle();
+ assert.deepStrictEqual(texts(anchorRace),['AB']);
+ // Jumping to latest supersedes a pending forward page as well as a prepend.
+ const navigation=make();navigation.hasNewer=true;navigation.newerCursor=100;navigation.historyPreserveWindow=true;
+ let finishForward;navigation.apiWithTimeout=()=>new Promise(resolve=>{finishForward=resolve});
+ navigation.loadNewerTranscript();navigation.historyNavigationGeneration=1;navigation.loadingNewer=false;
+ navigation.historyPreserveWindow=false;navigation.hasNewer=false;navigation.renderTranscript([chunk(1000,'Latest')]);
+ finishForward({events:[chunk(101,'Obsolete')],page:{has_older:true,has_newer:true}});await settle();
+ assert.deepStrictEqual(texts(navigation),['Latest']);assert.strictEqual(navigation.hasNewer,false);
  assert.strictEqual(virtualTimers.size,0);virtualTimers=null;
  console.log('PASS exact rendering, phases, snapshots, cache continuation, lifecycle replay, ordered gap repair, failed paging, recent bootstrap, preview and anchor isolation');
 })().catch(error=>{console.error(error);process.exitCode=1});
