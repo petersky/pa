@@ -2265,6 +2265,58 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(health["coordinated_upgrade_ready"])
         self.assertEqual(health["incompatible_effect_instances"], ["legacy-peer"])
 
+    async def test_green_survives_only_transient_mergeability_unknown_until_merge(self) -> None:
+        merged = snapshot(state='merged', merge_commit_sha='c'*40, mergeable=None, mergeable_state='unknown')
+        service = await self.make_service([snapshot(), snapshot(mergeable=None, mergeable_state='unknown'), merged])
+        self.domain.get_card.return_value = Card(id='card-1', title='guarded', lane=CardLane.WAITING)
+        for _ in range(3):
+            self.store.schedule_now(watch_id='watch-1')
+            await service.run_once()
+        current = self.store.get_watch('watch-1')
+        self.assertEqual(current.status, PRWatchStatus.MERGED)
+        self.assertTrue(current.state['stable_green_evidence']['green'])
+        self.assertEqual(current.state['card_lane'], 'done')
+        self.assertIsNone(current.owner_instance_id)
+
+    async def test_terminal_refresh_reconciles_original_audit_and_normal_completion(self) -> None:
+        merged = snapshot(state='merged', merge_commit_sha='c'*40, mergeable=None, mergeable_state='unknown')
+        service = await self.make_service([snapshot(), snapshot(mergeable=None, mergeable_state='unknown'), merged])
+        self.domain.get_project.return_value = SimpleNamespace(tool_config={'pr_policy':self.policy().model_dump()})
+        self.domain.get_card.return_value = Card(id='card-1', title='accepted work', lane=CardLane.WAITING)
+        current = await service.freeze_canonical_policy(self.store.get_watch('watch-1'))
+        current.authority_instance_id = self.settings.instance_id
+        self.store.upsert_watch(current)
+        # Simulate the old released observer, which did not retain green in state.
+        for _ in range(3):
+            self.store.schedule_now(watch_id='watch-1')
+            await service.run_once()
+            current = self.store.get_watch('watch-1')
+            current.state.pop('stable_green_evidence', None)
+            self.store.upsert_watch(current, preserve_lease=True)
+        before = self.store.get_watch('watch-1')
+        before.state['card_lane'] = 'waiting'
+        self.store.upsert_watch(before, preserve_lease=True)
+        events_before = self.store.list_events('watch-1')
+        reconciled = await service.refresh_watch('watch-1')
+        self.assertEqual(reconciled.id, before.id)
+        self.assertEqual(reconciled.retired_at, before.retired_at)
+        self.assertEqual(reconciled.state['card_lane'], 'done')
+        self.assertIsNone(reconciled.owner_instance_id)
+        proof = reconciled.state['stable_green_evidence']
+        self.assertEqual(proof['source'], 'immutable_supervisor_observations')
+        self.assertTrue(set(proof['observation_ids']) <= {e.id for e in events_before})
+        self.assertTrue(any(e.event_type == 'terminal_green_revalidated' for e in self.store.list_events('watch-1')))
+        again = await service.refresh_watch('watch-1')
+        self.assertEqual(again.updated_at, reconciled.updated_at)
+
+    async def test_terminal_reconciliation_cas_rejects_intervening_watch_change(self) -> None:
+        current = self.store.upsert_watch(watch())
+        terminal = self.store.set_terminal(current.id, PRWatchStatus.MERGED)
+        with self.assertRaises(StaleFenceError):
+            self.store.set_terminal(current.id, PRWatchStatus.MERGED,
+                expected_updated_at=current.updated_at, state={'stable_green_evidence':{'green':True}})
+        self.assertEqual(self.store.get_watch(current.id), terminal)
+
     async def test_merged_pr_without_stable_green_waits_and_retires_watch(self) -> None:
         merged = snapshot(
             state="merged",

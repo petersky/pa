@@ -710,8 +710,8 @@ def present_work_item(
         action_explanation = "Review the current completion requirement."
         if completion['reason_code'] == 'verification_pending':
             group = 'motion'
-            state_label = 'Verification pending'
-            summary = 'PA is arranging independent verification.'
+            state_label = 'Working'
+            summary = 'PA is checking completion.'
             reason = 'The declared checks remain owned by PA.'
             tone = 'active'
             attention_code = None

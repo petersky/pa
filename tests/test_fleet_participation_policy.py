@@ -10,6 +10,7 @@ from pa.config import Settings, reset_settings
 from pa.core.kernel import Kernel
 from pa.domain.models import CardEvent, EventType, FleetInstance
 from pa.domain.store import get_store, reset_store
+from pa.instance.agent_session import reset_instance_agent
 from pa.fleet.placement import (
     PlacementCandidate,
     PlacementError,
@@ -510,6 +511,7 @@ def test_authenticated_api_and_accessible_ui_expose_configuration_and_audit(
 ) -> None:
     reset_store()
     reset_settings()
+    reset_instance_agent()
     settings = Settings(
         data_dir=tmp_path,
         instance_id="local",
@@ -522,6 +524,7 @@ def test_authenticated_api_and_accessible_ui_expose_configuration_and_audit(
     app = Kernel.boot(settings=settings).build_app()
     try:
         with TestClient(app) as client:
+            assert app.state.ctx.require_service('instance_agent').settings.data_dir == tmp_path
             assert client.get("/").status_code == 200
             headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
             groups = client.get("/api/fleet/instance-groups").json()
@@ -656,3 +659,4 @@ def test_authenticated_api_and_accessible_ui_expose_configuration_and_audit(
     finally:
         reset_store()
         reset_settings()
+        reset_instance_agent()

@@ -99,7 +99,9 @@ declared authority, criteria and milestones. Missing scheduling configuration is
 durable PA work; it does not request an operator to coordinate agents.
 
 The common verification scheduler owns revision/subject/scope-specific intents
-in server-owned `verification.db`. It uses normal fenced dispatch admission with
+in the existing server-owned health journal and runs in its existing service loop.
+No separate verification database or background timer is needed. An existing
+unreleased verification file is preserved in place when present. It uses normal fenced dispatch admission with
 a separate worktree and the normal native/model/permission defaults. It supplies
 exact merge/watch/head evidence, scenario observations, the full affected-instance
 snapshot and inbox watermark, loaded runtime identity, and excluded origins.
@@ -130,14 +132,12 @@ key; it prevents handoff without preventing that owner's normal receipt recovery
 `GET /api/health-journal/verification-intents?card_id=...&realm=...` exposes the
 durable assignment and diagnostic. Administrator preview/apply is available at
 `POST /api/health-journal/completion-migrations/{card_id}` with `kind` equal to
-`system_health` or `inherited_child`, `realm`, `requirement_revision`,
-`expected_version`, `apply` (default false), and an Idempotency-Key. Child correction
-requires the frozen start-selected notebook and unchanged canonical creation
-declaration and authoritative evidence of this child's source deliverable; it
-replaces only confirmed unrelated inherited health criteria with this child's
-source-integration gate. A design/research child without source evidence remains
-unchanged with an explicit unsupported-migration diagnostic. Original history remains immutable. A later
-explicit requirement edit prevents correction. Replays use the saved exact PATCH.
+`system_health`, `realm`, `requirement_revision`, `expected_version`, `apply`
+(default false), and an Idempotency-Key. This narrow path onboards only proven
+system declarations. Selected-issue completion is never rewritten by it; the
+confirmed historical children were corrected through the normal card API, and
+new selected issues receive their own completion scope. Replays use the saved
+exact PATCH.
 Coordinate existing live assignments before applying a migration.
 
 No extra human permission step or automatic deployment is implied. If actual

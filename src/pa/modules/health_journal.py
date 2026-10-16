@@ -117,7 +117,7 @@ class Configure(Strict):
 
 class CompletionMigration(Strict):
     realm: str = Field(default='default', min_length=1, max_length=80)
-    kind: Literal['system_health', 'inherited_child']
+    kind: Literal['system_health']
     requirement_revision: str = Field(min_length=1, max_length=100)
     expected_version: str = Field(min_length=1, max_length=80)
     apply: bool = False
@@ -422,9 +422,11 @@ class HealthJournalModule(Module):
         ctx.register_service('health_journal', HealthService(ctx, journal))
         current = ctx.require_service('health_journal')
         from pa.execution.verification import VerificationService, VerificationStore
-        import asyncio
         try:
-            verification = VerificationService(ctx, current, VerificationStore(ctx.settings.data_dir / 'verification.db'))
+            # Share the existing operational journal. Preserve an unreleased
+            # installation's original file in place rather than move live work.
+            previous = ctx.settings.data_dir / 'verification.db'
+            verification = VerificationService(ctx, current, VerificationStore(previous if previous.exists() else journal.path))
         except (sqlite3.Error, OSError):
             verification = None
             ctx.register_service('verification_error', 'verification_storage_unavailable')
@@ -434,12 +436,8 @@ class HealthJournalModule(Module):
         if supervisor is not None and hasattr(supervisor, 'eligibility_journal_hook'):
             supervisor.eligibility_journal_hook = current.eligibility_hook
         await current.start(app)
-        if verification:
-            verification.task = asyncio.create_task(verification.run(), name='pa-verification')
 
     async def on_shutdown(self, app, ctx):
-        if ctx.services.get('verification'):
-            await ctx.services['verification'].stop()
         if ctx.services.get('health_journal'):
             await ctx.services['health_journal'].stop()
 
