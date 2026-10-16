@@ -12,6 +12,7 @@ from pa.domain.projection import CardProjection
 from pa.sync.event_log import DuplicateCardCreateError, EventLog
 from pa.sync.object_store import ObjectStore
 from pa.sync.dag_index import DagIndex
+from pa.core.performance import OperationObservation, current_observation
 
 
 def _commit(objects: ObjectStore, parent: str | None, event: CardEvent) -> str:
@@ -170,6 +171,20 @@ def test_imported_fork_reuses_only_reachable_verified_ancestry(tmp_path: Path) -
         compatible, health = log.compatible_histories(local, remote)
         assert compatible
         assert set(health["common_ancestors"]) == shared
+    # The first lookup can observe rebuilding just before another builder
+    # publishes a ready head. Neither a ready tip nor an older ancestor is empty.
+    original_ancestors = log.index.ancestors
+    for raced_head in (local, base):
+        first = True
+        def became_ready(head):
+            nonlocal first
+            if first:
+                first = False
+                return None
+            return original_ancestors(head)
+        expected = original_ancestors(raced_head)
+        with patch.object(log.index, "ancestors", side_effect=became_ready):
+            assert log._ancestors(raced_head) == expected
     # A reset forces the original canonical traversal with the same answer.
     log.index.reset_realm("default")
     assert log._ancestors(remote) == ancestry
@@ -187,11 +202,17 @@ def test_recursive_ancestry_work_is_linear_in_visited_edges(tmp_path: Path, edge
             instructions += 100
             return 0
         conn.set_progress_handler(progress, 100)
+        observation = OperationObservation()
+        token = current_observation.set(observation)
         try:
             ancestors = index._ancestor_hashes(conn, "default", f"c{edges}")
         finally:
+            current_observation.reset(token)
             conn.set_progress_handler(None, 0)
     assert ancestors == {f"c{i}" for i in range(edges + 1)}
     # Measure SQLite VM work rather than noisy shared-host wall time. A realm
     # scan per frontier node uses millions of instructions at these sizes.
     assert instructions < 100 * (edges + 1)
+    assert observation.sqlite_rows == 1
+    assert observation.sqlite_aggregate_items == edges + 1
+    assert observation.sqlite_aggregate_bytes > edges

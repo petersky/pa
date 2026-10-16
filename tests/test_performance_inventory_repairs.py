@@ -3,6 +3,8 @@ import json
 import asyncio
 import threading
 import sqlite3
+import contextvars
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
@@ -23,8 +25,9 @@ from pa.sync.event_log import StaleSyncHeadError
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
 from pa.sync.object_catalog import ObjectCatalog
-from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.sqlite_metrics import ObservedConnection, sqlite_connection_scope
 from pa.core.performance import OperationObservation, current_observation
+from pa.sync.dag_index import DagIndex
 
 
 def fixture_record(**kwargs):
@@ -53,6 +56,69 @@ def test_sqlite_observations_include_lazy_rows_without_retaining_values():
     finally:
         current_observation.reset(token)
         conn.close()
+
+
+def test_worker_scoped_connections_preserve_nested_isolation_rollback_and_close(tmp_path):
+    index = DagIndex(tmp_path / "index.db")
+    opened = []
+    original = index._conn
+    def connection():
+        conn = original()
+        opened.append(conn)
+        return conn
+    with patch.object(index, "_conn", side_effect=connection):
+        with sqlite_connection_scope():
+            index.status("default")
+            index.status("default")
+            assert len(opened) == 1
+            with index._db() as outer:
+                outer.execute("INSERT INTO commit_parents VALUES('default','child','parent',0)")
+                with index._db() as inner:
+                    assert inner is not outer
+                    assert inner.execute("SELECT COUNT(*) FROM commit_parents").fetchone()[0] == 0
+            assert len(opened) == 2
+            with pytest.raises(RuntimeError, match="fixture rollback"):
+                with index._db() as conn:
+                    conn.execute("INSERT INTO commit_parents VALUES('default','failed','parent',0)")
+                    raise RuntimeError("fixture rollback")
+            with index._db() as conn:
+                assert conn.execute("SELECT COUNT(*) FROM commit_parents").fetchone()[0] == 1
+        for conn in opened:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                conn.execute("SELECT 1")
+        with sqlite_connection_scope():
+            index.status("default")
+        assert len(opened) == 3
+
+
+@pytest.mark.asyncio
+async def test_async_runtime_owns_one_derived_connection_per_operation(tmp_path):
+    index = DagIndex(tmp_path / "index.db")
+    runtime = AsyncRuntime()
+    original = index._conn
+    def read_many():
+        for _ in range(20):
+            index.status("default")
+    try:
+        with patch.object(index, "_conn", wraps=original) as opened:
+            await runtime.run_blocking("sync.fixture_read", read_many)
+            await runtime.run_blocking("sync.fixture_read", read_many)
+        assert opened.call_count == 2
+    finally:
+        await runtime.close()
+
+
+def test_copied_worker_context_cannot_reuse_connections_in_another_thread_or_after_close(tmp_path):
+    index = DagIndex(tmp_path / "index.db")
+    with patch.object(index, "_conn", wraps=index._conn) as opened:
+        with sqlite_connection_scope():
+            index.status("default")
+            copied = contextvars.copy_context()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(copied.run, index.status, "default").result(timeout=3)
+            assert opened.call_count == 2
+        copied.run(index.status, "default")
+        assert opened.call_count == 3
 
 
 def test_derived_sync_connections_close_after_publication_and_rollback(tmp_path):

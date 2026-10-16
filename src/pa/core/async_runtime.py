@@ -20,6 +20,7 @@ from dataclasses import dataclass, field, fields
 from typing import Any, Awaitable, Callable, TypeVar
 
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
+from pa.core.sqlite_metrics import sqlite_connection_scope
 from pa.core.performance import (
     SAMPLE_LIMIT, OperationObservation, PerformanceMetrics, current_observation, distribution,
 )
@@ -86,6 +87,8 @@ class OperationMetrics:
     sqlite_commit_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_rows: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_aggregate_items: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_aggregate_bytes: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_busy_failures: int = 0
 
 
@@ -265,7 +268,8 @@ class AsyncRuntime:
             token = current_operation.set(evidence)
             observation_token = current_observation.set(observation)
             try:
-                return call(*args, **kwargs)
+                with sqlite_connection_scope():
+                    return call(*args, **kwargs)
             finally:
                 observation.thread_cpu_ms = (time.thread_time() - cpu_started) * 1000
                 observation.worker_finished_at = time.perf_counter()
@@ -419,6 +423,8 @@ class AsyncRuntime:
             metrics.sqlite_commit_ms.append(observation.sqlite_commit_ms)
             metrics.sqlite_calls.append(observation.sqlite_calls)
             metrics.sqlite_rows.append(observation.sqlite_rows)
+            metrics.sqlite_aggregate_items.append(observation.sqlite_aggregate_items)
+            metrics.sqlite_aggregate_bytes.append(observation.sqlite_aggregate_bytes)
             metrics.sqlite_busy_failures += observation.sqlite_busy_failures
             if observation.worker_finished_at:
                 metrics.worker_service_ms.append(
@@ -521,7 +527,8 @@ class AsyncRuntime:
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
             for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms",
-                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows"):
+                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
+                          "sqlite_aggregate_items", "sqlite_aggregate_bytes"):
                 data[phase] = distribution(list(getattr(metrics, phase)))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)

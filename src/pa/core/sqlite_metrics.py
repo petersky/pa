@@ -1,8 +1,68 @@
 """Numeric SQLite call observations; never retain SQL, arguments or results."""
 import sqlite3
 import time
+from contextlib import ExitStack, closing, contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from threading import get_ident
 
 from pa.core.performance import current_observation
+
+
+_connection_scope = ContextVar("pa_sqlite_connection_scope", default=None)
+
+
+@dataclass
+class _ConnectionScope:
+    thread_id: int
+    closers: ExitStack
+    available: dict = field(default_factory=dict)
+    active: bool = True
+
+
+def _owned_scope():
+    scope = _connection_scope.get()
+    return scope if scope is not None and scope.active and scope.thread_id == get_ident() else None
+
+
+@contextmanager
+def sqlite_connection_scope():
+    """Own derived connections until this worker finishes, including late work."""
+    if _owned_scope() is not None:
+        yield
+        return
+    with ExitStack() as closers:
+        scope = _ConnectionScope(get_ident(), closers)
+        token = _connection_scope.set(scope)
+        try:
+            yield
+        finally:
+            scope.active = False
+            scope.available.clear()
+            _connection_scope.reset(token)
+
+
+@contextmanager
+def derived_connection(owner, factory):
+    scope = _owned_scope()
+    if scope is None:
+        with closing(factory()) as connection:
+            yield connection
+        return
+    available = scope.available.setdefault(owner, [])
+    if available:
+        connection = available.pop()
+    else:
+        connection = factory()
+        scope.closers.callback(connection.close)
+    try:
+        yield connection
+    except BaseException:
+        # A failed helper never returns a potentially broken handle for reuse.
+        connection.close()
+        raise
+    else:
+        available.append(connection)
 
 
 class ObservedCursor(sqlite3.Cursor):

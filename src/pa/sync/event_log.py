@@ -495,6 +495,7 @@ class EventLog:
         seen: set[str] | None = None,
         stop: set[str] | None = None,
         max_commits: int = MAX_HISTORY_COMMITS,
+        validated_head: SyncCommit | None = None,
     ) -> Iterator[tuple[str, SyncCommit]]:
         """Walk a commit DAG parent-first with deterministic bounded state."""
         visited = seen if seen is not None else set()
@@ -520,7 +521,8 @@ class EventLog:
             visited.add(current_hash)
             if len(visited) > max_commits:
                 raise EventHistoryLimitError(len(visited), max_commits)
-            commit = self.get_commit(current_hash)
+            commit = (validated_head if current_hash == commit_hash and validated_head is not None
+                      else self.get_commit(current_hash))
             if not commit:
                 failure = EventHistoryObjectError("missing_parent", current_hash, "commit")
                 failure.diagnostic.update(head_hash=commit_hash,
@@ -1676,10 +1678,17 @@ class EventLog:
         tip = self.get_commit(head)
         ready = self.index.indexed_head(tip.realm_id) if tip else None
         known = self.index.ancestors(ready) if ready else None
+        if known and head in known:
+            # Another builder may have published this head after our first
+            # lookup. It is not an empty novel suffix: return its exact ancestry.
+            exact = known if ready == head else self.index.ancestors(head)
+            if exact is not None:
+                return exact
+            known = None
         if known:
             found: set[str] = set()
             boundaries: set[str] = set()
-            for commit_hash, commit in self._iter_commits_parent_first(head, stop=known):
+            for commit_hash, commit in self._iter_commits_parent_first(head, stop=known, validated_head=tip):
                 found.add(commit_hash)
                 boundaries.update(parent for parent in commit.parent_hashes if parent in known)
             for boundary in boundaries:
@@ -1693,7 +1702,7 @@ class EventLog:
             else:
                 return found
         return {
-            commit_hash for commit_hash, _ in self._iter_commits_parent_first(head)
+            commit_hash for commit_hash, _ in self._iter_commits_parent_first(head, validated_head=tip)
         }
 
     def advance_ref(

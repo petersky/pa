@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Iterator
-from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 
 SCHEMA_VERSION = 1
 
@@ -67,15 +67,13 @@ class ObjectCatalog:
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        conn = self._conn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with derived_connection(self, self._conn) as conn:
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     def _initialize(self) -> None:
         conn = self._conn()

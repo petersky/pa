@@ -414,6 +414,60 @@ exclude preexisting persistent connections; physical disk write amplification
 remains unmeasured on this Mac. No threshold, deadline, warning or durable-data
 retention policy was relaxed.
 
+Further native-call samples found repeated SQLite connection setup and per-hash
+cursor crossings. Ancestry now returns one structured SQLite result containing
+the same complete hash set; explicit aggregate item/UTF-8 byte counters prevent
+confusing one cursor row with one logical hash. Deduplication and traversal
+limits remain unchanged. The first such 100-iteration run retained all data but
+still had four warnings, including a 7,718.545 ms reconcile CPU tail; sampling
+did not independently reproduce that extreme and its cause remains unknown.
+
+Derived connections can now be reused only inside one blocking worker operation.
+Each helper retains its original commit/rollback boundary. Nested helpers borrow
+a separate handle so they cannot see or commit an outer uncommitted transaction.
+Every handle closes at worker completion, including work that outlives a caller;
+thread ownership and an active-scope fence reject copied callback contexts on
+another thread or after closure. Tests cover reuse count, isolation, rollback,
+closure and copied contexts. Direct calls outside a worker retain immediate
+connection closure. This bounds connection churn without a persistent cross-
+request connection pool or changed durability policy.
+
+CI head `87d282b` exposed one redundant canonical head read in the new incomplete-
+index fallback. Reusing only the head already validated in that traversal fixes
+the implementation; the existing exact two-read assertion remains unchanged and
+passes. The 36-case systemic/runtime/hash-set/cursor regression run also passed
+before connection reuse; its new scope invariants pass separately.
+
+The final connection-scope source passed 104 runtime/systemic/publication,
+transaction/callback-context, receipt and recovery tests plus five subtests.
+Its 100-iteration version-3 scenario completed 100 pushes, 100 reconciles (ten
+compatible merges), ten explicit concurrent card writes and 300 transcript
+drains with zero slow calls, threshold violations, failures, rejections or
+startup/drain timeouts. All 9,600 transcript events retained exact sequence order.
+Push p50/p95/p99/max was 90.282/162.444/361.725/461.447 ms; reconcile
+63.601/166.839/265.463/299.882; binding 46.587/121.889/222.812/333.416; drain
+109.236/197.706/436.210/456.745. Agent page maximum was 352.289 ms and dispatch
+list maximum 202.476 ms. The complete final run follows the failed stages in
+`docs/benchmarks/systemic-inventory-v3.json`.
+
+This is one finite local scenario on a shared 10-CPU arm64 Mac, Python 3.14.2,
+SQLite 3.50.4, GIL enabled, macOS 26.6.2. It is not a guarantee for arbitrary
+contention, retained history, real provider/MCP/network latency, unidentified
+peers or unmeasured physical write amplification. All prior tails remain in the
+evidence. Production/deployment and whole-inventory acceptance remain open.
+Ten starts/drains on the scoped-connection source also had zero failed,
+timed-out, rejected or slow operations: first 461.080 ms; subsequent median
+160.208 ms / maximum 203.506 ms. Both cold-start stages are retained in
+`docs/benchmarks/systemic-inventory-cold-start.json`.
+
+A targeted concurrency regression covers an index becoming ready between the
+initial ancestry lookup and suffix traversal. Return that head's exact verified
+ancestry, not an empty novel suffix or unrelated descendants; canonical fallback
+remains available if the index changes again. The race and traversal-limit tests
+pass. The earlier extreme aggregate-stage run made 6,249 canonical reads; this
+corroborates amplification but does not independently prove that race caused
+every historical or sampled tail.
+
 Reconciliation scans now return immutable scheduling identities instead of
 copying retained proofs for up to 1,000 dispatches. Each candidate still reloads
 the current durable record before action. Worker progress is reported between

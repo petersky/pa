@@ -1,161 +1,324 @@
 {
-  "fixture": "tool-free ACP process, real admission/configuration/workspace/binding/transcript paths",
-  "latency_ms": {
-    "samples": 10,
-    "max": 326.148,
-    "p50": 144.994,
-    "p95": 326.148,
-    "p99": 326.148
+  "scope": "Ten tool-free ACP subprocess starts/drains per source stage, isolated data; no real model or installed-service acceptance",
+  "earlier_stage": {
+    "fixture": "tool-free ACP process, real admission/configuration/workspace/binding/transcript paths",
+    "latency_ms": {
+      "samples": 10,
+      "max": 326.148,
+      "p50": 144.994,
+      "p95": 326.148,
+      "p99": 326.148
+    },
+    "first_start_ms": 326.148,
+    "subsequent_ms": {
+      "samples": 9,
+      "max": 260.735,
+      "p50": 144.994,
+      "p95": 260.735,
+      "p99": 260.735
+    },
+    "samples_ms": [
+      326.1482079979032,
+      260.73520904174075,
+      128.10120900394395,
+      140.68220800254494,
+      164.44695799145848,
+      161.61075001582503,
+      196.36595796328038,
+      119.82308299047872,
+      144.99433297896758,
+      132.12324999039993
+    ],
+    "operation_counts": {
+      "acp.provider_resolve": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "acp.wire_append": {
+        "submitted": 20,
+        "completed": 20,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "acp.wire_init": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "agent.provider_resolve": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "agent.session_mkdir": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "selection.catalog_scope": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "selection.configuration_receipt": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "selection.resolve": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.agent_runtime_checkpoint": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.agent_session_disconnect": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.agent_session_save": {
+        "submitted": 90,
+        "completed": 90,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.execution_binding_materialize": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.transcript_append": {
+        "submitted": 20,
+        "completed": 20,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.transcript_sequence": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "workspace.scratch_provision": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "workspace.session_leases": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      }
+    },
+    "scope": "Ten isolated tool-free ACP fixture starts with admission/configuration/workspace/binding/transcript paths; not installed provider acceptance"
   },
-  "first_start_ms": 326.148,
-  "subsequent_ms": {
-    "samples": 9,
-    "max": 260.735,
-    "p50": 144.994,
-    "p95": 260.735,
-    "p99": 260.735
-  },
-  "samples_ms": [
-    326.1482079979032,
-    260.73520904174075,
-    128.10120900394395,
-    140.68220800254494,
-    164.44695799145848,
-    161.61075001582503,
-    196.36595796328038,
-    119.82308299047872,
-    144.99433297896758,
-    132.12324999039993
-  ],
-  "operation_counts": {
-    "acp.provider_resolve": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
+  "scoped_connection_stage": {
+    "fixture": "tool-free ACP process, real admission/configuration/workspace/binding/transcript paths",
+    "latency_ms": {
+      "samples": 10,
+      "max": 461.08,
+      "p50": 160.208,
+      "p95": 461.08,
+      "p99": 461.08
     },
-    "acp.wire_append": {
-      "submitted": 20,
-      "completed": 20,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
+    "first_start_ms": 461.08,
+    "subsequent_ms": {
+      "samples": 9,
+      "max": 203.506,
+      "p50": 160.208,
+      "p95": 203.506,
+      "p99": 203.506
     },
-    "acp.wire_init": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "agent.provider_resolve": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "agent.session_mkdir": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "selection.catalog_scope": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "selection.configuration_receipt": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "selection.resolve": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "sqlite.agent_runtime_checkpoint": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "sqlite.agent_session_disconnect": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "sqlite.agent_session_save": {
-      "submitted": 90,
-      "completed": 90,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "sqlite.execution_binding_materialize": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "sqlite.transcript_append": {
-      "submitted": 20,
-      "completed": 20,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "sqlite.transcript_sequence": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "workspace.scratch_provision": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
-    },
-    "workspace.session_leases": {
-      "submitted": 10,
-      "completed": 10,
-      "failed": 0,
-      "timed_out": 0,
-      "slow_calls": 0,
-      "rejected": 0
+    "samples_ms": [
+      461.07995801139623,
+      161.69912496116012,
+      159.1928339912556,
+      156.1587500036694,
+      203.50649999454618,
+      152.4322080076672,
+      157.65562502201647,
+      165.89991701766849,
+      160.20837501855567,
+      173.22304099798203
+    ],
+    "operation_counts": {
+      "acp.provider_resolve": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "acp.wire_append": {
+        "submitted": 20,
+        "completed": 20,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "acp.wire_init": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "agent.provider_resolve": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "agent.session_mkdir": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "selection.catalog_scope": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "selection.configuration_receipt": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "selection.resolve": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.agent_runtime_checkpoint": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.agent_session_disconnect": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.agent_session_save": {
+        "submitted": 90,
+        "completed": 90,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.execution_binding_materialize": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.transcript_append": {
+        "submitted": 20,
+        "completed": 20,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "sqlite.transcript_sequence": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "workspace.scratch_provision": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      },
+      "workspace.session_leases": {
+        "submitted": 10,
+        "completed": 10,
+        "failed": 0,
+        "timed_out": 0,
+        "slow_calls": 0,
+        "rejected": 0
+      }
     }
-  },
-  "scope": "Ten isolated tool-free ACP fixture starts with admission/configuration/workspace/binding/transcript paths; not installed provider acceptance"
+  }
 }
