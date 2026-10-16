@@ -1439,24 +1439,21 @@ def build_overview(
         )
 
     if dispatch_store:
-        for item in dispatch_store.list(limit=100):
-            if item.state in TERMINAL_DISPATCH_STATES:
-                continue
+        for item in dispatch_store.topology_statuses(limit=100):
+            latest = (item.get("progress") or {}).get("latest") or {}
             edges.append(
                 {
-                    "id": f"dispatch-{item.dispatch_id}",
+                    "id": f"dispatch-{item['dispatch_id']}",
                     "kind": "dispatch",
-                    "source": item.authority_instance_id,
-                    "target": item.target_instance_id,
+                    "source": item["authority_instance_id"],
+                    "target": item["target_instance_id"],
                     "direction": "authority-to-target",
-                    "status": "degraded" if item.last_error else "healthy",
+                    "status": "degraded" if item.get("last_error") else "healthy",
                     "label": (
-                        f"{item.latest_progress.phase.value} · "
-                        f"{item.card_id or item.dispatch_id}"
-                        if item.latest_progress
-                        else f"{item.state} · {item.card_id or item.dispatch_id}"
+                        f"{latest.get('phase') or item['state']} · "
+                        f"{item.get('card_id') or item['dispatch_id']}"
                     ),
-                    "details": item.public_dict(),
+                    "details": item,
                 }
             )
 

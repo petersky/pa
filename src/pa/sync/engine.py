@@ -942,12 +942,23 @@ class SyncEngine:
                         automatic_resolutions=health.get(
                             "automatic_resolutions", []
                         ),
+                        # The application publisher owns projection+CAS under
+                        # primary mutation admission. Preparing immutable merge
+                        # objects must not advance the ref behind a canonical
+                        # writer that has already fenced its append parent.
+                        publish=self._publish_projection_head is None,
                     )
                     advanced_head = merge.hash
-                    # merge_heads already published the tip; rebuild after.
-                    projection = self._rebuild_to_head(realm_id, advanced_head)
-                    if projection and projection.get("reason") == "deferred_legacy_callback":
-                        projection = self._rebuild_to_head(realm_id)
+                    if self._publish_projection_head is not None:
+                        projection = self._publish_head_with_projection(
+                            realm_id, advanced_head, expected_head=local_head
+                        )
+                    else:
+                        # Legacy callbacks retain their already-published-tip
+                        # contract; application publication uses admission above.
+                        projection = self._rebuild_to_head(realm_id, advanced_head)
+                        if projection and projection.get("reason") == "deferred_legacy_callback":
+                            projection = self._rebuild_to_head(realm_id)
                 self.invalidate_prepared(realm_id)
                 return {
                     "advanced": True,

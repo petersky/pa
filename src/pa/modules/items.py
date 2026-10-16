@@ -2129,6 +2129,8 @@ def create_card_api(
         response.headers["X-PA-Operation-Replayed"] = "true"
         return replay
     try:
+        summary_service = request.app.state.ctx.services.get("card_summary_service")
+        initial_summary = summary_service.initial_summary_state(data) if summary_service else {}
         card = store.create_card(
             data,
             principal_id=get_principal_id(request),
@@ -2136,6 +2138,7 @@ def create_card_api(
             idempotency_key=key,
             request_fingerprint=fingerprint,
             direct_human=_direct_human_card_action(request),
+            initial_summary_state=initial_summary,
         )
         result = {**card.model_dump(mode="json"), "completion_status": card.completion_status}
         store.complete_operation(key, result)
@@ -2526,8 +2529,7 @@ def get_card_api(request: Request, card_id: str, realm: str | None = None) -> di
             "execution_version": card.execution_version}
 
 
-@router.get("/cards/{card_id}/history")
-def card_history_api(
+def _card_history_payload(
     request: Request,
     card_id: str,
     realm: str | None = None,
@@ -2551,6 +2553,26 @@ def card_history_api(
     except EventHistoryError as exc:
         raise HTTPException(status_code=422, detail=exc.as_detail()) from exc
     return {"card_id": card_id, "realm_id": realm_id, **page}
+
+
+@router.get("/cards/{card_id}/history", response_model=dict)
+async def card_history_api(
+    request: Request, card_id: str, realm: str | None = None,
+    limit: int = 100, cursor: str | None = None,
+) -> Response:
+    runtime = request.app.state.ctx.require_service("async_runtime")
+
+    def encoded():
+        payload = _card_history_payload(request, card_id, realm, limit, cursor)
+        started = time.perf_counter()
+        body = json.dumps(payload, ensure_ascii=False, allow_nan=False,
+                          separators=(",", ":"), default=str).encode()
+        runtime.work_metrics.record("http.card_history.serialization_ms", (time.perf_counter() - started) * 1000)
+        runtime.work_metrics.record("http.card_history.rows_returned", len(payload["events"]))
+        runtime.work_metrics.record("http.card_history.response_bytes", len(body))
+        return body
+
+    return Response(await runtime.run_blocking("history.card_page", encoded), media_type="application/json")
 
 
 @router.post("/cards/repair-legacy-history")
@@ -2804,6 +2826,49 @@ def _card_attachment_or_404(
     return card, attachment
 
 
+def _publish_card_attachment(
+    request: Request, card_id: str, realm_id: str, sha256: str, size: int,
+    filename: str, media_type: str,
+) -> dict:
+    """Publish bytes and receipt identity in the same canonical event.
+
+    This whole operation runs in an owned executor invocation: cancellation of
+    the HTTP waiter cannot abandon the post-commit receipt update. Replay is
+    checked before mutable card state (including the ten-attachment limit).
+    """
+    store = get_store()
+    key, fingerprint, replay = _begin_operation(
+        request, operation="card.attachment.create", realm_id=realm_id,
+        payload={"card_id": card_id, "sha256": sha256, "size": size,
+                 "filename": filename, "media_type": media_type}, store=store,
+    )
+    if replay is not None:
+        return replay
+    try:
+        card = store.get_card(card_id, realm_id=realm_id)
+        if not card:
+            raise HTTPException(status_code=404, detail="Card not found")
+        attachment = CardAttachment(
+            card_id=card.id, realm_id=realm_id, filename=filename,
+            media_type=media_type, size=size, sha256=sha256,
+            blob_ref=f"sha256:{sha256}",
+            created_by_principal=get_principal_id(request),
+            created_by_instance=request.app.state.ctx.settings.instance_id,
+            visibility=card.visibility,
+        )
+        store.add_attachment(
+            attachment, principal_id=get_principal_id(request),
+            instance_id=request.app.state.ctx.settings.instance_id,
+            idempotency_key=key, request_fingerprint=fingerprint,
+        )
+    except Exception as exc:
+        store.fail_operation(key, type(exc).__name__)
+        raise
+    result = attachment.model_dump(mode="json")
+    store.complete_operation(key, result)
+    return result
+
+
 @router.post("/cards/{card_id}/attachments", status_code=201)
 async def create_card_attachment_api(
     request: Request,
@@ -2812,9 +2877,6 @@ async def create_card_attachment_api(
     realm: str | None = None,
 ) -> dict:
     realm_id = realm or request.app.state.ctx.settings.primary_realm
-    card = get_store().get_card(card_id, realm_id=realm_id)
-    if not card:
-        raise HTTPException(status_code=404, detail="Card not found")
     runtime = request.app.state.ctx.require_service("async_runtime")
     try:
         sha256, size = await runtime.run_blocking(
@@ -2823,26 +2885,12 @@ async def create_card_attachment_api(
             file.file,
             timeout=120.0,
         )
-        attachment = CardAttachment(
-            card_id=card.id,
-            realm_id=realm_id,
-            filename=safe_filename(file.filename or "attachment"),
-            media_type=_attachment_media_type(
-                file.filename or "attachment", file.content_type
-            ),
-            size=size,
-            sha256=sha256,
-            blob_ref=f"sha256:{sha256}",
-            created_by_principal=get_principal_id(request),
-            created_by_instance=request.app.state.ctx.settings.instance_id,
-            visibility=card.visibility,
+        return await runtime.run_blocking(
+            "cards.attachments.publish", _publish_card_attachment,
+            request, card_id, realm_id, sha256, size,
+            safe_filename(file.filename or "attachment"),
+            _attachment_media_type(file.filename or "attachment", file.content_type),
         )
-        get_store().add_attachment(
-            attachment,
-            principal_id=get_principal_id(request),
-            instance_id=request.app.state.ctx.settings.instance_id,
-        )
-        return attachment.model_dump(mode="json")
     except AttachmentError as exc:
         raise HTTPException(
             status_code=413 if not exc.recoverable else 409, detail=exc.detail()
@@ -3235,11 +3283,14 @@ async def create_card_modal_ui(
         preferred_capabilities=_comma_separated(preferred_capabilities),
         auto_enrich=auto_enrich,
     )
-    card = store.create_card(
-        create_data,
-        principal_id=principal,
-        instance_id=settings.instance_id,
-    )
+    def publish_form_card():
+        summary_service = request.app.state.ctx.services.get("card_summary_service")
+        initial_summary = summary_service.initial_summary_state(create_data) if summary_service else {}
+        return store.create_card(
+            create_data, principal_id=principal, instance_id=settings.instance_id,
+            initial_summary_state=initial_summary,
+        )
+    card = await runtime.run_blocking("sqlite.card_write", publish_form_card, wait_for_completion=True)
     if not summary.strip():
         card = _schedule_card_summary(request, background_tasks, card)
     if auto_enrich:
@@ -3270,8 +3321,10 @@ async def create_card_modal_ui(
                 created_by_instance=settings.instance_id,
                 visibility=card.visibility,
             )
-            card = store.add_attachment(
-                attachment, principal_id=principal, instance_id=settings.instance_id
+            card = await runtime.run_blocking(
+                "cards.attachments.publish", store.add_attachment,
+                attachment, principal_id=principal, instance_id=settings.instance_id,
+                wait_for_completion=True,
             )
             attachments.append(
                 {
@@ -3280,7 +3333,8 @@ async def create_card_modal_ui(
                 }
             )
         if attachments:
-            card = store.update_card(
+            card = await runtime.run_blocking(
+                "sqlite.card_write", store.update_card,
                 card.id,
                 CardUpdate(
                     body=_compose_card_body(
@@ -3294,6 +3348,7 @@ async def create_card_modal_ui(
                 realm_id=realm,
                 principal_id=principal,
                 instance_id=settings.instance_id,
+                wait_for_completion=True,
             )
     finally:
         for upload in uploads:

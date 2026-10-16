@@ -12,6 +12,7 @@ SAMPLE_LIMIT = 256
 
 @dataclass
 class OperationObservation:
+    queue_wait_ms: float = 0.0
     python_lock_wait_ms: float = 0.0
     python_lock_hold_ms: float = 0.0
     worker_started_at: float = 0.0

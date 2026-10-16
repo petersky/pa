@@ -138,6 +138,7 @@ class AsyncRuntime:
         self._request_total_ms = 0.0
         self._request_max_ms = 0.0
         self._request_slow: deque[dict[str, Any]] = deque(maxlen=50)
+        self._slow_operations: deque[dict[str, Any]] = deque(maxlen=64)
         self._request_samples_ms: deque[float] = deque(maxlen=SAMPLE_LIMIT)
         self._request_bytes = 0
         self._request_routes: dict[str, dict] = {}
@@ -261,7 +262,7 @@ class AsyncRuntime:
 
         if evidence:
             evidence.execution_started(time.monotonic())
-        observation = OperationObservation()
+        observation = OperationObservation(queue_wait_ms=queue_ms)
         def invoke():
             observation.worker_started_at = time.perf_counter()
             cpu_started = time.thread_time()
@@ -464,10 +465,25 @@ class AsyncRuntime:
         )
         if elapsed_ms >= warning_seconds * 1000:
             metrics.slow_calls += 1
+            phases = {"operation": operation, "elapsed_ms": round(elapsed_ms, 3),
+                      "observed_at_monotonic": round(time.perf_counter(), 6)}
+            if observation is not None:
+                for name in ("queue_wait_ms", "thread_cpu_ms", "python_lock_wait_ms", "python_lock_hold_ms",
+                             "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
+                             "sqlite_aggregate_items", "sqlite_aggregate_bytes", "sqlite_busy_failures"):
+                    phases[name] = round(getattr(observation, name), 3)
+                if observation.worker_finished_at:
+                    phases.update(
+                        worker_service_ms=round((observation.worker_finished_at - observation.worker_started_at) * 1000, 3),
+                        executor_dispatch_ms=round((observation.worker_started_at - started_at) * 1000, 3),
+                        completion_delivery_ms=round((time.perf_counter() - observation.worker_finished_at) * 1000, 3),
+                    )
+            self._slow_operations.append(phases)
             logger.warning(
                 "Slow off-loop operation operation=%s elapsed_ms=%.1f",
                 operation,
                 elapsed_ms,
+                extra={"performance_phases": phases},
             )
 
     async def _monitor_loop_lag(self) -> None:
@@ -535,6 +551,9 @@ class AsyncRuntime:
             data["max_runtime_ms"] = round(data["max_runtime_ms"], 3)
             operations[name] = data
         return {
+            "slow_operations": {"capacity": 64, "scope": "last completed slow worker invocations; queue time separate from elapsed",
+                                "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                                "observations": [dict(item) for item in self._slow_operations]},
             "executor": {
                 "max_workers": self.max_workers,
                 "max_queue": self.max_queue,

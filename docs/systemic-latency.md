@@ -491,3 +491,140 @@ At 07:41 UTC the local status API reported running version 1.5.6, installed
 backup PR #483 and systemic PR #484. Neither a restart into that wheel nor a
 source-branch merge would establish deployment of these repairs. No channel
 switch, installed-service update or restart was performed.
+
+## All-findings coverage and expanded workload
+
+The [coverage matrix](performance-coverage.md) and its [numeric ledger](performance-coverage.json)
+account for all 105 independently supplied slow names, all 110 names in the
+retained-file inventory, 181 baseline runtime operations, 115 baseline route
+groups, nine startup phases, six page families and 19 cross-cutting concerns.
+Six newly exercised runtime operations have separate rows. Each finding retains
+cause certainty, existing repair/owner, measurements, implementation/integration/
+deployment/retest status, residual and next actor. No unresolved row is closed by
+assuming that a shared fix covers an unmeasured operation. Backup acceptance
+remains on `0331d21a-f014-44c8-9176-bc1e955a9ad2`; database/API acceptance remains
+on `89957d94-db93-4bf4-b534-3fbea8ba783c`.
+
+The expanded workload exposed additional mechanisms:
+
+- Incoming fork reconciliation published the merge ref before acquiring the
+  application's primary mutation admission. It now prepares immutable merge
+  objects and delegates projection/CAS publication to the existing application
+  publisher. A deterministic concurrent-writer test verifies ref stability,
+  same-request CAS retry, both merge parents and all projected effects.
+- A losing index preflight could rebuild a target already covered by another
+  builder's ready descendant. Rebuild now checks that coverage under its builder
+  boundary. In the expanded fixture, card-history max fell from 4,383 to 229 ms
+  after this guard; subsequent bounded paging/encoding runs recorded a 75 ms max,
+  though the final longer run still has a native SQLite tail described below.
+- History pages fetched all retained matching rows before slicing the page.
+  SQL now bounds the required prefix plus one sentinel, including immutable-head
+  filtering. Completion-effect replay and stable cursors are preserved. HTTP
+  encoding runs in the bounded executor and records numeric rows, bytes and
+  serialization time.
+- Card-summary reads and writes ran on the event loop. They now use the bounded
+  executor and atomically revalidate input, summary attempt and manual edits
+  before writing. Detached task failures are explicitly logged.
+- Fleet topology copied terminal dispatch proofs before discarding those
+  records. It now projects active edge details under the ledger lock, preserving
+  the existing record window, full active details and detached result semantics.
+- Complete-message compaction repeatedly concatenated the entire text prefix.
+  With identical 3,200-chunk inputs, the old implementation materialized
+  4,097,279,200 characters in 3,199 snapshots (647 ms in one comparison); the
+  repaired implementation materialized 2,560,000 characters once (11.3 ms).
+  Replacement snapshots, tool interleaving, sequence spans and immutable source
+  events remain covered by exact reconstruction tests.
+- Attachment creation lacked canonical receipt metadata and published on the
+  event loop. Its event now includes request key, fingerprint and exact result;
+  publication is off-loop, with same-key replay before mutable capacity checks.
+  MCP accepts an optional stable key. Historical untracked uploads are not
+  relabeled or ambiguously retried.
+
+`AsyncRuntime` now retains at most 64 numeric slow-invocation observations,
+including queue, dispatch, service, thread CPU, SQLite, measured-lock and
+completion-delivery phases. Transcript connections also use numeric SQL/fetch
+observations. Neither diagnostic retains SQL, arguments, payloads or transcripts.
+Measured lock sections are inclusive and can overlap when nested. Successful
+native SQLite busy wait remains inseparable from other native SQL elapsed time.
+
+The [version-four results](benchmarks/systemic-inventory-v4.json) preserve every
+incomplete/failing stage. They include the invalid initial synthetic selection
+receipt, the reproduced fork failure, covered-index rebuild amplification,
+quadratic long-message copying and later residual tails. A 30-iteration measured
+window passed with zero warnings/threshold violations; that does not supersede
+the following longer result.
+
+Latest corrected-source scenario: 1,000 history commits, 101 retained dispatches,
+30 sessions, 30 watches, eight executor workers, 100 pushes/reconciliations,
+ten controlled compatible forks, 300 drains, 26 local request variants sampled
+100 times, and exactly 9,600 retained ordered events. Failures, timeouts and
+rejections were zero. **The performance acceptance target is not achieved:**
+
+| Residual | Count | p50 / p95 / p99 / max ms |
+|---|---:|---|
+| Transcript drain above 500 ms | 2 | 100.359 / 237.052 / 370.239 / 506.866 |
+| Reconcile above 500 ms | 1 | 66.492 / 235.078 / 416.747 / 523.871 |
+| Complete-message request above 500 ms | 1 | 201.709 / 379.703 / 456.860 / 550.850 |
+| Fleet page above 500 ms | 1 | 99.517 / 199.956 / 336.534 / 525.215 |
+
+There were two slow worker warnings. One transcript append recorded 325 ms
+Python-lock wait, 174 ms hold and 134 ms observed SQLite calls, versus 16 ms
+thread CPU. The reconcile recorded 347 ms measured lock wait and 80 ms SQL time.
+Native busy, disk and scheduling attribution remains open. Request thresholds and
+worker warning counts differ because HTTP includes additional work. The prior
+instrumented 100-iteration run retained a 961 ms card-history worker (949 ms
+inside SQLite calls, 29 ms thread CPU and 105 rows); this outlier remains in the
+artifact's prior runs, rather than being erased by the latest sample. No warning
+threshold or deadline was increased.
+
+Premeasurement Kernel boot/fixture seeding is explicitly separate: one sync-ref
+read had 3,331 ms elapsed, 1.5 ms worker service and 3,329 ms completion delivery.
+This requires startup attribution; it is not a 3-second SQLite query. Ten separate
+tool-free ACP fixture cold starts had zero slow operations/failures/timeouts/
+rejections; first start was 521 ms and subsequent max 254 ms. These do not accept
+full server boot, a real provider, an external MCP/peer or a deployed build.
+
+Validation includes 44 attachment/materialization/receipt regressions, 195 broader
+scoped regressions before later history/phase changes, 20 DAG/index tests, eight
+history/version contracts, 30 existing history/lane/completion contracts, 75
+existing Fleet/UI tests plus two subtests, and 16 transcript/instrumentation/
+reconstruction tests. The new detached-topology and numeric-phase tests passed
+after correcting required metadata in their fixture. An unchanged 40 ms max-loop
+assertion observed 49.858 ms while another benchmark overlapped; its serial
+recheck failed at 58.835 ms. Both failures are retained and the threshold is
+unchanged. A subsequent alternating same-host comparison failed all three
+archived-main samples (54.562/54.850/50.221 ms) and all three patch samples
+(50.706/50.451/49.583 ms). One earlier main sample passed, so timing variability
+remains explicit; no production-loop resolution is inferred. These overlapping suites are not summed
+as unique tests. CI and exact integrated-source verification remain required.
+
+All remaining leaf/control paths, normal enqueue checkpoints, peer failures/logs,
+startup classification workaround, logging loss, physical write amplification,
+full Kernel boot and installed rollout/retest remain open in the matrix. The
+runtime's bounded windows and lifetime counters, retained selected slow-log
+statistics and this fixture's distributions remain distinct. No installed PA
+update, configuration change, restart, direct service-data mutation or production
+fault injection was performed.
+
+PR486's first CI head (`77b8fd4`) passed four checks but exposed a card-version
+race in the unchanged execution-selection roundtrip. After a card read, an
+asynchronous unconfigured-summary metadata write advanced its version about
+10 ms before the next execution-preference edit. The correction settles known
+disabled metadata in the original canonical creation event and its exact receipt,
+before returning that version. Configured generation and supplied summaries
+retain their behavior; unknown optional configuration remains asynchronous.
+The strict stale-version fence is unchanged. Form canonical writes also run in
+the bounded executor. Seven creation/selection tests pass, including delayed-task
+version stability and exact canonical replay/rebuild; 62 broader card/receipt
+tests and nine subtests passed. The new fixture's initial UTC string-format
+comparison was corrected to equality of the exact instants; its immutable
+canonical receipt comparisons remain exact.
+
+The subsequent `b060f2c` CI head passed four checks but failed two existing
+degraded-kernel healthy-card creation regressions because the initial metadata
+classification unconditionally required the optional summary service. The
+compatibility correction skips that classification when the service is absent;
+it does not change realm gates or stale-version checks. The latest numeric
+workload's module hashes attest the preceding source; the optional-service
+compatibility correction passed all nine targeted creation/selection and existing
+degraded-kernel regressions; CI and integrated-source verification remain required.

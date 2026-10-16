@@ -2707,6 +2707,7 @@ class CardProjection:
         idempotency_key: str | None = None,
         request_fingerprint: str | None = None,
         direct_human: bool = False,
+        initial_summary_state: dict | None = None,
     ) -> Card:
         now = datetime.now(UTC)
         supplied_summary = data.summary.strip()
@@ -2734,6 +2735,11 @@ class CardProjection:
             created_by_principal=principal_id,
             created_by_instance=instance_id,
         )
+        if initial_summary_state:
+            # The creation event and replay result must contain the same
+            # settled metadata. A post-create system write would race the
+            # version returned to the caller and add an unnecessary commit.
+            card = Card.model_validate({**card.model_dump(), **initial_summary_state})
         if card.completion_requirement:
             from pa.domain.completion import CompletionConflict, bind_verification_authority
             card.completion_requirement = bind_verification_authority(card.completion_requirement, instance_id)
@@ -2764,7 +2770,9 @@ class CardProjection:
 
     @serialized_mutation
     def add_attachment(
-        self, attachment: CardAttachment, *, principal_id: str, instance_id: str
+        self, attachment: CardAttachment, *, principal_id: str, instance_id: str,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
     ) -> Card:
         card = self.get_card(attachment.card_id, realm_id=attachment.realm_id)
         if not card:
@@ -2785,6 +2793,10 @@ class CardProjection:
             author_principal=principal_id,
             author_instance=instance_id,
             payload=payload,
+            source_operation="card.attachment.create",
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            operation_result=attachment.model_dump(mode="json") if idempotency_key else None,
         )
         self.commit_event(event)
         return self.get_card(attachment.card_id, realm_id=attachment.realm_id)

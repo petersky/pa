@@ -26,6 +26,7 @@ from typing import Any, Iterator
 
 from pa.core.operation_budget import measured_lock, report_work_progress
 from pa.core.performance import PerformanceMetrics
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.domain.models import TranscriptEvent
 
 SCHEMA_VERSION = 1
@@ -91,7 +92,7 @@ class TranscriptStorage:
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         from pa.core.operation_budget import current_operation
         if current_operation.get() is not None:

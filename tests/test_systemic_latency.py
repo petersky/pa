@@ -22,6 +22,10 @@ from pa.pr_supervisor.models import PRWatch
 from pa.pr_supervisor.store import PRSupervisorStore
 from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
+from pa.sync.engine import SyncEngine
+from pa.sync.event_log import StaleSyncHeadError
+from pa.network.peer_table import PeerTable
+from pa.fleet.membership import MembershipStore
 
 
 def event(title):
@@ -37,6 +41,160 @@ def imported(log, title, parents):
                         author_principal="user:test", parent_hashes=parents, event_hashes=[digest])
     commit.hash = log.store.put_json(commit.model_dump(mode="json"))
     return commit
+
+
+def test_incoming_fork_publication_respects_primary_writer_and_retries_cas(tmp_path):
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "local")
+    projection = CardProjection(tmp_path / "pa.db", log)
+    base = projection.commit_event(event("base"))
+    remote = imported(log, "remote-side", [base.hash])
+    local = projection.commit_event(event("local-side"))
+    engine = SyncEngine(Settings(data_dir=tmp_path), log.store, log,
+                        PeerTable(tmp_path), MembershipStore(tmp_path))
+    entered = threading.Event()
+    publications = []
+
+    def publish(realm, target, *, expected_head):
+        entered.set()
+        with projection.mutation():
+            actual = log.get_head(realm)
+            if actual != expected_head:
+                raise StaleSyncHeadError(realm, expected_head, actual)
+            publications.append((expected_head, target))
+            result = projection.catch_up_projection(realm, target)
+            log.advance_ref(realm, target, expected_head=expected_head, update_index=False)
+        log.ensure_indexed(realm, target)
+        return result
+
+    def recovery_only(*args):
+        raise AssertionError("incoming fork bypassed the application publisher")
+
+    engine.on_head_advanced(recovery_only, publish_head=publish)
+    with ThreadPoolExecutor(1) as pool:
+        with projection.mutation():
+            pending = pool.submit(engine._reconcile_remote_head, "default", remote.hash)
+            assert entered.wait(5)
+            # Preparing a merge must not move the canonical ref behind a writer
+            # already holding primary admission. Advance normally, then force
+            # the incoming publisher to retry its original CAS against this tip.
+            assert log.get_head("default") == local.hash
+            concurrent = projection.commit_event(event("concurrent-local"))
+        result = pending.result(timeout=10)
+    assert result["advanced"] and result["attempts"] == 2
+    assert publications[0][0] == concurrent.hash
+    assert set(log.get_commit(result["head"]).parent_hashes) == {concurrent.hash, remote.hash}
+    assert projection.get_projection_head("default") == result["head"]
+    for name in ("base", "local-side", "remote-side", "concurrent-local"):
+        assert projection.get_card(name)
+    projection.close_thread_connection()
+
+
+def test_losing_index_preflight_reuses_ready_descendant_without_rebuild(tmp_path):
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "local")
+    projection = CardProjection(tmp_path / "pa.db", log)
+    base = projection.commit_event(event("base"))
+    child = imported(log, "child", [base.hash])
+    descendant = imported(log, "descendant", [child.hash])
+    paused, release = threading.Event(), threading.Event()
+    original = log.index.try_incremental_advance
+
+    def preflight_race(realm, old, target, commits, entity):
+        if target == child.hash:
+            paused.set()
+            assert release.wait(5)
+        return original(realm, old, target, commits, entity)
+
+    with patch.object(log.index, "try_incremental_advance", side_effect=preflight_race), ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(log.ensure_indexed, "default", child.hash)
+        try:
+            assert paused.wait(5)
+            assert log.ensure_indexed("default", descendant.hash)
+            # Rebuild's canonical iterator must never be consumed for a target
+            # already covered by the winning ready generation.
+            def forbidden_records(*args, **kwargs):
+                raise AssertionError("redecoded covered history")
+                yield  # The canonical walk is lazy, just like the real iterator.
+            with patch.object(log, "_authoritative_index_records", side_effect=forbidden_records):
+                release.set()
+                assert pending.result(timeout=5)
+        finally:
+            release.set()
+    assert log.index.indexed_head("default") == descendant.hash
+    assert log.index.ancestors(descendant.hash) == {base.hash, child.hash, descendant.hash}
+    projection.close_thread_connection()
+
+
+def test_entity_history_paging_bounds_rows_and_preserves_immutable_cursor(tmp_path):
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "local", cursor_secret="fixture")
+    projection = CardProjection(tmp_path / "pa.db", log)
+    projection.commit_event(event("card"))
+    for number in range(40):
+        projection.commit_event(CardEvent(type=EventType.CARD_UPDATED, realm_id="default", card_id="card",
+            author_principal="user:test", author_instance="local", payload={"title": f"Version {number}"}))
+    original = log.entity_history("default", "card", "card")
+    fetched = []
+    original_rows = log.index.entity_rows
+
+    def rows(*args, **kwargs):
+        result = original_rows(*args, **kwargs)
+        fetched.append(len(result))
+        return result
+
+    with patch.object(log.index, "entity_rows", side_effect=rows):
+        first = log.entity_history_page("default", "card", "card", limit=5)
+        assert fetched == [6], "first page hydrated the complete retained entity history"
+        # New canonical writes cannot alter a previously issued cursor's head.
+        projection.commit_event(CardEvent(type=EventType.CARD_UPDATED, realm_id="default", card_id="card",
+            author_principal="user:test", author_instance="local", payload={"title": "Later"}))
+        collected = list(first["events"])
+        cursor = first["next_cursor"]
+        while cursor:
+            page = log.entity_history_page("default", "card", "card", limit=5, cursor=cursor)
+            assert page["head"] == first["head"]
+            collected.extend(page["events"])
+            cursor = page["next_cursor"]
+    assert collected == original
+    assert len(log.entity_history("default", "card", "card")) == len(original) + 1
+    projection.close_thread_connection()
+
+
+def test_topology_preserves_detached_active_detail_without_terminal_hydration(tmp_path):
+    ledger = DispatchStore(tmp_path)
+    proof = {"retained": ["large proof" * 1000] * 20}
+    for number in range(20):
+        ledger.put(DispatchRecord(mutation_id=f"terminal-{number}", state="completed",
+            authority_instance_id="local", authority_url="http://fixture", target_instance_id="local", placement_decision=proof))
+    active = ledger.put(DispatchRecord(mutation_id="active", state="running",
+        authority_instance_id="local", authority_url="http://fixture", target_instance_id="remote", placement_decision=proof))
+    expected = active.public_dict()
+    with patch.object(ledger, "_snapshot", side_effect=AssertionError("hydrated a retained dispatch")):
+        topology = ledger.topology_statuses()
+    assert topology == [expected]
+    assert topology[0]["placement_decision"] == proof
+    topology[0]["placement_decision"]["retained"].clear()
+    assert ledger.get(active.dispatch_id).placement_decision == proof
+
+
+@pytest.mark.asyncio
+async def test_transcript_reads_and_writes_report_numeric_sql_work(tmp_path):
+    projection = CardProjection(tmp_path / "pa.db")
+    runtime = AsyncRuntime()
+    text = "fixture payload excluded from numeric diagnostics"
+    try:
+        events = [TranscriptEvent(session_id="measured", seq=i + 1,
+            event_type="agent_message_chunk", payload={"text": text}) for i in range(3)]
+        await runtime.run_blocking("fixture.transcript.write", projection.append_transcript_events, events)
+        result = await runtime.run_blocking("fixture.transcript.read", projection.list_transcript_events,
+                                           "measured", after_seq=0, limit=3)
+        assert [event.seq for event in result] == [1, 2, 3]
+        snapshot = runtime.snapshot()
+        for name in ("fixture.transcript.write", "fixture.transcript.read"):
+            assert snapshot["operations"][name]["sqlite_calls"]["max"] > 0
+        assert snapshot["operations"]["fixture.transcript.read"]["sqlite_rows"]["max"] >= 3
+        assert text not in repr(snapshot)
+    finally:
+        await runtime.close()
+        projection.close_thread_connection()
 
 
 def test_remote_suffix_never_decodes_projected_history_and_merge_keeps_both_parents(tmp_path):
