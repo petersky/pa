@@ -20,6 +20,8 @@ from pa.core.kernel import Kernel, reset_kernel
 from pa.domain.models import (
     AgentSession,
     CardCreate,
+    CardUpdate,
+    CompletionEvidence,
     CardEvent,
     EventType,
     ProjectCreate,
@@ -38,7 +40,7 @@ from pa.domain.notifications import (
 )
 from pa.domain.projection import CardProjection
 from pa.domain.store import reset_store
-from pa.execution.dispatch import DispatchRecord
+from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.progress import OperatorInputRequestV1
 from pa.instance.agent_session import AgentSessionRuntime, reset_instance_agent
 from pa.modules.fleet import _create_operator_input_notification
@@ -1282,3 +1284,116 @@ def test_resolve_still_requires_completion_of_pending_interaction(tmp_path: Path
         service.resolve(notice, principal_id="user:local", idempotency_key="retire-pending")
     assert error.value.code == "interaction_response_required"
     assert service.store.get_notification(notice.id) == notice
+
+
+@pytest.fixture
+def cancelled_completion_request(tmp_path, request):
+    kernel = _kernel(tmp_path)
+    service = kernel.ctx.require_service("notifications")
+    store = kernel.ctx.store
+    card = store.create_card(CardCreate(title="Repair", lane="waiting", completion_requirement={
+        "mode":"explicit_acceptance", "milestones":["verified"],
+        "acceptance_principals":["user:local"],
+        "originating_session_id":"repair-session", "originating_dispatch_id":"repair-dispatch",
+    }))
+    ledger = DispatchStore(tmp_path / "owned-test-dispatch")
+    request.addfinalizer(ledger.close)
+    kernel.ctx.register_service("dispatch_store", ledger)
+    origin = ledger.put(DispatchRecord(mutation_id="repair", dispatch_id="repair-dispatch",
+        session_id="repair-session", card_id=card.id, realm_id=card.realm_id,
+        authority_instance_id="local", target_instance_id="local", authority_url="http://pa.test",
+        principal_id="user:local", state="completed"))
+    interaction = _interaction(continuation_mode="prompt")
+    interaction.kind = InteractionKind.MCP_OPERATOR_INPUT
+    interaction.protocol_method = "pa/report_dispatch_progress.operator_input"
+    notice = _create(service, card_id=card.id, session_id=origin.session_id,
+                     dispatch_id=origin.dispatch_id, principal_id="user:local", interaction=interaction)
+    handler = MagicMock(side_effect=RuntimeError("old owner unavailable"))
+    service.register_delivery_handler(notice.id, handler)
+    cancellation = InteractionResponse(idempotency_key="original-cancel", cancel=True)
+    with pytest.raises(NotificationConflict, match="old owner unavailable"):
+        asyncio.run(service.respond(notice, cancellation, principal_id="user:local"))
+    service.unregister_delivery_handler(notice.id)
+    card = store.update_card(card.id, CardUpdate(expected_version=card.updated_at, completion_acceptance=CompletionEvidence(
+        requirement_revision=card.completion_requirement.revision, subject_revision="build-a",
+        milestones=["verified"])), actor_session_id="verifier-session",
+        actor_dispatch_id="verifier-dispatch", idempotency_key="independent-acceptance")
+    card = store.update_card(card.id, CardUpdate(lane="done"))
+    assert card.completion_status["accepted"]
+    return service, card, ledger, origin, notice, cancellation, handler
+
+
+def test_completed_cancelled_mcp_request_retires_without_delivery_or_history_rewrite(cancelled_completion_request):
+    service, card, _, _, notice, cancellation, handler = cancelled_completion_request
+    failed = service.store.get_notification(notice.id)
+    assert not failed.resolved_at and failed.interaction.state == InteractionState.FAILED
+    with patch.object(service, "_deliver", new_callable=AsyncMock) as delivery:
+        assert asyncio.run(service.expire_due(realm_id="default")) == 0  # retirement is not expiry
+        retired = service.store.get_notification(notice.id)
+        assert retired.resolved_at and not retired.outstanding
+        assert retired.interaction == failed.interaction
+        assert retired.delivery_state == failed.delivery_state
+        assert retired.delivery_updated_at == failed.delivery_updated_at
+        assert f"completion-retire:{notice.id}:independent-acceptance" in retired.idempotency_keys
+        snapshot = retired.model_dump(mode="json")
+        assert asyncio.run(service.expire_due(realm_id="default")) == 0
+        assert asyncio.run(service.respond(failed, cancellation, principal_id="user:local")).model_dump(mode="json") == snapshot
+        with pytest.raises(NotificationConflict) as error:
+            asyncio.run(service.respond(failed, InteractionResponse(idempotency_key="stale-retry", retry=True), principal_id="user:local"))
+        assert error.value.code == "interaction_already_resolved"
+        delivery.assert_not_awaited()
+    handler.assert_called_once()
+    assert service.store.get_notification(notice.id).model_dump(mode="json") == snapshot
+
+
+@pytest.mark.parametrize("change", ["permission", "elicitation", "answered", "unanswered", "pending", "live_handler",
+    "other_card", "other_realm", "other_principal", "other_owner", "source_running", "source_session",
+    "requirement_changed", "human_override", "new_build", "new_build_override", "same_verifier", "later_question"])
+def test_completion_retirement_preserves_unrelated_or_unsettled_requests(cancelled_completion_request, change):
+    service, card, ledger, origin, notice, _, _ = cancelled_completion_request
+    current = service.store.get_notification(notice.id)
+    if change in {"permission", "elicitation"}:
+        current.interaction.kind = InteractionKind.ACP_PERMISSION if change == "permission" else InteractionKind.ACP_ELICITATION
+    elif change == "answered": current.interaction.response = {"choice_id":"release", "value":"production"}
+    elif change == "unanswered":
+        current.interaction.state = InteractionState.OUTSTANDING
+        current.interaction.response = None
+    elif change == "pending": current.interaction.state = InteractionState.DELIVERY_PENDING
+    elif change == "live_handler": service.register_delivery_handler(notice.id, MagicMock())
+    elif change == "other_card": current.card_id = "other-card"
+    elif change == "other_realm":
+        origin.realm_id = "engineering"
+        ledger.put(origin)
+    elif change == "other_principal": current.principal_id = "user:other"
+    elif change == "other_owner": current.owner_instance_id = "remote"
+    elif change == "source_running":
+        origin.state = "running"
+        ledger.put(origin)
+    elif change == "source_session": current.session_id = "other-session"
+    elif change in {"requirement_changed", "human_override"}:
+        requirement = card.completion_requirement.model_copy(update={"criteria":"New acceptance required"})
+        card = service.store.update_card(card.id, CardUpdate(completion_requirement=requirement,
+            expected_version=card.updated_at, field_intent=["completion_requirement", "lane"], lane="waiting"))
+    elif change in {"new_build", "new_build_override"}:
+        card = service.store.update_card(card.id, CardUpdate(expected_version=card.updated_at),
+            principal_id="instance:pr-supervisor", idempotency_key="integrated-build-b", integration_evidence=CompletionEvidence(
+            requirement_revision=card.completion_requirement.revision, subject_revision="build-b",
+            outcome="integrated", milestones=["integrated"]))
+    elif change == "same_verifier":
+        current.session_id, current.dispatch_id = "verifier-session", "verifier-dispatch"
+        ledger.put(origin.model_copy(update={"dispatch_id":current.dispatch_id, "session_id":current.session_id,
+                                            "mutation_id":"verifier"}))
+    elif change == "later_question": current.created_at = datetime.now(UTC) + timedelta(seconds=1)
+    if change in {"human_override", "new_build_override"}:
+        if card.lane == "done":
+            card = service.store.update_card(card.id, CardUpdate(lane="waiting"))
+        card = service.store.update_card(card.id, CardUpdate(expected_version=card.updated_at, lane="done"),
+            direct_human=True, idempotency_key="explicit-human-override")
+        assert card.completion_status["accepted"]  # an override is not independent verification
+    current.version += 1
+    service.store.save_notification(current, principal_id="user:local", instance_id="local", expected_version=current.version-1)
+    snapshot = current.model_dump(mode="json")
+    with patch.object(service, "_deliver", new_callable=AsyncMock) as delivery:
+        asyncio.run(service.expire_due(realm_id="default"))
+        delivery.assert_not_awaited()
+    assert service.store.get_notification(notice.id).model_dump(mode="json") == snapshot
