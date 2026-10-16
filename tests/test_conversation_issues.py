@@ -82,6 +82,8 @@ async def test_grouped_start_exactly_once_and_restore_after_lost_dispatch_receip
     # Reload from persisted notebook, then retry the same request.
     restored = await get_issues(req(), "discussion")
     assert restored["requests"][0]["submission"] == body.model_dump()
+    assert restored["requests"][0]["realm_id"] == "default"
+    assert "context" not in restored["requests"][0]
     again = await start_issues(req(), "discussion", body)
     assert again["requests"][0]["state"] == "admitted"
     assert again["requests"][0]["groups"][0]["card_id"] == card_id
@@ -284,3 +286,16 @@ async def test_card_event_recovers_after_crash_before_notebook_receipt(setup, mo
 def test_client_retry_identity_and_late_response_thread_isolation():
     result = subprocess.run(["node", "tests/conversation_issues_node_harness.js"], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_restored_receipt_exposes_frozen_realm_without_execution_context():
+    state = {"revision": 2, "issues": [], "requests": [{
+        "request_id": "saved-start", "state": "admitted", "fingerprint": "private",
+        "context": {"realm_id": "research", "instance_id": "remote-owner", "dispatch": {"model_id": "private"}},
+        "groups": [{"card_id": "existing-card", "issues": [], "dispatch_inputs": {}}],
+    }]}
+    receipt = ConversationIssues.public(state)["requests"][0]
+    assert receipt["realm_id"] == "research"
+    assert "context" not in receipt and "fingerprint" not in receipt
+    assert receipt["groups"] == [{"card_id": "existing-card"}]
+    assert "realm_id" not in state["requests"][0]  # no migration of retained notebooks

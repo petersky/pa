@@ -3,8 +3,11 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const memory = new Map();
 const window = {};
+function element(tag) {
+  return {tag, children: [], appendChild(child) {this.children.push(child);}, replaceChildren() {this.children = [];}};
+}
 vm.runInNewContext(fs.readFileSync("src/pa/server/static/js/conversation-issues.js", "utf8"), {
-  window, console, setTimeout: () => 1, clearTimeout() {},
+  window, console, document: {createElement: element}, setTimeout: () => 1, clearTimeout() {},
   localStorage: {getItem: k => memory.get(k), setItem: (k,v) => memory.set(k,v), removeItem: k => memory.delete(k)},
 });
 const proto = window.PAConversationIssues.prototype;
@@ -40,4 +43,29 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   edited.save([{id: "one", title: "<script>text</script>", request_id: "internal-only"}]); await tick();
   assert.equal(saved.issues[0].request_id, undefined, "clients cannot assign work claims");
   assert.equal(edited.state.revision, 2);
+  // Rendering restored receipts uses Work, including blocked groups that
+  // already created a card. Older peers without realm metadata still work.
+  const restored = controller(() => {throw new Error("render must not start work");});
+  Object.assign(restored, {list: element("ul"), receipts: element("div")});
+  restored.widget.root = {querySelector: () => ({})};
+  restored.state.requests = [
+    {request_id: "started", state: "admitted", realm_id: "team & research", groups: [
+      {title: "Started", state: "admitted", card_id: "card/with?reserved#&="},
+      {title: "Pending", state: "pending"},
+    ]},
+    {request_id: "blocked", state: "blocked", realm_id: "default", groups: [
+      {title: "Card created", state: "pending", card_id: "existing-card"},
+    ]},
+    {request_id: "legacy", state: "admitted", groups: [{title: "Legacy", state: "admitted", card_id: "legacy-card"}]},
+  ];
+  restored.retryButton = () => {};
+  proto.render.call(restored);
+  const lines = restored.receipts.children.flatMap(section => section.children.filter(e => e.tag === "p"));
+  const links = lines.flatMap(line => line.children);
+  assert.deepEqual(links.map(link => link.href), [
+    "/work?card=card%2Fwith%3Freserved%23%26%3D&realm=team%20%26%20research",
+    "/work?card=existing-card&realm=default",
+    "/work?card=legacy-card",
+  ]);
+  assert.ok(links.every(link => link.textContent === "Open card"));
 })().catch(error => {console.error(error); process.exitCode = 1;});
