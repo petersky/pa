@@ -554,7 +554,7 @@ quadratic long-message copying and later residual tails. A 30-iteration measured
 window passed with zero warnings/threshold violations; that does not supersede
 the following longer result.
 
-Latest corrected-source scenario: 1,000 history commits, 101 retained dispatches,
+Earlier `b060f2c` corrected-source scenario: 1,000 history commits, 101 retained dispatches,
 30 sessions, 30 watches, eight executor workers, 100 pushes/reconciliations,
 ten controlled compatible forks, 300 drains, 26 local request variants sampled
 100 times, and exactly 9,600 retained ordered events. Failures, timeouts and
@@ -628,3 +628,44 @@ it does not change realm gates or stale-version checks. The latest numeric
 workload's module hashes attest the preceding source; the optional-service
 compatibility correction passed all nine targeted creation/selection and existing
 degraded-kernel regressions; CI and integrated-source verification remain required.
+
+PR486 merged as `687436f58a7079649a24c42bb521f635664873b4` from exact watched
+head `682561f90ed02f2e86af64c7d699ab898ff76d2d`. All five head checks passed;
+supervisor stable-green evidence had 14 observations, and independent reviews,
+threads, rules, author attribution and mergeability matched. Both source trees
+were `1d86c251b9004ef7e157be577a8e9169635c9d7e`. The final source-attested
+100-iteration scenario retained 9,600 ordered events with zero worker warnings,
+failures, timeouts or rejections. Two HTTP violations remain: complete-message
+history 518.524 ms (p50/p95/p99 204.980/408.645/468.984 ms), and Pull Requests
+675.397 ms (59.400/112.455/285.617 ms). Loop p95/max was 23.067/508.158 ms.
+Premeasurement callbacks retained about 3,375 ms completion delay despite less
+than 1 ms service. These distributions and all earlier outliers are preserved;
+this is still failed performance acceptance, with no installed rollout claimed.
+
+A separate normal human enqueue probe confirmed two durable runtime checkpoints
+per enqueue. The first already captures human activity, complete ordered queue
+and assigned transcript cursor; the intervening synchronous flush only schedules
+the same events. Removing the duplicate second save retains the first durability
+boundary and transcript flush. The same 100-enqueue probe reduced saves 200 to100,
+p95 enqueue 13.882 to9.980 ms, maximum18.055 to11.701 ms and loop maximum15.580
+to9.766 ms. All100 prompts remained durable. Existing queue/recovery/acceptance
+suites passed87 tests. The committed reproducible probe additionally verifies
+exact prompt identities and cursor100; its separate run retains100prompts with
+100saves. These are single-host paused-queue measurements, not provider delivery,
+installed acceptance or proof that ordinary synchronous checkpoint tails are
+resolved. See [the comparison](benchmarks/prompt-enqueue-checkpoints.json) and
+`scripts/benchmark_prompt_enqueue.py`.
+
+Main CI38885981504 at exact merge687436f also completed successfully with all
+five checks green. This completes PR486 source integration verification; the
+remaining performance, fleet and deployment requirements stay open.
+
+PR487 initial CI458f356 passed four checks but the receipt-copy concurrency
+test hit the unchanged500ms HTTP budget while deliberately holding its worker
+until a producer finished. The exact test passed in isolation; affected dispatch,
+API and status-service source bytes match integrated687436f. The correction
+checks the same real storage-copy/index-lock fence and immutable old observation
+directly, then checks authenticated HTTP200/current value, oversized504 and
+identity/namespace409 responses. All12 passive-status tests pass, including
+client timeout and late-worker accounting. No deadline, node or byte budget was
+changed; this does not relabel an actual timeout as performance acceptance.

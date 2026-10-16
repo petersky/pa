@@ -1,0 +1,101 @@
+{
+  "before": {
+    "scope": "isolated 100 normal paused human enqueue calls; no provider/peers; real durable Store/transcript",
+    "latency": {
+      "samples": 100,
+      "max_ms": 18.054832995403558,
+      "p50_ms": 7.740084023680538,
+      "p95_ms": 13.881999999284744,
+      "p99_ms": 16.950290999375284
+    },
+    "checkpoint": {
+      "samples": 200,
+      "max_ms": 13.878666039090604,
+      "p50_ms": 3.556750016286969,
+      "p95_ms": 6.397166987881064,
+      "p99_ms": 9.507000038865954
+    },
+    "loop_lag": {
+      "samples": 101,
+      "max_ms": 15.580458983313292,
+      "p50_ms": 3.6132080224342644,
+      "p95_ms": 9.993374997284263,
+      "p99_ms": 13.368792026303709
+    },
+    "checkpoints": 200,
+    "durable_queued": 100
+  },
+  "after": {
+    "scope": "isolated 100 normal paused human enqueue calls; no provider/peers; real durable Store/transcript",
+    "latency": {
+      "samples": 100,
+      "max_ms": 11.701291019562632,
+      "p50_ms": 4.732290981337428,
+      "p95_ms": 9.980333968997002,
+      "p99_ms": 11.375667003449053
+    },
+    "checkpoint": {
+      "samples": 100,
+      "max_ms": 10.100083949510008,
+      "p50_ms": 3.83612496079877,
+      "p95_ms": 8.737249998375773,
+      "p99_ms": 9.967207966838032
+    },
+    "loop_lag": {
+      "samples": 92,
+      "max_ms": 9.766165991313756,
+      "p50_ms": 1.4404170308262108,
+      "p95_ms": 7.404915997758508,
+      "p99_ms": 9.232249993365258
+    },
+    "checkpoints": 100,
+    "durable_queued": 100
+  },
+  "source": {
+    "before_commit": "687436f58a7079649a24c42bb521f635664873b4",
+    "before_agent_session_sha256": "1d5119e6ff42944610717b91140c615277b9935cd9dc45ffaacb0efd60f7f20a",
+    "after_agent_session_sha256": "59f2050a878fe473c88e8b0688920804065204fcf3f44da02e709829c5037da9",
+    "probe": ".dev/probe_normal_enqueue.py; reproducible equivalent scripts/benchmark_prompt_enqueue.py",
+    "limitation": "one same-host comparison, not deployed or mixed-load acceptance"
+  },
+  "reproducible_script_verification": {
+    "scope": "100 paused human enqueues; real durable Store/transcript; no provider/peers",
+    "agent_session_source_sha256": "59f2050a878fe473c88e8b0688920804065204fcf3f44da02e709829c5037da9",
+    "latency": {
+      "samples": 100,
+      "max_ms": 11.289042013231665,
+      "p50_ms": 4.300165979657322,
+      "p95_ms": 7.077082991600037,
+      "p99_ms": 11.22054096776992
+    },
+    "checkpoint": {
+      "samples": 100,
+      "max_ms": 10.259500006213784,
+      "p50_ms": 3.5687090130522847,
+      "p95_ms": 6.074167031329125,
+      "p99_ms": 9.441250003874302
+    },
+    "loop_lag": {
+      "samples": 88,
+      "max_ms": 6.4321669726632535,
+      "p50_ms": 0.9607090125791726,
+      "p95_ms": 4.576125016901642,
+      "p99_ms": 6.4321669726632535
+    },
+    "checkpoints": 100,
+    "durable_queued": 100
+  },
+  "validation": {
+    "existing_queue_recovery_acceptance_tests": 87,
+    "single_save_contract": "passed",
+    "passive_status_suite_after_ci_test_separation": 12,
+    "ci_failure": {
+      "head": "458f356d3aff6ed5a9709d0e290c1fab5ac18816",
+      "run": 38886462097,
+      "checks_success": 4,
+      "failure": "Deliberately held selected copy outlasted unchanged500ms HTTP deadline; isolated exact test passed.",
+      "correction": "Exercise real storage-copy fence directly; retain authenticated HTTP200/new value, oversize504, namespace/identity409 and late-worker timeout tests. No deadline or budget changes.",
+      "report": "6925b699-69cf-4583-845a-f33bf9240fea"
+    }
+  }
+}

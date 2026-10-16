@@ -47,8 +47,9 @@ CONCERNS = [
     ("incoming-fork-fence", "Incoming fork publication and summary writes", "sync", "Expanded25-request mixed fixture exposed one unhandled DagIndexStaleError during summary publication, despite zero measured latency violations. Confirmed incoming merge advanced ref before application primary admission; repair routes prepared immutable merge through projection/CAS publisher and offloads summary work with fresh-input/manual-edit fences. Report19c44107-99dc-4b64-92ea-fda8d22a3418; regression/retest status below."),
     ("large-message-copy", "Quadratic complete-message compaction", "acp", "Expanded100-iteration fixture exposed transcript message-page tails as a single message grew to3200chunks/2.56million characters. Repeated prefix concatenation materialized about4.1billion characters. Linear grouping joins once while preserving replacement snapshots, source sequence spans, interleaved tools and all durable input chunks; exact reconstruction and copy-volume regression passed."),
     ("startup-classification", "Startup classification and same-request recovery", "selection", "Report e2bed017-d546-49f5-910e-3d8326d80e40: start classified as research, same request recovered after metadata correction. The workaround is not a repair or new authorization. Preserve request/receipt identity and user model/permission defaults; root classification and regression coverage remain open."),
-    ("creation-version", "Known disabled summary metadata races card version", "sqlite", "PR486 CI38883010060 exposed a disabled-summary metadata write about10ms after a caller read the card version, rejecting its following execution-preference edit. Correction settles known unconfigured metadata in the initial canonical creation event and exact receipt. Configured/manual summary behavior and strict stale-version rejection remain intact; source correction/CI verification pending."),
-    ("completion-scope", "Integration-only automatic completion exceeds card scope", "operation", "Supervisor marked this expanded performance card Done after PR484 and PR485 despite open acceptance/peer/coverage findings; card restored Active twice. Report861aef1f-3d04-461d-8594-fc5b4260ccf2 revision2 preserves evidence. Integration is not whole-PA acceptance; completion-policy/requirement coordination remains open, with no invented acceptance receipt or weakened gate."),
+    ("creation-version", "Known disabled summary metadata races card version", "sqlite", "PR486 CI38883010060 exposed a disabled-summary metadata write about10ms after a caller read the card version, rejecting its following execution-preference edit. Correction settles known unconfigured metadata in the initial canonical creation event and exact receipt. Configured/manual summary behavior and strict stale-version rejection remain intact; PR486 merged687436f after all5checks passed; optional-service absence remains compatible with degraded local operations (9targeted tests)."),
+    ("completion-scope", "Integration-only automatic completion exceeds card scope", "operation", "Supervisor marked this expanded performance card Done after PR484, PR485 and PR486 despite open acceptance/peer/coverage findings; card restored Active three times. Report861aef1f-3d04-461d-8594-fc5b4260ccf2 revision3 preserves evidence. Integration is not whole-PA acceptance; completion-policy/requirement coordination remains open, with no invented acceptance receipt or weakened gate."),
+    ("normal-enqueue", "Duplicate durable human enqueue checkpoint", "progress", "100 real paused human enqueue calls produced200checkpoints (p95enqueue13.882ms/max18.055ms). Removing the redundant second checkpoint yields100checkpoints, p959.980ms/max11.701ms, with all100prompts durable. Existing queue/recovery/acceptance suites:87passed. Ordinary synchronous checkpoint cost remains; no claim of whole-PA acceptance."),
 ]
 
 
@@ -158,6 +159,24 @@ def build(independent: dict, integrated: dict, followup: dict | None = None) -> 
             if row["id"] == "concern:creation-version":
                 row["implemented"] = "Known unconfigured summary state is part of the original canonical creation event and exact receipt; optional configuration failures retain asynchronous ownership. Form writes use bounded executor."
                 row["retested"] = "7 creation/selection tests passed with strict stale-version rejection unchanged, exact replay/rebuild and delayed disabled task. Broader62tests+9subtests passed; initial new fixture compared equivalent Z/+00:00 strings, corrected to exact datetime equality."
+            if row["id"] in {"concern:ambiguous-upload", "concern:incoming-fork-fence", "concern:large-message-copy", "concern:creation-version"}:
+                row["merged"] = ["https://github.com/petersky/pa/pull/486"]
+                row["integration_evidence"] = {"head":"682561f90ed02f2e86af64c7d699ab898ff76d2d", "merge":"687436f58a7079649a24c42bb521f635664873b4", "tree":"1d86c251b9004ef7e157be577a8e9169635c9d7e", "watch":"bd009a71-422f-4b00-8ae0-1230fdc31012", "head_ci":38885531633, "checks_success":5}
+            exact_causes = {
+                "concern:incoming-fork-fence": "Confirmed incoming fork published ref before primary admission; a concurrent canonical writer then saw a stale fenced parent. Deterministic CAS-retry regression verifies the corrected publication boundary.",
+                "concern:large-message-copy": "Confirmed repeated text prefix concatenation:3199copies/4097279200characters for3200chunks. Linear grouping preserves exact output with1copy/2560000characters.",
+                "concern:creation-version": "Confirmed optional disabled-summary metadata was a second canonical write after creation, advancing the caller's card version. Initial-event metadata removes that write without weakening CAS. Missing optional-service registration is separately covered by degraded-kernel regressions.",
+                "concern:ambiguous-upload": "Confirmed attachment canonical events omitted request-key/fingerprint/result recovery metadata. Historical transport timeout and missing recovery-key exposure remain separate unverified causes; future receipt repair does not invent historical receipts.",
+                "concern:normal-enqueue": "Confirmed source and same-host measurement: human activity and cursor are already included in the first checkpoint; synchronous transcript flush schedules the same events without changing recoverable state. Second checkpoint duplicates that durable write.",
+            }
+            if row["id"] in exact_causes:
+                row["cause"] = exact_causes[row["id"]]
+                row["cause_classification"] = "confirmed_source_cause_with_open_deployed_acceptance"
+            if row["id"] == "concern:normal-enqueue":
+                row["implemented"] = "Removed only the redundant second checkpoint; first durable save, queue ordering, human activity, cursor and transcript flush retained. Unmerged follow-up."
+                row["merged"] = []
+                row["retested"] = "87 existing queue/recovery/durable-admission tests passed. Identical100enqueue comparison retains all100prompts and halves checkpoints200to100; docs/benchmarks/prompt-enqueue-checkpoints.json."
+                row["next_action"] = "Complete supervised follow-up integration; measure normal admission under larger mixed queues and installed workload."
             if row["id"] == "concern:completion-scope":
                 row["next_actor"] = "this session and PA completion policy/requirement owner"
                 row["next_action"] = "Keep expanded card open; coordinate a completion contract covering all residual acceptance and owner gates before final Done. Do not invent independent acceptance or clear existing requirements."
@@ -165,7 +184,7 @@ def build(independent: dict, integrated: dict, followup: dict | None = None) -> 
     return {"contract": "pa.performance-coverage/v1", "card_id": CARD,
             "as_of": "2026-10-16", "completion": "open; all findings require deployed acceptance or an evidence-backed final disposition",
             "baseline_source_head": HEAD, "baseline_merge_commit": MERGE,
-            "followup_source_evidence": ({"stage": "source patch; supervised integration/deployment unverified",
+            "followup_source_evidence": ({"stage": "PR486 merged687436f, exact source/merge tree1d86c251; deployed acceptance unverified",
                                           "module_sha256": followup.get("source_module_sha256")}
                                          if followup else None),
             "input_scope": independent["coverage"],
@@ -182,6 +201,7 @@ def build(independent: dict, integrated: dict, followup: dict | None = None) -> 
                            "attachment:861e8a6e7ea14651918f84a557851d5f", "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
                            "report:0e918df2-4b5c-44f1-aff2-ad7a98175744", "report:8ef59858-fd0d-4dcf-85c6-867c09bd2b38",
                            "report:fb45137a-c958-4356-93fc-cbf9ecb9ad49", "report:e2bed017-d546-49f5-910e-3d8326d80e40",
+                           "report:861aef1f-3d04-461d-8594-fc5b4260ccf2", "report:d09ac79d-3df3-49e9-a426-8e0b3e156355",
                            "report:19c44107-99dc-4b64-92ea-fda8d22a3418", "report:e58d4d65-5332-4dac-8de9-5ae244739ac5"],
             "followup_artifact": "benchmarks/systemic-inventory-v4.json" if followup else None,
             "rows": rows}
@@ -192,11 +212,12 @@ def markdown(data: dict) -> str:
              "Every finding has a cause assessment, repair/owner, exact measurement status, rollout state, residual and next actor in [the JSON matrix](performance-coverage.json). All rows remain open pending sufficient verification and acceptance.", "",
              "The original independent attachments contain 233,892 redacted records (2026-10-15T05:48:13Z–2026-10-16T05:48:23Z), 105 slow names, 181 runtime operations and 115 route groups. The additional retained-file inventory covers 16 files, 86,440,227 source bytes and 570,983 physical lines, Oct8–16, with 110 slow names in22families. Cross-sink duplicates, dropped logs, 3,200 unattributable lines, uninspected peer logs and older retention gaps prevent an exhaustive fleet claim.", "",
              "PR484 and PR485 are merged. At exact merged-tree761a4c6, 100push/100reconcile/300drain mixed iterations retained9600events with zero slow warnings/failures/timeouts; ten tool-free ACP fixture cold starts passed. Running1.5.6 is not verified to contain these repairs. Real provider, peer, unmeasured leaf/route and physical-write acceptance remains open.", "",
+             "PR486 is merged as687436f from watched stable-green682561f with all5head checks successful. The expanded100-iteration source-matched scenario has0worker warnings/failures/timeouts,9600ordered events, but2HTTP500ms violations (message history518.524ms;PullRequests675.397ms) and loopmax508.158ms. This remains failed performance acceptance. All earlier outliers remain in [the numeric artifact](benchmarks/systemic-inventory-v4.json). Normal-enqueue checkpoint reduction is a separate unmerged follow-up.", "",
              "## Concern dispositions", "", "| Finding | Evidence and remaining work | Owner |", "|---|---|---|"]
     for r in data["rows"]:
         if r["kind"] == "concern":
             lines.append(f'| {r["finding"]} | {r["measurement"]["evidence"]} | {r["owner_card"]} |')
-    lines += ["", "## Exact observed slow operations", "", "Counts are raw retained slow emissions, not distinct incidents. Milliseconds; p50/p95/p99/max are threshold-selected. Fixture evidence refers only to the named operation in the declared integrated scenario.", "", "| Operation | Count | p50 | p95 | p99 | Max | Exact integrated fixture |", "|---|---:|---:|---:|---:|---:|---|"]
+    lines += ["", "## Exact observed slow operations", "", "Counts are raw retained slow emissions, not distinct incidents. Milliseconds; p50/p95/p99/max are threshold-selected. Fixture evidence refers only to the named operation in the declared integrated scenario.", "", "| Operation | Count | p50 | p95 | p99 | Max | Earlier PR485 fixture; latest follow-up in JSON |", "|---|---:|---:|---:|---:|---:|---|"]
     for r in data["rows"]:
         if r["kind"] != "slow_log":
             continue
