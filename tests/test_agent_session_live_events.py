@@ -854,6 +854,7 @@ class AgentSessionLiveEventTests(unittest.TestCase):
             self.assertEqual(durable["queued_prompts"][0]["card_id"], "card-1")
             self.assertEqual(durable["queued_prompts"][0]["project_id"], "project-1")
             store.save_session.assert_called_with(session, expected_connection_id="")
+            self.assertEqual(store.save_session.call_count, 1)
 
     def test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot(
         self,

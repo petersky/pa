@@ -1818,8 +1818,9 @@ class AgentSessionRuntime:
             self._queue = [queued for queued in self._queue if queued.id != item.id]
             raise
         self._flush_transcript()
-        if not _is_automatic_source(source):
-            self._checkpoint_runtime(lifecycle="queued")
+        # The checkpoint above already includes human activity, the complete
+        # queue and the assigned transcript cursor. Flushing only schedules
+        # those same events; it does not change recoverable runtime state.
         if (
             not self._queue_paused
             and not _defer_drain
