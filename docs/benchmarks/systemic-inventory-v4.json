@@ -15552,6 +15552,14 @@
       "failure": "execution selection roundtrip stale_card_version raced unconfigured summary metadata write",
       "correction": "known unconfigured summary state is in initial canonical creation event and exact receipt; no CAS weakening",
       "report": "37908b69-182a-4f6b-82da-c35294056765"
+    },
+    {
+      "head": "b060f2c46e90d6aee91ef05976abe2cd3f2e1940",
+      "run": 38885001292,
+      "result": "4 checks passed; test(0) failed two existing degraded-kernel healthy-card creation regressions",
+      "cause": "initial summary classification unconditionally required optional service registration",
+      "correction": "skip initial optional metadata classification when summary service is absent; preserve supplied-summary/degraded realm behavior",
+      "verification": "9 targeted creation/selection and existing degraded-kernel regressions passed, exit0; exact numeric module hashes remain the preceding b060 source"
     }
   ],
   "compaction_copy_comparison": {

@@ -2129,7 +2129,8 @@ def create_card_api(
         response.headers["X-PA-Operation-Replayed"] = "true"
         return replay
     try:
-        initial_summary = request.app.state.ctx.require_service("card_summary_service").initial_summary_state(data)
+        summary_service = request.app.state.ctx.services.get("card_summary_service")
+        initial_summary = summary_service.initial_summary_state(data) if summary_service else {}
         card = store.create_card(
             data,
             principal_id=get_principal_id(request),
@@ -3283,7 +3284,8 @@ async def create_card_modal_ui(
         auto_enrich=auto_enrich,
     )
     def publish_form_card():
-        initial_summary = request.app.state.ctx.require_service("card_summary_service").initial_summary_state(create_data)
+        summary_service = request.app.state.ctx.services.get("card_summary_service")
+        initial_summary = summary_service.initial_summary_state(create_data) if summary_service else {}
         return store.create_card(
             create_data, principal_id=principal, instance_id=settings.instance_id,
             initial_summary_state=initial_summary,

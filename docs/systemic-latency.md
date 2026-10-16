@@ -619,3 +619,12 @@ version stability and exact canonical replay/rebuild; 62 broader card/receipt
 tests and nine subtests passed. The new fixture's initial UTC string-format
 comparison was corrected to equality of the exact instants; its immutable
 canonical receipt comparisons remain exact.
+
+The subsequent `b060f2c` CI head passed four checks but failed two existing
+degraded-kernel healthy-card creation regressions because the initial metadata
+classification unconditionally required the optional summary service. The
+compatibility correction skips that classification when the service is absent;
+it does not change realm gates or stale-version checks. The latest numeric
+workload's module hashes attest the preceding source; the optional-service
+compatibility correction passed all nine targeted creation/selection and existing
+degraded-kernel regressions; CI and integrated-source verification remain required.
