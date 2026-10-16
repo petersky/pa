@@ -669,3 +669,66 @@ directly, then checks authenticated HTTP200/current value, oversized504 and
 identity/namespace409 responses. All12 passive-status tests pass, including
 client timeout and late-worker accounting. No deadline, node or byte budget was
 changed; this does not relabel an actual timeout as performance acceptance.
+
+The next measured repair replaces full-watch hydration in PR metrics and health
+with lifecycle/owner/fence SQL aggregates. A disposable100-watch/30-call baseline
+decoded3,000watch models and193,086,000state/policy bytes to return four counts.
+The clean sequential after run decodes zero proofs and preserves those counts:
+p50/p95/p99/max86.402/94.061/101.048/101.048ms becomes
+6.319/7.014/7.275/7.275ms. The initial after probe overlapped mixed-fixture
+startup and is retained as diagnostic only; the comparison above uses the later
+sequential run. See [the comparison](benchmarks/pr-inventory-counts.json) and
+`scripts/benchmark_pr_inventory.py`.99new/existing PR supervisor tests pass,
+covering every lifecycle, retired-active records, owner counts, maximum active
+fence, empty catalogs, existing metrics and public health fields. Numeric SQLite
+observations now cover this store, without retaining SQL or arguments; returned
+rows do not claim physical scan or I/O counts.
+
+The identical expanded100-iteration scenario retained9,600ordered events and
+zero failures/timeouts/rejections. Pull Requests p50/p95/p99/max changed from
+59.400/112.455/285.617/675.397ms to29.346/68.897/90.582/206.495ms in this one
+same-host comparison. Process CPU changed91,013.591to84,392.444ms. This does
+not establish whole-PA acceptance: two worker warnings remain (reconcile581ms,
+summary write657ms), and two explicit measured threshold violations remain
+(Agent871.750ms and reconcile591.490ms). Agent p95/p99 is89.066/458.588ms;
+reconcile p95/p99 is155.097/300.113ms. Loop p95/max is18.773/186.936ms.
+The summary worker records469ms aggregate lock wait,124ms SQL and72ms thread
+CPU; nested lock hold sections overlap, so those hold/wait sums are not exclusive
+wall-time phases. Current attribution remains incomplete and needs named lock/
+holder evidence. The startup schema still blocks completion delivery about3.1s;
+its premeasurement evidence remains separate.
+
+The two newly changed PR modules have supplemental source hashes captured during
+the run and verified unchanged at completion. The benchmark now includes them
+in its built-in hash list for subsequent runs. The449-row matrix includes22
+concerns, retaining the full-Kernel schema CPU cause and PR copy amplification
+as separate findings. PR487 integration is verified: exactmerge8fcc3ce,
+matching source treeb6e2857b, stable-green watched heada5dd220, and5/5green
+head/mainCI38887997502. Original failed CI attempts and the single same-head
+Fleet retry remain recorded. This local PR aggregate repair still requires
+supervised integration; deployment, active-watch API/detail, real GitHub/peer
+polling, backup and all other uncovered leaf acceptance remain open.
+
+Final aggregate-source verification also preserves the exact maximum for all
+model-accepted legacy fence values: inactive rows cannot supply a zero that
+changes a negative active maximum. All five final inventory contracts pass after
+this precision correction; the earlier99-test broader suite is retained. The
+final same-workload sequential metrics result is p50/p95/p99/max
+6.525/8.667/10.295/10.295ms with zero proof hydration and identical counts. The
+prior7.014ms-p95 run remains an earlier sample, not a discarded result.
+
+A final100-iteration mixed run has16built-in source hashes, all verified against
+the unchanged source. It retains9,600events and zero failures/timeouts/rejections.
+Pull Requests p50/p95/p99/max is27.834/60.515/71.811/213.786ms; process CPU
+is83,338.970ms. Performance acceptance still fails: two worker warnings
+(reconcile514.339ms; transcript message page526.182ms) and four explicitly
+sampled threshold violations remain: drain507.378ms (p95245.820/p99371.741),
+push548.788ms (149.410/313.488), reconcile534.643ms (149.973/323.083), and
+complete-message HTTP597.144ms (367.810/405.600). Loop p95/max is19.442/180.803ms.
+The message-page worker returned2,753rows and recorded434.673ms SQLite calls,
+328.222ms thread CPU, no measured Python-lock wait and no native busy failure.
+This does not partition successful native busy, scheduling, GC or disk time;
+those remain attribution gaps. Startup callbacks still retain about2.9s
+completion delivery with sub-millisecond service. All previous source stages,
+including Agent871.750ms, remain in the artifact. No warning/timeout threshold
+or durability setting changed, and no deployment or whole-PA acceptance is claimed.

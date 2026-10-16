@@ -3354,16 +3354,7 @@ class PRSupervisor:
             or ""
         ).rstrip("/")
         remote = self._authority_url()
-        all_watches = self.store.list_watches(include_retired=True)
-        watches = [watch for watch in all_watches if watch.actionable]
-        owned = [w for w in watches if w.owner_instance_id == self.settings.instance_id]
-        archived = [watch for watch in all_watches if watch.retired_at is not None]
-        backlog = [
-            watch
-            for watch in all_watches
-            if watch.status in GITHUB_TERMINAL_PR_WATCH_STATUSES
-            and watch.retired_at is None
-        ]
+        inventory = self.store.watch_inventory(owner_instance_id=self.settings.instance_id)
         capabilities = self.store.list_capabilities(
             fresh_seconds=self.CAPABILITY_TTL_SECONDS
         )
@@ -3400,12 +3391,7 @@ class PRSupervisor:
                 else None
             ),
             "last_authority_error": self._authority_last_error,
-            "active_watches": len(watches),
-            "historical_watches": len(all_watches) - len(watches),
-            "archived_watches": len(archived),
-            "terminal_retirement_backlog": len(backlog),
-            "locally_owned_watches": len(owned),
-            "max_fence_token": max((w.fence_token for w in watches), default=0),
+            **inventory,
             "active_renewers": len(
                 set(self._local_leases)
                 | set(self._lease_retry_at)

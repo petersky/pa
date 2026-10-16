@@ -6,7 +6,8 @@
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
-    "stage": "PR486 merged687436f, exact source/merge tree1d86c251; deployed acceptance unverified",
+    "stage": "Final PR inventory aggregate source patch;16built-in module hashes verified;99broader tests then5final inventory tests passed; supervised integration/deployment pending",
+    "supplemental": null,
     "module_sha256": {
       "pa.core.async_runtime": "7a09e8e9be1149eddfa8878d033a63fee1ab84e021a3094435f8152b5a86c35c",
       "pa.core.performance": "1e3245aa474f6e18aed1e517697c946f21fd27072fbdc3fa2089ac4152285786",
@@ -20,7 +21,10 @@
       "pa.sync.engine": "4cdc98f6e11e8c3df7f90a19c7c20a38b6d5f520fcea28901552b27431791549",
       "pa.sync.event_log": "6a111121e824014047482e5a2160445b073b67dcc38446ea52c3644750017270",
       "pa.sync.dag_index": "6d921c69f30e9029a8d610e749d347bc4c26274dd2e663f529d47b053729aca0",
-      "pa.acp.transcript_page": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382"
+      "pa.acp.transcript_page": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382",
+      "pa.instance.agent_session": "59f2050a878fe473c88e8b0688920804065204fcf3f44da02e709829c5037da9",
+      "pa.pr_supervisor.store": "516a63e4db57ed38942698cfb5c0d54261fd0f922718ef415e83a4dbc68a59b3",
+      "pa.pr_supervisor.service": "851c670390593c8213ab12219c101d4b2e97830d0fe1ef187760a38b43243145"
     }
   },
   "input_scope": {
@@ -90,6 +94,8 @@
     "report:8ef59858-fd0d-4dcf-85c6-867c09bd2b38",
     "report:fb45137a-c958-4356-93fc-cbf9ecb9ad49",
     "report:e2bed017-d546-49f5-910e-3d8326d80e40",
+    "report:d2db90ed-30f7-4cca-ae3a-af18d4fa056a",
+    "report:f6391c9f-68ad-41ca-8035-60d9ab2e0b28",
     "report:861aef1f-3d04-461d-8594-fc5b4260ccf2",
     "report:d09ac79d-3df3-49e9-a426-8e0b3e156355",
     "report:19c44107-99dc-4b64-92ea-fda8d22a3418",
@@ -183,25 +189,29 @@
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
-          "slow_calls": 0
+          "slow_calls": 1
         },
         "latency_by_exact_request": {
           "sync.reconcile_head": {
             "samples": 100,
-            "max_ms": 348.757,
-            "p50_ms": 51.228,
-            "p95_ms": 168.384,
-            "p99_ms": 296.56
+            "max_ms": 534.643,
+            "p50_ms": 53.136,
+            "p95_ms": 149.973,
+            "p99_ms": 323.083
           }
         },
         "response_bytes": {
           "sync.reconcile_head": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -296,20 +306,24 @@
         "latency_by_exact_request": {
           "sync.push_transaction": {
             "samples": 100,
-            "max_ms": 411.006,
-            "p50_ms": 83.391,
-            "p95_ms": 174.822,
-            "p99_ms": 381.166
+            "max_ms": 548.788,
+            "p50_ms": 73.556,
+            "p95_ms": 149.41,
+            "p99_ms": 313.488
           }
         },
         "response_bytes": {
           "sync.push_transaction": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -404,20 +418,24 @@
         "latency_by_exact_request": {
           "sqlite.execution_binding_materialize": {
             "samples": 100,
-            "max_ms": 467.124,
-            "p50_ms": 42.07,
-            "p95_ms": 163.77,
-            "p99_ms": 283.877
+            "max_ms": 352.727,
+            "p50_ms": 40.539,
+            "p95_ms": 132.892,
+            "p99_ms": 276.553
           }
         },
         "response_bytes": {
           "sqlite.execution_binding_materialize": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -512,20 +530,24 @@
         "latency_by_exact_request": {
           "sqlite.card_write": {
             "samples": 10,
-            "max_ms": 339.083,
-            "p50_ms": 67.485,
-            "p95_ms": 339.083,
-            "p99_ms": 339.083
+            "max_ms": 156.809,
+            "p50_ms": 35.72,
+            "p95_ms": 156.809,
+            "p99_ms": 156.809
           }
         },
         "response_bytes": {
           "sqlite.card_write": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -608,10 +630,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -873,8 +899,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 6,
-          "completed": 6,
+          "submitted": 5,
+          "completed": 5,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -883,10 +909,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1103,8 +1133,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 44,
-          "completed": 44,
+          "submitted": 39,
+          "completed": 39,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -1113,10 +1143,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1180,10 +1214,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1326,20 +1364,24 @@
         "latency_by_exact_request": {
           "sync.commit_read": {
             "samples": 100,
-            "max_ms": 127.061,
-            "p50_ms": 6.39,
-            "p95_ms": 20.54,
-            "p99_ms": 118.274
+            "max_ms": 32.602,
+            "p50_ms": 5.297,
+            "p95_ms": 22.76,
+            "p99_ms": 30.874
           }
         },
         "response_bytes": {
           "sync.commit_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1424,8 +1466,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 118,
-          "completed": 118,
+          "submitted": 115,
+          "completed": 115,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -1434,20 +1476,24 @@
         "latency_by_exact_request": {
           "fleet.overview_cache_write": {
             "samples": 100,
-            "max_ms": 216.32,
-            "p50_ms": 12.972,
-            "p95_ms": 35.781,
-            "p99_ms": 95.415
+            "max_ms": 198.914,
+            "p50_ms": 12.413,
+            "p95_ms": 31.814,
+            "p99_ms": 158.058
           }
         },
         "response_bytes": {
           "fleet.overview_cache_write": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1506,15 +1552,19 @@
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
-          "slow_calls": 0
+          "slow_calls": 1
         },
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1587,8 +1637,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 44,
-          "completed": 44,
+          "submitted": 39,
+          "completed": 39,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -1597,10 +1647,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1695,20 +1749,24 @@
         "latency_by_exact_request": {
           "acp.wire_append": {
             "samples": 100,
-            "max_ms": 36.435,
-            "p50_ms": 4.603,
-            "p95_ms": 16.71,
-            "p99_ms": 23.752
+            "max_ms": 106.023,
+            "p50_ms": 3.593,
+            "p95_ms": 27.533,
+            "p99_ms": 51.756
           }
         },
         "response_bytes": {
           "acp.wire_append": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -1851,20 +1909,24 @@
         "latency_by_exact_request": {
           "progress.sequence_allocate": {
             "samples": 100,
-            "max_ms": 161.312,
-            "p50_ms": 9.103,
-            "p95_ms": 31.022,
-            "p99_ms": 88.415
+            "max_ms": 179.571,
+            "p50_ms": 7.697,
+            "p95_ms": 26.3,
+            "p99_ms": 42.441
           }
         },
         "response_bytes": {
           "progress.sequence_allocate": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2120,10 +2182,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2266,20 +2332,24 @@
         "latency_by_exact_request": {
           "dispatch.runnable_read": {
             "samples": 100,
-            "max_ms": 13.741,
-            "p50_ms": 2.537,
-            "p95_ms": 9.424,
-            "p99_ms": 12.751
+            "max_ms": 153.108,
+            "p50_ms": 2.283,
+            "p95_ms": 8.611,
+            "p99_ms": 10.44
           }
         },
         "response_bytes": {
           "dispatch.runnable_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2352,8 +2422,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 9,
-          "completed": 9,
+          "submitted": 8,
+          "completed": 8,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -2362,10 +2432,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2498,8 +2572,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 118,
-          "completed": 118,
+          "submitted": 116,
+          "completed": 116,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -2508,20 +2582,24 @@
         "latency_by_exact_request": {
           "reconciliation.dispatch_read": {
             "samples": 100,
-            "max_ms": 173.261,
-            "p50_ms": 2.067,
-            "p95_ms": 10.677,
-            "p99_ms": 27.453
+            "max_ms": 108.934,
+            "p50_ms": 1.683,
+            "p95_ms": 8.986,
+            "p99_ms": 29.438
           }
         },
         "response_bytes": {
           "reconciliation.dispatch_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2594,8 +2672,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 19,
-          "completed": 19,
+          "submitted": 15,
+          "completed": 15,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -2604,10 +2682,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2690,10 +2772,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2766,8 +2852,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 30,
-          "completed": 30,
+          "submitted": 26,
+          "completed": 26,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -2776,10 +2862,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2874,20 +2964,24 @@
         "latency_by_exact_request": {
           "progress.checkpoint_write": {
             "samples": 100,
-            "max_ms": 222.1,
-            "p50_ms": 8.755,
-            "p95_ms": 22.212,
-            "p99_ms": 54.293
+            "max_ms": 103.837,
+            "p50_ms": 9.226,
+            "p95_ms": 30.433,
+            "p99_ms": 52.081
           }
         },
         "response_bytes": {
           "progress.checkpoint_write": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -2960,8 +3054,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 19,
-          "completed": 19,
+          "submitted": 15,
+          "completed": 15,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -2970,10 +3064,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -3479,8 +3577,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 154,
-          "completed": 154,
+          "submitted": 145,
+          "completed": 145,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -3489,20 +3587,24 @@
         "latency_by_exact_request": {
           "fleet.overview_cache_read": {
             "samples": 100,
-            "max_ms": 39.104,
-            "p50_ms": 2.712,
-            "p95_ms": 17.456,
-            "p99_ms": 33.936
+            "max_ms": 27.8,
+            "p50_ms": 1.723,
+            "p95_ms": 8.576,
+            "p99_ms": 12.043
           }
         },
         "response_bytes": {
           "fleet.overview_cache_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -3671,8 +3773,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 6,
-          "completed": 6,
+          "submitted": 5,
+          "completed": 5,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -3681,10 +3783,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -3886,10 +3992,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -4148,8 +4258,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 16,
-          "completed": 16,
+          "submitted": 18,
+          "completed": 18,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -4158,10 +4268,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -4420,8 +4534,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 44,
-          "completed": 44,
+          "submitted": 39,
+          "completed": 39,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -4430,10 +4544,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -4561,10 +4679,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -4868,10 +4990,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -5133,8 +5259,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 6,
-          "completed": 6,
+          "submitted": 5,
+          "completed": 5,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -5143,10 +5269,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -6090,10 +6220,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -6733,20 +6867,24 @@
         "latency_by_exact_request": {
           "sync.push_transaction": {
             "samples": 100,
-            "max_ms": 411.006,
-            "p50_ms": 83.391,
-            "p95_ms": 174.822,
-            "p99_ms": 381.166
+            "max_ms": 548.788,
+            "p50_ms": 73.556,
+            "p95_ms": 149.41,
+            "p99_ms": 313.488
           }
         },
         "response_bytes": {
           "sync.push_transaction": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -6846,20 +6984,24 @@
         "latency_by_exact_request": {
           "sqlite.execution_binding_materialize": {
             "samples": 100,
-            "max_ms": 467.124,
-            "p50_ms": 42.07,
-            "p95_ms": 163.77,
-            "p99_ms": 283.877
+            "max_ms": 352.727,
+            "p50_ms": 40.539,
+            "p95_ms": 132.892,
+            "p99_ms": 276.553
           }
         },
         "response_bytes": {
           "sqlite.execution_binding_materialize": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -7020,25 +7162,29 @@
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
-          "slow_calls": 0
+          "slow_calls": 1
         },
         "latency_by_exact_request": {
           "sync.reconcile_head": {
             "samples": 100,
-            "max_ms": 348.757,
-            "p50_ms": 51.228,
-            "p95_ms": 168.384,
-            "p99_ms": 296.56
+            "max_ms": 534.643,
+            "p50_ms": 53.136,
+            "p95_ms": 149.973,
+            "p99_ms": 323.083
           }
         },
         "response_bytes": {
           "sync.reconcile_head": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -7138,20 +7284,24 @@
         "latency_by_exact_request": {
           "sqlite.card_write": {
             "samples": 10,
-            "max_ms": 339.083,
-            "p50_ms": 67.485,
-            "p95_ms": 339.083,
-            "p99_ms": 339.083
+            "max_ms": 156.809,
+            "p50_ms": 35.72,
+            "p95_ms": 156.809,
+            "p99_ms": 156.809
           }
         },
         "response_bytes": {
           "sqlite.card_write": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -7632,10 +7782,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -7719,8 +7873,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 44,
-          "completed": 44,
+          "submitted": 39,
+          "completed": 39,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -7729,10 +7883,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -8219,20 +8377,24 @@
         "latency_by_exact_request": {
           "progress.sequence_allocate": {
             "samples": 100,
-            "max_ms": 161.312,
-            "p50_ms": 9.103,
-            "p95_ms": 31.022,
-            "p99_ms": 88.415
+            "max_ms": 179.571,
+            "p50_ms": 7.697,
+            "p95_ms": 26.3,
+            "p99_ms": 42.441
           }
         },
         "response_bytes": {
           "progress.sequence_allocate": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -8332,20 +8494,24 @@
         "latency_by_exact_request": {
           "acp.wire_append": {
             "samples": 100,
-            "max_ms": 36.435,
-            "p50_ms": 4.603,
-            "p95_ms": 16.71,
-            "p99_ms": 23.752
+            "max_ms": 106.023,
+            "p50_ms": 3.593,
+            "p95_ms": 27.533,
+            "p99_ms": 51.756
           }
         },
         "response_bytes": {
           "acp.wire_append": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -8564,8 +8730,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 118,
-          "completed": 118,
+          "submitted": 116,
+          "completed": 116,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -8574,20 +8740,24 @@
         "latency_by_exact_request": {
           "reconciliation.dispatch_read": {
             "samples": 100,
-            "max_ms": 173.261,
-            "p50_ms": 2.067,
-            "p95_ms": 10.677,
-            "p99_ms": 27.453
+            "max_ms": 108.934,
+            "p50_ms": 1.683,
+            "p95_ms": 8.986,
+            "p99_ms": 29.438
           }
         },
         "response_bytes": {
           "reconciliation.dispatch_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -8671,8 +8841,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 19,
-          "completed": 19,
+          "submitted": 15,
+          "completed": 15,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -8681,10 +8851,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -8913,20 +9087,24 @@
         "latency_by_exact_request": {
           "progress.checkpoint_write": {
             "samples": 100,
-            "max_ms": 222.1,
-            "p50_ms": 8.755,
-            "p95_ms": 22.212,
-            "p99_ms": 54.293
+            "max_ms": 103.837,
+            "p50_ms": 9.226,
+            "p95_ms": 30.433,
+            "p99_ms": 52.081
           }
         },
         "response_bytes": {
           "progress.checkpoint_write": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -9010,8 +9188,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 30,
-          "completed": 30,
+          "submitted": 26,
+          "completed": 26,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -9020,10 +9198,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -9173,8 +9355,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 9,
-          "completed": 9,
+          "submitted": 8,
+          "completed": 8,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -9183,10 +9365,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -9402,8 +9588,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 6,
-          "completed": 6,
+          "submitted": 5,
+          "completed": 5,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -9412,10 +9598,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -9755,10 +9945,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -9842,8 +10036,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 6,
-          "completed": 6,
+          "submitted": 5,
+          "completed": 5,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -9852,10 +10046,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -10329,8 +10527,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 19,
-          "completed": 19,
+          "submitted": 15,
+          "completed": 15,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -10339,10 +10537,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -10697,10 +10899,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -10790,8 +10996,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 118,
-          "completed": 118,
+          "submitted": 115,
+          "completed": 115,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -10800,20 +11006,24 @@
         "latency_by_exact_request": {
           "fleet.overview_cache_write": {
             "samples": 100,
-            "max_ms": 216.32,
-            "p50_ms": 12.972,
-            "p95_ms": 35.781,
-            "p99_ms": 95.415
+            "max_ms": 198.914,
+            "p50_ms": 12.413,
+            "p95_ms": 31.814,
+            "p99_ms": 158.058
           }
         },
         "response_bytes": {
           "fleet.overview_cache_write": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -10903,8 +11113,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 154,
-          "completed": 154,
+          "submitted": 145,
+          "completed": 145,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -10913,20 +11123,24 @@
         "latency_by_exact_request": {
           "fleet.overview_cache_read": {
             "samples": 100,
-            "max_ms": 39.104,
-            "p50_ms": 2.712,
-            "p95_ms": 17.456,
-            "p99_ms": 33.936
+            "max_ms": 27.8,
+            "p50_ms": 1.723,
+            "p95_ms": 8.576,
+            "p99_ms": 12.043
           }
         },
         "response_bytes": {
           "fleet.overview_cache_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -11140,10 +11354,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -11616,15 +11834,19 @@
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
-          "slow_calls": 0
+          "slow_calls": 1
         },
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -11834,8 +12056,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 16,
-          "completed": 16,
+          "submitted": 18,
+          "completed": 18,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -11844,10 +12066,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -12013,20 +12239,24 @@
         "latency_by_exact_request": {
           "sync.commit_read": {
             "samples": 100,
-            "max_ms": 127.061,
-            "p50_ms": 6.39,
-            "p95_ms": 20.54,
-            "p99_ms": 118.274
+            "max_ms": 32.602,
+            "p50_ms": 5.297,
+            "p95_ms": 22.76,
+            "p99_ms": 30.874
           }
         },
         "response_bytes": {
           "sync.commit_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -12105,10 +12335,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -12190,10 +12424,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -12277,8 +12515,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 44,
-          "completed": 44,
+          "submitted": 39,
+          "completed": 39,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -12287,10 +12525,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -12434,8 +12676,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 44,
-          "completed": 44,
+          "submitted": 39,
+          "completed": 39,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -12444,10 +12686,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -12663,8 +12909,8 @@
       "followup_verification": {
         "artifact": "benchmarks/systemic-inventory-v4.json",
         "counter_delta": {
-          "submitted": 6,
-          "completed": 6,
+          "submitted": 5,
+          "completed": 5,
           "failed": 0,
           "timed_out": 0,
           "rejected": 0,
@@ -12673,10 +12919,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -13541,10 +13791,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -14802,10 +15056,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -19905,10 +20163,10 @@
         "latency_by_exact_request": {
           "/api/agent/sessions?view=chats": {
             "samples": 100,
-            "max_ms": 243.794,
-            "p50_ms": 32.207,
-            "p95_ms": 71.508,
-            "p99_ms": 187.413
+            "max_ms": 89.075,
+            "p50_ms": 29.67,
+            "p95_ms": 56.14,
+            "p99_ms": 80.083
           }
         },
         "response_bytes": {
@@ -19918,10 +20176,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -19985,10 +20247,10 @@
         "latency_by_exact_request": {
           "/api/status": {
             "samples": 100,
-            "max_ms": 300.28,
-            "p50_ms": 84.513,
-            "p95_ms": 145.39,
-            "p99_ms": 252.715
+            "max_ms": 236.58,
+            "p50_ms": 80.507,
+            "p95_ms": 121.586,
+            "p99_ms": 221.757
           }
         },
         "response_bytes": {
@@ -19998,10 +20260,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -20287,10 +20553,10 @@
         "latency_by_exact_request": {
           "/partials/home/sections": {
             "samples": 100,
-            "max_ms": 152.767,
-            "p50_ms": 19.304,
-            "p95_ms": 35.11,
-            "p99_ms": 61.918
+            "max_ms": 174.285,
+            "p50_ms": 17.89,
+            "p95_ms": 34.633,
+            "p99_ms": 51.556
           }
         },
         "response_bytes": {
@@ -20300,10 +20566,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -20460,10 +20730,10 @@
         "latency_by_exact_request": {
           "/api/notifications": {
             "samples": 100,
-            "max_ms": 31.355,
-            "p50_ms": 6.043,
-            "p95_ms": 11.883,
-            "p99_ms": 15.734
+            "max_ms": 23.629,
+            "p50_ms": 5.369,
+            "p95_ms": 10.591,
+            "p99_ms": 22.696
           }
         },
         "response_bytes": {
@@ -20473,10 +20743,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -20522,10 +20796,10 @@
         "latency_by_exact_request": {
           "/api/pr-supervisor/watches": {
             "samples": 100,
-            "max_ms": 28.933,
-            "p50_ms": 8.126,
-            "p95_ms": 16.723,
-            "p99_ms": 21.648
+            "max_ms": 26.644,
+            "p50_ms": 7.717,
+            "p95_ms": 15.923,
+            "p99_ms": 23.025
           }
         },
         "response_bytes": {
@@ -20535,10 +20809,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -20917,10 +21195,10 @@
         "latency_by_exact_request": {
           "/api/pr-supervisor/capabilities": {
             "samples": 100,
-            "max_ms": 32.096,
-            "p50_ms": 8.608,
-            "p95_ms": 19.417,
-            "p99_ms": 28.607
+            "max_ms": 26.521,
+            "p50_ms": 7.705,
+            "p95_ms": 15.073,
+            "p99_ms": 20.168
           }
         },
         "response_bytes": {
@@ -20930,10 +21208,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -21219,10 +21501,10 @@
         "latency_by_exact_request": {
           "/api/fleet/dispatch-jobs": {
             "samples": 100,
-            "max_ms": 139.96,
-            "p50_ms": 35.31,
-            "p95_ms": 66.256,
-            "p99_ms": 121.648
+            "max_ms": 107.916,
+            "p50_ms": 33.046,
+            "p95_ms": 66.856,
+            "p99_ms": 72.667
           }
         },
         "response_bytes": {
@@ -21232,10 +21514,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -21318,10 +21604,10 @@
         "latency_by_exact_request": {
           "/api/execution/defaults": {
             "samples": 100,
-            "max_ms": 56.667,
-            "p50_ms": 6.04,
-            "p95_ms": 9.56,
-            "p99_ms": 18.814
+            "max_ms": 33.915,
+            "p50_ms": 5.604,
+            "p95_ms": 7.802,
+            "p99_ms": 13.92
           }
         },
         "response_bytes": {
@@ -21331,10 +21617,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -21676,10 +21966,10 @@
         "latency_by_exact_request": {
           "/api/sync/refs": {
             "samples": 100,
-            "max_ms": 21.551,
-            "p50_ms": 5.032,
-            "p95_ms": 11.182,
-            "p99_ms": 17.649
+            "max_ms": 26.909,
+            "p50_ms": 4.408,
+            "p95_ms": 8.566,
+            "p99_ms": 15.693
           }
         },
         "response_bytes": {
@@ -21689,10 +21979,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -22219,10 +22513,10 @@
         "latency_by_exact_request": {
           "/api/workspaces": {
             "samples": 100,
-            "max_ms": 35.528,
-            "p50_ms": 7.464,
-            "p95_ms": 17.672,
-            "p99_ms": 27.225
+            "max_ms": 22.731,
+            "p50_ms": 6.692,
+            "p95_ms": 11.422,
+            "p99_ms": 20.356
           }
         },
         "response_bytes": {
@@ -22232,10 +22526,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -22836,23 +23134,27 @@
         "latency_by_exact_request": {
           "/api/sync/status": {
             "samples": 100,
-            "max_ms": 90.459,
-            "p50_ms": 13.183,
-            "p95_ms": 35.049,
-            "p99_ms": 84.345
+            "max_ms": 94.669,
+            "p50_ms": 12.041,
+            "p95_ms": 42.556,
+            "p99_ms": 73.297
           }
         },
         "response_bytes": {
           "/api/sync/status": {
-            "min": 3595,
-            "max": 3618
+            "min": 3593,
+            "max": 3619
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -23009,23 +23311,27 @@
         "latency_by_exact_request": {
           "/api/cards": {
             "samples": 100,
-            "max_ms": 33.136,
-            "p50_ms": 9.047,
-            "p95_ms": 17.078,
-            "p99_ms": 22.338
+            "max_ms": 23.702,
+            "p50_ms": 8.287,
+            "p95_ms": 14.664,
+            "p99_ms": 21.061
           }
         },
         "response_bytes": {
           "/api/cards": {
-            "min": 3244,
+            "min": 3271,
             "max": 23031
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -23071,10 +23377,10 @@
         "latency_by_exact_request": {
           "/api/fleet/dispatch-queue": {
             "samples": 100,
-            "max_ms": 47.417,
-            "p50_ms": 7.531,
-            "p95_ms": 15.21,
-            "p99_ms": 29.162
+            "max_ms": 30.541,
+            "p50_ms": 6.757,
+            "p95_ms": 12.388,
+            "p99_ms": 23.758
           }
         },
         "response_bytes": {
@@ -23084,10 +23390,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -23410,10 +23720,10 @@
         "latency_by_exact_request": {
           "/api/runtime?section=sse": {
             "samples": 100,
-            "max_ms": 16.148,
-            "p50_ms": 5.288,
-            "p95_ms": 7.212,
-            "p99_ms": 12.565
+            "max_ms": 14.326,
+            "p50_ms": 4.862,
+            "p95_ms": 5.906,
+            "p99_ms": 7.866
           }
         },
         "response_bytes": {
@@ -23423,10 +23733,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -23768,10 +24082,10 @@
         "latency_by_exact_request": {
           "/api/health-journal/status": {
             "samples": 100,
-            "max_ms": 33.213,
-            "p50_ms": 8.62,
-            "p95_ms": 16.003,
-            "p99_ms": 31.789
+            "max_ms": 36.793,
+            "p50_ms": 8.099,
+            "p95_ms": 13.415,
+            "p99_ms": 22.835
           }
         },
         "response_bytes": {
@@ -23781,10 +24095,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -23904,10 +24222,10 @@
         "latency_by_exact_request": {
           "/api/agent/preferences": {
             "samples": 100,
-            "max_ms": 16.498,
-            "p50_ms": 5.209,
-            "p95_ms": 8.687,
-            "p99_ms": 13.023
+            "max_ms": 14.278,
+            "p50_ms": 4.728,
+            "p95_ms": 7.822,
+            "p99_ms": 10.895
           }
         },
         "response_bytes": {
@@ -23917,10 +24235,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -23984,10 +24306,10 @@
         "latency_by_exact_request": {
           "/api/health": {
             "samples": 100,
-            "max_ms": 13.343,
-            "p50_ms": 3.508,
-            "p95_ms": 4.736,
-            "p99_ms": 9.95
+            "max_ms": 12.934,
+            "p50_ms": 3.363,
+            "p95_ms": 4.515,
+            "p99_ms": 5.636
           }
         },
         "response_bytes": {
@@ -23997,10 +24319,14 @@
           }
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -25152,7 +25478,7 @@
       "finding": "Integration-only automatic completion exceeds card scope",
       "family": "operation",
       "measurement": {
-        "evidence": "Supervisor marked this expanded performance card Done after PR484, PR485 and PR486 despite open acceptance/peer/coverage findings; card restored Active three times. Report861aef1f-3d04-461d-8594-fc5b4260ccf2 revision3 preserves evidence. Integration is not whole-PA acceptance; completion-policy/requirement coordination remains open, with no invented acceptance receipt or weakened gate."
+        "evidence": "Supervisor marked this expanded performance card Done after PR484, PR485, PR486 and PR487 despite open acceptance/peer/coverage findings; card restored Active four times. Report861aef1f-3d04-461d-8594-fc5b4260ccf2 revision4 preserves evidence. Integration is not whole-PA acceptance; completion-policy/requirement coordination remains open, with no invented acceptance receipt or weakened gate."
       },
       "cause_classification": "hypothesis",
       "cause": "Shared contention/CPU/copy amplification is a hypothesis for this leaf; exact cause unconfirmed.",
@@ -25175,7 +25501,7 @@
       "finding": "Duplicate durable human enqueue checkpoint",
       "family": "progress",
       "measurement": {
-        "evidence": "100 real paused human enqueue calls produced200checkpoints (p95enqueue13.882ms/max18.055ms). Removing the redundant second checkpoint yields100checkpoints, p959.980ms/max11.701ms, with all100prompts durable. Existing queue/recovery/acceptance suites:87passed. Ordinary synchronous checkpoint cost remains; no claim of whole-PA acceptance."
+        "evidence": "100 real paused human enqueue calls produced200checkpoints (p95enqueue13.882ms/max18.055ms). Removing the redundant second checkpoint yields100checkpoints, p959.980ms/max11.701ms, with all100prompts durable. Existing queue/recovery/acceptance suites:87passed. PR487 merged8fcc3ce after supervised stable-green head and5/5head+mainCI. Ordinary synchronous checkpoint cost remains; no claim of whole-PA acceptance."
       },
       "cause_classification": "confirmed_source_cause_with_open_deployed_acceptance",
       "cause": "Confirmed source and same-host measurement: human activity and cursor are already included in the first checkpoint; synchronous transcript flush schedules the same events without changing recoverable state. Second checkpoint duplicates that durable write.",
@@ -25184,13 +25510,70 @@
       "linked_cards": [
         "89957d94-db93-4bf4-b534-3fbea8ba783c"
       ],
-      "implemented": "Removed only the redundant second checkpoint; first durable save, queue ordering, human activity, cursor and transcript flush retained. Unmerged follow-up.",
-      "merged": [],
+      "implemented": "PR487 removes only the redundant second checkpoint; first durable save, queue ordering, human activity, cursor and transcript flush retained.",
+      "merged": [
+        "https://github.com/petersky/pa/pull/487"
+      ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
       "retested": "87 existing queue/recovery/durable-admission tests passed. Identical100enqueue comparison retains all100prompts and halves checkpoints200to100; docs/benchmarks/prompt-enqueue-checkpoints.json.",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Complete supervised follow-up integration; measure normal admission under larger mixed queues and installed workload."
+      "next_action": "Integrated source verified; measure normal admission under larger mixed queues and installed workload.",
+      "integration_evidence": {
+        "head": "a5dd220fb32834cb517fccb2ff594d7ad6b686a3",
+        "merge": "8fcc3ce4f48b1e27e64e5e69b491cbf2a4e62c92",
+        "tree": "b6e2857bd712f7ea32ed47d9000555165236bca9",
+        "watch": "79fc6c48-c28a-4d46-b105-050220d7bb8f",
+        "head_ci": 38887025596,
+        "main_ci": 38887997502,
+        "head_main_checks_success": 5
+      }
+    },
+    {
+      "id": "concern:startup-schema-cpu",
+      "kind": "concern",
+      "finding": "Full Kernel schema warm-up blocks completion delivery",
+      "family": "runtime",
+      "measurement": {
+        "evidence": "Disposable full boot: OpenAPI2919.984ms wall/2878.777ms CPU on loop; concurrent sync-ref service1.57ms/delivery3015.695ms. Exact offload alternative preserves readiness paths but still records schema1443.870ms and ref520.821ms warnings. No source readiness repair committed; real full-boot and GIL/CPU limits remain open. Reportd2db90ed-30f7-4cca-ae3a-af18d4fa056a."
+      },
+      "cause_classification": "confirmed_disposable_startup_cpu_cause",
+      "cause": "Timer around full-schema generation confirms loop-thread CPU and simultaneous completion delivery delay. It does not attribute every live historical loop stall.",
+      "fix_or_existing_owner": "No operation-specific fix or verified resolution claimed.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "None: diagnostic offload alternative only; still slow. No readiness gate, OpenAPI contract or deadline changed.",
+      "merged": [],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "One isolated before/alternative full boot, required paths present in both; source version and all numeric residuals on card/reportd2db90ed.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Reduce or isolate schema CPU while preserving readiness/admission and verify full cold boot; retain remaining GIL/completion delays."
+    },
+    {
+      "id": "concern:pr-inventory-hydration",
+      "kind": "concern",
+      "finding": "PR metrics and health hydrate proofs to count lifecycle",
+      "family": "pr_supervisor",
+      "measurement": {
+        "evidence": "100retained watches/30metrics calls hydrate3000records/193086000state-policy bytes; baselinep9594.061ms. SQLaggregate replacement:0proof hydrations, same counts, clean sequentialp958.667ms.99new/existing PR tests plus5final inventory contracts passed. Final mixed run still2worker warnings/four measured violations; no blanket root-cause or deployment closure."
+      },
+      "cause_classification": "confirmed_copy_amplification",
+      "cause": "metrics() and authority_health() decoded all retained watch policy/state to calculate counts, ownership and maximum active fence; source and3000row/193MB probe confirm unnecessary hydration.",
+      "fix_or_existing_owner": "Existing durable PR supervisor retained; no blanket latency resolution claimed.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "Local source patch uses aggregate metadata SQL, preserves lifecycle/owner/fence predicates and public fields, adds numeric SQL observations; integration pending.",
+      "merged": [],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "99new/existing PR supervisor tests then5final inventory contracts pass; per-lifecycle/owner/fence parity, empty catalog, no hydration, SQL row observations; clean30call comparison and100mixed iterations retained with residuals.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Complete supervised integration and exact-head checks; exercise nonempty active-watch API and real external poll/effect paths, then installed acceptance."
     },
     {
       "id": "runtime-followup:dispatch.runnable_read",
@@ -25217,69 +25600,69 @@
           "queued": 0,
           "max_active": 1,
           "max_queued": 1,
-          "total_queue_ms": 4.098,
-          "total_wait_ms": 368.02958231419325,
-          "max_wait_ms": 13.729624974075705,
+          "total_queue_ms": 4.601,
+          "total_wait_ms": 477.7508709812537,
+          "max_wait_ms": 153.09729101136327,
           "total_lock_wait_ms": 0.0,
-          "total_runtime_ms": 286.462,
-          "max_runtime_ms": 12.034,
+          "total_runtime_ms": 394.471,
+          "max_runtime_ms": 152.797,
           "slow_calls": 0,
           "sqlite_busy_failures": 0,
           "runtime_ms": {
             "samples": 100,
-            "max": 12.034,
-            "p50": 1.972,
-            "p95": 7.85,
-            "p99": 11.434
+            "max": 152.797,
+            "p50": 1.662,
+            "p95": 6.976,
+            "p99": 9.746
           },
           "queue_ms": {
             "samples": 100,
-            "max": 0.092,
-            "p50": 0.04,
-            "p95": 0.065,
-            "p99": 0.07
+            "max": 0.861,
+            "p50": 0.037,
+            "p95": 0.057,
+            "p99": 0.113
           },
           "python_lock_wait_ms": {
             "samples": 100,
-            "max": 5.817,
+            "max": 0.004,
             "p50": 0.002,
             "p95": 0.003,
-            "p99": 0.009
+            "p99": 0.003
           },
           "python_lock_hold_ms": {
             "samples": 100,
-            "max": 1.214,
-            "p50": 0.352,
-            "p95": 0.439,
-            "p99": 0.844
+            "max": 0.588,
+            "p50": 0.286,
+            "p95": 0.379,
+            "p99": 0.474
           },
           "worker_service_ms": {
             "samples": 100,
-            "max": 6.196,
-            "p50": 0.437,
-            "p95": 0.65,
-            "p99": 1.316
+            "max": 0.684,
+            "p50": 0.355,
+            "p95": 0.486,
+            "p99": 0.589
           },
           "executor_dispatch_ms": {
             "samples": 100,
-            "max": 10.778,
-            "p50": 0.393,
-            "p95": 3.623,
-            "p99": 6.914
+            "max": 151.696,
+            "p50": 0.349,
+            "p95": 1.325,
+            "p99": 4.558
           },
           "completion_delivery_ms": {
             "samples": 100,
-            "max": 11.052,
-            "p50": 0.88,
-            "p95": 5.159,
-            "p99": 8.69
+            "max": 9.145,
+            "p50": 0.712,
+            "p95": 5.342,
+            "p99": 8.606
           },
           "thread_cpu_ms": {
             "samples": 100,
-            "max": 0.59,
-            "p50": 0.425,
-            "p95": 0.528,
-            "p99": 0.586
+            "max": 0.568,
+            "p50": 0.351,
+            "p95": 0.458,
+            "p99": 0.508
           },
           "sqlite_statement_ms": {
             "samples": 100,
@@ -25356,20 +25739,24 @@
         "latency_by_exact_request": {
           "dispatch.runnable_read": {
             "samples": 100,
-            "max_ms": 13.741,
-            "p50_ms": 2.537,
-            "p95_ms": 9.424,
-            "p99_ms": 12.751
+            "max_ms": 153.108,
+            "p50_ms": 2.283,
+            "p95_ms": 8.611,
+            "p99_ms": 10.44
           }
         },
         "response_bytes": {
           "dispatch.runnable_read": null
         },
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -25398,27 +25785,27 @@
           "queued": 0,
           "max_active": 1,
           "max_queued": 1,
-          "total_queue_ms": 30.3,
-          "total_wait_ms": 3605.2139998064376,
-          "max_wait_ms": 334.07641702797264,
+          "total_queue_ms": 7.472,
+          "total_wait_ms": 2601.9735028385185,
+          "max_wait_ms": 80.45266702538356,
           "total_lock_wait_ms": 0.0,
-          "total_runtime_ms": 3546.28,
-          "max_runtime_ms": 325.817,
+          "total_runtime_ms": 2576.469,
+          "max_runtime_ms": 80.108,
           "slow_calls": 0,
           "sqlite_busy_failures": 0,
           "runtime_ms": {
             "samples": 100,
-            "max": 325.817,
-            "p50": 28.863,
-            "p95": 54.658,
-            "p99": 148.737
+            "max": 80.108,
+            "p50": 23.015,
+            "p95": 43.869,
+            "p99": 64.858
           },
           "queue_ms": {
             "samples": 100,
-            "max": 21.723,
-            "p50": 0.077,
-            "p95": 0.153,
-            "p99": 0.398
+            "max": 0.117,
+            "p50": 0.074,
+            "p95": 0.092,
+            "p99": 0.1
           },
           "python_lock_wait_ms": {
             "samples": 100,
@@ -25436,45 +25823,45 @@
           },
           "worker_service_ms": {
             "samples": 100,
-            "max": 325.055,
-            "p50": 28.085,
-            "p95": 53.678,
-            "p99": 147.061
+            "max": 76.232,
+            "p50": 22.388,
+            "p95": 43.055,
+            "p99": 63.478
           },
           "executor_dispatch_ms": {
             "samples": 100,
-            "max": 1.877,
-            "p50": 0.246,
-            "p95": 0.492,
-            "p99": 1.235
+            "max": 1.477,
+            "p50": 0.229,
+            "p95": 0.53,
+            "p99": 1.163
           },
           "completion_delivery_ms": {
             "samples": 100,
-            "max": 8.747,
-            "p50": 0.369,
-            "p95": 1.406,
-            "p99": 4.244
+            "max": 3.428,
+            "p50": 0.349,
+            "p95": 0.557,
+            "p99": 0.761
           },
           "thread_cpu_ms": {
             "samples": 100,
-            "max": 32.377,
-            "p50": 24.247,
-            "p95": 28.324,
-            "p99": 30.99
+            "max": 27.552,
+            "p50": 21.788,
+            "p95": 25.818,
+            "p99": 27.004
           },
           "sqlite_statement_ms": {
             "samples": 100,
-            "max": 317.003,
-            "p50": 16.9,
-            "p95": 36.534,
-            "p99": 73.278
+            "max": 54.55,
+            "p50": 12.354,
+            "p95": 31.477,
+            "p99": 50.026
           },
           "sqlite_commit_ms": {
             "samples": 100,
-            "max": 0.019,
+            "max": 2.029,
             "p50": 0.0,
             "p95": 0.0,
-            "p99": 0.018
+            "p99": 0.045
           },
           "sqlite_calls": {
             "samples": 100,
@@ -25534,10 +25921,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -25566,69 +25957,69 @@
           "queued": 0,
           "max_active": 1,
           "max_queued": 1,
-          "total_queue_ms": 14.006,
-          "total_wait_ms": 3662.560117605608,
-          "max_wait_ms": 136.22479198966175,
+          "total_queue_ms": 13.675,
+          "total_wait_ms": 3338.071709207725,
+          "max_wait_ms": 94.52858398435637,
           "total_lock_wait_ms": 0.0,
-          "total_runtime_ms": 3616.36,
-          "max_runtime_ms": 135.878,
+          "total_runtime_ms": 3303.938,
+          "max_runtime_ms": 93.147,
           "slow_calls": 0,
           "sqlite_busy_failures": 0,
           "runtime_ms": {
             "samples": 100,
-            "max": 135.878,
-            "p50": 31.684,
-            "p95": 58.015,
-            "p99": 105.858
+            "max": 93.147,
+            "p50": 29.985,
+            "p95": 61.694,
+            "p99": 69.289
           },
           "queue_ms": {
             "samples": 100,
-            "max": 0.37,
-            "p50": 0.147,
-            "p95": 0.195,
-            "p99": 0.311
+            "max": 0.885,
+            "p50": 0.134,
+            "p95": 0.175,
+            "p99": 0.352
           },
           "python_lock_wait_ms": {
             "samples": 100,
-            "max": 0.008,
+            "max": 0.005,
             "p50": 0.001,
             "p95": 0.002,
             "p99": 0.005
           },
           "python_lock_hold_ms": {
             "samples": 100,
-            "max": 35.233,
-            "p50": 18.184,
-            "p95": 25.065,
-            "p99": 32.962
+            "max": 26.671,
+            "p50": 17.589,
+            "p95": 19.726,
+            "p99": 23.493
           },
           "worker_service_ms": {
             "samples": 100,
-            "max": 125.321,
-            "p50": 30.954,
-            "p95": 57.089,
-            "p99": 103.959
+            "max": 91.851,
+            "p50": 29.263,
+            "p95": 58.6,
+            "p99": 67.562
           },
           "executor_dispatch_ms": {
             "samples": 100,
-            "max": 1.561,
-            "p50": 0.387,
-            "p95": 0.651,
-            "p99": 1.026
+            "max": 1.039,
+            "p50": 0.367,
+            "p95": 0.681,
+            "p99": 0.983
           },
           "completion_delivery_ms": {
             "samples": 100,
-            "max": 10.228,
-            "p50": 0.409,
-            "p95": 1.043,
-            "p99": 1.371
+            "max": 3.254,
+            "p50": 0.398,
+            "p95": 1.024,
+            "p99": 2.049
           },
           "thread_cpu_ms": {
             "samples": 100,
-            "max": 41.641,
-            "p50": 29.548,
-            "p95": 35.428,
-            "p99": 40.942
+            "max": 37.925,
+            "p50": 28.523,
+            "p95": 34.053,
+            "p99": 37.487
           },
           "sqlite_statement_ms": {
             "samples": 100,
@@ -25702,10 +26093,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -25734,76 +26129,76 @@
           "queued": 0,
           "max_active": 1,
           "max_queued": 1,
-          "total_queue_ms": 8.766,
-          "total_wait_ms": 3582.974793331232,
-          "max_wait_ms": 241.42883397871628,
+          "total_queue_ms": 7.801,
+          "total_wait_ms": 2992.487297160551,
+          "max_wait_ms": 84.48670798679814,
           "total_lock_wait_ms": 0.0,
-          "total_runtime_ms": 3545.83,
-          "max_runtime_ms": 241.299,
+          "total_runtime_ms": 2957.241,
+          "max_runtime_ms": 84.167,
           "slow_calls": 0,
           "sqlite_busy_failures": 0,
           "runtime_ms": {
             "samples": 100,
-            "max": 241.299,
-            "p50": 28.322,
-            "p95": 67.29,
-            "p99": 183.564
+            "max": 84.167,
+            "p50": 26.036,
+            "p95": 52.192,
+            "p99": 69.996
           },
           "queue_ms": {
             "samples": 100,
-            "max": 0.229,
-            "p50": 0.086,
-            "p95": 0.112,
-            "p99": 0.158
+            "max": 0.124,
+            "p50": 0.077,
+            "p95": 0.097,
+            "p99": 0.107
           },
           "python_lock_wait_ms": {
             "samples": 100,
-            "max": 0.062,
-            "p50": 0.028,
-            "p95": 0.035,
-            "p99": 0.061
+            "max": 0.129,
+            "p50": 0.026,
+            "p95": 0.034,
+            "p99": 0.073
           },
           "python_lock_hold_ms": {
             "samples": 100,
-            "max": 158.458,
-            "p50": 1.419,
-            "p95": 2.083,
-            "p99": 29.768
+            "max": 35.111,
+            "p50": 1.314,
+            "p95": 2.243,
+            "p99": 7.714
           },
           "worker_service_ms": {
             "samples": 100,
-            "max": 240.899,
-            "p50": 27.771,
-            "p95": 66.668,
-            "p99": 183.046
+            "max": 78.682,
+            "p50": 25.468,
+            "p95": 50.0,
+            "p99": 61.672
           },
           "executor_dispatch_ms": {
             "samples": 100,
-            "max": 0.996,
-            "p50": 0.209,
-            "p95": 0.41,
-            "p99": 0.883
+            "max": 7.717,
+            "p50": 0.193,
+            "p95": 0.451,
+            "p99": 1.203
           },
           "completion_delivery_ms": {
             "samples": 100,
-            "max": 1.286,
-            "p50": 0.351,
-            "p95": 0.828,
-            "p99": 1.28
+            "max": 12.074,
+            "p50": 0.334,
+            "p95": 0.651,
+            "p99": 4.842
           },
           "thread_cpu_ms": {
             "samples": 100,
-            "max": 179.252,
-            "p50": 25.877,
-            "p95": 32.373,
-            "p99": 58.355
+            "max": 56.692,
+            "p50": 24.689,
+            "p95": 29.632,
+            "p99": 33.499
           },
           "sqlite_statement_ms": {
             "samples": 100,
-            "max": 227.711,
-            "p50": 3.25,
-            "p95": 20.078,
-            "p99": 44.748
+            "max": 62.045,
+            "p50": 6.893,
+            "p95": 27.599,
+            "p99": 41.528
           },
           "sqlite_commit_ms": {
             "samples": 100,
@@ -25814,17 +26209,17 @@
           },
           "sqlite_calls": {
             "samples": 100,
-            "max": 4,
-            "p50": 4,
-            "p95": 4,
-            "p99": 4
+            "max": 8,
+            "p50": 8,
+            "p95": 8,
+            "p99": 8
           },
           "sqlite_rows": {
             "samples": 100,
-            "max": 30,
-            "p50": 30,
-            "p95": 30,
-            "p99": 30
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
           },
           "sqlite_aggregate_items": {
             "samples": 100,
@@ -25870,10 +26265,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -25900,29 +26299,29 @@
           "rejected": 0,
           "active": 0,
           "queued": 0,
-          "max_active": 5,
-          "max_queued": 2,
-          "total_queue_ms": 10.171,
-          "total_wait_ms": 106.28912411630154,
-          "max_wait_ms": 14.535167021676898,
+          "max_active": 7,
+          "max_queued": 3,
+          "total_queue_ms": 10.645,
+          "total_wait_ms": 132.7014178968966,
+          "max_wait_ms": 11.233041994273663,
           "total_lock_wait_ms": 0.0,
-          "total_runtime_ms": 87.654,
-          "max_runtime_ms": 8.964,
+          "total_runtime_ms": 111.757,
+          "max_runtime_ms": 10.435,
           "slow_calls": 0,
           "sqlite_busy_failures": 0,
           "runtime_ms": {
             "samples": 18,
-            "max": 8.964,
-            "p50": 5.094,
-            "p95": 8.964,
-            "p99": 8.964
+            "max": 10.435,
+            "p50": 5.396,
+            "p95": 10.435,
+            "p99": 10.435
           },
           "queue_ms": {
             "samples": 18,
-            "max": 5.971,
-            "p50": 0.038,
-            "p95": 5.971,
-            "p99": 5.971
+            "max": 4.752,
+            "p50": 0.041,
+            "p95": 4.752,
+            "p99": 4.752
           },
           "python_lock_wait_ms": {
             "samples": 18,
@@ -25940,38 +26339,38 @@
           },
           "worker_service_ms": {
             "samples": 18,
-            "max": 6.535,
-            "p50": 3.713,
-            "p95": 6.535,
-            "p99": 6.535
+            "max": 8.633,
+            "p50": 2.809,
+            "p95": 8.633,
+            "p99": 8.633
           },
           "executor_dispatch_ms": {
             "samples": 18,
-            "max": 2.63,
-            "p50": 0.506,
-            "p95": 2.63,
-            "p99": 2.63
+            "max": 2.182,
+            "p50": 0.495,
+            "p95": 2.182,
+            "p99": 2.182
           },
           "completion_delivery_ms": {
             "samples": 18,
-            "max": 3.904,
-            "p50": 0.547,
-            "p95": 3.904,
-            "p99": 3.904
+            "max": 5.832,
+            "p50": 0.773,
+            "p95": 5.832,
+            "p99": 5.832
           },
           "thread_cpu_ms": {
             "samples": 18,
-            "max": 2.979,
-            "p50": 1.209,
-            "p95": 2.979,
-            "p99": 2.979
+            "max": 2.593,
+            "p50": 1.087,
+            "p95": 2.593,
+            "p99": 2.593
           },
           "sqlite_statement_ms": {
             "samples": 18,
-            "max": 6.112,
-            "p50": 3.072,
-            "p95": 6.112,
-            "p99": 6.112
+            "max": 7.633,
+            "p50": 2.065,
+            "p95": 7.633,
+            "p99": 7.633
           },
           "sqlite_commit_ms": {
             "samples": 18,
@@ -25982,10 +26381,10 @@
           },
           "sqlite_calls": {
             "samples": 18,
-            "max": 2,
+            "max": 3,
             "p50": 2,
-            "p95": 2,
-            "p99": 2
+            "p95": 3,
+            "p99": 3
           },
           "sqlite_rows": {
             "samples": 18,
@@ -26041,10 +26440,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     },
@@ -26071,85 +26474,85 @@
           "rejected": 0,
           "active": 0,
           "queued": 0,
-          "max_active": 5,
-          "max_queued": 2,
-          "total_queue_ms": 14.942,
-          "total_wait_ms": 2373.3452080050483,
-          "max_wait_ms": 308.7770830024965,
+          "max_active": 7,
+          "max_queued": 3,
+          "total_queue_ms": 11.961,
+          "total_wait_ms": 3233.3398740156554,
+          "max_wait_ms": 446.78687502164394,
           "total_lock_wait_ms": 0.0,
-          "total_runtime_ms": 2350.388,
-          "max_runtime_ms": 308.673,
+          "total_runtime_ms": 3216.434,
+          "max_runtime_ms": 442.277,
           "slow_calls": 0,
           "sqlite_busy_failures": 0,
           "runtime_ms": {
             "samples": 18,
-            "max": 308.673,
-            "p50": 118.779,
-            "p95": 308.673,
-            "p99": 308.673
+            "max": 442.277,
+            "p50": 163.261,
+            "p95": 442.277,
+            "p99": 442.277
           },
           "queue_ms": {
             "samples": 18,
-            "max": 7.313,
-            "p50": 0.036,
-            "p95": 7.313,
-            "p99": 7.313
+            "max": 4.444,
+            "p50": 0.042,
+            "p95": 4.444,
+            "p99": 4.444
           },
           "python_lock_wait_ms": {
             "samples": 18,
-            "max": 260.539,
-            "p50": 64.32,
-            "p95": 260.539,
-            "p99": 260.539
+            "max": 405.119,
+            "p50": 60.729,
+            "p95": 405.119,
+            "p99": 405.119
           },
           "python_lock_hold_ms": {
             "samples": 18,
-            "max": 426.494,
-            "p50": 79.854,
-            "p95": 426.494,
-            "p99": 426.494
+            "max": 587.761,
+            "p50": 109.009,
+            "p95": 587.761,
+            "p99": 587.761
           },
           "worker_service_ms": {
             "samples": 18,
-            "max": 306.676,
-            "p50": 117.45,
-            "p95": 306.676,
-            "p99": 306.676
+            "max": 440.991,
+            "p50": 143.485,
+            "p95": 440.991,
+            "p99": 440.991
           },
           "executor_dispatch_ms": {
             "samples": 18,
-            "max": 1.37,
-            "p50": 0.253,
-            "p95": 1.37,
-            "p99": 1.37
+            "max": 3.369,
+            "p50": 0.442,
+            "p95": 3.369,
+            "p99": 3.369
           },
           "completion_delivery_ms": {
             "samples": 18,
-            "max": 9.851,
-            "p50": 0.542,
-            "p95": 9.851,
-            "p99": 9.851
+            "max": 18.819,
+            "p50": 0.452,
+            "p95": 18.819,
+            "p99": 18.819
           },
           "thread_cpu_ms": {
             "samples": 18,
-            "max": 68.938,
-            "p50": 20.719,
-            "p95": 68.938,
-            "p99": 68.938
+            "max": 62.117,
+            "p50": 19.269,
+            "p95": 62.117,
+            "p99": 62.117
           },
           "sqlite_statement_ms": {
             "samples": 18,
-            "max": 103.802,
-            "p50": 12.635,
-            "p95": 103.802,
-            "p99": 103.802
+            "max": 159.431,
+            "p50": 8.556,
+            "p95": 159.431,
+            "p99": 159.431
           },
           "sqlite_commit_ms": {
             "samples": 18,
-            "max": 23.601,
-            "p50": 2.304,
-            "p95": 23.601,
-            "p99": 23.601
+            "max": 8.492,
+            "p50": 2.257,
+            "p95": 8.492,
+            "p99": 8.492
           },
           "sqlite_calls": {
             "samples": 18,
@@ -26160,10 +26563,10 @@
           },
           "sqlite_rows": {
             "samples": 18,
-            "max": 1210,
+            "max": 1211,
             "p50": 10,
-            "p95": 1210,
-            "p99": 1210
+            "p95": 1211,
+            "p99": 1211
           },
           "sqlite_aggregate_items": {
             "samples": 18,
@@ -26212,10 +26615,14 @@
         "latency_by_exact_request": {},
         "response_bytes": {},
         "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
-        "scenario_warnings": {},
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
         "scenario_threshold_violations": {
-          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
-          "/pull-requests": 1
+          "transcript.drain": 1,
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1
         }
       }
     }
