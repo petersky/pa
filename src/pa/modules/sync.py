@@ -1420,7 +1420,29 @@ class SyncModule(Module):
             )
             return result
 
-        engine.on_head_advanced(rebuild_projection)
+        def publish_projection_head(
+            realm_id: str, target_head: str, *, expected_head: str | None,
+        ) -> dict[str, Any]:
+            # Incoming targets are not yet the durable ref. Serialize the
+            # projection/CAS handoff with canonical writers, while recovery
+            # retains its strict already-published-tip callback above.
+            with store.mutation():
+                current = event_log.get_head(realm_id)
+                if current != expected_head:
+                    raise StaleSyncHeadError(realm_id, expected_head, current)
+                result = store.catch_up_projection(realm_id, target_head)
+                event_log.advance_ref(realm_id, target_head,
+                                      expected_head=expected_head, update_index=False)
+            # Derived indexing follows publication outside primary admission,
+            # just like normal push; failure remains visible and recoverable.
+            event_log.ensure_indexed(realm_id, target_head)
+            live_updates.publish(realm_id, {
+                "type": "cards_changed", "realm_id": realm_id,
+                "head": event_log.get_head(realm_id), "source": "sync",
+            })
+            return result
+
+        engine.on_head_advanced(rebuild_projection, publish_head=publish_projection_head)
         runtime = ctx.require_service("async_runtime")
 
         from pa.sync.recovery import SyncRecovery

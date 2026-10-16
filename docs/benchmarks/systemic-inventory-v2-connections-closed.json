@@ -1,0 +1,4943 @@
+{
+  "hardware": {
+    "machine": "arm64",
+    "python": "3.14.2",
+    "cpus": 10
+  },
+  "fixture": {
+    "history_commits": 1000,
+    "retained_dispatches": 101,
+    "sessions": 30,
+    "workload_version": 2,
+    "sync_pushes": 30,
+    "incoming_reconciliations": 30,
+    "watches": 30,
+    "iterations_per_family": 30,
+    "transcript_sessions": 3,
+    "executor_workers": 8,
+    "duration_seconds": 8.378,
+    "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"
+  },
+  "latency": {
+    "/api/health": {
+      "samples": 30,
+      "max_ms": 12.153,
+      "p50_ms": 3.05,
+      "p95_ms": 5.832,
+      "p99_ms": 12.153
+    },
+    "progress.sequence_allocate": {
+      "samples": 30,
+      "max_ms": 63.351,
+      "p50_ms": 5.296,
+      "p95_ms": 35.915,
+      "p99_ms": 63.351
+    },
+    "fleet.overview_cache_write": {
+      "samples": 30,
+      "max_ms": 39.747,
+      "p50_ms": 6.251,
+      "p95_ms": 36.247,
+      "p99_ms": 39.747
+    },
+    "sqlite.execution_binding_materialize": {
+      "samples": 30,
+      "max_ms": 245.39,
+      "p50_ms": 20.548,
+      "p95_ms": 156.785,
+      "p99_ms": 245.39
+    },
+    "fleet.overview_cache_read": {
+      "samples": 30,
+      "max_ms": 5.972,
+      "p50_ms": 1.001,
+      "p95_ms": 5.448,
+      "p99_ms": 5.972
+    },
+    "acp.wire_append": {
+      "samples": 30,
+      "max_ms": 64.726,
+      "p50_ms": 2.593,
+      "p95_ms": 17.285,
+      "p99_ms": 64.726
+    },
+    "progress.checkpoint_write": {
+      "samples": 30,
+      "max_ms": 48.064,
+      "p50_ms": 6.54,
+      "p95_ms": 46.89,
+      "p99_ms": 48.064
+    },
+    "sync.commit_read": {
+      "samples": 30,
+      "max_ms": 26.068,
+      "p50_ms": 4.499,
+      "p95_ms": 11.643,
+      "p99_ms": 26.068
+    },
+    "dispatch.runnable_read": {
+      "samples": 30,
+      "max_ms": 15.937,
+      "p50_ms": 1.663,
+      "p95_ms": 13.403,
+      "p99_ms": 15.937
+    },
+    "reconciliation.dispatch_read": {
+      "samples": 30,
+      "max_ms": 17.71,
+      "p50_ms": 1.195,
+      "p95_ms": 12.278,
+      "p99_ms": 17.71
+    },
+    "/api/agent/sessions?view=chats": {
+      "samples": 30,
+      "max_ms": 59.874,
+      "p50_ms": 27.195,
+      "p95_ms": 53.329,
+      "p99_ms": 59.874
+    },
+    "transcript.drain": {
+      "samples": 90,
+      "max_ms": 240.854,
+      "p50_ms": 93.243,
+      "p95_ms": 179.497,
+      "p99_ms": 240.854
+    },
+    "/agent": {
+      "samples": 30,
+      "max_ms": 254.565,
+      "p50_ms": 46.406,
+      "p95_ms": 96.488,
+      "p99_ms": 254.565
+    },
+    "/partials/home/sections": {
+      "samples": 30,
+      "max_ms": 112.861,
+      "p50_ms": 20.345,
+      "p95_ms": 42.249,
+      "p99_ms": 112.861
+    },
+    "sync.push_transaction": {
+      "samples": 30,
+      "max_ms": 526.823,
+      "p50_ms": 114.22,
+      "p95_ms": 258.738,
+      "p99_ms": 526.823
+    },
+    "/api/status": {
+      "samples": 30,
+      "max_ms": 167.22,
+      "p50_ms": 57.179,
+      "p95_ms": 101.392,
+      "p99_ms": 167.22
+    },
+    "/api/runtime?section=sse": {
+      "samples": 30,
+      "max_ms": 12.287,
+      "p50_ms": 3.884,
+      "p95_ms": 5.799,
+      "p99_ms": 12.287
+    },
+    "/api/fleet/dispatch-jobs": {
+      "samples": 30,
+      "max_ms": 98.28,
+      "p50_ms": 26.539,
+      "p95_ms": 72.406,
+      "p99_ms": 98.28
+    },
+    "sync.reconcile_head": {
+      "samples": 30,
+      "max_ms": 444.309,
+      "p50_ms": 101.305,
+      "p95_ms": 286.721,
+      "p99_ms": 444.309
+    }
+  },
+  "response_bytes": {
+    "/api/health": {
+      "min": 15,
+      "max": 15
+    },
+    "/api/agent/sessions?view=chats": {
+      "min": 75522,
+      "max": 75522
+    },
+    "/agent": {
+      "min": 120237,
+      "max": 120238
+    },
+    "/partials/home/sections": {
+      "min": 3708,
+      "max": 3708
+    },
+    "/api/status": {
+      "min": 1939,
+      "max": 1939
+    },
+    "/api/runtime?section=sse": {
+      "min": 303,
+      "max": 303
+    },
+    "/api/fleet/dispatch-jobs": {
+      "min": 247332,
+      "max": 247332
+    }
+  },
+  "warnings": {
+    "Slow off-loop operation": 1
+  },
+  "sql_statements": {
+    "PRAGMA": 2759,
+    "BEGIN": 382,
+    "INSERT": 4963,
+    "COMMIT": 382,
+    "SELECT": 2902,
+    "UPDATE": 78,
+    "ATTACH": 4
+  },
+  "threshold_violations": {
+    "sync.push_transaction": 1
+  },
+  "operation_counter_deltas": {
+    "acp.wire_append": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "agent.startup_state_read": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "dispatch.completion_pending_read": {
+      "submitted": 2,
+      "completed": 2,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "dispatch.followup_pending_read": {
+      "submitted": 2,
+      "completed": 2,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "dispatch.runnable_read": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "filesystem.github_credentials_read": {
+      "submitted": 4,
+      "completed": 4,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "fleet.overview.reachability": {
+      "submitted": 1,
+      "completed": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "fleet.overview.status": {
+      "submitted": 1,
+      "completed": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "fleet.overview.sync": {
+      "submitted": 1,
+      "completed": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "fleet.overview_cache_read": {
+      "submitted": 39,
+      "completed": 39,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "fleet.overview_cache_write": {
+      "submitted": 33,
+      "completed": 33,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "fleet.update_recovery": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "goal.dispatch_lifecycle_index": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "health.canonical_obligation": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "http.dispatch_list": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "http.session_list": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "maintenance.run": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "progress.checkpoint_write": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "progress.pending_read": {
+      "submitted": 3,
+      "completed": 3,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "progress.sequence_allocate": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "reconciliation.dispatch_read": {
+      "submitted": 32,
+      "completed": 32,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.card_read": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.execution_binding_materialize": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.pr_supervisor_capability_write": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.pr_supervisor_completion_due_read": {
+      "submitted": 4,
+      "completed": 4,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.pr_supervisor_due_read": {
+      "submitted": 4,
+      "completed": 4,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.restart_handoffs_pending": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sqlite.transcript_append": {
+      "submitted": 90,
+      "completed": 90,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "startup.agent_manager": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sync.commit_read": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sync.gc_resume": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sync.push_transaction": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 1
+    },
+    "sync.reconcile_head": {
+      "submitted": 30,
+      "completed": 30,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sync.ref_read": {
+      "submitted": 1,
+      "completed": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "sync.startup_reconcile": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "workspace.collect_garbage": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    },
+    "workspace.reconcile_terminal_state": {
+      "submitted": 0,
+      "completed": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "rejected": 0,
+      "slow_calls": 0
+    }
+  },
+  "canonical_object_reads": {
+    "reads": 600,
+    "bytes": 235882
+  },
+  "process_cpu_ms": 10451.741,
+  "disk_output_blocks": 0,
+  "gc_pauses": {
+    "latency": {
+      "samples": 80,
+      "max_ms": 154.582,
+      "p50_ms": 0.009,
+      "p95_ms": 6.79,
+      "p99_ms": 154.582
+    },
+    "window": "last_256_collections_during_measurement",
+    "counts_by_generation": {
+      "1": 80
+    },
+    "observations": [
+      {
+        "generation": 1,
+        "elapsed_ms": 0.009542040061205626,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.008124974556267262,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007167051080614328,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007166003342717886,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.01091696321964264,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.008791976142674685,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.014791963621973991,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.0034580007195472717,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.009959039743989706,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.004875008016824722,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.003916968125849962,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.009041978046298027,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007792026735842228,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006292015314102173,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.010166957508772612,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.008958042599260807,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.005667039658874273,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011416035704314709,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.005916983354836702,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.0035420525819063187,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011125055607408285,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.004584027919918299,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007166003342717886,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011958007235080004,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007916998583823442,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.004415982402861118,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011041993275284767,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011334021110087633,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.010124989785254002,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.01337495632469654,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.008707982487976551,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.0072499969974160194,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.013416050933301449,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.010750023648142815,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011917029041796923,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.0076249707490205765,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007833994459360838,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006416987162083387,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.013334036339074373,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.0038750004023313522,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.01191598130390048,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.004791014362126589,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.010333023965358734,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.005249981768429279,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.008458970114588737,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006208021659404039,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011125055607408285,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.005167035851627588,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.011249969247728586,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.004208006430417299,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.01429201802238822,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007333001121878624,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.010500021744519472,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006041023880243301,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.012082979083061218,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.00562501372769475,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.015666999388486147,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006249989382922649,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.016457983292639256,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.004958012141287327,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.016708974726498127,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006292015314102173,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.0189170241355896,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.007040973287075758,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.021083978936076164,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 34.42279202863574,
+        "collected": 11111,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.012207950931042433,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.005875015631318092,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.017167010810226202,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006333983037620783,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.01579197123646736,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.006292015314102173,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 0.008707982487976551,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 3.2288749935105443,
+        "collected": 1657,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 6.510291947051883,
+        "collected": 16,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 3.8108750013634562,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 6.790208979509771,
+        "collected": 381,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 7.837374985683709,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 9.554166987072676,
+        "collected": 0,
+        "uncollectable": 0
+      },
+      {
+        "generation": 1,
+        "elapsed_ms": 154.58229201612994,
+        "collected": 0,
+        "uncollectable": 0
+      }
+    ]
+  },
+  "transcript_input_rows": 2880,
+  "transcript_retained_rows": 2880,
+  "runtime": {
+    "executor": {
+      "max_workers": 8,
+      "max_queue": 64,
+      "active": 0,
+      "queued": 0,
+      "closing": false
+    },
+    "event_loop": {
+      "samples": 81,
+      "latest_lag_ms": 1.11,
+      "p95_lag_ms": 12.946,
+      "max_lag_ms": 19.536
+    },
+    "requests": {
+      "window": "last_256_non_sse_requests_per_route",
+      "count": 210,
+      "average_ms": 30.222,
+      "max_ms": 252.875,
+      "slow": [],
+      "latency_ms": {
+        "samples": 210,
+        "max": 252.875,
+        "p50": 23.667,
+        "p95": 79.94,
+        "p99": 111.168
+      },
+      "response_bytes": 13471709,
+      "excluded_sse_requests": 0,
+      "routes": {
+        "/api/health": {
+          "count": 30,
+          "response_bytes": 450,
+          "latency_ms": {
+            "samples": 30,
+            "max": 6.244,
+            "p50": 1.444,
+            "p95": 2.949,
+            "p99": 6.244
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 15,
+            "p50": 15,
+            "p95": 15,
+            "p99": 15
+          }
+        },
+        "/api/agent/sessions": {
+          "count": 30,
+          "response_bytes": 2265660,
+          "latency_ms": {
+            "samples": 30,
+            "max": 57.638,
+            "p50": 26.087,
+            "p95": 51.243,
+            "p99": 57.638
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 75522,
+            "p50": 75522,
+            "p95": 75522,
+            "p99": 75522
+          }
+        },
+        "/{page_path:path}": {
+          "count": 30,
+          "response_bytes": 3607139,
+          "latency_ms": {
+            "samples": 30,
+            "max": 252.875,
+            "p50": 44.979,
+            "p95": 94.531,
+            "p99": 252.875
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 120238,
+            "p50": 120238,
+            "p95": 120238,
+            "p99": 120238
+          }
+        },
+        "/partials/home/sections": {
+          "count": 30,
+          "response_bytes": 111240,
+          "latency_ms": {
+            "samples": 30,
+            "max": 111.168,
+            "p50": 18.65,
+            "p95": 40.775,
+            "p99": 111.168
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 3708,
+            "p50": 3708,
+            "p95": 3708,
+            "p99": 3708
+          }
+        },
+        "/api/status": {
+          "count": 30,
+          "response_bytes": 58170,
+          "latency_ms": {
+            "samples": 30,
+            "max": 164.878,
+            "p50": 55.515,
+            "p95": 99.003,
+            "p99": 164.878
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 1939,
+            "p50": 1939,
+            "p95": 1939,
+            "p99": 1939
+          }
+        },
+        "/api/runtime": {
+          "count": 30,
+          "response_bytes": 9090,
+          "latency_ms": {
+            "samples": 30,
+            "max": 8.493,
+            "p50": 2.321,
+            "p95": 3.924,
+            "p99": 8.493
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 303,
+            "p50": 303,
+            "p95": 303,
+            "p99": 303
+          }
+        },
+        "/api/fleet/dispatch-jobs": {
+          "count": 30,
+          "response_bytes": 7419960,
+          "latency_ms": {
+            "samples": 30,
+            "max": 96.459,
+            "p50": 25.673,
+            "p95": 70.93,
+            "p99": 96.459
+          },
+          "response_size_bytes": {
+            "samples": 30,
+            "max": 247332,
+            "p50": 247332,
+            "p95": 247332,
+            "p99": 247332
+          }
+        }
+      }
+    },
+    "owned_mutations": {
+      "pending": 0
+    },
+    "work": {
+      "window": "last_256_observations_per_metric",
+      "metrics": {
+        "http.session_list.serialization_ms": {
+          "samples": 30,
+          "max": 1.895,
+          "p50": 1.141,
+          "p95": 1.735,
+          "p99": 1.895,
+          "count": 30,
+          "total": 35.185
+        },
+        "http.session_list.rows_returned": {
+          "samples": 30,
+          "max": 30,
+          "p50": 30,
+          "p95": 30,
+          "p99": 30,
+          "count": 30,
+          "total": 900
+        },
+        "http.session_list.response_bytes": {
+          "samples": 30,
+          "max": 75522,
+          "p50": 75522,
+          "p95": 75522,
+          "p99": 75522,
+          "count": 30,
+          "total": 2265660
+        },
+        "http.dispatch_list.serialization_ms": {
+          "samples": 30,
+          "max": 5.155,
+          "p50": 3.153,
+          "p95": 4.846,
+          "p99": 5.155,
+          "count": 30,
+          "total": 101.239
+        },
+        "http.dispatch_list.rows_returned": {
+          "samples": 30,
+          "max": 100,
+          "p50": 100,
+          "p95": 100,
+          "p99": 100,
+          "count": 30,
+          "total": 3000
+        },
+        "http.dispatch_list.response_bytes": {
+          "samples": 30,
+          "max": 247332,
+          "p50": 247332,
+          "p95": 247332,
+          "p99": 247332,
+          "count": 30,
+          "total": 7419960
+        }
+      }
+    },
+    "active_operations": [],
+    "operations": {
+      "acp.wire_append": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.643,
+        "total_wait_ms": 182.60908115189523,
+        "max_wait_ms": 64.71816700650379,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 161.152,
+        "max_runtime_ms": 63.228,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 63.228,
+          "p50": 2.341,
+          "p95": 17.048,
+          "p99": 63.228
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.045,
+          "p50": 0.019,
+          "p95": 0.042,
+          "p99": 0.045
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 14.411,
+          "p50": 1.192,
+          "p95": 12.206,
+          "p99": 14.411
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 2.781,
+          "p50": 0.165,
+          "p95": 2.018,
+          "p99": 2.781
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 60.728,
+          "p50": 0.367,
+          "p95": 3.963,
+          "p99": 60.728
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 0.808,
+          "p50": 0.449,
+          "p95": 0.733,
+          "p99": 0.808
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "agent.startup_state_read": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.06,
+        "total_wait_ms": 5.2176250028423965,
+        "max_wait_ms": 5.2176250028423965,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 4.752,
+        "max_runtime_ms": 4.752,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 4.752,
+          "p50": 4.752,
+          "p95": 4.752,
+          "p99": 4.752
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.06,
+          "p50": 0.06,
+          "p95": 0.06,
+          "p99": 0.06
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 0.644,
+          "p50": 0.644,
+          "p95": 0.644,
+          "p99": 0.644
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.309,
+          "p50": 0.309,
+          "p95": 0.309,
+          "p99": 0.309
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 3.796,
+          "p50": 3.796,
+          "p95": 3.796,
+          "p99": 3.796
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 0.184,
+          "p50": 0.184,
+          "p95": 0.184,
+          "p99": 0.184
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "dispatch.completion_pending_read": {
+        "submitted": 11,
+        "completed": 11,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.224,
+        "total_wait_ms": 28.922333905939013,
+        "max_wait_ms": 16.692458011675626,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 25.572,
+        "max_runtime_ms": 16.246,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 11,
+          "max": 16.246,
+          "p50": 0.961,
+          "p95": 16.246,
+          "p99": 16.246
+        },
+        "queue_ms": {
+          "samples": 11,
+          "max": 0.729,
+          "p50": 0.056,
+          "p95": 0.729,
+          "p99": 0.729
+        },
+        "python_lock_wait_ms": {
+          "samples": 11,
+          "max": 0.001,
+          "p50": 0.001,
+          "p95": 0.001,
+          "p99": 0.001
+        },
+        "python_lock_hold_ms": {
+          "samples": 11,
+          "max": 0.2,
+          "p50": 0.007,
+          "p95": 0.2,
+          "p99": 0.2
+        },
+        "worker_service_ms": {
+          "samples": 11,
+          "max": 0.265,
+          "p50": 0.044,
+          "p95": 0.265,
+          "p99": 0.265
+        },
+        "executor_dispatch_ms": {
+          "samples": 11,
+          "max": 0.408,
+          "p50": 0.284,
+          "p95": 0.408,
+          "p99": 0.408
+        },
+        "completion_delivery_ms": {
+          "samples": 11,
+          "max": 15.939,
+          "p50": 0.444,
+          "p95": 15.939,
+          "p99": 15.939
+        },
+        "thread_cpu_ms": {
+          "samples": 11,
+          "max": 0.261,
+          "p50": 0.037,
+          "p95": 0.261,
+          "p99": 0.261
+        },
+        "sqlite_statement_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 11,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "dispatch.followup_pending_read": {
+        "submitted": 11,
+        "completed": 11,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.34,
+        "total_wait_ms": 2271.4043319574557,
+        "max_wait_ms": 2260.5123330140486,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 2266.438,
+        "max_runtime_ms": 2258.812,
+        "slow_calls": 1,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 11,
+          "max": 2258.812,
+          "p50": 0.743,
+          "p95": 2258.812,
+          "p99": 2258.812
+        },
+        "queue_ms": {
+          "samples": 11,
+          "max": 0.05,
+          "p50": 0.031,
+          "p95": 0.05,
+          "p99": 0.05
+        },
+        "python_lock_wait_ms": {
+          "samples": 11,
+          "max": 0.001,
+          "p50": 0.001,
+          "p95": 0.001,
+          "p99": 0.001
+        },
+        "python_lock_hold_ms": {
+          "samples": 11,
+          "max": 0.234,
+          "p50": 0.005,
+          "p95": 0.234,
+          "p99": 0.234
+        },
+        "worker_service_ms": {
+          "samples": 11,
+          "max": 0.281,
+          "p50": 0.037,
+          "p95": 0.281,
+          "p99": 0.281
+        },
+        "executor_dispatch_ms": {
+          "samples": 11,
+          "max": 0.458,
+          "p50": 0.186,
+          "p95": 0.458,
+          "p99": 0.458
+        },
+        "completion_delivery_ms": {
+          "samples": 11,
+          "max": 2258.328,
+          "p50": 0.369,
+          "p95": 2258.328,
+          "p99": 2258.328
+        },
+        "thread_cpu_ms": {
+          "samples": 11,
+          "max": 0.278,
+          "p50": 0.035,
+          "p95": 0.278,
+          "p99": 0.278
+        },
+        "sqlite_statement_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 11,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "dispatch.runnable_read": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.917,
+        "total_wait_ms": 82.13879191316664,
+        "max_wait_ms": 15.899666002951562,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 67.922,
+        "max_runtime_ms": 15.662,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 15.662,
+          "p50": 1.241,
+          "p95": 10.544,
+          "p99": 15.662
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.091,
+          "p50": 0.025,
+          "p95": 0.057,
+          "p99": 0.091
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.003,
+          "p50": 0.001,
+          "p95": 0.003,
+          "p99": 0.003
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 0.531,
+          "p50": 0.23,
+          "p95": 0.47,
+          "p99": 0.531
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 0.597,
+          "p50": 0.262,
+          "p95": 0.543,
+          "p99": 0.597
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 2.202,
+          "p50": 0.328,
+          "p95": 2.124,
+          "p99": 2.202
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 15.204,
+          "p50": 0.568,
+          "p95": 10.0,
+          "p99": 15.204
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 0.532,
+          "p50": 0.26,
+          "p95": 0.476,
+          "p99": 0.532
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "filesystem.github_credentials_read": {
+        "submitted": 27,
+        "completed": 27,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.734,
+        "total_wait_ms": 43.097332934848964,
+        "max_wait_ms": 13.283874955959618,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 38.005,
+        "max_runtime_ms": 13.149,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 27,
+          "max": 13.149,
+          "p50": 0.874,
+          "p95": 2.062,
+          "p99": 13.149
+        },
+        "queue_ms": {
+          "samples": 27,
+          "max": 0.125,
+          "p50": 0.062,
+          "p95": 0.093,
+          "p99": 0.125
+        },
+        "python_lock_wait_ms": {
+          "samples": 27,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 27,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 27,
+          "max": 12.571,
+          "p50": 0.252,
+          "p95": 1.056,
+          "p99": 12.571
+        },
+        "executor_dispatch_ms": {
+          "samples": 27,
+          "max": 0.845,
+          "p50": 0.209,
+          "p95": 0.626,
+          "p99": 0.845
+        },
+        "completion_delivery_ms": {
+          "samples": 27,
+          "max": 1.064,
+          "p50": 0.328,
+          "p95": 0.918,
+          "p99": 1.064
+        },
+        "thread_cpu_ms": {
+          "samples": 27,
+          "max": 0.275,
+          "p50": 0.197,
+          "p95": 0.269,
+          "p99": 0.275
+        },
+        "sqlite_statement_ms": {
+          "samples": 27,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 27,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 27,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "fleet.overview.reachability": {
+        "submitted": 4,
+        "completed": 4,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.072,
+        "total_wait_ms": 3.642291878350079,
+        "max_wait_ms": 1.3723339652642608,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 2.433,
+        "max_runtime_ms": 1.007,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 4,
+          "max": 1.007,
+          "p50": 0.448,
+          "p95": 1.007,
+          "p99": 1.007
+        },
+        "queue_ms": {
+          "samples": 4,
+          "max": 0.026,
+          "p50": 0.015,
+          "p95": 0.026,
+          "p99": 0.026
+        },
+        "python_lock_wait_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 4,
+          "max": 0.016,
+          "p50": 0.006,
+          "p95": 0.016,
+          "p99": 0.016
+        },
+        "executor_dispatch_ms": {
+          "samples": 4,
+          "max": 0.255,
+          "p50": 0.162,
+          "p95": 0.255,
+          "p99": 0.255
+        },
+        "completion_delivery_ms": {
+          "samples": 4,
+          "max": 0.735,
+          "p50": 0.291,
+          "p95": 0.735,
+          "p99": 0.735
+        },
+        "thread_cpu_ms": {
+          "samples": 4,
+          "max": 0.012,
+          "p50": 0.004,
+          "p95": 0.012,
+          "p99": 0.012
+        },
+        "sqlite_statement_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 4,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "fleet.overview.status": {
+        "submitted": 4,
+        "completed": 4,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.1,
+        "total_wait_ms": 5.05749904550612,
+        "max_wait_ms": 2.795791020616889,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 4.08,
+        "max_runtime_ms": 2.325,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 4,
+          "max": 2.325,
+          "p50": 0.587,
+          "p95": 2.325,
+          "p99": 2.325
+        },
+        "queue_ms": {
+          "samples": 4,
+          "max": 0.027,
+          "p50": 0.026,
+          "p95": 0.027,
+          "p99": 0.027
+        },
+        "python_lock_wait_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 4,
+          "max": 0.035,
+          "p50": 0.022,
+          "p95": 0.035,
+          "p99": 0.035
+        },
+        "executor_dispatch_ms": {
+          "samples": 4,
+          "max": 0.628,
+          "p50": 0.24,
+          "p95": 0.628,
+          "p99": 0.628
+        },
+        "completion_delivery_ms": {
+          "samples": 4,
+          "max": 1.655,
+          "p50": 0.309,
+          "p95": 1.655,
+          "p99": 1.655
+        },
+        "thread_cpu_ms": {
+          "samples": 4,
+          "max": 0.03,
+          "p50": 0.019,
+          "p95": 0.03,
+          "p99": 0.03
+        },
+        "sqlite_statement_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 4,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "fleet.overview.sync": {
+        "submitted": 4,
+        "completed": 4,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.082,
+        "total_wait_ms": 177.1671239985153,
+        "max_wait_ms": 66.50991598144174,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 176.699,
+        "max_runtime_ms": 66.378,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 4,
+          "max": 66.378,
+          "p50": 41.425,
+          "p95": 66.378,
+          "p99": 66.378
+        },
+        "queue_ms": {
+          "samples": 4,
+          "max": 0.032,
+          "p50": 0.016,
+          "p95": 0.032,
+          "p99": 0.032
+        },
+        "python_lock_wait_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 4,
+          "max": 65.393,
+          "p50": 40.651,
+          "p95": 65.393,
+          "p99": 65.393
+        },
+        "executor_dispatch_ms": {
+          "samples": 4,
+          "max": 0.566,
+          "p50": 0.4,
+          "p95": 0.566,
+          "p99": 0.566
+        },
+        "completion_delivery_ms": {
+          "samples": 4,
+          "max": 0.438,
+          "p50": 0.366,
+          "p95": 0.438,
+          "p99": 0.438
+        },
+        "thread_cpu_ms": {
+          "samples": 4,
+          "max": 26.874,
+          "p50": 16.33,
+          "p95": 26.874,
+          "p99": 26.874
+        },
+        "sqlite_statement_ms": {
+          "samples": 4,
+          "max": 25.763,
+          "p50": 9.655,
+          "p95": 25.763,
+          "p99": 25.763
+        },
+        "sqlite_commit_ms": {
+          "samples": 4,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 4,
+          "max": 30,
+          "p50": 29,
+          "p95": 30,
+          "p99": 30
+        }
+      },
+      "fleet.overview_cache_read": {
+        "submitted": 66,
+        "completed": 66,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 3,
+        "max_queued": 1,
+        "total_queue_ms": 2.491,
+        "total_wait_ms": 184.6356278983876,
+        "max_wait_ms": 30.359249969478697,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 163.012,
+        "max_runtime_ms": 30.078,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 66,
+          "max": 30.078,
+          "p50": 0.799,
+          "p95": 7.758,
+          "p99": 30.078
+        },
+        "queue_ms": {
+          "samples": 66,
+          "max": 0.706,
+          "p50": 0.026,
+          "p95": 0.058,
+          "p99": 0.706
+        },
+        "python_lock_wait_ms": {
+          "samples": 66,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 66,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 66,
+          "max": 0.032,
+          "p50": 0.011,
+          "p95": 0.019,
+          "p99": 0.032
+        },
+        "executor_dispatch_ms": {
+          "samples": 66,
+          "max": 4.874,
+          "p50": 0.262,
+          "p95": 4.114,
+          "p99": 4.874
+        },
+        "completion_delivery_ms": {
+          "samples": 66,
+          "max": 25.94,
+          "p50": 0.377,
+          "p95": 3.396,
+          "p99": 25.94
+        },
+        "thread_cpu_ms": {
+          "samples": 66,
+          "max": 0.026,
+          "p50": 0.009,
+          "p95": 0.016,
+          "p99": 0.026
+        },
+        "sqlite_statement_ms": {
+          "samples": 66,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 66,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 66,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "fleet.overview_cache_write": {
+        "submitted": 42,
+        "completed": 42,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 2,
+        "max_queued": 1,
+        "total_queue_ms": 1.352,
+        "total_wait_ms": 387.85175106022507,
+        "max_wait_ms": 39.72112503834069,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 368.286,
+        "max_runtime_ms": 38.545,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 42,
+          "max": 38.545,
+          "p50": 5.598,
+          "p95": 35.207,
+          "p99": 38.545
+        },
+        "queue_ms": {
+          "samples": 42,
+          "max": 0.104,
+          "p50": 0.028,
+          "p95": 0.055,
+          "p99": 0.104
+        },
+        "python_lock_wait_ms": {
+          "samples": 42,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 42,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 42,
+          "max": 34.446,
+          "p50": 4.773,
+          "p95": 20.708,
+          "p99": 34.446
+        },
+        "executor_dispatch_ms": {
+          "samples": 42,
+          "max": 3.317,
+          "p50": 0.293,
+          "p95": 1.239,
+          "p99": 3.317
+        },
+        "completion_delivery_ms": {
+          "samples": 42,
+          "max": 22.037,
+          "p50": 0.553,
+          "p95": 2.408,
+          "p99": 22.037
+        },
+        "thread_cpu_ms": {
+          "samples": 42,
+          "max": 2.705,
+          "p50": 1.831,
+          "p95": 2.605,
+          "p99": 2.705
+        },
+        "sqlite_statement_ms": {
+          "samples": 42,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 42,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 42,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "fleet.update_recovery": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.191,
+        "total_wait_ms": 5.547625012695789,
+        "max_wait_ms": 5.547625012695789,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 5.208,
+        "max_runtime_ms": 5.208,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 5.208,
+          "p50": 5.208,
+          "p95": 5.208,
+          "p99": 5.208
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.191,
+          "p50": 0.191,
+          "p95": 0.191,
+          "p99": 0.191
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 0.063,
+          "p50": 0.063,
+          "p95": 0.063,
+          "p99": 0.063
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.295,
+          "p50": 0.295,
+          "p95": 0.295,
+          "p99": 0.295
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 4.837,
+          "p50": 4.837,
+          "p95": 4.837,
+          "p99": 4.837
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 0.048,
+          "p50": 0.048,
+          "p95": 0.048,
+          "p99": 0.048
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "goal.dispatch_lifecycle_index": {
+        "submitted": 3,
+        "completed": 3,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.112,
+        "total_wait_ms": 18.878540897276253,
+        "max_wait_ms": 17.233499966096133,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 18.15,
+        "max_runtime_ms": 16.893,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 3,
+          "max": 16.893,
+          "p50": 0.817,
+          "p95": 16.893,
+          "p99": 16.893
+        },
+        "queue_ms": {
+          "samples": 3,
+          "max": 0.051,
+          "p50": 0.039,
+          "p95": 0.051,
+          "p99": 0.051
+        },
+        "python_lock_wait_ms": {
+          "samples": 3,
+          "max": 0.002,
+          "p50": 0.001,
+          "p95": 0.002,
+          "p99": 0.002
+        },
+        "python_lock_hold_ms": {
+          "samples": 3,
+          "max": 0.008,
+          "p50": 0.005,
+          "p95": 0.008,
+          "p99": 0.008
+        },
+        "worker_service_ms": {
+          "samples": 3,
+          "max": 0.072,
+          "p50": 0.044,
+          "p95": 0.072,
+          "p99": 0.072
+        },
+        "executor_dispatch_ms": {
+          "samples": 3,
+          "max": 0.354,
+          "p50": 0.297,
+          "p95": 0.354,
+          "p99": 0.354
+        },
+        "completion_delivery_ms": {
+          "samples": 3,
+          "max": 16.488,
+          "p50": 0.471,
+          "p95": 16.488,
+          "p99": 16.488
+        },
+        "thread_cpu_ms": {
+          "samples": 3,
+          "max": 0.065,
+          "p50": 0.041,
+          "p95": 0.065,
+          "p99": 0.065
+        },
+        "sqlite_statement_ms": {
+          "samples": 3,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 3,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 3,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "health.canonical_obligation": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.13,
+        "total_wait_ms": 2.272042038384825,
+        "max_wait_ms": 2.272042038384825,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 1.8,
+        "max_runtime_ms": 1.8,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 1.8,
+          "p50": 1.8,
+          "p95": 1.8,
+          "p99": 1.8
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.13,
+          "p50": 0.13,
+          "p95": 0.13,
+          "p99": 0.13
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 1.065,
+          "p50": 1.065,
+          "p95": 1.065,
+          "p99": 1.065
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.566,
+          "p50": 0.566,
+          "p95": 0.566,
+          "p99": 0.566
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.164,
+          "p50": 0.164,
+          "p95": 0.164,
+          "p99": 0.164
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 0.473,
+          "p50": 0.473,
+          "p95": 0.473,
+          "p99": 0.473
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.953,
+          "p50": 0.953,
+          "p95": 0.953,
+          "p99": 0.953
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 1,
+          "p50": 1,
+          "p95": 1,
+          "p99": 1
+        }
+      },
+      "http.dispatch_list": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 2.616,
+        "total_wait_ms": 919.3668320658617,
+        "max_wait_ms": 85.164749994874,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 908.202,
+        "max_runtime_ms": 84.903,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 84.903,
+          "p50": 23.932,
+          "p95": 68.376,
+          "p99": 84.903
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.327,
+          "p50": 0.069,
+          "p95": 0.138,
+          "p99": 0.327
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.005,
+          "p50": 0.001,
+          "p95": 0.002,
+          "p99": 0.005
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 19.283,
+          "p50": 11.999,
+          "p95": 17.711,
+          "p99": 19.283
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 81.749,
+          "p50": 23.388,
+          "p95": 66.75,
+          "p99": 81.749
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 1.374,
+          "p50": 0.283,
+          "p95": 0.775,
+          "p99": 1.374
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 2.681,
+          "p50": 0.462,
+          "p95": 1.056,
+          "p99": 2.681
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 37.169,
+          "p50": 20.515,
+          "p95": 35.539,
+          "p99": 37.169
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "http.session_list": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 2.122,
+        "total_wait_ms": 830.0862082396634,
+        "max_wait_ms": 50.9217080543749,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 823.427,
+        "max_runtime_ms": 50.636,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 50.636,
+          "p50": 23.729,
+          "p95": 49.047,
+          "p99": 50.636
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.146,
+          "p50": 0.069,
+          "p95": 0.092,
+          "p99": 0.146
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.027,
+          "p50": 0.016,
+          "p95": 0.027,
+          "p99": 0.027
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 1.501,
+          "p50": 0.96,
+          "p95": 1.492,
+          "p99": 1.501
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 48.517,
+          "p50": 23.003,
+          "p95": 46.981,
+          "p99": 48.517
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 5.756,
+          "p50": 0.229,
+          "p95": 4.091,
+          "p99": 5.756
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 0.958,
+          "p50": 0.43,
+          "p95": 0.915,
+          "p99": 0.958
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 31.23,
+          "p50": 20.01,
+          "p95": 26.179,
+          "p99": 31.23
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 11.552,
+          "p50": 0.697,
+          "p95": 10.994,
+          "p99": 11.552
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 2,
+          "p50": 2,
+          "p95": 2,
+          "p99": 2
+        }
+      },
+      "maintenance.run": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.086,
+        "total_wait_ms": 46.019041968975216,
+        "max_wait_ms": 46.019041968975216,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 45.628,
+        "max_runtime_ms": 45.628,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 45.628,
+          "p50": 45.628,
+          "p95": 45.628,
+          "p99": 45.628
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.086,
+          "p50": 0.086,
+          "p95": 0.086,
+          "p99": 0.086
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.001,
+          "p50": 0.001,
+          "p95": 0.001,
+          "p99": 0.001
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.01,
+          "p50": 0.01,
+          "p95": 0.01,
+          "p99": 0.01
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 45.017,
+          "p50": 45.017,
+          "p95": 45.017,
+          "p99": 45.017
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.324,
+          "p50": 0.324,
+          "p95": 0.324,
+          "p99": 0.324
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.285,
+          "p50": 0.285,
+          "p95": 0.285,
+          "p99": 0.285
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 27.255,
+          "p50": 27.255,
+          "p95": 27.255,
+          "p99": 27.255
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 4.612,
+          "p50": 4.612,
+          "p95": 4.612,
+          "p99": 4.612
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.175,
+          "p50": 0.175,
+          "p95": 0.175,
+          "p99": 0.175
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 5,
+          "p50": 5,
+          "p95": 5,
+          "p99": 5
+        }
+      },
+      "progress.checkpoint_write": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.116,
+        "total_wait_ms": 321.01116597186774,
+        "max_wait_ms": 48.05008403491229,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 301.049,
+        "max_runtime_ms": 47.548,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 47.548,
+          "p50": 6.128,
+          "p95": 46.503,
+          "p99": 47.548
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.069,
+          "p50": 0.038,
+          "p95": 0.066,
+          "p99": 0.069
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.018,
+          "p50": 0.002,
+          "p95": 0.003,
+          "p99": 0.018
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 43.123,
+          "p50": 4.071,
+          "p95": 27.796,
+          "p99": 43.123
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 42.635,
+          "p50": 3.634,
+          "p95": 27.279,
+          "p99": 42.635
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 1.787,
+          "p50": 0.235,
+          "p95": 0.728,
+          "p99": 1.787
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 39.336,
+          "p50": 0.566,
+          "p95": 11.178,
+          "p99": 39.336
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 4.558,
+          "p50": 2.435,
+          "p95": 3.413,
+          "p99": 4.558
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "progress.pending_read": {
+        "submitted": 18,
+        "completed": 18,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.196,
+        "total_wait_ms": 18.622082192450762,
+        "max_wait_ms": 3.3930420177057385,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 13.509,
+        "max_runtime_ms": 1.949,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 18,
+          "max": 1.949,
+          "p50": 0.55,
+          "p95": 1.949,
+          "p99": 1.949
+        },
+        "queue_ms": {
+          "samples": 18,
+          "max": 0.14,
+          "p50": 0.064,
+          "p95": 0.14,
+          "p99": 0.14
+        },
+        "python_lock_wait_ms": {
+          "samples": 18,
+          "max": 0.001,
+          "p50": 0.001,
+          "p95": 0.001,
+          "p99": 0.001
+        },
+        "python_lock_hold_ms": {
+          "samples": 18,
+          "max": 0.314,
+          "p50": 0.006,
+          "p95": 0.314,
+          "p99": 0.314
+        },
+        "worker_service_ms": {
+          "samples": 18,
+          "max": 0.387,
+          "p50": 0.047,
+          "p95": 0.387,
+          "p99": 0.387
+        },
+        "executor_dispatch_ms": {
+          "samples": 18,
+          "max": 0.57,
+          "p50": 0.21,
+          "p95": 0.57,
+          "p99": 0.57
+        },
+        "completion_delivery_ms": {
+          "samples": 18,
+          "max": 1.005,
+          "p50": 0.286,
+          "p95": 1.005,
+          "p99": 1.005
+        },
+        "thread_cpu_ms": {
+          "samples": 18,
+          "max": 0.382,
+          "p50": 0.043,
+          "p95": 0.382,
+          "p99": 0.382
+        },
+        "sqlite_statement_ms": {
+          "samples": 18,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 18,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 18,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "progress.sequence_allocate": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.934,
+        "total_wait_ms": 304.3119159992784,
+        "max_wait_ms": 63.32983396714553,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 213.434,
+        "max_runtime_ms": 35.645,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 35.645,
+          "p50": 4.073,
+          "p95": 18.705,
+          "p99": 35.645
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.068,
+          "p50": 0.028,
+          "p95": 0.064,
+          "p99": 0.068
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.004,
+          "p50": 0.001,
+          "p95": 0.004,
+          "p99": 0.004
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 12.846,
+          "p50": 3.643,
+          "p95": 8.621,
+          "p99": 12.846
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 12.217,
+          "p50": 2.894,
+          "p95": 8.021,
+          "p99": 12.217
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 14.543,
+          "p50": 0.281,
+          "p95": 2.889,
+          "p99": 14.543
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 27.003,
+          "p50": 0.57,
+          "p95": 8.89,
+          "p99": 27.003
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 7.388,
+          "p50": 2.012,
+          "p95": 2.691,
+          "p99": 7.388
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "reconciliation.dispatch_read": {
+        "submitted": 42,
+        "completed": 42,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.825,
+        "total_wait_ms": 113.35303797386587,
+        "max_wait_ms": 17.700832977425307,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 98.605,
+        "max_runtime_ms": 17.317,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 42,
+          "max": 17.317,
+          "p50": 0.919,
+          "p95": 8.732,
+          "p99": 17.317
+        },
+        "queue_ms": {
+          "samples": 42,
+          "max": 0.496,
+          "p50": 0.026,
+          "p95": 0.079,
+          "p99": 0.496
+        },
+        "python_lock_wait_ms": {
+          "samples": 42,
+          "max": 0.009,
+          "p50": 0.001,
+          "p95": 0.001,
+          "p99": 0.009
+        },
+        "python_lock_hold_ms": {
+          "samples": 42,
+          "max": 0.452,
+          "p50": 0.073,
+          "p95": 0.17,
+          "p99": 0.452
+        },
+        "worker_service_ms": {
+          "samples": 42,
+          "max": 0.587,
+          "p50": 0.091,
+          "p95": 0.205,
+          "p99": 0.587
+        },
+        "executor_dispatch_ms": {
+          "samples": 42,
+          "max": 5.629,
+          "p50": 0.237,
+          "p95": 1.721,
+          "p99": 5.629
+        },
+        "completion_delivery_ms": {
+          "samples": 42,
+          "max": 16.878,
+          "p50": 0.438,
+          "p95": 6.863,
+          "p99": 16.878
+        },
+        "thread_cpu_ms": {
+          "samples": 42,
+          "max": 0.58,
+          "p50": 0.088,
+          "p95": 0.201,
+          "p99": 0.58
+        },
+        "sqlite_statement_ms": {
+          "samples": 42,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 42,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 42,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sqlite.card_read": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.061,
+        "total_wait_ms": 1.2406670139171183,
+        "max_wait_ms": 1.2406670139171183,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 1.13,
+        "max_runtime_ms": 1.13,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 1.13,
+          "p50": 1.13,
+          "p95": 1.13,
+          "p99": 1.13
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.061,
+          "p50": 0.061,
+          "p95": 0.061,
+          "p99": 0.061
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 0.895,
+          "p50": 0.895,
+          "p95": 0.895,
+          "p99": 0.895
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.142,
+          "p50": 0.142,
+          "p95": 0.142,
+          "p99": 0.142
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.091,
+          "p50": 0.091,
+          "p95": 0.091,
+          "p99": 0.091
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 0.282,
+          "p50": 0.282,
+          "p95": 0.282,
+          "p99": 0.282
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.52,
+          "p50": 0.52,
+          "p95": 0.52,
+          "p99": 0.52
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 1,
+          "p50": 1,
+          "p95": 1,
+          "p99": 1
+        }
+      },
+      "sqlite.execution_binding_materialize": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.935,
+        "total_wait_ms": 1025.985541054979,
+        "max_wait_ms": 245.37950003286824,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 991.136,
+        "max_runtime_ms": 243.939,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 243.939,
+          "p50": 18.544,
+          "p95": 149.961,
+          "p99": 243.939
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.062,
+          "p50": 0.029,
+          "p95": 0.056,
+          "p99": 0.062
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 137.067,
+          "p50": 5.558,
+          "p95": 114.933,
+          "p99": 137.067
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 67.772,
+          "p50": 6.248,
+          "p95": 22.145,
+          "p99": 67.772
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 182.938,
+          "p50": 15.486,
+          "p95": 145.925,
+          "p99": 182.938
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 17.798,
+          "p50": 0.564,
+          "p95": 1.879,
+          "p99": 17.798
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 60.75,
+          "p50": 1.024,
+          "p95": 17.022,
+          "p99": 60.75
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 8.492,
+          "p50": 2.186,
+          "p95": 6.07,
+          "p99": 8.492
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 43.311,
+          "p50": 2.487,
+          "p95": 13.024,
+          "p99": 43.311
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 11.418,
+          "p50": 0.754,
+          "p95": 4.636,
+          "p99": 11.418
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 6,
+          "p50": 5,
+          "p95": 6,
+          "p99": 6
+        }
+      },
+      "sqlite.pr_supervisor_capability_write": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.037,
+        "total_wait_ms": 7.935166999232024,
+        "max_wait_ms": 7.935166999232024,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 7.788,
+        "max_runtime_ms": 7.788,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 7.788,
+          "p50": 7.788,
+          "p95": 7.788,
+          "p99": 7.788
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.037,
+          "p50": 0.037,
+          "p95": 0.037,
+          "p99": 0.037
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 7.155,
+          "p50": 7.155,
+          "p95": 7.155,
+          "p99": 7.155
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.153,
+          "p50": 0.153,
+          "p95": 0.153,
+          "p99": 0.153
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.476,
+          "p50": 0.476,
+          "p95": 0.476,
+          "p99": 0.476
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 3.05,
+          "p50": 3.05,
+          "p95": 3.05,
+          "p99": 3.05
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sqlite.pr_supervisor_completion_due_read": {
+        "submitted": 25,
+        "completed": 25,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.907,
+        "total_wait_ms": 241.83945707045496,
+        "max_wait_ms": 37.97541599487886,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 234.755,
+        "max_runtime_ms": 36.06,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 25,
+          "max": 36.06,
+          "p50": 8.162,
+          "p95": 19.882,
+          "p99": 36.06
+        },
+        "queue_ms": {
+          "samples": 25,
+          "max": 0.083,
+          "p50": 0.034,
+          "p95": 0.076,
+          "p99": 0.083
+        },
+        "python_lock_wait_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 25,
+          "max": 34.562,
+          "p50": 6.867,
+          "p95": 12.629,
+          "p99": 34.562
+        },
+        "executor_dispatch_ms": {
+          "samples": 25,
+          "max": 0.554,
+          "p50": 0.134,
+          "p95": 0.416,
+          "p99": 0.554
+        },
+        "completion_delivery_ms": {
+          "samples": 25,
+          "max": 12.054,
+          "p50": 0.411,
+          "p95": 3.383,
+          "p99": 12.054
+        },
+        "thread_cpu_ms": {
+          "samples": 25,
+          "max": 7.483,
+          "p50": 5.26,
+          "p95": 7.044,
+          "p99": 7.483
+        },
+        "sqlite_statement_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 25,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sqlite.pr_supervisor_due_read": {
+        "submitted": 25,
+        "completed": 25,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.62,
+        "total_wait_ms": 184.65533386915922,
+        "max_wait_ms": 56.11612502252683,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 177.488,
+        "max_runtime_ms": 55.734,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 25,
+          "max": 55.734,
+          "p50": 4.09,
+          "p95": 15.967,
+          "p99": 55.734
+        },
+        "queue_ms": {
+          "samples": 25,
+          "max": 0.485,
+          "p50": 0.047,
+          "p95": 0.067,
+          "p99": 0.485
+        },
+        "python_lock_wait_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 25,
+          "max": 53.592,
+          "p50": 3.233,
+          "p95": 15.425,
+          "p99": 53.592
+        },
+        "executor_dispatch_ms": {
+          "samples": 25,
+          "max": 0.566,
+          "p50": 0.154,
+          "p95": 0.407,
+          "p99": 0.566
+        },
+        "completion_delivery_ms": {
+          "samples": 25,
+          "max": 1.708,
+          "p50": 0.373,
+          "p95": 1.372,
+          "p99": 1.708
+        },
+        "thread_cpu_ms": {
+          "samples": 25,
+          "max": 2.969,
+          "p50": 2.724,
+          "p95": 2.946,
+          "p99": 2.969
+        },
+        "sqlite_statement_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 25,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 25,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sqlite.restart_handoffs_pending": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.045,
+        "total_wait_ms": 16.20954100508243,
+        "max_wait_ms": 16.20954100508243,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 15.632,
+        "max_runtime_ms": 15.632,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 15.632,
+          "p50": 15.632,
+          "p95": 15.632,
+          "p99": 15.632
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.045,
+          "p50": 0.045,
+          "p95": 0.045,
+          "p99": 0.045
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 3.449,
+          "p50": 3.449,
+          "p95": 3.449,
+          "p99": 3.449
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.383,
+          "p50": 0.383,
+          "p95": 0.383,
+          "p99": 0.383
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 11.797,
+          "p50": 11.797,
+          "p95": 11.797,
+          "p99": 11.797
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 2.828,
+          "p50": 2.828,
+          "p95": 2.828,
+          "p99": 2.828
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 2.869,
+          "p50": 2.869,
+          "p95": 2.869,
+          "p99": 2.869
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 2,
+          "p50": 2,
+          "p95": 2,
+          "p99": 2
+        }
+      },
+      "sqlite.transcript_append": {
+        "submitted": 90,
+        "completed": 90,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 3,
+        "max_queued": 1,
+        "total_queue_ms": 5.023,
+        "total_wait_ms": 8792.963747284375,
+        "max_wait_ms": 239.8158340365626,
+        "total_lock_wait_ms": 4325.029786908999,
+        "total_runtime_ms": 8738.684,
+        "max_runtime_ms": 239.36,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 90,
+          "max": 239.36,
+          "p50": 91.582,
+          "p95": 177.233,
+          "p99": 239.36
+        },
+        "queue_ms": {
+          "samples": 90,
+          "max": 0.501,
+          "p50": 0.045,
+          "p95": 0.107,
+          "p99": 0.501
+        },
+        "python_lock_wait_ms": {
+          "samples": 90,
+          "max": 143.418,
+          "p50": 39.498,
+          "p95": 112.256,
+          "p99": 143.418
+        },
+        "python_lock_hold_ms": {
+          "samples": 90,
+          "max": 190.571,
+          "p50": 38.892,
+          "p95": 70.857,
+          "p99": 190.571
+        },
+        "worker_service_ms": {
+          "samples": 90,
+          "max": 238.045,
+          "p50": 89.271,
+          "p95": 174.883,
+          "p99": 238.045
+        },
+        "executor_dispatch_ms": {
+          "samples": 90,
+          "max": 14.036,
+          "p50": 0.348,
+          "p95": 2.727,
+          "p99": 14.036
+        },
+        "completion_delivery_ms": {
+          "samples": 90,
+          "max": 26.432,
+          "p50": 0.738,
+          "p95": 5.894,
+          "p99": 26.432
+        },
+        "thread_cpu_ms": {
+          "samples": 90,
+          "max": 21.521,
+          "p50": 14.14,
+          "p95": 19.04,
+          "p99": 21.521
+        },
+        "sqlite_statement_ms": {
+          "samples": 90,
+          "max": 63.133,
+          "p50": 7.098,
+          "p95": 33.085,
+          "p99": 63.133
+        },
+        "sqlite_commit_ms": {
+          "samples": 90,
+          "max": 17.489,
+          "p50": 0.635,
+          "p95": 6.009,
+          "p99": 17.489
+        },
+        "sqlite_calls": {
+          "samples": 90,
+          "max": 1,
+          "p50": 1,
+          "p95": 1,
+          "p99": 1
+        }
+      },
+      "startup.agent_manager": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.184,
+        "total_wait_ms": 12.859792041126639,
+        "max_wait_ms": 12.859792041126639,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 12.55,
+        "max_runtime_ms": 12.55,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 12.55,
+          "p50": 12.55,
+          "p95": 12.55,
+          "p99": 12.55
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.184,
+          "p50": 0.184,
+          "p95": 0.184,
+          "p99": 0.184
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 11.569,
+          "p50": 11.569,
+          "p95": 11.569,
+          "p99": 11.569
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.531,
+          "p50": 0.531,
+          "p95": 0.531,
+          "p99": 0.531
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.431,
+          "p50": 0.431,
+          "p95": 0.431,
+          "p99": 0.431
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 10.648,
+          "p50": 10.648,
+          "p95": 10.648,
+          "p99": 10.648
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sync.commit_read": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.377,
+        "total_wait_ms": 167.25708392914385,
+        "max_wait_ms": 26.04554098797962,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 137.566,
+        "max_runtime_ms": 21.56,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 21.56,
+          "p50": 3.452,
+          "p95": 11.26,
+          "p99": 21.56
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.072,
+          "p50": 0.048,
+          "p95": 0.069,
+          "p99": 0.072
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 18.841,
+          "p50": 1.424,
+          "p95": 8.555,
+          "p99": 18.841
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 5.307,
+          "p50": 0.315,
+          "p95": 3.177,
+          "p99": 5.307
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 5.064,
+          "p50": 0.837,
+          "p95": 4.405,
+          "p99": 5.064
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 0.864,
+          "p50": 0.486,
+          "p95": 0.688,
+          "p99": 0.864
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sync.gc_resume": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.115,
+        "total_wait_ms": 3.251124988310039,
+        "max_wait_ms": 3.251124988310039,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 2.88,
+        "max_runtime_ms": 2.88,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 2.88,
+          "p50": 2.88,
+          "p95": 2.88,
+          "p99": 2.88
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.115,
+          "p50": 0.115,
+          "p95": 0.115,
+          "p99": 0.115
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 0.205,
+          "p50": 0.205,
+          "p95": 0.205,
+          "p99": 0.205
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.521,
+          "p50": 0.521,
+          "p95": 0.521,
+          "p99": 0.521
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 2.151,
+          "p50": 2.151,
+          "p95": 2.151,
+          "p99": 2.151
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 0.2,
+          "p50": 0.2,
+          "p95": 0.2,
+          "p99": 0.2
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sync.push_transaction": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 2.767,
+        "total_wait_ms": 4037.3386259307154,
+        "max_wait_ms": 526.8047080026008,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 3942.933,
+        "max_runtime_ms": 525.085,
+        "slow_calls": 1,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 525.085,
+          "p50": 113.49,
+          "p95": 258.489,
+          "p99": 525.085
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 1.028,
+          "p50": 0.056,
+          "p95": 0.1,
+          "p99": 1.028
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 7.209,
+          "p50": 0.005,
+          "p95": 4.575,
+          "p99": 7.209
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 193.477,
+          "p50": 78.657,
+          "p95": 167.384,
+          "p99": 193.477
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 523.368,
+          "p50": 112.491,
+          "p95": 257.446,
+          "p99": 523.368
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 2.266,
+          "p50": 0.201,
+          "p95": 1.451,
+          "p99": 2.266
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 2.503,
+          "p50": 0.422,
+          "p95": 2.178,
+          "p99": 2.503
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 76.211,
+          "p50": 53.473,
+          "p95": 75.17,
+          "p99": 76.211
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 120.617,
+          "p50": 31.868,
+          "p95": 119.044,
+          "p99": 120.617
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 9.217,
+          "p50": 2.28,
+          "p95": 5.604,
+          "p99": 9.217
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 67,
+          "p50": 66,
+          "p95": 66,
+          "p99": 67
+        }
+      },
+      "sync.reconcile_head": {
+        "submitted": 30,
+        "completed": 30,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 1.553,
+        "total_wait_ms": 3472.1985409851186,
+        "max_wait_ms": 442.7286669961177,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 3465.928,
+        "max_runtime_ms": 442.083,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 30,
+          "max": 442.083,
+          "p50": 99.914,
+          "p95": 285.254,
+          "p99": 442.083
+        },
+        "queue_ms": {
+          "samples": 30,
+          "max": 0.149,
+          "p50": 0.04,
+          "p95": 0.143,
+          "p99": 0.149
+        },
+        "python_lock_wait_ms": {
+          "samples": 30,
+          "max": 21.583,
+          "p50": 0.004,
+          "p95": 1.297,
+          "p99": 21.583
+        },
+        "python_lock_hold_ms": {
+          "samples": 30,
+          "max": 206.782,
+          "p50": 59.433,
+          "p95": 150.922,
+          "p99": 206.782
+        },
+        "worker_service_ms": {
+          "samples": 30,
+          "max": 440.927,
+          "p50": 99.033,
+          "p95": 284.309,
+          "p99": 440.927
+        },
+        "executor_dispatch_ms": {
+          "samples": 30,
+          "max": 0.482,
+          "p50": 0.163,
+          "p95": 0.379,
+          "p99": 0.482
+        },
+        "completion_delivery_ms": {
+          "samples": 30,
+          "max": 2.04,
+          "p50": 0.306,
+          "p95": 1.122,
+          "p99": 2.04
+        },
+        "thread_cpu_ms": {
+          "samples": 30,
+          "max": 83.219,
+          "p50": 45.068,
+          "p95": 71.594,
+          "p99": 83.219
+        },
+        "sqlite_statement_ms": {
+          "samples": 30,
+          "max": 69.651,
+          "p50": 19.487,
+          "p95": 60.675,
+          "p99": 69.651
+        },
+        "sqlite_commit_ms": {
+          "samples": 30,
+          "max": 4.736,
+          "p50": 1.068,
+          "p95": 4.167,
+          "p99": 4.736
+        },
+        "sqlite_calls": {
+          "samples": 30,
+          "max": 60,
+          "p50": 60,
+          "p95": 60,
+          "p99": 60
+        }
+      },
+      "sync.ref_read": {
+        "submitted": 11,
+        "completed": 11,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.624,
+        "total_wait_ms": 2381.6192090744153,
+        "max_wait_ms": 2260.360040992964,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 2378.192,
+        "max_runtime_ms": 2258.911,
+        "slow_calls": 1,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 11,
+          "max": 2258.911,
+          "p50": 15.132,
+          "p95": 2258.911,
+          "p99": 2258.911
+        },
+        "queue_ms": {
+          "samples": 11,
+          "max": 0.084,
+          "p50": 0.058,
+          "p95": 0.084,
+          "p99": 0.084
+        },
+        "python_lock_wait_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 11,
+          "max": 19.917,
+          "p50": 11.752,
+          "p95": 19.917,
+          "p99": 19.917
+        },
+        "executor_dispatch_ms": {
+          "samples": 11,
+          "max": 0.547,
+          "p50": 0.205,
+          "p95": 0.547,
+          "p99": 0.547
+        },
+        "completion_delivery_ms": {
+          "samples": 11,
+          "max": 2258.079,
+          "p50": 0.356,
+          "p95": 2258.079,
+          "p99": 2258.079
+        },
+        "thread_cpu_ms": {
+          "samples": 11,
+          "max": 0.933,
+          "p50": 0.638,
+          "p95": 0.933,
+          "p99": 0.933
+        },
+        "sqlite_statement_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 11,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 11,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sync.startup_reconcile": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.081,
+        "total_wait_ms": 3.319040988571942,
+        "max_wait_ms": 3.319040988571942,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 2.847,
+        "max_runtime_ms": 2.847,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 2.847,
+          "p50": 2.847,
+          "p95": 2.847,
+          "p99": 2.847
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.081,
+          "p50": 0.081,
+          "p95": 0.081,
+          "p99": 0.081
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 1.464,
+          "p50": 1.464,
+          "p95": 1.464,
+          "p99": 1.464
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.586,
+          "p50": 0.586,
+          "p95": 0.586,
+          "p99": 0.586
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.795,
+          "p50": 0.795,
+          "p95": 0.795,
+          "p99": 0.795
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 0.524,
+          "p50": 0.524,
+          "p95": 0.524,
+          "p99": 0.524
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "workspace.collect_garbage": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.073,
+        "total_wait_ms": 18.516000011004508,
+        "max_wait_ms": 18.516000011004508,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 17.445,
+        "max_runtime_ms": 17.445,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 17.445,
+          "p50": 17.445,
+          "p95": 17.445,
+          "p99": 17.445
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.073,
+          "p50": 0.073,
+          "p95": 0.073,
+          "p99": 0.073
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 2.252,
+          "p50": 2.252,
+          "p95": 2.252,
+          "p99": 2.252
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.207,
+          "p50": 0.207,
+          "p95": 0.207,
+          "p99": 0.207
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 14.983,
+          "p50": 14.983,
+          "p95": 14.983,
+          "p99": 14.983
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 1.279,
+          "p50": 1.279,
+          "p95": 1.279,
+          "p99": 1.279
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "workspace.reconcile_terminal_state": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.033,
+        "total_wait_ms": 11.877666984219104,
+        "max_wait_ms": 11.877666984219104,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 11.525,
+        "max_runtime_ms": 11.525,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 11.525,
+          "p50": 11.525,
+          "p95": 11.525,
+          "p99": 11.525
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.033,
+          "p50": 0.033,
+          "p95": 0.033,
+          "p99": 0.033
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 5.629,
+          "p50": 5.629,
+          "p95": 5.629,
+          "p99": 5.629
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.172,
+          "p50": 0.172,
+          "p95": 0.172,
+          "p99": 0.172
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 5.717,
+          "p50": 5.717,
+          "p95": 5.717,
+          "p99": 5.717
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 4.106,
+          "p50": 4.106,
+          "p95": 4.106,
+          "p99": 4.106
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 2.046,
+          "p50": 2.046,
+          "p95": 2.046,
+          "p99": 2.046
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 3,
+          "p50": 3,
+          "p95": 3,
+          "p99": 3
+        }
+      }
+    }
+  },
+  "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
+  "transcript_performance": {
+    "window": "last_256_observations_per_metric",
+    "metrics": {
+      "prepare_ms": {
+        "samples": 90,
+        "max": 4.462,
+        "p50": 2.468,
+        "p95": 3.706,
+        "p99": 4.462,
+        "count": 90,
+        "total": 229.992
+      },
+      "input_rows": {
+        "samples": 90,
+        "max": 32,
+        "p50": 32,
+        "p95": 32,
+        "p99": 32,
+        "count": 90,
+        "total": 2880
+      },
+      "canonical_payload_bytes": {
+        "samples": 90,
+        "max": 26134,
+        "p50": 26134,
+        "p95": 26134,
+        "p99": 26134,
+        "count": 90,
+        "total": 2351100
+      },
+      "python_lock_wait_ms": {
+        "samples": 90,
+        "max": 143.42,
+        "p50": 27.475,
+        "p95": 66.488,
+        "p99": 143.42,
+        "count": 90,
+        "total": 2758.927
+      },
+      "object_publish_ms": {
+        "samples": 90,
+        "max": 0.009,
+        "p50": 0.002,
+        "p95": 0.007,
+        "p99": 0.009,
+        "count": 90,
+        "total": 0.243
+      },
+      "sqlite_writer_acquire_ms": {
+        "samples": 90,
+        "max": 40.719,
+        "p50": 0.152,
+        "p95": 2.641,
+        "p99": 40.719,
+        "count": 90,
+        "total": 84.413
+      },
+      "lookup_rows_returned": {
+        "samples": 90,
+        "max": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "count": 90,
+        "total": 0
+      },
+      "sqlite_rows_committed": {
+        "samples": 90,
+        "max": 32,
+        "p50": 32,
+        "p95": 32,
+        "p99": 32,
+        "count": 90,
+        "total": 2880
+      },
+      "transaction_hold_ms": {
+        "samples": 90,
+        "max": 165.509,
+        "p50": 15.14,
+        "p95": 42.303,
+        "p99": 165.509,
+        "count": 90,
+        "total": 1753.268
+      },
+      "sqlite_row_changes_attempted": {
+        "samples": 90,
+        "max": 32,
+        "p50": 32,
+        "p95": 32,
+        "p99": 32,
+        "count": 90,
+        "total": 2880
+      }
+    }
+  },
+  "dispatch_performance": {
+    "window": "last_256_observations_per_metric",
+    "metrics": {
+      "sqlite_writer_acquire_ms": {
+        "samples": 162,
+        "max": 12.171,
+        "p50": 0.019,
+        "p95": 0.897,
+        "p99": 5.429,
+        "count": 162,
+        "total": 45.909
+      },
+      "transaction_hold_ms": {
+        "samples": 162,
+        "max": 13.052,
+        "p50": 1.315,
+        "p95": 4.329,
+        "p99": 10.988,
+        "count": 162,
+        "total": 282.274
+      }
+    }
+  },
+  "provenance": {
+    "scope": "disposable local fixture; no installed PA mutation",
+    "source_state": "systemic-inventory-v2-connections-closed",
+    "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "not_acceptance": "retained slow-operation violations; production/fleet acceptance unresolved",
+    "runtime_python_source_manifest_sha256": "ee9f16e55cf0f795a73f5cb13ba7d8c50298da9866949a0c9214b95cb9afa21d",
+    "runtime_python_source_files": 334,
+    "benchmark_script_sha256": "4f1743021625e2994dbb2ce7510a8186c03ad724d8c4f2e3da441ac8290975e0"
+  }
+}

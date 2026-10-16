@@ -269,3 +269,84 @@ An isolated 50-record/20-request fixture measured response bytes
 38.304/63.564/79.788/79.788 → 10.693/14.569/15.768/15.768 ms. Its loop probe
 includes the same-process ASGI client's JSON decode and is not a production
 server-only loop SLO. These fixes do not resolve the remaining inventory.
+
+The full-Kernel incoming-sync regression also confirmed a callback contract
+defect: the engine invoked a target-aware callback before ref publication, but
+the application callback required the target to be the already-published ref.
+A valid first import or fast-forward returned stale after three attempts.
+Incoming publication now has an explicit application callback that checks the
+expected ref and projects the explicit target under the canonical mutation
+boundary, then publishes the ref. Recovery retains its strict published-tip
+check. Derived indexing runs after releasing primary mutation admission.
+First-import replay now uses the incoming target, rather than the previous ref.
+Tests cover first import, fast-forward, projection rollback, stale CAS and an
+independent session-binding write while derived indexing is held. This defect
+does not establish the cause of every historical reconcile delay.
+
+The expanded version-2 mixed fixture adds 30 incoming reconciliations and 30
+100-row dispatch-list requests to the previous workload. Its first run retained
+all 2,880 transcript events with no failures, rejections or timeouts, but produced
+two slow calls: push maximum 643.293 ms and reconcile maximum 514.471 ms.
+Those violations remain evidence, not a passing acceptance result. Their p95s
+were 356.763/181.240 ms; executor dispatch maxima were 4.550/5.136 ms and
+primary SQLite statement/commit totals per call were small. Disk-output blocks
+reported zero on this Mac and cannot establish absence of disk activity.
+
+A subsequent disposable database check confirmed both DAG index and object
+catalog connections used WAL with `synchronous=FULL` (2), although initialization
+requested NORMAL (1). SQLite's synchronous setting is connection-local; opening
+each later connection restored its default. Apply the existing NORMAL policy
+on each connection of these two explicitly disposable, rebuildable indexes,
+and include their numeric SQLite calls/commits/BUSY errors in operation metrics.
+Canonical object/ref publication and primary/transcript durability policies
+remain unchanged. This policy defect is confirmed; its contribution to the
+first run's two individual tails is not proven without comparative evidence.
+The policy-only comparison still produced two warnings (push maximum 535.109 ms,
+reconcile 1,091.566 ms); it does not establish tail acceptance or improvement.
+Source inspection then found four DAG-index paths using SQLite's connection
+context manager without closing the connection. That context manager commits or
+rolls back but does not close. An explicit-lifetime regression retained strong
+references to every opened connection and independently reproduced unclosed
+handles after publication. Both writes and entity-snapshot reads now use the
+existing closing transaction helper, including rollback. The benchmark also
+records bounded numeric GC-pause evidence; no GC suppression is used.
+After explicit closure, the same version-2 run retained all 2,880 events and had
+zero startup/drain timeouts or failed/rejected operations, but one push still
+violated 500 ms (526.823 ms). Push p50/p95/p99/max was
+114.220/258.738/526.823/526.823 ms; reconcile was
+101.305/286.721/444.309/444.309 ms. Binding maximum was 245.390 ms, drain
+240.854 ms, Agent page 254.565 ms and dispatch list 98.280 ms. GC pauses reached
+154.582 ms; their per-call causal overlap and external host/disk contention are
+not established. This is a retained acceptance failure requiring further work,
+not a zero-warning result. The three raw numeric runs are retained under
+`docs/benchmarks/systemic-inventory-v2-*.json`; workload version 2 must not be
+compared as an identical scenario to version 1.
+Ten final-source tool-free ACP fixture starts and drains completed with no
+failed, timed-out, rejected or slow operations. The first took 326.148 ms;
+subsequent starts had median 144.994 ms and maximum 260.735 ms. Numeric evidence
+is `docs/benchmarks/systemic-inventory-cold-start.json`; this does not measure
+real provider, peer-network or installed-service startup.
+
+Reconciliation scans now return immutable scheduling identities instead of
+copying retained proofs for up to 1,000 dispatches. Each candidate still reloads
+the current durable record before action. Worker progress is reported between
+completed candidates; no timer heartbeat disguises a stalled candidate. The
+retained restart emissions motivate this repair, but their historical individual
+causes are not proven. Normal prompt enqueue still contains synchronous runtime
+checkpoints and requires separate admission-safe investigation.
+
+Bounded read-only peer observations at approximately 07:22 UTC are recorded in
+card attachment `c846ed5c59d1486ba0a006abafc7189a`. The nonresponding configured
+peer remained unidentified after one bounded identity/runtime read each. The
+responding macmini (`02dbcd47-8f40-44eb-8403-5eb57545afc8`) reported 6,800
+fleet-overview failed/timed-out calls out of 9,980 submissions, 638 PR-peer
+failures out of 1,843, and 269 sync-peer failures out of 3,452. Failed and timed-out
+counters overlap; these are process-lifetime counters, not new incidents.
+Reconcile/push lifetime maxima remained 92.881/79.034 seconds. Peer build identity,
+logs, individual failure causes and post-deployment acceptance remain unverified.
+At 07:41 UTC the local status API reported running version 1.5.6, installed
+1.5.8, null runtime VCS revision and release track `release`. Verified tag
+`v1.5.8` points to `fe26edfab7899d1c4a64e8063d82093ffd550ef9`, preceding both
+backup PR #483 and systemic PR #484. Neither a restart into that wheel nor a
+source-branch merge would establish deployment of these repairs. No channel
+switch, installed-service update or restart was performed.

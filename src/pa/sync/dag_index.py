@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from pa.domain.models import CardEvent, SyncCommit
+from pa.core.sqlite_metrics import ObservedConnection
 
 
 SCHEMA_VERSION = 2
@@ -35,10 +36,14 @@ class DagIndex:
         self._initialize()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=5.0)
+        conn = sqlite3.connect(self.path, timeout=5.0, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
+        # This disposable index is rebuilt from canonical objects. Unlike WAL,
+        # synchronous is connection-local: setting it only during initialization
+        # left every later short-lived connection at SQLite's FULL default.
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     @contextmanager
@@ -524,7 +529,7 @@ class DagIndex:
         present are skipped; only novel descendants are inserted. Returns False
         when the published index is not exactly ``from_head``.
         """
-        with self._build_lock, self._conn() as conn:
+        with self._build_lock, self._db() as conn:
             meta = conn.execute(
                 "SELECT indexed_head, commit_count, event_count FROM index_meta "
                 "WHERE realm_id=? AND state='ready'",
@@ -578,7 +583,7 @@ class DagIndex:
 
     def reset_realm(self, realm_id: str) -> None:
         """Discard one realm's derived records; canonical objects are untouched."""
-        with self._build_lock, self._conn() as conn:
+        with self._build_lock, self._db() as conn:
             for table in ("entity_events", "reachability", "commit_parents", "commits"):
                 conn.execute(f"DELETE FROM {table} WHERE realm_id=?", (realm_id,))
             conn.execute("DELETE FROM index_meta WHERE realm_id=?", (realm_id,))

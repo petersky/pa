@@ -15,6 +15,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
@@ -153,6 +154,14 @@ class DispatchEvent(BaseModel):
     message: str
     detail: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
+class ReconciliationCandidate:
+    """Read-only scheduling hint; mutations reload the current durable record."""
+    dispatch_id: str
+    reconciliation_state: str
+    reconciliation_next_retry_at: datetime | None
 
 
 class GoalDispatchProvenance(BaseModel):
@@ -2225,6 +2234,23 @@ class DispatchStore:
                        if not target_instance_id or record.target_instance_id == target_instance_id)
             selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[:limit]
             return [self._public_status_record(record) for record in selected]
+
+    def reconciliation_candidates(self, *, due_at: datetime,
+                                  limit: int = 1000) -> list[ReconciliationCandidate]:
+        """Select due identities without copying retained plans and turn history."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted((record for record in self._records.values() if (
+                record.reconciliation_state == "prompted" or (
+                    record.reconciliation_state in {"pending", "blocked"}
+                    and (record.reconciliation_next_retry_at is None
+                         or record.reconciliation_next_retry_at <= due_at)
+                )
+            )), key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [ReconciliationCandidate(record.dispatch_id, record.reconciliation_state,
+                                            record.reconciliation_next_retry_at)
+                    for record in selected]
 
     def waiting_count(self) -> int:
         """Scalar queue health; no record copies, SQL or writer lock."""

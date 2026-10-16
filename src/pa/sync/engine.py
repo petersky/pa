@@ -82,6 +82,7 @@ class SyncEngine:
         self._peer_backoff: dict[tuple[str, str], tuple[int, float, dict]] = {}
         self._periodic_task: asyncio.Task | None = None
         self._rebuild_projection: Callable[[str], dict[str, Any] | None] | None = None
+        self._publish_projection_head: Callable[..., dict[str, Any]] | None = None
         self._client: httpx.AsyncClient | None = None
         self._peer_slots = asyncio.Semaphore(8)
         # Legacy full bundles are retained only when they fit the old safety
@@ -320,10 +321,12 @@ class SyncEngine:
         self._push_callbacks.append(callback)
 
     def on_head_advanced(
-        self, callback: Callable[..., dict[str, Any] | None]
+        self, callback: Callable[..., dict[str, Any] | None], *,
+        publish_head: Callable[..., dict[str, Any]] | None = None,
     ) -> None:
         # Callback may accept (realm_id) or (realm_id, target_head=None).
         self._rebuild_projection = callback
+        self._publish_projection_head = publish_head
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -855,6 +858,13 @@ class SyncEngine:
         expected_head: str | None,
     ) -> dict[str, Any] | None:
         """Catch up target-aware projections before CAS; legacy after."""
+        if self._publish_projection_head is not None:
+            # The application owns its shared metadata mutation boundary.
+            # A recovery callback only accepts an already published durable tip;
+            # it is not an incoming-head publisher.
+            return self._publish_projection_head(
+                realm_id, new_head, expected_head=expected_head
+            )
         if self._projection_callback_accepts_target():
             projection = self._rebuild_to_head(realm_id, new_head)
             self.log.advance_ref(

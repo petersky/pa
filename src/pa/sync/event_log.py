@@ -1250,7 +1250,7 @@ class EventLog:
     ) -> dict | None:
         # Realm is not encoded in public snapshot arguments. Resolve it from
         # the indexed commit, avoiding canonical object reads on the hot path.
-        with self.index._conn() as conn:
+        with self.index._db() as conn:
             found = conn.execute(
                 "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1", (head,)
             ).fetchone()
@@ -1264,7 +1264,7 @@ class EventLog:
 
     def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
         """Materialize one entity at an arbitrary immutable history head."""
-        with self.index._conn() as conn:
+        with self.index._db() as conn:
             found = conn.execute(
                 "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1", (head,)
             ).fetchone()

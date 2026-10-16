@@ -6271,6 +6271,10 @@ class CardProjection:
         if not self.event_log:
             return
         head = self.event_log.get_head(realm_id)
+        self._rebuild_from_log_head(realm_id, head)
+
+    def _rebuild_from_log_head(self, realm_id: str, head: str | None) -> None:
+        """Replay an explicit canonical target while the caller owns mutation."""
         if not head:
             return
         # Keep the destructive reset, complete replay, and head checkpoint in
@@ -6381,7 +6385,7 @@ class CardProjection:
         if not self.event_log.get_commit(target_head):
             raise ValueError(f"missing projection target {target_head}")
         if current is None or not self.event_log.get_commit(current):
-            self.rebuild_from_log(realm_id)
+            self._rebuild_from_log_head(realm_id, target_head)
             return {
                 "commits_applied": 0,
                 "rebuilt": True,
@@ -6389,7 +6393,7 @@ class CardProjection:
                 "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
             }
         if not self.event_log.is_ancestor(current, target_head):
-            self.rebuild_from_log(realm_id)
+            self._rebuild_from_log_head(realm_id, target_head)
             return {
                 "commits_applied": 0,
                 "rebuilt": True,

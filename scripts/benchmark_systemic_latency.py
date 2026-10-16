@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gc
 import json
 import logging
 import math
@@ -16,7 +17,7 @@ import resource
 import sqlite3
 import tempfile
 import time
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 from threading import Lock
 from unittest.mock import patch
@@ -74,6 +75,7 @@ async def run_app(app, root, *, history, iterations):
     manager._startup_complete = True
     store = ctx.store
     log = ctx.require_service("event_log")
+    engine = ctx.require_service("sync_engine")
     dispatches = ctx.require_service("dispatch_store")
     watches = ctx.require_service("pr_supervisor_store")
     counts = Counts()
@@ -116,6 +118,16 @@ async def run_app(app, root, *, history, iterations):
     wire = WireJsonlLogger(root / "fixture-wire.jsonl")
     transcript_runtimes = [AgentSessionRuntime(manager, s, initial_transcript_seq=0) for s in sessions[:3]]
     samples, sizes = defaultdict(list), defaultdict(list)
+    gc_started, gc_pauses, gc_counts = {}, deque(maxlen=256), Counter()
+    def observe_gc(phase, info):
+        generation = info["generation"]
+        if phase == "start":
+            gc_started[generation] = time.perf_counter()
+        elif generation in gc_started:
+            gc_counts[generation] += 1
+            gc_pauses.append({"generation": generation,
+                "elapsed_ms": (time.perf_counter() - gc_started.pop(generation)) * 1000,
+                "collected": info["collected"], "uncollectable": info["uncollectable"]})
     warnings = Counter()
     class WarningCounts(logging.Handler):
         def emit(self, record):
@@ -143,13 +155,26 @@ async def run_app(app, root, *, history, iterations):
             # transaction; object creation is included in its workload sample.
             def push():
                 parent = log.get_head("default")
-                digest = log.store.put_json(event(history + i).model_dump(mode="json"))
+                digest = log.store.put_json(event(history + 2 * i).model_dump(mode="json"))
                 commit = SyncCommit(hash="", realm_id="default", instance_id="peer",
                     parent_hashes=[parent], event_hashes=[digest], author_principal="user:fixture")
                 commit.hash = log.store.put_json(commit.model_dump(mode="json"))
                 return _apply_sync_push_local(ctx, "default", commit.hash, {})
             result = await offload("sync.push_transaction", push)
             assert result["commits_applied"] == 1
+            # Exercise the application's actual incoming-head callback as well
+            # as HTTP push. Object import precedes this publication scenario.
+            def prepare_reconcile():
+                parent = log.get_head("default")
+                digest = log.store.put_json(event(history + 2 * i + 1).model_dump(mode="json"))
+                commit = SyncCommit(hash="", realm_id="default", instance_id="peer",
+                    parent_hashes=[parent], event_hashes=[digest], author_principal="user:fixture")
+                return log.store.put_json(commit.model_dump(mode="json"))
+            target = await asyncio.to_thread(prepare_reconcile)
+            reconciled = await measure("sync.reconcile_head", engine.apply_realm_head(
+                "default", target, "sync.reconcile_head", engine._reconcile_remote_head,
+                "default", target))
+            assert reconciled["advanced"], reconciled
             await asyncio.sleep(0.005)
     async def startup_work():
         for i in range(iterations):
@@ -176,8 +201,9 @@ async def run_app(app, root, *, history, iterations):
                 phase=ProgressPhase.TESTING, summary="Fixture checkpoint")
             await offload("progress.checkpoint_write", dispatches.ingest_progress, progress, delivered=True)
             await offload("dispatch.runnable_read", dispatches.runnable)
-            await offload("reconciliation.dispatch_read", dispatches.list,
-                          reconciliation_states={"pending", "prompted", "blocked"}, limit=100)
+            from datetime import UTC, datetime
+            await offload("reconciliation.dispatch_read", dispatches.reconciliation_candidates,
+                          due_at=datetime.now(UTC), limit=100)
             await asyncio.sleep(0.005)
     async def cache_and_wire():
         for i in range(iterations):
@@ -190,7 +216,8 @@ async def run_app(app, root, *, history, iterations):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
             for _ in range(iterations):
                 for path in ("/api/health", "/api/agent/sessions?view=chats", "/agent",
-                             "/partials/home/sections", "/api/status", "/api/runtime?section=sse"):
+                             "/partials/home/sections", "/api/status", "/api/runtime?section=sse",
+                             "/api/fleet/dispatch-jobs"):
                     response = await measure(path, client.get(path))
                     response.raise_for_status()
                     if path == "/agent":
@@ -202,6 +229,7 @@ async def run_app(app, root, *, history, iterations):
     runtime_before = runtime.snapshot()
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()
+    gc.callbacks.append(observe_gc)
     try:
         with patch("sqlite3.connect", counts.connection), patch.object(log.store, "get", side_effect=read_object):
             await asyncio.gather(sync_work(), startup_work(), progress_work(), cache_and_wire(), foreground(),
@@ -220,9 +248,10 @@ async def run_app(app, root, *, history, iterations):
             assert cursor == iterations * 32
         assert actual == expected
         assert store.get_projection_head("default") == log.get_head("default")
-        assert store.get_card(card_id).title == f"Fixture {history + iterations - 1}"
+        assert store.get_card(card_id).title == f"Fixture {history + 2 * iterations - 1}"
         return {"hardware": {"machine": platform.machine(), "python": platform.python_version(), "cpus": os.cpu_count()},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,
+                "workload_version": 2, "sync_pushes": iterations, "incoming_reconciliations": iterations,
                 "watches": 30, "iterations_per_family": iterations, "transcript_sessions": 3,
                 "executor_workers": runtime.max_workers, "duration_seconds": round(elapsed, 3),
                 "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"},
@@ -241,11 +270,15 @@ async def run_app(app, root, *, history, iterations):
             "canonical_object_reads": dict(counts.objects),
             "process_cpu_ms": round((after_io.ru_utime + after_io.ru_stime - before_io.ru_utime - before_io.ru_stime) * 1000, 3),
             "disk_output_blocks": after_io.ru_oublock - before_io.ru_oublock,
+            "gc_pauses": {"latency": distribution([item["elapsed_ms"] for item in gc_pauses]),
+                          "window": "last_256_collections_during_measurement",
+                          "counts_by_generation": dict(gc_counts), "observations": list(gc_pauses)},
             "transcript_input_rows": expected, "transcript_retained_rows": actual,
             "runtime": snapshot, "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
             "transcript_performance": store.transcripts.performance.snapshot(),
             "dispatch_performance": dispatches.performance.snapshot()}
     finally:
+        gc.callbacks.remove(observe_gc)
         logging.getLogger().removeHandler(handler)
         store.close_thread_connection()
 
