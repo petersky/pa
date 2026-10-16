@@ -164,6 +164,7 @@ class ConversationIssues:
         return {"revision": state["revision"], "issues": state["issues"],
                 "editable_issues": [{k: v for k, v in i.items() if k != "request_id"} for i in state["issues"]], "requests": [
             {k: v for k, v in r.items() if k not in {"context", "fingerprint"}} | {
+                "realm_id": r["context"]["realm_id"],
                 "groups": [{k: v for k, v in g.items() if k not in {"issues", "dispatch_inputs"}} for g in r["groups"]]
             } for r in state["requests"]
         ]}

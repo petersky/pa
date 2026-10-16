@@ -106,7 +106,12 @@
       section.appendChild(element("strong", label));
       receipt.groups.forEach(function (group) {
         const line = element("p", group.title + " · " + group.state + " ");
-        if (group.card_id) { const link = element("a", "Open card"); link.href = "/cards/" + encodeURIComponent(group.card_id); line.appendChild(link); }
+        if (group.card_id) {
+          const link = element("a", "Open card");
+          link.href = "/work?card=" + encodeURIComponent(group.card_id);
+          if (receipt.realm_id) link.href += "&realm=" + encodeURIComponent(receipt.realm_id);
+          line.appendChild(link);
+        }
         section.appendChild(line);
       });
       if (receipt.error) section.appendChild(element("p", typeof receipt.error === "string" ? receipt.error : receipt.error.message || receipt.error.code || "Admission needs recovery"));
