@@ -25,6 +25,9 @@ Source selection: `561d7362-705b-4678-bff7-f2ea9127c87f`, issue
   permission requests and workspace admission. No source workspace, card-worker
   ownership, dispatch identity or execution binding is copied to a new session.
   Reading a group filters both owner and realm.
+- Session selection clears the prior permission and queue controls before
+  asynchronous routing. Permission actions retain their original session and
+  subscription generation, so a stale control cannot answer another thread.
 
 ## Verification
 
@@ -37,7 +40,8 @@ Source selection: `561d7362-705b-4678-bff7-f2ea9127c87f`, issue
   synthetic active PA runtimes. It checks thread navigation, separate drafts and
   histories, selection/reload, narrow scrolling, retained queues, an unanswered
   permission request visible only in its owning thread, and creating a third
-  empty sibling while the original work remains active. Provider startup is
+  empty sibling while the original work remains active. It also exercises a
+  detached stale permission button during the transition. Provider startup is
   substituted in this isolated fixture; this is not a live-provider concurrency
   or deployment claim.
 - Broader conversation, composer-draft, session-action, SSE, stream-join, MCP,

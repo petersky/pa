@@ -1479,6 +1479,13 @@
   };
 
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
+    // Controls from the previously selected thread must disappear before any
+    // owner/history/snapshot request can yield to a different session.
+    if (this.els.permissions) {
+      this.els.permissions.replaceChildren();
+      this.els.permissions.hidden = true;
+    }
+    this.renderQueue([], {});
     if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
     this.recentRetryTimer = null; this.recentRetryCount = 0;
     this.recentBootstrap = true; this.historyPreserveWindow = false; this.historyUserIntent = false; this.liveControlSeq = 0; this.heldControlSeq = {}; this.initialLiveCursor = null;
@@ -3609,6 +3616,7 @@
   AgentChatWidget.prototype.showPermission = function (payload) {
     if (!this.els.permissions) return;
     const self = this;
+    const requestSessionId = this.sessionId, generation = this.subscriptionGeneration;
     this.els.permissions.hidden = false;
     const reqId = payload.request_id;
     let card = this.els.permissions.querySelector('[data-req-id="' + reqId + '"]');
@@ -3633,8 +3641,9 @@
       btn.className = opt.kind && String(opt.kind).indexOf("allow") === 0 ? "primary small" : "ghost small";
       btn.textContent = opt.name || opt.optionId || opt.option_id;
       btn.addEventListener("click", function () {
+        if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
         const allow = opt.kind && String(opt.kind).indexOf("allow") === 0;
-        self.api("/sessions/" + self.sessionId + "/permissions/" + reqId, {
+        self.api("/sessions/" + requestSessionId + "/permissions/" + reqId, {
           method: "POST",
           body: JSON.stringify({
             allow: !!allow,
@@ -3651,10 +3660,11 @@
     always.className = "ghost small";
     always.textContent = "Always allow";
     always.addEventListener("click", function () {
+      if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
       const allowOpt = options.find(function (o) {
         return o.kind === "allow_always" || o.kind === "allow_once";
       });
-      self.api("/sessions/" + self.sessionId + "/permissions/" + reqId, {
+      self.api("/sessions/" + requestSessionId + "/permissions/" + reqId, {
         method: "POST",
         body: JSON.stringify({
           allow: true,

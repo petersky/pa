@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import httpx
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader
@@ -77,9 +76,6 @@ addEventListener('DOMContentLoaded', () => {
 async def test_switch_and_reload_parallel_threads_keep_drafts_history_queues_and_permissions(operator_server, tmp_path):
     app, base = operator_server
     agent = add_threads_fixture(app)
-    async with httpx.AsyncClient(base_url=base) as client:
-        response = await client.get("/api/agent/sessions/thread-root")
-        assert response.status_code == 200, response.text
     browser = BrowserManager(tmp_path / "browser")
     manager = BrowserSessionManager(browser, instance_id="thread-browser-test")
     scope = BrowserScope("user:test", "thread-browser-test", "thread-browser-test")
@@ -113,6 +109,21 @@ async def test_switch_and_reload_parallel_threads_keep_drafts_history_queues_and
         await wait_for(selected("thread-root"))
         await wait_for("document.querySelector('[data-acw-permissions]').innerText.includes('Permission only for root')")
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Draft for root"
+        # Exercise the transition itself, before a target snapshot arrives.
+        # Even a detached old button must never answer on the new thread.
+        assert await page.evaluate('''(() => {
+          const widget = document.querySelector('[data-agent-chat]')._acw;
+          const permission = document.querySelector('[data-acw-permissions] button');
+          const api = widget.api; window.permissionPosts = [];
+          widget.api = function(path, options) {
+            if (path.includes('/permissions/')) {window.permissionPosts.push(path);return Promise.resolve({});}
+            return api.call(this,path,options);
+          };
+          widget.switchSession('thread-sibling', true, widget.currentInstanceId);
+          permission.click();
+          return document.querySelector('[data-acw-permissions]').childElementCount === 0 && window.permissionPosts.length === 0;
+        })()''')
+        await wait_for(selected("thread-sibling"))
         # Reload the fixture with the same selected durable session.
         await manager.open(scope, url=base + "/fixture/threads?session=thread-sibling")
         await wait_for(selected("thread-sibling"))
