@@ -71,6 +71,10 @@ control key, with at most three delivery attempts. Exhausted or rejected recover
 shows Waiting and identifies the project owner and existing dispatch as the next
 step. An explicit repair assessment prevents competing automatic investigation;
 the canonical verification requirement remains in force.
+After delegated work finishes, the obsolete failed investigation releases its
+collector slot only after fresh canonical completion and current scoped acceptance
+are verified. This finishes the collector action while preserving the canonical
+repair card; a concurrent assessment prevents release.
 
 ## Catalogs, connections, and readiness
 

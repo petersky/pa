@@ -199,9 +199,14 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_health_journal.json').read_text()))
     baseline.update(json.loads((Path(__file__).parent / 'fixtures/mcp_tool_schemas_conversations.json').read_text()))
     # Status deliberately adds optional owner/operation/fingerprint selectors;
-    # all other tool contracts remain frozen to the historical fixture.
+    # Dispatch adds one optional semantic snapshot precondition without changing
+    # the legacy timestamp CAS or required arguments. All other contracts remain
+    # frozen to the historical fixture.
     baseline['get_operation_outcome'] = '89e98961cba2c587d7c207dfee0e485297700204227ddd4100a23e7546524485'
     baseline["recover_operation_outcome"] = "067beb8bc05e49dc3cf8a38d3d6cffcf01ce709996be73ce77a8472701b08131"
+    baseline["preview_fleet_placement"] = "2a47f1f27fbe19f5b8c1274692cabb123e2b3f626db65f1d8995573e4e4fbce8"
+    baseline["dispatch_card"] = "44129e76e13baa10125497aa8162be7666e5b045920f989c58dde86490888edc"
+    baseline["dispatch_card_to_instance"] = "ac1a5bd9d43373ae735a21b82c3165f9c297a8b46364c1f82553b4bd307fc9b7"
     assert actual == baseline
 
 

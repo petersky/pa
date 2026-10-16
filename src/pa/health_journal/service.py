@@ -277,6 +277,33 @@ class HealthService:
         if group['disposition'] != 'triaged':
             # A human/repair worker has taken ownership since triage. Preserve
             # that assessment and its verification gate; do not start a rival.
+            if group['disposition'] in {'deployed_verified', 'no_fix', 'duplicate'}:
+                card = await self.canonical_call(self.ctx.store.get_card, action['result']['card_id'],
+                                                 realm_id=action['payload']['realm'])
+                if card is None or card.lane != 'done':
+                    return
+                if group['disposition'] == 'deployed_verified':
+                    from pa.health_journal.acceptance import verify_acceptance
+                    from pa.health_journal.models import Assessment
+                    assessment = Assessment.model_validate({
+                        **{k:v for k, v in group['data'].items() if k in Assessment.model_fields},
+                        'expected_version':group['version'], 'disposition':'deployed_verified'})
+                    origins = await self.call(self.journal.repair_dispatches, group['id'])
+                    ledger = self.ctx.services.get('dispatch_store')
+                    if ledger is None:
+                        raise JournalError('acceptance_origin_unknown')
+                    records = await self.canonical_call(lambda:[ledger.get(key) for key in origins])
+                    if any(record is None for record in records):
+                        raise JournalError('acceptance_origin_unknown')
+                    verify_acceptance(card, group, assessment, repair_dispatches=origins,
+                        repair_sessions=[record.session_id for record in records if record.session_id])
+                elif card.completion_requirement is not None and not card.completion_status.get('accepted'):
+                    return
+                # Finish the obsolete collector obligation, never the canonical
+                # owner. A concurrent new assessment invalidates this release.
+                await self.call(self.journal.action_result, action['id'], state='terminal',
+                    result={'dispatch_state':durable['state']}, expected_group_version=group['version'],
+                    owner=self.owner, fence=lease['fence'])
             return
         result = action['result']
         retry_key = f'health-start_retry:{action["id"]}'

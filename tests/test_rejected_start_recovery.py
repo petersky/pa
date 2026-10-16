@@ -311,3 +311,53 @@ async def test_explicit_repair_owner_prevents_rival_automatic_retry(fleet):
     assert group["data"]["phase"] == "repairing"
     assert group["data"]["next_actor"] == "repair_owner"
     assert group["data"]["reason"] == "Canonical repair worker owns implementation"
+    with pytest.raises(JournalError, match="assessment_version_conflict"):
+        authority.journal.action_result(action["id"], state="terminal", result={},
+            expected_group_version=group["version"] - 1, owner=authority.service.owner, fence=lease["fence"])
+    assert authority.journal.status()["active_actions"][0]["id"] == action["id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("current_acceptance", [False, True])
+async def test_obsolete_failed_start_releases_slot_only_after_current_canonical_acceptance(fleet, current_acceptance):
+    from pa.domain.models import CompletionEvidence
+    from pa.health_journal.store import JournalError
+
+    authority, source, _network = fleet
+    await api(source, "POST", "/reports", body=observation())
+    await authority.service.cycle(manual=True)
+    policy = authority.journal.status()["policy"]
+    authority.journal.configure(Policy.model_validate(policy).model_copy(update={
+        "project_id":"project", "principal_id":"user:local"}), expected_version=2, actor="user:local")
+    lease = authority.journal.lease(authority.service.owner)
+    action = authority.journal.action(owner=authority.service.owner, fence=lease["fence"])
+    authority.journal.action_result(action["id"], state="dispatched", result={
+        "card_id":"canonical", "dispatch_id":"original-failed"}, owner=authority.service.owner, fence=lease["fence"])
+    action = authority.journal.action(owner=authority.service.owner, fence=lease["fence"])
+    group = authority.journal.group(action["group_id"], realms=["default"])
+    commit = "a"*40
+    card = Card(id="canonical", title="Preserved owner", lane="done", completion_requirement={
+        "mode":"explicit_acceptance", "revision":"current", "milestones":["verified"],
+        "acceptance_principals":["user:local"]})
+    card.completion_evidence = [CompletionEvidence(
+        requirement_revision="current" if current_acceptance else "obsolete", subject_revision=commit,
+        milestones=["verified"], references=[f"health-group:{group['id']}", "scenario:isolated-repair",
+            f"instance:{source.settings.instance_id}"], idempotency_key="independent-acceptance",
+        actor="user:local", actor_kind="human", recorded_at="2026-10-16T00:00:00+00:00")]
+    authority.journal.assess(group["id"], Assessment(expected_version=group["version"], disposition="deployed_verified",
+        reason="Independent declared acceptance", card_id=card.id, commit=commit, accepted_subject_revision=commit,
+        acceptance_reference="independent-acceptance", acceptance_scenario="isolated-repair",
+        accepted_instances=[source.settings.instance_id]), actor="fixture:acceptance", realms=["default"], accepted=True)
+    authority.ctx.store = SimpleNamespace(get_card=lambda *args, **kwargs:card)
+    authority.ctx.services["dispatch_store"] = SimpleNamespace(get=lambda key:SimpleNamespace(session_id=None))
+    if not current_acceptance:
+        with pytest.raises(JournalError, match="awaiting_acceptance"):
+            await authority.service.failed_start(action, lease, {"state":"failed"})
+        assert authority.journal.status()["active_actions"]
+    else:
+        await authority.service.failed_start(action, lease, {"state":"failed"})
+        assert not authority.journal.status()["active_actions"]
+        saved = authority.journal.group(group["id"], realms=["default"])
+        assert saved["data"]["card_id"] == card.id and saved["disposition"] == "deployed_verified"
+        assert saved["data"]["phase"] == "verified"
+        assert card.completion_requirement.revision == "current"

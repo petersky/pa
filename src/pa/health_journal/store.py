@@ -460,7 +460,7 @@ class Journal:
                        (action_id, group['id'], encode(payload), 'reserved', encode(result) if result else None))
             return {'id': action_id, 'group_id': group['id'], 'payload': payload, 'state': 'reserved', 'result': result}
 
-    def action_result(self, action_id, *, state, result, owner, fence):
+    def action_result(self, action_id, *, state, result, owner, fence, expected_group_version=None):
         with self.connection(write=True) as db:
             self._fenced(db, owner, fence)
             old = db.execute('SELECT * FROM actions WHERE id=?', (action_id,)).fetchone()
@@ -470,11 +470,14 @@ class Journal:
                 merged['effects'] = previous['effects']
             db.execute('UPDATE actions SET state=?,result=? WHERE id=?', (state, encode(merged), action_id))
             group = db.execute('SELECT * FROM groups WHERE id=?', (old['group_id'],)).fetchone()
+            if expected_group_version is not None and group['version'] != expected_group_version:
+                raise JournalError('assessment_version_conflict')
             original_data = json.loads(group['data'])
             data = {**original_data, **merged}
             disposition = group['disposition']
             data['phase'] = 'triaging' if state == 'dispatched' else state
-            if disposition not in {'new', 'reopened', 'triaged'} and state != 'terminal':
+            if disposition not in {'new', 'reopened', 'triaged'} and (
+                    state != 'terminal' or disposition in {'deployed_verified', 'no_fix', 'duplicate'}):
                 # A collector checkpoint racing an explicit repair assessment
                 # cannot take ownership back or replace its explanation.
                 for key in ('phase', 'reason', 'next_actor', 'next_action'):
