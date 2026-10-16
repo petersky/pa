@@ -99,6 +99,13 @@
     </div>
   </div>
 
+  <nav class="acw-thread-navigation" data-thread-navigation aria-label="Threads in this chat" hidden>
+    <strong>Threads</strong>
+    <div class="acw-thread-list" data-thread-list></div>
+    <button type="button" class="ghost small" data-thread-empty disabled>New thread</button>
+    <span class="muted small" data-thread-list-status role="status"></span>
+  </nav>
+
   {% if telemetry_enabled and telemetry_session_header != 'hidden' %}
   <details class="acw-resource-header"
            data-session-telemetry
@@ -113,12 +120,6 @@
   </details>
   {% endif %}
 
-  <nav class="acw-thread-navigation" data-thread-navigation aria-label="Threads in this chat" hidden>
-    <strong>Threads</strong>
-    <div class="acw-thread-list" data-thread-list></div>
-    <button type="button" class="ghost small" data-thread-empty disabled>New thread</button>
-    <span class="muted small" data-thread-list-status role="status"></span>
-  </nav>
   <div class="acw-details" data-acw-details>
     <details data-acw-execution-panel>
       <summary>Execution selection</summary>

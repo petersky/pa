@@ -21,6 +21,7 @@ Source selection: `561d7362-705b-4678-bff7-f2ea9127c87f`, issue
 - The thread strip shows titles, source/context labels, activity, queued count
   and archive state. It refreshes sibling activity every five seconds, supports
   normal links and session switching, and scrolls horizontally on narrow screens.
+  It sits above Resources; the existing detail tabs remain directly below Resources.
 - Threads keep their existing per-session drafts, history, queues, questions,
   permission requests and workspace admission. No source workspace, card-worker
   ownership, dispatch identity or execution binding is copied to a new session.
