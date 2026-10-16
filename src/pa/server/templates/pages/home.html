@@ -9,7 +9,6 @@
     <div>
       <p class="eyebrow">{{ active_realm }}</p>
       <h1>What needs your attention?</h1>
-      <p>Act on concrete blockers while autonomous work stays visibly in motion.</p>
     </div>
     <a class="primary home-new-chat" href="/agent?new=1" hx-get="/agent?new=1" hx-target="#app-view" hx-push-url="true" hx-swap="innerHTML">New chat</a>
     <a class="ghost" href="/work?realm={{ active_realm }}">Open work board</a>
@@ -24,7 +23,6 @@
              aria-labelledby="needs-attention-title">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Operator-owned next steps</p>
           <h2 id="needs-attention-title">Needs attention</h2>
         </div>
       </div>
@@ -34,7 +32,6 @@
     <section class="panel command-section" aria-labelledby="active-work-title">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Autonomous progress</p>
           <h2 id="active-work-title">In motion</h2>
         </div>
       </div>
@@ -44,7 +41,6 @@
     <section class="panel command-section" aria-labelledby="recent-outcomes-title">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Execution outcomes</p>
           <h2 id="recent-outcomes-title">Recent outcomes</h2>
         </div>
       </div>

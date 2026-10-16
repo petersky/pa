@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -8,6 +9,16 @@ from pa.domain.models import AgentSession
 from pa.execution.dispatch import DispatchRecord
 from pa.modules.fleet import RemoteAgentStartBody
 from pa.modules.items import _card_session_view
+
+
+def test_source_conversation_is_navigation_without_worker_exclusion():
+    from pa.domain.session_selection import preferred_sessions_by_card
+    ctx = SimpleNamespace(settings=SimpleNamespace(instance_id="local"))
+    chat = session(purpose="chat", status="prompting")
+    result = build_card_execution_index(ctx, sessions=[chat], dispatches=[])
+    assert not result["executions"] and not result["exclusive_active"]
+    assert result["source_conversations"][0]["id"] == chat.id
+    assert not preferred_sessions_by_card([chat])
 
 
 def session(**changes) -> AgentSession:

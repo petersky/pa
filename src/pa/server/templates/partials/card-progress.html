@@ -12,31 +12,23 @@
     <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
     {% if presentation.occurred_at %}<time datetime="{{ presentation.occurred_at }}"
           title="{{ presentation.absolute_time }}">
-      {{ presentation.signal_label }} · {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+      {{ presentation.relative_time }}
     </time>{% else %}<span class="muted">{{ presentation.freshness_label }} · Time unavailable</span>{% endif %}
   </div>
-  <strong>{{ presentation.summary }}</strong>
-  <p class="muted small">{{ presentation.reason }}</p>
-  <p class="muted small">Next: {{ (presentation.next_actor | default({})).label | default('Not confirmed') }}</p>
-  <p class="muted small">{{ presentation.reporting_label }}</p>
-  <div class="card-work-state-context muted small">
-    <span>{{ presentation.execution_label ~ ' instance' if presentation.session_id else 'Dispatch target' }} {{ presentation.target_instance_name }}</span>
-    {% if presentation.provider %}<span>{{ presentation.execution_label }} agent {{ presentation.provider }}{% if presentation.model %} · {{ presentation.model }}{% endif %}</span>{% endif %}
-    {% if presentation.session_id %}<a href="{{ presentation.action.href if presentation.action.kind == 'open_agent' else '/agent?session=' ~ presentation.session_id }}">Linked session {{ presentation.session_id[:8] }}</a>{% endif %}
-  </div>
-  <div class="card-work-state-action">
-    {% if action.kind == 'retry' %}
-    <button type="button" class="small"
-            data-card-dispatch-retry="{{ action.dispatch_id }}">{{ action.label }}</button>
-    {% elif action.kind == 'open_agent' %}
-    <a class="button small" href="{{ action.href }}">{{ action.label or 'Open exact session' }}</a>
-    {% elif action.kind in ('respond', 'review') %}
-    <a class="button small" href="{{ action.href }}"
-       {% if action.external %}target="_blank" rel="noopener"{% endif %}>{{ action.label }}</a>
-    {% elif presentation.action_explanation %}
-    <span class="muted small">{{ presentation.action_explanation }}</span>
+  {% if presentation.outcome %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
+  {% if presentation.next_actor.id in ('operator', 'reviewer') %}<p class="muted small">{{ presentation.next_actor.label }}</p>{% endif %}
+  <details class="work-evidence">
+    <summary>Details and diagnostics</summary>
+    <p>{{ presentation.summary }}</p>
+    <p>{{ presentation.reason }}</p>
+    {% if presentation.action_explanation %}<p>{{ presentation.action_explanation }}</p>{% endif %}
+    {% if presentation.start_receipt %}<p>Saved request <code>{{ presentation.start_receipt.request_id }}</code></p>{% if presentation.start_receipt.error %}<pre>{{ presentation.start_receipt.error | tojson(indent=2) }}</pre>{% endif %}{% endif %}
+    {% if presentation.dispatch_id or presentation.session_id %}
+    <p>{{ presentation.reporting_label }}</p>
+    <p>{{ presentation.execution_label }} · {{ presentation.target_instance_name }}{% if presentation.provider %} · {{ presentation.provider }}{% if presentation.model %} · {{ presentation.model }}{% endif %}{% endif %}</p>
+    {% if presentation.session_id %}<a href="/agent?session={{ presentation.session_id }}{% if presentation.target_instance_id %}&instance={{ presentation.target_instance_id }}{% endif %}">Open worker session</a>{% endif %}
     {% endif %}
-  </div>
+  </details>
 </div>
 
 {% if refresh_actions | default(false) %}{% include "partials/card-primary-action.html" %}{% endif %}

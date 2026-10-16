@@ -368,7 +368,7 @@ class CoreWorkUiRouteTests(unittest.TestCase):
                 assert 'data-progress-state="live"' in html
                 assert "Structured progress unsupported" in html
                 assert "Disconnected" not in html
-                assert "Execution agent codex" in html
+                assert "codex" in html
                 assert "session=exact-worker" in html
                 assert "coordinator" not in html
                 assert "data-card-dispatch-open" not in html
@@ -499,8 +499,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
             self.assertEqual(collection.status_code, 200)
             self.assertNotIn(disabled_excerpt, collection.text)
             self.assertNotIn(stale_excerpt, collection.text)
-            self.assertIn("Summary generation is disabled.", collection.text)
-            self.assertIn("Summary pending.", collection.text)
+            self.assertIn("Not started", collection.text)
+            self.assertNotIn("Summary generation is disabled.", collection.text)
 
     def test_global_header_shows_the_serving_instance_beneath_the_pa_brand(
         self,
@@ -1245,7 +1245,8 @@ class CoreWorkUiRouteTests(unittest.TestCase):
         self.assertIn("data-card-agent-select", agent_detail)
         self.assertIn("auto_start=false", agent_detail)
         self.assertIn('hx-preserve="true"', agent_detail)
-        self.assertIn("Selecting a card never starts work", agent_detail)
+        self.assertIn("Card workers", agent_detail)
+        self.assertIn("Source conversation", agent_detail)
         self.assertIn("data-inline-edit-open", detail)
         self.assertIn('data-markdown-tab="edit"', detail)
         self.assertIn('data-markdown-tab="preview"', detail)

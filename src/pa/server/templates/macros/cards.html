@@ -1,6 +1,11 @@
 {% from "macros/instance_identity.html" import instance_identity %}
 {% macro presentation_action(action, title, card_id, realm_id, classes="ghost small compact-card-dispatch") %}
-  {% if action.kind == 'retry' %}
+  {% if action.kind == 'dispatch' %}
+  <button type="button" class="{{ classes }}" data-card-dispatch-open
+          data-contextual-work-action="dispatch"
+          data-card-id="{{ card_id }}" data-card-realm="{{ realm_id }}"
+          aria-label="{{ action.label }} for {{ title }}">{{ action.label }}</button>
+  {% elif action.kind == 'retry' %}
   <button type="button" class="{{ classes }}"
           data-contextual-work-action="{{ action.kind }}"
           data-card-dispatch-retry="{{ action.dispatch_id }}"
@@ -14,6 +19,7 @@
      {% if action.kind in ('open_card', 'inspect') %}
      data-card-detail-link data-card-id="{{ card_id }}"
      data-card-realm="{{ realm_id }}"
+     {% if action.kind == 'inspect' %}data-card-detail-tab="agent"{% endif %}
      {% endif %}
      {% if action.external %}target="_blank" rel="noopener"{% endif %}
      aria-label="{{ action.label }} for {{ title }}">{{ action.label }}</a>
@@ -46,7 +52,7 @@
        data-card-id="{{ card.id }}"
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
-  {% if card.completion_requirement and card.completion_status.missing %}
+  {% if not presentation and card.completion_requirement and card.completion_status.missing %}
   <p class="muted small">{% if card.completion_status.reason_code == 'verification_pending' %}PA is arranging independent verification.{% else %}Next: {{ card.completion_status.missing[0] | replace("_", " ") }}.{% endif %}</p>
   {% endif %}
   {% if presentation and presentation.action %}
@@ -64,8 +70,8 @@
   <div class="compact-card-progress progress-{{ presentation.freshness }}"
        data-card-progress
        data-progress-state="{{ presentation.freshness }}">
-    <strong>{{ presentation.summary }}</strong>
-    <span class="muted small">{{ presentation.reason }}</span>
+    {% if presentation.outcome %}<p class="work-outcome">{{ presentation.outcome }}</p>{% endif %}
+    {% if presentation.next_actor.id in ('operator', 'reviewer') %}<span class="muted small">{{ presentation.next_actor.label }}</span>{% endif %}
   </div>
   {% else %}
   {% if card.summary and card.summary_source.value != 'fallback' %}
@@ -98,10 +104,10 @@
   {% endif %}
   <footer class="compact-card-footer">
     {% if presentation %}
-    <span>Target {{ presentation.target_instance_name }}</span>
+    {% if presentation.target_instance_id %}<span>{{ presentation.target_instance_name }}</span>{% endif %}
     <time datetime="{{ presentation.occurred_at or card.updated_at.isoformat() }}"
           title="{{ presentation.absolute_time }}">
-      {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+      {{ presentation.relative_time }}
     </time>
     {% else %}
     <span>
@@ -148,7 +154,7 @@
     <span class="status status-{{ presentation.tone }}">{{ presentation.state_label }}</span>
     <time datetime="{{ presentation.occurred_at or order.updated_at }}"
           title="{{ presentation.absolute_time }}">
-      {{ presentation.freshness_label }} · {{ presentation.relative_time }}
+      {{ presentation.relative_time }}
     </time>
   </div>
   <h3>
@@ -157,17 +163,10 @@
        data-card-id="{{ order.id }}"
        data-card-realm="{{ order.card.realm_id or 'default' }}">{{ order.title }}</a>
   </h3>
-  <p class="attention-card-summary">{{ presentation.summary }}</p>
-  <p class="attention-card-reason">{{ presentation.reason }}</p>
-  <dl class="attention-card-context">
-    <div><dt>Target</dt><dd>{{ presentation.target_instance_name }}</dd></div>
-    <div><dt>Next</dt><dd>{{ (presentation.next_actor | default({})).label | default('Not confirmed') }}</dd></div>
-  </dl>
+  {% if presentation.outcome | default(presentation.summary) %}<p class="attention-card-summary">{{ presentation.outcome | default(presentation.summary) }}</p>{% endif %}
   <footer class="attention-card-actions">
     {{ presentation_action(action, order.title, order.id, order.card.realm_id or 'default', "button small") }}
-    {% if presentation.action_explanation %}
-    <span class="muted small">{{ presentation.action_explanation }}</span>
-    {% endif %}
+    {% if presentation.next_actor is defined and presentation.next_actor.id in ('operator', 'reviewer') %}<span class="muted small">{{ presentation.next_actor.label }}</span>{% endif %}
   </footer>
 </article>
 {% endmacro %}

@@ -714,7 +714,9 @@ def build_workshop_snapshot(
             if not session_id:
                 continue
             dispatch = dispatch_by_session.get(session_id)
-            card_id = session.get("card_id") or (dispatch or {}).get("card_id")
+            card_id = (dispatch or {}).get("card_id") or (
+                session.get("card_id") if (session.get("purpose") or (session.get("presentation") or {}).get("purpose")) != "chat" else None
+            )
             state = _worker_state(session, dispatch)
             if activity_state != "fresh" and state in {"working", "quiet-active"}:
                 state = "stalled"
@@ -724,6 +726,7 @@ def build_workshop_snapshot(
             workers.append(
                 {
                     "id": session_id,
+                    "purpose": session.get("purpose") or (session.get("presentation") or {}).get("purpose"),
                     "title": session.get("title") or session_id,
                     "state": state
                     if state in SUPPORTED_WORKER_STATES
@@ -940,6 +943,9 @@ def build_workshop_snapshot(
             else:
                 orphan_workers.append({"bay": bay, "worker": worker})
 
+    from pa.domain.conversation_issues import ConversationIssues
+    starts = (ConversationIssues(ctx.store).starts_for_cards(set(card_by_id), realm_id=realm_id)
+              if hasattr(ctx.store, "_conn") else {})
     work_orders = []
     for card in sorted(cards, key=lambda item: item.updated_at, reverse=True):
         payload = card_payloads[card.id]
@@ -1026,7 +1032,8 @@ def build_workshop_snapshot(
                 or reservation_worker.get("latest_progress"),
             )
         presentation = present_work_item(
-            payload,
+            card,
+            start_receipt=starts.get(card.id),
             dispatch=latest_dispatch_by_card.get(card.id),
             session=session_worker,
             watches=payload["pull_requests"],

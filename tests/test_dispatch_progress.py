@@ -744,7 +744,7 @@ class ProgressApiAndUiTests(unittest.TestCase):
         script = (root / "src/pa/server/static/js/fleet.js").read_text()
         self.assertIn('include "partials/card-progress.html"', card)
         self.assertIn("data-card-live-progress", progress)
-        self.assertIn("Open exact session", progress)
+        self.assertIn("Open worker session", progress)
         self.assertIn("every 15s", progress)
         self.assertIn("every 15s", work)
         self.assertIn("Progress &amp; validation", activity)

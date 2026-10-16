@@ -97,6 +97,36 @@ class ConversationIssues:
         with self.store._conn() as conn:
             return self._read(conn, session_id)
 
+    def starts_for_cards(self, card_ids: set[str], *, realm_id: str) -> dict[str, dict]:
+        """Read saved starts through card associations, without resuming work."""
+        if not card_ids:
+            return {}
+        placeholders = ",".join("?" for _ in card_ids)
+        with self.store._conn() as conn:
+            rows = conn.execute(f"""
+                SELECT DISTINCT notes.session_id, notes.payload
+                FROM agent_session_cards AS links
+                JOIN agent_sessions AS sessions ON sessions.id = links.session_id
+                JOIN conversation_issues AS notes ON notes.session_id = sessions.id
+                WHERE links.card_id IN ({placeholders}) AND links.retired_at IS NULL
+                  AND sessions.realm_id = ? AND sessions.purpose = 'chat'
+                """, (*card_ids, realm_id)).fetchall()
+        result = {}
+        for row in rows:
+            for record in json.loads(row["payload"])["requests"]:
+                for group in record["groups"]:
+                    card_id = group.get("card_id")
+                    if card_id not in card_ids:
+                        continue
+                    receipt = {
+                        "session_id": row["session_id"], "request_id": record["request_id"],
+                        "state": "admitted" if group.get("dispatch_id") else record["state"],
+                        "accepted_at": record["accepted_at"], "error": record.get("error"),
+                    }
+                    if receipt["accepted_at"] >= result.get(card_id, {}).get("accepted_at", ""):
+                        result[card_id] = receipt
+        return result
+
     def edit(self, session_id, body: IssueEdit):
         with self.store._conn() as conn:
             conn.execute("BEGIN IMMEDIATE")
