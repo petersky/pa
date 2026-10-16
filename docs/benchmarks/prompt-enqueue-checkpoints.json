@@ -84,5 +84,18 @@
     },
     "checkpoints": 100,
     "durable_queued": 100
+  },
+  "validation": {
+    "existing_queue_recovery_acceptance_tests": 87,
+    "single_save_contract": "passed",
+    "passive_status_suite_after_ci_test_separation": 12,
+    "ci_failure": {
+      "head": "458f356d3aff6ed5a9709d0e290c1fab5ac18816",
+      "run": 38886462097,
+      "checks_success": 4,
+      "failure": "Deliberately held selected copy outlasted unchanged500ms HTTP deadline; isolated exact test passed.",
+      "correction": "Exercise real storage-copy fence directly; retain authenticated HTTP200/new value, oversize504, namespace/identity409 and late-worker timeout tests. No deadline or budget changes.",
+      "report": "6925b699-69cf-4583-845a-f33bf9240fea"
+    }
   }
 }

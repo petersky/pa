@@ -659,3 +659,13 @@ resolved. See [the comparison](benchmarks/prompt-enqueue-checkpoints.json) and
 Main CI38885981504 at exact merge687436f also completed successfully with all
 five checks green. This completes PR486 source integration verification; the
 remaining performance, fleet and deployment requirements stay open.
+
+PR487 initial CI458f356 passed four checks but the receipt-copy concurrency
+test hit the unchanged500ms HTTP budget while deliberately holding its worker
+until a producer finished. The exact test passed in isolation; affected dispatch,
+API and status-service source bytes match integrated687436f. The correction
+checks the same real storage-copy/index-lock fence and immutable old observation
+directly, then checks authenticated HTTP200/current value, oversized504 and
+identity/namespace409 responses. All12 passive-status tests pass, including
+client timeout and late-worker accounting. No deadline, node or byte budget was
+changed; this does not relabel an actual timeout as performance acceptance.
