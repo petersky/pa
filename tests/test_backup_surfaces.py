@@ -39,6 +39,10 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
             }.issubset(tools)
         )
         self.assertIn("idempotency_key", tools["backup_run"].input_schema["required"])
+        listing = tools["backup_list"].input_schema
+        self.assertEqual(listing["properties"]["offset"]["default"], 0)
+        self.assertEqual(listing["properties"]["limit"]["default"], 50)
+        self.assertEqual(listing.get("required", []), [])
         self.assertIn(
             "confirm_instance_id",
             tools["backup_restore_initiate"].input_schema["required"],

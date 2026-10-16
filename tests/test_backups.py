@@ -720,14 +720,14 @@ class BackupTestCase(unittest.TestCase):
     def test_legacy_manifest_order_is_compatible_and_duplicate_members_fail(self) -> None:
         good = self._run("legacy-order")
         record = self.service.inspect_backup(good.backup_id)
-        # Rebuild in legacy alphabetical order (manifest follows payloads), then
-        # demonstrate that v1 still verifies without relaxing content checks.
+        # v1 permits metadata after payloads. Preserve that compatibility while
+        # rejecting duplicate archive members without relaxing content checks.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with tarfile.open(record.path, "r:*") as archive:
                 archive.extractall(root, filter="data")
             with tarfile.open(record.path, "w:gz") as archive:
-                for path in sorted(root.rglob("*")):
+                for path in sorted(root.rglob("*"), key=lambda item: (item.name == "manifest.json", item.as_posix())):
                     archive.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
             self.assertTrue(self.service.verify_backup(good.backup_id).verified)
             with tarfile.open(record.path, "w:gz") as archive:
