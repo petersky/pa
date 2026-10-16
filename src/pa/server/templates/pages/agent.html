@@ -10,7 +10,11 @@
 </section>{% endif %}
 <div class="panel agent-sessions-panel" data-agent-session-view="{{ session_view }}" data-agent-activity-filter="{{ activity_filter }}">
   <div class="panel-header">
-    <h2>{{ 'Chats' if session_view == 'chats' else ('Activity' if session_view == 'activity' else ('Archived' if session_view == 'archived' else 'All sessions')) }}</h2>
+    {% if session_view == 'chats' %}
+    <h1 class="agent-sessions-heading">Chats</h1>
+    {% else %}
+    <h2>{{ 'Activity' if session_view == 'activity' else ('Archived' if session_view == 'archived' else 'All sessions') }}</h2>
+    {% endif %}
     <div class="agent-session-header-actions">
       {% if agent_enabled and session_view == 'chats' %}
       <a class="ghost small" href="/agent?new=1" hx-get="/agent?new=1" hx-target="#app-view" hx-push-url="true">New chat</a>
@@ -249,12 +253,14 @@
 {% endset %}
 
 {% set main %}
+{% if session_view != 'chats' %}
 <header class="page-heading agent-page-heading">
   <div>
-    <h1>{{ 'Chats' if session_view == 'chats' else ('Activity' if session_view == 'activity' else 'Session inspection') }}</h1>
-    <p>{{ 'Persistent human conversations.' if session_view == 'chats' else ('Managed automated work and requests that need you.' if session_view == 'activity' else 'Search durable sessions, provider attempts, lifecycle, and closure history.') }}</p>
+    <h1>{{ 'Activity' if session_view == 'activity' else 'Session inspection' }}</h1>
+    <p>{{ 'Managed automated work and requests that need you.' if session_view == 'activity' else 'Search durable sessions, provider attempts, lifecycle, and closure history.' }}</p>
   </div>
 </header>
+{% endif %}
 <div class="panel panel-fill page-agent-main{% if not agent_enabled %} agent-disabled-panel{% endif %}">
   {% if agent_enabled %}
   {% with

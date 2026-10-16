@@ -3571,6 +3571,14 @@ code {
   margin-left: auto;
 }
 
+.agent-sessions-heading {
+  margin: 0;
+  color: var(--pa-text);
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
 .panel-header [data-agent-new-session] {
   margin-left: auto;
 }
