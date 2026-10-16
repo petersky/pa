@@ -130,6 +130,20 @@ def verification_service(request):
     return current
 
 
+@router.get('/verification-readiness/{dispatch_id}')
+async def verification_readiness(request: Request, dispatch_id: str):
+    # Fresh, bounded target-owned lifecycle evidence; never permission contents.
+    if getattr(request.state, 'instance_authenticated', False):
+        peer_only(request)
+    else:
+        admin_only(request)
+    current = verification_service(request)
+    record = await current.call(current.ctx.services['dispatch_store'].get, dispatch_id)
+    if not record or record.realm_id not in current.ctx.settings.subscribed_realms:
+        raise HTTPException(404, 'Dispatch unavailable')
+    return await current.origin_readiness(record)
+
+
 @router.post('/completion-migrations/{card_id}')
 async def completion_migration(request: Request, card_id: UUID, body: CompletionMigration,
                                key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=160)]):

@@ -72,6 +72,11 @@ assigned dispatch/session, and complete excluded repair lineage. Its receipt mus
 reference the current `verification-intent:<id>` and required scenario/instance
 scope. A changed declaration, build or membership invalidates a pending assignment.
 Explicit external/user authority stays declared and is never replaced by an agent.
+Repair lineage comes from exact declarations, journal actions and source PR
+provenance. An unrelated conversation issue's generic parent relationship cannot
+block verification or disqualify its agent. Source readiness uses the owning
+instance's lifecycle guards, including queued follow-ups and pending permissions;
+PA waits without changing those interactions or admitting another verifier.
 
 Ordinary declarations persist `verification_authority_instance_id` (bound to the
 creating server when omitted) and `verification_paused`. Only that authority may

@@ -85,7 +85,7 @@ def _is_sync_path(path: str) -> bool:
 
 def _is_fleet_instance_route(request: Request) -> bool:
     if request.method == "GET" and re.fullmatch(
-        r"/api/health-journal/receipts/[a-f0-9-]{36}", request.url.path
+        r"/api/health-journal/(?:receipts|verification-readiness)/[a-f0-9-]{36}", request.url.path
     ):
         return True
     if request.method == "POST" and re.fullmatch(

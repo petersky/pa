@@ -10,7 +10,7 @@ from pa.config import Settings
 from pa.core.context import AppContext
 from pa.core.hooks import HookBus
 from pa.domain.completion import CompletionConflict, completion_capabilities
-from pa.domain.models import CardCreate, CardUpdate, CompletionEvidence
+from pa.domain.models import AgentSession, CardCreate, CardUpdate, CompletionEvidence
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.execution.verification import VerificationService, VerificationStore
 from pa.execution.verification_migration import migration_plan
@@ -20,6 +20,7 @@ from pa.health_journal.store import Journal
 from pa.pr_supervisor.models import PRWatch, PRWatchStatus
 from pa.pr_supervisor.store import PRSupervisorStore
 from tests.test_completion_requirements import projection
+from tests.test_health_journal import fleet
 
 
 @pytest.fixture
@@ -31,6 +32,12 @@ def system(tmp_path):
     health = HealthService(ctx, Journal(tmp_path/'health.db', settings.instance_id))
     service = VerificationService(ctx, health, VerificationStore(tmp_path/'verification.db'))
     ctx.services.update(health_journal=health, verification=service)
+    from pa.instance.session_lifecycle import SessionLifecyclePolicy
+    runtimes = {}
+    manager = SimpleNamespace(store=ctx.store, settings=settings, get=runtimes.get,
+        workspace_manager=SimpleNamespace(list=lambda **kw:[], _status=lambda p:(False,0)), _admitting_sessions=set())
+    lifecycle = SessionLifecyclePolicy(manager, ctx.services)
+    ctx.services.update(instance_agent=manager, session_lifecycle=lifecycle)
     calls, replies = [], {}
     async def api(actor, method, path, *, body=None, key=None):
         calls.append((method, path, body, key))
@@ -42,6 +49,8 @@ def system(tmp_path):
                 authority_instance_id=settings.instance_id, authority_url='http://owner',
                 principal_id=actor['principal_id'], state='running', session_id=str(uuid4()))
             ctx.services['dispatch_store'].put(record)
+            ctx.store.save_session(AgentSession(id=record.session_id, agent_name='codex', purpose='automated_run',
+                lifecycle_owner='dispatch', card_id=record.card_id, dispatch_id=record.dispatch_id, status='active'))
             replies[key] = {'dispatch_id': record.dispatch_id}
         elif path.startswith('/api/cards/'):
             card_id = path.split('/')[-1].split('?')[0]
@@ -52,17 +61,23 @@ def system(tmp_path):
             raise AssertionError(path)
         return replies[key]
     health.local_api = api
-    yield SimpleNamespace(ctx=ctx, service=service, health=health, calls=calls, replies=replies)
+    yield SimpleNamespace(ctx=ctx, service=service, health=health, calls=calls, replies=replies, runtimes=runtimes)
     ctx.services['dispatch_store'].close()
     health.pool.shutdown(wait=True)
+    lifecycle._close_executor.shutdown(wait=True)
 
 
 def origin(system, card_id, **changes):
+    session_id = changes.pop('session_id', 'implementation-session')
     record = DispatchRecord(mutation_id=str(uuid4()), card_id=card_id,
         target_instance_id='instance-a', authority_instance_id='instance-a', authority_url='http://owner',
-        state='completed', session_id='implementation-session', acknowledged_at=datetime.now(UTC),
+        state='completed', session_id=session_id, acknowledged_at=datetime.now(UTC),
         completion_delivery_class='acknowledged', reconciliation_state='not_required', **changes)
-    return system.ctx.services['dispatch_store'].put(record)
+    record = system.ctx.services['dispatch_store'].put(record)
+    if session_id:
+        system.ctx.store.save_session(AgentSession(id=session_id, agent_name='codex', purpose='automated_run',
+            lifecycle_owner='dispatch', card_id=card_id, dispatch_id=record.dispatch_id, status='idle'))
+    return record
 
 
 def ordinary(system, **changes):
@@ -148,15 +163,15 @@ async def test_requirement_subject_and_child_lineage_changes_invalidate_assignme
     evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
         subject_revision='a'*40, milestones=['verified'], references=['verification-intent:' + job['id']])
     child = system.ctx.store.create_card(CardCreate(title='Actual implementation', parent_id=card.id))
-    child_origin = origin(system, child.id, dispatch_id='child-implementation')
+    child_origin = origin(system, child.id, dispatch_id='child-implementation', session_id='child-writer')
     packet = system.service.packet(card)
-    assert child_origin.dispatch_id in packet['origin_dispatches']
-    with pytest.raises(CompletionConflict, match='assignment_not_current'):
-        system.service.validate_acceptance(card, verifier, evidence)
+    assert child_origin.dispatch_id not in packet['origin_dispatches']
+    system.service.validate_acceptance(card, verifier, evidence)
     await system.service.process(card)
     assert len(system.calls) == 1  # Active old assignment prevents a rival.
     changed = system.ctx.store.update_card(card.id, CardUpdate(expected_version=card.updated_at,
-        field_intent=['completion_requirement'], completion_requirement=card.completion_requirement.model_copy(update={'criteria':'New scenario'})))
+        field_intent=['completion_requirement'], completion_requirement=card.completion_requirement.model_copy(update={
+            'criteria':'New scenario', 'originating_dispatch_ids':[child_origin.dispatch_id]})))
     with pytest.raises(CompletionConflict, match='assignment_not_current'):
         system.service.validate_acceptance(changed, verifier, evidence)
 
@@ -209,6 +224,7 @@ def health_repair(system, *, legacy=False):
     journal.assess(group['id'], Assessment(expected_version=group['version'], disposition='merged',
         reason='Exact source merge', card_id=card.id, commit='b'*40, pr_url='https://github.com/test/pa/pull/1'), actor='user:local', realms=['default'])
     watch = PRWatch(repository='test/pa', pr_number=1, pr_url='https://github.com/test/pa/pull/1',
+        provenance_version=1,
         card_id=card.id, originating_session_id=record.session_id, dispatch_id=record.dispatch_id,
         status=PRWatchStatus.MERGED, head_sha='c'*40, state={'merge_commit_sha':'b'*40})
     watch.state.update(state='merged', head_sha='c'*40, confirmed_head_sha='c'*40,
@@ -217,6 +233,15 @@ def health_repair(system, *, legacy=False):
     watch.stable_head_since = datetime.now(UTC) - timedelta(seconds=watch.policy.stable_head_seconds + 1)
     system.ctx.services['pr_supervisor_store'].upsert_watch(watch)
     return card, action, lease
+
+
+def repair_child_writer(system, card):
+    child = system.ctx.store.create_card(CardCreate(title='Actual implementation', parent_id=card.id))
+    writer = origin(system, child.id, session_id='actual-child-writer')
+    watch = system.ctx.services['pr_supervisor_store'].find_watches('test/pa',1)[0]
+    watch.card_id, watch.dispatch_id, watch.originating_session_id = child.id, writer.dispatch_id, writer.session_id
+    system.ctx.services['pr_supervisor_store'].upsert_watch(watch)
+    return writer
 
 
 @pytest.mark.asyncio
@@ -241,8 +266,6 @@ async def test_legacy_onboarding_preserves_history_and_requires_exact_proof(syst
 async def test_health_scope_full_coverage_stale_build_and_durable_collector_handoff(system, monkeypatch):
     card, action, lease = health_repair(system)
     # Use the actual lifecycle obligation decision, with no live session obligation.
-    system.ctx.services['session_lifecycle'] = SimpleNamespace(_decision=None)
-    system.ctx.services['instance_agent'] = SimpleNamespace(workspace_manager=SimpleNamespace(list=lambda **kw: []))
     async def settled(_, **kwargs): return None
     monkeypatch.setattr(system.health, 'repair_obligation', settled)
     await system.health.dispatch_one(lease)
@@ -272,7 +295,8 @@ def test_agent_policy_requires_new_owner_capability(system):
     assert 'completion-agent-verification:v1' in completion_capabilities(card.completion_requirement)
 
 
-def test_child_migration_only_corrects_proven_copy_and_preserves_explicit_edits(system):
+@pytest.mark.parametrize('deliverable', ['code','design'])
+def test_child_migration_only_corrects_proven_copy_and_preserves_explicit_edits(system, deliverable):
     from pa.domain.conversation_issues import ConversationIssues, IssueEdit, StartIssues
     from pa.domain.models import AgentSession
     parent = system.ctx.store.create_card(CardCreate(title='Parent', completion_requirement={
@@ -283,11 +307,19 @@ def test_child_migration_only_corrects_proven_copy_and_preserves_explicit_edits(
     req = parent.completion_requirement.model_dump(mode='json')
     context = {'source_card_id':parent.id, 'realm_id':'default', 'completion_requirement':req}
     state = notes.admit('conversation', StartIssues(request_id='selection', revision=1, issue_ids=['child']), context)
-    child = system.ctx.store.create_card(CardCreate(title='Child', parent_id=parent.id,
+    child = system.ctx.store.create_card(CardCreate(title='Design-only proposal' if deliverable == 'design' else 'Source fix', parent_id=parent.id,
         body='Source conversation: conversation', completion_requirement=req))
     groups = state['requests'][0]['groups']
     groups[0]['card_id'] = child.id
     notes.update_request('conversation','selection',groups=groups)
+    with pytest.raises(CompletionConflict, match='inherited_child_deliverable_unconfirmed'):
+        migration_plan(system.service, child, 'inherited_child')
+    assert system.ctx.store.get_card(child.id).completion_requirement == child.completion_requirement
+    if deliverable == 'design':
+        assert not child.completion_status['accepted'] and child.lane != 'done'
+        return
+    system.ctx.services['pr_supervisor_store'].upsert_watch(PRWatch(repository='test/child', pr_number=1,
+        pr_url='https://github.com/test/child/pull/1', card_id=child.id, head_sha='c'*40, provenance_version=1))
     corrected = migration_plan(system.service, child, 'inherited_child')
     assert corrected.mode == 'integration_only' and corrected.milestones == ['integrated']
     assert system.ctx.store.get_card(child.id).completion_requirement == child.completion_requirement
@@ -573,10 +605,10 @@ async def test_new_open_watch_racing_finish_prevents_done(system):
 @pytest.mark.asyncio
 async def test_active_durably_assigned_verifier_allows_obsolete_collector_release(system):
     card, action, lease = health_repair(system)
+    repair_child_writer(system, card)
     record = system.ctx.services['dispatch_store'].get(system.health.journal.repair_dispatches(action['group_id'])[0])
     record.state, record.session_id, record.recoverable = 'failed', None, True
     system.ctx.services['dispatch_store'].put(record)
-    system.ctx.services['session_lifecycle'] = SimpleNamespace()
     await system.service.process(card)
     job = system.service.store.list()[0]
     assert job['dispatch_id']
@@ -588,6 +620,7 @@ async def test_active_durably_assigned_verifier_allows_obsolete_collector_releas
 @pytest.mark.asyncio
 async def test_unknown_repair_retry_keeps_collector_and_verification_fenced(system):
     card, action, lease = health_repair(system)
+    repair_child_writer(system, card)
     journal = system.health.journal
     journal.action_result(action['id'], state='blocked', result={'retry_pending':True},
         owner=system.health.owner, fence=lease['fence'])
@@ -595,7 +628,6 @@ async def test_unknown_repair_retry_keeps_collector_and_verification_fenced(syst
     record = system.ctx.services['dispatch_store'].get(current['result']['dispatch_id'])
     record.state, record.session_id, record.recoverable = 'failed', None, True
     system.ctx.services['dispatch_store'].put(record)
-    system.ctx.services['session_lifecycle'] = SimpleNamespace()
     assert await system.health.repair_obligation(current) == 'repair_retry_outcome_unknown'
     await system.service.process(card)
     await system.health.dispatch_one(lease)
@@ -617,6 +649,11 @@ async def test_two_instances_share_one_declared_authority_across_race_restart_pa
     ctx = AppContext(settings, HookBus(), projection(root))
     ledger = DispatchStore(root/'dispatch')
     ctx.services.update(dispatch_store=ledger, pr_supervisor_store=PRSupervisorStore(root/'prs.db'))
+    from pa.instance.session_lifecycle import SessionLifecyclePolicy
+    manager = SimpleNamespace(store=ctx.store, settings=settings, get=lambda sid:None,
+        workspace_manager=SimpleNamespace(list=lambda **kw:[], _status=lambda p:(False,0)), _admitting_sessions=set())
+    lifecycle = SessionLifecyclePolicy(manager, ctx.services)
+    ctx.services.update(instance_agent=manager, session_lifecycle=lifecycle)
     health = HealthService(ctx, Journal(root/'health.db', settings.instance_id))
     peer = VerificationService(ctx, health, VerificationStore(root/'verification.db'))
     admissions = []
@@ -628,9 +665,16 @@ async def test_two_instances_share_one_declared_authority_across_race_restart_pa
         record = ledger.put(DispatchRecord(mutation_id=str(uuid4()), idempotency_key=key,
             card_id=body['card_id'], principal_id=actor['principal_id'], authority_instance_id=settings.instance_id,
             target_instance_id=settings.instance_id, authority_url='http://peer', state='running', session_id=str(uuid4())))
+        ctx.store.save_session(AgentSession(id=record.session_id, agent_name='codex', purpose='automated_run',
+            lifecycle_owner='dispatch', card_id=record.card_id, dispatch_id=record.dispatch_id, status='active'))
         admissions.append(record.dispatch_id)
         return {'dispatch_id':record.dispatch_id}
     health.local_api = admit
+    async def target_readiness(instance_id, method, path, **kwargs):
+        assert instance_id == system.ctx.settings.instance_id
+        record = system.ctx.services['dispatch_store'].get(path.split('/')[-1])
+        return await system.service.origin_readiness(record)
+    health.peer = target_readiness
     def replicate(target, card):
         before = target.get_card(card.id)
         target.commit_event(CardEvent(type=EventType.CARD_UPDATED if before else EventType.CARD_CREATED,
@@ -682,6 +726,8 @@ async def test_two_instances_share_one_declared_authority_across_race_restart_pa
         record.acknowledged_at = datetime.now(UTC)
         record.completion_delivery_class, record.reconciliation_state = 'acknowledged', 'not_required'
         ledger.put(record)
+        session = ctx.store.get_session(record.session_id)
+        ctx.store.save_session(session.model_copy(update={'status':'closed'}))
         remote = edit(peer, remote, verification_paused=False, verification_authority_instance_id='instance-a')
         card = replicate(system.ctx.store, remote)
         await asyncio.gather(restarted.process(card), peer.process(remote))
@@ -691,6 +737,7 @@ async def test_two_instances_share_one_declared_authority_across_race_restart_pa
     finally:
         ledger.close()
         health.pool.shutdown(wait=True)
+        lifecycle._close_executor.shutdown(wait=True)
 
 
 def test_admission_claim_and_authority_handoff_are_atomic(system):
@@ -713,3 +760,113 @@ def test_admission_claim_and_authority_handoff_are_atomic(system):
     with ThreadPoolExecutor(max_workers=2) as pool:
         admitted, handed_off = pool.submit(claim), pool.submit(fence)
         assert admitted.result() != handed_off.result()
+
+
+@pytest.mark.asyncio
+async def test_exact_repair_watch_excludes_writer_but_unrelated_active_issue_does_not_block(system):
+    card, action, _ = health_repair(system)
+    writer = repair_child_writer(system, card)
+    unrelated = system.ctx.store.create_card(CardCreate(title='Unrelated conversation design', parent_id=card.id))
+    other = origin(system, unrelated.id, session_id='unrelated-issue-agent')
+    other.state = 'running'
+    system.ctx.services['dispatch_store'].put(other)
+    packet = system.service.packet(card)
+    assert writer.dispatch_id in packet['origin_dispatches'] and writer.session_id in packet['origin_sessions']
+    assert other.dispatch_id not in packet['origin_dispatches'] and other.session_id not in packet['origin_sessions']
+    await system.service.process(card)
+    job = next(j for j in system.service.store.list() if j['dispatch_id'])
+    verifier = system.ctx.services['dispatch_store'].get(job['dispatch_id'])
+    refs = ['verification-intent:'+job['id'], 'health-group:'+action['group_id'],
+        'scenario:'+packet['scope']['scenario'], 'instance:instance-a', 'runtime-build:instance-a:'+'b'*40,
+        'runtime-startup:instance-a:'+system.health.runtime_build['startup_id']]
+    evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
+        subject_revision='b'*40, milestones=['verified'], references=refs)
+    with pytest.raises(CompletionConflict, match='self_acceptance_forbidden'):
+        system.service.validate_acceptance(card, verifier.model_copy(update={'session_id':writer.session_id}), evidence)
+    system.service.validate_acceptance(card, verifier.model_copy(update={'session_id':other.session_id}), evidence)
+    assert digest(system.service.packet(card)) == job['id']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('followup', ['live','queued','permission','durable_queue','accepted_turn','undelivered_turn'])
+async def test_completed_primary_waits_for_followup_then_schedules_same_intent(system, followup):
+    import asyncio
+    card, repair = ordinary(system)
+    session = system.ctx.store.get_session(repair.session_id)
+    permission = object()
+    runtime = SimpleNamespace(prompting=False, _queue=[], _pending_permissions={}, _pending_elicitations={},
+        _transcript_buffer=[], _transcript_queue=asyncio.Queue(), _closed=False, session=session)
+    system.runtimes[session.id] = runtime
+    if followup == 'live': runtime.prompting = True
+    if followup == 'queued': runtime._queue.append(object())
+    if followup == 'permission': runtime._pending_permissions['owned-permission'] = permission
+    if followup == 'durable_queue':
+        system.runtimes.clear()
+        session.config_json = {'durable_runtime':{'queued_prompts':[{'id':'followup'}]}}
+        system.ctx.store.save_session(session)
+    if followup in {'accepted_turn','undelivered_turn'}:
+        repair.followup_operations['followup'] = {'state':'accepted','prompt_id':'followup', 'response':{'accepted':True}}
+        repair.followup_turns = [{'prompt_id':'followup','state':'accepted' if followup == 'accepted_turn' else 'ended',
+                                  'delivery_state':'pending'}]
+        system.ctx.services['dispatch_store'].put(repair)
+    await system.service.process(card)
+    job = system.service.store.list()[0]
+    assert job['diagnostic'] == 'repair_workflow_pending' and not system.calls
+    if followup == 'permission': assert runtime._pending_permissions['owned-permission'] is permission
+    runtime.prompting = False
+    runtime._queue.clear()
+    runtime._pending_permissions.clear()  # Synthetic operator completion, never done by the planner.
+    session.config_json = {}
+    system.ctx.store.save_session(session)
+    if repair.followup_turns:
+        repair.followup_turns[0].update(state='ended', delivery_state='acknowledged')
+        system.ctx.services['dispatch_store'].put(repair)
+    await system.service.process(card)
+    assert len(system.calls) == 1
+    assert system.service.store.get(job['id'])['state'] == 'dispatched'
+    assert len(system.service.store.list()) == 1
+
+
+@pytest.mark.asyncio
+async def test_peer_readiness_uses_target_lifecycle_without_exposing_or_resolving_permissions(fleet, tmp_path):
+    import asyncio
+    import json
+    from pa.instance.session_lifecycle import SessionLifecyclePolicy
+    authority, target, _ = fleet
+    ctx = target.ctx
+    ctx.store = projection(tmp_path/'target-canonical')
+    card = ctx.store.create_card(CardCreate(title='Remote repair'))
+    session = ctx.store.save_session(AgentSession(agent_name='codex', purpose='automated_run',
+        lifecycle_owner='dispatch', card_id=card.id, status='idle'))
+    ledger = DispatchStore(tmp_path/'target-dispatch')
+    record = ledger.put(DispatchRecord(mutation_id=str(uuid4()), card_id=card.id, session_id=session.id,
+        authority_instance_id=authority.settings.instance_id, target_instance_id=target.settings.instance_id,
+        authority_url='http://authority', state='completed', acknowledged_at=datetime.now(UTC),
+        completion_delivery_class='acknowledged', reconciliation_state='not_required'))
+    session = ctx.store.save_session(session.model_copy(update={'dispatch_id':record.dispatch_id}))
+    permission = object()
+    runtime = SimpleNamespace(prompting=False, _queue=[], _pending_permissions={'private-permission':permission},
+        _pending_elicitations={}, _transcript_buffer=[], _transcript_queue=asyncio.Queue(), _closed=False)
+    manager = SimpleNamespace(store=ctx.store, settings=target.settings, get=lambda sid:runtime,
+        workspace_manager=SimpleNamespace(list=lambda **kw:[], _status=lambda p:(False,0)), _admitting_sessions=set())
+    ctx.services.update(dispatch_store=ledger, instance_agent=manager,
+        pr_supervisor_store=PRSupervisorStore(tmp_path/'target-prs.db'))
+    lifecycle = SessionLifecyclePolicy(manager, ctx.services)
+    ctx.services['session_lifecycle'] = lifecycle
+    ctx.services['verification'] = VerificationService(ctx, target.service, VerificationStore(tmp_path/'target-verification.db'))
+    try:
+        path = '/verification-readiness/'+record.dispatch_id
+        blocked = await authority.service.peer(target.settings.instance_id, 'GET', path)
+        assert blocked['ready'] is False and blocked['reason'] == 'permission_pending'
+        assert blocked['instance_id'] == target.settings.instance_id and blocked['session_id'] == session.id
+        assert 'private-permission' not in json.dumps(blocked)
+        assert runtime._pending_permissions['private-permission'] is permission
+        runtime._pending_permissions.clear()  # Synthetic operator completion.
+        settled = await authority.service.peer(target.settings.instance_id, 'GET', path)
+        assert settled['ready'] is True and settled['reason'] == 'dispatch_completed'
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=target.app), base_url='http://target') as client:
+            response = await client.get('/api/health-journal'+path)
+        assert response.status_code in {401,403}
+    finally:
+        ledger.close()
+        await lifecycle.close()

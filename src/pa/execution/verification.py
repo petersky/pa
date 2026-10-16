@@ -12,6 +12,7 @@ import time
 import httpx
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import UTC, datetime
 
 from pa.domain.completion import CompletionConflict
 from pa.domain.models import CardLane
@@ -169,12 +170,20 @@ class VerificationService:
             record = ledger.get(job['dispatch_id']) if job['dispatch_id'] else ledger.by_authority_idempotency(
                 self.ctx.settings.instance_id, 'verification:' + job['id'])
             if record and record.state in TERMINAL_DISPATCH_STATES:
+                from pa.execution.followup import dispatch_followup_pending
+                if dispatch_followup_pending(record):
+                    continue
                 for dependency in self.store.pending_recoveries(job['id']):
                     if record.control_operations.get('verification-retry:' + job['id'] + ':' + dependency) == 'retry':
                         self.store.recovery(job['id'], dependency, 'confirmed')
-                if (not record.session_id and not record.initial_prompt_operation and not record.prompt_acknowledged_at
-                        or record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
-                        and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES and not record.recoverable):
+                pre_session = not record.session_id and not record.initial_prompt_operation and not record.prompt_acknowledged_at
+                manager = self.ctx.services.get('instance_agent')
+                session = self.ctx.store.get_session(record.session_id) if record.session_id else None
+                runtime = manager.get(record.session_id) if manager and record.session_id else None
+                closed = bool(session and session.status == 'closed' and (runtime is None or getattr(runtime,'_closed',False)))
+                if (pre_session or closed and record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
+                        and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES
+                        and (record.state == 'completed' or not record.recoverable)):
                     settled.add(job['id'])
         self.store.fence_authority(card.id, card.realm_id, req.revision, key,
             require_idle=replacement_authority != authority, settled=settled)
@@ -188,42 +197,24 @@ class VerificationService:
         supervisor = self.ctx.services.get('pr_supervisor_store')
         if not ledger or not supervisor:
             raise CompletionConflict('verification_services_unavailable')
-        # Include actual child implementation lineage, including failed starts.
-        cards = [card]
-        for parent in cards:
-            children = self.ctx.store.list_cards(realm_id=card.realm_id, parent_id=parent.id, limit=101)
-            known = {c.id for c in cards}
-            cards.extend(c for c in children if c.id not in known)
-            if len(cards) > 100:
-                raise CompletionConflict('verification_origin_bound_exceeded')
         jobs = self.store.list(card.id, card.realm_id)
         verifier_dispatches = {j['dispatch_id'] for j in jobs if j['dispatch_id']}
         # A lost admission reply is still identified by the normal mutation key.
         verifier_keys = {'verification:' + j['id'] for j in jobs}
         sessions = set(req.originating_session_ids) | {req.originating_session_id}
         dispatches = set(req.originating_dispatch_ids) | {req.originating_dispatch_id}
-        for child in cards:
-            records = ledger.list(card_id=child.id, realm_id=card.realm_id, limit=101)
-            if len(records) > 100:
-                raise CompletionConflict('verification_origin_bound_exceeded')
-            for record in records:
-                if record.dispatch_id in verifier_dispatches or record.idempotency_key in verifier_keys:
-                    continue
-                dispatches.add(record.dispatch_id)
-                sessions.add(record.session_id)
-        watches = supervisor.list_watches_for_cards({c.id for c in cards}, realm_id=card.realm_id,
-                                                   include_retired=True, per_card_limit=20)
-        if len(watches) > 100:
-            raise CompletionConflict('verification_evidence_bound_exceeded')
-        for watch in watches:
-            sessions.add(watch.originating_session_id)
-            dispatches.add(watch.dispatch_id)
-        sessions.discard(None)
-        dispatches.discard(None)
-        sessions.discard('')
-        dispatches.discard('')
-        if len(sessions) > 100 or len(dispatches) > 100:
+        # Parentage also represents independent conversation issues. Only the
+        # exact card, declared origins and explicit repair/PR provenance count.
+        records = ledger.list(card_id=card.id, realm_id=card.realm_id, limit=101)
+        if len(records) > 100:
             raise CompletionConflict('verification_origin_bound_exceeded')
+        for record in records:
+            if record.dispatch_id in verifier_dispatches or record.idempotency_key in verifier_keys:
+                continue
+            dispatches.add(record.dispatch_id)
+            sessions.add(record.session_id)
+        watches = supervisor.list_watches_for_cards({card.id}, realm_id=card.realm_id,
+                                                   include_retired=True, per_card_limit=20)
         integrated = [e for e in card.completion_evidence if e.outcome == 'integrated']
         subject = integrated[-1].subject_revision if integrated else None
         scope = None
@@ -237,6 +228,24 @@ class VerificationService:
             group = self.health.journal.group(group_id, realms=[card.realm_id])
             if group['data'].get('card_id') != card.id:
                 raise CompletionConflict('verification_health_card_mismatch')
+            dispatches.update(self.health.journal.repair_dispatches(group_id))
+            pr_url = group['data'].get('pr_url')
+            if pr_url:
+                from urllib.parse import urlsplit
+                parts = urlsplit(pr_url).path.strip('/').split('/')
+                if len(parts) != 4 or parts[2] != 'pull':
+                    raise CompletionConflict('verification_repair_pr_invalid')
+                linked = supervisor.find_watches('/'.join(parts[:2]), int(parts[3]))
+                for watch in linked:
+                    if watch.realm_id == card.realm_id and watch.pr_url == pr_url and watch.id not in {w.id for w in watches}:
+                        watches.append(watch)
+            # Retain previously proved actual writers when the repair advances
+            # to another source PR. Generic descendant snapshots are not proof.
+            for old in jobs:
+                prior = old['packet']
+                if prior.get('origin_provenance') == 'explicit-repair-v1' and prior.get('health_group') == group_id:
+                    sessions.update(prior['origin_sessions'])
+                    dispatches.update(prior['origin_dispatches'])
             for action in self.health.journal.repair_actions(group_id, expected_version=group['version'], realms=[card.realm_id]):
                 result = action['result']
                 if result.get('retry_pending'):
@@ -248,11 +257,34 @@ class VerificationService:
             else:
                 subject = group['data'].get('commit')
                 # A journal assessment cannot mint integration evidence.
-                if not any(w.state.get('merge_commit_sha') == subject and w.pr_url == group['data'].get('pr_url')
+                if not any(w.provenance_version >= 1 and w.originating_session_id and w.dispatch_id
+                           and w.state.get('merge_commit_sha') == subject and w.pr_url == group['data'].get('pr_url')
                            and decide_card_disposition(disposition_for_merged_watch(w), current_lane=CardLane.WAITING,
                                                        watches=[w]).applied_lane == CardLane.DONE for w in watches):
                     subject = None
             scope['scenario'] = group['data'].get('acceptance_scenario') or 'health-repair:' + group_id
+        if len(watches) > 100:
+            raise CompletionConflict('verification_evidence_bound_exceeded')
+        for watch in watches:
+            sessions.add(watch.originating_session_id)
+            dispatches.add(watch.dispatch_id)
+            record = ledger.get(watch.dispatch_id) if watch.dispatch_id else (
+                ledger.by_session(watch.originating_session_id) if watch.originating_session_id else None)
+            if record:
+                if ((watch.card_id and record.card_id != watch.card_id)
+                        or (watch.originating_session_id and record.session_id and record.session_id != watch.originating_session_id)):
+                    raise CompletionConflict('verification_watch_origin_mismatch')
+                dispatches.add(record.dispatch_id)
+        for key in dispatches - {None, ''}:
+            record = ledger.get(key)
+            if record:
+                if record.realm_id != card.realm_id:
+                    raise CompletionConflict('verification_origin_realm_mismatch')
+                sessions.add(record.session_id)
+        sessions.difference_update({None, ''})
+        dispatches.difference_update({None, ''})
+        if len(sessions) > 100 or len(dispatches) > 100:
+            raise CompletionConflict('verification_origin_bound_exceeded')
         prior_receipts = [e for e in card.completion_evidence
                           if e.requirement_revision != req.revision or e.outcome == 'integrated'][-8:]
         bookkeeping = {name for name in type(card).model_fields if name == 'summary' or name.startswith('summary_')}
@@ -267,6 +299,7 @@ class VerificationService:
                 'eligible_principals': sorted(req.acceptance_principals),
                 'criteria': req.criteria, 'milestones': req.milestones,
                 'subject': subject, 'origin_sessions': sorted(sessions),
+                'origin_provenance': 'explicit-repair-v1',
                 'origin_dispatches': sorted(dispatches), 'health_group': group_id,
                 'pending_repair_controls': sorted(pending_controls),
                 'scope': scope, 'runtime_build': self.health.runtime_build if group_id else None,
@@ -319,6 +352,13 @@ class VerificationService:
     async def call(self, fn, *args, **kwargs):
         return await self.health.canonical_call(fn, *args, **kwargs)
 
+    def job_controls_settled(self, job, record):
+        for dependency in self.store.pending_recoveries(job['id']):
+            if record.control_operations.get('verification-retry:' + job['id'] + ':' + dependency) != 'retry':
+                return False
+            self.store.recovery(job['id'], dependency, 'confirmed')
+        return True
+
     async def ensure(self, card):
         packet = await self.call(self.packet, card)
         if not packet:
@@ -336,9 +376,12 @@ class VerificationService:
             unadmitted = not old['dispatch_id'] and (old['state'] == 'pending' or old['diagnostic'] in {
                 'verification_principal_unconfigured', 'waiting_for_integration_or_origin', 'repair_workflow_pending',
                 'verification_realm_authority_required'})
-            if unadmitted or (record and record.state in TERMINAL_DISPATCH_STATES and (
+            settled = record and record.state in TERMINAL_DISPATCH_STATES and (
                     not record.session_id or (record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
-                                              and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES))):
+                                              and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES))
+            if settled:
+                settled = await self.call(self.job_controls_settled, old, record) and (await self.origin_readiness(record))['ready']
+            if unadmitted or settled:
                 await self.call(self.store.update, old['id'], 'superseded', diagnostic='successor:' + current['id'])
         return current
 
@@ -348,6 +391,9 @@ class VerificationService:
         for key in packet['origin_dispatches']:
             record = self.ctx.services['dispatch_store'].get(key)
             if record is None or record.state not in TERMINAL_DISPATCH_STATES:
+                return False
+            from pa.execution.followup import dispatch_followup_pending
+            if dispatch_followup_pending(record):
                 return False
             pre_session = (record.state in {'failed', 'cancelled'} and not record.session_id
                            and not record.prompt_acknowledged_at and not record.initial_prompt_operation)
@@ -360,6 +406,57 @@ class VerificationService:
             if record.state in {'failed', 'cancelled'} and record.recoverable:
                 return False
         return True
+
+    async def origin_readiness(self, record):
+        """Read the target's existing lifecycle policy without closing or prompting."""
+        identity = {'dispatch_id':record.dispatch_id, 'session_id':record.session_id,
+                    'card_id':record.card_id, 'realm':record.realm_id, 'instance_id':self.ctx.settings.instance_id}
+        if record.target_instance_id != self.ctx.settings.instance_id:
+            return {**identity, 'ready':False, 'reason':'origin_owner_mismatch'}
+        probe = {'origin_dispatches':[record.dispatch_id], 'pending_repair_controls':[]}
+        if not await self.call(self.origins_settled, probe):
+            return {**identity, 'ready':False, 'reason':'origin_dispatch_pending'}
+        if not record.session_id:
+            return {**identity, 'ready':True, 'reason':'pre_session_terminal'}
+        manager = self.ctx.services.get('instance_agent')
+        lifecycle = self.ctx.services.get('session_lifecycle')
+        session = await self.call(self.ctx.store.get_session, record.session_id)
+        if not manager or not lifecycle or not session or session.realm_id != record.realm_id:
+            return {**identity, 'ready':False, 'reason':'origin_lifecycle_unknown'}
+        if record.session_id in getattr(manager, '_admitting_sessions', set()):
+            return {**identity, 'ready':False, 'reason':'origin_session_admitting'}
+        runtime = manager.get(record.session_id)
+        if session.status == 'closed' and runtime and not getattr(runtime, '_closed', False):
+            return {**identity, 'ready':False, 'reason':'origin_runtime_still_owned'}
+        watches = await self.call(self.ctx.services['pr_supervisor_store'].list_watches, include_retired=True)
+        leases = await self.call(manager.workspace_manager.list, card_id=record.card_id)
+        latest = await self.call(self.ctx.services['dispatch_store'].by_session, record.session_id)
+        records = [record] + ([latest] if latest and latest.dispatch_id != record.dispatch_id else [])
+        async with asyncio.timeout(5):
+            decision, reason = await lifecycle._decision(session, sessions=[session], dispatches=records,
+                watches=watches, leases=leases, now=datetime.now(UTC))
+        return {**identity, 'ready':decision in {'close','retire'} or reason == 'already_closed', 'reason':reason}
+
+    async def origin_sessions_settled(self, packet):
+        observed_sessions = set()
+        for key in packet['origin_dispatches']:
+            record = await self.call(self.ctx.services['dispatch_store'].get, key)
+            if not record:
+                return False
+            if record.session_id:
+                observed_sessions.add(record.session_id)
+            if record.target_instance_id == self.ctx.settings.instance_id:
+                status = await self.origin_readiness(record)
+            else:
+                try:
+                    status = await self.health.peer(record.target_instance_id, 'GET', '/verification-readiness/' + record.dispatch_id)
+                except Exception:
+                    return False
+            if (status.get('ready') is not True or status.get('dispatch_id') != record.dispatch_id
+                    or status.get('session_id') != record.session_id or status.get('realm') != packet['realm']
+                    or status.get('card_id') != record.card_id or status.get('instance_id') != record.target_instance_id):
+                return False
+        return set(packet['origin_sessions']) <= observed_sessions
 
     async def process(self, card):
         req = card.completion_requirement
@@ -433,7 +530,7 @@ class VerificationService:
         if not packet['subject'] or not (packet['origin_sessions'] or packet['origin_dispatches']):
             await self.call(self.store.update, key, 'blocked', diagnostic='waiting_for_integration_or_origin')
             return
-        if not await self.call(self.origins_settled, packet):
+        if not await self.call(self.origins_settled, packet) or not await self.origin_sessions_settled(packet):
             await self.call(self.store.update, key, 'blocked', diagnostic='repair_workflow_pending')
             return
         if job['dispatch_id']:
@@ -441,6 +538,8 @@ class VerificationService:
             if not record:
                 return  # Unknown remains owned; never a replacement dispatch.
             if record.state in TERMINAL_DISPATCH_STATES:
+                if record.state == 'completed' and not (await self.origin_readiness(record))['ready']:
+                    return
                 await self.call(self.store.update, key, 'failed', diagnostic='verification_ended_without_acceptance')
                 await self.retry_after_provider_recovery(job, record)
             elif job['state'] == 'failed':
@@ -448,12 +547,18 @@ class VerificationService:
             return
         # A revision/scope change cannot start a rival while an old verifier runs.
         for old in await self.call(self.store.list, card.id, card.realm_id):
-            if old['id'] == key or old['state'] in {'accepted', 'superseded'}:
+            if old['id'] == key:
                 continue
             if not old['dispatch_id']:
+                if old['state'] in {'accepted','superseded'}:
+                    continue
                 return  # An uncertain earlier admission still owns the work.
             record = await self.call(self.ctx.services['dispatch_store'].get, old['dispatch_id'])
             if record is None or record.state not in TERMINAL_DISPATCH_STATES:
+                return
+            if not await self.call(self.job_controls_settled, old, record):
+                return
+            if not (await self.origin_readiness(record))['ready']:
                 return
         if card.realm_id != self.ctx.settings.primary_realm:
             await self.call(self.store.update, key, 'blocked', diagnostic='verification_realm_authority_required')

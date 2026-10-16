@@ -309,6 +309,9 @@ class SessionLifecyclePolicy:
         for dispatch in linked_dispatches:
             if dispatch.state not in TERMINAL_DISPATCH_STATES:
                 return "retained", "dispatch_active"
+            from pa.execution.followup import dispatch_followup_pending
+            if dispatch_followup_pending(dispatch):
+                return "retained", "followup_pending"
             if dispatch.state == "completed" and (
                 not dispatch.acknowledged_at
                 or dispatch.completion_delivery_class != "acknowledged"

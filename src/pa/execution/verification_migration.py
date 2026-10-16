@@ -37,6 +37,15 @@ def migration_plan(service, card, kind):
             raise CompletionConflict('explicit_requirement_preserved')
         if 'health-group:' not in req.criteria:
             raise CompletionConflict('unrelated_health_requirement_required')
+        supervisor = service.ctx.services.get('pr_supervisor_store')
+        watches = supervisor.list_watches(card_id=card.id, realm_id=card.realm_id, include_retired=True) if supervisor else []
+        source_evidence = any(e.outcome == 'integrated' and e.actor_kind == 'integration' for e in card.completion_evidence)
+        source_evidence = source_evidence or any(w.provenance_version >= 1 and w.head_sha
+            and str(w.status) in {'active','blocked','merged'} for w in watches)
+        if not source_evidence:
+            # A design/research issue has no source-integration producer. Keep
+            # its declaration pending for an evidence-based scope correction.
+            raise CompletionConflict('inherited_child_deliverable_unconfirmed')
         return CompletionRequirement(mode='integration_only', milestones=['integrated'],
             provenance='inherited_repair_correction', source_reference='card:' + card.parent_id,
             criteria='Integrate this card’s source changes. Unrelated inherited health acceptance was corrected; the original declaration remains in immutable history.')
