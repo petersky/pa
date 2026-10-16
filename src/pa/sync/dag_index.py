@@ -97,6 +97,8 @@ class DagIndex:
                     ON commits(commit_hash, realm_id);
                 CREATE INDEX IF NOT EXISTS ix_commit_parent
                     ON commit_parents(realm_id, parent_hash, commit_hash);
+                CREATE INDEX IF NOT EXISTS ix_commit_edges_forward
+                    ON commit_parents(realm_id, commit_hash, parent_hash);
                 CREATE TABLE IF NOT EXISTS reachability (
                     realm_id TEXT NOT NULL,
                     descendant_hash TEXT NOT NULL,
@@ -186,11 +188,13 @@ class DagIndex:
     ) -> set[str]:
         # Walk only this head's indexed edges. UNION deduplicates merge ancestry
         # and terminates cycles; the bound retains the authoritative walk limit.
+        # Keep the frontier outermost and use its forward covering index. A
+        # freely reordered join otherwise scans the entire realm per node.
         found = {str(row[0]) for row in conn.execute(
             """WITH RECURSIVE ancestry(hash) AS (
                    SELECT ? UNION
-                   SELECT p.parent_hash FROM commit_parents p
-                   JOIN ancestry a ON p.commit_hash=a.hash WHERE p.realm_id=?
+                   SELECT p.parent_hash FROM ancestry a CROSS JOIN commit_parents p
+                   WHERE p.realm_id=? AND p.commit_hash=a.hash
                    LIMIT ?
                ) SELECT hash FROM ancestry""",
             (head, realm_id, limit + 1),

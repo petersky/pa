@@ -85,6 +85,7 @@ class OperationMetrics:
     sqlite_statement_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_commit_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_rows: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_busy_failures: int = 0
 
 
@@ -417,6 +418,7 @@ class AsyncRuntime:
             metrics.sqlite_statement_ms.append(observation.sqlite_statement_ms)
             metrics.sqlite_commit_ms.append(observation.sqlite_commit_ms)
             metrics.sqlite_calls.append(observation.sqlite_calls)
+            metrics.sqlite_rows.append(observation.sqlite_rows)
             metrics.sqlite_busy_failures += observation.sqlite_busy_failures
             if observation.worker_finished_at:
                 metrics.worker_service_ms.append(
@@ -519,7 +521,7 @@ class AsyncRuntime:
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
             for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms",
-                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls"):
+                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows"):
                 data[phase] = distribution(list(getattr(metrics, phase)))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)

@@ -8,8 +8,10 @@ from unittest.mock import patch
 import pytest
 
 from pa.domain.models import CardEvent, EventType, SyncCommit
+from pa.domain.projection import CardProjection
 from pa.sync.event_log import DuplicateCardCreateError, EventLog
 from pa.sync.object_store import ObjectStore
+from pa.sync.dag_index import DagIndex
 
 
 def _commit(objects: ObjectStore, parent: str | None, event: CardEvent) -> str:
@@ -106,3 +108,90 @@ def test_index_rebuild_is_identical_and_append_preflight_is_indexed(tmp_path: Pa
             )
         )
     assert event.causal_card_version == "v1"
+
+
+def test_direct_child_index_advance_never_enumerates_indexed_ancestry(tmp_path: Path) -> None:
+    objects = ObjectStore(tmp_path / "objects")
+    log = EventLog(objects, tmp_path, "authority", cursor_secret="test")
+    parent, old_objects = None, set()
+    for index in range(80):
+        event = CardEvent(type=EventType.CARD_CREATED, realm_id="default", card_id=f"old-{index}",
+            author_principal="user:test", author_instance="authority",
+            payload={"id": f"old-{index}", "title": "retained"})
+        parent = _commit(objects, parent, event)
+        old_objects.add(parent)
+    log.advance_ref("default", parent, expected_head=None)
+    projection = CardProjection(tmp_path / "projection.db", log)
+    projection.rebuild_from_log("default")
+    child = _commit(objects, parent, CardEvent(type=EventType.CARD_CREATED,
+        realm_id="default", card_id="new", author_principal="user:test", author_instance="authority",
+        payload={"id": "new", "title": "incremental"}))
+    original_get = objects.get
+    def novel_only(digest):
+        assert digest == parent or digest not in old_objects, "reopened retained history"
+        return original_get(digest)
+    with patch.object(log.index, "ancestors", side_effect=AssertionError("enumerated retained ancestry")), patch.object(
+        objects, "get", side_effect=novel_only
+    ) as reads:
+        result = projection.catch_up_projection("default", child)
+        assert result["commits_applied"] == 1
+        log.advance_ref("default", child, expected_head=parent)
+    assert reads.call_count <= 8
+    assert projection.get_projection_head("default") == child
+    assert log.index.indexed_head("default") == child
+    assert log.entity_snapshot(child, "card", "new")["title"] == "incremental"
+    assert len(log.entity_history("default", "card", "old-0")) == 1
+
+
+def test_imported_fork_reuses_only_reachable_verified_ancestry(tmp_path: Path) -> None:
+    objects = ObjectStore(tmp_path / "objects")
+    log = EventLog(objects, tmp_path, "authority", cursor_secret="test")
+    def event(identity):
+        return CardEvent(type=EventType.CARD_CREATED, realm_id="default", card_id=identity,
+            author_principal="user:test", author_instance="authority",
+            payload={"id": identity, "title": identity})
+    base, shared = None, set()
+    for i in range(80):
+        base = _commit(objects, base, event(f"shared-{i}"))
+        shared.add(base)
+    log.advance_ref("default", base, expected_head=None)
+    local = _commit(objects, base, event("local"))
+    remote = _commit(objects, base, event("remote"))
+    log.advance_ref("default", local, expected_head=base)
+    original_get = objects.get
+    def novel_only(digest):
+        assert digest not in shared, "reopened verified shared history"
+        return original_get(digest)
+    with patch.object(objects, "get", side_effect=novel_only) as reads:
+        ancestry = log._ancestors(remote)
+        assert reads.call_count <= 2
+        assert ancestry == shared | {remote}
+        assert local not in ancestry
+        compatible, health = log.compatible_histories(local, remote)
+        assert compatible
+        assert set(health["common_ancestors"]) == shared
+    # A reset forces the original canonical traversal with the same answer.
+    log.index.reset_realm("default")
+    assert log._ancestors(remote) == ancestry
+
+
+@pytest.mark.parametrize("edges", [1000, 2000])
+def test_recursive_ancestry_work_is_linear_in_visited_edges(tmp_path: Path, edges: int) -> None:
+    index = DagIndex(tmp_path / "index.db")
+    with index._db() as conn:
+        conn.executemany("INSERT INTO commit_parents VALUES(?,?,?,?)",
+            [("default", f"c{i}", f"c{i-1}", 0) for i in range(1, edges + 1)])
+        instructions = 0
+        def progress():
+            nonlocal instructions
+            instructions += 100
+            return 0
+        conn.set_progress_handler(progress, 100)
+        try:
+            ancestors = index._ancestor_hashes(conn, "default", f"c{edges}")
+        finally:
+            conn.set_progress_handler(None, 0)
+    assert ancestors == {f"c{i}" for i in range(edges + 1)}
+    # Measure SQLite VM work rather than noisy shared-host wall time. A realm
+    # scan per frontier node uses millions of instructions at these sizes.
+    assert instructions < 100 * (edges + 1)

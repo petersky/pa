@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from pa.core.async_runtime import AsyncRuntime
 from pa.execution.dispatch import DispatchRecord, DispatchStore
 from pa.modules.fleet import list_dispatches
+from pa.modules.sync import _apply_sync_push_local
 from pa.execution.reconciliation import CompletionReconciler
 from pa.config import Settings
 from pa.core.kernel import Kernel
@@ -23,11 +24,35 @@ from pa.sync.event_log import EventLog
 from pa.sync.object_store import ObjectStore
 from pa.sync.object_catalog import ObjectCatalog
 from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.performance import OperationObservation, current_observation
 
 
 def fixture_record(**kwargs):
     return DispatchRecord(mutation_id="fixture", authority_instance_id="local",
                           authority_url="http://fixture", target_instance_id="target", **kwargs)
+
+
+def test_sqlite_observations_include_lazy_rows_without_retaining_values():
+    conn = sqlite3.connect(":memory:", factory=ObservedConnection)
+    conn.row_factory = sqlite3.Row
+    observation = OperationObservation()
+    token = current_observation.set(observation)
+    try:
+        conn.execute("CREATE TABLE fixture (value TEXT)")
+        conn.executemany("INSERT INTO fixture VALUES (?)", [(f"private-fixture-{i}",) for i in range(5)])
+        cursor = conn.execute("SELECT value FROM fixture ORDER BY value")
+        assert cursor.fetchone()["value"] == "private-fixture-0"
+        assert len(cursor.fetchmany(2)) == 2
+        assert len(list(cursor)) == 2
+        assert cursor.fetchone() is None
+        assert len(conn.execute("SELECT value FROM fixture").fetchall()) == 5
+        conn.commit()
+        assert observation.sqlite_rows == 10
+        assert observation.sqlite_statement_ms > 0 and observation.sqlite_commit_ms > 0
+        assert "private-fixture" not in json.dumps(vars(observation))
+    finally:
+        current_observation.reset(token)
+        conn.close()
 
 
 def test_derived_sync_connections_close_after_publication_and_rollback(tmp_path):
@@ -248,3 +273,55 @@ async def test_kernel_sync_engine_fast_forward_publishes_matching_projection(tmp
         assert log.get_head("default") == remote.hash
         assert ctx.store.get_projection_head("default") == remote.hash
         assert ctx.store.get_card("remote").title == "remote"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fork", [False, True])
+async def test_sync_push_keeps_parents_and_releases_primary_before_index(tmp_path, fork):
+    settings = Settings(data_dir=tmp_path / "data", workspace_root=tmp_path / "workspaces",
+                        agent_enabled=False, telemetry_enabled=False, peers=[], instance_id="fixture")
+    app = Kernel.boot(settings=settings).build_app()
+    async with app.router.lifespan_context(app):
+        ctx = app.state.ctx
+        log = ctx.require_service("event_log")
+        def event(identity):
+            return CardEvent(type=EventType.CARD_CREATED, realm_id="default", card_id=identity,
+                author_principal="user:fixture", author_instance="fixture",
+                payload={"id": identity, "title": identity})
+        def prepare():
+            if fork:
+                ctx.store.commit_event(event("base"))
+            base = log.get_head("default")
+            digest = log.store.put_json(event("remote").model_dump(mode="json"))
+            remote = SyncCommit(hash="", realm_id="default", instance_id="peer", parent_hashes=[base] if base else [],
+                                event_hashes=[digest], author_principal="user:fixture")
+            remote.hash = log.store.put_json(remote.model_dump(mode="json"))
+            if fork:
+                ctx.store.commit_event(event("local"))
+            ctx.store.save_session(AgentSession(id="binding", agent_name="codex"))
+            return log.get_head("default"), remote.hash
+        local, remote = await asyncio.to_thread(prepare)
+        entered, release = threading.Event(), threading.Event()
+        original_index = log.ensure_indexed
+        def held_index(realm_id, head=None):
+            if head and head != local:
+                entered.set()
+                release.wait(10)
+            return original_index(realm_id, head)
+        with patch.object(log, "ensure_indexed", side_effect=held_index):
+            pushing = asyncio.create_task(asyncio.to_thread(_apply_sync_push_local, ctx, "default", remote, {}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 3)
+                await asyncio.wait_for(asyncio.to_thread(ctx.store.set_session_execution_binding,
+                    "binding", {"version": 1, "origin_instance_id": "fixture"},
+                    reason="workspace_binding_initialized", expected_binding={}), 3)
+            finally:
+                release.set()
+            result = await pushing
+        merged = log.get_commit(result["head"])
+        assert set(merged.parent_hashes) == ({local, remote} if fork else set())
+        assert result["commits_applied"] == (2 if fork else 0)
+        assert ctx.store.get_projection_head("default") == result["head"]
+        assert ctx.store.get_card("remote")
+        if fork:
+            assert ctx.store.get_card("local")

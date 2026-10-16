@@ -251,14 +251,17 @@ def _apply_sync_push_local(
                             automatic_resolutions=health.get(
                                 "automatic_resolutions", []
                             ),
+                            update_index=False,
                         )
                         head_hash = merge.hash
                         projection = store.catch_up_projection(realm_id, head_hash)
                         head_changed = True
+                        index_after_publication = True
                 elif local_head != head_hash:
                     projection = store.catch_up_projection(realm_id, head_hash)
-                    log.advance_ref(realm_id, head_hash, expected_head=local_head)
+                    log.advance_ref(realm_id, head_hash, expected_head=local_head, update_index=False)
                     head_changed = True
+                    index_after_publication = True
             except StaleSyncHeadError as exc:
                 raise HTTPException(
                     status_code=409,

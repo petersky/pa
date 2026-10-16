@@ -327,6 +327,93 @@ subsequent starts had median 144.994 ms and maximum 260.735 ms. Numeric evidence
 is `docs/benchmarks/systemic-inventory-cold-start.json`; this does not measure
 real provider, peer-network or installed-service startup.
 
+Per-operation diagnostic timers then located substantial derived-index work:
+one slow push spent 446.933 ms in indexing, including nested ancestry/connect/
+close costs; its four explicit filesystem fsync calls totalled 0.453 ms. These
+wall phases overlap, include scheduling/GC effects and add diagnostic overhead;
+they do not prove that every historical delay was disk or SQLite locking. An
+earlier global cProfile run mixed thread attribution and is excluded from causal
+claims. The production bounded operation context remains thread-scoped.
+
+A direct single-parent target proves ancestry without enumerating all retained
+ancestors. Both projection catch-up and derived-index advance now stop at that
+verified parent. General suffixes and merges retain complete ancestry exclusion,
+canonical validation, CAS and receipt replay. A regression forbids ancestry
+enumeration/old-history reads while checking matching checkpoints and history.
+Index-only optimization still retained one 511.337 ms push violation. With both
+paths bounded, the identical 30-iteration version-2 run reported zero warnings,
+threshold violations, failures, rejections or startup/drain timeouts and retained
+all 2,880 events. Push p50/p95/p99/max was
+129.414/268.269/284.801/284.801 ms; reconcile was
+77.550/189.265/478.238/478.238 ms. Numeric comparisons are in
+`docs/benchmarks/systemic-inventory-v2-linear.json`. This finite scenario does
+not close whole-PA/fleet acceptance or erase the failed preceding comparisons.
+The stronger 100-iteration run retained all 9,600 transcript events without
+failures/rejections/startup/drain timeouts, but failed the zero-warning target:
+three transcript appends and two reconciles were slow. Reconcile p50/p95/p99/max
+was 72.215/167.001/2,750.416/3,492.914 ms; drain maximum was 859.333 ms.
+Canonical reads rose to 3,987 versus approximately 1,800 for normal deltas.
+This result is retained in the same numeric comparison, not discarded in favor
+of the passing 30-iteration run.
+
+Imported forks not yet in the index still reopened their complete shared
+canonical ancestry. They now walk novel commits to indexed boundaries and union
+only the exact verified ancestors reachable from those boundaries. Unrelated
+local descendants must not enter the answer. A regression checks exact fork
+ancestry/common-base conflict assessment without reopening shared objects, then
+resets the derived index and verifies the original canonical fallback agrees.
+
+Version 3 makes ten ordinary compatible forks explicit per 100 iterations and
+checks every requested sync head remains included, plus accepted progress
+receipts. A prior partial run aborted on the fixture's exact-one-applied-commit
+assumption; a compatible fork correctly applies an incoming commit and merge
+marker. A real-Kernel regression verifies both parents/effects and the two-commit
+result. First-import and fork API pushes now defer derived indexing until after
+primary mutation admission is released, as fast-forward pushes already did.
+
+The first complete version-3 run retained all 9,600 events with no failures,
+rejections or startup/drain timeouts, but logged 19 slow calls: 12 reconciles,
+six transcript appends and one execution binding. Reconcile maximum was
+4,357.257 ms. It completed 12 compatible merges (ten explicit plus two incidental)
+and 88 fast-forwards; canonical reads dropped to 1,975. Thus avoiding canonical
+rereads alone did not close merge-path latency.
+
+Numeric phase timers isolated the remaining ancestor-set cost. EXPLAIN confirmed
+SQLite scanned all realm parent edges for every recursive frontier node. The
+old query used 5,027,000 VM instructions at 1,000 edges and 20,054,000 at 2,000.
+Adding a forward covering index alone still used 5,027,000 at 1,000: join order
+also matters. A frontier-first CROSS JOIN plus the forward covering index uses
+27,000/54,000 instructions respectively, with identical ancestor sets, UNION
+deduplication and traversal limits. Tests assert a linear instruction bound,
+independent of shared-host wall timing. This is confirmed in the source fixture;
+it is not attributed to an unidentified installed binary or every historical
+warning. The extra derived index maintains one entry per parent edge; its
+one-time build cost on a large existing installation remains unmeasured.
+
+Earlier SQLite timings measured execute/commit but omitted lazy row production,
+so they could not rule out query service time. Numeric observations now cover
+fetchone/fetchmany/fetchall/iteration and count returned rows, with cursor row
+factories and transaction behavior preserved. SQL text, parameters and returned
+values are never retained. Successful native busy-handler waiting still cannot
+be isolated exactly from SQLite service using the standard-library interface.
+The full runtime/cursor, history-scale, fork, CAS, receipt and rebuild regression
+run passed 112 tests plus five subtests. The unchanged auth-navigation browser
+case failed once in CI on head `686a8db` during read-only navigation polling and
+passed in isolation; that failed CI run is retained, not treated as merge green.
+
+The version-3 retest after the query repair still failed zero-warning acceptance:
+eight slow calls (four reconciles, three transcript appends and one binding),
+while retaining all 9,600 events with no failed/rejected operations or timeouts.
+Reconcile p50/p95/p99/max was 86.356/443.855/1,125.391/3,497.975 ms; push maximum
+was 392.384 ms, drain 547.657 ms and binding 519.978 ms. Both version-3 results,
+their complete path distributions, row/byte metrics and counter deltas are in
+`docs/benchmarks/systemic-inventory-v3.json`; query-plan work counts are in
+`docs/benchmarks/systemic-ancestry-query-plan.json`. These remaining tails require
+further investigation. SQL trace counts cover newly hooked connections and may
+exclude preexisting persistent connections; physical disk write amplification
+remains unmeasured on this Mac. No threshold, deadline, warning or durable-data
+retention policy was relaxed.
+
 Reconciliation scans now return immutable scheduling identities instead of
 copying retained proofs for up to 1,000 dispatches. Each candidate still reloads
 the current durable record before action. Worker progress is reported between
