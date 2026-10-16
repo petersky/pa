@@ -386,7 +386,11 @@ class NotificationService:
             limit=limit,
         )
         for notification in records:
-            if not notification.expires_at or notification.expires_at > now:
+            interaction = notification.interaction
+            cancelled = (interaction and interaction.kind == InteractionKind.MCP_OPERATOR_INPUT
+                         and interaction.state == InteractionState.FAILED
+                         and interaction.response == {"cancelled": True})
+            if (not notification.expires_at or notification.expires_at > now) and not cancelled:
                 continue
             if (
                 notification.owner_instance_id
@@ -402,6 +406,10 @@ class NotificationService:
                     realm_id=realm_id,
                 )
                 if not current or current.resolved_at is not None:
+                    continue
+                if await asyncio.to_thread(self._retire_completed_cancellation, current):
+                    continue
+                if not current.expires_at or current.expires_at > now:
                     continue
 
                 def expire_item(item: Notification, stamp: datetime) -> None:
@@ -421,6 +429,57 @@ class NotificationService:
                 await self._deliver_expiry(current)
                 expired += 1
         return expired
+
+    def _retire_completed_cancellation(self, notice: Notification) -> bool:
+        """Close a failed, already-cancelled MCP continuation without delivering it.
+
+        Unanswered requests have no reliable legacy completion-scope marker. Never
+        infer consent from their text or from a card becoming Done. This bounded
+        maintenance path only retires an existing cancellation after independent
+        canonical acceptance, preserving the response and failed delivery verbatim.
+        """
+        interaction = notice.interaction
+        if (
+            not interaction or interaction.kind != InteractionKind.MCP_OPERATOR_INPUT
+            or interaction.protocol_method != "pa/report_dispatch_progress.operator_input"
+            or interaction.continuation_mode != "prompt"
+            or interaction.state != InteractionState.FAILED
+            or interaction.response != {"cancelled": True}
+            or not interaction.responded_at or notice.id in self._delivery_handlers
+            or not notice.card_id or not notice.dispatch_id or not notice.session_id
+            or notice.owner_instance_id != self.ctx.settings.instance_id
+        ):
+            return False
+        card = self.store.get_card(notice.card_id, realm_id=notice.realm_id)
+        requirement = card.completion_requirement if card else None
+        if not requirement or card.lane != "done" or not card.completion_status["accepted"]:
+            return False
+        ledger = self.ctx.services.get("dispatch_store")
+        origin = ledger.get(notice.dispatch_id) if ledger else None
+        if (not origin or origin.state not in TERMINAL_DISPATCH_STATES
+                or (origin.card_id, origin.realm_id, origin.session_id)
+                != (card.id, card.realm_id, notice.session_id)):
+            return False
+        from pa.domain.completion import completion_state
+
+        for receipt in reversed(card.completion_evidence):
+            if (
+                receipt.outcome != "accepted" or receipt.actor_kind != "bound_session"
+                or receipt.requirement_revision != requirement.revision
+                or not receipt.recorded_at or notice.created_at > receipt.recorded_at
+                or not receipt.actor_session_id or not receipt.actor_dispatch_id
+                or receipt.actor_session_id == notice.session_id
+                or receipt.actor_dispatch_id == notice.dispatch_id
+                or receipt.actor != origin.principal_id or receipt.actor != notice.principal_id
+            ):
+                continue
+            integrated = [item for item in card.completion_evidence if item.outcome == "integrated"]
+            if not completion_state(requirement, [*integrated, receipt])["accepted"]:
+                continue
+            self.resolve(notice, principal_id="system:completion",
+                         idempotency_key=f"completion-retire:{notice.id}:{receipt.idempotency_key}")
+            return True
+        return False
 
     def prune(
         self, *, realm_id: str, retention_days: int = 90, max_records: int = 10_000
