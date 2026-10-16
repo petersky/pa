@@ -18,7 +18,8 @@ from tests.test_card_status_browser import operator_server, operator_app  # noqa
 
 @pytest.mark.skipif(not _browser_executable(), reason="managed Chromium is not installed")
 @pytest.mark.asyncio
-async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path):
+@pytest.mark.parametrize(("width", "height"), [(1440, 1000), (390, 844)])
+async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path, width, height):
     app, base = operator_server
     store = app.state.ctx.store
     ready = store.create_card(CardCreate(title="Unstarted preview", auto_enrich=False))
@@ -43,7 +44,7 @@ async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path)
     evidence = Path(".dev/status-actions")
     evidence.mkdir(parents=True, exist_ok=True)
     try:
-        await manager.attach(scope, url=base, width=1440, height=1000)
+        await manager.attach(scope, url=base, width=width, height=height)
         page = manager.resolve(scope).page
 
         async def wait_for(expression):
@@ -52,7 +53,9 @@ async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path)
                 if await page.evaluate(expression):
                     return
                 await asyncio.sleep(.05)
-            pytest.fail("Browser condition did not become true: " + expression)
+            (evidence / "failure.png").write_bytes(await page.screenshot())
+            detail = await page.evaluate("document.querySelector('dialog[open]')?.innerText || 'No dialog open'")
+            pytest.fail("Browser condition did not become true: " + expression + "; " + str(detail)[:600])
 
         async def assert_layout(selector):
             result = await page.evaluate(f'''(() => {{
@@ -62,39 +65,38 @@ async def test_status_actions_desktop_narrow_and_zoom(operator_server, tmp_path)
             }})()''')
             assert result["count"] and not result["overflow"] and not result["clipped"], result
 
-        for width, height in [(1440, 1000), (390, 844)]:
-            await manager.resize(scope, width=width, height=height)
-            await page.navigate_and_wait(base)
-            await wait_for("!!document.querySelector('[data-attention-state=\"start_blocked\"]')")
-            assert "Review start" in await page.evaluate("document.querySelector('[data-attention-state=\"start_blocked\"]').innerText")
-            text = await page.evaluate("document.querySelector('[data-home-attention-queue]').innerText")
-            assert "No action required" not in text and "missing_worktree_lease" not in text
-            await assert_layout(".attention-queue-card, .attention-card-summary, .attention-card-actions")
-            (evidence / f"home-{width}.png").write_bytes(await page.screenshot())
+        await wait_for("!!document.querySelector('[data-attention-state=\"start_blocked\"]')")
+        assert "Review start" in await page.evaluate("document.querySelector('[data-attention-state=\"start_blocked\"]').innerText")
+        text = await page.evaluate("document.querySelector('[data-home-attention-queue]').innerText")
+        assert "No action required" not in text and "missing_worktree_lease" not in text
+        await assert_layout(".attention-queue-card, .attention-card-summary, .attention-card-actions")
+        (evidence / f"home-{width}.png").write_bytes(await page.screenshot())
 
-            await page.navigate_and_wait(base + "/work")
-            await wait_for(f"!!document.querySelector('.compact-card[data-card-id=\"{ready.id}\"]')")
-            await page.evaluate("document.querySelector('[data-board-lane=\"inbox\"]').click(); document.querySelector('[data-work-board]').scrollIntoView()")
-            ready_text = await page.evaluate(f"document.querySelector('.compact-card[data-card-id=\"{ready.id}\"]').innerText")
-            assert "not started" in ready_text.lower() and "Open agent" not in ready_text
-            await assert_layout(".compact-card, .work-outcome, .compact-card h3")
-            (evidence / f"work-{width}.png").write_bytes(await page.screenshot())
+        await page.navigate_and_wait(base + "/work")
+        await wait_for(f"!!document.querySelector('.compact-card[data-card-id=\"{ready.id}\"]')")
+        await page.evaluate("document.querySelector('[data-board-lane=\"inbox\"]').click(); document.querySelector('[data-work-board]').scrollIntoView()")
+        ready_text = await page.evaluate(f"document.querySelector('.compact-card[data-card-id=\"{ready.id}\"]').innerText")
+        assert "not started" in ready_text.lower() and "Open agent" not in ready_text
+        await assert_layout(".compact-card, .work-outcome, .compact-card h3")
+        (evidence / f"work-{width}.png").write_bytes(await page.screenshot())
 
-            await manager.click(scope, selector=f'.compact-card[data-card-id="{blocked.id}"] h3 a')
-            await wait_for("!!document.querySelector('[data-card-live-progress]')")
-            text = await page.evaluate("document.querySelector('[data-card-detail]').innerText")
-            assert text.lower().count("start blocked") == 1 and text.count("Review start") == 1
-            assert "workspace_preflight_failed" not in text
-            await assert_layout(".card-detail-header, .card-live-progress, .work-outcome")
-            (evidence / f"card-{width}.png").write_bytes(await page.screenshot())
-            await page.evaluate("document.querySelector('.card-live-progress details').open=true")
-            assert "original-start" in await page.evaluate("document.querySelector('.card-live-progress').innerText")
-            await page.evaluate("document.querySelector('.card-live-progress details').open=false")
-            await page.evaluate("document.querySelector('[data-card-tab=\"agent\"]').click()")
-            await wait_for("!!document.querySelector('[data-card-tab-panel=\"agent\"] [data-card-tab-loaded]')")
-            agent = await page.evaluate("document.querySelector('[data-card-tab-panel=\"agent\"]').innerText")
-            assert "Source conversation" in agent and "No agent sessions yet" in agent
-            await manager.click(scope, selector="[data-card-dialog-close]")
+        await page.evaluate(f'''document.querySelector('.compact-card[data-card-id="{blocked.id}"] h3 a').scrollIntoView({{block:'center', behavior:'instant'}})''')
+        await page.evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        await manager.click(scope, selector=f'.compact-card[data-card-id="{blocked.id}"] h3 a')
+        await wait_for("!!document.querySelector('[data-card-live-progress]')")
+        text = await page.evaluate("document.querySelector('[data-card-detail]').innerText")
+        assert text.lower().count("start blocked") == 1 and text.count("Review start") == 1
+        assert "workspace_preflight_failed" not in text
+        await assert_layout(".card-detail-header, .card-live-progress, .work-outcome")
+        (evidence / f"card-{width}.png").write_bytes(await page.screenshot())
+        await page.evaluate("document.querySelector('.card-live-progress details').open=true")
+        assert "original-start" in await page.evaluate("document.querySelector('.card-live-progress').innerText")
+        await page.evaluate("document.querySelector('.card-live-progress details').open=false")
+        await page.evaluate("document.querySelector('[data-card-tab=\"agent\"]').click()")
+        await wait_for("!!document.querySelector('[data-card-tab-panel=\"agent\"] [data-card-tab-loaded]')")
+        agent = await page.evaluate("document.querySelector('[data-card-tab-panel=\"agent\"]').innerText")
+        assert "Source conversation" in agent and "No agent sessions yet" in agent
+        await manager.click(scope, selector="[data-card-dialog-close]")
         await wait_for("!!document.querySelector('.compact-card')")
         await page.evaluate("document.querySelector('[data-board-lane=\"inbox\"]').click()")
         await page.evaluate("document.documentElement.style.zoom='2'")

@@ -721,7 +721,7 @@ def present_work_item(
         action = _action("recover_start", "Review start" if blocked_start else "View start",
                          href=f"/agent?session={start_receipt['session_id']}&issues=1")
         action_explanation = "Review current constraints, then resume the same saved request."
-    elif not dispatch_id and not session_id and lane == "inbox":
+    elif not dispatch_id and not session_id and lane in {"inbox", "active"} and not _value(card, "completion_evidence", []):
         state_code, state_label = "not_started", "Not started"
         summary = "No card worker has started."
         reason = "The card has no admitted execution."

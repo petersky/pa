@@ -108,7 +108,7 @@ def test_card_modal_distinguishes_local_start_preference_and_durable_dispatch() 
         assert 'name="provider" placeholder=' not in dispatch.text
         assert 'name="model_id" placeholder=' not in dispatch.text
         assert "documented default" in dispatch.text
-        assert 'data-contextual-work-action="open_card"' in work.text
+        assert 'data-contextual-work-action="dispatch"' in work.text
 
 
 def test_card_modal_separates_prompt_backlog_from_execution_slots() -> None:
@@ -248,11 +248,11 @@ def test_card_item_actions_follow_context_and_detail_opens_dispatch_status() -> 
             cards = client.get("/partials/cards?lane=inbox")
             detail = client.get(f"/partials/cards/{dispatched.id}/detail")
 
-        assert f'aria-label="Open card for {eligible.title}"' in cards.text
+        assert f'aria-label="Start work for {eligible.title}"' in cards.text
         assert f'aria-label="Open agent for {dispatched.title}"' in cards.text
         assert f'aria-label="Dispatch {dispatched.title}"' not in cards.text
         assert "data-card-dispatch-open" not in detail.text
-        assert "View running work" in detail.text
+        assert "Open agent" in detail.text
 
 
 def test_shared_modal_preserves_focus_and_workshop_uses_live_dispatch_state() -> None:

@@ -2,6 +2,7 @@
 {% macro presentation_action(action, title, card_id, realm_id, classes="ghost small compact-card-dispatch") %}
   {% if action.kind == 'dispatch' %}
   <button type="button" class="{{ classes }}" data-card-dispatch-open
+          data-contextual-work-action="dispatch"
           data-card-id="{{ card_id }}" data-card-realm="{{ realm_id }}"
           aria-label="{{ action.label }} for {{ title }}">{{ action.label }}</button>
   {% elif action.kind == 'retry' %}

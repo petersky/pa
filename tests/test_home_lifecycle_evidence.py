@@ -251,7 +251,8 @@ def test_home_preserves_completion_obligations_without_inventing_motion(app, dis
 def test_home_placeholder_and_loaded_outcomes_use_the_same_terminology(app):
     for path in ("/", "/partials/home/sections"):
         html = app.state.test_client.get(path).text
-        assert "Execution outcomes" in html
+        assert "Recent outcomes" in html
+        assert "Execution outcomes" not in html
         assert "Terminal work" not in html
 
 
