@@ -2229,7 +2229,7 @@ class AgentSessionRuntime:
                 self._flush_transcript()
                 await self._drain_transcripts()
             except BaseException:
-                self._finish_turn_state()
+                await self._finish_turn_state()
                 raise
             stall_task = asyncio.create_task(self._watch_turn_waiting(item))
             import time
@@ -2260,8 +2260,8 @@ class AgentSessionRuntime:
                     from pa.acp.errors import classify_acp_failure, format_acp_error
 
                     if self._is_connection_loss(exc):
-                        self._finish_turn_state()
-                        self._notify_connection_lost(item, exc)
+                        await self._finish_turn_state()
+                        await self._notify_connection_lost(item, exc)
                         await self._drain_transcripts()
                         return "connection_lost"
                     classified = classify_acp_failure(
@@ -2289,7 +2289,7 @@ class AgentSessionRuntime:
                 # Clear snapshot-visible turn state before publishing the
                 # terminal event. A page refresh after turn_completed must see
                 # prompting=false and no per-turn start time.
-                self._finish_turn_state()
+                await self._finish_turn_state()
                 self._append_transcript(
                     "turn_completed",
                     {
@@ -2426,7 +2426,7 @@ class AgentSessionRuntime:
                     await stall_task
                 except asyncio.CancelledError:
                     pass
-                self._finish_turn_state()
+                await self._finish_turn_state()
                 if selection_attempt:
                     try:
                         from pa.execution.selection_audit import finish_prompt
@@ -2631,12 +2631,12 @@ class AgentSessionRuntime:
             )
             self._flush_transcript()
 
-    def _finish_turn_state(self) -> None:
+    async def _finish_turn_state(self) -> None:
         self._in_flight = None
         self._turn_timing = None
         self._turn_started_at = None
         self._turn_streamed = False
-        self._checkpoint_runtime(lifecycle="ready")
+        await self._checkpoint_runtime_async(lifecycle="ready")
 
     def _is_connection_loss(self, exc: BaseException) -> bool:
         if isinstance(exc, ConnectionError):
@@ -2649,7 +2649,7 @@ class AgentSessionRuntime:
             or "chunk exceed the limit" in msg
         )
 
-    def _notify_connection_lost(self, item: QueuedPrompt, exc: BaseException) -> None:
+    async def _notify_connection_lost(self, item: QueuedPrompt, exc: BaseException) -> None:
         logger.warning(
             "ACP connection lost for session %s during prompt %s: %s",
             self.session_id,
@@ -2665,7 +2665,7 @@ class AgentSessionRuntime:
             },
         )
         self.session.status = "recoverable_interrupted"
-        self._checkpoint_runtime(lifecycle="recoverable_interrupted")
+        await self._checkpoint_runtime_async(lifecycle="recoverable_interrupted")
         self._flush_transcript()
         self.manager.request_recovery(self.session_id)
 

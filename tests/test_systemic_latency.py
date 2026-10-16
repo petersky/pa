@@ -160,6 +160,40 @@ async def test_primary_sqlite_busy_failure_is_numeric_and_keeps_statement_time(t
 
 
 @pytest.mark.asyncio
+async def test_turn_completion_keeps_loop_live_while_metadata_writer_waits(tmp_path):
+    store = CardProjection(tmp_path / "pa.db")
+    executor = AsyncRuntime()
+    manager = AgentSessionManager(Settings(data_dir=tmp_path, agent_enabled=False), store)
+    manager.async_runtime = executor
+    session = AgentSession(id="finishing", agent_name="codex")
+    store.save_session(session)
+    runtime = AgentSessionRuntime(manager, session, initial_transcript_seq=0)
+    entered, release = threading.Event(), threading.Event()
+    def hold_writer():
+        with store._mutation_lock:
+            entered.set()
+            release.wait(2)
+    holder = threading.Thread(target=hold_writer)
+    holder.start()
+    assert entered.wait(1)
+    try:
+        started = time.perf_counter()
+        finishing = asyncio.create_task(runtime._finish_turn_state())
+        await asyncio.sleep(0.01)
+        assert (time.perf_counter() - started) < 0.5
+        assert not finishing.done()
+    finally:
+        release.set()
+        holder.join(2)
+    try:
+        await finishing
+        assert store.get_session(session.id).config_json["durable_runtime"]["lifecycle"] == "ready"
+    finally:
+        await executor.close()
+        store.close_thread_connection()
+
+
+@pytest.mark.asyncio
 async def test_required_harness_discovery_does_not_wait_for_optional_providers_or_publish_partial_full_catalog(tmp_path):
     from pa.execution.selection_service import SelectionService
     from tests.selection_browser_app import FixtureProvider

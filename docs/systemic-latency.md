@@ -61,6 +61,10 @@ share the existing metadata mutation admission boundary. Only the short metadata
 transaction is serialized; cold payload preparation/publication precedes it.
 This removed the measured successful SQLite contention tails: before this change,
 statement service reached 550 ms while commit service remained below 10 ms.
+Terminal turn and connection-loss checkpoints also await off-loop persistence.
+Their former synchronous saves could make an event-loop callback wait behind
+the metadata writer; a regression keeps the loop live while that writer is held
+and verifies the terminal checkpoint is durable before completion returns.
 
 ## Bounded measurements
 
