@@ -181,7 +181,7 @@ class HealthService:
         async with asyncio.timeout(5):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
-    async def repair_obligation(self, action, *, verification_dispatches=()):
+    async def repair_obligation(self, action, *, verification_dispatches=(), allow_retry_recovery=False):
         """Reuse the normal session-lifecycle decision; never a second queue."""
         result, payload = action['result'] or {}, action['payload']
         ledger = self.ctx.services.get('dispatch_store')
@@ -199,7 +199,8 @@ class HealthService:
             return 'dispatch_active'
         if (record.state in {'failed', 'cancelled'} and not record.session_id
                 and not record.prompt_acknowledged_at and not record.initial_prompt_operation):
-            if result.get('retry_pending') and (record.control_operations or {}).get(f'health-start_retry:{action["id"]}') != 'retry':
+            if (not allow_retry_recovery and result.get('retry_pending')
+                    and (record.control_operations or {}).get(f'health-start_retry:{action["id"]}') != 'retry'):
                 return 'repair_retry_outcome_unknown'
             others = await self.canonical_call(ledger.list, card_id=record.card_id,
                 realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=101)
@@ -498,7 +499,10 @@ class HealthService:
                             'next_actor':'pa', 'next_action':'finish_investigation'},
                             owner=self.owner, fence=lease['fence'])
                 if state in {'completed', 'failed', 'cancelled', 'acknowledged'}:
-                    obligation = await self.repair_obligation(action)
+                    # The existing failed-start owner must replay its bounded
+                    # retry receipt. That same uncertainty still fences a
+                    # merged repair's handoff to a different obligation.
+                    obligation = await self.repair_obligation(action, allow_retry_recovery=True)
                     if obligation == 'pre_session_failed':
                         await self.failed_start(action, lease, durable)
                         return

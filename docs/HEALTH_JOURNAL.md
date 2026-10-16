@@ -124,6 +124,8 @@ declarations are preserved. A merged collector action releases its slot only
 after a durable verification successor exists and its old dispatch obligation
 is settled; group-version and lease fencing protect the atomic handoff. Novel
 observations replan verification of the existing repair instead of retriaging it.
+An uncertain failed-start retry retains its original owner and bounded replay
+key; it prevents handoff without preventing that owner's normal receipt recovery.
 
 `GET /api/health-journal/verification-intents?card_id=...&realm=...` exposes the
 durable assignment and diagnostic. Administrator preview/apply is available at
