@@ -44,6 +44,9 @@ CONCERNS = [
     ("peers", "Peer stalls and repeated failures", "fleet", "macmini02dbcd47:reconcile92.9s/push79s; original fleet4762,PR62,sync173failures; later snapshot worsened. Other configured peer identity unknown after bounded read timeout. Peer logs/build uninspected."),
     ("observability", "Log loss, provenance and coverage", "runtime", "CLI5.64MBdropped/2396status failures; PR485 fixes UUID provenance and WARNING normalization, not all pump losses. Own16-file retained scan covers Oct8–16; unknown timestamps3200 and missing older/peer logs remain gaps."),
     ("ambiguous-upload", "Attachment timeout and receipt recovery", "operation", "Independent reportd6f9f96d correlation89e1728a-ce91-49c1-a036-5bc8bc7cfd66 operation9fce2c73-175e-4495-aca2-aafb3c5bcc2e; own report0e918df2 fullID in ledger references. Exact-hash effects exist despite unknown transport/absent receipt; never retry ambiguously."),
+    ("incoming-fork-fence", "Incoming fork publication and summary writes", "sync", "Expanded25-request mixed fixture exposed one unhandled DagIndexStaleError during summary publication, despite zero measured latency violations. Confirmed incoming merge advanced ref before application primary admission; repair routes prepared immutable merge through projection/CAS publisher and offloads summary work with fresh-input/manual-edit fences. Report19c44107-99dc-4b64-92ea-fda8d22a3418; regression/retest status below."),
+    ("large-message-copy", "Quadratic complete-message compaction", "acp", "Expanded100-iteration fixture exposed transcript message-page tails as a single message grew to3200chunks/2.56million characters. Repeated prefix concatenation materialized about4.1billion characters. Linear grouping joins once while preserving replacement snapshots, source sequence spans, interleaved tools and all durable input chunks; exact reconstruction and copy-volume regression passed."),
+    ("startup-classification", "Startup classification and same-request recovery", "selection", "Report e2bed017-d546-49f5-910e-3d8326d80e40: start classified as research, same request recovered after metadata correction. The workaround is not a repair or new authorization. Preserve request/receipt identity and user model/permission defaults; root classification and regression coverage remain open."),
 ]
 
 
@@ -67,12 +70,20 @@ def disposition(name: str, family: str, fixture: dict | None = None) -> dict:
     }
 
 
-def build(independent: dict, integrated: dict) -> dict:
+def build(independent: dict, integrated: dict, followup: dict | None = None) -> dict:
     baseline = {x["operation"]: x for x in integrated["baseline_operations"]}
     independent_by_name = {x["operation"]: x for x in independent["all_logged_slow_operations"]}
     independent_names = set(independent_by_name)
     assert len(independent_names) == 105 and independent_names <= baseline.keys()
     rows = []
+    measured = integrated["integrated_fixture"]
+    def fixture_evidence(name: str) -> dict | None:
+        counters = measured.get("operation_counter_deltas", {}).get(name)
+        if not counters or not counters.get("submitted", 0):
+            return None
+        return {"counter_delta": counters, "latency_ms": measured.get("latency", {}).get(name),
+                "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+                "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"}
     for name, b in baseline.items():
         counters = b.get("fixture_counter_delta")
         verification = ({"counter_delta": counters,
@@ -88,12 +99,19 @@ def build(independent: dict, integrated: dict) -> dict:
         name = op["operation"]
         rows.append({"id": "runtime:" + name, "kind": "runtime_operation", "finding": name,
                      "family": name.split(".")[0], "measurement": op,
-                     **disposition(name, name.split(".")[0])})
+                     **disposition(name, name.split(".")[0], fixture_evidence(name))})
     for route in independent["runtime"]["all_routes"]:
         name = route["route"]
+        exact_requests = {path: stats for path, stats in measured.get("latency", {}).items()
+                          if path.split("?", 1)[0] == name}
+        verification = ({"latency_by_exact_request": exact_requests,
+                         "response_bytes": {path: measured.get("response_bytes", {}).get(path) for path in exact_requests},
+                         "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+                         "limitation": "Only listed query variants and fixture data; no deployed acceptance"}
+                        if exact_requests else None)
         rows.append({"id": "route:" + name, "kind": "http_route", "finding": name,
                      "family": "backup" if "backups" in name else "http", "measurement": route,
-                     **disposition(name, "backup" if "backups" in name else "http")})
+                     **disposition(name, "backup" if "backups" in name else "http", verification)})
     for section, kind in [("page_shell_logged_ms", "page_shell"), ("startup_phase_logged_ms", "startup_phase")]:
         for name, stats in independent[section].items():
             rows.append({"id": kind + ":" + name, "kind": kind, "finding": name,
@@ -101,10 +119,47 @@ def build(independent: dict, integrated: dict) -> dict:
     for key, title, family, evidence in CONCERNS:
         rows.append({"id": "concern:" + key, "kind": "concern", "finding": title,
                      "family": family, "measurement": {"evidence": evidence}, **disposition(title, family)})
+    if followup:
+        baseline_runtime_names = {r["finding"] for r in rows if r["kind"] == "runtime_operation"}
+        for name, counters in followup.get("operation_counter_deltas", {}).items():
+            if name not in baseline_runtime_names and counters.get("submitted", 0):
+                rows.append({"id": "runtime-followup:" + name, "kind": "runtime_operation_followup",
+                             "finding": name, "family": name.split(".")[0],
+                             "measurement": {"counter_delta": counters,
+                                             "phases": followup.get("runtime", {}).get("operations", {}).get(name),
+                                             "scope": "new followup operation; phase window may include boot, counter delta covers measured window"},
+                             **disposition(name, name.split(".")[0])})
+        for row in rows:
+            name = row["finding"]
+            exact = followup.get("operation_counter_deltas", {}).get(name)
+            routes = {path: stats for path, stats in followup.get("latency", {}).items()
+                      if path.split("?", 1)[0] == name}
+            if (exact and exact.get("submitted", 0)) or routes:
+                row["followup_verification"] = {
+                    "artifact": "benchmarks/systemic-inventory-v4.json",
+                    "counter_delta": exact, "latency_by_exact_request": routes,
+                    "response_bytes": {path: followup.get("response_bytes", {}).get(path) for path in routes},
+                    "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+                    "scenario_warnings": followup.get("warnings"),
+                    "scenario_threshold_violations": followup.get("threshold_violations"),
+                }
+        for row in rows:
+            if row["id"] == "concern:ambiguous-upload":
+                row["implemented"] = "Canonical attachment event carries request key/fingerprint/exact result; MCP exposes optional stable key; publication offloaded. Future operations only, no fabricated historical receipt."
+                row["retested"] = "44 attachment/materialization/canonical-receipt regressions passed; replay at capacity, changed-byte conflict, lost postcommit response, rebuild, unrelated-API responsiveness."
+            if row["id"] == "concern:incoming-fork-fence":
+                row["implemented"] = "Prepared immutable merge uses existing application publisher; summary reads/writes offloaded with atomic fresh-input/attempt/manual-source revalidation."
+                row["retested"] = "Deterministic primary-writer/CAS-retry/both-parent regression and summary manual-edit-after-worker-wait regression passed; expanded workload in followup artifact."
+            if row["id"] == "concern:large-message-copy":
+                row["implemented"] = "Linear chunk grouping with one text join per completed group; only derived browser pages change, durable events untouched."
+                row["retested"] = "8 exact historical reconstruction tests passed, including3200chunk/2.56million-character copy-volume and immutable-source assertions."
     assert len({r["id"] for r in rows}) == len(rows)
     return {"contract": "pa.performance-coverage/v1", "card_id": CARD,
             "as_of": "2026-10-16", "completion": "open; all findings require deployed acceptance or an evidence-backed final disposition",
-            "source_head": HEAD, "merge_commit": MERGE,
+            "baseline_source_head": HEAD, "baseline_merge_commit": MERGE,
+            "followup_source_evidence": ({"stage": "source patch; supervised integration/deployment unverified",
+                                          "module_sha256": followup.get("source_module_sha256")}
+                                         if followup else None),
             "input_scope": independent["coverage"],
             "own_retained_scope": {"files": 16, "bytes_at_open": 86440227, "physical_lines": 570983,
                                    "first": "2026-10-08T03:25:05.396667Z", "last": "2026-10-16T07:10:18.520347Z",
@@ -117,7 +172,10 @@ def build(independent: dict, integrated: dict) -> dict:
                                "Shared fixes cannot close unmeasured leaves; every row remains open until exact-path evidence and acceptance."],
             "references": ["attachment:ca676cf3a65c4c439e5ca8937e30ec38", "attachment:3789c5f965d24edba16d8e9aea164e0f",
                            "attachment:861e8a6e7ea14651918f84a557851d5f", "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
-                           "report:0e918df2-4b5c-44f1-aff2-ad7a98175744", "report:8ef59858-fd0d-4dcf-85c6-867c09bd2b38"],
+                           "report:0e918df2-4b5c-44f1-aff2-ad7a98175744", "report:8ef59858-fd0d-4dcf-85c6-867c09bd2b38",
+                           "report:fb45137a-c958-4356-93fc-cbf9ecb9ad49", "report:e2bed017-d546-49f5-910e-3d8326d80e40",
+                           "report:19c44107-99dc-4b64-92ea-fda8d22a3418", "report:e58d4d65-5332-4dac-8de9-5ae244739ac5"],
+            "followup_artifact": "benchmarks/systemic-inventory-v4.json" if followup else None,
             "rows": rows}
 
 
@@ -148,10 +206,13 @@ def main() -> None:
     parser.add_argument("independent", type=Path)
     parser.add_argument("integrated", type=Path)
     parser.add_argument("--output", type=Path, default=Path("docs/performance-coverage.json"))
+    parser.add_argument("--followup", type=Path,
+                        help="Additional isolated mixed-workload numeric results; never implies deployed acceptance")
     args = parser.parse_args()
     raw = args.independent.read_bytes()
     assert hashlib.sha256(raw).hexdigest() == "ba99e696a5eb82f440541d56b6801b7b61a1478cb22db4b4550b1e15e6ddbe31", "independent attachment hash mismatch"
-    data = build(json.loads(raw), json.loads(args.integrated.read_text()))
+    followup = json.loads(args.followup.read_text()) if args.followup else None
+    data = build(json.loads(raw), json.loads(args.integrated.read_text()), followup)
     args.output.write_text(json.dumps(data, indent=2) + "\n")
     args.output.with_suffix(".md").write_text(markdown(data))
     print(json.dumps({"rows": len(data["rows"]), "kinds": {kind: sum(r["kind"] == kind for r in data["rows"]) for kind in sorted({r["kind"] for r in data["rows"]})}}))

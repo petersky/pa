@@ -2235,6 +2235,20 @@ class DispatchStore:
             selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[:limit]
             return [self._public_status_record(record) for record in selected]
 
+    def topology_statuses(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Preserve active topology detail without copying terminal proofs.
+
+        Keep the existing newest-record window and take each detached public
+        projection under the ledger's index lock. No shallow mutable record
+        escapes, and no terminal plan/history needs hydration for an edge that
+        will be discarded immediately.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted(self._records.values(), key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [record.public_dict() for record in selected if record.state not in TERMINAL_DISPATCH_STATES]
+
     def reconciliation_candidates(self, *, due_at: datetime,
                                   limit: int = 1000) -> list[ReconciliationCandidate]:
         """Select due identities without copying retained plans and turn history."""

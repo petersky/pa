@@ -804,6 +804,11 @@ class CardSummaryService:
         """Forget only the generation task that still owns this card key."""
         if self._tasks.get(key) is task:
             self._tasks.pop(key, None)
+        if not task.cancelled():
+            error = task.exception()
+            if error is not None:
+                logger.error("Card summary background task failed for %s", key[1],
+                             exc_info=(type(error), error, error.__traceback__))
 
     async def request(
         self, card_id: str, realm_id: str, *, force: bool = False
@@ -829,7 +834,7 @@ class CardSummaryService:
     ) -> None:
         if not self.is_authority:
             return
-        card = self.ctx.store.get_card(card_id, realm_id=realm_id)
+        card = await self._offload("sqlite.card_summary_read", self.ctx.store.get_card, card_id, realm_id=realm_id)
         if not card or (card.summary_source == CardSummarySource.MANUAL and not force):
             return
         input_hash = summary_input_hash(card.title, card.body)
@@ -848,7 +853,7 @@ class CardSummaryService:
                 and card.summary_failure_code == configuration.failure_code
             ):
                 return
-            self._update(
+            await self._update_async(
                 card,
                 summary_status="disabled",
                 summary_stale=bool(card.summary),
@@ -876,7 +881,7 @@ class CardSummaryService:
             return
         attempt_number = attempts + 1
         attempted_at = datetime.now(UTC)
-        self._update(
+        admitted = await self._update_async(
             card,
             summary_status="pending",
             summary_stale=bool(card.summary),
@@ -892,6 +897,8 @@ class CardSummaryService:
             summary_last_attempted_at=attempted_at,
             summary_authority_instance_id=self.settings.instance_id,
         )
+        if not admitted:
+            return
         selection = None
         summary_schema_valid = False
         from pa.execution.selection_audit import summary_response, record_summary
@@ -931,11 +938,11 @@ class CardSummaryService:
                 failure.retryable,
                 attempt_number,
             )
-            current = self.ctx.store.get_card(card_id, realm_id=realm_id)
+            current = await self._offload("sqlite.card_summary_read", self.ctx.store.get_card, card_id, realm_id=realm_id)
             if not self._matches_attempt(current, input_hash, attempted_at):
                 return
             will_retry = failure.retryable and attempt_number < max_attempts
-            self._update(
+            await self._update_async(
                 current,
                 summary_status="pending" if will_retry else "failed",
                 summary_stale=bool(current.summary),
@@ -964,10 +971,10 @@ class CardSummaryService:
                     attempted_at=attempted_at,
                 )
 
-        current = self.ctx.store.get_card(card_id, realm_id=realm_id)
+        current = await self._offload("sqlite.card_summary_read", self.ctx.store.get_card, card_id, realm_id=realm_id)
         if not self._matches_attempt(current, input_hash, attempted_at):
             return
-        self._update(
+        await self._update_async(
             current,
             summary=summary,
             summary_source="agent",
@@ -992,6 +999,31 @@ class CardSummaryService:
             and card.summary_input_hash == input_hash
             and card.summary_last_attempted_at == attempted_at
         )
+
+    async def _offload(self, operation, call, *args, **kwargs):
+        runtime = getattr(self.ctx, "services", {}).get("async_runtime")
+        if runtime is not None:
+            return await runtime.run_blocking(
+                operation, call, *args, wait_for_completion=True, **kwargs
+            )
+        return await asyncio.to_thread(call, *args, **kwargs)
+
+    async def _update_async(self, card, **changes) -> bool:
+        def update_current():
+            # Awaiting worker admission permits another writer to change the
+            # input or summary attempt. Revalidate in the same primary mutation
+            # boundary as publication; never overwrite a new manual summary or
+            # persist an old provider result against changed card content.
+            with self.ctx.store.mutation():
+                current = self.ctx.store.get_card(card.id, realm_id=card.realm_id)
+                if (current is None
+                        or summary_input_hash(current.title, current.body) != summary_input_hash(card.title, card.body)
+                        or any(getattr(current, field) != getattr(card, field) for field in (
+                            "summary_source", "summary_input_hash", "summary_last_attempted_at"))):
+                    return False
+                self._update(current, **changes)
+                return True
+        return await self._offload("sqlite.card_summary_write", update_current)
 
     def _update(self, card, **changes) -> None:
         self.ctx.store.update_card(
@@ -1628,7 +1660,7 @@ class CardSummaryService:
                 "stale",
                 "disabled",
             }:
-                self._update(
+                await self._update_async(
                     card,
                     summary_status="stale",
                     summary_stale=bool(card.summary),

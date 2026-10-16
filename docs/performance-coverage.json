@@ -3,8 +3,26 @@
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
   "as_of": "2026-10-16",
   "completion": "open; all findings require deployed acceptance or an evidence-backed final disposition",
-  "source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
-  "merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
+  "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
+  "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
+  "followup_source_evidence": {
+    "stage": "source patch; supervised integration/deployment unverified",
+    "module_sha256": {
+      "pa.core.async_runtime": "7a09e8e9be1149eddfa8878d033a63fee1ab84e021a3094435f8152b5a86c35c",
+      "pa.core.performance": "1e3245aa474f6e18aed1e517697c946f21fd27072fbdc3fa2089ac4152285786",
+      "pa.core.sqlite_metrics": "2c9b9f4e634bb6a2241e3d3a64c15335ff6bb5722642d0590ab296b98e68125c",
+      "pa.domain.projection": "721a26108f2527859bbdbd4b44b19e111cfaf237749e3dcffa652b847387cd81",
+      "pa.domain.transcript_storage": "7c05377db647186cae9ec05722e32cfb3f171614da967d8300b72cec097fde46",
+      "pa.domain.card_summary_service": "1a67f684b648ea62fd201b5de15cb48c0b90e4efd717ae27a395268f6c0be22b",
+      "pa.modules.items": "09369dcd468efc363586d835f2fe7c3858a2255cd32fd4acfd576ff6540f48ee",
+      "pa.execution.dispatch": "1baeb22df825a377ef8125a39cb31ec326194856d36783fe9de733ccf9ea9c7e",
+      "pa.fleet.overview": "37ae0480776b87c55caeb0643f52b9ba4713891dac1fabce68d4ed8b50864337",
+      "pa.sync.engine": "4cdc98f6e11e8c3df7f90a19c7c20a38b6d5f520fcea28901552b27431791549",
+      "pa.sync.event_log": "6a111121e824014047482e5a2160445b073b67dcc38446ea52c3644750017270",
+      "pa.sync.dag_index": "6d921c69f30e9029a8d610e749d347bc4c26274dd2e663f529d47b053729aca0",
+      "pa.acp.transcript_page": "2f6d8d13306e2afc6b191772047978e0c7a07deca6ed34c8fbc0c52862f0f382"
+    }
+  },
   "input_scope": {
     "instance_id_confirmed_by_api": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
     "instance_name": "macbook",
@@ -69,8 +87,13 @@
     "attachment:861e8a6e7ea14651918f84a557851d5f",
     "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
     "report:0e918df2-4b5c-44f1-aff2-ad7a98175744",
-    "report:8ef59858-fd0d-4dcf-85c6-867c09bd2b38"
+    "report:8ef59858-fd0d-4dcf-85c6-867c09bd2b38",
+    "report:fb45137a-c958-4356-93fc-cbf9ecb9ad49",
+    "report:e2bed017-d546-49f5-910e-3d8326d80e40",
+    "report:19c44107-99dc-4b64-92ea-fda8d22a3418",
+    "report:e58d4d65-5332-4dac-8de9-5ae244739ac5"
   ],
+  "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
     {
       "id": "slow:sync.reconcile_head",
@@ -149,7 +172,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "latency_by_exact_request": {
+          "sync.reconcile_head": {
+            "samples": 100,
+            "max_ms": 581.899,
+            "p50_ms": 58.317,
+            "p95_ms": 161.394,
+            "p99_ms": 451.006
+          }
+        },
+        "response_bytes": {
+          "sync.reconcile_head": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sync.push_transaction",
@@ -228,7 +284,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sync.push_transaction": {
+            "samples": 100,
+            "max_ms": 438.886,
+            "p50_ms": 74.597,
+            "p95_ms": 184.958,
+            "p99_ms": 377.986
+          }
+        },
+        "response_bytes": {
+          "sync.push_transaction": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.execution_binding_materialize",
@@ -307,7 +396,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sqlite.execution_binding_materialize": {
+            "samples": 100,
+            "max_ms": 369.204,
+            "p50_ms": 41.031,
+            "p95_ms": 222.735,
+            "p99_ms": 316.034
+          }
+        },
+        "response_bytes": {
+          "sqlite.execution_binding_materialize": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.card_write",
@@ -386,7 +508,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sqlite.card_write": {
+            "samples": 10,
+            "max_ms": 114.249,
+            "p50_ms": 41.408,
+            "p95_ms": 114.249,
+            "p99_ms": 114.249
+          }
+        },
+        "response_bytes": {
+          "sqlite.card_write": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.transcript_append",
@@ -453,7 +608,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 300,
+          "completed": 300,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sync.object_collect",
@@ -709,7 +887,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:dispatch.expire_capacity_reservations",
@@ -920,7 +1121,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 44,
+          "completed": 44,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.transcript_read",
@@ -968,7 +1192,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:progress.dispatch_read",
@@ -1095,7 +1342,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sync.commit_read": {
+            "samples": 100,
+            "max_ms": 197.797,
+            "p50_ms": 5.672,
+            "p95_ms": 21.946,
+            "p99_ms": 101.576
+          }
+        },
+        "response_bytes": {
+          "sync.commit_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:fleet.overview_cache_write",
@@ -1174,7 +1454,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "fleet.overview_cache_write": {
+            "samples": 100,
+            "max_ms": 228.65,
+            "p50_ms": 13.915,
+            "p95_ms": 38.2,
+            "p99_ms": 78.031
+          }
+        },
+        "response_bytes": {
+          "fleet.overview_cache_write": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.transcript_message_page",
@@ -1222,7 +1535,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.pr_supervisor_completion_due_read",
@@ -1289,7 +1625,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 44,
+          "completed": 44,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:acp.wire_append",
@@ -1368,7 +1727,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Verify wire read/write, cancellation, reconnect and real-provider startup/drain separately from fixture provider."
+      "next_action": "Verify wire read/write, cancellation, reconnect and real-provider startup/drain separately from fixture provider.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "acp.wire_append": {
+            "samples": 100,
+            "max_ms": 129.92,
+            "p50_ms": 4.798,
+            "p95_ms": 19.06,
+            "p99_ms": 82.394
+          }
+        },
+        "response_bytes": {
+          "acp.wire_append": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.agent_session_save",
@@ -1495,7 +1887,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement."
+      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "progress.sequence_allocate": {
+            "samples": 100,
+            "max_ms": 175.718,
+            "p50_ms": 9.466,
+            "p95_ms": 36.814,
+            "p99_ms": 105.351
+          }
+        },
+        "response_bytes": {
+          "progress.sequence_allocate": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:workspace.project_provision",
@@ -1735,7 +2160,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure recovery/history detail paging, actual MCP/provider/workspace phases and normal prompt admission."
+      "next_action": "Measure recovery/history detail paging, actual MCP/provider/workspace phases and normal prompt admission.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:workspace.lease_renew",
@@ -1862,7 +2310,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks."
+      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "dispatch.runnable_read": {
+            "samples": 100,
+            "max_ms": 42.097,
+            "p50_ms": 3.045,
+            "p95_ms": 11.815,
+            "p99_ms": 20.839
+          }
+        },
+        "response_bytes": {
+          "dispatch.runnable_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sync.ref_read",
@@ -1929,7 +2410,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 9,
+          "completed": 9,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.agent_runtime_checkpoint",
@@ -2056,7 +2560,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise due/completion/dispatch reads with realistic retained proofs and stalled external dependencies."
+      "next_action": "Exercise due/completion/dispatch reads with realistic retained proofs and stalled external dependencies.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "reconciliation.dispatch_read": {
+            "samples": 100,
+            "max_ms": 51.162,
+            "p50_ms": 2.253,
+            "p95_ms": 10.32,
+            "p99_ms": 16.842
+          }
+        },
+        "response_bytes": {
+          "reconciliation.dispatch_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:dispatch.completion_pending_read",
@@ -2123,7 +2660,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks."
+      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.pr_supervisor_capability_write",
@@ -2190,7 +2750,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:progress.pending_read",
@@ -2257,7 +2840,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement."
+      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 31,
+          "completed": 31,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:progress.checkpoint_write",
@@ -2336,7 +2942,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement."
+      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "progress.checkpoint_write": {
+            "samples": 100,
+            "max_ms": 200.224,
+            "p50_ms": 11.174,
+            "p95_ms": 28.096,
+            "p99_ms": 84.057
+          }
+        },
+        "response_bytes": {
+          "progress.checkpoint_write": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:dispatch.followup_pending_read",
@@ -2403,7 +3042,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks."
+      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:dispatch.waiting_read",
@@ -2903,7 +3565,40 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 154,
+          "completed": 154,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "fleet.overview_cache_read": {
+            "samples": 100,
+            "max_ms": 25.218,
+            "p50_ms": 2.83,
+            "p95_ms": 12.861,
+            "p99_ms": 21.576
+          }
+        },
+        "response_bytes": {
+          "fleet.overview_cache_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.repository_read",
@@ -3066,7 +3761,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:provider.status.codex",
@@ -3252,7 +3970,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.pr_supervisor_watch_write",
@@ -3505,7 +4246,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 17,
+          "completed": 17,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.pr_supervisor_event_write",
@@ -3758,7 +4522,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 44,
+          "completed": 44,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.project_read",
@@ -3870,7 +4657,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.restart_handoff_session",
@@ -4158,7 +4968,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:pr_supervisor.github_response_json",
@@ -4414,7 +5247,30 @@
       },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:sqlite.prompt_acceptance_read",
@@ -5342,7 +6198,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "slow:selection.settings_resolve",
@@ -5945,10 +6824,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 370.405,
+          "p50_ms": 85.961,
+          "p95_ms": 166.858,
+          "p99_ms": 342.931
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sync.push_transaction": {
+            "samples": 100,
+            "max_ms": 438.886,
+            "p50_ms": 74.597,
+            "p95_ms": 184.958,
+            "p99_ms": 377.986
+          }
+        },
+        "response_bytes": {
+          "sync.push_transaction": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.execution_binding_materialize",
@@ -6011,10 +6941,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 360.879,
+          "p50_ms": 51.455,
+          "p95_ms": 114.678,
+          "p99_ms": 214.529
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sqlite.execution_binding_materialize": {
+            "samples": 100,
+            "max_ms": 369.204,
+            "p50_ms": 41.031,
+            "p95_ms": 222.735,
+            "p99_ms": 316.034
+          }
+        },
+        "response_bytes": {
+          "sqlite.execution_binding_materialize": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sync.object_collect",
@@ -6143,10 +7124,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 326.732,
+          "p50_ms": 69.66,
+          "p95_ms": 172.243,
+          "p99_ms": 239.133
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "latency_by_exact_request": {
+          "sync.reconcile_head": {
+            "samples": 100,
+            "max_ms": 581.899,
+            "p50_ms": 58.317,
+            "p95_ms": 161.394,
+            "p99_ms": 451.006
+          }
+        },
+        "response_bytes": {
+          "sync.reconcile_head": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.card_write",
@@ -6209,10 +7241,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 10,
+          "max_ms": 297.653,
+          "p50_ms": 70.435,
+          "p95_ms": 297.653,
+          "p99_ms": 297.653
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sqlite.card_write": {
+            "samples": 10,
+            "max_ms": 114.249,
+            "p50_ms": 41.408,
+            "p95_ms": 114.249,
+            "p99_ms": 114.249
+          }
+        },
+        "response_bytes": {
+          "sqlite.card_write": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:http.github_snapshot",
@@ -6662,10 +7745,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 300,
+          "completed": 300,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 300,
+          "completed": 300,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_due_read",
@@ -6728,10 +7846,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 14,
+          "completed": 15,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 44,
+          "completed": 44,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:progress.dispatch_read",
@@ -7181,10 +8334,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 47.746,
+          "p50_ms": 7.884,
+          "p95_ms": 25.041,
+          "p99_ms": 38.769
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement."
+      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "progress.sequence_allocate": {
+            "samples": 100,
+            "max_ms": 175.718,
+            "p50_ms": 9.466,
+            "p95_ms": 36.814,
+            "p99_ms": 105.351
+          }
+        },
+        "response_bytes": {
+          "progress.sequence_allocate": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:acp.wire_append",
@@ -7247,10 +8451,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 37.208,
+          "p50_ms": 3.409,
+          "p95_ms": 13.436,
+          "p99_ms": 35.106
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Verify wire read/write, cancellation, reconnect and real-provider startup/drain separately from fixture provider."
+      "next_action": "Verify wire read/write, cancellation, reconnect and real-provider startup/drain separately from fixture provider.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "acp.wire_append": {
+            "samples": 100,
+            "max_ms": 129.92,
+            "p50_ms": 4.798,
+            "p95_ms": 19.06,
+            "p99_ms": 82.394
+          }
+        },
+        "response_bytes": {
+          "acp.wire_append": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:workspace.collect_garbage",
@@ -7442,10 +8697,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 106,
+          "completed": 106,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 208.843,
+          "p50_ms": 1.608,
+          "p95_ms": 14.199,
+          "p99_ms": 28.979
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise due/completion/dispatch reads with realistic retained proofs and stalled external dependencies."
+      "next_action": "Exercise due/completion/dispatch reads with realistic retained proofs and stalled external dependencies.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "reconciliation.dispatch_read": {
+            "samples": 100,
+            "max_ms": 51.162,
+            "p50_ms": 2.253,
+            "p95_ms": 10.32,
+            "p99_ms": 16.842
+          }
+        },
+        "response_bytes": {
+          "reconciliation.dispatch_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:dispatch.completion_pending_read",
@@ -7508,10 +8814,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks."
+      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:http.github",
@@ -7703,10 +9044,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 153.403,
+          "p50_ms": 8.027,
+          "p95_ms": 31.186,
+          "p99_ms": 73.917
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement."
+      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "progress.checkpoint_write": {
+            "samples": 100,
+            "max_ms": 200.224,
+            "p50_ms": 11.174,
+            "p95_ms": 28.096,
+            "p99_ms": 84.057
+          }
+        },
+        "response_bytes": {
+          "progress.checkpoint_write": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:progress.pending_read",
@@ -7769,10 +9161,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement."
+      "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 31,
+          "completed": 31,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:agent.recovery_sessions",
@@ -7901,10 +9328,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 9,
+          "completed": 9,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:fleet.placement_resolve",
@@ -8099,10 +9561,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:provider.status.cursor",
@@ -8426,7 +9923,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:fleet.overview.status",
@@ -8489,10 +10009,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_lease_write",
@@ -8945,10 +10500,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks."
+      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_watch_read",
@@ -9272,10 +10862,45 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:fleet.overview_cache_write",
@@ -9338,10 +10963,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 106,
+          "completed": 106,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 157.078,
+          "p50_ms": 10.713,
+          "p95_ms": 36.592,
+          "p99_ms": 74.643
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "fleet.overview_cache_write": {
+            "samples": 100,
+            "max_ms": 228.65,
+            "p50_ms": 13.915,
+            "p95_ms": 38.2,
+            "p99_ms": 78.031
+          }
+        },
+        "response_bytes": {
+          "fleet.overview_cache_write": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:fleet.overview_cache_read",
@@ -9404,10 +11080,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 19.116,
+          "p50_ms": 1.803,
+          "p95_ms": 6.818,
+          "p99_ms": 14.958
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 154,
+          "completed": 154,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "fleet.overview_cache_read": {
+            "samples": 100,
+            "max_ms": 25.218,
+            "p50_ms": 2.83,
+            "p95_ms": 12.861,
+            "p99_ms": 21.576
+          }
+        },
+        "response_bytes": {
+          "fleet.overview_cache_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.restart_handoff_session",
@@ -9605,7 +11332,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure recovery/history detail paging, actual MCP/provider/workspace phases and normal prompt admission."
+      "next_action": "Measure recovery/history detail paging, actual MCP/provider/workspace phases and normal prompt admission.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.prompt_acceptance",
@@ -10067,7 +11817,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:selection.resolve",
@@ -10256,10 +12029,45 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 12,
+          "completed": 12,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 17,
+          "completed": 17,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:agent.project_recovery_availability",
@@ -10388,10 +12196,61 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": {
+          "samples": 100,
+          "max_ms": 126.958,
+          "p50_ms": 4.694,
+          "p95_ms": 20.038,
+          "p99_ms": 38.395
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "sync.commit_read": {
+            "samples": 100,
+            "max_ms": 197.797,
+            "p50_ms": 5.672,
+            "p95_ms": 21.946,
+            "p99_ms": 101.576
+          }
+        },
+        "response_bytes": {
+          "sync.commit_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:notifications.list_page",
@@ -10454,7 +12313,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.agent_session_read",
@@ -10520,7 +12402,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_completion_due_read",
@@ -10583,10 +12488,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 44,
+          "completed": 44,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:selection.target_revalidation",
@@ -10709,10 +12649,45 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 44,
+          "completed": 44,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_capability_read",
@@ -10907,10 +12882,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics."
+      "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sync.object_has",
@@ -11759,7 +13769,30 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sync.startup_reconcile",
@@ -12986,10 +15019,45 @@
         "https://github.com/petersky/pa/pull/485"
       ],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "counter_delta": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_ms": null,
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only this fixture/path; not deployed/peer/whole-family acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability."
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "runtime:sqlite.pr_supervisor_effect_finish",
@@ -18059,10 +20127,57 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "latency_by_exact_request": {
+          "/api/agent/sessions?view=chats": {
+            "samples": 100,
+            "max_ms": 312.26,
+            "p50_ms": 34.081,
+            "p95_ms": 88.459,
+            "p99_ms": 257.889
+          }
+        },
+        "response_bytes": {
+          "/api/agent/sessions?view=chats": {
+            "min": 75522,
+            "max": 75522
+          }
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only listed query variants and fixture data; no deployed acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/agent/sessions?view=chats": {
+            "samples": 100,
+            "max_ms": 97.381,
+            "p50_ms": 31.755,
+            "p95_ms": 54.24,
+            "p99_ms": 81.826
+          }
+        },
+        "response_bytes": {
+          "/api/agent/sessions?view=chats": {
+            "min": 75522,
+            "max": 75522
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/status",
@@ -18096,10 +20211,57 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "latency_by_exact_request": {
+          "/api/status": {
+            "samples": 100,
+            "max_ms": 270.396,
+            "p50_ms": 83.06,
+            "p95_ms": 153.183,
+            "p99_ms": 213.804
+          }
+        },
+        "response_bytes": {
+          "/api/status": {
+            "min": 1940,
+            "max": 1942
+          }
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only listed query variants and fixture data; no deployed acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/status": {
+            "samples": 100,
+            "max_ms": 245.897,
+            "p50_ms": 84.27,
+            "p95_ms": 122.819,
+            "p99_ms": 194.342
+          }
+        },
+        "response_bytes": {
+          "/api/status": {
+            "min": 1940,
+            "max": 1943
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/agent/sessions/{session_id}/close",
@@ -18355,10 +20517,57 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "latency_by_exact_request": {
+          "/partials/home/sections": {
+            "samples": 100,
+            "max_ms": 165.992,
+            "p50_ms": 19.993,
+            "p95_ms": 51.18,
+            "p99_ms": 65.564
+          }
+        },
+        "response_bytes": {
+          "/partials/home/sections": {
+            "min": 3789,
+            "max": 3791
+          }
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only listed query variants and fixture data; no deployed acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/partials/home/sections": {
+            "samples": 100,
+            "max_ms": 158.96,
+            "p50_ms": 18.722,
+            "p95_ms": 34.898,
+            "p99_ms": 82.026
+          }
+        },
+        "response_bytes": {
+          "/partials/home/sections": {
+            "min": 3789,
+            "max": 3791
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/partials/cards",
@@ -18506,7 +20715,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/notifications": {
+            "samples": 100,
+            "max_ms": 33.352,
+            "p50_ms": 5.923,
+            "p95_ms": 10.171,
+            "p99_ms": 11.747
+          }
+        },
+        "response_bytes": {
+          "/api/notifications": {
+            "min": 75,
+            "max": 75
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/pr-supervisor/watches",
@@ -18543,7 +20781,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/pr-supervisor/watches": {
+            "samples": 100,
+            "max_ms": 28.823,
+            "p50_ms": 7.906,
+            "p95_ms": 18.876,
+            "p99_ms": 28.084
+          }
+        },
+        "response_bytes": {
+          "/api/pr-supervisor/watches": {
+            "min": 2,
+            "max": 2
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/pr-supervisor/watches/{watch_id}/lease",
@@ -18913,7 +21180,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/pr-supervisor/capabilities": {
+            "samples": 100,
+            "max_ms": 25.721,
+            "p50_ms": 7.858,
+            "p95_ms": 16.603,
+            "p99_ms": 23.13
+          }
+        },
+        "response_bytes": {
+          "/api/pr-supervisor/capabilities": {
+            "min": 1214,
+            "max": 1214
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/sync/need",
@@ -19169,10 +21465,57 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "latency_by_exact_request": {
+          "/api/fleet/dispatch-jobs": {
+            "samples": 100,
+            "max_ms": 332.204,
+            "p50_ms": 34.743,
+            "p95_ms": 99.072,
+            "p99_ms": 122.606
+          }
+        },
+        "response_bytes": {
+          "/api/fleet/dispatch-jobs": {
+            "min": 247332,
+            "max": 247335
+          }
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only listed query variants and fixture data; no deployed acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/fleet/dispatch-jobs": {
+            "samples": 100,
+            "max_ms": 240.041,
+            "p50_ms": 34.54,
+            "p95_ms": 62.458,
+            "p99_ms": 227.622
+          }
+        },
+        "response_bytes": {
+          "/api/fleet/dispatch-jobs": {
+            "min": 247332,
+            "max": 247338
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/execution/preview",
@@ -19246,7 +21589,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/execution/defaults": {
+            "samples": 100,
+            "max_ms": 29.816,
+            "p50_ms": 5.722,
+            "p95_ms": 8.741,
+            "p99_ms": 14.004
+          }
+        },
+        "response_bytes": {
+          "/api/execution/defaults": {
+            "min": 2733,
+            "max": 2733
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/agent/sessions/{session_id}/issues/start",
@@ -19579,7 +21951,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/sync/refs": {
+            "samples": 100,
+            "max_ms": 14.042,
+            "p50_ms": 4.74,
+            "p95_ms": 9.522,
+            "p99_ms": 12.071
+          }
+        },
+        "response_bytes": {
+          "/api/sync/refs": {
+            "min": 259,
+            "max": 259
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/cards/{card_id}",
@@ -20097,7 +22498,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/workspaces": {
+            "samples": 100,
+            "max_ms": 42.763,
+            "p50_ms": 7.275,
+            "p95_ms": 19.763,
+            "p99_ms": 24.097
+          }
+        },
+        "response_bytes": {
+          "/api/workspaces": {
+            "min": 26,
+            "max": 26
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/fleet/session-route/{session_id}",
@@ -20689,7 +23119,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/sync/status": {
+            "samples": 100,
+            "max_ms": 69.961,
+            "p50_ms": 12.988,
+            "p95_ms": 27.298,
+            "p99_ms": 43.98
+          }
+        },
+        "response_bytes": {
+          "/api/sync/status": {
+            "min": 3594,
+            "max": 3618
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/fleet/dispatch/{dispatch_id}/turn-end",
@@ -20837,7 +23296,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/cards": {
+            "samples": 100,
+            "max_ms": 41.792,
+            "p50_ms": 8.974,
+            "p95_ms": 14.647,
+            "p99_ms": 25.161
+          }
+        },
+        "response_bytes": {
+          "/api/cards": {
+            "min": 3271,
+            "max": 23031
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/fleet/dispatch-queue",
@@ -20874,7 +23362,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/fleet/dispatch-queue": {
+            "samples": 100,
+            "max_ms": 31.534,
+            "p50_ms": 7.137,
+            "p95_ms": 13.37,
+            "p99_ms": 27.028
+          }
+        },
+        "response_bytes": {
+          "/api/fleet/dispatch-queue": {
+            "min": 1072,
+            "max": 1074
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/partials/cards/new",
@@ -21167,10 +23684,57 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "latency_by_exact_request": {
+          "/api/runtime?section=sse": {
+            "samples": 100,
+            "max_ms": 14.943,
+            "p50_ms": 4.885,
+            "p95_ms": 6.341,
+            "p99_ms": 7.569
+          }
+        },
+        "response_bytes": {
+          "/api/runtime?section=sse": {
+            "min": 303,
+            "max": 303
+          }
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only listed query variants and fixture data; no deployed acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/runtime?section=sse": {
+            "samples": 100,
+            "max_ms": 14.561,
+            "p50_ms": 5.041,
+            "p95_ms": 6.677,
+            "p99_ms": 11.157
+          }
+        },
+        "response_bytes": {
+          "/api/runtime?section=sse": {
+            "min": 303,
+            "max": 303
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/ready",
@@ -21503,7 +24067,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/health-journal/status": {
+            "samples": 100,
+            "max_ms": 36.492,
+            "p50_ms": 8.486,
+            "p95_ms": 16.446,
+            "p99_ms": 29.513
+          }
+        },
+        "response_bytes": {
+          "/api/health-journal/status": {
+            "min": 521,
+            "max": 522
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/agent/prompt-capabilities",
@@ -21614,7 +24207,36 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/agent/preferences": {
+            "samples": 100,
+            "max_ms": 27.95,
+            "p50_ms": 4.926,
+            "p95_ms": 11.213,
+            "p99_ms": 14.963
+          }
+        },
+        "response_bytes": {
+          "/api/agent/preferences": {
+            "min": 351,
+            "max": 351
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/health",
@@ -21648,10 +24270,57 @@
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
-      "retested": "No exact-path integrated measurement yet; open",
+      "retested": {
+        "latency_by_exact_request": {
+          "/api/health": {
+            "samples": 100,
+            "max_ms": 12.514,
+            "p50_ms": 3.429,
+            "p95_ms": 5.304,
+            "p99_ms": 7.458
+          }
+        },
+        "response_bytes": {
+          "/api/health": {
+            "min": 15,
+            "max": 15
+          }
+        },
+        "source": "attachment:e2d70c9f37544c02a4823bc0f1179fe3",
+        "limitation": "Only listed query variants and fixture data; no deployed acceptance"
+      },
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": null,
+        "latency_by_exact_request": {
+          "/api/health": {
+            "samples": 100,
+            "max_ms": 21.554,
+            "p50_ms": 3.511,
+            "p95_ms": 4.794,
+            "p99_ms": 6.48
+          }
+        },
+        "response_bytes": {
+          "/api/health": {
+            "min": 15,
+            "max": 15
+          }
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     },
     {
       "id": "route:/api/config",
@@ -22655,6 +25324,81 @@
       "linked_cards": [
         "89957d94-db93-4bf4-b534-3fbea8ba783c"
       ],
+      "implemented": "Canonical attachment event carries request key/fingerprint/exact result; MCP exposes optional stable key; publication offloaded. Future operations only, no fabricated historical receipt.",
+      "merged": [],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "44 attachment/materialization/canonical-receipt regressions passed; replay at capacity, changed-byte conflict, lost postcommit response, rebuild, unrelated-API responsiveness.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+    },
+    {
+      "id": "concern:incoming-fork-fence",
+      "kind": "concern",
+      "finding": "Incoming fork publication and summary writes",
+      "family": "sync",
+      "measurement": {
+        "evidence": "Expanded25-request mixed fixture exposed one unhandled DagIndexStaleError during summary publication, despite zero measured latency violations. Confirmed incoming merge advanced ref before application primary admission; repair routes prepared immutable merge through projection/CAS publisher and offloads summary work with fresh-input/manual-edit fences. Report19c44107-99dc-4b64-92ea-fda8d22a3418; regression/retest status below."
+      },
+      "cause_classification": "mixed_confirmed_and_unverified",
+      "cause": "Confirmed shared critical-section and ancestry-query amplification in isolated Kernel fixtures; not every historical outlier attributed.",
+      "fix_or_existing_owner": "PR484/485: suffix/index publication outside primary admission, forward ancestry query, scoped derived connections; both-parent and receipt regressions.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "Prepared immutable merge uses existing application publisher; summary reads/writes offloaded with atomic fresh-input/attempt/manual-source revalidation.",
+      "merged": [
+        "https://github.com/petersky/pa/pull/484",
+        "https://github.com/petersky/pa/pull/485"
+      ],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "Deterministic primary-writer/CAS-retry/both-parent regression and summary manual-edit-after-worker-wait regression passed; expanded workload in followup artifact.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence."
+    },
+    {
+      "id": "concern:large-message-copy",
+      "kind": "concern",
+      "finding": "Quadratic complete-message compaction",
+      "family": "acp",
+      "measurement": {
+        "evidence": "Expanded100-iteration fixture exposed transcript message-page tails as a single message grew to3200chunks/2.56million characters. Repeated prefix concatenation materialized about4.1billion characters. Linear grouping joins once while preserving replacement snapshots, source sequence spans, interleaved tools and all durable input chunks; exact reconstruction and copy-volume regression passed."
+      },
+      "cause_classification": "mixed_confirmed_and_unverified",
+      "cause": "Transcript/wire serialization and shared contention are candidates; isolated batching/order verified, historical external provider tails not fully attributed.",
+      "fix_or_existing_owner": "PR484 bounded transcript batches and awaited durable terminal checkpoint; fixture durability/order checks.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "Linear chunk grouping with one text join per completed group; only derived browser pages change, durable events untouched.",
+      "merged": [
+        "https://github.com/petersky/pa/pull/484",
+        "https://github.com/petersky/pa/pull/485"
+      ],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "8 exact historical reconstruction tests passed, including3200chunk/2.56million-character copy-volume and immutable-source assertions.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Verify wire read/write, cancellation, reconnect and real-provider startup/drain separately from fixture provider."
+    },
+    {
+      "id": "concern:startup-classification",
+      "kind": "concern",
+      "finding": "Startup classification and same-request recovery",
+      "family": "selection",
+      "measurement": {
+        "evidence": "Report e2bed017-d546-49f5-910e-3d8326d80e40: start classified as research, same request recovered after metadata correction. The workaround is not a repair or new authorization. Preserve request/receipt identity and user model/permission defaults; root classification and regression coverage remain open."
+      },
+      "cause_classification": "hypothesis",
+      "cause": "Shared contention/CPU/copy amplification is a hypothesis for this leaf; exact cause unconfirmed.",
+      "fix_or_existing_owner": "No operation-specific fix or verified resolution claimed.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
       "implemented": "See fix field; not an assertion this exact finding is resolved",
       "merged": [],
       "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
@@ -22662,6 +25406,1057 @@
       "resolution": "open",
       "next_actor": "this card/session",
       "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions."
+    },
+    {
+      "id": "runtime-followup:dispatch.runnable_read",
+      "kind": "runtime_operation_followup",
+      "finding": "dispatch.runnable_read",
+      "family": "dispatch",
+      "measurement": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "phases": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 1,
+          "max_queued": 1,
+          "total_queue_ms": 4.846,
+          "total_wait_ms": 484.4059621100314,
+          "max_wait_ms": 42.06729197176173,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 354.494,
+          "max_runtime_ms": 14.115,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "runtime_ms": {
+            "samples": 100,
+            "max": 14.115,
+            "p50": 2.216,
+            "p95": 9.84,
+            "p99": 10.61
+          },
+          "queue_ms": {
+            "samples": 100,
+            "max": 0.603,
+            "p50": 0.04,
+            "p95": 0.077,
+            "p99": 0.172
+          },
+          "python_lock_wait_ms": {
+            "samples": 100,
+            "max": 0.008,
+            "p50": 0.002,
+            "p95": 0.004,
+            "p99": 0.004
+          },
+          "python_lock_hold_ms": {
+            "samples": 100,
+            "max": 1.441,
+            "p50": 0.363,
+            "p95": 0.672,
+            "p99": 0.844
+          },
+          "worker_service_ms": {
+            "samples": 100,
+            "max": 1.55,
+            "p50": 0.454,
+            "p95": 0.768,
+            "p99": 0.978
+          },
+          "executor_dispatch_ms": {
+            "samples": 100,
+            "max": 5.596,
+            "p50": 0.479,
+            "p95": 4.417,
+            "p99": 5.348
+          },
+          "completion_delivery_ms": {
+            "samples": 100,
+            "max": 13.367,
+            "p50": 0.975,
+            "p95": 6.657,
+            "p99": 9.434
+          },
+          "thread_cpu_ms": {
+            "samples": 100,
+            "max": 0.683,
+            "p50": 0.429,
+            "p95": 0.593,
+            "p99": 0.65
+          },
+          "sqlite_statement_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_commit_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_calls": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_rows": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_items": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        },
+        "scope": "new followup operation; phase window may include boot, counter delta covers measured window"
+      },
+      "cause_classification": "mixed_confirmed_and_unverified",
+      "cause": "Confirmed repeated copies of retained execution/progress evidence; not every admission/capacity tail attributed.",
+      "fix_or_existing_owner": "PR485 compact list/status and detached candidate DTO; 50-record response 20,275,331 to123,140bytes (20requests).",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "See fix field; not an assertion this exact finding is resolved",
+      "merged": [
+        "https://github.com/petersky/pa/pull/484",
+        "https://github.com/petersky/pa/pull/485"
+      ],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "No exact-path integrated measurement yet; open",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Measure normal admission/capacity expiry/cancel/follow-up/receipt paths and preserve fresh-record checks.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {
+          "dispatch.runnable_read": {
+            "samples": 100,
+            "max_ms": 42.097,
+            "p50_ms": 3.045,
+            "p95_ms": 11.815,
+            "p99_ms": 20.839
+          }
+        },
+        "response_bytes": {
+          "dispatch.runnable_read": null
+        },
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
+    },
+    {
+      "id": "runtime-followup:history.card_page",
+      "kind": "runtime_operation_followup",
+      "finding": "history.card_page",
+      "family": "history",
+      "measurement": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "phases": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 1,
+          "max_queued": 1,
+          "total_queue_ms": 8.135,
+          "total_wait_ms": 4419.538125919644,
+          "max_wait_ms": 962.1673750225455,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 4389.327,
+          "max_runtime_ms": 961.151,
+          "slow_calls": 1,
+          "sqlite_busy_failures": 0,
+          "runtime_ms": {
+            "samples": 100,
+            "max": 961.151,
+            "p50": 29.16,
+            "p95": 61.46,
+            "p99": 242.327
+          },
+          "queue_ms": {
+            "samples": 100,
+            "max": 0.207,
+            "p50": 0.074,
+            "p95": 0.112,
+            "p99": 0.171
+          },
+          "python_lock_wait_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "python_lock_hold_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "worker_service_ms": {
+            "samples": 100,
+            "max": 960.57,
+            "p50": 28.463,
+            "p95": 60.274,
+            "p99": 241.851
+          },
+          "executor_dispatch_ms": {
+            "samples": 100,
+            "max": 1.525,
+            "p50": 0.239,
+            "p95": 0.559,
+            "p99": 0.783
+          },
+          "completion_delivery_ms": {
+            "samples": 100,
+            "max": 5.011,
+            "p50": 0.373,
+            "p95": 0.932,
+            "p99": 1.824
+          },
+          "thread_cpu_ms": {
+            "samples": 100,
+            "max": 37.464,
+            "p50": 23.695,
+            "p95": 28.377,
+            "p99": 30.404
+          },
+          "sqlite_statement_ms": {
+            "samples": 100,
+            "max": 948.886,
+            "p50": 17.718,
+            "p95": 39.259,
+            "p99": 229.127
+          },
+          "sqlite_commit_ms": {
+            "samples": 100,
+            "max": 0.154,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.102
+          },
+          "sqlite_calls": {
+            "samples": 100,
+            "max": 32,
+            "p50": 13,
+            "p95": 13,
+            "p99": 22
+          },
+          "sqlite_rows": {
+            "samples": 100,
+            "max": 112,
+            "p50": 105,
+            "p95": 105,
+            "p99": 108
+          },
+          "sqlite_aggregate_items": {
+            "samples": 100,
+            "max": 2140,
+            "p50": 0,
+            "p95": 0,
+            "p99": 1153
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 100,
+            "max": 143382,
+            "p50": 0,
+            "p95": 0,
+            "p99": 77252
+          }
+        },
+        "scope": "new followup operation; phase window may include boot, counter delta covers measured window"
+      },
+      "cause_classification": "hypothesis",
+      "cause": "Shared contention/CPU/copy amplification is a hypothesis for this leaf; exact cause unconfirmed.",
+      "fix_or_existing_owner": "No operation-specific fix or verified resolution claimed.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "See fix field; not an assertion this exact finding is resolved",
+      "merged": [],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "No exact-path integrated measurement yet; open",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
+    },
+    {
+      "id": "runtime-followup:http.dispatch_list",
+      "kind": "runtime_operation_followup",
+      "finding": "http.dispatch_list",
+      "family": "http",
+      "measurement": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "phases": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 1,
+          "max_queued": 1,
+          "total_queue_ms": 13.251,
+          "total_wait_ms": 3884.5232882304117,
+          "max_wait_ms": 236.8195000453852,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 3838.946,
+          "max_runtime_ms": 236.609,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "runtime_ms": {
+            "samples": 100,
+            "max": 236.609,
+            "p50": 31.223,
+            "p95": 59.098,
+            "p99": 224.214
+          },
+          "queue_ms": {
+            "samples": 100,
+            "max": 0.247,
+            "p50": 0.136,
+            "p95": 0.191,
+            "p99": 0.244
+          },
+          "python_lock_wait_ms": {
+            "samples": 100,
+            "max": 0.006,
+            "p50": 0.001,
+            "p95": 0.002,
+            "p99": 0.005
+          },
+          "python_lock_hold_ms": {
+            "samples": 100,
+            "max": 222.522,
+            "p50": 18.099,
+            "p95": 24.488,
+            "p99": 209.638
+          },
+          "worker_service_ms": {
+            "samples": 100,
+            "max": 235.872,
+            "p50": 30.526,
+            "p95": 57.683,
+            "p99": 223.494
+          },
+          "executor_dispatch_ms": {
+            "samples": 100,
+            "max": 0.993,
+            "p50": 0.391,
+            "p95": 0.677,
+            "p99": 0.821
+          },
+          "completion_delivery_ms": {
+            "samples": 100,
+            "max": 4.372,
+            "p50": 0.397,
+            "p95": 1.112,
+            "p99": 3.988
+          },
+          "thread_cpu_ms": {
+            "samples": 100,
+            "max": 227.546,
+            "p50": 29.418,
+            "p95": 34.26,
+            "p99": 203.212
+          },
+          "sqlite_statement_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_commit_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_calls": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_rows": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_items": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        },
+        "scope": "new followup operation; phase window may include boot, counter delta covers measured window"
+      },
+      "cause_classification": "hypothesis",
+      "cause": "Shared contention/CPU/copy amplification is a hypothesis for this leaf; exact cause unconfirmed.",
+      "fix_or_existing_owner": "No operation-specific fix or verified resolution claimed.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "See fix field; not an assertion this exact finding is resolved",
+      "merged": [],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "No exact-path integrated measurement yet; open",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
+    },
+    {
+      "id": "runtime-followup:http.session_list",
+      "kind": "runtime_operation_followup",
+      "finding": "http.session_list",
+      "family": "http",
+      "measurement": {
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "phases": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 1,
+          "max_queued": 1,
+          "total_queue_ms": 10.396,
+          "total_wait_ms": 3280.0211180001497,
+          "max_wait_ms": 87.25312497699633,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 3245.834,
+          "max_runtime_ms": 85.803,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "runtime_ms": {
+            "samples": 100,
+            "max": 85.803,
+            "p50": 28.298,
+            "p95": 49.63,
+            "p99": 75.913
+          },
+          "queue_ms": {
+            "samples": 100,
+            "max": 1.774,
+            "p50": 0.081,
+            "p95": 0.126,
+            "p99": 0.343
+          },
+          "python_lock_wait_ms": {
+            "samples": 100,
+            "max": 0.112,
+            "p50": 0.027,
+            "p95": 0.037,
+            "p99": 0.048
+          },
+          "python_lock_hold_ms": {
+            "samples": 100,
+            "max": 16.039,
+            "p50": 1.408,
+            "p95": 2.249,
+            "p99": 8.188
+          },
+          "worker_service_ms": {
+            "samples": 100,
+            "max": 83.774,
+            "p50": 27.609,
+            "p95": 49.087,
+            "p99": 74.817
+          },
+          "executor_dispatch_ms": {
+            "samples": 100,
+            "max": 1.472,
+            "p50": 0.204,
+            "p95": 0.696,
+            "p99": 1.086
+          },
+          "completion_delivery_ms": {
+            "samples": 100,
+            "max": 1.261,
+            "p50": 0.342,
+            "p95": 0.835,
+            "p99": 0.948
+          },
+          "thread_cpu_ms": {
+            "samples": 100,
+            "max": 37.953,
+            "p50": 25.89,
+            "p95": 33.045,
+            "p99": 34.838
+          },
+          "sqlite_statement_ms": {
+            "samples": 100,
+            "max": 43.999,
+            "p50": 3.123,
+            "p95": 24.289,
+            "p99": 33.061
+          },
+          "sqlite_commit_ms": {
+            "samples": 100,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_calls": {
+            "samples": 100,
+            "max": 4,
+            "p50": 4,
+            "p95": 4,
+            "p99": 4
+          },
+          "sqlite_rows": {
+            "samples": 100,
+            "max": 30,
+            "p50": 30,
+            "p95": 30,
+            "p99": 30
+          },
+          "sqlite_aggregate_items": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 100,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        },
+        "scope": "new followup operation; phase window may include boot, counter delta covers measured window"
+      },
+      "cause_classification": "hypothesis",
+      "cause": "Shared contention/CPU/copy amplification is a hypothesis for this leaf; exact cause unconfirmed.",
+      "fix_or_existing_owner": "No operation-specific fix or verified resolution claimed.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "See fix field; not an assertion this exact finding is resolved",
+      "merged": [],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "No exact-path integrated measurement yet; open",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
+    },
+    {
+      "id": "runtime-followup:sqlite.card_summary_read",
+      "kind": "runtime_operation_followup",
+      "finding": "sqlite.card_summary_read",
+      "family": "sqlite",
+      "measurement": {
+        "counter_delta": {
+          "submitted": 13,
+          "completed": 13,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "phases": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 7,
+          "max_queued": 1,
+          "total_queue_ms": 0.761,
+          "total_wait_ms": 160.85395793197677,
+          "max_wait_ms": 33.58695801580325,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 151.706,
+          "max_runtime_ms": 32.824,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "runtime_ms": {
+            "samples": 18,
+            "max": 32.824,
+            "p50": 4.891,
+            "p95": 32.824,
+            "p99": 32.824
+          },
+          "queue_ms": {
+            "samples": 18,
+            "max": 0.115,
+            "p50": 0.031,
+            "p95": 0.115,
+            "p99": 0.115
+          },
+          "python_lock_wait_ms": {
+            "samples": 18,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "python_lock_hold_ms": {
+            "samples": 18,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "worker_service_ms": {
+            "samples": 18,
+            "max": 8.51,
+            "p50": 3.13,
+            "p95": 8.51,
+            "p99": 8.51
+          },
+          "executor_dispatch_ms": {
+            "samples": 18,
+            "max": 0.903,
+            "p50": 0.352,
+            "p95": 0.903,
+            "p99": 0.903
+          },
+          "completion_delivery_ms": {
+            "samples": 18,
+            "max": 30.952,
+            "p50": 0.723,
+            "p95": 30.952,
+            "p99": 30.952
+          },
+          "thread_cpu_ms": {
+            "samples": 18,
+            "max": 3.303,
+            "p50": 1.012,
+            "p95": 3.303,
+            "p99": 3.303
+          },
+          "sqlite_statement_ms": {
+            "samples": 18,
+            "max": 7.131,
+            "p50": 2.475,
+            "p95": 7.131,
+            "p99": 7.131
+          },
+          "sqlite_commit_ms": {
+            "samples": 18,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_calls": {
+            "samples": 18,
+            "max": 2,
+            "p50": 2,
+            "p95": 2,
+            "p99": 2
+          },
+          "sqlite_rows": {
+            "samples": 18,
+            "max": 1,
+            "p50": 1,
+            "p95": 1,
+            "p99": 1
+          },
+          "sqlite_aggregate_items": {
+            "samples": 18,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 18,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        },
+        "scope": "new followup operation; phase window may include boot, counter delta covers measured window"
+      },
+      "cause_classification": "mixed_confirmed_and_unverified",
+      "cause": "Binding's historical lock wait dominates its own hold. Other SQLite tails require per-operation attribution; native busy vs disk wait remains unpartitioned.",
+      "fix_or_existing_owner": "PR484/485 shorten shared mutation admission and batch transcript writes; numeric SQL/fetch/lock metrics.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "See fix field; not an assertion this exact finding is resolved",
+      "merged": [
+        "https://github.com/petersky/pa/pull/484",
+        "https://github.com/petersky/pa/pull/485"
+      ],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "No exact-path integrated measurement yet; open",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 13,
+          "completed": 13,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
+    },
+    {
+      "id": "runtime-followup:sqlite.card_summary_write",
+      "kind": "runtime_operation_followup",
+      "finding": "sqlite.card_summary_write",
+      "family": "sqlite",
+      "measurement": {
+        "counter_delta": {
+          "submitted": 13,
+          "completed": 13,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "phases": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 7,
+          "max_queued": 1,
+          "total_queue_ms": 0.789,
+          "total_wait_ms": 2454.32158280164,
+          "max_wait_ms": 306.34662497323006,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 2439.892,
+          "max_runtime_ms": 305.64,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "runtime_ms": {
+            "samples": 18,
+            "max": 305.64,
+            "p50": 121.439,
+            "p95": 305.64,
+            "p99": 305.64
+          },
+          "queue_ms": {
+            "samples": 18,
+            "max": 0.102,
+            "p50": 0.037,
+            "p95": 0.102,
+            "p99": 0.102
+          },
+          "python_lock_wait_ms": {
+            "samples": 18,
+            "max": 259.942,
+            "p50": 60.809,
+            "p95": 259.942,
+            "p99": 259.942
+          },
+          "python_lock_hold_ms": {
+            "samples": 18,
+            "max": 343.086,
+            "p50": 113.564,
+            "p95": 343.086,
+            "p99": 343.086
+          },
+          "worker_service_ms": {
+            "samples": 18,
+            "max": 304.842,
+            "p50": 120.771,
+            "p95": 304.842,
+            "p99": 304.842
+          },
+          "executor_dispatch_ms": {
+            "samples": 18,
+            "max": 1.472,
+            "p50": 0.283,
+            "p95": 1.472,
+            "p99": 1.472
+          },
+          "completion_delivery_ms": {
+            "samples": 18,
+            "max": 1.577,
+            "p50": 0.49,
+            "p95": 1.577,
+            "p99": 1.577
+          },
+          "thread_cpu_ms": {
+            "samples": 18,
+            "max": 73.934,
+            "p50": 19.595,
+            "p95": 73.934,
+            "p99": 73.934
+          },
+          "sqlite_statement_ms": {
+            "samples": 18,
+            "max": 70.438,
+            "p50": 18.317,
+            "p95": 70.438,
+            "p99": 70.438
+          },
+          "sqlite_commit_ms": {
+            "samples": 18,
+            "max": 4.845,
+            "p50": 1.933,
+            "p95": 4.845,
+            "p99": 4.845
+          },
+          "sqlite_calls": {
+            "samples": 18,
+            "max": 43,
+            "p50": 34,
+            "p95": 43,
+            "p99": 43
+          },
+          "sqlite_rows": {
+            "samples": 18,
+            "max": 1211,
+            "p50": 10,
+            "p95": 1211,
+            "p99": 1211
+          },
+          "sqlite_aggregate_items": {
+            "samples": 18,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 18,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        },
+        "scope": "new followup operation; phase window may include boot, counter delta covers measured window"
+      },
+      "cause_classification": "mixed_confirmed_and_unverified",
+      "cause": "Binding's historical lock wait dominates its own hold. Other SQLite tails require per-operation attribution; native busy vs disk wait remains unpartitioned.",
+      "fix_or_existing_owner": "PR484/485 shorten shared mutation admission and batch transcript writes; numeric SQL/fetch/lock metrics.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_cards": [
+        "89957d94-db93-4bf4-b534-3fbea8ba783c"
+      ],
+      "implemented": "See fix field; not an assertion this exact finding is resolved",
+      "merged": [
+        "https://github.com/petersky/pa/pull/484",
+        "https://github.com/petersky/pa/pull/485"
+      ],
+      "deployed": "unverified; running1.5.6 at08:55Z; installed/published1.5.8 predates repairs",
+      "retested": "No exact-path integrated measurement yet; open",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Run each uncovered SQL operation with concurrent sync/transcript/control traffic; measure native busy and physical writes without changing durability.",
+      "followup_verification": {
+        "artifact": "benchmarks/systemic-inventory-v4.json",
+        "counter_delta": {
+          "submitted": 13,
+          "completed": 13,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "latency_by_exact_request": {},
+        "response_bytes": {},
+        "scope": "isolated version4 mixed fixture; source patch verification, deployment unverified",
+        "scenario_warnings": {
+          "Slow off-loop operation": 2
+        },
+        "scenario_threshold_violations": {
+          "sync.reconcile_head": 1,
+          "/api/cards/fixture-card/history": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+          "/fleet": 1
+        }
+      }
     }
   ]
 }

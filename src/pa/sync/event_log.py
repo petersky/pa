@@ -620,6 +620,7 @@ class EventLog:
         expected_head: str | None | object = ...,
         automatic_resolutions: list[dict[str, Any]] | None = None,
         update_index: bool = True,
+        publish: bool = True,
     ) -> SyncCommit:
         parents = sorted({head_a, head_b})
         normalized_resolutions = sorted(
@@ -738,8 +739,9 @@ class EventLog:
             timestamp=_EPOCH,
         )
         commit.hash = self.store.put_json(commit.model_dump(mode="json"))
-        self.advance_ref(realm_id, commit.hash, expected_head=expected_head,
-                         update_index=update_index)
+        if publish:
+            self.advance_ref(realm_id, commit.hash, expected_head=expected_head,
+                             update_index=update_index)
         return commit
 
     def resolve_heads(
@@ -1402,7 +1404,9 @@ class EventLog:
         from pa.domain.completion import completion_history_effect
         completion_snapshot = {}
         if self.ensure_indexed(realm_id, head):
-            indexed_rows = self.index.entity_rows(realm_id, head, entity, entity_id)
+            indexed_rows = self.index.entity_rows(
+                realm_id, head, entity, entity_id, limit=offset + limit + 1
+            )
             if indexed_rows is not None:
                 records: list[dict[str, Any]] = []
                 entity_present = False

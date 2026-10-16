@@ -48,6 +48,28 @@ class HistoryReconstructionTests(unittest.TestCase):
         self.request.app.state.ctx.settings.instance_id = "isolated-fixture"
         self.request.app.state.ctx.settings.instance_name = "fixture"
 
+    def test_large_stream_materializes_text_once_and_keeps_durable_inputs(self):
+        events = [TranscriptEvent(session_id="large", seq=index + 1,
+            event_type="agent_message_chunk", payload={"message_id": "large", "text": "αβ" * 400})
+            for index in range(3200)]
+        copied_text = 0
+        original = TranscriptEvent.model_copy
+
+        def measured(event, *, update=None, deep=False):
+            nonlocal copied_text
+            copied_text += len((update or {}).get("payload", {}).get("text", ""))
+            return original(event, update=update, deep=deep)
+
+        with patch.object(TranscriptEvent, "model_copy", measured):
+            result = compact_chunks(events)
+        expected = "αβ" * (400 * 3200)
+        self.assertEqual(result[0].payload["text"], expected)
+        self.assertEqual(result[0].payload["source_first_seq"], 1)
+        self.assertEqual(result[0].seq, 3200)
+        self.assertEqual(copied_text, len(expected))
+        self.assertEqual(len(events[0].payload["text"]), 800)
+        self.assertNotIn("source_first_seq", events[0].payload)
+
     def page(self, **kwargs):
         with patch("pa.modules.agent_chat._manager", return_value=self.manager), patch.object(self.store, "get_session", return_value=self.session):
             return asyncio.run(get_agent_session_history(self.request, self.session.id, message_boundaries=True, **kwargs))

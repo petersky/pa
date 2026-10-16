@@ -377,8 +377,18 @@ class DagIndex:
                     "WHERE realm_id=? AND state='ready'",
                     (realm_id,),
                 ).fetchone()
-                if current and current[0] == head and not force:
-                    return
+                if current and not force:
+                    # Another builder can publish a descendant after our
+                    # incremental preflight loses its old-head fence. Its ready
+                    # generation already proves this immutable target. Do not
+                    # erase it and replay retained history just to move the
+                    # disposable index back to an older covered head.
+                    covered = conn.execute(
+                        "SELECT 1 FROM commits WHERE realm_id=? AND commit_hash=?",
+                        (realm_id, head),
+                    ).fetchone()
+                    if covered is not None:
+                        return
 
                 checkpoint = conn.execute(
                     "SELECT * FROM rebuild_checkpoint WHERE realm_id=?",
@@ -605,18 +615,21 @@ class DagIndex:
             conn.execute("DELETE FROM index_meta WHERE realm_id=?", (realm_id,))
 
     def entity_rows(
-        self, realm_id: str, head: str, entity: str, entity_id: str
+        self, realm_id: str, head: str, entity: str, entity_id: str,
+        *, limit: int | None = None,
     ) -> list[sqlite3.Row] | None:
         if not self.contains_commit(realm_id, head):
             return None
         with self._db() as conn:
+            bounded = " LIMIT ?" if limit is not None else ""
+            bound_args = (max(0, limit),) if limit is not None else ()
             current = conn.execute(
                 "SELECT indexed_head FROM index_meta WHERE realm_id=? AND state='ready'",
                 (realm_id,),
             ).fetchone()
             if current and current[0] == head:
                 return conn.execute(
-                    """SELECT e.*, c.position, c.instance_id, c.author_principal,
+                    f"""SELECT e.*, c.position, c.instance_id, c.author_principal,
                               c.timestamp,
                               (SELECT GROUP_CONCAT(parent_hash, char(31)) FROM (
                                  SELECT parent_hash FROM commit_parents cp
@@ -627,12 +640,12 @@ class DagIndex:
                        FROM entity_events e JOIN commits c
                          ON c.realm_id=e.realm_id AND c.commit_hash=e.commit_hash
                        WHERE e.realm_id=? AND e.entity_type=? AND e.entity_id=?
-                       ORDER BY c.position,e.event_order""",
-                    (realm_id, entity, entity_id),
+                       ORDER BY c.position,e.event_order{bounded}""",
+                    (realm_id, entity, entity_id, *bound_args),
                 ).fetchall()
             ancestors = self._ancestor_hashes(conn, realm_id, head)
             rows = conn.execute(
-                """SELECT e.*, c.position, c.instance_id, c.author_principal,
+                f"""SELECT e.*, c.position, c.instance_id, c.author_principal,
                           c.timestamp,
                           (SELECT GROUP_CONCAT(parent_hash, char(31)) FROM (
                              SELECT parent_hash FROM commit_parents cp
@@ -643,10 +656,11 @@ class DagIndex:
                    FROM entity_events e JOIN commits c
                      ON c.realm_id=e.realm_id AND c.commit_hash=e.commit_hash
                    WHERE e.realm_id=? AND e.entity_type=? AND e.entity_id=?
-                   ORDER BY c.position,e.event_order""",
-                (realm_id, entity, entity_id),
+                     AND e.commit_hash IN (SELECT value FROM json_each(?))
+                   ORDER BY c.position,e.event_order{bounded}""",
+                (realm_id, entity, entity_id, json.dumps(list(ancestors)), *bound_args),
             ).fetchall()
-            return [row for row in rows if str(row["commit_hash"]) in ancestors]
+            return rows
 
     def operation_rows(self, realm_id: str, head: str, key: str) -> list[sqlite3.Row] | None:
         if not self.contains_commit(realm_id, head):

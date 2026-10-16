@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import gc
+import hashlib
 import json
 import logging
 import math
@@ -15,6 +16,7 @@ import os
 import platform
 import resource
 import sqlite3
+import sys
 import tempfile
 import time
 from collections import Counter, defaultdict, deque
@@ -25,6 +27,7 @@ from unittest.mock import patch
 import httpx
 
 from pa.acp.client import WireJsonlLogger
+from pa.acp import transcript_page  # Include lazy history compaction in source attestation.
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.models import AgentSession, CardEvent, EventType, SyncCommit
@@ -59,15 +62,15 @@ class Counts:
         return conn
 
 
-async def run(root, *, history=1000, iterations=30):
+async def run(root, *, history=1000, iterations=30, inventory_reads=False):
     settings = Settings(data_dir=root / "data", workspace_root=root / "workspaces",
         agent_enabled=False, telemetry_enabled=False, auth_required=False)
     app = Kernel.boot(settings=settings).build_app()
     async with app.router.lifespan_context(app):
-        return await run_app(app, root, history=history, iterations=iterations)
+        return await run_app(app, root, history=history, iterations=iterations, inventory_reads=inventory_reads)
 
 
-async def run_app(app, root, *, history, iterations):
+async def run_app(app, root, *, history, iterations, inventory_reads=False):
     ctx = app.state.ctx
     settings = ctx.settings
     runtime = ctx.require_service("async_runtime")
@@ -95,7 +98,9 @@ async def run_app(app, root, *, history, iterations):
         sessions = []
         for i in range(30):
             session = AgentSession(id=f"session-{i}", agent_name="codex", purpose="chat",
-                status="idle", config_json={"execution_selection": proof,
+                status="idle", config_json={"execution_selection": {
+                    **proof, "decision_id": f"fixture-selection-{i}",
+                    "selected": {"harness": "codex", "model": "fixture"}},
                     "execution_context": {"repositories": [{"repository_url": "https://github.com/example/repo",
                                                               "branch": "fixture"}]},
                     "values": {"model": "fixture", "reasoningEffort": "high"}})
@@ -127,6 +132,8 @@ async def run_app(app, root, *, history, iterations):
         elif generation in gc_started:
             gc_counts[generation] += 1
             gc_pauses.append({"generation": generation,
+                "started_at_monotonic": gc_started[generation],
+                "finished_at_monotonic": time.perf_counter(),
                 "elapsed_ms": (time.perf_counter() - gc_started.pop(generation)) * 1000,
                 "collected": info["collected"], "uncollectable": info["uncollectable"]})
     warnings = Counter()
@@ -236,11 +243,23 @@ async def run_app(app, root, *, history, iterations):
             await offload("sync.commit_read", log.get_commit, log.get_head("default"))
             await asyncio.sleep(0.005)
     async def foreground():
+        paths = ["/api/health", "/api/agent/sessions?view=chats", "/agent",
+                 "/partials/home/sections", "/api/status", "/api/runtime?section=sse",
+                 "/api/fleet/dispatch-jobs"]
+        if inventory_reads:
+            # Explicit harmless local reads, never execute URLs from findings
+            # data. No SSE stream, provider action or external refresh request.
+            paths += ["/api/cards", f"/api/cards/{card_id}",
+                      f"/api/cards/{card_id}/history", "/api/agent/history/session-0?limit=64",
+                      "/api/agent/history/session-0?limit=64&message_boundaries=true",
+                      "/api/notifications", "/api/agent/preferences", "/api/execution/defaults",
+                      "/api/fleet/dispatch-queue", "/api/pr-supervisor/watches",
+                      "/api/pr-supervisor/capabilities", "/api/workspaces",
+                      "/api/health-journal/status", "/api/sync/status", "/api/sync/refs",
+                      "/settings?section=agent", "/settings?section=backups", "/fleet", "/pull-requests"]
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
             for _ in range(iterations):
-                for path in ("/api/health", "/api/agent/sessions?view=chats", "/agent",
-                             "/partials/home/sections", "/api/status", "/api/runtime?section=sse",
-                             "/api/fleet/dispatch-jobs"):
+                for path in paths:
                     response = await measure(path, client.get(path))
                     response.raise_for_status()
                     if path == "/agent":
@@ -250,6 +269,11 @@ async def run_app(app, root, *, history, iterations):
     await runtime.start()
     runtime.reset_lag_samples()
     runtime_before = runtime.snapshot()
+    source_hashes = {name: hashlib.sha256(Path(sys.modules[name].__file__).read_bytes()).hexdigest()
+                     for name in ("pa.core.async_runtime", "pa.core.performance", "pa.core.sqlite_metrics",
+                                  "pa.domain.projection", "pa.domain.transcript_storage", "pa.domain.card_summary_service", "pa.modules.items",
+                                  "pa.execution.dispatch", "pa.fleet.overview", "pa.sync.engine",
+                                  "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page")}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()
     gc.callbacks.append(observe_gc)
@@ -273,8 +297,15 @@ async def run_app(app, root, *, history, iterations):
         assert store.get_projection_head("default") == log.get_head("default")
         assert store.get_card(card_id).title == f"Fixture {history + 2 * iterations - 1}"
         return {"hardware": {"machine": platform.machine(), "python": platform.python_version(), "cpus": os.cpu_count()},
+            "source_module_sha256": source_hashes,
+            "premeasurement": {"scope": "Kernel boot and synthetic fixture seeding; not part of steady mixed window",
+                               "slow_calls": sum(value.get("slow_calls", 0) for value in runtime_before["operations"].values()),
+                               "slow_observations": runtime_before.get("slow_operations", {}),
+                               "acceptance": "reported separately; full server cold boot remains unaccepted"},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,
-                "workload_version": 3, "sync_pushes": iterations, "incoming_reconciliations": iterations,
+                "workload_version": 4 if inventory_reads else 3,
+                "foreground_inventory_reads": inventory_reads,
+                "sync_pushes": iterations, "incoming_reconciliations": iterations,
                 "controlled_compatible_forks": (iterations + 9) // 10,
                 "watches": 30, "iterations_per_family": iterations, "transcript_sessions": 3,
                 "executor_workers": runtime.max_workers, "duration_seconds": round(elapsed, 3),
@@ -313,10 +344,13 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--history", type=int, default=1000)
     parser.add_argument("--iterations", type=int, default=30)
+    parser.add_argument("--inventory-reads", action="store_true",
+                        help="Include 19 additional local read/page paths from the findings inventory")
     args = parser.parse_args()
     if args.history < 1 or args.iterations < 1:
         parser.error("history and iterations must be positive")
     with tempfile.TemporaryDirectory(prefix="pa-systemic-benchmark-") as tmp:
-        result = asyncio.run(run(Path(tmp), history=args.history, iterations=args.iterations))
+        result = asyncio.run(run(Path(tmp), history=args.history, iterations=args.iterations,
+                                 inventory_reads=args.inventory_reads))
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"output": str(args.output), "warnings": result["warnings"], "latency": result["latency"]}, indent=2))

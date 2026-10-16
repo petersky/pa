@@ -2764,7 +2764,9 @@ class CardProjection:
 
     @serialized_mutation
     def add_attachment(
-        self, attachment: CardAttachment, *, principal_id: str, instance_id: str
+        self, attachment: CardAttachment, *, principal_id: str, instance_id: str,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
     ) -> Card:
         card = self.get_card(attachment.card_id, realm_id=attachment.realm_id)
         if not card:
@@ -2785,6 +2787,10 @@ class CardProjection:
             author_principal=principal_id,
             author_instance=instance_id,
             payload=payload,
+            source_operation="card.attachment.create",
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            operation_result=attachment.model_dump(mode="json") if idempotency_key else None,
         )
         self.commit_event(event)
         return self.get_card(attachment.card_id, realm_id=attachment.realm_id)
