@@ -280,6 +280,14 @@ class SelectionService:
         scope = (self.settings.instance_id + ":harness:" + required_harness
                  if required_harness else self.settings.instance_id)
         rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
+        if required_harness and not force:
+            shared, shared_stamp = await asyncio.to_thread(self.store.catalog, self.settings.instance_id)
+            matching = [row for row in shared if row.get("harness") == required_harness]
+            if matching and shared_stamp and (stamp is None or shared_stamp > stamp):
+                # Background discovery already supplies valid evidence for this
+                # required tuple. Narrowing must not force duplicate probes or
+                # discard a warmer full-catalog advertisement.
+                rows, stamp = matching, shared_stamp
         age = (datetime.now(UTC) - stamp).total_seconds() if stamp else None
         if (stale_while_revalidate and not force and refresh and rows
                 and age is not None and 60 < age < 240):

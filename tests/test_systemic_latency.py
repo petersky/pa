@@ -206,6 +206,20 @@ def test_catalog_scope_obeys_automatic_preferred_and_required_precedence(tmp_pat
                 overrides=ExecutionPreferences(harness={"intent": intent, "value": value})) == expected
 
 
+@pytest.mark.asyncio
+async def test_required_harness_reuses_fresh_full_catalog_without_optional_or_duplicate_probes(tmp_path):
+    from pa.execution.selection_service import SelectionService, status_candidates
+    from tests.selection_browser_app import FixtureProvider
+    service = SelectionService(Settings(data_dir=tmp_path, instance_id="local"), None)
+    rows = status_candidates("local", [FixtureProvider("codex").status(tmp_path).model_dump(mode="json")])
+    service.store.save_catalog("local", [row.model_dump(mode="json") for row in rows])
+    with patch("pa.acp.providers.resolve.list_provider_summaries_bounded", side_effect=AssertionError("duplicate discovery")):
+        selected = await service.local_catalog(refresh=True, required_harness="codex")
+    assert {row.key for row in selected} == {row.key for row in rows}
+    assert service.store.catalog("local:harness:codex")[0] == []
+    await service.close()
+
+
 def test_sidebar_preserves_settings_status_and_links_without_full_proofs(tmp_path):
     store = CardProjection(tmp_path / "pa.db")
     dispatches = DispatchStore(tmp_path)
