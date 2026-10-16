@@ -27,9 +27,10 @@ class HealthService:
         self.transport = transport
         self.owner = str(uuid4())
         from pa import __version__
-        from pa.install.metadata import running_source_revision
+        from pa.install.metadata import running_package_identity, running_source_revision
         import os
         self.runtime_build = {'loaded_module_version': __version__, 'source_revision': running_source_revision(),
+                              'package_identity': running_package_identity(),
                               'pid': os.getpid(), 'startup_id': self.owner}
         # Reserved capacity independent of canonical repair's shared worker pool.
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='pa-journal')

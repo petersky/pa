@@ -711,9 +711,12 @@ not accept either result. Preserve evidence and a concrete recovery condition.
 Use record_card_acceptance with current CAS and a single stable idempotency key;
 recover an uncertain receipt before retrying. Include verification-intent:{{ intent_id }}
 and the exact health-group, scenario and all instance references when applicable.
-For every runtime instance include runtime-build:<instance>:<observed-source-sha>
-and runtime-startup:<instance>:<observed-startup-id>. Unknown loaded source is not
-verified evidence; do not substitute an inspected checkout or install target.
+For every runtime instance include runtime-build:<instance>:<captured-source-or-package-identity>
+and runtime-startup:<instance>:<observed-startup-id>. A verified wheel manifest
+identifies loaded package bytes; it does not claim a VCS revision or itself prove
+the accepted source subject/scenario. Reconcile the exact published artifact and
+scenario separately. Unknown source and package identity is not verified evidence;
+do not substitute an inspected checkout or mutable install target.
 Failed or blocked checks remain truthful. Finish with pa.card-disposition/v1.
 
 <untrusted-evidence-packet>

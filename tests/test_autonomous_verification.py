@@ -295,8 +295,12 @@ async def test_legacy_onboarding_preserves_history_and_requires_exact_proof(syst
 
 
 @pytest.mark.asyncio
-async def test_health_scope_full_coverage_stale_build_and_durable_collector_handoff(system, monkeypatch):
+@pytest.mark.parametrize('wheel', [False, True])
+async def test_health_scope_full_coverage_stale_build_and_durable_collector_handoff(system, monkeypatch, wheel):
     card, action, lease = health_repair(system)
+    build = 'sha256:'+'d'*64 if wheel else 'b'*40
+    if wheel:
+        system.health.runtime_build.update(source_revision=None, package_identity=build)
     # Use the actual lifecycle obligation decision, with no live session obligation.
     async def settled(_, **kwargs): return None
     monkeypatch.setattr(system.health, 'repair_obligation', settled)
@@ -307,7 +311,7 @@ async def test_health_scope_full_coverage_stale_build_and_durable_collector_hand
     job = system.service.store.list()[0]
     verifier = system.ctx.services['dispatch_store'].get(job['dispatch_id'])
     refs = ['verification-intent:'+job['id'], 'health-group:'+action['group_id'],
-            'scenario:'+job['packet']['scope']['scenario'], 'runtime-build:instance-a:'+'b'*40,
+            'scenario:'+job['packet']['scope']['scenario'], 'runtime-build:instance-a:'+build,
             'runtime-startup:instance-a:'+system.health.runtime_build['startup_id']]
     evidence = CompletionEvidence(requirement_revision=card.completion_requirement.revision,
         subject_revision='b'*40, milestones=['verified'], references=refs)

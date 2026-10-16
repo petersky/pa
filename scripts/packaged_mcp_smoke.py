@@ -10,6 +10,9 @@ from pa.config import Settings
 
 
 def main() -> None:
+    from pa.install.metadata import running_package_identity
+    if running_package_identity() is None:
+        raise RuntimeError('Packaged PA wheel identity could not be verified')
     with tempfile.TemporaryDirectory(prefix="pa-packaged-mcp-") as root:
         settings = Settings(
             data_dir=Path(root),
