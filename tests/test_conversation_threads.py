@@ -12,7 +12,7 @@ from pa.acp.client import AgentConnection
 from pa.acp.conversation_capabilities import conversation_capabilities
 from pa.agent.context import compose_session_prompt
 from pa.domain.models import AgentSession, TranscriptEvent
-from pa.modules.conversation_threads import BranchConversation, branch_conversation, get_conversation_capabilities
+from pa.modules.conversation_threads import BranchConversation, branch_conversation, get_conversation_capabilities, list_conversation_threads
 from tests.test_conversation_issues import setup  # shared isolated store/request fixture
 
 
@@ -100,6 +100,63 @@ async def test_native_is_explicit_capability_gated_without_copy_fallback(setup):
     with pytest.raises(HTTPException):
         await branch_conversation(req("branch-1234"), "discussion", BranchConversation(request_id="branch-1234", strategy="native"))
     manager.create_session.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_empty_threads_and_forks_retain_group_across_reload_without_shared_state(setup):
+    store, manager, req, _ = setup
+    source = store.get_session("discussion")
+    source.external_session_id = "source-native"
+    source.config_json = {"durable_runtime": {"queued_prompts": [{"id": "only-source"}]}}
+    store.save_session(source)
+    captured = []
+    async def create(**kwargs):
+        captured.append(kwargs)
+        # All strategies go through normal admission, never inherit a lease or
+        # replace the busy source. Fresh siblings get no provider history seed.
+        assert not set(kwargs) & {"cwd", "execution_binding", "card_id", "dispatch_id", "context_source_session_id"}
+        target = AgentSession(id=kwargs["session_id"], agent_name="codex", purpose="chat",
+                              principal_id="user:test", mode_id="read-only",
+                              initiating_workflow=kwargs["initiating_workflow"], cwd="/own/" + kwargs["session_id"])
+        store.save_session(target)
+        return SimpleNamespace(session=target)
+    manager.create_session = AsyncMock(side_effect=create)
+    body = BranchConversation(request_id="empty-thread-123", strategy="empty")
+    a, duplicate = await asyncio.gather(*(branch_conversation(req(body.request_id), source.id, body) for _ in range(2)))
+    assert a["session"]["id"] == duplicate["session"]["id"]
+    assert len(captured) == 1
+    empty_id = a["session"]["id"]
+    assert a["branch"]["kind"] == "conversation_thread"
+    assert "saved_excerpt" not in a["branch"]
+    assert a["branch"]["chat_group_id"] == source.id
+    # A child of a sibling stays in the same chat (no accidental nested group).
+    copy_body = BranchConversation(request_id="copy-thread-1234", strategy="copy")
+    copy = await branch_conversation(req(copy_body.request_id), empty_id, copy_body)
+    assert copy["branch"]["chat_group_id"] == source.id
+    assert copy["branch"]["source_session_id"] == empty_id
+    manager._runtimes[source.id] = SimpleNamespace(connection=SimpleNamespace(_init_response=CAPS))
+    native_body = BranchConversation(request_id="native-thread-123", strategy="native")
+    fork = await branch_conversation(req(native_body.request_id), source.id, native_body)
+    manager._runtimes.clear()
+    assert fork["branch"]["chat_group_id"] == source.id
+    assert fork["branch"]["strategy"] == "native"
+    # Reload all relationships from SQLite; unrelated chats and forged group
+    # metadata on another owner's session must not leak into the group.
+    for sid, principal, realm in [("new-chat", "user:test", "default"), ("foreign", "user:other", "default"), ("other-realm", "user:test", "other")]:
+        store.save_session(AgentSession(id=sid, agent_name="codex", purpose="chat", principal_id=principal, realm_id=realm,
+            initiating_workflow={} if sid == "new-chat" else {"chat_group_id": source.id}))
+    group = await list_conversation_threads(req(), empty_id)
+    assert {t["id"] for t in group["threads"]} == {source.id, empty_id, copy["session"]["id"], fork["session"]["id"]}
+    assert group["chat_group_id"] == source.id
+    assert [t["queue_length"] for t in group["threads"] if t["id"] == source.id] == [1]
+    assert all(t["queue_length"] == 0 for t in group["threads"] if t["id"] != source.id)
+    assert {t["context"] for t in group["threads"]} == {"Original conversation", "Empty context", "Copied recent context", "Latest provider history"}
+    assert len((await list_conversation_threads(req(), "new-chat"))["threads"]) == 1
+    with pytest.raises(HTTPException) as denied:
+        await list_conversation_threads(req(principal="user:other"), source.id)
+    assert denied.value.status_code == 403
+    assert store.get_session(source.id).external_session_id == "source-native"
+    assert not store.list_cards()
 
 
 @pytest.mark.asyncio

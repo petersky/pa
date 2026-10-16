@@ -1479,6 +1479,13 @@
   };
 
   AgentChatWidget.prototype.openSession = function (sessionId, ownerInstanceId, options) {
+    // Controls from the previously selected thread must disappear before any
+    // owner/history/snapshot request can yield to a different session.
+    if (this.els.permissions) {
+      this.els.permissions.replaceChildren();
+      this.els.permissions.hidden = true;
+    }
+    this.renderQueue([], {});
     if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
     this.recentRetryTimer = null; this.recentRetryCount = 0;
     this.recentBootstrap = true; this.historyPreserveWindow = false; this.historyUserIntent = false; this.liveControlSeq = 0; this.heldControlSeq = {}; this.initialLiveCursor = null;
@@ -2108,7 +2115,7 @@
 
   AgentChatWidget.prototype.applySnapshot = function (snap) {
     if (this.issues) this.issues.ready();
-    if (this.threads) this.threads.ready();
+    if (this.threads) this.threads.ready(snap);
     const self = this;
     this.lastSnapshot = Object.assign({}, this.lastSnapshot || {}, snap);
     this.liveControlSeq = Math.max(this.liveControlSeq || 0, snap.last_event_seq || 0);
@@ -2756,7 +2763,7 @@
     if (this.destroyed) return;
     clearTimeout(this.queueRefreshTimer);
     if (this.issues) this.issues.reset();
-    if (this.threads) this.threads.reset();
+    if (this.threads) this.threads.destroy();
     this._stashSessionDomCache();
     if (this.recentRetryTimer) clearTimeout(this.recentRetryTimer);
     this.recentRetryTimer = null;
@@ -3609,6 +3616,7 @@
   AgentChatWidget.prototype.showPermission = function (payload) {
     if (!this.els.permissions) return;
     const self = this;
+    const requestSessionId = this.sessionId, generation = this.subscriptionGeneration;
     this.els.permissions.hidden = false;
     const reqId = payload.request_id;
     let card = this.els.permissions.querySelector('[data-req-id="' + reqId + '"]');
@@ -3633,8 +3641,9 @@
       btn.className = opt.kind && String(opt.kind).indexOf("allow") === 0 ? "primary small" : "ghost small";
       btn.textContent = opt.name || opt.optionId || opt.option_id;
       btn.addEventListener("click", function () {
+        if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
         const allow = opt.kind && String(opt.kind).indexOf("allow") === 0;
-        self.api("/sessions/" + self.sessionId + "/permissions/" + reqId, {
+        self.api("/sessions/" + requestSessionId + "/permissions/" + reqId, {
           method: "POST",
           body: JSON.stringify({
             allow: !!allow,
@@ -3651,10 +3660,11 @@
     always.className = "ghost small";
     always.textContent = "Always allow";
     always.addEventListener("click", function () {
+      if (!self._isCurrentSessionRequest(requestSessionId, generation)) return;
       const allowOpt = options.find(function (o) {
         return o.kind === "allow_always" || o.kind === "allow_once";
       });
-      self.api("/sessions/" + self.sessionId + "/permissions/" + reqId, {
+      self.api("/sessions/" + requestSessionId + "/permissions/" + reqId, {
         method: "POST",
         body: JSON.stringify({
           allow: true,
@@ -5966,6 +5976,14 @@
 
   function bindSessionSidebar(scope) {
     const root = scope || document;
+    root.querySelectorAll("[data-agent-new-thread]").forEach(function (button) {
+      if (button._acwBound) return;
+      button._acwBound = true;
+      button.addEventListener("click", function () {
+        const widget = document.querySelector("[data-agent-chat]");
+        if (widget && widget._acw && widget._acw.threads) widget._acw.threads.branch("empty");
+      });
+    });
     const list = root.querySelector("[data-agent-session-list]");
     if (list && !list._acwBound) {
       list._acwBound = true;

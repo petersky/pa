@@ -5476,6 +5476,13 @@ a.ghost:hover {
 .acw-timings { flex: 0 0 auto; padding: .2rem .75rem; font-size: .75rem; color: var(--pa-text-muted); }
 .acw-timings p { margin: .3rem 0; }
 
+.acw-thread-navigation { display: flex; align-items: center; gap: .5rem; padding: .5rem; min-width: 0; border-bottom: 1px solid var(--border); }
+.acw-thread-navigation[hidden] { display: none; }
+.acw-thread-list { display: flex; gap: .375rem; overflow-x: auto; min-width: 0; flex: 1; }
+.acw-thread-link { display: flex; flex-direction: column; align-items: flex-start; flex-shrink: 0; max-width: 20rem; text-align: left; }
+.acw-thread-link strong, .acw-thread-link small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acw-thread-link[aria-current="page"] { outline: 2px solid var(--pa-accent); outline-offset: -2px; }
+[data-thread-list-status]:empty { display: none; }
 .acw-details { flex: 0 1 auto; min-height: 0; min-width: 0; overflow: auto; }
 .acw-detail-tabs {
   display: flex;

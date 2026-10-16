@@ -18,7 +18,7 @@
     <div class="agent-session-header-actions">
       {% if agent_enabled and session_view == 'chats' %}
       <a class="ghost small" href="/agent?new=1" hx-get="/agent?new=1" hx-target="#app-view" hx-push-url="true">New chat</a>
-      <a class="ghost small" href="/agent?new=1" title="Start an independent conversation">New thread</a>
+      <button type="button" class="ghost small" data-agent-new-thread disabled title="Start an empty parallel thread in this chat">New thread</button>
       <button type="button" class="ghost small" data-agent-new-session title="Configure a new conversation">Options…</button>
       {% endif %}
     </div>
