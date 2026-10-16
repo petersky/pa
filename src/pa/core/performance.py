@@ -17,6 +17,10 @@ class OperationObservation:
     worker_started_at: float = 0.0
     worker_finished_at: float = 0.0
     thread_cpu_ms: float = 0.0
+    sqlite_statement_ms: float = 0.0
+    sqlite_commit_ms: float = 0.0
+    sqlite_calls: int = 0
+    sqlite_busy_failures: int = 0
 
 
 current_observation: ContextVar[OperationObservation | None] = ContextVar("pa_performance", default=None)

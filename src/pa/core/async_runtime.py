@@ -82,6 +82,10 @@ class OperationMetrics:
     executor_dispatch_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     completion_delivery_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     thread_cpu_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_statement_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_commit_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    sqlite_busy_failures: int = 0
 
 
 class AsyncRuntime:
@@ -410,6 +414,10 @@ class AsyncRuntime:
         if observation:
             metrics.python_lock_wait_ms.append(observation.python_lock_wait_ms)
             metrics.python_lock_hold_ms.append(observation.python_lock_hold_ms)
+            metrics.sqlite_statement_ms.append(observation.sqlite_statement_ms)
+            metrics.sqlite_commit_ms.append(observation.sqlite_commit_ms)
+            metrics.sqlite_calls.append(observation.sqlite_calls)
+            metrics.sqlite_busy_failures += observation.sqlite_busy_failures
             if observation.worker_finished_at:
                 metrics.worker_service_ms.append(
                     (observation.worker_finished_at - observation.worker_started_at) * 1000
@@ -510,7 +518,8 @@ class AsyncRuntime:
             data["queue_ms"] = distribution(list(metrics.queue_samples_ms))
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
-            for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms"):
+            for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms",
+                          "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls"):
                 data[phase] = distribution(list(getattr(metrics, phase)))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)

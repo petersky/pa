@@ -1,6 +1,7 @@
 """Shared latency regressions using only disposable stores and runtimes."""
 import asyncio
 import json
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -134,6 +135,28 @@ async def test_worker_completion_delay_is_separate_from_service_and_cpu():
         assert metrics["slow_calls"] == 0
     finally:
         await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_primary_sqlite_busy_failure_is_numeric_and_keeps_statement_time(tmp_path):
+    store = CardProjection(tmp_path / "pa.db")
+    runtime = AsyncRuntime()
+    def write():
+        with store._conn(busy_timeout_ms=10) as conn:
+            conn.execute("UPDATE agent_sessions SET title='fixture' WHERE id='missing'")
+    try:
+        with sqlite3.connect(store.db_path) as other:
+            other.execute("BEGIN IMMEDIATE")
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                await runtime.run_blocking("sqlite.fixture_write", write)
+        metrics = runtime.snapshot()["operations"]["sqlite.fixture_write"]
+        assert metrics["sqlite_busy_failures"] == 1
+        assert metrics["sqlite_statement_ms"]["p50"] >= 5
+        assert metrics["sqlite_calls"]["p50"] > 0
+        assert "UPDATE agent_sessions" not in json.dumps(metrics)
+    finally:
+        await runtime.close()
+        store.close_thread_connection()
 
 
 @pytest.mark.asyncio

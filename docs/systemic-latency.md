@@ -67,6 +67,10 @@ Dispatch writer/index locks now participate in Python wait/hold measurements.
 Session-list diagnostics expose returned rows, encoded bytes and serialization
 time. Existing transcript and dispatch metrics expose SQLite writer acquisition,
 transaction hold, row changes and payload preparation/publication.
+Primary projection connection calls also expose statement service, commit service,
+call counts and BUSY/LOCKED failure counts per off-loop operation. These observe
+connection execute/executemany/commit calls, not cursor fetch or schema-script
+execution; an executemany batch counts as one Python API call.
 
 Worker service minus thread CPU includes I/O, locks, GIL and OS scheduling; it is
 not pure disk time. SQLite writer acquisition includes successful busy-handler
