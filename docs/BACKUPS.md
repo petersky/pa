@@ -32,6 +32,14 @@ temporary archive and atomically renames it only after verification. The
 destination directory must be owner-only (`0700`); archives and state are
 `0600`.
 
+The v1 manifest supports up to 250,000 files and 64 MiB of JSON. Both the
+writer and reader enforce these limits; an oversized snapshot fails before
+archive publication and leaves existing recovery points intact. New archives
+put the manifest first so reading it does not decompress all payloads. Legacy
+v1 archives remain compatible. Verification still checks paths, duplicate
+members, file sizes and hashes, SQLite/schema integrity, durable refs and
+reachable event/transcript objects.
+
 The local backend boundary is intentionally small (`health`, `publish`, `list`,
 and `delete`) so object-storage backends can preserve the same manifest,
 verification, atomic-publication, retention, and restore semantics later.
@@ -55,7 +63,8 @@ Defaults:
 
 Count retention is required. Maximum age and maximum total size are optional.
 Pruning is oldest-first with backup ID as the deterministic tie-break. PA
-verifies candidates before pruning, audits each decision, skips corrupt
+uses verification records tied to the archive's file identity before pruning,
+audits each decision, skips corrupt or unverified
 archives, and never deletes the last known-good recovery point. A failed new
 attempt does not prune an older good archive.
 
@@ -67,6 +76,7 @@ pa backup config
 pa backup config --interval-seconds 21600 --retention-count 8
 pa backup run --idempotency-key operator-ticket-123
 pa backup list --verify
+pa backup list --offset 50 --limit 50
 pa backup inspect BACKUP_ID
 pa backup verify BACKUP_ID
 pa backup export BACKUP_ID --output ./recovery.pa-backup.tgz
@@ -83,6 +93,42 @@ next run, last attempt/success,
 duration/size/failure history, metrics, and the repeated-failure alert state.
 A missing, disconnected, read-only, exposed, or full destination fails the
 backup visibly without affecting PA runtime.
+
+Status and ordinary inventory reads never open archives or trigger verification.
+The page computes status and its recovery-point page from one inventory scan.
+Inventory uses cached verification metadata plus filesystem identity (device,
+inode, size, modification and change timestamps). Replacing or changing an
+archive invalidates its cached result. Legacy records without that identity and
+newly discovered archives appear as `unverified`, not `failed`; select Verify
+to check them. Verification in progress and recorded failures have distinct
+states and reasons. The last successful run remains historical; the last known
+good retained recovery point requires a current verification record.
+
+`GET /api/backups`, MCP `backup_list`, and CLI `backup list` accept `offset`
+and `limit` (default 50, maximum 200). `verify=true` verifies only that page.
+List responses omit manifests; inspect/verify responses include them. Status
+omits the potentially large per-archive verification and idempotency maps.
+Destination health on reads checks permissions without creating probe files;
+backup execution still performs a real write probe.
+
+At `alert_after_failures`, automatic startup, scheduled backups and periodic
+scrubs pause. PA creates one durable service-health notification per failure
+streak with a link to Backups. The page shows the reason, last recovery point,
+and Administrator as the next actor. Correct the cause and explicitly run a
+manual backup; a successful verified publication clears the streak and resumes
+scheduling. The pause survives restart. Raising the configured threshold can
+also make automatic attempts eligible again. Temporary attempts are recorded
+as runs, not retained archives; successful maintenance removes obsolete
+verification entries left by earlier versions.
+
+For acceptance of a repair build, first use isolated fixtures to verify a
+manifest above 2 MiB in compressed and uncompressed archives, changed/damaged
+archives, concurrent verification, pagination, and failure-pause recovery.
+Live-instance acceptance must record the exact build, affected instance and
+scenario through the card's independent acceptance workflow. A merge or passing
+fixture suite alone does not establish live recovery. Live backup runs,
+verification sweeps, configuration changes, restore and deployment require their
+own authorization.
 
 ## Guarded restore
 

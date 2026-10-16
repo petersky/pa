@@ -20,13 +20,14 @@ class LocalFilesystemBackend:
     def __init__(self, destination: Path) -> None:
         self.destination = destination
 
-    def health(self) -> dict:
+    def health(self, *, probe: bool = True) -> dict:
         exists = self.destination.is_dir()
         result = {
             "backend": "local",
             "path": str(self.destination),
             "exists": exists,
             "writable": False,
+            "write_check": "probe" if probe else "permissions_only",
             "free_bytes": None,
             "total_bytes": None,
             "error": None,
@@ -48,10 +49,11 @@ class LocalFilesystemBackend:
             if not mode & stat.S_IWUSR:
                 result["error"] = "destination is not writable by its owner"
                 return result
-            probe = self.destination / f".pa-backup-health-{os.getpid()}"
-            fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            os.close(fd)
-            probe.unlink()
+            if probe:
+                probe_path = self.destination / f".pa-backup-health-{os.getpid()}"
+                fd = os.open(probe_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.close(fd)
+                probe_path.unlink()
             usage = shutil.disk_usage(self.destination)
             result.update(
                 writable=True,

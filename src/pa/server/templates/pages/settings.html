@@ -636,10 +636,14 @@
       <dt>Next scheduled run</dt><dd>{{ backup_status.next_scheduled_run or 'Not scheduled' }}</dd>
       <dt>Last attempt</dt><dd>{{ backup_status.last_attempt or 'Never' }}</dd>
       <dt>Last success</dt><dd>{{ backup_status.last_success or 'Never' }}</dd>
+      <dt>Last known good recovery point</dt><dd>{% if backup_status.last_known_good %}{{ backup_status.last_known_good.created_at }} · <code>{{ backup_status.last_known_good.backup_id }}</code>{% else %}No retained archive has a current verification record. Select Verify to check an existing archive.{% endif %}</dd>
+      <dt>Activity</dt><dd>{{ backup_status.backup_state }}{% if backup_status.automatic_backups_paused %} · automatic attempts paused{% endif %}</dd>
+      <dt>Next actor</dt><dd>{{ backup_status.next_actor }} · {{ backup_status.next_action }}</dd>
+      {% if backup_status.latest_failure_reason %}<dt>Latest failure</dt><dd>{{ backup_status.latest_failure_reason }}</dd>{% endif %}
       <dt>Destination health</dt>
       <dd>
         <span class="status status-{{ 'ready' if backup_status.destination_health.writable else 'error' }}">
-          {{ 'writable' if backup_status.destination_health.writable else 'unhealthy' }}
+          {{ 'permissions allow writes' if backup_status.destination_health.writable else 'unhealthy' }}
         </span>
         {% if backup_status.destination_health.error %}{{ backup_status.destination_health.error }}{% endif %}
       </dd>
@@ -728,7 +732,7 @@
             <td>{{ backup.created_at }}</td>
             <td><code>{{ backup.backup_id }}</code></td>
             <td>{{ backup.size_bytes }}</td>
-            <td><span class="status status-{{ 'ready' if backup.verified else 'error' }}">{{ 'verified' if backup.verified else 'failed' }}</span></td>
+            <td><span class="status status-{{ 'ready' if backup.verification_status == 'verified' else 'error' if backup.verification_status == 'failed' else 'pending' }}">{{ backup.verification_status }}</span>{% if backup.verification_error %}<p class="small">{{ backup.verification_error }}</p>{% endif %}</td>
             <td>
               <a class="button secondary small" href="/api/backups/{{ backup.backup_id }}/download">Export</a>
               <button type="button" class="secondary small" data-backup-verify="{{ backup.backup_id }}">Verify</button>
@@ -742,6 +746,13 @@
     </div>
     {% else %}
     <p class="muted">No recovery points yet.</p>
+    {% endif %}
+    {% if backup_pagination %}
+    <nav aria-label="Recovery point pages">
+      <span>{{ backup_pagination.total }} recovery points · up to {{ backup_pagination.limit }} per page</span>
+      {% if backup_pagination.previous_offset is not none %}<a class="button secondary small" href="/settings?section=backups&amp;backup_offset={{ backup_pagination.previous_offset }}">Previous</a>{% endif %}
+      {% if backup_pagination.next_offset is not none %}<a class="button secondary small" href="/settings?section=backups&amp;backup_offset={{ backup_pagination.next_offset }}">Next</a>{% endif %}
+    </nav>
     {% endif %}
     <div class="notice danger">
       <strong>Restore requires maintenance.</strong>

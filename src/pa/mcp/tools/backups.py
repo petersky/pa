@@ -15,10 +15,10 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         return request_local_pa(ctx.settings, "GET", "/api/backups/status")
 
     @mcp.tool()
-    def backup_list(verify: bool = False) -> list[dict[str, Any]]:
+    def backup_list(verify: bool = False, offset: int = 0, limit: int = 50) -> list[dict[str, Any]]:
         """List retained local metadata backups and verification state."""
         return request_local_pa(
-            ctx.settings, "GET", "/api/backups", params={"verify": verify}
+            ctx.settings, "GET", "/api/backups", params={"verify": verify, "offset": offset, "limit": limit}
         )
 
     @mcp.tool()

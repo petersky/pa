@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 BACKUP_FORMAT_VERSION = 1
+# One contract for v1 readers and writers, including legacy pretty-printed JSON.
+MAX_MANIFEST_BYTES = 64 * 1024 * 1024
+MAX_MANIFEST_FILES = 250_000
 
 
 def validate_backup_destination_path(data_dir: Path, destination: Path) -> Path:
@@ -55,9 +58,21 @@ class BackupConfig(BaseModel):
 
 
 class ManifestFile(BaseModel):
-    path: str
+    path: str = Field(min_length=1, max_length=4096)
     size_bytes: int = Field(ge=0)
-    sha256: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("path")
+    @classmethod
+    def _safe_path(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if (
+            path.is_absolute() or not path.parts or ".." in path.parts
+            or "\\" in value or "\x00" in value or path.as_posix() != value
+            or value == "manifest.json"
+        ):
+            raise ValueError("manifest file path must be canonical and relative")
+        return value
 
 
 class BackupManifest(BaseModel):
@@ -75,7 +90,7 @@ class BackupManifest(BaseModel):
     durable_heads: dict[str, str] = Field(default_factory=dict)
     projection_heads: dict[str, str] = Field(default_factory=dict)
     consistent: bool
-    files: list[ManifestFile] = Field(default_factory=list)
+    files: list[ManifestFile] = Field(default_factory=list, max_length=MAX_MANIFEST_FILES)
     included: list[str] = Field(
         default_factory=lambda: [
             "projection_database_online_snapshot",
@@ -104,6 +119,8 @@ class BackupManifest(BaseModel):
         expected = self.projection_heads == self.durable_heads
         if self.consistent != expected:
             raise ValueError("manifest consistency claim does not match recorded heads")
+        if len({item.path for item in self.files}) != len(self.files):
+            raise ValueError("manifest contains duplicate file paths")
         return self
 
 
@@ -158,6 +175,7 @@ class BackupState(BaseModel):
     last_scrub: datetime | None = None
     next_scrub_run: datetime | None = None
     last_scrub_results: dict[str, bool] = Field(default_factory=dict)
+    failure_alert_key: str | None = None
 
 
 class BackupRecord(BaseModel):
@@ -168,9 +186,16 @@ class BackupRecord(BaseModel):
     verified: bool
     verification_error: str | None = None
     manifest: BackupManifest | None = None
+    verification_status: Literal[
+        "verified", "failed", "unverified", "in_progress"
+    ] = "unverified"
 
-    def public_dict(self, *, include_path: bool = False) -> dict[str, Any]:
-        data = self.model_dump(mode="json")
+    def public_dict(
+        self, *, include_path: bool = False, exclude_manifest: bool = False
+    ) -> dict[str, Any]:
+        data = self.model_dump(
+            mode="json", exclude={"manifest"} if exclude_manifest else set()
+        )
         if not include_path:
             data.pop("path", None)
         return data
