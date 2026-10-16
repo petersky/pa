@@ -2707,6 +2707,7 @@ class CardProjection:
         idempotency_key: str | None = None,
         request_fingerprint: str | None = None,
         direct_human: bool = False,
+        initial_summary_state: dict | None = None,
     ) -> Card:
         now = datetime.now(UTC)
         supplied_summary = data.summary.strip()
@@ -2734,6 +2735,11 @@ class CardProjection:
             created_by_principal=principal_id,
             created_by_instance=instance_id,
         )
+        if initial_summary_state:
+            # The creation event and replay result must contain the same
+            # settled metadata. A post-create system write would race the
+            # version returned to the caller and add an unnecessary commit.
+            card = Card.model_validate({**card.model_dump(), **initial_summary_state})
         if card.completion_requirement:
             from pa.domain.completion import CompletionConflict, bind_verification_authority
             card.completion_requirement = bind_verification_authority(card.completion_requirement, instance_id)

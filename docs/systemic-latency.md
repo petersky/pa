@@ -497,7 +497,7 @@ switch, installed-service update or restart was performed.
 The [coverage matrix](performance-coverage.md) and its [numeric ledger](performance-coverage.json)
 account for all 105 independently supplied slow names, all 110 names in the
 retained-file inventory, 181 baseline runtime operations, 115 baseline route
-groups, nine startup phases, six page families and 17 cross-cutting concerns.
+groups, nine startup phases, six page families and 19 cross-cutting concerns.
 Six newly exercised runtime operations have separate rows. Each finding retains
 cause certainty, existing repair/owner, measurements, implementation/integration/
 deployment/retest status, residual and next actor. No unresolved row is closed by
@@ -554,7 +554,7 @@ quadratic long-message copying and later residual tails. A 30-iteration measured
 window passed with zero warnings/threshold violations; that does not supersede
 the following longer result.
 
-Final source-patch scenario: 1,000 history commits, 101 retained dispatches,
+Latest corrected-source scenario: 1,000 history commits, 101 retained dispatches,
 30 sessions, 30 watches, eight executor workers, 100 pushes/reconciliations,
 ten controlled compatible forks, 300 drains, 26 local request variants sampled
 100 times, and exactly 9,600 retained ordered events. Failures, timeouts and
@@ -562,21 +562,23 @@ rejections were zero. **The performance acceptance target is not achieved:**
 
 | Residual | Count | p50 / p95 / p99 / max ms |
 |---|---:|---|
-| Reconcile above 500 ms | 1 | 58.317 / 161.394 / 451.006 / 581.899 |
-| Card-history request above 500 ms | 1 | 32.440 / 65.705 / 245.039 / 963.843 |
-| Complete-message request above 500 ms | 2 | 204.172 / 413.601 / 509.604 / 513.211 |
-| Fleet page above 500 ms | 1 | 100.629 / 221.607 / 343.780 / 626.566 |
+| Transcript drain above 500 ms | 2 | 100.359 / 237.052 / 370.239 / 506.866 |
+| Reconcile above 500 ms | 1 | 66.492 / 235.078 / 416.747 / 523.871 |
+| Complete-message request above 500 ms | 1 | 201.709 / 379.703 / 456.860 / 550.850 |
+| Fleet page above 500 ms | 1 | 99.517 / 199.956 / 336.534 / 525.215 |
 
-There were two slow worker warnings. The card-history worker's 961 ms outlier
-included 949 ms observed inside SQLite calls with 29 ms thread CPU and 105 rows;
-this is not evidence that its bounded response serialization took 949 ms. The
-reconcile outlier recorded 103 ms measured lock wait and 315 ms SQL time. Native
-busy, disk and scheduling attribution remains open. Request thresholds and worker
-warning counts differ because HTTP includes additional work. The measured loop
-p95/max was 21.216/229.290 ms. No warning threshold or deadline was increased.
+There were two slow worker warnings. One transcript append recorded 325 ms
+Python-lock wait, 174 ms hold and 134 ms observed SQLite calls, versus 16 ms
+thread CPU. The reconcile recorded 347 ms measured lock wait and 80 ms SQL time.
+Native busy, disk and scheduling attribution remains open. Request thresholds and
+worker warning counts differ because HTTP includes additional work. The prior
+instrumented 100-iteration run retained a 961 ms card-history worker (949 ms
+inside SQLite calls, 29 ms thread CPU and 105 rows); this outlier remains in the
+artifact's prior runs, rather than being erased by the latest sample. No warning
+threshold or deadline was increased.
 
 Premeasurement Kernel boot/fixture seeding is explicitly separate: one sync-ref
-read had 3,155 ms elapsed, 1.4 ms worker service and 3,152 ms completion delivery.
+read had 3,331 ms elapsed, 1.5 ms worker service and 3,329 ms completion delivery.
 This requires startup attribution; it is not a 3-second SQLite query. Ten separate
 tool-free ACP fixture cold starts had zero slow operations/failures/timeouts/
 rejections; first start was 521 ms and subsequent max 254 ms. These do not accept
@@ -603,3 +605,17 @@ runtime's bounded windows and lifetime counters, retained selected slow-log
 statistics and this fixture's distributions remain distinct. No installed PA
 update, configuration change, restart, direct service-data mutation or production
 fault injection was performed.
+
+PR486's first CI head (`77b8fd4`) passed four checks but exposed a card-version
+race in the unchanged execution-selection roundtrip. After a card read, an
+asynchronous unconfigured-summary metadata write advanced its version about
+10 ms before the next execution-preference edit. The correction settles known
+disabled metadata in the original canonical creation event and its exact receipt,
+before returning that version. Configured generation and supplied summaries
+retain their behavior; unknown optional configuration remains asynchronous.
+The strict stale-version fence is unchanged. Form canonical writes also run in
+the bounded executor. Seven creation/selection tests pass, including delayed-task
+version stability and exact canonical replay/rebuild; 62 broader card/receipt
+tests and nine subtests passed. The new fixture's initial UTC string-format
+comparison was corrected to equality of the exact instants; its immutable
+canonical receipt comparisons remain exact.

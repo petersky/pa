@@ -785,6 +785,35 @@ class CardSummaryService:
             return self.ctx.store.get_card(card.id, realm_id=card.realm_id)
         return card
 
+    def initial_summary_state(self, data) -> dict:
+        """Settle known unconfigured metadata in the original creation event.
+
+        Call before primary mutation admission, from a worker. No provider is
+        invoked. Configured generation remains asynchronous; supplied summaries
+        and non-authoritative instances retain their existing behavior.
+        """
+        if data.summary.strip() or not self.is_authority:
+            return {}
+        try:
+            if self._configured_from_files() is not None:
+                return {}
+            configuration = self._unconfigured_configuration()
+        except (OSError, ValueError) as exc:
+            # Failure to classify optional summary configuration must not turn
+            # card creation into a credential/provider setup prerequisite.
+            logger.warning("Initial summary configuration unavailable (%s); asynchronous classification retained",
+                           type(exc).__name__)
+            return {}
+        return {
+            "summary_status": "disabled", "summary_stale": False,
+            "summary_provider": configuration.provider, "summary_model": configuration.model,
+            "summary_auth_source": configuration.auth_source, "summary_prompt_version": PROMPT_VERSION,
+            "summary_input_hash": summary_input_hash(data.title, data.body),
+            "summary_failure": configuration.setup_guidance,
+            "summary_failure_code": SummaryFailureCode.UNCONFIGURED.value,
+            "summary_authority_instance_id": self.settings.instance_id,
+        }
+
     def enqueue(self, card_id: str, realm_id: str, *, force: bool = False) -> bool:
         if not self.is_authority:
             return False

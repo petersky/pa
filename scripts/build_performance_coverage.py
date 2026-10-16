@@ -47,6 +47,8 @@ CONCERNS = [
     ("incoming-fork-fence", "Incoming fork publication and summary writes", "sync", "Expanded25-request mixed fixture exposed one unhandled DagIndexStaleError during summary publication, despite zero measured latency violations. Confirmed incoming merge advanced ref before application primary admission; repair routes prepared immutable merge through projection/CAS publisher and offloads summary work with fresh-input/manual-edit fences. Report19c44107-99dc-4b64-92ea-fda8d22a3418; regression/retest status below."),
     ("large-message-copy", "Quadratic complete-message compaction", "acp", "Expanded100-iteration fixture exposed transcript message-page tails as a single message grew to3200chunks/2.56million characters. Repeated prefix concatenation materialized about4.1billion characters. Linear grouping joins once while preserving replacement snapshots, source sequence spans, interleaved tools and all durable input chunks; exact reconstruction and copy-volume regression passed."),
     ("startup-classification", "Startup classification and same-request recovery", "selection", "Report e2bed017-d546-49f5-910e-3d8326d80e40: start classified as research, same request recovered after metadata correction. The workaround is not a repair or new authorization. Preserve request/receipt identity and user model/permission defaults; root classification and regression coverage remain open."),
+    ("creation-version", "Known disabled summary metadata races card version", "sqlite", "PR486 CI38883010060 exposed a disabled-summary metadata write about10ms after a caller read the card version, rejecting its following execution-preference edit. Correction settles known unconfigured metadata in the initial canonical creation event and exact receipt. Configured/manual summary behavior and strict stale-version rejection remain intact; source correction/CI verification pending."),
+    ("completion-scope", "Integration-only automatic completion exceeds card scope", "operation", "Supervisor marked this expanded performance card Done after PR484 and PR485 despite open acceptance/peer/coverage findings; card restored Active twice. Report861aef1f-3d04-461d-8594-fc5b4260ccf2 revision2 preserves evidence. Integration is not whole-PA acceptance; completion-policy/requirement coordination remains open, with no invented acceptance receipt or weakened gate."),
 ]
 
 
@@ -153,6 +155,12 @@ def build(independent: dict, integrated: dict, followup: dict | None = None) -> 
             if row["id"] == "concern:large-message-copy":
                 row["implemented"] = "Linear chunk grouping with one text join per completed group; only derived browser pages change, durable events untouched."
                 row["retested"] = "8 exact historical reconstruction tests passed, including3200chunk/2.56million-character copy-volume and immutable-source assertions."
+            if row["id"] == "concern:creation-version":
+                row["implemented"] = "Known unconfigured summary state is part of the original canonical creation event and exact receipt; optional configuration failures retain asynchronous ownership. Form writes use bounded executor."
+                row["retested"] = "7 creation/selection tests passed with strict stale-version rejection unchanged, exact replay/rebuild and delayed disabled task. Broader62tests+9subtests passed; initial new fixture compared equivalent Z/+00:00 strings, corrected to exact datetime equality."
+            if row["id"] == "concern:completion-scope":
+                row["next_actor"] = "this session and PA completion policy/requirement owner"
+                row["next_action"] = "Keep expanded card open; coordinate a completion contract covering all residual acceptance and owner gates before final Done. Do not invent independent acceptance or clear existing requirements."
     assert len({r["id"] for r in rows}) == len(rows)
     return {"contract": "pa.performance-coverage/v1", "card_id": CARD,
             "as_of": "2026-10-16", "completion": "open; all findings require deployed acceptance or an evidence-backed final disposition",

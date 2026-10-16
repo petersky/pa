@@ -2129,6 +2129,7 @@ def create_card_api(
         response.headers["X-PA-Operation-Replayed"] = "true"
         return replay
     try:
+        initial_summary = request.app.state.ctx.require_service("card_summary_service").initial_summary_state(data)
         card = store.create_card(
             data,
             principal_id=get_principal_id(request),
@@ -2136,6 +2137,7 @@ def create_card_api(
             idempotency_key=key,
             request_fingerprint=fingerprint,
             direct_human=_direct_human_card_action(request),
+            initial_summary_state=initial_summary,
         )
         result = {**card.model_dump(mode="json"), "completion_status": card.completion_status}
         store.complete_operation(key, result)
@@ -3280,11 +3282,13 @@ async def create_card_modal_ui(
         preferred_capabilities=_comma_separated(preferred_capabilities),
         auto_enrich=auto_enrich,
     )
-    card = store.create_card(
-        create_data,
-        principal_id=principal,
-        instance_id=settings.instance_id,
-    )
+    def publish_form_card():
+        initial_summary = request.app.state.ctx.require_service("card_summary_service").initial_summary_state(create_data)
+        return store.create_card(
+            create_data, principal_id=principal, instance_id=settings.instance_id,
+            initial_summary_state=initial_summary,
+        )
+    card = await runtime.run_blocking("sqlite.card_write", publish_form_card, wait_for_completion=True)
     if not summary.strip():
         card = _schedule_card_summary(request, background_tasks, card)
     if auto_enrich:
@@ -3315,8 +3319,10 @@ async def create_card_modal_ui(
                 created_by_instance=settings.instance_id,
                 visibility=card.visibility,
             )
-            card = store.add_attachment(
-                attachment, principal_id=principal, instance_id=settings.instance_id
+            card = await runtime.run_blocking(
+                "cards.attachments.publish", store.add_attachment,
+                attachment, principal_id=principal, instance_id=settings.instance_id,
+                wait_for_completion=True,
             )
             attachments.append(
                 {
@@ -3325,7 +3331,8 @@ async def create_card_modal_ui(
                 }
             )
         if attachments:
-            card = store.update_card(
+            card = await runtime.run_blocking(
+                "sqlite.card_write", store.update_card,
                 card.id,
                 CardUpdate(
                     body=_compose_card_body(
@@ -3339,6 +3346,7 @@ async def create_card_modal_ui(
                 realm_id=realm,
                 principal_id=principal,
                 instance_id=settings.instance_id,
+                wait_for_completion=True,
             )
     finally:
         for upload in uploads:
