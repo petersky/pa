@@ -19,6 +19,7 @@ from pa.execution.selection import (
     assess_task,
     digest,
     legacy_preferences,
+    merge_preferences,
     resolve_selection,
     validate_reuse,
 )
@@ -236,6 +237,10 @@ class SelectionService:
         self._last_forced_refresh = float("-inf")
         self._catalog_task: asyncio.Task | None = None
         self._refresh_task: asyncio.Task | None = None
+        self._harness_refresh_locks: dict[str, asyncio.Lock] = {}
+        self._harness_generations: dict[str, int] = {}
+        self._harness_forced_refresh: dict[str, float] = {}
+        self._harness_refresh_tasks: dict[str, asyncio.Task] = {}
 
     def start(self) -> None:
         """Keep admission evidence warm while the server is running."""
@@ -243,14 +248,15 @@ class SelectionService:
             self._catalog_task = asyncio.create_task(self._maintain_catalog(), name="pa-selection-catalog")
 
     async def close(self) -> None:
-        tasks = [task for task in (self._catalog_task, self._refresh_task) if task is not None]
+        tasks = [task for task in (self._catalog_task, self._refresh_task,
+                                  *self._harness_refresh_tasks.values()) if task is not None]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _refresh_catalog(self) -> None:
+    async def _refresh_catalog(self, required_harness: str | None = None) -> None:
         try:
-            await self.local_catalog(refresh=True)
+            await self.local_catalog(refresh=True, required_harness=required_harness)
         except Exception:
             logger.exception("Execution catalog refresh failed")
 
@@ -260,42 +266,70 @@ class SelectionService:
             await asyncio.sleep(45)
 
     async def local_catalog(
-        self, *, refresh=False, force=False, stale_while_revalidate=False
+        self, *, refresh=False, force=False, stale_while_revalidate=False,
+        required_harness: str | None = None,
     ) -> list[ExecutionCandidate]:
-        generation = self.catalog_generation
-        scope = self.settings.instance_id
+        if required_harness is not None:
+            from pa.acp.providers.registry import get_provider
+            try:
+                get_provider(required_harness)  # Only registered harnesses define cache scopes.
+            except KeyError:
+                return []  # Normal selection emits its durable incompatibility evidence.
+        generation = (self._harness_generations.get(required_harness, 0)
+                      if required_harness else self.catalog_generation)
+        scope = (self.settings.instance_id + ":harness:" + required_harness
+                 if required_harness else self.settings.instance_id)
         rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
         age = (datetime.now(UTC) - stamp).total_seconds() if stamp else None
         if (stale_while_revalidate and not force and refresh and rows
                 and age is not None and 60 < age < 240):
-            if self._refresh_task is None or self._refresh_task.done():
+            if required_harness:
+                task = self._harness_refresh_tasks.get(required_harness)
+                if task is None or task.done():
+                    self._harness_refresh_tasks[required_harness] = asyncio.create_task(
+                        self._refresh_catalog(required_harness), name="pa-selection-harness-refresh"
+                    )
+            elif self._refresh_task is None or self._refresh_task.done():
                 self._refresh_task = asyncio.create_task(self._refresh_catalog(), name="pa-selection-refresh")
             refresh = False
         if force or (refresh and (age is None or age > 60)):
-            async with self._refresh_lock:
+            refresh_lock = (self._harness_refresh_locks.setdefault(required_harness, asyncio.Lock())
+                            if required_harness else self._refresh_lock)
+            async with refresh_lock:
                 rows, stamp = await asyncio.to_thread(self.store.catalog, scope)
                 age = (datetime.now(UTC) - stamp).total_seconds() if stamp else None
-                force_due = force and time.monotonic() - self._last_forced_refresh >= 3
-                if generation == self.catalog_generation and (
+                last_forced = (self._harness_forced_refresh.get(required_harness, float("-inf"))
+                               if required_harness else self._last_forced_refresh)
+                force_due = force and time.monotonic() - last_forced >= 3
+                current_generation = (self._harness_generations.get(required_harness, 0)
+                                      if required_harness else self.catalog_generation)
+                if generation == current_generation and (
                     force_due if force else age is None or age > 60
                 ):
                     if force:
-                        self._last_forced_refresh = time.monotonic()
+                        if required_harness:
+                            self._harness_forced_refresh[required_harness] = time.monotonic()
+                        else:
+                            self._last_forced_refresh = time.monotonic()
                     from pa.acp.providers.resolve import list_provider_summaries_bounded
 
                     statuses = await list_provider_summaries_bounded(
-                        self.settings.data_dir, manager=self.manager
+                        self.settings.data_dir, manager=self.manager,
+                        **({"provider_ids": {required_harness}} if required_harness else {}),
                     )
                     # An authenticated adapter may expose models only at
                     # session/new. Discover them without submitting a prompt.
                     from pa.execution.selection_catalog import discover_missing_catalogs
 
                     statuses = await discover_missing_catalogs(statuses, self.settings)
-                    candidates = status_candidates(scope, statuses)
+                    candidates = status_candidates(self.settings.instance_id, statuses)
                     rows = [c.model_dump(mode="json") for c in candidates]
                     await asyncio.to_thread(self.store.save_catalog, scope, rows)
                     stamp = datetime.now(UTC)
-                    self.catalog_generation += 1
+                    if required_harness:
+                        self._harness_generations[required_harness] = current_generation + 1
+                    else:
+                        self.catalog_generation += 1
         rows = await asyncio.to_thread(self._current_connection_rows, rows)
         candidates = [ExecutionCandidate.model_validate(row) for row in rows]
         now = datetime.now(UTC)
@@ -321,7 +355,7 @@ class SelectionService:
             )
             live = [status for status in statuses if status.get("execution_catalogs")]
             candidates = reconcile_candidates(candidates + status_candidates(scope, live))
-        return candidates
+        return [c for c in candidates if not required_harness or c.harness == required_harness]
 
     def _current_connection_rows(self, rows):
         from pa.execution.selection_connections import connection_revision
@@ -386,6 +420,15 @@ class SelectionService:
                     self.settings.instance_id,
                     [c for c in local if c["connection"] != profile.id] + cached,
                 )
+                # A targeted admission cache must see explicit account refreshes
+                # too; never leave its old connection revision as the only row.
+                harness_scope = self.settings.instance_id + ":harness:" + profile.harness
+                scoped, _ = await asyncio.to_thread(self.store.catalog, harness_scope)
+                if scoped:
+                    await asyncio.to_thread(
+                        self.store.save_catalog, harness_scope,
+                        [c for c in scoped if c["connection"] != profile.id] + cached,
+                    )
         return cached
 
     def _project_config(self, card, supplied):
@@ -515,6 +558,19 @@ class SelectionService:
         )
         self.store.save_decision(result, realm, receipt["context"]["principal"])
         return result
+
+    def required_catalog_harness(self, *, principal, realm, surface, card=None,
+                                 project_config=None, overrides=None, legacy=None):
+        """Narrow discovery only when the normal precedence rules require it.
+
+        Preferred/automatic selectors still discover the complete candidate set.
+        Resolution subsequently revalidates policy, constraints and all hard pins.
+        """
+        layers = self.layers(principal=principal, surface=surface, card=card,
+                             project_config=project_config, overrides=overrides, legacy=legacy)
+        merged, _ = merge_preferences([*layers, ("installation", self.store.policy(realm).defaults)])
+        harness = merged["harness"]
+        return harness["value"] if harness["intent"] == "required" else None
 
     def resolve(
         self,

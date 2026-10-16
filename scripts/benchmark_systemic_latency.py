@@ -193,6 +193,8 @@ async def run_app(app, root, *, history, iterations):
                              "/partials/home/sections", "/api/status", "/api/runtime?section=sse"):
                     response = await measure(path, client.get(path))
                     response.raise_for_status()
+                    if path == "/agent":
+                        assert "PR #1 · closed" in response.text
                     sizes[path].append(len(response.content))
                 await asyncio.sleep(0.005)
     await runtime.start()
@@ -208,7 +210,14 @@ async def run_app(app, root, *, history, iterations):
         after_io = resource.getrusage(resource.RUSAGE_SELF)
         snapshot = runtime.snapshot()
         expected = iterations * 32 * len(transcript_runtimes)
-        actual = sum(len(store.list_transcript_events(s.id, limit=iterations * 32 + 1)) for s in sessions[:3])
+        actual = 0
+        for session in sessions[:3]:
+            cursor = 0
+            while page := store.list_transcript_events(session.id, after_seq=cursor, limit=1000):
+                assert [event.seq for event in page] == list(range(cursor + 1, cursor + 1 + len(page)))
+                actual += len(page)
+                cursor = page[-1].seq
+            assert cursor == iterations * 32
         assert actual == expected
         assert store.get_projection_head("default") == log.get_head("default")
         assert store.get_card(card_id).title == f"Fixture {history + iterations - 1}"
@@ -246,6 +255,8 @@ if __name__ == "__main__":
     parser.add_argument("--history", type=int, default=1000)
     parser.add_argument("--iterations", type=int, default=30)
     args = parser.parse_args()
+    if args.history < 1 or args.iterations < 1:
+        parser.error("history and iterations must be positive")
     with tempfile.TemporaryDirectory(prefix="pa-systemic-benchmark-") as tmp:
         result = asyncio.run(run(Path(tmp), history=args.history, iterations=args.iterations))
     args.output.write_text(json.dumps(result, indent=2) + "\n")

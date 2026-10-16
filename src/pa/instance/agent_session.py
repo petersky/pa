@@ -5753,7 +5753,9 @@ class AgentSessionManager:
                     # Authority admission may have newer support evidence than
                     # this target's warm startup cache. Refresh before the first
                     # target check; retain the exact receipt and all hard pins.
-                    candidates=await selection_service.local_catalog(refresh=True, force=True),
+                    candidates=await selection_service.local_catalog(
+                        refresh=True, force=True, required_harness=selected["harness"]
+                    ),
                     principal=effective_principal_id,
                     realm=realm_id or self.settings.primary_realm,
                     surface=surface_key,
@@ -5807,7 +5809,21 @@ class AgentSessionManager:
                     selection_project.tool_config if selection_project else None
                 )
             with startup_trace.phase("execution_selection") if startup_trace else nullcontext():
-                candidates = await selection_service.local_catalog(refresh=True, stale_while_revalidate=True)
+                required_harness = await self._offload(
+                    "selection.catalog_scope", selection_service.required_catalog_harness,
+                    principal=effective_principal_id,
+                    realm=realm_id or self.settings.primary_realm, surface=surface_key,
+                    card=selection_card, project_config=project_tool_config, overrides=prefs,
+                    legacy=legacy_preferences(
+                        provider=provider_override, model_id=explicit.model_id,
+                        model_provider=explicit.model_provider, effort=explicit.reasoning,
+                        config=explicit.config,
+                    ),
+                )
+                catalog_args = ({"required_harness": required_harness} if required_harness else {})
+                candidates = await selection_service.local_catalog(
+                    refresh=True, stale_while_revalidate=True, **catalog_args
+                )
                 receipt = await self._offload(
                     "selection.resolve",
                     selection_service.resolve,

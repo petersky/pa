@@ -1672,6 +1672,7 @@ class EventLog:
         commit_hash: str,
         *,
         expected_head: str | None | object = ...,
+        update_index: bool = True,
     ) -> None:
         """Advance a ref with an optional compare-and-swap precondition."""
         with self._lock:
@@ -1685,6 +1686,8 @@ class EventLog:
                 self._save_refs()
         # Imported heads and merges may add many objects. Build outside the ref
         # lock; readers observe an explicit stale/advancing status meanwhile.
+        if not update_index:
+            return
         commit = self.get_commit(commit_hash)
         if commit and all(self.store.has(parent) for parent in commit.parent_hashes):
             self.ensure_indexed(realm_id, commit_hash)

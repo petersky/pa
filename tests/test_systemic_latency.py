@@ -3,6 +3,7 @@ import asyncio
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -79,6 +80,37 @@ def test_incomplete_index_is_not_used_as_ancestry_evidence(tmp_path):
         assert read.call_count == 2
 
 
+def test_sync_derived_index_io_does_not_hold_session_provenance_lock(tmp_path):
+    from pa.modules.sync import _apply_sync_push_local
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "local")
+    store = CardProjection(tmp_path / "pa.db", log)
+    base = store.commit_event(event("base"))
+    target = imported(log, "next", [base.hash])
+    store.save_session(AgentSession(id="new-session", agent_name="codex"))
+    services = {"event_log": log, "sync_engine": SimpleNamespace(ingest_objects=lambda _: []),
+                "sync_metrics": SimpleNamespace(record_pull=lambda _: None)}
+    ctx = SimpleNamespace(store=store, require_service=services.__getitem__)
+    entered, release = threading.Event(), threading.Event()
+    original = log.ensure_indexed
+    def index(realm, head):
+        entered.set()
+        assert release.wait(5)
+        return original(realm, head)
+    with ThreadPoolExecutor(max_workers=2) as pool, patch.object(log, "ensure_indexed", side_effect=index):
+        push = pool.submit(_apply_sync_push_local, ctx, "default", target.hash, {})
+        assert entered.wait(2)
+        try:
+            assert store.get_projection_head("default") == log.get_head("default") == target.hash
+            binding = pool.submit(store.set_session_execution_binding, "new-session", {"version": 1},
+                                  reason="workspace_binding_initialized", expected_binding={})
+            assert binding.result(timeout=1).execution_binding == {"version": 1}
+        finally:
+            release.set()
+        assert push.result()["commits_applied"] == 1
+    assert log.index.indexed_head("default") == target.hash
+    assert store.get_card("base") and store.get_card("next")
+
+
 @pytest.mark.asyncio
 async def test_worker_completion_delay_is_separate_from_service_and_cpu():
     runtime = AsyncRuntime()
@@ -102,6 +134,53 @@ async def test_worker_completion_delay_is_separate_from_service_and_cpu():
         assert metrics["slow_calls"] == 0
     finally:
         await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_required_harness_discovery_does_not_wait_for_optional_providers_or_publish_partial_full_catalog(tmp_path):
+    from pa.execution.selection_service import SelectionService
+    from tests.selection_browser_app import FixtureProvider
+
+    service = SelectionService(Settings(data_dir=tmp_path, instance_id="local"), None)
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+    async def probe(_directory, *, manager=None, provider_ids=None):
+        calls.append(provider_ids)
+        if provider_ids is None:
+            entered.set()
+            await release.wait()
+        return [FixtureProvider(harness).status(tmp_path).model_dump(mode="json")
+                for harness in (sorted(provider_ids) if provider_ids else ("codex", "cursor"))]
+    with patch("pa.acp.providers.resolve.list_provider_summaries_bounded", side_effect=probe):
+        full = asyncio.create_task(service.local_catalog(refresh=True, force=True))
+        await entered.wait()
+        try:
+            targeted = await asyncio.wait_for(
+                service.local_catalog(refresh=True, force=True, required_harness="codex"), 1
+            )
+            assert targeted and {candidate.harness for candidate in targeted} == {"codex"}
+            assert service.store.catalog("local")[0] == []
+            # Forcing one harness must not throttle a different scope's first refresh.
+            cursor = await service.local_catalog(refresh=True, force=True, required_harness="cursor")
+            assert {candidate.harness for candidate in cursor} == {"cursor"}
+            assert calls == [None, {"codex"}, {"cursor"}]
+        finally:
+            release.set()
+            combined = await full
+        assert {candidate.harness for candidate in combined} == {"codex", "cursor"}
+    await service.close()
+
+
+def test_catalog_scope_obeys_automatic_preferred_and_required_precedence(tmp_path):
+    from pa.execution.selection import ExecutionPreferences, SelectionPolicy
+    from pa.execution.selection_service import SelectionService
+    service = SelectionService(Settings(data_dir=tmp_path, agent_provider="codex"), None)
+    policy = SelectionPolicy(defaults=ExecutionPreferences(harness={"intent": "required", "value": "codex"}))
+    with patch.object(service.store, "policy", return_value=policy):
+        for intent, value, expected in (("automatic", None, None), ("preferred", "cursor", None),
+                                        ("required", "cursor", "cursor")):
+            assert service.required_catalog_harness(principal="user:test", realm="default", surface="chat.default",
+                overrides=ExecutionPreferences(harness={"intent": intent, "value": value})) == expected
 
 
 def test_sidebar_preserves_settings_status_and_links_without_full_proofs(tmp_path):
