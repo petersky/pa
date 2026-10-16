@@ -708,6 +708,14 @@ def present_work_item(
         attention_code = completion["reason_code"]
         action = _action("open_card", "Open card", href=card_href)
         action_explanation = "Review the current completion requirement."
+        if completion['reason_code'] == 'verification_pending':
+            group = 'motion'
+            state_label = 'Verification pending'
+            summary = 'PA is arranging independent verification.'
+            reason = 'The declared checks remain owned by PA.'
+            tone = 'active'
+            attention_code = None
+            action_explanation = 'Inspect verification progress.'
     elif state in {"completed", "acknowledged"}:
         group = "outcome"
         state_code = "turn_ended"

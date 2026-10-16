@@ -27,8 +27,10 @@ class HealthService:
         self.transport = transport
         self.owner = str(uuid4())
         from pa import __version__
+        from pa.install.metadata import running_source_revision
         import os
-        self.runtime_build = {'loaded_module_version': __version__, 'pid': os.getpid(), 'startup_id': self.owner}
+        self.runtime_build = {'loaded_module_version': __version__, 'source_revision': running_source_revision(),
+                              'pid': os.getpid(), 'startup_id': self.owner}
         # Reserved capacity independent of canonical repair's shared worker pool.
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='pa-journal')
         self.slots = asyncio.Semaphore(4)
@@ -179,7 +181,7 @@ class HealthService:
         async with asyncio.timeout(5):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
-    async def repair_obligation(self, action):
+    async def repair_obligation(self, action, *, verification_dispatches=()):
         """Reuse the normal session-lifecycle decision; never a second queue."""
         result, payload = action['result'] or {}, action['payload']
         ledger = self.ctx.services.get('dispatch_store')
@@ -198,8 +200,8 @@ class HealthService:
         if (record.state in {'failed', 'cancelled'} and not record.session_id
                 and not record.prompt_acknowledged_at and not record.initial_prompt_operation):
             others = await self.canonical_call(ledger.list, card_id=record.card_id,
-                realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=1)
-            if others:
+                realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=101)
+            if len(others) > 100 or any(r.dispatch_id not in verification_dispatches for r in others):
                 return 'canonical_repair_active'
             watches = await self.canonical_call(supervisor.list_watches_for_cards, {result['card_id']},
                 realm_id=payload['realm'], per_card_limit=5)
@@ -416,6 +418,15 @@ class HealthService:
                     criteria=(req.get('criteria') or '') +
                         f' Verify the declared repair build and scenario for health-group:{group_id}; retain exact canonical acceptance receipt and affected instance references.')
                 req.setdefault('acceptance_principals', [])
+                if not card.get('completion_requirement'):
+                    # Generated gates come with an eligible ordinary agent
+                    # principal and durable scheduler policy. Explicit gates
+                    # retain their declared authority and criteria.
+                    req.update(provenance='system_health', source_reference=f'health-group:{group_id}',
+                               verification_policy='independent_agent_v1',
+                               verification_principal=action['payload']['principal_id'],
+                               acceptance_principals=[action['payload']['principal_id']],
+                               originating_dispatch_id=result.get('dispatch_id'))
                 plan = {'method':'PATCH', 'path':path, 'body':{
                     'expected_version':card['updated_at'], 'field_intent':['completion_requirement'],
                     'completion_requirement':req}}
@@ -438,6 +449,28 @@ class HealthService:
             return
         payload, result = action['payload'], action['result'] or {}
         try:
+            group = await self.call(self.journal.group, action['group_id'], realms=[payload['realm']])
+            if group['disposition'] in {'merged', 'awaiting_acceptance'}:
+                if not result.get('card_id'):
+                    raise JournalError('verification_health_card_missing')
+                verification = self.ctx.services.get('verification')
+                card = await self.canonical_call(self.ctx.store.get_card, result['card_id'], realm_id=payload['realm'])
+                if verification and card:
+                    jobs = await verification.call(verification.store.list, card.id, card.realm_id)
+                    verifier_ids = {job['dispatch_id'] for job in jobs if job['dispatch_id']}
+                    obligation = await self.repair_obligation(action, verification_dispatches=verifier_ids) if result.get('dispatch_id') else None
+                    successor = await verification.ensure(card) if obligation in {None, 'pre_session_failed'} else None
+                    if successor:
+                        # The separate durable obligation is committed before
+                        # this atomic fenced/versioned release of the collector.
+                        await self.call(self.journal.action_result, action['id'], state='terminal',
+                            result={'verification_intent': successor['id'], 'next_actor': 'pa',
+                                    'next_action': 'verify_existing_repair'},
+                            expected_group_version=group['version'], owner=self.owner, fence=lease['fence'])
+                        return
+                # Existing merged repair ownership cannot become ordinary
+                # triage because of an unconfigured verifier or new report.
+                return
             if result.get('dispatch_id'):
                 # Existing durable dispatch remains authoritative beyond lease expiry.
                 record = await self.local_api(payload, 'GET', f'/api/fleet/dispatch-jobs/{result["dispatch_id"]}')
@@ -535,8 +568,18 @@ class HealthService:
         old_id = status['policy']['authority_id']
         if action == 'freeze':
             self.peer_url(target_id)
+            verification = self.ctx.services.get('verification')
             if self._cycle.locked():
                 raise JournalError('authority_transfer_active_cycle')
+            if verification:
+                if verification.lock.locked():
+                    raise JournalError('authority_transfer_active_verification_cycle')
+                async with verification.lock:
+                    if any(job['packet'].get('health_group') and job['state'] not in {'accepted', 'superseded'}
+                           for job in await verification.call(verification.store.list)):
+                        raise JournalError('authority_transfer_pending_verification')
+                    return await self.call(self.journal.freeze_transfer, target_id,
+                                           expected_version=expected_version, actor=actor)
             return await self.call(self.journal.freeze_transfer, target_id,
                                    expected_version=expected_version, actor=actor)
         if action == 'receive':

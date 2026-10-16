@@ -157,7 +157,9 @@ async def test_first_selected_work_inherits_primary_card_project_and_worker_defa
     from pa.modules.fleet import _apply_dispatch_mode_default
     store, _, req, _ = setup
     project = store.create_project(ProjectCreate(title="PA Core"))
-    source = store.create_card(CardCreate(title="Canonical source", project_id=project.id, auto_enrich=False))
+    source = store.create_card(CardCreate(title="Canonical source", project_id=project.id, auto_enrich=False,
+        completion_requirement={'mode':'explicit_acceptance', 'criteria':'Verify health-group:unrelated',
+                                'milestones':['verified'], 'originating_session_id':'parent-repair'}))
     session = store.get_session("discussion")
     session.card_id, session.mode_id = source.id, "agent-full-access"
     session.model_id = "gpt-6.1-sol[xhigh]"
@@ -183,6 +185,7 @@ async def test_first_selected_work_inherits_primary_card_project_and_worker_defa
     assert first["requests"][0]["state"] == "admitted"
     card = store.get_card(first["requests"][0]["groups"][0]["card_id"])
     assert card.project_id == project.id and card.parent_id == source.id
+    assert card.completion_requirement is None
     await start_issues(req(), "discussion", body)
     assert len(seen) == 1
     assert store.get_session("discussion").mode_id == "agent-full-access"

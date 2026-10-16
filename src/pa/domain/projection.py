@@ -3587,7 +3587,7 @@ class CardProjection:
                     raise CompletionConflict("completion_owner_unconfigured")
                 if not actor_session_id or not actor_dispatch_id:
                     raise CompletionConflict("completion_actor_unbound")
-                if actor_session_id == requirement.originating_session_id or actor_dispatch_id == requirement.originating_dispatch_id:
+                if actor_session_id in {requirement.originating_session_id, *requirement.originating_session_ids} or actor_dispatch_id in {requirement.originating_dispatch_id, *requirement.originating_dispatch_ids}:
                     raise CompletionConflict("completion_self_acceptance_forbidden")
             if not direct_human and principal_id not in requirement.acceptance_principals:
                 raise CompletionConflict("completion_acceptance_unauthorized")

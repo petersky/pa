@@ -61,3 +61,24 @@ does not silently reopen cards that were already Done before this contract.
 Completion remains idempotent. Replaying the same acknowledged mutation returns
 the recorded disposition result, while a stale authority card version or a
 mismatched mutation, target, card, realm, or session is still rejected.
+
+## Autonomous verification
+
+An explicitly declared `independent_agent_v1` verification policy uses the same
+completion planner as system-generated health gates. Integration-only work keeps
+its ordinary integration route. Independent verification remains bound to the
+exact card, realm, requirement revision, source subject, eligible principal,
+assigned dispatch/session, and complete excluded repair lineage. Its receipt must
+reference the current `verification-intent:<id>` and required scenario/instance
+scope. A changed declaration, build or membership invalidates a pending assignment.
+Explicit external/user authority stays declared and is never replaced by an agent.
+
+PA displays these routine gates as verification pending and schedules the work;
+it does not ask the user to arrange an approver. Only current canonical successful
+evidence permits completion. See [the journal workflow](HEALTH_JOURNAL.md) for
+onboarding and migration APIs. Selected conversation issues receive their own
+completion scope; parent repair requirements are not copied. Before placement of
+a reopened card, PA runs the ordinary guarded lifecycle reconciliation for that
+card so a finished idle automated run can close and expire its old lease on the
+first attempt. Live prompts, interactions, dirty workspaces and unsettled outcomes
+continue to retain their owners.

@@ -47,7 +47,7 @@
        data-card-realm="{{ card.realm_id }}">{{ card.title }}</a>
   </h3>
   {% if card.completion_requirement and card.completion_status.missing %}
-  <p class="muted small">Next: {{ card.completion_status.missing[0] | replace("_", " ") }}.</p>
+  <p class="muted small">{% if card.completion_status.reason_code == 'verification_pending' %}PA is arranging independent verification.{% else %}Next: {{ card.completion_status.missing[0] | replace("_", " ") }}.{% endif %}</p>
   {% endif %}
   {% if presentation and presentation.action %}
   {{ presentation_action(presentation.action, card.title, card.id, card.realm_id) }}

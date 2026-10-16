@@ -76,7 +76,7 @@ class SessionLifecyclePolicy:
             except TimeoutError:
                 pass
 
-    async def run_once(self, *, now: datetime | None = None) -> dict[str, int]:
+    async def run_once(self, *, now: datetime | None = None, card_id: str | None = None) -> dict[str, int]:
         now = now or datetime.now(UTC)
         if self._lock.locked():
             self.metrics["coalesced:sweep_active"] += 1
@@ -113,6 +113,8 @@ class SessionLifecyclePolicy:
             )
             closed_ids: list[str] = []
             for session in sessions:
+                if card_id and session.card_id != card_id:
+                    continue
                 decision, reason = await self._decision(
                     session,
                     sessions=sessions,

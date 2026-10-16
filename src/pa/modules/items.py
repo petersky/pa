@@ -190,6 +190,8 @@ def _direct_human_card_action(request: Request) -> bool:
 
 def _completion_conflict_detail(request: Request, code: str) -> dict:
     detail = {"code": code, "message": code.replace("_", " ").capitalize() + "."}
+    if code == 'verification_pending':
+        detail['message'] = 'Done was not saved: PA is arranging independent verification of this card’s declared requirements.'
     if code in {"acceptance_pending", "completion_owner_unconfigured"}:
         detail["message"] = "Done was not saved: this card still requires completion acceptance."
         if not _direct_human_card_action(request):
@@ -2672,8 +2674,16 @@ def update_card_api(
             _assigned_local_dispatch(request, completion=True)
             current = store.get_card(card_id, realm_id=realm_id)
             requirement = current.completion_requirement if current else None
-            if not (requirement and (requirement.originating_session_id or requirement.originating_dispatch_id)):
+            if not requirement:
                 raise CompletionConflict("completion_actor_independence_unconfirmed")
+            if requirement.verification_policy == 'declared' and not (requirement.originating_session_id or requirement.originating_dispatch_id):
+                if not (requirement and (requirement.originating_session_ids or requirement.originating_dispatch_ids)):
+                    raise CompletionConflict("completion_actor_independence_unconfirmed")
+            verification = request.app.state.ctx.services.get("verification")
+            if requirement.verification_policy == "independent_agent_v1":
+                if verification is None:
+                    raise CompletionConflict("verification_services_unavailable")
+                verification.validate_acceptance(current, record, data.completion_acceptance)
         _require_completion_owner_compatibility(request, card_id, data, realm_id=realm_id)
         card = store.update_card(
             card_id,

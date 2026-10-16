@@ -7569,6 +7569,12 @@ async def _resolve_policy_placement(
 ) -> tuple[Any, Any]:
     ctx = request.app.state.ctx
     _check_dispatch_preview(body, card)
+    # A completed design run may still have an idle connected provider when
+    # its card is reopened. Settle it through the normal lifecycle guards
+    # before taking the placement snapshot; never ignore a live writer lease.
+    lifecycle = ctx.services.get("session_lifecycle")
+    if card and lifecycle:
+        await lifecycle.run_once(card_id=card.id)
     requested_provider = (body.provider or "").strip().lower() or None
     requested_model_id = body.model_id
     requested_mode_id = body.mode_id
