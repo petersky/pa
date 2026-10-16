@@ -142,6 +142,7 @@ class VerificationService:
         subject = integrated[-1].subject_revision if integrated else None
         scope = None
         group_id = None
+        pending_controls = []
         if req.provenance == 'system_health':
             if not (req.source_reference or '').startswith('health-group:'):
                 raise CompletionConflict('verification_health_binding_required')
@@ -150,6 +151,12 @@ class VerificationService:
             group = self.health.journal.group(group_id, realms=[card.realm_id])
             if group['data'].get('card_id') != card.id:
                 raise CompletionConflict('verification_health_card_mismatch')
+            for action in self.health.journal.repair_actions(group_id, expected_version=group['version'], realms=[card.realm_id]):
+                result = action['result']
+                if result.get('retry_pending'):
+                    record = ledger.get(result.get('dispatch_id'))
+                    if record is None or record.control_operations.get('health-start_retry:' + action['id']) != 'retry':
+                        pending_controls.append(action['id'])
             if group['disposition'] not in {'merged', 'awaiting_acceptance', 'deployed_verified'}:
                 subject = None
             else:
@@ -175,6 +182,7 @@ class VerificationService:
                 'criteria': req.criteria, 'milestones': req.milestones,
                 'subject': subject, 'origin_sessions': sorted(sessions),
                 'origin_dispatches': sorted(dispatches), 'health_group': group_id,
+                'pending_repair_controls': sorted(pending_controls),
                 'scope': scope, 'runtime_build': self.health.runtime_build if group_id else None,
                 'prior_receipts': [{'revision': e.requirement_revision, 'subject': e.subject_revision,
                     'outcome': e.outcome, 'receipt': e.idempotency_key, 'references': e.references[:8]}
@@ -247,6 +255,8 @@ class VerificationService:
         return current
 
     def origins_settled(self, packet):
+        if packet['pending_repair_controls']:
+            return False
         for key in packet['origin_dispatches']:
             record = self.ctx.services['dispatch_store'].get(key)
             if record is None or record.state not in TERMINAL_DISPATCH_STATES:

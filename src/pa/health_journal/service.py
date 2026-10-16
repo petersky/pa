@@ -199,6 +199,8 @@ class HealthService:
             return 'dispatch_active'
         if (record.state in {'failed', 'cancelled'} and not record.session_id
                 and not record.prompt_acknowledged_at and not record.initial_prompt_operation):
+            if result.get('retry_pending') and (record.control_operations or {}).get(f'health-start_retry:{action["id"]}') != 'retry':
+                return 'repair_retry_outcome_unknown'
             others = await self.canonical_call(ledger.list, card_id=record.card_id,
                 realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=101)
             if len(others) > 100 or any(r.dispatch_id not in verification_dispatches for r in others):

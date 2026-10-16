@@ -570,3 +570,25 @@ async def test_active_durably_assigned_verifier_allows_obsolete_collector_releas
     await system.health.dispatch_one(lease)
     assert not system.health.journal.status()['active_actions']
     assert system.service.store.get(job['id'])['state'] == 'dispatched'
+
+
+@pytest.mark.asyncio
+async def test_unknown_repair_retry_keeps_collector_and_verification_fenced(system):
+    card, action, lease = health_repair(system)
+    journal = system.health.journal
+    journal.action_result(action['id'], state='blocked', result={'retry_pending':True},
+        owner=system.health.owner, fence=lease['fence'])
+    current = journal.repair_action(action['group_id'], expected_version=journal.group(action['group_id'], realms=['default'])['version'], realms=['default'])
+    record = system.ctx.services['dispatch_store'].get(current['result']['dispatch_id'])
+    record.state, record.session_id, record.recoverable = 'failed', None, True
+    system.ctx.services['dispatch_store'].put(record)
+    system.ctx.services['session_lifecycle'] = SimpleNamespace()
+    assert await system.health.repair_obligation(current) == 'repair_retry_outcome_unknown'
+    await system.service.process(card)
+    await system.health.dispatch_one(lease)
+    assert journal.status()['active_actions'][0]['id'] == action['id'] and not system.calls
+    assert system.service.store.list()[0]['diagnostic'] == 'repair_workflow_pending'
+    record.control_operations['health-start_retry:'+action['id']] = 'retry'
+    system.ctx.services['dispatch_store'].put(record)
+    await system.health.dispatch_one(lease)
+    assert not journal.status()['active_actions']
