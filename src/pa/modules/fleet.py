@@ -11569,19 +11569,34 @@ async def _admit_remote_agent_work(
 
 
 @router.get("/fleet/dispatch-jobs")
-def list_dispatches(
+async def list_dispatches(
     request: Request,
     target_instance_id: str | None = None,
     limit: int = 100,
-) -> list[dict[str, Any]]:
+    view: Literal["status", "full"] = "status",
+) -> Response:
     require_user(request)
     limit = max(1, min(limit, 500))
-    return [
-        _dispatch_public(request, record)
-        for record in _dispatch_store(request).list(
-            target_instance_id=target_instance_id, limit=limit
-        )
-    ]
+    ctx = request.app.state.ctx
+
+    def encoded():
+        store = _dispatch_store(request)
+        if view == "status":
+            rows = [canonicalize_dispatch_public(ctx, row, public=row)
+                    for row in store.public_statuses(target_instance_id=target_instance_id, limit=limit)]
+        else:
+            rows = [_dispatch_public(request, record) for record in store.list(
+                target_instance_id=target_instance_id, limit=limit)]
+        started = time.perf_counter()
+        body = json.dumps(rows).encode()
+        runtime = ctx.services.get("async_runtime")
+        if isinstance(runtime, AsyncRuntime):
+            runtime.work_metrics.record("http.dispatch_list.serialization_ms", (time.perf_counter() - started) * 1000)
+            runtime.work_metrics.record("http.dispatch_list.rows_returned", len(rows))
+            runtime.work_metrics.record("http.dispatch_list.response_bytes", len(body))
+        return body
+
+    return Response(await _offload_ctx(ctx, "http.dispatch_list", encoded), media_type="application/json")
 
 
 @router.get("/fleet/dispatch-queue")

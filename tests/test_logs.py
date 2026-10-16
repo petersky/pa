@@ -29,6 +29,51 @@ from pa.core.logging import (
 
 
 class LogReaderTests(unittest.TestCase):
+    def test_human_warning_severity_and_unfiltered_sink_deduplication(self) -> None:
+        fallback = datetime(2026, 10, 16, tzinfo=UTC)
+        for level in ("WARN", "WARNING"):
+            record = parse_line(
+                f"2026-10-16T00:00:00-0700 {level} [pa.fixture] slow fixture",
+                "stderr", fallback,
+            )
+            self.assertEqual(record.level, "WARNING")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs = root / "logs"
+            logs.mkdir()
+            (logs / "server.err.log").write_text(
+                "2026-10-16T00:00:00-0700 WARNING [pa.fixture] slow fixture\n"
+            )
+            (logs / "pa.jsonl").write_text(json.dumps({
+                "timestamp": "2026-10-16T07:00:00Z", "level": "WARNING",
+                "logger": "pa.fixture", "message": "slow fixture",
+            }) + "\n")
+            output = io.StringIO()
+            show_logs(settings=self.settings(root), sources=["stderr", "structured"],
+                      lines=20, json_output=True, output=output, diagnostics=io.StringIO())
+            self.assertEqual(len(output.getvalue().splitlines()), 1)
+            self.assertEqual(json.loads(output.getvalue())["level"], "WARNING")
+
+    def test_service_log_identity_reads_configuration_without_initializing_it(self) -> None:
+        from pa.cli.service import tail_logs
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            initial = Settings(data_dir=root)
+            config = root / "config.json"
+            for payload, expected in ((None, "unknown"),
+                                      ({"instance_id": "source-instance", "instance_name": "Source"}, "source-instance")):
+                if payload is not None:
+                    config.write_text(json.dumps(payload))
+                before = config.read_bytes() if config.exists() else None
+                with patch("pa.cli.service.Settings", return_value=initial), patch("pa.cli.logs.show_logs") as show:
+                    tail_logs(json_output=True)
+                self.assertEqual(show.call_args.kwargs["settings"].instance_id, expected)
+                self.assertEqual(config.read_bytes() if config.exists() else None, before)
+            explicit = Settings(data_dir=root, instance_id="explicit", instance_name="Explicit")
+            with patch("pa.cli.service.Settings", return_value=explicit), patch("pa.cli.logs.show_logs") as show:
+                tail_logs()
+            self.assertEqual(show.call_args.kwargs["settings"].instance_id, "explicit")
+
     def settings(self, root: Path) -> Settings:
         return Settings(
             data_dir=root, instance_name="unit-test", instance_id="instance-1"

@@ -252,13 +252,19 @@ class EventLog:
             return False
         indexed = self.index.indexed_head(realm_id)
         try:
-            if indexed and self.is_ancestor(indexed, requested):
+            # A single new child proves this common ancestry relation directly.
+            # Enumerating the complete indexed ancestry twice made even a
+            # one-commit push pay for its retained history and extra connections.
+            target = self.get_commit(requested) if indexed else None
+            direct_child = bool(target and target.parent_hashes == [indexed])
+            if indexed and (direct_child or self.is_ancestor(indexed, requested)):
                 advanced = self.index.try_incremental_advance(
                     realm_id,
                     indexed,
                     requested,
                     self._authoritative_index_records(
-                        requested, realm_id, stop=self._ancestors(indexed)
+                        requested, realm_id,
+                        stop={indexed} if direct_child else self._ancestors(indexed),
                     ),
                     _event_entity,
                 )
@@ -489,6 +495,7 @@ class EventLog:
         seen: set[str] | None = None,
         stop: set[str] | None = None,
         max_commits: int = MAX_HISTORY_COMMITS,
+        validated_head: SyncCommit | None = None,
     ) -> Iterator[tuple[str, SyncCommit]]:
         """Walk a commit DAG parent-first with deterministic bounded state."""
         visited = seen if seen is not None else set()
@@ -514,7 +521,8 @@ class EventLog:
             visited.add(current_hash)
             if len(visited) > max_commits:
                 raise EventHistoryLimitError(len(visited), max_commits)
-            commit = self.get_commit(current_hash)
+            commit = (validated_head if current_hash == commit_hash and validated_head is not None
+                      else self.get_commit(current_hash))
             if not commit:
                 failure = EventHistoryObjectError("missing_parent", current_hash, "commit")
                 failure.diagnostic.update(head_hash=commit_hash,
@@ -611,6 +619,7 @@ class EventLog:
         *,
         expected_head: str | None | object = ...,
         automatic_resolutions: list[dict[str, Any]] | None = None,
+        update_index: bool = True,
     ) -> SyncCommit:
         parents = sorted({head_a, head_b})
         normalized_resolutions = sorted(
@@ -729,7 +738,8 @@ class EventLog:
             timestamp=_EPOCH,
         )
         commit.hash = self.store.put_json(commit.model_dump(mode="json"))
-        self.advance_ref(realm_id, commit.hash, expected_head=expected_head)
+        self.advance_ref(realm_id, commit.hash, expected_head=expected_head,
+                         update_index=update_index)
         return commit
 
     def resolve_heads(
@@ -1250,7 +1260,7 @@ class EventLog:
     ) -> dict | None:
         # Realm is not encoded in public snapshot arguments. Resolve it from
         # the indexed commit, avoiding canonical object reads on the hot path.
-        with self.index._conn() as conn:
+        with self.index._db() as conn:
             found = conn.execute(
                 "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1", (head,)
             ).fetchone()
@@ -1264,7 +1274,7 @@ class EventLog:
 
     def entity_snapshot(self, head: str, entity: str, entity_id: str) -> dict | None:
         """Materialize one entity at an arbitrary immutable history head."""
-        with self.index._conn() as conn:
+        with self.index._db() as conn:
             found = conn.execute(
                 "SELECT realm_id FROM commits WHERE commit_hash=? LIMIT 1", (head,)
             ).fetchone()
@@ -1662,8 +1672,37 @@ class EventLog:
         indexed = self.index.ancestors(head)
         if indexed is not None:
             return indexed
+        # An imported fork is not indexed yet, but most of its ancestry often
+        # already is. Walk only novel commits and splice in the exact ancestry
+        # of each reached indexed boundary, never unrelated local descendants.
+        tip = self.get_commit(head)
+        ready = self.index.indexed_head(tip.realm_id) if tip else None
+        known = self.index.ancestors(ready) if ready else None
+        if known and head in known:
+            # Another builder may have published this head after our first
+            # lookup. It is not an empty novel suffix: return its exact ancestry.
+            exact = known if ready == head else self.index.ancestors(head)
+            if exact is not None:
+                return exact
+            known = None
+        if known:
+            found: set[str] = set()
+            boundaries: set[str] = set()
+            for commit_hash, commit in self._iter_commits_parent_first(head, stop=known, validated_head=tip):
+                found.add(commit_hash)
+                boundaries.update(parent for parent in commit.parent_hashes if parent in known)
+            for boundary in boundaries:
+                prior = self.index.ancestors(boundary)
+                if prior is None:
+                    # A concurrent derived-index reset is not ancestry evidence.
+                    break
+                found.update(prior)
+                if len(found) > MAX_HISTORY_COMMITS:
+                    raise EventHistoryLimitError(len(found), MAX_HISTORY_COMMITS)
+            else:
+                return found
         return {
-            commit_hash for commit_hash, _ in self._iter_commits_parent_first(head)
+            commit_hash for commit_hash, _ in self._iter_commits_parent_first(head, validated_head=tip)
         }
 
     def advance_ref(

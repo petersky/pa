@@ -20,6 +20,9 @@ class OperationObservation:
     sqlite_statement_ms: float = 0.0
     sqlite_commit_ms: float = 0.0
     sqlite_calls: int = 0
+    sqlite_rows: int = 0
+    sqlite_aggregate_items: int = 0
+    sqlite_aggregate_bytes: int = 0
     sqlite_busy_failures: int = 0
 
 

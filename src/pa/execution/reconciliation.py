@@ -18,6 +18,7 @@ from pa.execution.dispatch import (
     DispatchEvent,
     DispatchRecord,
     DispatchStore,
+    ReconciliationCandidate,
 )
 from pa.execution.disposition import extract_card_disposition, parse_card_disposition
 from pa.prompts import PROMPTS
@@ -362,13 +363,17 @@ class CompletionReconciler:
                 heartbeat()
             records = await self._offload(
                 "reconciliation.dispatch_read",
-                self.dispatch_store.list,
+                self.dispatch_store.reconciliation_candidates,
                 limit=1000,
-                reconciliation_states={"pending", "blocked", "prompted"},
-                reconciliation_due_at=datetime.now(UTC),
+                due_at=datetime.now(UTC),
             )
             now = datetime.now(UTC)
             for record in records:
+                # Completing the previous candidate is real work progress. A
+                # long but advancing batch must not look like one stalled call;
+                # a single stuck candidate still receives no timer heartbeats.
+                if heartbeat:
+                    heartbeat()
                 if record.reconciliation_state == "prompted":
                     try:
                         async with self._lock:
@@ -403,7 +408,7 @@ class CompletionReconciler:
     def worker_health(self) -> dict[str, Any]:
         return self._supervisor.health()
 
-    async def _recover_prompted(self, record: DispatchRecord) -> None:
+    async def _recover_prompted(self, record: DispatchRecord | ReconciliationCandidate) -> None:
         """Recover a reconciler turn that finished immediately before restart."""
         current = await self._offload(
             "reconciliation.dispatch_read",
@@ -534,7 +539,7 @@ class CompletionReconciler:
             return f"{prefix}: {detail}"[:1000]
         return f"{prefix}: missing payload"[:1000]
 
-    async def _advance(self, record: DispatchRecord) -> None:
+    async def _advance(self, record: DispatchRecord | ReconciliationCandidate) -> None:
         current = await self._offload(
             "reconciliation.dispatch_read",
             self.dispatch_store.get,

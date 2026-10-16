@@ -15,6 +15,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
@@ -113,8 +114,15 @@ def summarize_dispatch(data: dict[str, Any]) -> dict[str, Any]:
     if progress:
         result["progress"] = {
             key: value for key, value in progress.items()
-            if key in {"latest", "heartbeat", "freshness", "reporting", "checkpoint_count"}
+            if key in {"latest", "heartbeat", "freshness", "reporting", "checkpoint_count",
+                       "sequence_gap", "delivery_error", "conflicts", "late_arrivals",
+                       "highest_accepted_sequence"}
         }
+        # Protocol gaps are correctness evidence, not expandable proof bodies.
+        # Preserve the complete numeric ranges so compact lists cannot hide
+        # missing/compacted sequences or turn a warning into a healthy row.
+        for key in ("missing_ranges", "compacted_ranges"):
+            result["progress"][key] = data["progress"].get(key, [])
     return result
 CAPACITY_RESERVATION_STATES = {
     "queued",
@@ -146,6 +154,14 @@ class DispatchEvent(BaseModel):
     message: str
     detail: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
+class ReconciliationCandidate:
+    """Read-only scheduling hint; mutations reload the current durable record."""
+    dispatch_id: str
+    reconciliation_state: str
+    reconciliation_next_retry_at: datetime | None
 
 
 class GoalDispatchProvenance(BaseModel):
@@ -2181,14 +2197,60 @@ class DispatchStore:
             record = self._records.get(dispatch_id)
             if not record:
                 return None
-            data = record.public_dict(summary=True)
-            data["card_version"] = record.card_version
-            data["events"] = [{"state": record.events[-1].state,
-                               "message": record.events[-1].message[:500]}] if record.events else []
-            data["materialization_plan"] = {"summary": str((record.materialization_plan or {}).get("summary") or "")[:500]}
-            data["placement_decision"] = {"tie_breaking_reason": str((record.placement_decision or {}).get("tie_breaking_reason") or "")[:500]}
-            data["view"] = "status"
-            return data
+            return self._public_status_record(record)
+
+    @staticmethod
+    def _public_status_record(record: DispatchRecord) -> dict[str, Any]:
+        data = record.public_dict(summary=True)
+        data["card_version"] = record.card_version
+        data["events"] = [{"state": record.events[-1].state,
+                           "message": record.events[-1].message[:500]}] if record.events else []
+        data["materialization_plan"] = {"summary": str((record.materialization_plan or {}).get("summary") or "")[:500]}
+        data["placement_decision"] = {"tie_breaking_reason": str((record.placement_decision or {}).get("tie_breaking_reason") or "")[:500]}
+        data["stale_session_recovery"] = {
+            "eligible_candidate": record.state in {"running", "dispatching", "queued"} and bool(record.session_id),
+            "recovered": any(item.get("kind") == "stale_closed_session_dispatch_recovered"
+                             for item in record.lifecycle_inconsistencies),
+        }
+        latest = record.post_turn_evaluations[-1] if record.post_turn_evaluations else None
+        data["followup_state"] = {"scheduled": bool(latest and any(
+            action.status.value in {"approved", "executed"}
+            and action.name.value not in {"no_action", "record_turn_outcome"}
+            for action in latest.recommended_actions
+        ))}
+        degraded = (record.sync_evidence or {}).get("degraded_peers") or []
+        data["sync_evidence"] = {"degraded_peer_count": len(degraded)}
+        data["view"] = "status"
+        return data
+
+    def public_statuses(self, *, target_instance_id: str | None = None,
+                        limit: int = 100) -> list[dict[str, Any]]:
+        """Detached list rows without copying stored plans/proofs or histories."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            self._refresh_queue_positions_locked()
+            records = (record for record in self._records.values()
+                       if not target_instance_id or record.target_instance_id == target_instance_id)
+            selected = sorted(records, key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [self._public_status_record(record) for record in selected]
+
+    def reconciliation_candidates(self, *, due_at: datetime,
+                                  limit: int = 1000) -> list[ReconciliationCandidate]:
+        """Select due identities without copying retained plans and turn history."""
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            selected = sorted((record for record in self._records.values() if (
+                record.reconciliation_state == "prompted" or (
+                    record.reconciliation_state in {"pending", "blocked"}
+                    and (record.reconciliation_next_retry_at is None
+                         or record.reconciliation_next_retry_at <= due_at)
+                )
+            )), key=lambda record: record.updated_at, reverse=True)[:limit]
+            return [ReconciliationCandidate(record.dispatch_id, record.reconciliation_state,
+                                            record.reconciliation_next_retry_at)
+                    for record in selected]
 
     def waiting_count(self) -> int:
         """Scalar queue health; no record copies, SQL or writer lock."""

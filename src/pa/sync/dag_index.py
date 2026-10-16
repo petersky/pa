@@ -18,10 +18,21 @@ from pathlib import Path
 from typing import Any
 
 from pa.domain.models import CardEvent, SyncCommit
+from pa.core.sqlite_metrics import ObservedConnection, derived_connection
+from pa.core.performance import current_observation
 
 
 SCHEMA_VERSION = 2
 _REBUILD_BATCH = 250
+
+
+def _hash_set_result(raw: str | None) -> set[str]:
+    values = json.loads(raw or "[]")
+    observation = current_observation.get()
+    if observation is not None:
+        observation.sqlite_aggregate_items += len(values)
+        observation.sqlite_aggregate_bytes += len((raw or "[]").encode("utf-8"))
+    return {str(value) for value in values}
 
 
 class DagIndex:
@@ -35,23 +46,25 @@ class DagIndex:
         self._initialize()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=5.0)
+        conn = sqlite3.connect(self.path, timeout=5.0, factory=ObservedConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=5000")
+        # This disposable index is rebuilt from canonical objects. Unlike WAL,
+        # synchronous is connection-local: setting it only during initialization
+        # left every later short-lived connection at SQLite's FULL default.
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        conn = self._conn()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with derived_connection(self, self._conn) as conn:
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     def _initialize(self) -> None:
         with self._db() as conn:
@@ -92,6 +105,8 @@ class DagIndex:
                     ON commits(commit_hash, realm_id);
                 CREATE INDEX IF NOT EXISTS ix_commit_parent
                     ON commit_parents(realm_id, parent_hash, commit_hash);
+                CREATE INDEX IF NOT EXISTS ix_commit_edges_forward
+                    ON commit_parents(realm_id, commit_hash, parent_hash);
                 CREATE TABLE IF NOT EXISTS reachability (
                     realm_id TEXT NOT NULL,
                     descendant_hash TEXT NOT NULL,
@@ -170,9 +185,10 @@ class DagIndex:
                 return None
             if row[1] == head:
                 # A ready generation contains exactly this head's ancestry.
-                return {str(item[0]) for item in conn.execute(
-                    "SELECT commit_hash FROM commits WHERE realm_id=?", (row[0],)
-                )}
+                raw = conn.execute(
+                    "SELECT json_group_array(commit_hash) FROM commits WHERE realm_id=?", (row[0],)
+                ).fetchone()[0]
+                return _hash_set_result(raw)
             return self._ancestor_hashes(conn, str(row[0]), head)
 
     @staticmethod
@@ -181,15 +197,20 @@ class DagIndex:
     ) -> set[str]:
         # Walk only this head's indexed edges. UNION deduplicates merge ancestry
         # and terminates cycles; the bound retains the authoritative walk limit.
-        found = {str(row[0]) for row in conn.execute(
+        # Keep the frontier outermost and use its forward covering index. A
+        # freely reordered join otherwise scans the entire realm per node.
+        raw = conn.execute(
             """WITH RECURSIVE ancestry(hash) AS (
                    SELECT ? UNION
-                   SELECT p.parent_hash FROM commit_parents p
-                   JOIN ancestry a ON p.commit_hash=a.hash WHERE p.realm_id=?
+                   SELECT p.parent_hash FROM ancestry a CROSS JOIN commit_parents p
+                   WHERE p.realm_id=? AND p.commit_hash=a.hash
                    LIMIT ?
-               ) SELECT hash FROM ancestry""",
+               ) SELECT json_group_array(hash) FROM ancestry""",
             (head, realm_id, limit + 1),
-        )}
+        ).fetchone()[0]
+        # One cursor row avoids a SQLite/Python/GIL handoff per retained hash.
+        # Every logical hash and result byte is still counted explicitly.
+        found = _hash_set_result(raw)
         if len(found) > limit:
             raise RuntimeError("indexed ancestry limit exceeded")
         return found
@@ -524,7 +545,7 @@ class DagIndex:
         present are skipped; only novel descendants are inserted. Returns False
         when the published index is not exactly ``from_head``.
         """
-        with self._build_lock, self._conn() as conn:
+        with self._build_lock, self._db() as conn:
             meta = conn.execute(
                 "SELECT indexed_head, commit_count, event_count FROM index_meta "
                 "WHERE realm_id=? AND state='ready'",
@@ -578,7 +599,7 @@ class DagIndex:
 
     def reset_realm(self, realm_id: str) -> None:
         """Discard one realm's derived records; canonical objects are untouched."""
-        with self._build_lock, self._conn() as conn:
+        with self._build_lock, self._db() as conn:
             for table in ("entity_events", "reachability", "commit_parents", "commits"):
                 conn.execute(f"DELETE FROM {table} WHERE realm_id=?", (realm_id,))
             conn.execute("DELETE FROM index_meta WHERE realm_id=?", (realm_id,))

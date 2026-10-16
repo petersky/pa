@@ -1,0 +1,1570 @@
+{
+  "scope": "same version2 local disposable workload; earlier failed comparisons retained",
+  "runs": [
+    {
+      "hardware": {
+        "machine": "arm64",
+        "python": "3.14.2",
+        "cpus": 10
+      },
+      "fixture": {
+        "history_commits": 1000,
+        "retained_dispatches": 101,
+        "sessions": 30,
+        "workload_version": 2,
+        "sync_pushes": 30,
+        "incoming_reconciliations": 30,
+        "watches": 30,
+        "iterations_per_family": 30,
+        "transcript_sessions": 3,
+        "executor_workers": 8,
+        "duration_seconds": 8.053,
+        "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"
+      },
+      "latency": {
+        "/api/health": {
+          "samples": 30,
+          "max_ms": 16.568,
+          "p50_ms": 3.005,
+          "p95_ms": 3.973,
+          "p99_ms": 16.568
+        },
+        "progress.sequence_allocate": {
+          "samples": 30,
+          "max_ms": 88.289,
+          "p50_ms": 5.626,
+          "p95_ms": 62.202,
+          "p99_ms": 88.289
+        },
+        "fleet.overview_cache_write": {
+          "samples": 30,
+          "max_ms": 126.77,
+          "p50_ms": 10.708,
+          "p95_ms": 89.327,
+          "p99_ms": 126.77
+        },
+        "sqlite.execution_binding_materialize": {
+          "samples": 30,
+          "max_ms": 428.445,
+          "p50_ms": 25.357,
+          "p95_ms": 224.457,
+          "p99_ms": 428.445
+        },
+        "progress.checkpoint_write": {
+          "samples": 30,
+          "max_ms": 44.603,
+          "p50_ms": 9.807,
+          "p95_ms": 34.19,
+          "p99_ms": 44.603
+        },
+        "fleet.overview_cache_read": {
+          "samples": 30,
+          "max_ms": 12.483,
+          "p50_ms": 1.402,
+          "p95_ms": 11.969,
+          "p99_ms": 12.483
+        },
+        "dispatch.runnable_read": {
+          "samples": 30,
+          "max_ms": 23.259,
+          "p50_ms": 1.835,
+          "p95_ms": 21.384,
+          "p99_ms": 23.259
+        },
+        "reconciliation.dispatch_read": {
+          "samples": 30,
+          "max_ms": 14.458,
+          "p50_ms": 1.196,
+          "p95_ms": 5.021,
+          "p99_ms": 14.458
+        },
+        "acp.wire_append": {
+          "samples": 30,
+          "max_ms": 34.533,
+          "p50_ms": 2.191,
+          "p95_ms": 16.351,
+          "p99_ms": 34.533
+        },
+        "sync.commit_read": {
+          "samples": 30,
+          "max_ms": 34.645,
+          "p50_ms": 2.089,
+          "p95_ms": 29.06,
+          "p99_ms": 34.645
+        },
+        "/api/agent/sessions?view=chats": {
+          "samples": 30,
+          "max_ms": 94.162,
+          "p50_ms": 28.199,
+          "p95_ms": 60.447,
+          "p99_ms": 94.162
+        },
+        "transcript.drain": {
+          "samples": 90,
+          "max_ms": 459.17,
+          "p50_ms": 88.149,
+          "p95_ms": 209.64,
+          "p99_ms": 459.17
+        },
+        "/agent": {
+          "samples": 30,
+          "max_ms": 382.362,
+          "p50_ms": 53.844,
+          "p95_ms": 117.152,
+          "p99_ms": 382.362
+        },
+        "sync.push_transaction": {
+          "samples": 30,
+          "max_ms": 511.337,
+          "p50_ms": 114.674,
+          "p95_ms": 247.477,
+          "p99_ms": 511.337
+        },
+        "/partials/home/sections": {
+          "samples": 30,
+          "max_ms": 161.272,
+          "p50_ms": 18.374,
+          "p95_ms": 36.469,
+          "p99_ms": 161.272
+        },
+        "/api/status": {
+          "samples": 30,
+          "max_ms": 169.93,
+          "p50_ms": 63.622,
+          "p95_ms": 115.113,
+          "p99_ms": 169.93
+        },
+        "/api/runtime?section=sse": {
+          "samples": 30,
+          "max_ms": 8.417,
+          "p50_ms": 4.472,
+          "p95_ms": 8.153,
+          "p99_ms": 8.417
+        },
+        "/api/fleet/dispatch-jobs": {
+          "samples": 30,
+          "max_ms": 59.683,
+          "p50_ms": 28.389,
+          "p95_ms": 54.942,
+          "p99_ms": 59.683
+        },
+        "sync.reconcile_head": {
+          "samples": 30,
+          "max_ms": 406.012,
+          "p50_ms": 85.528,
+          "p95_ms": 181.309,
+          "p99_ms": 406.012
+        }
+      },
+      "response_bytes": {
+        "/api/health": {
+          "min": 15,
+          "max": 15
+        },
+        "/api/agent/sessions?view=chats": {
+          "min": 75522,
+          "max": 75522
+        },
+        "/agent": {
+          "min": 120237,
+          "max": 120238
+        },
+        "/partials/home/sections": {
+          "min": 3708,
+          "max": 3708
+        },
+        "/api/status": {
+          "min": 1939,
+          "max": 1939
+        },
+        "/api/runtime?section=sse": {
+          "min": 303,
+          "max": 303
+        },
+        "/api/fleet/dispatch-jobs": {
+          "min": 247332,
+          "max": 247332
+        }
+      },
+      "warnings": {
+        "Slow off-loop operation": 1
+      },
+      "threshold_violations": {
+        "sync.push_transaction": 1
+      },
+      "operation_counter_deltas": {
+        "acp.wire_append": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "agent.startup_state_read": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.completion_pending_read": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.followup_pending_read": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.runnable_read": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "filesystem.github_credentials_read": {
+          "submitted": 4,
+          "completed": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.reachability": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.status": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.sync": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview_cache_read": {
+          "submitted": 39,
+          "completed": 39,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview_cache_write": {
+          "submitted": 33,
+          "completed": 33,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.update_recovery": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "goal.dispatch_lifecycle_index": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "health.canonical_obligation": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "http.dispatch_list": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "http.session_list": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "maintenance.run": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.checkpoint_write": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.pending_read": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.sequence_allocate": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "reconciliation.dispatch_read": {
+          "submitted": 32,
+          "completed": 32,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.card_read": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.execution_binding_materialize": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_capability_write": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_completion_due_read": {
+          "submitted": 4,
+          "completed": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_due_read": {
+          "submitted": 4,
+          "completed": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.restart_handoffs_pending": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.transcript_append": {
+          "submitted": 90,
+          "completed": 90,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "startup.agent_manager": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.commit_read": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.gc_resume": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.push_transaction": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "sync.reconcile_head": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.ref_read": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.startup_reconcile": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "workspace.collect_garbage": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "workspace.reconcile_terminal_state": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        }
+      },
+      "canonical_object_reads": {
+        "reads": 600,
+        "bytes": 235872
+      },
+      "process_cpu_ms": 10053.187,
+      "disk_output_blocks": 0,
+      "sql_statements": {
+        "PRAGMA": 2199,
+        "BEGIN": 348,
+        "INSERT": 4604,
+        "COMMIT": 348,
+        "SELECT": 2565,
+        "UPDATE": 71,
+        "ATTACH": 4
+      },
+      "transcript_input_rows": 2880,
+      "transcript_retained_rows": 2880,
+      "source_state": "index-direct-child-only",
+      "gc_pause_distribution": {
+        "samples": 77,
+        "max_ms": 58.442,
+        "p50_ms": 0.01,
+        "p95_ms": 4.963,
+        "p99_ms": 58.442
+      },
+      "loop": {
+        "samples": 77,
+        "latest_lag_ms": 0.506,
+        "p95_lag_ms": 18.984,
+        "max_lag_ms": 61.23
+      },
+      "raw_fixture_sha256": "1ac447227214038827f60cb8641180f94e37b1893328a8eb1ee0c8d4e361a9d0"
+    },
+    {
+      "hardware": {
+        "machine": "arm64",
+        "python": "3.14.2",
+        "cpus": 10
+      },
+      "fixture": {
+        "history_commits": 1000,
+        "retained_dispatches": 101,
+        "sessions": 30,
+        "workload_version": 2,
+        "sync_pushes": 30,
+        "incoming_reconciliations": 30,
+        "watches": 30,
+        "iterations_per_family": 30,
+        "transcript_sessions": 3,
+        "executor_workers": 8,
+        "duration_seconds": 8.862,
+        "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"
+      },
+      "latency": {
+        "/api/health": {
+          "samples": 30,
+          "max_ms": 12.164,
+          "p50_ms": 3.862,
+          "p95_ms": 4.906,
+          "p99_ms": 12.164
+        },
+        "progress.sequence_allocate": {
+          "samples": 30,
+          "max_ms": 41.49,
+          "p50_ms": 8.283,
+          "p95_ms": 37.256,
+          "p99_ms": 41.49
+        },
+        "fleet.overview_cache_write": {
+          "samples": 30,
+          "max_ms": 58.738,
+          "p50_ms": 14.571,
+          "p95_ms": 43.547,
+          "p99_ms": 58.738
+        },
+        "sqlite.execution_binding_materialize": {
+          "samples": 30,
+          "max_ms": 312.192,
+          "p50_ms": 39.415,
+          "p95_ms": 144.911,
+          "p99_ms": 312.192
+        },
+        "fleet.overview_cache_read": {
+          "samples": 30,
+          "max_ms": 15.718,
+          "p50_ms": 1.967,
+          "p95_ms": 13.471,
+          "p99_ms": 15.718
+        },
+        "acp.wire_append": {
+          "samples": 30,
+          "max_ms": 83.691,
+          "p50_ms": 3.622,
+          "p95_ms": 48.113,
+          "p99_ms": 83.691
+        },
+        "progress.checkpoint_write": {
+          "samples": 30,
+          "max_ms": 37.926,
+          "p50_ms": 9.195,
+          "p95_ms": 27.118,
+          "p99_ms": 37.926
+        },
+        "dispatch.runnable_read": {
+          "samples": 30,
+          "max_ms": 38.089,
+          "p50_ms": 2.131,
+          "p95_ms": 31.895,
+          "p99_ms": 38.089
+        },
+        "sync.commit_read": {
+          "samples": 30,
+          "max_ms": 16.518,
+          "p50_ms": 2.82,
+          "p95_ms": 11.248,
+          "p99_ms": 16.518
+        },
+        "reconciliation.dispatch_read": {
+          "samples": 30,
+          "max_ms": 47.474,
+          "p50_ms": 1.581,
+          "p95_ms": 8.794,
+          "p99_ms": 47.474
+        },
+        "/api/agent/sessions?view=chats": {
+          "samples": 30,
+          "max_ms": 98.745,
+          "p50_ms": 36.51,
+          "p95_ms": 86.678,
+          "p99_ms": 98.745
+        },
+        "transcript.drain": {
+          "samples": 90,
+          "max_ms": 472.167,
+          "p50_ms": 107.166,
+          "p95_ms": 245.842,
+          "p99_ms": 472.167
+        },
+        "sync.push_transaction": {
+          "samples": 30,
+          "max_ms": 284.801,
+          "p50_ms": 129.414,
+          "p95_ms": 268.269,
+          "p99_ms": 284.801
+        },
+        "/agent": {
+          "samples": 30,
+          "max_ms": 449.279,
+          "p50_ms": 55.557,
+          "p95_ms": 170.116,
+          "p99_ms": 449.279
+        },
+        "/partials/home/sections": {
+          "samples": 30,
+          "max_ms": 157.139,
+          "p50_ms": 21.051,
+          "p95_ms": 65.216,
+          "p99_ms": 157.139
+        },
+        "sync.reconcile_head": {
+          "samples": 30,
+          "max_ms": 478.238,
+          "p50_ms": 77.55,
+          "p95_ms": 189.265,
+          "p99_ms": 478.238
+        },
+        "/api/status": {
+          "samples": 30,
+          "max_ms": 184.402,
+          "p50_ms": 69.062,
+          "p95_ms": 141.537,
+          "p99_ms": 184.402
+        },
+        "/api/runtime?section=sse": {
+          "samples": 30,
+          "max_ms": 12.724,
+          "p50_ms": 5.044,
+          "p95_ms": 10.278,
+          "p99_ms": 12.724
+        },
+        "/api/fleet/dispatch-jobs": {
+          "samples": 30,
+          "max_ms": 92.091,
+          "p50_ms": 35.178,
+          "p95_ms": 78.931,
+          "p99_ms": 92.091
+        }
+      },
+      "response_bytes": {
+        "/api/health": {
+          "min": 15,
+          "max": 15
+        },
+        "/api/agent/sessions?view=chats": {
+          "min": 75522,
+          "max": 75522
+        },
+        "/agent": {
+          "min": 120238,
+          "max": 120238
+        },
+        "/partials/home/sections": {
+          "min": 3708,
+          "max": 3708
+        },
+        "/api/status": {
+          "min": 1939,
+          "max": 1939
+        },
+        "/api/runtime?section=sse": {
+          "min": 303,
+          "max": 303
+        },
+        "/api/fleet/dispatch-jobs": {
+          "min": 247332,
+          "max": 247332
+        }
+      },
+      "warnings": {},
+      "threshold_violations": {},
+      "operation_counter_deltas": {
+        "acp.wire_append": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "agent.startup_state_read": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.completion_pending_read": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.followup_pending_read": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.runnable_read": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "filesystem.github_credentials_read": {
+          "submitted": 4,
+          "completed": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.reachability": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.status": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.sync": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview_cache_read": {
+          "submitted": 39,
+          "completed": 39,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview_cache_write": {
+          "submitted": 33,
+          "completed": 33,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.update_recovery": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "goal.dispatch_lifecycle_index": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "health.canonical_obligation": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "http.dispatch_list": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "http.session_list": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "maintenance.run": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.checkpoint_write": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.pending_read": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.sequence_allocate": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "reconciliation.dispatch_read": {
+          "submitted": 32,
+          "completed": 32,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.card_read": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.execution_binding_materialize": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_capability_write": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_completion_due_read": {
+          "submitted": 4,
+          "completed": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_due_read": {
+          "submitted": 4,
+          "completed": 4,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.restart_handoffs_pending": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.transcript_append": {
+          "submitted": 90,
+          "completed": 90,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "startup.agent_manager": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.commit_read": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.gc_resume": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.push_transaction": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.reconcile_head": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.ref_read": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.startup_reconcile": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "workspace.collect_garbage": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "workspace.reconcile_terminal_state": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        }
+      },
+      "canonical_object_reads": {
+        "reads": 540,
+        "bytes": 214748
+      },
+      "process_cpu_ms": 11657.785,
+      "disk_output_blocks": 0,
+      "sql_statements": {
+        "PRAGMA": 1659,
+        "BEGIN": 358,
+        "INSERT": 4524,
+        "COMMIT": 358,
+        "SELECT": 2284,
+        "UPDATE": 76,
+        "ATTACH": 4
+      },
+      "transcript_input_rows": 2880,
+      "transcript_retained_rows": 2880,
+      "source_state": "projection-and-index-direct-child",
+      "gc_pause_distribution": {
+        "samples": 75,
+        "max_ms": 34.593,
+        "p50_ms": 0.011,
+        "p95_ms": 3.113,
+        "p99_ms": 34.593
+      },
+      "loop": {
+        "samples": 83,
+        "latest_lag_ms": 5.555,
+        "p95_lag_ms": 17.952,
+        "max_lag_ms": 100.924
+      },
+      "raw_fixture_sha256": "f4b81e6be01a2b1fa2e96e1e4dc7f84cb529c76332b6b0626003ea5bc88c4f7e"
+    },
+    {
+      "hardware": {
+        "machine": "arm64",
+        "python": "3.14.2",
+        "cpus": 10
+      },
+      "fixture": {
+        "history_commits": 1000,
+        "retained_dispatches": 101,
+        "sessions": 30,
+        "workload_version": 2,
+        "sync_pushes": 100,
+        "incoming_reconciliations": 100,
+        "watches": 30,
+        "iterations_per_family": 100,
+        "transcript_sessions": 3,
+        "executor_workers": 8,
+        "duration_seconds": 29.216,
+        "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"
+      },
+      "latency": {
+        "/api/health": {
+          "samples": 100,
+          "max_ms": 11.595,
+          "p50_ms": 3.48,
+          "p95_ms": 5.663,
+          "p99_ms": 9.946
+        },
+        "progress.sequence_allocate": {
+          "samples": 100,
+          "max_ms": 24.956,
+          "p50_ms": 4.401,
+          "p95_ms": 14.05,
+          "p99_ms": 22.638
+        },
+        "sqlite.execution_binding_materialize": {
+          "samples": 100,
+          "max_ms": 114.991,
+          "p50_ms": 16.213,
+          "p95_ms": 72.152,
+          "p99_ms": 114.046
+        },
+        "fleet.overview_cache_write": {
+          "samples": 100,
+          "max_ms": 31.417,
+          "p50_ms": 7.39,
+          "p95_ms": 24.13,
+          "p99_ms": 30.087
+        },
+        "fleet.overview_cache_read": {
+          "samples": 100,
+          "max_ms": 16.272,
+          "p50_ms": 1.223,
+          "p95_ms": 12.936,
+          "p99_ms": 15.895
+        },
+        "progress.checkpoint_write": {
+          "samples": 100,
+          "max_ms": 56.284,
+          "p50_ms": 6.121,
+          "p95_ms": 19.315,
+          "p99_ms": 41.412
+        },
+        "acp.wire_append": {
+          "samples": 100,
+          "max_ms": 28.036,
+          "p50_ms": 2.469,
+          "p95_ms": 15.95,
+          "p99_ms": 26.1
+        },
+        "dispatch.runnable_read": {
+          "samples": 100,
+          "max_ms": 19.174,
+          "p50_ms": 1.382,
+          "p95_ms": 9.237,
+          "p99_ms": 17.878
+        },
+        "reconciliation.dispatch_read": {
+          "samples": 100,
+          "max_ms": 24.609,
+          "p50_ms": 1.299,
+          "p95_ms": 10.903,
+          "p99_ms": 18.029
+        },
+        "sync.commit_read": {
+          "samples": 100,
+          "max_ms": 69.292,
+          "p50_ms": 3.055,
+          "p95_ms": 18.243,
+          "p99_ms": 51.361
+        },
+        "/api/agent/sessions?view=chats": {
+          "samples": 100,
+          "max_ms": 95.831,
+          "p50_ms": 34.583,
+          "p95_ms": 57.596,
+          "p99_ms": 86.91
+        },
+        "transcript.drain": {
+          "samples": 300,
+          "max_ms": 859.333,
+          "p50_ms": 88.924,
+          "p95_ms": 170.154,
+          "p99_ms": 342.516
+        },
+        "sync.push_transaction": {
+          "samples": 100,
+          "max_ms": 299.848,
+          "p50_ms": 121.68,
+          "p95_ms": 196.845,
+          "p99_ms": 278.594
+        },
+        "/agent": {
+          "samples": 100,
+          "max_ms": 250.069,
+          "p50_ms": 55.196,
+          "p95_ms": 152.979,
+          "p99_ms": 216.219
+        },
+        "/partials/home/sections": {
+          "samples": 100,
+          "max_ms": 103.039,
+          "p50_ms": 21.059,
+          "p95_ms": 43.807,
+          "p99_ms": 80.119
+        },
+        "sync.reconcile_head": {
+          "samples": 100,
+          "max_ms": 3492.914,
+          "p50_ms": 72.215,
+          "p95_ms": 167.001,
+          "p99_ms": 2750.416
+        },
+        "/api/status": {
+          "samples": 100,
+          "max_ms": 129.368,
+          "p50_ms": 79.58,
+          "p95_ms": 121.8,
+          "p99_ms": 126.236
+        },
+        "/api/runtime?section=sse": {
+          "samples": 100,
+          "max_ms": 10.43,
+          "p50_ms": 4.868,
+          "p95_ms": 6.505,
+          "p99_ms": 7.455
+        },
+        "/api/fleet/dispatch-jobs": {
+          "samples": 100,
+          "max_ms": 188.348,
+          "p50_ms": 35.747,
+          "p95_ms": 62.503,
+          "p99_ms": 89.494
+        }
+      },
+      "response_bytes": {
+        "/api/health": {
+          "min": 15,
+          "max": 15
+        },
+        "/api/agent/sessions?view=chats": {
+          "min": 75522,
+          "max": 75522
+        },
+        "/agent": {
+          "min": 120238,
+          "max": 120268
+        },
+        "/partials/home/sections": {
+          "min": 3706,
+          "max": 3708
+        },
+        "/api/status": {
+          "min": 1939,
+          "max": 1941
+        },
+        "/api/runtime?section=sse": {
+          "min": 303,
+          "max": 303
+        },
+        "/api/fleet/dispatch-jobs": {
+          "min": 247332,
+          "max": 247335
+        }
+      },
+      "warnings": {
+        "Slow off-loop operation": 5
+      },
+      "threshold_violations": {
+        "transcript.drain": 3,
+        "sync.reconcile_head": 2
+      },
+      "operation_counter_deltas": {
+        "acp.wire_append": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "agent.startup_state_read": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.completion_pending_read": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.followup_pending_read": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "dispatch.runnable_read": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "filesystem.github_credentials_read": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.reachability": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.status": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview.sync": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview_cache_read": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.overview_cache_write": {
+          "submitted": 106,
+          "completed": 106,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "fleet.update_recovery": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "goal.dispatch_lifecycle_index": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "health.canonical_obligation": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "http.dispatch_list": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "http.session_list": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "maintenance.run": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.checkpoint_write": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.pending_read": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "progress.sequence_allocate": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "reconciliation.dispatch_read": {
+          "submitted": 105,
+          "completed": 105,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.card_read": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.execution_binding_materialize": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_capability_write": {
+          "submitted": 1,
+          "completed": 1,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_completion_due_read": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.pr_supervisor_due_read": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.restart_handoffs_pending": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sqlite.transcript_append": {
+          "submitted": 300,
+          "completed": 300,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 3
+        },
+        "startup.agent_manager": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.commit_read": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.gc_resume": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.push_transaction": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.reconcile_head": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 2
+        },
+        "sync.ref_read": {
+          "submitted": 5,
+          "completed": 5,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "sync.startup_reconcile": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "workspace.collect_garbage": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "workspace.reconcile_terminal_state": {
+          "submitted": 0,
+          "completed": 0,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        }
+      },
+      "canonical_object_reads": {
+        "reads": 3987,
+        "bytes": 1554699
+      },
+      "process_cpu_ms": 36360.217,
+      "disk_output_blocks": 0,
+      "sql_statements": {
+        "PRAGMA": 5653,
+        "BEGIN": 1097,
+        "INSERT": 14114,
+        "COMMIT": 1097,
+        "SELECT": 7529,
+        "UPDATE": 234,
+        "ATTACH": 14,
+        "WITH": 2
+      },
+      "transcript_input_rows": 9600,
+      "transcript_retained_rows": 9600,
+      "source_state": "projection-and-index-direct-child-100-iterations",
+      "gc_pause_distribution": {
+        "samples": 256,
+        "max_ms": 151.353,
+        "p50_ms": 0.013,
+        "p95_ms": 0.032,
+        "p99_ms": 11.556
+      },
+      "gc_window": "last_256_collections_during_measurement",
+      "loop": {
+        "samples": 273,
+        "latest_lag_ms": 2.208,
+        "p95_lag_ms": 22.42,
+        "max_lag_ms": 178.08
+      },
+      "raw_fixture_sha256": "fb4886e25b6b00bdad443a00464f7360bfe244ac2c745bb92f0577b28cbce3c3"
+    }
+  ]
+}

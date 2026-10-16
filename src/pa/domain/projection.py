@@ -6271,6 +6271,10 @@ class CardProjection:
         if not self.event_log:
             return
         head = self.event_log.get_head(realm_id)
+        self._rebuild_from_log_head(realm_id, head)
+
+    def _rebuild_from_log_head(self, realm_id: str, head: str | None) -> None:
+        """Replay an explicit canonical target while the caller owns mutation."""
         if not head:
             return
         # Keep the destructive reset, complete replay, and head checkpoint in
@@ -6378,18 +6382,20 @@ class CardProjection:
                 "reason": "identical",
                 "sqlite_ms": 0.0,
             }
-        if not self.event_log.get_commit(target_head):
+        target_commit = self.event_log.get_commit(target_head)
+        if not target_commit:
             raise ValueError(f"missing projection target {target_head}")
         if current is None or not self.event_log.get_commit(current):
-            self.rebuild_from_log(realm_id)
+            self._rebuild_from_log_head(realm_id, target_head)
             return {
                 "commits_applied": 0,
                 "rebuilt": True,
                 "reason": "missing_projection_head",
                 "sqlite_ms": round((time.perf_counter() - started) * 1000, 3),
             }
-        if not self.event_log.is_ancestor(current, target_head):
-            self.rebuild_from_log(realm_id)
+        direct_child = target_commit.parent_hashes == [current]
+        if not direct_child and not self.event_log.is_ancestor(current, target_head):
+            self._rebuild_from_log_head(realm_id, target_head)
             return {
                 "commits_applied": 0,
                 "rebuilt": True,
@@ -6400,7 +6406,9 @@ class CardProjection:
         # A merge's other parents can reach ancestors of the current head
         # without passing through that head. Exclude the complete projected
         # ancestry, or old effects and completed operation receipts are replayed.
-        projected = self.event_log._ancestors(current)
+        # One-parent direct children have no side ancestry to exclude. General
+        # suffixes and merges still require the complete projected ancestry.
+        projected = {current} if direct_child else self.event_log._ancestors(current)
         applied = 0
         with self._conn():
             for commit_hash, commit in self.event_log._iter_commits_parent_first(

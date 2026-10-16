@@ -1102,10 +1102,12 @@
         : "";
       var syncEvidence = dispatch.sync_evidence || {};
       var degradedPeers = syncEvidence.degraded_peers || [];
-      var syncWarning = degradedPeers.length
+      var degradedPeerCount = syncEvidence.degraded_peer_count == null
+        ? degradedPeers.length : syncEvidence.degraded_peer_count;
+      var syncWarning = degradedPeerCount
         ? '<p class="status status-open small">Scoped dispatch remained safe; ' +
-          escapeHtml(degradedPeers.length) +
-          ' unrelated fleet peer' + (degradedPeers.length === 1 ? " was" : "s were") +
+          escapeHtml(degradedPeerCount) +
+          ' unrelated fleet peer' + (degradedPeerCount === 1 ? " was" : "s were") +
           ' degraded and remain queued for normal sync convergence.</p>'
         : "";
       var outbox = dispatch.completion_outbox || {};
