@@ -234,7 +234,8 @@ async def run_app(app, root, *, history, iterations):
                                      for key, values in samples.items()
                                      if any(value >= (2000 if key == "dispatch.runnable_read" else 500)
                                             for value in values)},
-            "operation_counter_deltas": {name: {key: value.get(key, 0) - runtime_before.get("operations", {}).get(name, {}).get(key, 0)
+            "operation_counter_deltas": {name: {key: (value[key] - runtime_before.get("operations", {}).get(name, {}).get(key, 0)
+                                                    if key in value else None)
                 for key in ("submitted", "completed", "failed", "timed_out", "rejected", "slow_calls")}
                 for name, value in snapshot["operations"].items()},
             "canonical_object_reads": dict(counts.objects),

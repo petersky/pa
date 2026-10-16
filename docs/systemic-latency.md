@@ -132,20 +132,21 @@ initialization is outside this fixture's latency claim.
 ## Acceptance results
 
 Measured on this arm64 host with 10 logical CPUs and Python 3.14.2. The source
-for the measured mixed scenario is `7e578095b990f35a7107a62082ca8d583339c846`.
-The subsequent required-harness cache follow-up preserves warm full-catalog
-evidence and has separate regression coverage.
+for the measured mixed and cold-start scenarios is
+`a2802e7b09af6a22297a1977830501e24c092de9`, including warm full-catalog reuse
+and awaited terminal checkpoints. The later evidence commit changes benchmark
+counter compatibility and documentation only.
 
 | Path | Baseline p95 / max, ms | Final p50 / p95 / p99 / max, ms |
 | --- | ---: | ---: |
-| Sync push | 3,934.652 / 6,379.538 | 149.933 / 475.143 / 485.452 / 485.452 |
-| Startup row + audited binding | 3,890.812 / 6,343.104 | 32.087 / 233.832 / 341.509 / 341.509 |
-| Transcript drain | 447.306 / 739.386 | 95.089 / 242.715 / 373.651 / 373.651 |
-| Session list | 802.010 / 858.263 | 33.418 / 82.336 / 97.507 / 97.507 |
-| Agent page | 539.722 / 623.020 | 54.963 / 292.184 / 293.364 / 293.364 |
-| Progress sequence | 29.727 / 980.444 | 5.464 / 33.302 / 44.175 / 44.175 |
-| Progress checkpoint | 15.602 / 24.714 | 7.977 / 24.150 / 45.358 / 45.358 |
-| Fleet cache read | 11.227 / 17.248 | 2.205 / 10.542 / 18.714 / 18.714 |
+| Sync push | 4,235.549 / 7,089.001 | 139.200 / 365.185 / 370.080 / 370.080 |
+| Startup row + audited binding | 4,212.452 / 6,843.431 | 36.770 / 189.984 / 218.872 / 218.872 |
+| Transcript drain | 235.916 / 446.274 | 87.109 / 183.825 / 324.981 / 324.981 |
+| Session list | 1,025.040 / 2,667.950 | 32.164 / 74.037 / 89.826 / 89.826 |
+| Agent page | 584.729 / 1,393.456 | 56.709 / 255.171 / 274.718 / 274.718 |
+| Progress sequence | 16.906 / 207.288 | 5.190 / 33.693 / 53.155 / 53.155 |
+| Progress checkpoint | 13.631 / 16.805 | 7.218 / 28.979 / 36.660 / 36.660 |
+| Fleet cache read | 2.926 / 9.951 | 1.769 / 7.265 / 25.967 / 25.967 |
 
 The final mixed scenario recorded **zero** off-loop warnings, end-to-end
 threshold violations, startup timeouts, drain timeouts, failed/rejected workload
@@ -155,22 +156,24 @@ had 2–5 slow-operation warnings; they failed acceptance and motivated further
 instrumentation and writer admission changes. Thresholds and deadlines were not
 raised. Individual unaffected small operations can vary or increase under host
 contention; this is not a universal speedup for every microbenchmark.
-The baseline's initial samples overlapped the tail of local regression work;
-the final mixed run had no competing validation process from this session.
-Other host activity was uncontrolled. Compare structural reads/bytes directly;
-latency ratios include that scheduling uncertainty.
+The committed comparison runs were sequential, with no competing validation
+process from this session. Other host activity was uncontrolled. An earlier
+diagnostic baseline overlapped local tests and was replaced for this comparison.
+The controlled baseline recorded 38 off-loop warnings and 58 end-to-end threshold
+violations across sync, binding, list, Agent and status calls; the final run
+recorded zero of each. Baseline counters absent in its source are null, not zero.
 
-Canonical object reads fell from 184,074 / 78,681,559 bytes to 330 / 128,530 bytes.
-SQL SELECT calls fell from 35,868 to 2,324. Fixture BEGIN/COMMIT counts fell from
-659 to 278; durable transcript event/mirror rows were preserved. Session lists
+Canonical object reads fell from 184,098 / 78,669,051 bytes to 330 / 128,530 bytes.
+SQL SELECT calls fell from 35,906 to 2,322. Fixture BEGIN/COMMIT counts fell from
+695 to 267; durable transcript event/mirror rows were preserved. Session lists
 fell from 3,955,888 to 75,522 bytes; final serialization p95 is recorded in the
 numeric artifact. Statement counts are affected by ordinary lifecycle workers
 and run duration, so they are workload observations rather than per-event
 amplification constants.
 
 Ten real tool-free ACP starts completed with zero failed/timed-out/slow
-off-loop calls. The first complete start and drain took 392.207 ms; subsequent
-starts ranged up to 158.064 ms (median 145.010 ms). The separate cold-object
+off-loop calls. The first complete start and drain took 296.269 ms; subsequent
+starts ranged up to 136.444 ms (median 114.860 ms). The separate cold-object
 database fixture retained all 500 cold objects/references and compatibility rows,
 reported no missing objects, and passed SQLite integrity. Its cold append p95
 was 59.367 ms and maximum 116.979 ms.
@@ -194,4 +197,20 @@ subtests; 90 sync/selection cases plus five subtests; and 95 final metadata,
 ordering, cancellation and CAS cases. One existing 40 ms maximum loop-lag check
 failed at 129.389 ms while concurrent local work ran, then passed alone. Its
 threshold was preserved. Isolated boot smoke and wheel/source builds passed.
-The final full-suite and supervised integration results follow the PR record.
+The broad Mac four-worker run on the earlier implementation passed 3,387 tests
+and 887 subtests, with 14 failures and five setup errors. Final-source serial
+reruns cleared 18 of those 19 cases (including dispatch identity, workspace,
+MCP handshake, SQLite and browser cases). The remaining unchanged maximum
+loop-lag check failed at 44.512 ms in the serial run and 52.752 ms alone against
+its 40 ms limit. Callback tracing found several short callbacks and aggregate
+cold scheduling lag, not a single blocking 40 ms callback. A declared five-sample
+comparison passed all five on the final source (maxima 33.580, 22.976, 18.778,
+21.243, 18.633 ms); unchanged base source failed two of five (40.174 and
+48.209 ms). This is a retained host-sensitive validation limit, not an assertion
+that every Mac run is green. No test threshold was relaxed. Final mixed-workload
+loop lag was p95 24.923 ms / max 72.274 ms, versus baseline p95 14.731 ms /
+max 2,064.922 ms; there is no claim that every loop percentile improved.
+
+All four required CI shards and the smoke/build/packaged-MCP job passed on
+`a2802e7`. The final evidence commit and supervised integration results follow
+[PR #484](https://github.com/petersky/pa/pull/484).
