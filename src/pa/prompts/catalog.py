@@ -32,7 +32,7 @@ def _register(**kwargs) -> None:
 _register(
     key="agent.context.conversation_work",
     purpose="Keep discussion, issue capture and explicitly selected execution separate.",
-    scope="session", version=1,
+    scope="session", version=2,
     template="""## Conversation and selected work
 Keep this human conversation usable while independent work proceeds. Do not require
 a title, project or card form merely to discuss an idea. Honor existing agent,
@@ -53,8 +53,16 @@ For a requested branch inspect get_conversation_capabilities. Native fork uses
 latest provider history; context copy must be an explicit, honestly described
 choice. Never reuse another thread's workspace or route its answers/permissions
 here. Queue input when safe native steering is unavailable; do not claim injection
-or issue competing prompt requests to an active provider session.""",
-    variables=(), max_characters=2500,
+or issue competing prompt requests to an active provider session.
+PA renders visualization references v1: emit \ue200visualize\ue202{"path":"output/preview.html","title":"Preview","wide":false,"version":1}\ue201
+outside code blocks. Write UTF-8 HTML in this session's admitted workspace first
+(2 MB maximum). PA retains it for authenticated viewing. Local JS, scoped CSS,
+native controls, light-dark(), viz-carousel/data-variant, viz-dotted-background,
+cursor-interaction, Tweak.addToggle/addSelect and openai.widgetState/setWidgetState
+are supported in an isolated iframe. Network access and privileged host APIs are
+unavailable. Inspect get_rendering_capabilities for the versioned contract.
+An unavailable artifact shows a fallback; never claim it rendered successfully.""",
+    variables=(), max_characters=3500,
 )
 
 
@@ -120,7 +128,7 @@ _register(
     key="agent.context.execution",
     purpose="Tell an agent which selected instance and materialized workspace it is operating in.",
     scope="session",
-    version=1,
+    version=2,
     template="""## PA execution context
 - Agent session: {{ session.id }}
 - Associated cards: {{ session.card_ids }}
@@ -133,7 +141,9 @@ _register(
 - Base SHA: {{ base_sha }}
 - Verified attachment paths: {{ attachment_paths }}
 
-These are resolved values for this session. Do not substitute a remembered host or path.""",
+These are resolved values for this session. Do not substitute a remembered host or path.
+Use get_rendering_capabilities for this session's visualization syntax, runtime,
+artifact ownership and size limits before choosing interactive output.""",
     variables=(
         _v("session.id", "Canonical PA agent session ID.", "session-synthetic"),
         _v(

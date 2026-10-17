@@ -67,6 +67,8 @@ async def get_conversation_capabilities(request: Request, session_id: str):
     result = conversation_capabilities(connection._init_response if connection else None)
     result["native_branch_available"] = bool(result["fork"] and session.external_session_id)
     result["copy_available"] = True
+    from pa.visualizations import CAPABILITIES
+    result["visualizations"] = CAPABILITIES
     result["branch_point"] = "latest provider history; message-specific fork points are not supported"
     return result
 

@@ -2424,6 +2424,16 @@
     unique.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
     this.transcriptEvents = this._boundedEvents(unique, !!options.keepOldest);
     const retained = this.transcriptEvents;
+    // Reconciliation can return identical history after a provider exits.
+    // Keep interactive iframe browsing contexts alive across those polls.
+    const visualizationSignature = window.PAVisualizations && this.els.messages.querySelector(".acw-visualization") &&
+      (this.sessionId + "::" + this.apiBase + "::" + JSON.stringify(retained));
+    if (visualizationSignature && this._visualizationTranscriptSignature === visualizationSignature &&
+        this.els.messages.querySelector(".acw-visualization")) {
+      if (options.scrollBottom) this.scrollToBottom();
+      return;
+    }
+    this._visualizationTranscriptSignature = visualizationSignature;
     this.seenEvents = {};
     Object.keys(this.toolTimers).forEach(function (id) {
       const timer = self.toolTimers[id];
@@ -2453,6 +2463,9 @@
     retained.forEach(function (event) {
       self.handleEvent(event, true, false);
     });
+    if (window.PAVisualizations && this.els.messages.querySelector(".acw-visualization")) {
+      this._visualizationTranscriptSignature = this.sessionId + "::" + this.apiBase + "::" + JSON.stringify(retained);
+    }
     this._rebuildSeenEvents();
     this.renderTerminal();
     this._pruneMessageRows(!!options.keepOldest);
@@ -3268,9 +3281,14 @@
     const gallery = bubble.querySelector(".acw-message-images");
     if (gallery) gallery.remove();
     if (this.rawText) {
+      bubble._vizParts = null;
       bubble.textContent = content;
     } else {
-      bubble.innerHTML = renderMarkdown(content);
+      const rendered = window.PAVisualizations && bubble.classList.contains("acw-bubble-agent") &&
+        window.PAVisualizations.render(bubble, content, {
+          markdown: renderMarkdown, apiBase: this.apiBase, sessionId: this.sessionId
+        });
+      if (!rendered) { bubble._vizParts = null; bubble.innerHTML = renderMarkdown(content); }
       if (window.PALinks) window.PALinks.decorate(bubble);
     }
     if (gallery) bubble.insertBefore(gallery, bubble.firstChild);

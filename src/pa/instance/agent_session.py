@@ -490,7 +490,7 @@ class AgentSessionRuntime:
             raise RuntimeError(
                 "Transcript persistence backlog exceeded 4096 events; session paused"
             )
-        if len(self._transcript_buffer) >= 8:
+        if len(self._transcript_buffer) >= 8 or "\ue201" in str(payload.get("text") or ""):
             self._flush_transcript()
         event = {
             "id": te.id,
@@ -517,7 +517,7 @@ class AgentSessionRuntime:
             batch = list(self._transcript_buffer)
             self._transcript_buffer.clear()
             try:
-                self.store.append_transcript_events(batch)
+                self._persist_transcript_batch(batch)
             except Exception:
                 logger.exception("Failed to persist transcript events")
                 self._transcript_buffer = batch + self._transcript_buffer
@@ -546,7 +546,7 @@ class AgentSessionRuntime:
                     self._transcript_queue.task_done()
                 events = [event for queued in batches for event in queued]
                 try:
-                    self.store.append_transcript_events(events)
+                    self._persist_transcript_batch(events)
                 except Exception:
                     logger.exception("Failed to persist transcript events")
                     self._transcript_buffer = events + self._transcript_buffer
@@ -566,7 +566,7 @@ class AgentSessionRuntime:
                     try:
                         await self._offload(
                             "sqlite.transcript_append",
-                            self.store.append_transcript_events,
+                            self._persist_transcript_batch,
                             batch,
                             # A timed-out thread still owns this batch. Await
                             # its actual result instead of starting concurrent
@@ -578,7 +578,7 @@ class AgentSessionRuntime:
                         # Shutdown has closed the thread pool. Retrying would
                         # spin forever, block queue.join(), and hang stop().
                         try:
-                            self.store.append_transcript_events(batch)
+                            self._persist_transcript_batch(batch)
                         except Exception:
                             logger.exception(
                                 "Failed to persist transcript events during shutdown"
@@ -600,6 +600,20 @@ class AgentSessionRuntime:
                 for _ in range(batches):
                     self._transcript_queue.task_done()
             self._flush_transcript()
+
+    def _persist_transcript_batch(self, batch) -> None:
+        self.store.append_transcript_events(batch)
+        # Capture before a provider can exit or its workspace can be collected.
+        # Artifact failures must never lose or stall the canonical transcript.
+        try:
+            from pa.visualizations import VisualizationCapture, VisualizationStore
+            if not hasattr(self, "_visualization_capture"):
+                self._visualization_capture = VisualizationCapture(
+                    VisualizationStore(self.settings, self.store), self.session,
+                )
+            self._visualization_capture.consume(batch)
+        except Exception:
+            logger.exception("Could not retain visualization artifact for %s", self.session_id)
 
     async def _drain_transcripts(
         self, *, timeout: float | None = 10.0, raise_on_timeout: bool = False
