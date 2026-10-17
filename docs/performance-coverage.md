@@ -1,3 +1,35 @@
+# Startup schema repair and complete coverage checkpoint — 2026-10-17
+
+The systemic card remains **open: 520 evidence rows/42 concerns**, retaining all 140 slow names,181 baseline runtime operations,115 baseline routes,6 page families and every prior failure/owner. These are evidence records, not distinct incidents or independent causes. [Complete matrix](performance-coverage.json); [new numeric evidence and all phase/coverage details](benchmarks/systemic-startup-schema-20261017.json). Earlier sections below remain historical; this checkpoint supersedes their current-status labels.
+
+Confirmed startup amplification: schema discovery constructed3,952 Pydantic adapters, including adapters immediately discarded before rendering. The candidate uses call-local FastAPI 0.136.3 bindings to read metadata during discovery and skip those discarded adapters; original validation/serialization/rendering remains intact. Other framework versions use the public generator. The complete481-path, 792,712-byte schema has identical canonical SHA d4e0c89c. Three cold samples per mode: baseline p50/p95/p99/max3442.814/3781.848/3781.848/3781.848ms; candidate1175.659/1452.912/1452.912/1452.912ms,3952→142adapters. First pair overlapped end of scoped tests; host load is uncontrolled and three-sample tails equalmax. A serialization experiment showed no clear benefit and was removed, with evidence retained.
+
+Full schema generation now uses the existing bounded executor and remains required before readiness. A per-app cache lock prevents concurrent duplicate generation. Ready flags publish on the loop only after actual completion; failed/cancelled startup cannot be made ready by a late worker.37final regressions and6subtests pass, including complete PA and variant schema parity, callbacks/webhooks, concurrent isolation/cache, unknown-version fallback and failure/cancellation fencing. No numeric warning/deadline threshold, execution default, validation, durable state or admission rule changed. Initial head CI39076626460 later failed the new immediate-failure counter observation and an unchanged snapshot200ms deadline test. The readiness test now yields once to its already-queued accounting callback;33corrective tests/2subtests pass, no timeout/threshold or product change. Original failures remain in the numeric artifact and reportf697bc31. Full corrected-head CI is required.
+
+**Startup acceptance still fails.** The final offloaded cold sample records schema 1450.171 ms, capability write 1340.734 ms warnings and startup 1658.313 ms after build; schema worker completion delivery3.667ms. Prior inline sample retained schema1407.822ms and two fast-worker completion deliveries1479.650/1476.818ms. Native/GIL/disk/GC attribution remains incomplete. Kernel boot plus app construction8958.477 ms is a separate open phase. All schema samples still exceed500ms; source improvement/offloading is not acceptance.
+
+Final25module-hash-matched100iteration/29request mixed source replay:9600ordered retained events in90.066s,0operation failures/timeouts/rejections, **3worker warnings and7sampled threshold violations** (reconcile1,Fleet2,fullobjectcollect4). Startup schema1592.018ms and other premeasurement warnings are separate, not excluded from acceptance. Statusp50/p95/p99/max50.727/72.982/113.188/169.306ms; runtime34.678/44.433/64.525/80.111ms; drain104.698/227.555/355.701/434.143ms; complete-message HTTP189.576/367.206/410.528/421.781ms. Fullobjectcollect402.205/2218.833/2218.833/2218.833ms (10samples), loopmax242.610ms. These are declared local fixture results, not real-provider/network/deployed acceptance.
+
+Prior integrated source175ccb4f is independently **loaded locally**: PID69926/startup6c897a27/packagee708 matches435installed source files, unchanged configuration86968. This new schema candidate is uninstalled. These observations are not fleet/deployed-family acceptance. The new artifact preserves all 135 runtime names/38 routes from the22:37Z owner snapshot, their exact counters/bounded windows/maxima, and three newly observed normal retry operations plus one route. No new broad log/peer audit was performed.
+
+The overwritten uncommitted cb33raw snapshot remains an explicit observability gap: derived counts/top windows/three rows and durable progress survive; complete original per-name raw windows do not. New observers retain SHA-addressed archives. No current raw file is substituted as cb33. Original 10 attachments remain at quota. Historical dropped logs/status-file failures, peer failures/unknown identity/build/logs and older retention gaps stay open.
+
+Every row has an owner and next action. Group counts assign all 520 rows once; ownership is sequential in this same leased executor, not a claim all branches have been exercised or that parallel workers were created.
+
+| Remaining work group | Rows | Owner / next action |
+| --- | ---: | --- |
+| Shared SQL, sync and transcript |153|This session: separate successful native waits, WAL/checkpoint, GC/CPU/disk and lock convoys; repair measured causes without weakening durability/order/CAS/receipts.|
+| Startup and MCP admission |16|This session: remaining schema rendering and boot/app-build CPU; full provider/MCP/workspace cold starts and bounded stage attribution. UX batch retains its saved admission identities.|
+| Endpoint and background branches |335|This session: valid nonempty paths, payload/serialization/call amplification and realistic page/API responsiveness, including the normal saved retry path.|
+| Peer/log coverage |2|This session: supported peer identity/build/runtime/log evidence; retain unavailable peer-log/older-retention exclusions.|
+| Receipt and recovery |7|This session: preserve ambiguous outcomes, original keys/correlations and bounded supported recovery; never infer non-commit from missing receipts.|
+| Exact activation and acceptance |4|This session for protected integration/activation/retest; PA scheduler for final independent acceptance under unchanged17d034a6.|
+| Backup-linked scope |3|Existing repair dispatchc5a697e5/session18fc3aac; shared-cause coordination only. Failed12.78scardwrite verification and actual-scope independent acceptance remain required.|
+
+Database89957d94's accepted originalPR471 scope stays closed. Backup0331d21a has its own actual-scope independent requirement. Systemic card staysActive with integrated evidence only; active/verified/acceptance remain missing. No merged PR, source fixture, startup notification or activation closes the whole card.
+
+---
+
 # Transcript/backend continuation checkpoint — 2026-10-17
 
 The systemic card remains open: **510inventory rows/41concerns**. These are path/evidence records, not independent incidents or root causes. All140retained log slow names,181baseline runtime entries,115baseline route groups and prior evidence/owners remain. [Full matrix](performance-coverage.json); [numeric stage history](benchmarks/systemic-transcript-backend-20261017.json).

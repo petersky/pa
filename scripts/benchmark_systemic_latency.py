@@ -301,7 +301,9 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                   "pa.execution.dispatch", "pa.fleet.overview", "pa.sync.engine",
                                   "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page",
                                   "pa.instance.agent_session", "pa.pr_supervisor.store",
-                                  "pa.pr_supervisor.service", "pa.status.info", "pa.modules.instance")}
+                                  "pa.pr_supervisor.service", "pa.status.info", "pa.modules.instance",
+                                  "pa.core.kernel", "pa.openapi", "pa.server.schema_generation",
+                                  "pa.server.readiness")}
     diagnostics = ctx.services.get("runtime_diagnostics")
     diagnostics_before = diagnostics.snapshot() if diagnostics else {}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
@@ -332,6 +334,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
             "premeasurement": {"scope": "Kernel boot and synthetic fixture seeding; not part of steady mixed window",
                                "slow_calls": sum(value.get("slow_calls", 0) for value in runtime_before["operations"].values()),
                                "async_backend_initialization": runtime_before.get("async_backend_initialization"),
+                               "startup_openapi": runtime_before["operations"].get("startup.openapi"),
                                "slow_observations": runtime_before.get("slow_operations", {}),
                                "acceptance": "reported separately; full server cold boot remains unaccepted"},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,
