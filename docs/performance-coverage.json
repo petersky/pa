@@ -2,7 +2,7 @@
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
   "as_of": "2026-10-17",
-  "completion": "OPEN; every unresolved finding retains owner and action; integrated/active/verified/independent acceptance not collectively satisfied",
+  "completion": "OPEN; integrated evidence is not activation, verification or independent acceptance",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -18901,6 +18901,56 @@
           "slow_calls": 2
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance",
+        "slow_observations": [
+          {
+            "operation": "sync.push_transaction",
+            "elapsed_ms": 725.949,
+            "observed_at_monotonic": 455527.537225,
+            "queue_wait_ms": 0.054,
+            "thread_cpu_ms": 45.607,
+            "python_lock_wait_ms": 523.854,
+            "python_lock_hold_ms": 167.119,
+            "outer_lock_hold_ms": 158.577,
+            "sqlite_statement_ms": 152.31,
+            "sqlite_commit_ms": 4.287,
+            "sqlite_calls": 99,
+            "sqlite_rows": 31,
+            "sqlite_aggregate_items": 9762,
+            "sqlite_aggregate_bytes": 654062,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.153,
+            "file_lock_hold_ms": 1.835,
+            "atomic_write_calls": 2,
+            "atomic_write_bytes": 230,
+            "file_fsync_calls": 2,
+            "file_fsync_ms": 0.131,
+            "directory_fsync_calls": 2,
+            "directory_fsync_ms": 0.017,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 1.034,
+            "object_get_calls": 32,
+            "object_get_bytes": 22150,
+            "object_get_ms": 8.874,
+            "object_put_files": 4,
+            "object_put_bytes": 2020,
+            "lock_events_total": 10,
+            "worker_service_ms": 725.184,
+            "executor_dispatch_ms": 0.193,
+            "completion_delivery_ms": 0.635
+          }
+        ]
       }
     },
     {
@@ -19154,6 +19204,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -19356,6 +19418,56 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance",
+        "slow_observations": [
+          {
+            "operation": "sync.object_collect",
+            "elapsed_ms": 3089.536,
+            "observed_at_monotonic": 455502.277197,
+            "queue_wait_ms": 0.144,
+            "thread_cpu_ms": 329.248,
+            "python_lock_wait_ms": 0.0,
+            "python_lock_hold_ms": 7.876,
+            "outer_lock_hold_ms": 7.876,
+            "sqlite_statement_ms": 0.0,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_calls": 0,
+            "sqlite_rows": 0,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.013,
+            "file_lock_hold_ms": 6.222,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 512,
+            "object_get_bytes": 259220,
+            "object_get_ms": 2952.993,
+            "object_put_files": 0,
+            "object_put_bytes": 0,
+            "lock_events_total": 2,
+            "worker_service_ms": 3085.894,
+            "executor_dispatch_ms": 1.429,
+            "completion_delivery_ms": 2.269
+          }
+        ]
       }
     },
     {
@@ -19609,6 +19721,56 @@
           "slow_calls": 1
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance",
+        "slow_observations": [
+          {
+            "operation": "sync.reconcile_head",
+            "elapsed_ms": 739.477,
+            "observed_at_monotonic": 455499.159277,
+            "queue_wait_ms": 0.081,
+            "thread_cpu_ms": 69.153,
+            "python_lock_wait_ms": 12.258,
+            "python_lock_hold_ms": 480.702,
+            "outer_lock_hold_ms": 270.122,
+            "sqlite_statement_ms": 414.519,
+            "sqlite_commit_ms": 20.853,
+            "sqlite_calls": 97,
+            "sqlite_rows": 31,
+            "sqlite_aggregate_items": 8015,
+            "sqlite_aggregate_bytes": 537013,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.065,
+            "file_lock_hold_ms": 43.851,
+            "atomic_write_calls": 1,
+            "atomic_write_bytes": 121,
+            "file_fsync_calls": 1,
+            "file_fsync_ms": 1.442,
+            "directory_fsync_calls": 1,
+            "directory_fsync_ms": 0.006,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 1.728,
+            "object_get_calls": 21,
+            "object_get_bytes": 9410,
+            "object_get_ms": 159.151,
+            "object_put_files": 2,
+            "object_put_bytes": 1109,
+            "lock_events_total": 12,
+            "worker_service_ms": 738.453,
+            "executor_dispatch_ms": 0.34,
+            "completion_delivery_ms": 0.755
+          }
+        ]
       }
     },
     {
@@ -19862,6 +20024,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 10,
+          "completed": 10,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -21107,6 +21281,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 300,
+          "completed": 300,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -21344,6 +21530,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 45,
+          "completed": 45,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -22605,6 +22803,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -22858,6 +23068,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -23488,6 +23710,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 119,
+          "completed": 119,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -23725,6 +23959,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -24355,6 +24601,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -24592,6 +24850,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 30,
+          "completed": 30,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -25019,6 +25289,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 9,
+          "completed": 9,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -25636,6 +25918,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -26615,6 +26909,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -26852,6 +27158,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -28100,6 +28418,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 18,
+          "completed": 18,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -29094,6 +29424,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 3,
+          "completed": 3,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -29347,6 +29689,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 118,
+          "completed": 118,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -29600,6 +29954,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 154,
+          "completed": 154,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -30082,6 +30448,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -31324,6 +31702,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -31812,6 +32202,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 16,
+          "completed": 16,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -32255,6 +32657,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -32477,6 +32891,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -32702,6 +33128,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 200,
+          "completed": 200,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -32939,6 +33377,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 45,
+          "completed": 45,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -33360,6 +33810,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 45,
+          "completed": 45,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -33977,6 +34439,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 6,
+          "completed": 6,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -36227,6 +36701,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -39368,6 +39854,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 2,
+          "completed": 2,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -48241,6 +48739,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -58561,6 +59071,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -58746,6 +59268,56 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance",
+        "slow_observations": [
+          {
+            "operation": "history.card_page",
+            "elapsed_ms": 1049.585,
+            "observed_at_monotonic": 455556.864546,
+            "queue_wait_ms": 0.069,
+            "thread_cpu_ms": 30.102,
+            "python_lock_wait_ms": 0.001,
+            "python_lock_hold_ms": 0.439,
+            "outer_lock_hold_ms": 0.439,
+            "sqlite_statement_ms": 1037.065,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_calls": 13,
+            "sqlite_rows": 105,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 0.009,
+            "file_lock_hold_ms": 0.174,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0,
+            "lock_events_total": 2,
+            "worker_service_ms": 1048.631,
+            "executor_dispatch_ms": 0.555,
+            "completion_delivery_ms": 0.481
+          }
+        ]
       }
     },
     {
@@ -59054,6 +59626,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -59362,6 +59946,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 100,
+          "completed": 100,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -59673,6 +60269,18 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance"
       }
     },
     {
@@ -59861,6 +60469,56 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "ref_phase_fixture_followup": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json",
+        "counter_delta": {
+          "submitted": 14,
+          "completed": 14,
+          "failed": 0,
+          "timed_out": 0,
+          "rejected": 0,
+          "slow_calls": 1
+        },
+        "scope": "This controlled source stage only; positive submissions do not establish all branches or deployed acceptance",
+        "slow_observations": [
+          {
+            "operation": "sqlite.card_summary_write",
+            "elapsed_ms": 545.238,
+            "observed_at_monotonic": 455527.357199,
+            "queue_wait_ms": 0.039,
+            "thread_cpu_ms": 20.712,
+            "python_lock_wait_ms": 464.469,
+            "python_lock_hold_ms": 252.743,
+            "outer_lock_hold_ms": 76.213,
+            "sqlite_statement_ms": 45.609,
+            "sqlite_commit_ms": 8.013,
+            "sqlite_calls": 34,
+            "sqlite_rows": 10,
+            "sqlite_aggregate_items": 0,
+            "sqlite_aggregate_bytes": 0,
+            "sqlite_busy_failures": 0,
+            "file_lock_wait_ms": 1.404,
+            "file_lock_hold_ms": 24.715,
+            "atomic_write_calls": 1,
+            "atomic_write_bytes": 121,
+            "file_fsync_calls": 1,
+            "file_fsync_ms": 1.588,
+            "directory_fsync_calls": 1,
+            "directory_fsync_ms": 0.023,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.727,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 2,
+            "object_put_bytes": 2232,
+            "lock_events_total": 8,
+            "worker_service_ms": 543.328,
+            "executor_dispatch_ms": 1.193,
+            "completion_delivery_ms": 0.775
+          }
+        ]
       }
     },
     {
@@ -65120,12 +65778,25 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json"
       },
       "implemented": "Validate exact exported bytes once with existing hash/schema checks; short8object prefix grows geometrically to unchanged512object/128KiB hard bounds.",
-      "merged": [],
-      "deployed": "New source uninstalled; installed4297 lacks these follow-up changes",
+      "merged": [
+        "https://github.com/petersky/pa/pull/495"
+      ],
+      "deployed": "Unverified; installed runtime remains4297, no competing restart",
       "retested": "Paired complete-collection and actual-v3 fixture with identical bytes/closure;60sync regressions passed.",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance."
+      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance.",
+      "pr495_integration": {
+        "head": "f4efd94c8b9fc0bbef91276cb1e24777629231db",
+        "merge": "f36d4b38cc362024579cbf2ae917c011f88a148c",
+        "watch": "203463d2-233c-48bc-9688-cba90632f013",
+        "head_ci": 39051544706,
+        "main_ci": 39051816904,
+        "checks": "5terminalsuccess each; stable10observations plus independent exact-head/rules/reviews/authors/CLEAN/head-CAS merge",
+        "tree": "62b48efe5c542a71622ac7133fe3405cbff25e13",
+        "head_merge_trees_equal": true,
+        "deployment": "Unverified; no new install or restart"
+      }
     },
     {
       "id": "concern:runtime-diagnostic-capacity",
@@ -65139,12 +65810,25 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json"
       },
       "implemented": "One lazy worker reserved only for read-only runtime snapshot; same5sdeadline/configured queue bounds, visible diagnostic counters, orderly cleanup.",
-      "merged": [],
-      "deployed": "New source uninstalled; installed4297 lacks these follow-up changes",
+      "merged": [
+        "https://github.com/petersky/pa/pull/495"
+      ],
+      "deployed": "Unverified; installed runtime remains4297, no competing restart",
       "retested": "Latched ordinary worker survives successful runtime GET; auxiliary no-writer and failing teardown regressions pass. Exact reported504 cause unverified.",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance."
+      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance.",
+      "pr495_integration": {
+        "head": "f4efd94c8b9fc0bbef91276cb1e24777629231db",
+        "merge": "f36d4b38cc362024579cbf2ae917c011f88a148c",
+        "watch": "203463d2-233c-48bc-9688-cba90632f013",
+        "head_ci": 39051544706,
+        "main_ci": 39051816904,
+        "checks": "5terminalsuccess each; stable10observations plus independent exact-head/rules/reviews/authors/CLEAN/head-CAS merge",
+        "tree": "62b48efe5c542a71622ac7133fe3405cbff25e13",
+        "head_merge_trees_equal": true,
+        "deployment": "Unverified; no new install or restart"
+      }
     },
     {
       "id": "concern:loaded-runtime-provenance",
@@ -65158,12 +65842,25 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json"
       },
       "implemented": "Use same-PID immutable health startup capture for runtime_revision/build, keep mutable install_revision separate, unknown when no captured proof.",
-      "merged": [],
-      "deployed": "New source uninstalled; installed4297 lacks these follow-up changes",
+      "merged": [
+        "https://github.com/petersky/pa/pull/495"
+      ],
+      "deployed": "Unverified; installed runtime remains4297, no competing restart",
       "retested": "Current/foreign/absent PID and mutable install fixtures preserve truthful unknowns and detached output.",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance."
+      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance.",
+      "pr495_integration": {
+        "head": "f4efd94c8b9fc0bbef91276cb1e24777629231db",
+        "merge": "f36d4b38cc362024579cbf2ae917c011f88a148c",
+        "watch": "203463d2-233c-48bc-9688-cba90632f013",
+        "head_ci": 39051544706,
+        "main_ci": 39051816904,
+        "checks": "5terminalsuccess each; stable10observations plus independent exact-head/rules/reviews/authors/CLEAN/head-CAS merge",
+        "tree": "62b48efe5c542a71622ac7133fe3405cbff25e13",
+        "head_merge_trees_equal": true,
+        "deployment": "Unverified; no new install or restart"
+      }
     },
     {
       "id": "concern:receipt-stale-head-diagnostics",
@@ -65177,12 +65874,25 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json"
       },
       "implemented": "Expose checked/current head and stale_head while effect stays unknown and explicit recovery remains required; no automatic rescans or replay.",
-      "merged": [],
-      "deployed": "New source uninstalled; installed4297 lacks these follow-up changes",
+      "merged": [
+        "https://github.com/petersky/pa/pull/495"
+      ],
+      "deployed": "Unverified; installed runtime remains4297, no competing restart",
       "retested": "Unrelated durable commit invalidates negative proof; passive GET has no effects; explicit recovery refreshes proof; later committed receipt remains authoritative.",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance."
+      "next_action": "Integrate through stable-green review, verify exact activation and realistic mixed workload; retain every residual and independent final acceptance.",
+      "pr495_integration": {
+        "head": "f4efd94c8b9fc0bbef91276cb1e24777629231db",
+        "merge": "f36d4b38cc362024579cbf2ae917c011f88a148c",
+        "watch": "203463d2-233c-48bc-9688-cba90632f013",
+        "head_ci": 39051544706,
+        "main_ci": 39051816904,
+        "checks": "5terminalsuccess each; stable10observations plus independent exact-head/rules/reviews/authors/CLEAN/head-CAS merge",
+        "tree": "62b48efe5c542a71622ac7133fe3405cbff25e13",
+        "head_merge_trees_equal": true,
+        "deployment": "Unverified; no new install or restart"
+      }
     },
     {
       "id": "concern:managed-handoff-latency",
@@ -65202,9 +65912,56 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Attribute waiting/resume phases and reconcile existing continuation through supported ownership; preserve exact session identity."
+    },
+    {
+      "id": "concern:direct-child-parent-proof",
+      "kind": "concern",
+      "finding": "Ready-parent ancestry check materializes full history",
+      "family": "sync",
+      "cause_classification": "source_and_fixture_confirmed",
+      "cause": "100checks at1000commits copied100000hashes/6.7MB; paired30checks at10000copied300000hashes/20.1MB for a single proven edge.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json"
+      },
+      "implemented": "Validate canonical child and exact ready sole-parent head instead; keep indexed-descendant and canonical fallback guards. Paired p9520.961->5.308ms, all hash materialization removed.",
+      "merged": [],
+      "deployed": "New source not installed",
+      "retested": {
+        "broad": "65passed in141.82s: direct-parent integrity, filesystem ordering/failure, named locks, core IO, DAG index, read reuse, realm convergence. Run began before the additional object-I/O counter observation was added.",
+        "totals_focused": "23passed in8.43s, including270writes proving exact totals beyond256window and detached snapshots",
+        "final_focused": "27passed in9.68s after object counters: filesystem/direct-parent/named-lock/core IO/AsyncRuntime; overlapping counts, not92unique tests."
+      },
+      "resolution": "open",
+      "next_actor": "this systemic session",
+      "next_action": "Complete review/protected integration, exact activation and representative deployed/mixed replay; retain physical native busy/disk and full-startup acceptance gaps."
+    },
+    {
+      "id": "concern:filesystem-phase-attribution",
+      "kind": "concern",
+      "finding": "Ref-file lock/fsync and logical object IO lacked separate bounded phases",
+      "family": "cross_cutting",
+      "cause_classification": "source_and_fixture_confirmed",
+      "cause": "Prior slow worker observations combined ref serialization and atomic write/fsync/scheduling costs; logical write volume and native device causes could not be inferred from OS block counters.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ref-phases-20261017.json"
+      },
+      "implemented": "Separate ref RLock/advisory lock timelines, file/directory fsync and replace wall phases, logical atomic/object byte and call counts. Attribution only; no durability or deadline changes.",
+      "merged": [],
+      "deployed": "New source not installed",
+      "retested": {
+        "broad": "65passed in141.82s: direct-parent integrity, filesystem ordering/failure, named locks, core IO, DAG index, read reuse, realm convergence. Run began before the additional object-I/O counter observation was added.",
+        "totals_focused": "23passed in8.43s, including270writes proving exact totals beyond256window and detached snapshots",
+        "final_focused": "27passed in9.68s after object counters: filesystem/direct-parent/named-lock/core IO/AsyncRuntime; overlapping counts, not92unique tests."
+      },
+      "resolution": "open",
+      "next_actor": "this systemic session",
+      "next_action": "Complete review/protected integration, exact activation and representative deployed/mixed replay; retain physical native busy/disk and full-startup acceptance gaps."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
   "current_requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
-  "read_repair_artifact": "docs/benchmarks/systemic-read-repair-20261017.json"
+  "read_repair_artifact": "docs/benchmarks/systemic-read-repair-20261017.json",
+  "ref_phases_artifact": "docs/benchmarks/systemic-ref-phases-20261017.json"
 }

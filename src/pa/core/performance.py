@@ -8,6 +8,23 @@ from dataclasses import dataclass, field
 from threading import Lock
 
 SAMPLE_LIMIT = 256
+FILESYSTEM_PHASES = (
+    'file_lock_wait_ms',
+    'file_lock_hold_ms',
+    'atomic_write_calls',
+    'atomic_write_bytes',
+    'file_fsync_calls',
+    'file_fsync_ms',
+    'directory_fsync_calls',
+    'directory_fsync_ms',
+    'fsync_failures',
+    'atomic_replace_ms',
+    'object_get_calls',
+    'object_get_bytes',
+    'object_get_ms',
+    'object_put_files',
+    'object_put_bytes',
+)
 
 
 @dataclass
@@ -29,6 +46,23 @@ class OperationObservation:
     sqlite_aggregate_items: int = 0
     sqlite_aggregate_bytes: int = 0
     sqlite_busy_failures: int = 0
+    file_lock_wait_ms: float = 0.0
+    file_lock_hold_ms: float = 0.0
+    atomic_write_calls: int = 0
+    atomic_write_bytes: int = 0
+    file_fsync_calls: int = 0
+    file_fsync_ms: float = 0.0
+    directory_fsync_calls: int = 0
+    directory_fsync_ms: float = 0.0
+    fsync_failures: int = 0
+    atomic_replace_ms: float = 0.0
+    object_get_calls: int = 0
+    object_get_bytes: int = 0
+    object_get_ms: float = 0.0
+    object_put_files: int = 0
+    object_put_bytes: int = 0
+
+
 
 
 current_observation: ContextVar[OperationObservation | None] = ContextVar("pa_performance", default=None)

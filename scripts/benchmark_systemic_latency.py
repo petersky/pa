@@ -30,6 +30,7 @@ from pa.acp.client import WireJsonlLogger
 from pa.acp import transcript_page  # Include lazy history compaction in source attestation.
 from pa.config import Settings
 from pa.core.kernel import Kernel
+from pa.core.performance import FILESYSTEM_PHASES
 from pa.domain.models import AgentSession, CardEvent, EventType, SyncCommit
 from pa.execution.dispatch import DispatchRecord
 from pa.execution.progress import DispatchProgressEventV1, ProgressPhase
@@ -295,6 +296,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
     runtime_before = runtime.snapshot()
     source_hashes = {name: hashlib.sha256(Path(sys.modules[name].__file__).read_bytes()).hexdigest()
                      for name in ("pa.core.async_runtime", "pa.core.performance", "pa.core.sqlite_metrics",
+                                  "pa.core.io", "pa.core.operation_budget", "pa.sync.object_store",
                                   "pa.domain.projection", "pa.domain.transcript_storage", "pa.domain.card_summary_service", "pa.modules.items",
                                   "pa.execution.dispatch", "pa.fleet.overview", "pa.sync.engine",
                                   "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page",
@@ -356,6 +358,11 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
             "diagnostics_counter_deltas": {name: {key: value[key] - diagnostics_before.get("operations", {}).get(name, {}).get(key, 0)
                 for key in ("submitted", "completed", "failed", "timed_out", "rejected", "slow_calls")}
                 for name, value in (diagnostics.snapshot()["operations"] if diagnostics else {}).items()},
+            "filesystem_phase_totals_delta": {
+                name: {phase: value["filesystem_totals"][phase] - runtime_before["operations"].get(name, {}).get("filesystem_totals", {}).get(phase, 0)
+                       for phase in FILESYSTEM_PHASES}
+                for name, value in snapshot["operations"].items()},
+            "filesystem_phase_scope": "Exact completed-worker logical counters during measurement, separate from last256 distributions and premeasurement boot/seeding. Wall intervals overlap and are not physical disk bytes or native busy proof.",
             "canonical_object_reads": dict(counts.objects),
             "process_cpu_ms": round((after_io.ru_utime + after_io.ru_stime - before_io.ru_utime - before_io.ru_stime) * 1000, 3),
             "disk_output_blocks": after_io.ru_oublock - before_io.ru_oublock,

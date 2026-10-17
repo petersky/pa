@@ -22,7 +22,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 from pa.core.operation_budget import OperationBudget, OperationDeadline, current_operation
 from pa.core.sqlite_metrics import sqlite_connection_scope
 from pa.core.performance import (
-    SAMPLE_LIMIT, OperationObservation, PerformanceMetrics, current_observation, distribution,
+    FILESYSTEM_PHASES, SAMPLE_LIMIT, OperationObservation, PerformanceMetrics, current_observation, distribution,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,24 @@ class OperationMetrics:
     sqlite_aggregate_items: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_aggregate_bytes: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     sqlite_busy_failures: int = 0
+    filesystem_totals: dict = field(default_factory=lambda: {name: 0 for name in FILESYSTEM_PHASES})
+    file_lock_wait_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    file_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    atomic_write_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    atomic_write_bytes: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    file_fsync_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    file_fsync_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    directory_fsync_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    directory_fsync_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    fsync_failures: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    atomic_replace_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    object_get_calls: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    object_get_bytes: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    object_get_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    object_put_files: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    object_put_bytes: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+
+
 
 
 class AsyncRuntime:
@@ -430,6 +448,10 @@ class AsyncRuntime:
             metrics.sqlite_aggregate_items.append(observation.sqlite_aggregate_items)
             metrics.sqlite_aggregate_bytes.append(observation.sqlite_aggregate_bytes)
             metrics.sqlite_busy_failures += observation.sqlite_busy_failures
+            for name in FILESYSTEM_PHASES:
+                value = getattr(observation, name)
+                getattr(metrics, name).append(value)
+                metrics.filesystem_totals[name] += value
             if observation.worker_finished_at:
                 metrics.worker_service_ms.append(
                     (observation.worker_finished_at - observation.worker_started_at) * 1000
@@ -474,6 +496,8 @@ class AsyncRuntime:
                 for name in ("queue_wait_ms", "thread_cpu_ms", "python_lock_wait_ms", "python_lock_hold_ms", "outer_lock_hold_ms",
                              "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
                              "sqlite_aggregate_items", "sqlite_aggregate_bytes", "sqlite_busy_failures"):
+                    phases[name] = round(getattr(observation, name), 3)
+                for name in FILESYSTEM_PHASES:
                     phases[name] = round(getattr(observation, name), 3)
                 phases["lock_events_total"] = observation.lock_events_total
                 if observation.lock_events:
@@ -549,6 +573,7 @@ class AsyncRuntime:
         for name, metrics in sorted(self._operations.items()):
             data = {item.name: getattr(metrics, item.name) for item in fields(metrics)
                     if not isinstance(getattr(metrics, item.name), deque)}
+            data["filesystem_totals"] = dict(metrics.filesystem_totals)
             data["runtime_ms"] = distribution(list(metrics.runtime_samples_ms))
             data["queue_ms"] = distribution(list(metrics.queue_samples_ms))
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
@@ -556,6 +581,8 @@ class AsyncRuntime:
             for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms", "outer_lock_hold_ms",
                           "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
                           "sqlite_aggregate_items", "sqlite_aggregate_bytes"):
+                data[phase] = distribution(list(getattr(metrics, phase)))
+            for phase in FILESYSTEM_PHASES:
                 data[phase] = distribution(list(getattr(metrics, phase)))
             data["total_queue_ms"] = round(data["total_queue_ms"], 3)
             data["total_runtime_ms"] = round(data["total_runtime_ms"], 3)

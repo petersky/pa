@@ -20,10 +20,22 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from pa.core.io import atomic_write_json
+from pa.core.operation_budget import measured_lock
 from pa.domain.models import CardEvent, EventType, SyncCommit, SyncRef
 from pa.sync.dag_index import DagIndex
 from pa.sync.object_store import ObjectStore, object_hash
 from pa.workloads import canonical_default_scope_key
+
+class _RefFileLock:
+    def __init__(self, fd: int):
+        self.fd = fd
+
+    def acquire(self):
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+
+    def release(self):
+        fcntl.flock(self.fd, fcntl.LOCK_UN)
+
 
 _AUTOMATIC_METADATA_FIELDS = {("card", "updated_at")}
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -297,10 +309,10 @@ class EventLog:
         self.refs_lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.refs_lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
+            lock = _RefFileLock(fd)
+            with measured_lock(lock, name="sync.refs_file", filesystem=True):
+                yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
 
     def _load_refs(self) -> None:
@@ -312,7 +324,7 @@ class EventLog:
                 self._refs = {}
 
     def reload_refs(self) -> None:
-        with self._lock:
+        with measured_lock(self._lock, name="sync.refs"):
             with self._refs_file_lock():
                 self._load_refs()
 
@@ -366,7 +378,7 @@ class EventLog:
             if prepared_parent and event.card_id
             else None
         )
-        with self._lock:
+        with measured_lock(self._lock, name="sync.refs"):
             with self._refs_file_lock():
                 self._load_refs()
                 parent = self._refs.get(self.ref_key(realm_id))
@@ -1731,7 +1743,7 @@ class EventLog:
         update_index: bool = True,
     ) -> None:
         """Advance a ref with an optional compare-and-swap precondition."""
-        with self._lock:
+        with measured_lock(self._lock, name="sync.refs"):
             with self._refs_file_lock():
                 self._load_refs()
                 key = self.ref_key(realm_id)
@@ -1765,20 +1777,27 @@ class EventLog:
             indexed = self.index.is_ancestor(str(row[0]), ancestor, descendant)
             if indexed is not None:
                 return indexed
+        tip = self.get_commit(descendant)
+        if (tip and tip.parent_hashes == [ancestor]
+                and self.index.indexed_head(tip.realm_id) == ancestor):
+            # The ready generation proves the sole parent's complete history.
+            # Validate the new tip, but do not materialize that history just to
+            # prove this one edge. Forks and non-ready indexes retain the walk.
+            return True
         projected = self.index.ancestors(ancestor)
         if projected is None:
             # Unknown ancestry must still validate every canonical reference,
             # including the sought object itself, with the original traversal.
             return any(
                 commit_hash == ancestor
-                for commit_hash, _ in self._iter_commits_parent_first(descendant)
+                for commit_hash, _ in self._iter_commits_parent_first(descendant, validated_head=tip)
             )
         # Previously verified ancestry needs no repeated object decoding. Other
         # merge parents still participate in the bounded, cycle-checked walk.
         return any(
             ancestor in commit.parent_hashes
             for _, commit in self._iter_commits_parent_first(
-                descendant, stop=projected
+                descendant, stop=projected, validated_head=tip
             )
         )
 
