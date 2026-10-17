@@ -38,6 +38,25 @@ async def test_passive_negative_head_proof_never_masks_later_receipt(tmp_path):
                 absent = (await client.get("/api/operations/absent", params=params)).json()
                 assert absent["status"] == "not_found" and absent["committed"] is False
                 assert absent["lookup_head"] == h.log.get_head("healthy")
+                checked_head = absent["lookup_head"]
+                h.store.create_card(CardCreate(title="unrelated history", realm_id="healthy"),
+                    principal_id="user:local", instance_id="local")
+                stale = (await client.get("/api/operations/absent", params=params)).json()
+                assert stale["status"] == "lookup_pending" and stale["committed"] is None
+                assert stale["accepted"] is None and stale["effect"] == "unknown"
+                assert stale["recovery_state"] == "receipt_absent_history_head_changed"
+                assert stale["history_lookup"] == {"state": "stale_head",
+                    "checked_head": checked_head, "current_head": h.log.get_head("healthy")}
+                assert stale["reconciliation"]["state"] == "completed"
+                assert stale["recovery_action"] == "recover_operation_outcome"
+                assert not service.tasks  # Passive read never schedules repair.
+                refreshed = await client.post("/api/operation-recovery/absent", params=params)
+                assert refreshed.status_code == 202
+                await asyncio.gather(*service.tasks.values())
+                fresh = (await client.get("/api/operations/absent", params=params)).json()
+                assert fresh["status"] == "not_found" and fresh["committed"] is False
+                assert fresh["lookup_head"] == h.log.get_head("healthy")
+                assert "history_lookup" not in fresh
                 h.store.begin_operation(idempotency_key="absent", operation="card.create",
                     request_fingerprint="new", realm_id="healthy", correlation_id="real")
                 card = h.store.create_card(CardCreate(title="later effect", realm_id="healthy"),

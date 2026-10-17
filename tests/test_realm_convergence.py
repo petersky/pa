@@ -305,12 +305,20 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         }
         received: set[str] = set()
         remote_head: str | None = None
+        inventory_sizes: list[int] = []
 
         self.authority.engine.store = SimpleNamespace(
             get=lambda object_hash: objects.get(object_hash)
         )
+        def decode_commit(commit_hash, raw):
+            # This scale-only fake bypasses model parsing; real content/hash/
+            # version integrity is exercised by the collection guard tests.
+            self.assertEqual(raw, objects[commit_hash])
+            return commits.get(commit_hash)
+
         self.authority.engine.log = SimpleNamespace(
-            get_commit=lambda commit_hash: commits.get(commit_hash)
+            get_commit=lambda commit_hash: commits.get(commit_hash),
+            decode_commit=decode_commit,
         )
 
         async def request(method: str, url: str, *, payload=None, **_kwargs):
@@ -318,6 +326,7 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
             request = httpx.Request(method, url)
             body = payload or {}
             if url.endswith("/api/sync/need"):
+                inventory_sizes.append(len(body["hashes"]))
                 return httpx.Response(
                     200,
                     json={
@@ -354,6 +363,8 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(result["object_batches"], 1)
         self.assertEqual(remote_head, head)
         self.assertEqual(len(received), 30_001)
+        self.assertEqual(inventory_sizes[:3], [8, 32, 128])
+        self.assertEqual(max(inventory_sizes), 512)
 
     async def test_peer_missing_one_commit_receives_only_commit_and_event(self) -> None:
         card = self._shared_card()
@@ -371,6 +382,23 @@ class RealmConvergenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "reachable")
         self.assertEqual(result["objects_sent"], 2)
         self.assertEqual(result["inventory_protocol"], 3)
+        self.assertEqual(self.target.log.get_head("default"), head)
+
+    async def test_near_current_peer_does_not_read_a_full_known_history_page(self) -> None:
+        card = self._shared_card()
+        for index in range(300):
+            previous = self._update(self.authority, card.id, title=f"History {index}")
+        self._copy_objects(self.authority, self.target)
+        self.target.log.advance_ref("default", previous, expected_head=self.target.log.get_head("default"))
+        head = self._update(self.authority, card.id, title="One current delta")
+        with patch.object(self.authority.objects, "get", wraps=self.authority.objects.get) as reads:
+            result = await self.authority.engine._push_peer(
+                MagicMock(), "default", self.authority.peers.routes_for_realm("default")[0], head,
+            )
+        self.assertEqual(result["status"], "reachable")
+        self.assertEqual(result["objects_sent"], 2)
+        self.assertEqual(result["inventory_batches"], 1)
+        self.assertLessEqual(reads.call_count, 16)
         self.assertEqual(self.target.log.get_head("default"), head)
 
     async def test_interrupted_transfer_restarts_idempotently(self) -> None:

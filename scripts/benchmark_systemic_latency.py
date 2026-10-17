@@ -36,6 +36,7 @@ from pa.execution.progress import DispatchProgressEventV1, ProgressPhase
 from pa.fleet.overview import FleetOverviewCache, field
 from pa.instance.agent_session import AgentSessionRuntime
 from pa.modules.sync import _apply_sync_push_local
+from pa.modules import instance as instance_module  # Attest runtime diagnostics before measurement.
 from pa.pr_supervisor.models import PRWatch
 from pa.status import info as status_info  # Attest the lazy status count path before measurement.
 
@@ -214,6 +215,18 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                 "default", target))
             assert reconciled["advanced"], reconciled
             sync_outcomes["reconcile_merged" if reconciled["head"] != target else "reconcile_fast_forward"] += 1
+            if inventory_reads and i % 10 == 0:
+                # The actual bounded head-first inventory builder used by v3
+                # peers; no peer request, publication, or synthetic fault.
+                def inventory():
+                    head = log.get_head("default")
+                    objects, parents = engine._inventory_page([head], set(), [])
+                    assert head in objects and head in parents
+                    return {"objects": len(objects), "bytes": sum(map(len, objects.values()))}
+                page = await offload("sync.object_collect", inventory)
+                sync_outcomes["inventory_pages"] += 1
+                sync_outcomes["inventory_objects"] += page["objects"]
+                sync_outcomes["inventory_bytes"] += page["bytes"]
             await asyncio.sleep(0.005)
     async def startup_work():
         for i in range(iterations):
@@ -266,7 +279,8 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                       "/api/fleet/dispatch-queue", "/api/pr-supervisor/watches",
                       "/api/pr-supervisor/capabilities", "/api/workspaces",
                       "/api/health-journal/status", "/api/sync/status", "/api/sync/refs",
-                      "/settings?section=agent", "/settings?section=backups", "/fleet", "/pull-requests"]
+                      "/settings?section=agent", "/settings?section=backups", "/fleet", "/pull-requests",
+                      "/", "/work", "/api/runtime"]
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://fixture") as client:
             for _ in range(iterations):
                 for path in paths:
@@ -285,7 +299,9 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                   "pa.execution.dispatch", "pa.fleet.overview", "pa.sync.engine",
                                   "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page",
                                   "pa.instance.agent_session", "pa.pr_supervisor.store",
-                                  "pa.pr_supervisor.service", "pa.status.info")}
+                                  "pa.pr_supervisor.service", "pa.status.info", "pa.modules.instance")}
+    diagnostics = ctx.services.get("runtime_diagnostics")
+    diagnostics_before = diagnostics.snapshot() if diagnostics else {}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()
     gc.callbacks.append(observe_gc)
@@ -315,10 +331,11 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                "slow_observations": runtime_before.get("slow_operations", {}),
                                "acceptance": "reported separately; full server cold boot remains unaccepted"},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,
-                "workload_version": 4 if inventory_reads else 3,
+                "workload_version": 5 if inventory_reads else 3,
                 "foreground_inventory_reads": inventory_reads,
                 "sync_pushes": iterations, "incoming_reconciliations": iterations,
                 "controlled_compatible_forks": (iterations + 9) // 10,
+                "bounded_sync_inventory_pages": (iterations + 9) // 10 if inventory_reads else 0,
                 "watches": 30, "iterations_per_family": iterations, "transcript_sessions": 3,
                 "executor_workers": runtime.max_workers, "duration_seconds": round(elapsed, 3),
                 "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"},
@@ -335,6 +352,10 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                                     if key in value else None)
                 for key in ("submitted", "completed", "failed", "timed_out", "rejected", "slow_calls")}
                 for name, value in snapshot["operations"].items()},
+            "diagnostics_runtime": diagnostics.snapshot() if diagnostics else None,
+            "diagnostics_counter_deltas": {name: {key: value[key] - diagnostics_before.get("operations", {}).get(name, {}).get(key, 0)
+                for key in ("submitted", "completed", "failed", "timed_out", "rejected", "slow_calls")}
+                for name, value in (diagnostics.snapshot()["operations"] if diagnostics else {}).items()},
             "canonical_object_reads": dict(counts.objects),
             "process_cpu_ms": round((after_io.ru_utime + after_io.ru_stime - before_io.ru_utime - before_io.ru_stime) * 1000, 3),
             "disk_output_blocks": after_io.ru_oublock - before_io.ru_oublock,

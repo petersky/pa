@@ -1,5 +1,6 @@
 """Status is a passive owner read, with counts independent of retained payloads."""
 from datetime import UTC, datetime
+import os
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -69,12 +70,18 @@ def owner_snapshot():
         module_count=11, item_count=12, session_count=13, knowledge_count=5)
 
 
-def test_server_snapshot_uses_counts_and_retains_loaded_identity(tmp_path):
+@pytest.mark.parametrize("captured_pid", [None, -1, "current"])
+def test_server_snapshot_uses_counts_and_retains_loaded_identity(tmp_path, captured_pid):
     from pa.status.info import build_status_snapshot
     store = CardProjection(tmp_path / "fixture.db")
     store.save_session(AgentSession(agent_name="fixture"))
     ctx = SimpleNamespace(settings=Settings(data_dir=tmp_path, instance_id="owner-id"),
                           store=store, services={"assets": SimpleNamespace(version="loaded-assets")})
+    captured = {"pid": os.getpid() if captured_pid == "current" else captured_pid,
+                "source_revision": "loaded-old", "package_identity": "sha256:loaded",
+                "startup_id": "actual-startup"}
+    if captured_pid is not None:
+        ctx.services["health_journal"] = SimpleNamespace(runtime_build=captured)
     service = SimpleNamespace(installed=False, running=False, loaded=False,
                               backend="fixture", plist_path=tmp_path / "unit")
     with patch("pa.status.info.svc.get_status", return_value=service), \
@@ -82,16 +89,28 @@ def test_server_snapshot_uses_counts_and_retains_loaded_identity(tmp_path):
          patch("pa.status.info.svc.find_pa_binary", return_value=None), \
          patch("pa.status.info.svc.find_service_binary", return_value=None), \
          patch("pa.status.info.load_install_metadata", return_value=None), \
+         patch("pa.status.info.running_source_revision", side_effect=["installed-new", "installed-newer"]), \
          patch("pa.status.info.sync_from_context", return_value=SimpleNamespace(as_dict=lambda: {"consistent": True})), \
          patch("pa.server.listeners.owner_channel_health", return_value={}), \
          patch.object(store, "list_items", side_effect=AssertionError("hydration")), \
          patch.object(store, "list_sessions", side_effect=AssertionError("hydration")), \
          patch.object(store, "list_knowledge", side_effect=AssertionError("hydration")):
         snapshot = build_status_snapshot(ctx, module_count=11)
+        again = build_status_snapshot(ctx, module_count=11)
     assert snapshot["instance_id"] == "owner-id"
     assert snapshot["asset_version"] == "loaded-assets"
     assert snapshot["session_count"] == 1 and snapshot["item_count"] == 0
     assert snapshot["knowledge_count"] == 0 and snapshot["module_count"] == 11
+    assert snapshot["install_revision"] == "installed-new"
+    assert again["install_revision"] == "installed-newer"
+    expected = "loaded-old" if captured_pid == "current" else None
+    assert snapshot["runtime_revision"] == again["runtime_revision"] == expected
+    if expected:
+        assert snapshot["runtime_build"] == captured
+        snapshot["runtime_build"]["source_revision"] = "caller-change"
+        assert captured["source_revision"] == "loaded-old"
+    else:
+        assert snapshot["runtime_build"] is None
 
 
 def test_cli_status_uses_owner_identity_without_kernel_or_settings_writes(tmp_path, monkeypatch):
