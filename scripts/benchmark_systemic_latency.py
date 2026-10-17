@@ -37,6 +37,7 @@ from pa.fleet.overview import FleetOverviewCache, field
 from pa.instance.agent_session import AgentSessionRuntime
 from pa.modules.sync import _apply_sync_push_local
 from pa.pr_supervisor.models import PRWatch
+from pa.status import info as status_info  # Attest the lazy status count path before measurement.
 
 
 def distribution(values):
@@ -125,17 +126,26 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
     samples, sizes = defaultdict(list), defaultdict(list)
     sync_outcomes = Counter()
     gc_started, gc_pauses, gc_counts = {}, deque(maxlen=256), Counter()
+    long_gc_pauses = deque(maxlen=64)
+    long_gc_count = 0
     def observe_gc(phase, info):
+        nonlocal long_gc_count
         generation = info["generation"]
         if phase == "start":
             gc_started[generation] = time.perf_counter()
         elif generation in gc_started:
             gc_counts[generation] += 1
-            gc_pauses.append({"generation": generation,
+            pause = {"generation": generation,
                 "started_at_monotonic": gc_started[generation],
                 "finished_at_monotonic": time.perf_counter(),
                 "elapsed_ms": (time.perf_counter() - gc_started.pop(generation)) * 1000,
-                "collected": info["collected"], "uncollectable": info["uncollectable"]})
+                "collected": info["collected"], "uncollectable": info["uncollectable"]}
+            gc_pauses.append(pause)
+            # Diagnostic selection only; warning/deadline thresholds stay fixed.
+            # Tiny later collections must not erase an earlier correlated pause.
+            if pause["elapsed_ms"] >= 10:
+                long_gc_count += 1
+                long_gc_pauses.append(pause)
     warnings = Counter()
     class WarningCounts(logging.Handler):
         def emit(self, record):
@@ -275,7 +285,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                   "pa.execution.dispatch", "pa.fleet.overview", "pa.sync.engine",
                                   "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page",
                                   "pa.instance.agent_session", "pa.pr_supervisor.store",
-                                  "pa.pr_supervisor.service")}
+                                  "pa.pr_supervisor.service", "pa.status.info")}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()
     gc.callbacks.append(observe_gc)
@@ -330,7 +340,10 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
             "disk_output_blocks": after_io.ru_oublock - before_io.ru_oublock,
             "gc_pauses": {"latency": distribution([item["elapsed_ms"] for item in gc_pauses]),
                           "window": "last_256_collections_during_measurement",
-                          "counts_by_generation": dict(gc_counts), "observations": list(gc_pauses)},
+                          "counts_by_generation": dict(gc_counts), "observations": list(gc_pauses),
+                          "long_pause_selection_ms": 10, "long_pause_count": long_gc_count,
+                          "long_pause_window": "last_64_collections_at_least_10ms_during_measurement",
+                          "long_observations": list(long_gc_pauses)},
             "transcript_input_rows": expected, "transcript_retained_rows": actual,
             "runtime": snapshot, "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
             "transcript_performance": store.transcripts.performance.snapshot(),

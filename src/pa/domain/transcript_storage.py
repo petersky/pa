@@ -212,7 +212,7 @@ class TranscriptStorage:
         self.performance.record("canonical_payload_bytes", input_bytes)
         mirrors: list[tuple[TranscriptEvent, dict]] = []
         waiting = time.perf_counter()
-        with measured_lock(self._lock):
+        with measured_lock(self._lock, name="transcript.write"):
             self.performance.record("python_lock_wait_ms", (time.perf_counter() - waiting) * 1000)
             file_started = time.perf_counter()
             sizes = {digest: self._prepare_object(digest, compressed)
@@ -441,7 +441,7 @@ class TranscriptStorage:
     def prune(self, session_ids: list[str], *, keep_audit: bool = True) -> int:
         if not session_ids: return 0
         changed = 0
-        with measured_lock(self._lock), self._conn() as conn:
+        with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
             for session_id in session_ids:
                 if keep_audit:
                     marks = ",".join("?" for _ in _AUDIT_TYPES)
@@ -465,7 +465,7 @@ class TranscriptStorage:
         paths = self.objects_dir.glob("*/*.zlib")
         while batch := list(islice(paths, 128)):
             digests = [path.parent.name + path.stem for path in batch]
-            with measured_lock(self._lock), self._conn() as conn:
+            with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
                 marks = ",".join("?" for _ in digests)
                 live = {row[0] for row in conn.execute(
                     f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,

@@ -3229,7 +3229,9 @@ async def report_dispatch_checkpoint(
     body: ExplicitProgressCheckpointV1,
 ) -> dict[str, Any]:
     """Emit an allowlisted explicit checkpoint for a locally linked dispatch."""
-    record = _dispatch_store(request).get(dispatch_id)
+    record = await _offload_request(
+        request, "progress.dispatch_read", _dispatch_store(request).get, dispatch_id,
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
     _require_dispatch_access(request, record)

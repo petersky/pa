@@ -24,9 +24,7 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
     runtime_revision = running_source_revision()
     pa_bin = svc.find_pa_binary()
     service_bin = svc.find_service_binary()
-    items = store.list_items()
-    sessions = store.list_sessions()
-    knowledge = store.list_knowledge(limit=5)
+    counts = store.status_inventory()
     assets = ctx.services.get("assets")
     asset_version = assets.version if assets else ""
 
@@ -114,7 +112,5 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "zone": settings.zone,
         "peer_count": len(settings.peers),
         "module_count": module_count,
-        "item_count": len(items),
-        "session_count": len(sessions),
-        "knowledge_count": len(knowledge),
+        **counts,
     }

@@ -1237,6 +1237,25 @@ class PRSupervisorServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.dispatcher.calls), 1)
         self.assertIn("independently re-fetch", self.dispatcher.calls[0][1].lower())
 
+    async def test_implemented_independent_completion_support_can_own_protected_watch(self) -> None:
+        required = {"completion-requirements:v1", "completion-agent-verification:v1"}
+        self.domain.card_completion_capabilities.return_value = required
+        service = await self.make_service([snapshot()])
+        capability = service.capability
+        self.assertTrue(required.issubset(set(capability.capabilities)))
+        current = self.store.get_watch("watch-1")
+        self.assertTrue(required.issubset(set(current.required_capabilities)))
+        legacy = capability.model_copy(update={"capabilities": [
+            name for name in capability.capabilities if name != "completion-agent-verification:v1"]})
+        rejected = self.store.try_acquire_lease(current.id, self.settings.instance_id, capability=legacy)
+        self.assertFalse(rejected.acquired)
+        self.assertEqual(rejected.reason, "completion_owner_incompatible")
+        # Current advertised support must actually pass the authoritative lease
+        # fence; do not bypass or weaken the protected card's requirements.
+        grant = self.store.try_acquire_lease(current.id, self.settings.instance_id, capability=capability)
+        self.assertTrue(grant.acquired, grant.reason)
+        self.assertEqual(self.settings.capabilities, [])
+
     async def test_policy_tightening_reauthorizes_existing_watch_before_effect(self) -> None:
         self.domain.get_project.return_value = SimpleNamespace(
             tool_config={

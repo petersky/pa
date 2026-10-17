@@ -894,8 +894,8 @@ class PRSupervisor:
             self._capability = (
                 await self.github.probe(self.settings.instance_id)
             ).model_copy(update={"pr_watch_protocol_version": 2, "instance_name": self.settings.instance_name})
-            from pa.domain.completion import COMPLETION_CAPABILITY
-            self._capability.capabilities = sorted(set(self._capability.capabilities) | {COMPLETION_CAPABILITY})
+            from pa.domain.completion import completion_runtime_capabilities
+            self._capability.capabilities = completion_runtime_capabilities(self._capability.capabilities)
             self._capability_checked_at = now
 
         heartbeat_due = (

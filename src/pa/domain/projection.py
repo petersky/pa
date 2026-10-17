@@ -124,7 +124,7 @@ def serialized_mutation(method: Callable[..., T]) -> Callable[..., T]:
 
     @wraps(method)
     def wrapped(self: CardProjection, *args, **kwargs):
-        with measured_lock(self._mutation_lock):
+        with measured_lock(self._mutation_lock, name="projection.mutation"):
             return method(self, *args, **kwargs)
 
     return wrapped
@@ -298,7 +298,7 @@ class CardProjection:
     @contextmanager
     def mutation(self) -> Iterator[None]:
         """Serialize a complete event-log and projection mutation."""
-        with measured_lock(self._mutation_lock):
+        with measured_lock(self._mutation_lock, name="projection.mutation"):
             yield
 
     def _init_db(self) -> None:
@@ -1884,7 +1884,7 @@ class CardProjection:
             if record["state"] == "succeeded" and record.get("result_json"):
                 return self._operation_outcome(idempotency_key, record)
 
-        with measured_lock(self._mutation_lock):
+        with measured_lock(self._mutation_lock, name="projection.mutation"):
             return self._get_operation_outcome_repair(
                 idempotency_key, realm_id=realm_id
             )
@@ -4754,6 +4754,22 @@ class CardProjection:
         card = self.create_card(data.to_card_create(), **kwargs)
         return Item.from_card(card)
 
+    def status_inventory(self) -> dict[str, int]:
+        """Status counts across all realms, including archived sessions.
+
+        Match the unfiltered legacy item/session lists and the five most recent
+        active knowledge entries without reading bodies, proofs or JSON models.
+        One statement gives all three counts the same SQLite read snapshot.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT (SELECT COUNT(*) FROM cards) AS item_count, "
+                "(SELECT COUNT(*) FROM agent_sessions) AS session_count, "
+                "(SELECT COUNT(*) FROM (SELECT 1 FROM knowledge "
+                "WHERE status='active' LIMIT 5)) AS knowledge_count"
+            ).fetchone()
+        return dict(row)
+
     def list_items(
         self, kind: ItemKind | None = None, status: ItemStatus | None = None
     ) -> list[Item]:
@@ -4946,7 +4962,7 @@ class CardProjection:
             raise ValueError("Unsupported execution binding transition reason")
         normalized = dict(binding or {})
         changed_at = datetime.now(UTC)
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id=?", (session_id,)
             ).fetchone()
@@ -5044,7 +5060,7 @@ class CardProjection:
     ) -> AgentSession:
         """Associate a durable session and card without discarding older links."""
         linked_at = datetime.now(UTC)
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             session_row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -5109,7 +5125,7 @@ class CardProjection:
     ) -> AgentSession:
         """Retire one association while preserving its durable audit history."""
         updated_at = datetime.now(UTC)
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             session_row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -5265,7 +5281,7 @@ class CardProjection:
 
     def create_restart_handoff(self, handoff: RestartHandoff) -> RestartHandoff:
         """Insert once and serialize each session's nonterminal restart lifecycle."""
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             existing = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE session_id=? AND idempotency_key=?",
                 (handoff.session_id, handoff.idempotency_key),
@@ -5383,7 +5399,7 @@ class CardProjection:
     ) -> RestartHandoff | None:
         from pa.instance.restart_lifecycle import validate_transition, RestartTransitionConflict, TERMINAL
         now = datetime.now(UTC)
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             row = conn.execute("SELECT * FROM agent_restart_handoffs WHERE id=?", (handoff_id,)).fetchone()
             if row is None:
                 return None
@@ -5432,7 +5448,7 @@ class CardProjection:
     ) -> RestartHandoff:
         """Edit or remove continuation only before service quiescing begins."""
         now = datetime.now(UTC)
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
                 (handoff_id, session_id),
@@ -5459,7 +5475,7 @@ class CardProjection:
     ) -> RestartHandoff:
         """Re-arm one failed receipt without changing its continuation identity."""
         now = datetime.now(UTC)
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_restart_handoffs WHERE id=? AND session_id=?",
                 (handoff_id, session_id),
@@ -5844,7 +5860,7 @@ class CardProjection:
         # Serialize only the short compatibility transaction, after cold object
         # publication, rather than let local SQLite writers repeatedly overtake
         # one another in the busy handler.
-        with measured_lock(self._mutation_lock), self._conn() as conn:
+        with measured_lock(self._mutation_lock, name="projection.mutation"), self._conn() as conn:
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO agent_transcript_events
