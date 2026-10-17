@@ -100,101 +100,100 @@
 <section class="{{ "" if active_settings_section == "agent" else "hidden " }}stack" data-section="agent"{% if active_settings_section != "agent" %} hidden{% endif %}>
   <div class="panel">
     <div class="panel-header"><h2>Agent defaults</h2></div>
-    <p class="muted">Choose the provider and session options PA uses for new agent work. Instance defaults apply to everyone; account overrides apply only to you.</p>
-    <form class="stack settings-agent-prefs" id="pa-agent-prefs-form" data-instance-provider="{{ settings.agent_provider if settings is defined else 'cursor' }}">
-      <label class="checkbox-row">
-        <input type="checkbox" name="user_auto_approve"
-               {% if prefs.agent_auto_approve_permissions %}checked{% endif %}>
-        <span>Auto-approve permissions for my account</span>
-      </label>
-      <label>
-        <span>Session resource header</span>
-        <select name="telemetry_session_header">
-          {% for value, label in [('hidden', 'Hidden'), ('compact', 'Compact (default)'), ('expanded', 'Expanded')] %}
-          <option value="{{ value }}" {% if prefs.telemetry_session_header == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" name="global_auto_approve"
-               {% if global_prefs.agent_auto_approve_permissions %}checked{% endif %}>
-        <span>Instance default: auto-approve permissions</span>
-      </label>
-      <label>
-        <span>My ACP provider</span>
-        <select name="user_provider">
-          <option value="">Inherit instance default</option>
-          {% for provider in agent_providers %}
-          <option value="{{ provider.id }}" {% if prefs.agent_provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        <span>Instance default ACP provider</span>
-        <select name="global_provider">
-          <option value="">Use PA_AGENT_PROVIDER / config ({{ settings.agent_provider if settings is defined else 'cursor' }})</option>
-          {% for provider in agent_providers %}
-          <option value="{{ provider.id }}" {% if global_prefs.agent_provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      {% set global_chat_defaults = (global_prefs.agent_surfaces or {}).get('chat.default') %}
-      <fieldset class="stack" data-settings-defaults-scope="global">
-        <legend>Instance defaults for new chats</legend>
-        <p class="muted small">These are the fallback model, mode, effort, and provider for every account on this PA instance.</p>
-        <label>
-          <span>Provider</span>
-          <select name="global_surface_chat_default" data-settings-default-provider>
-            <option value="">Inherit instance ACP provider</option>
-            {% for provider in agent_providers %}
-            <option value="{{ provider.id }}" {% if global_chat_defaults and global_chat_defaults.provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label><span>Model</span><select name="global_default_model_id" data-settings-default-model data-saved-value="{{ global_chat_defaults.model_id if global_chat_defaults and global_chat_defaults.model_id else '' }}"><option value="">Provider default</option></select></label>
-        <label><span>Mode</span><select name="global_default_mode_id" data-settings-default-mode data-saved-value="{{ global_chat_defaults.mode_id if global_chat_defaults and global_chat_defaults.mode_id else '' }}"><option value="">Provider default</option></select></label>
-        <label><span>Effort</span><select name="global_default_effort" data-settings-default-effort data-saved-value="{{ global_chat_defaults.effort if global_chat_defaults and global_chat_defaults.effort else '' }}"><option value="">Provider default</option></select></label>
-        <div class="stack" data-settings-default-related hidden></div>
-        <script type="application/json" data-settings-default-config-json>{{ (global_chat_defaults.config if global_chat_defaults else {}) | tojson }}</script>
-      </fieldset>
-      {% set chat_defaults = (prefs.agent_surfaces or {}).get('chat.default') %}
-      <fieldset class="stack" data-settings-defaults-scope="user">
-        <legend>My overrides for new chats</legend>
-        <p class="muted small">Leave a value on “inherit” or “provider default” to use the instance setting above.</p>
-        <label>
-          <span>Provider</span>
-          <select name="surface_chat_default" data-settings-default-provider>
-            <option value="">Inherit my ACP provider</option>
+    <form class="stack settings-agent-prefs" id="pa-agent-prefs-form" data-instance-provider="{{ settings.agent_provider }}">
+      <label for="pa-defaults-scope">Settings scope</label>
+      <select id="pa-defaults-scope" name="defaults_scope" aria-describedby="pa-defaults-impact">
+        <option value="user">My defaults</option>
+        <option value="global">Instance defaults</option>
+      </select>
+      <p id="pa-defaults-impact" role="status">Affects only my new sessions</p>
+      {% for scope, title, values in [('user', 'My defaults', prefs), ('global', 'Instance defaults', global_prefs)] %}
+      {% set prefix = 'global_' if scope == 'global' else '' %}
+      {% set chat_defaults = (values.agent_surfaces or {}).get('chat.default') %}
+      <div class="stack" data-agent-scope="{{ scope }}"{% if scope == 'global' %} hidden{% endif %}>
+        <fieldset class="stack" data-settings-defaults-scope="{{ scope }}">
+          <legend>{{ title }} for new chats</legend>
+          <div class="settings-default-grid">
+          <div class="settings-default-control">
+          <label for="pa-{{ scope }}-provider">Provider</label>
+          <select id="pa-{{ scope }}-provider" name="{{ prefix }}surface_chat_default" data-settings-default-provider>
+            <option value="">Inherit</option>
             {% for provider in agent_providers %}
             <option value="{{ provider.id }}" {% if chat_defaults and chat_defaults.provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
             {% endfor %}
           </select>
-        </label>
-        <label><span>Model</span><select name="default_model_id" data-settings-default-model data-saved-value="{{ chat_defaults.model_id if chat_defaults and chat_defaults.model_id else '' }}"><option value="">Provider default</option></select></label>
-        <label><span>Mode</span><select name="default_mode_id" data-settings-default-mode data-saved-value="{{ chat_defaults.mode_id if chat_defaults and chat_defaults.mode_id else '' }}"><option value="">Provider default</option></select></label>
-        <label><span>Effort</span><select name="default_effort" data-settings-default-effort data-saved-value="{{ chat_defaults.effort if chat_defaults and chat_defaults.effort else '' }}"><option value="">Provider default</option></select></label>
-        <div class="stack" data-settings-default-related hidden></div>
-        <script type="application/json" data-settings-default-config-json>{{ (chat_defaults.config if chat_defaults else {}) | tojson }}</script>
-      </fieldset>
-      <fieldset class="stack">
-        <legend>Per-surface provider overrides (user)</legend>
-        {% set surfaces = [('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
-        {% for key, label in surfaces %}
-        <label>
-          <span>{{ label }} ({{ key }})</span>
-          <select name="surface_{{ key | replace('.', '_') }}">
-            {% set cur = (prefs.agent_surfaces or {}).get(key) %}
-            {% set cur_p = cur.provider if cur else None %}
+          </div>
+          {% for field, label, attr in [('model_id', 'Model', 'model'), ('mode_id', 'Execution / permission mode', 'mode'), ('effort', 'Effort', 'effort')] %}
+          <div class="settings-default-control">
+          <label for="pa-{{ scope }}-{{ attr }}">{{ label }}</label>
+          <select id="pa-{{ scope }}-{{ attr }}" name="{{ prefix }}default_{{ field }}" data-settings-default-{{ attr }} data-saved-value="{{ chat_defaults[field] if chat_defaults and chat_defaults[field] else '' }}">
             <option value="">Inherit</option>
-            {% for provider in agent_providers %}
-            <option value="{{ provider.id }}" {% if cur_p == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+          </select>
+          </div>
+          {% endfor %}
+          </div>
+          <details>
+            <summary>Advanced provider options</summary>
+            <div class="stack" data-settings-default-related hidden></div>
+            {% if chat_defaults %}
+            {% for key, value in chat_defaults.execution_preferences.model_dump(mode='json').items() %}
+            {% if value is mapping and value.get('intent', 'inherit') != 'inherit' %}
+            <p class="small">Saved {{ key }} selection: {{ value.get('value', 'Automatic') }} · {{ value.intent }}</p>
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+          </details>
+          <script type="application/json" data-settings-default-config-json>{{ (chat_defaults.config if chat_defaults else {}) | tojson }}</script>
+        </fieldset>
+        <details class="stack">
+          <summary>Advanced provider routing{% if scope == 'user' %} and surfaces{% endif %}</summary>
+          <label><span>{{ title }} ACP provider</span>
+            <select name="{{ 'global_provider' if scope == 'global' else 'user_provider' }}">
+              <option value="">{{ 'Use instance configuration' if scope == 'global' else 'Inherit instance ACP provider' }}</option>
+              {% for provider in agent_providers %}
+              <option value="{{ provider.id }}" {% if values.agent_provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          {% if scope == 'user' %}
+          <fieldset class="stack">
+            <legend>Per-surface provider overrides (user)</legend>
+            {% for key, label in [('chat.card', 'Card embeds'), ('project', 'Projects'), ('execution', 'Execution router')] %}
+            <label><span>{{ label }}</span>
+              <select name="surface_{{ key | replace('.', '_') }}">
+                <option value="">Inherit</option>
+                {% set current = (prefs.agent_surfaces or {}).get(key) %}
+                {% for provider in agent_providers %}
+                <option value="{{ provider.id }}" {% if current and current.provider == provider.id %}selected{% endif %}>{{ provider.display_name }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            {% endfor %}
+          </fieldset>
+          {% endif %}
+        </details>
+        <fieldset class="stack">
+          <legend>Permission approval · {{ title }}</legend>
+          <label class="checkbox-row">
+            <input type="checkbox" name="{{ 'global_auto_approve' if scope == 'global' else 'user_auto_approve' }}" {% if values.agent_auto_approve_permissions %}checked{% endif %}>
+            <span>Auto-approve permissions{% if scope == 'user' %} for my account{% else %} by default for this instance{% endif %}</span>
+          </label>
+        </fieldset>
+        {% if scope == 'user' %}
+        <label><span>Session resource header</span>
+          <select name="telemetry_session_header">
+            {% for value, label in [('hidden', 'Hidden'), ('compact', 'Compact (default)'), ('expanded', 'Expanded')] %}
+            <option value="{{ value }}" {% if prefs.telemetry_session_header == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </label>
-        {% endfor %}
-      </fieldset>
-      <button type="submit" class="primary">Save agent preferences</button>
-      <p class="muted small" id="pa-agent-prefs-status" hidden></p>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <div id="pa-agent-changes" role="status" aria-live="polite"></div>
+      <button type="submit" class="primary">Save my defaults</button>
+      <p class="muted small" id="pa-agent-prefs-status" role="status" hidden></p>
+      <script type="application/json" id="pa-agent-saved-preferences">{{ {'user': prefs.model_dump(mode='json'), 'global': global_prefs.model_dump(mode='json'), 'personal_file': personal_preferences_exist, 'preview': agent_defaults_preview} | tojson }}</script>
     </form>
   </div>
   <div class="panel">
@@ -957,6 +956,133 @@
 (function () {
   var form = document.getElementById("pa-agent-prefs-form");
   if (!form) return;
+  var scopeControl = form.elements.defaults_scope;
+  var savedNode = document.getElementById("pa-agent-saved-preferences");
+  var saved = savedNode ? JSON.parse(savedNode.textContent) : {user: {}, global: {}};
+  var baseline = {};
+  var pendingSave = false;
+  function controls(scope) {
+    var pane = form.querySelector('[data-agent-scope="' + scope + '"]');
+    return pane ? Array.from(pane.querySelectorAll("select, input")) : [];
+  }
+  function controlKey(el) { return el.name || "config:" + el.dataset.settingsDefaultConfig; }
+  function valueOf(el) { return el.type === "checkbox" ? el.checked : el.value; }
+  ["user", "global"].forEach(function (scope) {
+    baseline[scope] = {};
+    controls(scope).forEach(function (el) {
+      baseline[scope][controlKey(el)] = el.dataset.savedValue || valueOf(el);
+    });
+  });
+  function pane(scope) { return form.querySelector('[data-settings-defaults-scope="' + scope + '"]'); }
+  function field(scope, kind) { return pane(scope)?.querySelector('[data-settings-default-' + kind + ']'); }
+  var previews = saved.preview || {};
+  var previewRevision = 0;
+  var previewPending = false;
+  var previewFailed = false;
+  function resolvedProvider(scope) {
+    var pref = previews[scope]?.values?.harness;
+    // Minimal native-option test harness has no shared preview endpoint.
+    return {value: pref?.value || field(scope, "provider")?.value || form.elements[scope === "global" ? "global_provider" : "user_provider"]?.value || form.elements.global_provider?.value || form.dataset.instanceProvider};
+  }
+  function effective(scope, kind) {
+    var preview = previews[scope] || {};
+    if (previewPending && scope === scopeControl.value) return {value: "Checking effective value…", source: "Pending preview"};
+    if (previewFailed && scope === scopeControl.value) return {value: "Preview unavailable; reload to check inherited values", source: "Unconfirmed"};
+    if (kind === "mode") return {value: preview.mode || "Provider default (chosen at session start)", source: sourceLabel(preview.mode_source)};
+    var key = {provider: "harness", model: "model", effort: "reasoning"}[kind];
+    var pref = preview.values?.[key];
+    var value = pref?.intent === "automatic" ? "Automatic (policy at session start)" : pref?.value || "Provider default (chosen at session start)";
+    if (pref?.intent === "preferred") value += " (preferred)";
+    return {value: value, source: sourceLabel(preview.sources?.[key])};
+  }
+  function sourceLabel(source) {
+    if (!source || source === "automatic_policy" || source === "provider") return "Provider / policy";
+    if (source.startsWith("user")) {
+      if (saved.personal_file === false && !changes("user").length) return "Instance defaults (account inherits)";
+      return source === "user" ? "My advanced selection" : "My defaults";
+    }
+    if (source === "installation_surface") return "Instance advanced selection";
+    if (source === "installation_provider") return "Instance configuration";
+    return "Instance defaults";
+  }
+  function headers() {
+    var result = {"Content-Type": "application/json", Accept: "application/json"};
+    if (window.PACSRF) result = window.PACSRF.headers(result);
+    var csrf = document.querySelector('meta[name="csrf-token"]');
+    if (csrf?.content) result["X-CSRF-Token"] = csrf.content;
+    return result;
+  }
+  async function previewChanges() {
+    if (!scopeControl) return;
+    var revision = ++previewRevision;
+    var scope = scopeControl.value;
+    previewPending = true; previewFailed = false; refresh();
+    try {
+      var response = await fetch("/api/agent/preferences/preview", {method: "POST", headers: headers(), credentials: "same-origin", body: JSON.stringify(payload(scope))});
+      if (!response.ok) throw new Error("Preview unavailable");
+      var result = await response.json();
+      if (revision !== previewRevision) return;
+      previews[scope] = result;
+    } catch (_) { if (revision === previewRevision) previewFailed = true; }
+    finally { if (revision === previewRevision) { previewPending = false; refresh(); } }
+  }
+  function labelOf(el) {
+    return (el.labels?.[0]?.querySelector("span")?.textContent || el.labels?.[0]?.textContent)?.trim() || el.dataset.settingsDefaultConfig || el.name;
+  }
+  function changes(scope) {
+    return controls(scope).filter(function (el) {
+      var key = controlKey(el);
+      // Native options are loaded asynchronously; their saved baseline is explicit.
+      if (!(key in baseline[scope]) && el.dataset.settingsDefaultConfig) {
+        var configured = saved[scope]?.agent_surfaces?.["chat.default"]?.config?.[el.dataset.settingsDefaultConfig];
+        baseline[scope][key] = configured == null ? "" : String(configured);
+      }
+      return valueOf(el) !== baseline[scope][key];
+    });
+  }
+  function refresh() {
+    if (!scopeControl) return; // Small native-options fixture has no scope UI.
+    var scope = scopeControl.value;
+    ["user", "global"].forEach(function (current) {
+      form.querySelector('[data-agent-scope="' + current + '"]').hidden = current !== scope;
+      ["provider", "model", "mode", "effort"].forEach(function (kind) {
+        var el = field(current, kind);
+        var result = effective(current, kind);
+        var note = document.getElementById(el.id + "-effective");
+        if (!note) {
+          note = document.createElement("p"); note.id = el.id + "-effective";
+          note.className = "small"; note.setAttribute("aria-live", "polite");
+          el.setAttribute("aria-describedby", note.id); el.after(note);
+          var reset = document.createElement("button"); reset.type = "button";
+          reset.className = "secondary small"; reset.textContent = "Reset to inherited";
+          reset.setAttribute("aria-label", "Reset " + labelOf(el) + " to inherited");
+          reset.addEventListener("click", function () { el.value = ""; el.dispatchEvent(new Event("change", {bubbles: true})); });
+          note.after(reset);
+        }
+        note.textContent = (changes(current).length ? "After save: " : "Effective: ") + result.value + " · From " + result.source;
+      });
+    });
+    document.getElementById("pa-defaults-impact").textContent = scope === "user" ? "Affects only my new sessions" : "Affects new sessions for accounts inheriting instance defaults";
+    var changed = changes(scope);
+    var summary = document.getElementById("pa-agent-changes");
+    summary.replaceChildren();
+    var title = document.createElement("strong");
+    title.textContent = changed.length ? "Changes to " + (scope === "user" ? "my defaults" : "instance defaults") : "No changes in this scope";
+    summary.appendChild(title);
+    if (changed.length) {
+      var list = document.createElement("ul");
+      changed.forEach(function (el) {
+        var item = document.createElement("li");
+        var before = baseline[scope][controlKey(el)];
+        item.textContent = labelOf(el) + ": " + (before === "" ? "Inherited" : before) + " → " + (valueOf(el) === "" ? "Inherited" : valueOf(el));
+        list.appendChild(item);
+      });
+      summary.appendChild(list);
+    }
+    var submit = form.querySelector('[type="submit"]');
+    submit.textContent = scope === "user" ? "Save my defaults" : "Save instance defaults";
+    submit.disabled = pendingSave || previewPending || previewFailed || !changed.length || Array.from(form.querySelectorAll('[data-settings-defaults-scope]')).some(c => c.dataset.optionsLoading === "true");
+  }
   function optionValues(snap, key, snake) {
     var group = snap && snap[key];
     return group && (group[key === "models" ? "availableModels" : "availableModes"] || group[snake]) || [];
@@ -989,30 +1115,33 @@
   async function loadDefaultOptions(container, useSaved) {
     var revision = container._optionsRevision = (container._optionsRevision || 0) + 1;
     var effort = container.querySelector("[data-settings-default-effort]");
-    if (window.PANativeEffort) window.PANativeEffort.fill(effort, [], "", "Checking model support…");
+    container.dataset.optionsLoading = "true";
+    refresh();
     var provider = container.querySelector("[data-settings-default-provider]");
     var isGlobal = container.dataset.settingsDefaultsScope === "global";
-    var providerId = provider.value ||
-      (isGlobal ? "" : form.user_provider.value) ||
-      form.global_provider.value || form.dataset.instanceProvider || "";
+    var providerId = resolvedProvider(isGlobal ? "global" : "user").value;
     if (!providerId) return;
     var results = await Promise.all([
       fetch("/api/agent/provider-options/" + encodeURIComponent(providerId), { credentials: "same-origin", headers: { Accept: "application/json" } }).then(r => r.ok ? r.json() : {}),
       window.PANativeEffort ? window.PANativeEffort.catalog().catch(() => ({})) : Promise.resolve({})
     ]).catch(() => [{}, {}]);
     if (revision !== container._optionsRevision) return;
+    container._loadedProvider = providerId;
     var snap = results[0];
+    container._snapshot = snap;
     container._effortCatalog = results[1].candidates || [];
     container._effortScope = window.PANativeEffort && window.PANativeEffort.localScope(results[1], providerId);
     var model = container.querySelector("[data-settings-default-model]");
     var mode = container.querySelector("[data-settings-default-mode]");
     var effort = container.querySelector("[data-settings-default-effort]");
-    fill(model, optionValues(snap, "models", "available_models"), ["modelId", "model_id", "id"], useSaved ? model.dataset.savedValue : "");
-    fill(mode, optionValues(snap, "modes", "available_modes"), ["id", "modeId", "mode_id"], useSaved ? mode.dataset.savedValue : "");
+    fill(model, optionValues(snap, "models", "available_models"), ["modelId", "model_id", "id"], useSaved ? (model.dataset.draftValue ?? model.dataset.savedValue) : "", isGlobal ? "Provider default" : "Inherit instance model");
+    fill(mode, optionValues(snap, "modes", "available_modes"), ["id", "modeId", "mode_id"], useSaved ? (mode.dataset.draftValue ?? mode.dataset.savedValue) : "", isGlobal ? "Provider default" : "Inherit instance execution mode");
     var raw = snap.config_options || [];
-    var savedConfig = {};
+    var savedConfig = saved[container.dataset.settingsDefaultsScope]?.agent_surfaces?.["chat.default"]?.config || {};
     var savedConfigNode = container.querySelector("[data-settings-default-config-json]");
-    try { savedConfig = JSON.parse(savedConfigNode && savedConfigNode.textContent || "{}"); } catch (_) {}
+    if (!savedNode) {
+      try { savedConfig = JSON.parse(savedConfigNode && savedConfigNode.textContent || "{}"); } catch (_) {}
+    }
     var effortOption = raw.find(function (item) {
       var id = String(item && (item.id || item.configId || item.config_id || item.name) || "").toLowerCase().replace(/[_ -]/g, "");
       return ["effort", "reasoningeffort", "reasoninglevel", "thinkinglevel"].includes(id);
@@ -1020,13 +1149,20 @@
     function updateEffort(wanted) {
       if (!window.PANativeEffort) return;
       var values = window.PANativeEffort.evidence(container._effortCatalog, container._effortScope, model.value);
-      var reset = window.PANativeEffort.fill(effort, values, wanted, values.length ? "Automatic / provider default" : "Provider default — effort support unknown or unavailable");
+      var reset = window.PANativeEffort.fill(effort, values, wanted, isGlobal ? (values.length ? "Automatic / provider default" : "Provider default — support unconfirmed") : "Inherit instance effort");
       var note = container.querySelector("[data-effort-reset]");
-      if (!note) {note = document.createElement("p"); note.dataset.effortReset = ""; note.setAttribute("role", "status"); effort.parentNode.after(note);}
-      if (reset) note.textContent = "Previous effort is unavailable for this model. Reset to provider default; save to update defaults.";
+      if (!note) {note = document.createElement("p"); note.dataset.effortReset = ""; note.setAttribute("role", "status"); effort.after(note);}
+      if (reset && useSaved && wanted) {
+        effort.add(new Option(wanted + " (saved; support unconfirmed)", wanted));
+        effort.value = wanted;
+        note.textContent = "Saved effort retained; provider support is unconfirmed.";
+      } else {
+        note.textContent = reset ? "Previous effort is unavailable for this model. Reset to provider default; save to update defaults." : "";
+      }
+      refresh();
     }
-    updateEffort(useSaved ? effort.dataset.savedValue : "");
-    model.onchange = function () { updateEffort(); };
+    updateEffort(useSaved ? (effort.dataset.draftValue ?? effort.dataset.savedValue) : "");
+    model.onchange = function () { updateEffort(); effort.dataset.draftValue = effort.value; };
     var related = container.querySelector("[data-settings-default-related]");
     related.innerHTML = "";
     raw.filter(function (item) { return item && item !== effortOption && (!window.PANativeEffort || window.PANativeEffort.kind(item) === "other"); }).forEach(function (item) {
@@ -1042,104 +1178,128 @@
       label.appendChild(caption); label.appendChild(select); related.appendChild(label);
     });
     related.hidden = !related.children.length;
+    [model, mode, effort].forEach(function (el) { el.dataset.draftValue = el.value; });
+    container.dataset.optionsLoading = "false";
+    if (scopeControl && container.dataset.settingsDefaultsScope === scopeControl.value && changes(scopeControl.value).length) previewChanges();
+    refresh();
   }
   var defaultContainers = Array.from(form.querySelectorAll("[data-settings-defaults-scope]"));
-  defaultContainers.forEach(function (container) {
-    var provider = container.querySelector("[data-settings-default-provider]");
-    if (provider) provider.addEventListener("change", function () { loadDefaultOptions(container, false); });
-    loadDefaultOptions(container, true);
-  });
-  form.addEventListener("change", function () {
-    var status = document.getElementById("pa-agent-prefs-status");
-    if (status) {
-      status.hidden = false;
-      status.textContent = "Unsaved changes.";
+  defaultContainers.forEach(function (container) { loadDefaultOptions(container, true); });
+  form.addEventListener("pa:settings-draft-restored", function () { previewChanges(); });
+  form.addEventListener("change", async function (event) {
+    if (event.target.hasAttribute("data-saved-value")) event.target.dataset.draftValue = event.target.value;
+    if (event.target === scopeControl) document.getElementById("pa-agent-prefs-status").hidden = true;
+    if (event.target !== scopeControl) {
+      var status = document.getElementById("pa-agent-prefs-status");
+      if (status) { status.hidden = false; status.textContent = "Unsaved changes."; }
+    }
+    await previewChanges();
+    if (!scopeControl && event.target.hasAttribute("data-settings-default-provider")) {
+      loadDefaultOptions(event.target.closest("[data-settings-defaults-scope]"), false);
+      return;
+    }
+    var providerChanged = event.target.hasAttribute("data-settings-default-provider") || ["user_provider", "global_provider"].includes(event.target.name);
+    if (providerChanged || event.target === scopeControl) {
+      defaultContainers.forEach(function (container) {
+        var scope = container.dataset.settingsDefaultsScope;
+        if (container._loadedProvider !== resolvedProvider(scope).value) {
+          loadDefaultOptions(container, event.target === scopeControl || scope !== scopeControl?.value);
+        }
+      });
     }
   });
-  form.user_provider.addEventListener("change", function () {
-    defaultContainers.filter(function (container) {
-      return container.dataset.settingsDefaultsScope === "user" &&
-        !container.querySelector("[data-settings-default-provider]").value;
-    }).forEach(function (container) { loadDefaultOptions(container, false); });
-  });
-  form.global_provider.addEventListener("change", function () {
-    defaultContainers.filter(function (container) {
-      return !container.querySelector("[data-settings-default-provider]").value;
-    }).forEach(function (container) { loadDefaultOptions(container, false); });
-  });
-  form.addEventListener("submit", async function (e) {
-    e.preventDefault();
+  function syncSavedScope(scope, snapshot, keepDrafts) {
+    var dirty = keepDrafts ? changes(scope) : [];
+    saved[scope] = snapshot;
+    controls(scope).forEach(function (el) {
+      if (dirty.includes(el)) return;
+      var name = el.name;
+      var value;
+      if (name === "user_auto_approve" || name === "global_auto_approve") value = snapshot.agent_auto_approve_permissions;
+      else if (name === "user_provider" || name === "global_provider") value = snapshot.agent_provider || "";
+      else if (name === "telemetry_session_header") value = snapshot.telemetry_session_header;
+      else {
+        var surface = ["surface_chat_card", "surface_project", "surface_execution"].includes(name) ? name.slice(8).replace("_", ".") : "chat.default";
+        var current = snapshot.agent_surfaces?.[surface] || {};
+        var key = el.hasAttribute("data-settings-default-model") ? "model_id" : el.hasAttribute("data-settings-default-mode") ? "mode_id" : el.hasAttribute("data-settings-default-effort") ? "effort" : "provider";
+        value = el.dataset.settingsDefaultConfig ? current.config?.[el.dataset.settingsDefaultConfig] || "" : current[key] || "";
+      }
+      if (el.type === "checkbox") el.checked = value;
+      else {
+        if (value && !Array.from(el.options).some(option => option.value === value)) el.add(new Option(value, value));
+        el.value = value;
+      }
+      baseline[scope][controlKey(el)] = valueOf(el);
+      if (el.hasAttribute("data-saved-value")) { el.dataset.savedValue = el.value; el.dataset.draftValue = el.value; }
+    });
+  }
+  function payload(scope) {
+    var changed = changes(scope);
+    var body = {scope: scope};
+    var surfaces = {};
+    var existing = saved[scope]?.agent_surfaces || {};
+    changed.forEach(function (el) {
+      var name = el.name;
+      if (name === "user_auto_approve" || name === "global_auto_approve") body.agent_auto_approve_permissions = el.checked;
+      else if (name === "user_provider" || name === "global_provider") body.agent_provider = el.value || null;
+      else if (name === "telemetry_session_header") body.telemetry_session_header = el.value;
+      else {
+        var surface = "chat.default";
+        if (["surface_chat_card", "surface_project", "surface_execution"].includes(name)) surface = name.slice(8).replace("_", ".");
+        surfaces[surface] = surfaces[surface] || structuredClone(existing[surface] || {});
+        if (el.dataset.settingsDefaultConfig) {
+          surfaces[surface].config = surfaces[surface].config || {};
+          if (el.value) surfaces[surface].config[el.dataset.settingsDefaultConfig] = el.value;
+          else delete surfaces[surface].config[el.dataset.settingsDefaultConfig];
+        } else {
+          var key = el.hasAttribute("data-settings-default-model") ? "model_id" : el.hasAttribute("data-settings-default-mode") ? "mode_id" : el.hasAttribute("data-settings-default-effort") ? "effort" : "provider";
+          surfaces[surface][key] = el.value || null;
+        }
+      }
+    });
+    if (Object.keys(surfaces).length) body.agent_surfaces = surfaces;
+    return body;
+  }
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var scope = scopeControl.value;
+    var changed = changes(scope);
+    if (!changed.length || pendingSave || previewPending || previewFailed) return;
     var status = document.getElementById("pa-agent-prefs-status");
-    var headers = { "Content-Type": "application/json", Accept: "application/json" };
+    var headers = {"Content-Type": "application/json", Accept: "application/json"};
     if (window.PACSRF) headers = window.PACSRF.headers(headers);
     var csrf = document.querySelector('meta[name="csrf-token"]');
-    if (csrf && csrf.content) headers["X-CSRF-Token"] = csrf.content;
-    var userVal = !!form.user_auto_approve.checked;
-    var globalVal = !!form.global_auto_approve.checked;
-    var userProvider = form.user_provider.value || null;
-    var globalProvider = form.global_provider.value || null;
-    var surfaces = {};
-    ["chat_card", "project", "execution"].forEach(function (key) {
-      var el = form["surface_" + key];
-      if (!el) return;
-      var surfaceKey = key.replace("_", ".");
-      if (key === "chat_default") surfaceKey = "chat.default";
-      if (key === "chat_card") surfaceKey = "chat.card";
-      if (el.value) surfaces[surfaceKey] = { provider: el.value };
-      else surfaces[surfaceKey] = { provider: null };
+    if (csrf?.content) headers["X-CSRF-Token"] = csrf.content;
+    var body = payload(scope);
+    var locked = Array.from(form.querySelectorAll("select, input, button")).map(function (el) {
+      var wasDisabled = el.disabled; el.disabled = true; return [el, wasDisabled];
     });
-    function defaultsFor(scope) {
-      var container = form.querySelector('[data-settings-defaults-scope="' + scope + '"]');
-      var config = {};
-      container.querySelectorAll("[data-settings-default-config]").forEach(function (select) {
-        if (select.value) config[select.dataset.settingsDefaultConfig] = select.value;
-      });
-      return {
-        provider: container.querySelector("[data-settings-default-provider]").value || null,
-        model_id: container.querySelector("[data-settings-default-model]").value || null,
-        mode_id: container.querySelector("[data-settings-default-mode]").value || null,
-        effort: container.querySelector("[data-settings-default-effort]").value || null,
-        config: config,
-      };
-    }
-    surfaces["chat.default"] = defaultsFor("user");
-    var globalSurfaces = { "chat.default": defaultsFor("global") };
+    pendingSave = true; refresh();
+    status.hidden = false; status.textContent = "Saving…";
     try {
-      await fetch("/api/agent/preferences", {
-        method: "PUT",
-        headers: headers,
-        credentials: "same-origin",
-        body: JSON.stringify({
-          agent_auto_approve_permissions: userVal,
-          agent_provider: userProvider,
-          agent_surfaces: surfaces,
-          telemetry_session_header: form.telemetry_session_header.value,
-          scope: "user",
-        }),
-      });
-      await fetch("/api/agent/preferences", {
-        method: "PUT",
-        headers: headers,
-        credentials: "same-origin",
-        body: JSON.stringify({
-          agent_auto_approve_permissions: globalVal,
-          agent_provider: globalProvider,
-          agent_surfaces: globalSurfaces,
-          scope: "global",
-        }),
-      });
-      try { sessionStorage.removeItem("pa:settings:agent-draft"); } catch (_error) {}
-      if (status) {
-        status.hidden = false;
-        status.textContent = "Saved.";
+      var response = await fetch("/api/agent/preferences", {method: "PUT", headers: headers, credentials: "same-origin", body: JSON.stringify(body)});
+      if (!response.ok) {
+        var rejected = new Error("Save rejected (" + response.status + "). Your changes are still here.");
+        rejected.definitive = [400, 401, 403, 404, 409, 422].includes(response.status);
+        throw rejected;
       }
-    } catch (err) {
-      if (status) {
-        status.hidden = false;
-        status.textContent = "Failed to save preferences.";
+      var result = await response.json();
+      if (scope === "user") saved.personal_file = true;
+      syncSavedScope(scope, result[scope], false);
+      if (scope === "global" && saved.personal_file === false && result.user) syncSavedScope("user", result.user, true);
+      status.textContent = scope === "user" ? "My defaults saved." : "Instance defaults saved.";
+      // Keep any unsaved edits in the other scope for section navigation.
+      if (!changes(scope === "user" ? "global" : "user").length) {
+        try { sessionStorage.removeItem("pa:settings:agent-draft"); } catch (_) {}
       }
+    } catch (error) {
+      status.textContent = error.definitive ? error.message : "Save could not be confirmed. Your changes are still here; reload to check saved values before retrying.";
+    } finally {
+      locked.forEach(function (entry) { entry[0].disabled = entry[1]; });
+      pendingSave = false; await previewChanges(); refresh();
     }
   });
+  refresh();
 })();
 </script>
 <script>

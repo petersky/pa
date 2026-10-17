@@ -8,7 +8,7 @@ import time
 from datetime import UTC, datetime
 
 from pa.acp.configuration import SessionConfigurationRequest
-from pa.core.preferences import get_preferences_store
+from pa.core.preferences import UserPreferences, get_preferences_store
 from pa.execution.selection import (
     ExecutionCandidate,
     ExecutionPreferences,
@@ -66,6 +66,7 @@ def preference_layers(
     project_config=None,
     overrides=None,
     legacy=None,
+    preference_overrides: dict[str, UserPreferences] | None = None,
 ) -> list[tuple[str, ExecutionPreferences]]:
     overrides = overrides or ExecutionPreferences()
     legacy = legacy or ExecutionPreferences()
@@ -103,7 +104,9 @@ def preference_layers(
     for name, scope in ([("user", user_id)] if user_id else []) + [
         ("installation_surface", None)
     ]:
-        prefs = get_preferences_store(settings.data_dir, user_id=scope).load()
+        prefs = (preference_overrides or {}).get(name)
+        if prefs is None:
+            prefs = get_preferences_store(settings.data_dir, user_id=scope).load()
         specific = prefs.agent_surfaces.get(surface)
         if specific:
             layers.append((name, specific.execution_preferences))

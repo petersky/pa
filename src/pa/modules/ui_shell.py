@@ -177,6 +177,9 @@ def _settings_context(request: Request) -> dict:
         "active_settings_section": section,
         "prefs": prefs,
         "global_prefs": global_prefs,
+        "personal_preferences_exist": bool(
+            user_id and get_preferences_store(settings.data_dir, user_id=user_id).path.exists()
+        ),
         "settings": settings,
         "status": {
             "service": {"state": "deferred", "backend": "none", "installed": False}
@@ -197,6 +200,14 @@ def _settings_context(request: Request) -> dict:
         "backup_records": [],
         "backup_pagination": None,
     }
+    result["agent_defaults_preview"] = {}
+    if section == "agent":
+        from pa.modules.agent_chat import agent_defaults_preview
+
+        result["agent_defaults_preview"] = {
+            scope: agent_defaults_preview(settings, principal, scope=scope)
+            for scope in ("user", "global")
+        }
     if section == "prompts":
         result["prompt_catalog"] = PROMPTS.catalog(provider=settings.agent_provider)
         result["prompt_adapters"] = [
