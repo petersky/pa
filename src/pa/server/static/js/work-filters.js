@@ -1,10 +1,37 @@
 (function () {
   "use strict";
 
+  var readyWidgets = new WeakSet();
+  var readySaveButtons = new WeakSet();
+  var tagDropdown = null;
+
+  document.addEventListener("click", function (event) {
+    if (!tagDropdown) return;
+    if (!tagDropdown.element.isConnected) { tagDropdown = null; return; }
+    if (!tagDropdown.element.contains(event.target)) tagDropdown.close();
+  });
+
+  function updateResults() {
+    var board = document.querySelector("[data-work-board]");
+    var status = document.querySelector("[data-work-results]");
+    if (!board || !status) return;
+    var counts = board.querySelectorAll("[data-work-lane-results]");
+    if (counts.length !== board.querySelectorAll(".board-column").length) return;
+    counts.forEach(function (node) {
+      var shown = node.closest(".board-column").querySelectorAll(".compact-card").length;
+      var total = Number(node.dataset.total);
+      node.textContent = shown < total ? "Showing " + shown + " of " + total + " cards" : total + (total === 1 ? " card" : " cards");
+    });
+    var total = Array.from(counts).reduce(function (sum, node) { return sum + Number(node.dataset.total); }, 0);
+    var shown = board.querySelectorAll(".compact-card").length;
+    var message = total + (total === 1 ? " card" : " cards") + " across all lanes" + (shown < total ? " · " + shown + " loaded" : "");
+    if (status.textContent !== message) status.textContent = message;
+  }
+
   function init(root) {
     var widget = (root || document).querySelector("[data-work-tag-combobox]");
-    if (!widget || widget.dataset.ready) return;
-    widget.dataset.ready = "true";
+    if (!widget || readyWidgets.has(widget)) return;
+    readyWidgets.add(widget);
     if ((root || document).querySelector("[data-work-board]")) {
       var current = new URL(location.href);
       var stable = new URLSearchParams();
@@ -33,6 +60,7 @@
       list.hidden = true; input.setAttribute("aria-expanded", "false");
       input.removeAttribute("aria-activedescendant"); active = -1;
     }
+    tagDropdown = {element: widget, close: close};
     function add(value) {
       if (!value || values().indexOf(value) !== -1) return;
       var chip = document.createElement("span"); chip.className = "facet-chip";
@@ -50,7 +78,8 @@
         var item = document.createElement("li"); item.id = "work-tag-option-" + index;
         item.setAttribute("role", "option"); item.dataset.value = option.value;
         item.textContent = option.value + " (" + option.count + ")";
-        item.addEventListener("mousedown", function (event) { event.preventDefault(); add(option.value); });
+        item.addEventListener("mousedown", function (event) { event.preventDefault(); });
+        item.addEventListener("click", function () { add(option.value); });
         list.append(item);
       });
       list.hidden = false; input.setAttribute("aria-expanded", "true");
@@ -81,11 +110,10 @@
       if (remove) { var value = remove.dataset.removeTag; remove.closest(".facet-chip").remove(); announce(value + " removed. " + values().length + " tags selected."); }
       if (event.target.closest("[data-clear-tags]")) { chips.replaceChildren(); event.target.closest("[data-clear-tags]").hidden = true; announce("All tags cleared."); input.focus(); }
     });
-    document.addEventListener("click", function (event) { if (!widget.contains(event.target)) close(); });
 
     var save = (root || document).querySelector("[data-save-work-view]");
-    if (save && !save.dataset.ready) {
-      save.dataset.ready = "true";
+    if (save && !readySaveButtons.has(save)) {
+      readySaveButtons.add(save);
       save.addEventListener("click", function () {
         var name = window.prompt("Name this view"); if (!name) return;
         (window.PACSRF ? window.PACSRF.fetch : fetch)("/api/cards/saved-views?realm=" + encodeURIComponent(new URL(location.href).searchParams.get("realm") || "default"), {
@@ -96,6 +124,7 @@
       });
     }
   }
-  document.addEventListener("DOMContentLoaded", function () { init(document); });
-  document.body.addEventListener("htmx:afterSwap", function (event) { init(event.detail.target); });
+  document.addEventListener("DOMContentLoaded", function () { init(document); updateResults(); });
+  document.body.addEventListener("htmx:afterSwap", function (event) { init(event.detail.target); updateResults(); });
+  document.addEventListener("htmx:historyRestore", function () { init(document); updateResults(); });
 })();

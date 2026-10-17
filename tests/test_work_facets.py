@@ -14,7 +14,7 @@ from pa.instance.agent_session import reset_instance_agent
 
 def _app(tmp: str):
     reset_settings(); reset_store(); reset_instance_agent()
-    return Kernel.boot(settings=Settings(data_dir=Path(tmp), auth_required=False, telemetry_enabled=False)).build_app()
+    return Kernel.boot(settings=Settings(data_dir=Path(tmp) / "data", workspace_root=Path(tmp) / "workspaces", agent_enabled=False, auth_required=False, telemetry_enabled=False)).build_app()
 
 
 def test_work_shell_does_not_embed_unselected_vocabulary_and_facet_is_bounded() -> None:
@@ -44,6 +44,17 @@ def test_multiple_tag_and_or_filters_and_special_char_url_round_trip() -> None:
         assert "Both" in either.text and "One" in either.text
         assert page.text.count('name="tag" value="alpha"') == 1
         assert 'name="tag" value="ops &amp; qa"' in page.text
+        for title, tags in (("Both outcomes", ["alpha", "ops & qa"]), ("Alpha outcome", ["alpha"]), ("QA outcome", ["ops & qa"])):
+            store.create_card(CardCreate(title=title, tags=tags, lane="done"))
+        query = "/partials/cards?lane=done&attention=outcome&tag=alpha&tag=ops%20%26%20qa&tag_mode="
+        lifecycle_both = client.get(query + "and")
+        lifecycle_either = client.get(query + "or")
+        assert 'data-total="1"' in lifecycle_both.text
+        assert "Both outcomes" in lifecycle_both.text
+        assert "Alpha outcome" not in lifecycle_both.text and "QA outcome" not in lifecycle_both.text
+        assert 'data-total="3"' in lifecycle_either.text
+        assert all(title in lifecycle_either.text for title in ("Both outcomes", "Alpha outcome", "QA outcome"))
+
 
 
 def test_saved_views_are_scoped_versioned_audited_and_canonical() -> None:
@@ -68,3 +79,83 @@ def test_combobox_static_keyboard_and_accessibility_contract() -> None:
         assert behavior in script
     for contract in ('role="combobox"', 'role="listbox"', 'aria-live="polite"', "data-clear-tags", "Tag (no JavaScript fallback)"):
         assert contract in template
+
+
+def test_applied_filter_chips_remove_one_value_and_preserve_shared_view() -> None:
+    import html
+    import re
+    from urllib.parse import parse_qs, urlencode, urlsplit
+
+    from pa.domain.models import ProjectCreate
+
+    with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
+        project = client.app.state.ctx.store.create_project(ProjectCreate(title="Release & QA"))
+        params = [
+            ("q", "ship & review"), ("project", project.id), ("kind", "task"),
+            ("owner", "user:me"), ("instance", "missing-instance"), ("blocked", "blocked"),
+            ("tag", "ops & qa"), ("tag", "alpha"), ("tag_mode", "or"),
+            ("updated", "14"), ("attention", "motion"), ("lane", "waiting"),
+        ]
+        page = client.get("/work?" + urlencode(params))
+        assert page.status_code == 200
+        assert '<details class="work-filter-disclosure">' in page.text  # Collapsed even with applied values.
+        assert 'aria-label="9 applied"' in page.text
+        assert "Project: Release &amp; QA" in page.text
+        assert 'name="lane" value="waiting"' in page.text
+        assert 'value="14" selected' in page.text
+        chips = re.findall(r'href="([^"]+)" aria-label="Remove ([^"]+)" data-applied-filter="([^"]+)"', page.text)
+        assert len(chips) == 11
+        original = parse_qs(urlencode([("realm", "default"), *params]))
+        original["tag"].sort()
+        for link, label, key in chips:
+            remaining = parse_qs(urlsplit(html.unescape(link)).query)
+            expected = {k: list(v) for k, v in original.items()}
+            if key == "tag":
+                expected[key].remove(html.unescape(label).split(": ", 1)[1])
+            else:
+                del expected[key]
+            assert remaining == expected, (key, remaining, expected)
+            assert client.get(html.unescape(link)).status_code == 200
+
+
+def test_last_tag_removal_clears_match_mode_and_empty_lanes_are_concise() -> None:
+    import html
+    import re
+    from urllib.parse import parse_qs, urlsplit
+
+    with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
+        page = client.get("/work?tag=ops%20%26%20qa&tag_mode=or&blocked=blocked")
+        link = re.search(r'href="([^"]+)" aria-label="Remove Tag:', page.text).group(1)
+        assert parse_qs(urlsplit(html.unescape(link)).query) == {"realm": ["default"], "blocked": ["blocked"]}
+        empty = client.get("/partials/cards?lane=inbox")
+        filtered = client.get("/partials/cards?lane=active&q=missing")
+        assert 'data-total="0"' in empty.text
+        assert "No inbox cards." in empty.text and "data-new-card-open" in empty.text
+        assert "No active cards match these filters." in filtered.text
+        assert "data-new-card-open" not in filtered.text
+        assert "Try another filter" not in filtered.text
+        for index in range(12):
+            client.app.state.ctx.store.create_card(CardCreate(title=f"Result {index}"))
+        results = client.get("/partials/cards?lane=inbox&q=Result")
+        assert 'data-total="12"' in results.text
+        assert "Showing 10 of 12 cards" in results.text
+
+
+def test_show_more_preserves_all_tags_and_match_mode() -> None:
+    import html
+    import re
+    from urllib.parse import parse_qs, urlsplit
+
+    with tempfile.TemporaryDirectory() as tmp, TestClient(_app(tmp)) as client:
+        store = client.app.state.ctx.store
+        for index in range(12):
+            store.create_card(CardCreate(title=f"Outcome {index}", tags=["alpha", "ops & qa"], lane="done"))
+        query = "lane=done&tag=alpha&tag=ops%20%26%20qa&tag_mode=and"
+        for suffix in ("", "&attention=outcome"):
+            page = client.get("/partials/cards?" + query + suffix)
+            links = re.findall(r'hx-get="([^"]+)"', page.text)
+            link = next(html.unescape(link) for link in links if "limit=" in link)
+            params = parse_qs(urlsplit(link).query)
+            assert params["tag"] == ["alpha", "ops & qa"]
+            assert params["tag_mode"] == ["and"]
+            assert client.get(link).status_code == 200

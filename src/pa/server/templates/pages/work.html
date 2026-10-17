@@ -10,24 +10,13 @@
     <button type="button" class="ghost" data-new-card-open>New card</button>
   </header>
 
-  {% if filters.attention %}
-  <div class="work-filter-context" role="status">
-    Showing
-    {% if filters.attention == 'actionable' %}work with a concrete operator-owned next step
-    {% elif filters.attention == 'motion' %}work backed by current execution evidence
-    {% else %}terminal outcomes
-    {% endif %}.
-    <a href="/work?realm={{ active_realm }}">Clear this lifecycle filter</a>
-  </div>
-  {% endif %}
-
-  <nav class="work-saved-views" aria-label="Work views">
+  <nav class="work-saved-views" aria-label="Work views" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true">
     <span>Views</span>
-    <a href="/work?realm={{ active_realm }}&amp;owner={{ principal_id | default('') }}&amp;blocked=unblocked">My active work</a>
-    <a href="/work?realm={{ active_realm }}&amp;blocked=blocked">Blocked work</a>
-    <a href="/work?realm={{ active_realm }}&amp;lane=waiting">Waiting</a>
-    <a href="/work?realm={{ active_realm }}&amp;lane=done&amp;updated=7">Recently completed</a>
-    {% for view in saved_views %}<a href="/work?{{ view.query }}" data-saved-view-id="{{ view.id }}">{{ view.name }}</a>{% endfor %}
+    <a hx-get="/work?realm={{ active_realm }}&amp;owner={{ principal_id | default('') }}&amp;blocked=unblocked" href="/work?realm={{ active_realm }}&amp;owner={{ principal_id | default('') }}&amp;blocked=unblocked">My active work</a>
+    <a hx-get="/work?realm={{ active_realm }}&amp;blocked=blocked" href="/work?realm={{ active_realm }}&amp;blocked=blocked">Blocked work</a>
+    <a hx-get="/work?realm={{ active_realm }}&amp;lane=waiting" href="/work?realm={{ active_realm }}&amp;lane=waiting">Waiting</a>
+    <a hx-get="/work?realm={{ active_realm }}&amp;lane=done&amp;updated=7" href="/work?realm={{ active_realm }}&amp;lane=done&amp;updated=7">Recently completed</a>
+    {% for view in saved_views %}<a hx-get="/work?{{ view.query }}" href="/work?{{ view.query }}" data-saved-view-id="{{ view.id }}">{{ view.name }}</a>{% endfor %}
     <button type="button" class="ghost" data-save-work-view>Save current view</button>
   </nav>
 
@@ -38,57 +27,76 @@
     {% if filters.attention %}
     <input type="hidden" name="attention" value="{{ filters.attention }}">
     {% endif %}
-    <label class="filter-search">
-      <span>Search</span>
-      <input type="search" name="q" value="{{ filters.q }}" placeholder="Title, summary, or details">
-    </label>
-    <label><span>Project</span><select name="project">
-      <option value="">All projects</option>
-      {% for project in projects %}<option value="{{ project.id }}" {% if filters.project == project.id %}selected{% endif %}>{{ project.title }}</option>{% endfor %}
-    </select></label>
-    <label><span>Kind</span><select name="kind">
-      <option value="">All kinds</option>
-      {% for kind in kinds %}<option value="{{ kind.value }}" {% if filters.kind == kind.value %}selected{% endif %}>{{ kind.value | capitalize }}</option>{% endfor %}
-    </select></label>
-    <label><span>Owner</span><select name="owner">
-      <option value="">Any owner</option>
-      {% for owner in owners %}<option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>{% endfor %}
-    </select></label>
-    <div class="instance-select-field"><label><span>Instance</span><select name="instance" data-instance-identity-select>
-      <option value="">Any instance</option>
-      {% for instance in instances %}<option value="{{ instance.id }}" {% if filters.instance == instance.id %}selected{% endif %}>{{ instance.display_name }}</option>{% endfor %}
-    </select></label><span class="instance-identity-selection" data-instance-identity-selection hidden></span></div>
-    <label><span>Blocked state</span><select name="blocked">
-      <option value="">Any state</option>
-      <option value="blocked" {% if filters.blocked == 'blocked' %}selected{% endif %}>Blocked</option>
-      <option value="unblocked" {% if filters.blocked == 'unblocked' %}selected{% endif %}>Not blocked</option>
-    </select></label>
-    <fieldset class="work-tag-filter" data-work-tag-combobox data-facet-url="/api/cards/facets?facet=tag&amp;realm={{ active_realm }}">
-      <legend><span>Tag</span></legend>
-      <div class="facet-chips" data-facet-chips>
-        {% for tag in filters.tags %}<span class="facet-chip">{{ tag }}<button type="button" aria-label="Remove tag {{ tag }}" data-remove-tag="{{ tag }}">×</button><input type="hidden" name="tag" value="{{ tag }}"></span>{% endfor %}
+    {% if request.query_params.get('lane') %}<input type="hidden" name="lane" value="{{ selected_lane }}">{% endif %}
+    <div class="work-filter-primary">
+      <label class="filter-search">
+        <span>Search</span>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Title, summary, or details">
+      </label>
+      <label><span>Project</span><select name="project">
+        <option value="">All projects</option>
+        {% for project in projects %}<option value="{{ project.id }}" {% if filters.project == project.id %}selected{% endif %}>{{ project.title }}</option>{% endfor %}
+      </select></label>
+      <div class="filter-actions"><button type="submit">Apply filters</button><a hx-get="/work?realm={{ active_realm }}" href="/work?realm={{ active_realm }}" class="ghost">Reset</a></div>
+    </div>
+    <details class="work-filter-disclosure">
+      <summary>Filters <span class="work-filter-count" aria-label="{{ advanced_filter_count }} applied">{{ advanced_filter_count }}</span></summary>
+      <div class="work-filter-advanced">
+        <label><span>Kind</span><select name="kind">
+          <option value="">All kinds</option>
+          {% for kind in kinds %}<option value="{{ kind.value }}" {% if filters.kind == kind.value %}selected{% endif %}>{{ kind.value | capitalize }}</option>{% endfor %}
+        </select></label>
+        <label><span>Owner</span><select name="owner">
+          <option value="">Any owner</option>
+          {% for owner in owners %}<option value="{{ owner }}" {% if filters.owner == owner %}selected{% endif %}>{{ owner }}</option>{% endfor %}
+        </select></label>
+        <div class="instance-select-field"><label><span>Instance</span><select name="instance" data-instance-identity-select>
+          <option value="">Any instance</option>
+          {% for instance in instances %}<option value="{{ instance.id }}" {% if filters.instance == instance.id %}selected{% endif %}>{{ instance.display_name }}</option>{% endfor %}
+        </select></label><span class="instance-identity-selection" data-instance-identity-selection hidden></span></div>
+        <label><span>Blocked state</span><select name="blocked">
+          <option value="">Any state</option>
+          <option value="blocked" {% if filters.blocked == 'blocked' %}selected{% endif %}>Blocked</option>
+          <option value="unblocked" {% if filters.blocked == 'unblocked' %}selected{% endif %}>Not blocked</option>
+        </select></label>
+        <fieldset class="work-tag-filter" data-work-tag-combobox data-facet-url="/api/cards/facets?facet=tag&amp;realm={{ active_realm }}">
+          <legend><span>Tag</span></legend>
+          <div class="facet-chips" data-facet-chips>
+            {% for tag in filters.tags %}<span class="facet-chip">{{ tag }}<button type="button" aria-label="Remove tag {{ tag }}" data-remove-tag="{{ tag }}">×</button><input type="hidden" name="tag" value="{{ tag }}"></span>{% endfor %}
+          </div>
+          <div class="facet-combobox-wrap">
+            <input type="search" role="combobox" aria-label="Search tags" aria-expanded="false" aria-controls="work-tag-options" aria-autocomplete="list" autocomplete="off" placeholder="Search tags" data-facet-input>
+            <ul id="work-tag-options" role="listbox" hidden data-facet-options></ul>
+          </div>
+          <select name="tag" aria-label="Tag (no JavaScript fallback)" class="facet-no-js">
+            <option value="">Any tag</option>
+            {% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}
+          </select>
+          <label class="tag-mode"><span>Match</span><select name="tag_mode"><option value="and" {% if filters.tag_mode == 'and' %}selected{% endif %}>All tags (AND)</option><option value="or" {% if filters.tag_mode == 'or' %}selected{% endif %}>Any tag (OR)</option></select></label>
+          <button type="button" class="ghost facet-clear" data-clear-tags {% if not filters.tags %}hidden{% endif %}>Clear tags</button>
+          <p class="sr-only" aria-live="polite" data-facet-status></p>
+          <noscript><p class="muted">Enter one tag at a time; apply the form to add it to the URL.</p></noscript>
+        </fieldset>
+        <label><span>Updated</span><select name="updated">
+          <option value="">Any time</option>
+          {% if filters.updated and filters.updated not in ['1', '7', '30'] %}<option value="{{ filters.updated }}" selected>Past {{ filters.updated }} days</option>{% endif %}
+          <option value="1" {% if filters.updated == '1' %}selected{% endif %}>Past day</option>
+          <option value="7" {% if filters.updated == '7' %}selected{% endif %}>Past week</option>
+          <option value="30" {% if filters.updated == '30' %}selected{% endif %}>Past month</option>
+        </select></label>
+        <div class="filter-actions"><button type="submit">Apply filters</button></div>
       </div>
-      <div class="facet-combobox-wrap">
-        <input type="search" role="combobox" aria-label="Search tags" aria-expanded="false" aria-controls="work-tag-options" aria-autocomplete="list" autocomplete="off" placeholder="Search tags" data-facet-input>
-        <ul id="work-tag-options" role="listbox" hidden data-facet-options></ul>
-      </div>
-      <select name="tag" aria-label="Tag (no JavaScript fallback)" class="facet-no-js">
-        <option value="">Any tag</option>
-        {% for tag in tags %}<option value="{{ tag }}">{{ tag }}</option>{% endfor %}
-      </select>
-      <label class="tag-mode"><span>Match</span><select name="tag_mode"><option value="and" {% if filters.tag_mode == 'and' %}selected{% endif %}>All tags (AND)</option><option value="or" {% if filters.tag_mode == 'or' %}selected{% endif %}>Any tag (OR)</option></select></label>
-      <button type="button" class="ghost facet-clear" data-clear-tags {% if not filters.tags %}hidden{% endif %}>Clear tags</button>
-      <p class="sr-only" aria-live="polite" data-facet-status></p>
-      <noscript><p class="muted">Enter one tag at a time; apply the form to add it to the URL.</p></noscript>
-    </fieldset>
-    <label><span>Updated</span><select name="updated">
-      <option value="">Any time</option>
-      <option value="1" {% if filters.updated == '1' %}selected{% endif %}>Past day</option>
-      <option value="7" {% if filters.updated == '7' %}selected{% endif %}>Past week</option>
-      <option value="30" {% if filters.updated == '30' %}selected{% endif %}>Past month</option>
-    </select></label>
-    <div class="filter-actions"><button type="submit">Apply filters</button><a href="/work?realm={{ active_realm }}" class="ghost">Reset</a></div>
+    </details>
+    {% if applied_filters %}
+    <nav class="work-applied-filters" aria-label="Applied filters" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true">
+      {% for chip in applied_filters %}
+      <a class="work-applied-filter" hx-get="{{ chip.remove_url }}" href="{{ chip.remove_url }}" aria-label="Remove {{ chip.label }}: {{ chip.value }}" data-applied-filter="{{ chip.key }}"><span>{{ chip.label }}: {{ chip.value }}</span><span aria-hidden="true">×</span></a>
+      {% endfor %}
+    </nav>
+    {% endif %}
   </form>
+
+  <p class="work-results muted" role="status" aria-live="polite" data-work-results>Loading results…</p>
 
   <nav class="board-lane-switcher" aria-label="Board lane">
     {% for lane in lanes %}
