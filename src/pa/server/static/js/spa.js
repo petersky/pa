@@ -443,6 +443,11 @@
     stopBoardLiveUpdates();
   });
 
+  window.addEventListener("pagehide", stopBoardLiveUpdates);
+  window.addEventListener("pageshow", function (event) {
+    if (event.persisted) initBoardLiveUpdates();
+  });
+
   document.body.addEventListener("htmx:beforeSwap", function (event) {
     var target = event.detail && event.detail.target;
     if (target && (target.matches("#app-view") || target.querySelector("[data-work-board]"))) {

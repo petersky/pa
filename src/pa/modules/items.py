@@ -1352,7 +1352,10 @@ def _bounded_attention_cards_context(
     owner = request.query_params.get("owner", "").strip()
     instance = request.query_params.get("instance", "").strip()
     blocked = request.query_params.get("blocked", "").strip()
-    tag = request.query_params.get("tag", "").strip()
+    tags = _selected_tags(request)
+    tag_mode = request.query_params.get("tag_mode", "and").strip().lower()
+    if tag_mode not in {"and", "or"}:
+        tag_mode = "and"
     updated = request.query_params.get("updated", "").strip()
     try:
         updated_days = int(updated) if updated else None
@@ -1378,7 +1381,8 @@ def _bounded_attention_cards_context(
             owner=owner,
             instance=instance,
             blocked=blocked,
-            tag=tag,
+            tags=tags,
+            tag_mode=tag_mode,
             updated_days=updated_days,
             limit=WORK_PRESENTATION_PAGE_LIMIT,
             offset=offset,
@@ -1416,18 +1420,6 @@ def _bounded_attention_cards_context(
     card_sessions, card_progress, card_presentations, _ = (
         _presentation_context_for_cards(request, cards)
     )
-    filter_params = {
-        "realm": realm,
-        "project": project_id or "",
-        "q": query,
-        "kind": kind.value if kind else "",
-        "owner": owner,
-        "instance": instance,
-        "blocked": blocked,
-        "tag": tag,
-        "updated": updated,
-        "attention": attention,
-    }
     return {
         "cards": cards,
         "total_cards": total_cards,
@@ -1444,7 +1436,7 @@ def _bounded_attention_cards_context(
         "card_presentations": card_presentations,
         "owners": [],
         "instances": [],
-        "tags": [],
+        "tags": tags,
         "filters": {
             "q": query,
             "project": project_id or "",
@@ -1452,13 +1444,12 @@ def _bounded_attention_cards_context(
             "owner": owner,
             "instance": instance,
             "blocked": blocked,
-            "tag": tag,
+            "tags": tags,
+            "tag_mode": tag_mode,
             "updated": updated,
             "attention": attention,
         },
-        "filter_query": urlencode(
-            {key: value for key, value in filter_params.items() if value}
-        ),
+        "filter_query": urlencode(_work_query_pairs(request, realm=realm), doseq=True),
         "realms": request.app.state.ctx.settings.subscribed_realms,
         "active_realm": realm,
         "active_project": project_id,

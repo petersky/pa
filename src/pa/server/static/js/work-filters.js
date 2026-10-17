@@ -1,6 +1,16 @@
 (function () {
   "use strict";
 
+  var readyWidgets = new WeakSet();
+  var readySaveButtons = new WeakSet();
+  var tagDropdown = null;
+
+  document.addEventListener("click", function (event) {
+    if (!tagDropdown) return;
+    if (!tagDropdown.element.isConnected) { tagDropdown = null; return; }
+    if (!tagDropdown.element.contains(event.target)) tagDropdown.close();
+  });
+
   function updateResults() {
     var board = document.querySelector("[data-work-board]");
     var status = document.querySelector("[data-work-results]");
@@ -14,14 +24,14 @@
     });
     var total = Array.from(counts).reduce(function (sum, node) { return sum + Number(node.dataset.total); }, 0);
     var shown = board.querySelectorAll(".compact-card").length;
-    var message = total + (total === 1 ? " card" : " cards") + (shown < total ? " · " + shown + " shown" : "");
+    var message = total + (total === 1 ? " card" : " cards") + " across all lanes" + (shown < total ? " · " + shown + " loaded" : "");
     if (status.textContent !== message) status.textContent = message;
   }
 
   function init(root) {
     var widget = (root || document).querySelector("[data-work-tag-combobox]");
-    if (!widget || widget.dataset.ready) return;
-    widget.dataset.ready = "true";
+    if (!widget || readyWidgets.has(widget)) return;
+    readyWidgets.add(widget);
     if ((root || document).querySelector("[data-work-board]")) {
       var current = new URL(location.href);
       var stable = new URLSearchParams();
@@ -50,6 +60,7 @@
       list.hidden = true; input.setAttribute("aria-expanded", "false");
       input.removeAttribute("aria-activedescendant"); active = -1;
     }
+    tagDropdown = {element: widget, close: close};
     function add(value) {
       if (!value || values().indexOf(value) !== -1) return;
       var chip = document.createElement("span"); chip.className = "facet-chip";
@@ -99,11 +110,10 @@
       if (remove) { var value = remove.dataset.removeTag; remove.closest(".facet-chip").remove(); announce(value + " removed. " + values().length + " tags selected."); }
       if (event.target.closest("[data-clear-tags]")) { chips.replaceChildren(); event.target.closest("[data-clear-tags]").hidden = true; announce("All tags cleared."); input.focus(); }
     });
-    document.addEventListener("click", function (event) { if (!widget.contains(event.target)) close(); });
 
     var save = (root || document).querySelector("[data-save-work-view]");
-    if (save && !save.dataset.ready) {
-      save.dataset.ready = "true";
+    if (save && !readySaveButtons.has(save)) {
+      readySaveButtons.add(save);
       save.addEventListener("click", function () {
         var name = window.prompt("Name this view"); if (!name) return;
         (window.PACSRF ? window.PACSRF.fetch : fetch)("/api/cards/saved-views?realm=" + encodeURIComponent(new URL(location.href).searchParams.get("realm") || "default"), {
@@ -116,4 +126,5 @@
   }
   document.addEventListener("DOMContentLoaded", function () { init(document); updateResults(); });
   document.body.addEventListener("htmx:afterSwap", function (event) { init(event.detail.target); updateResults(); });
+  document.addEventListener("htmx:historyRestore", function () { init(document); updateResults(); });
 })();

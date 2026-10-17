@@ -44,6 +44,17 @@ def test_multiple_tag_and_or_filters_and_special_char_url_round_trip() -> None:
         assert "Both" in either.text and "One" in either.text
         assert page.text.count('name="tag" value="alpha"') == 1
         assert 'name="tag" value="ops &amp; qa"' in page.text
+        for title, tags in (("Both outcomes", ["alpha", "ops & qa"]), ("Alpha outcome", ["alpha"]), ("QA outcome", ["ops & qa"])):
+            store.create_card(CardCreate(title=title, tags=tags, lane="done"))
+        query = "/partials/cards?lane=done&attention=outcome&tag=alpha&tag=ops%20%26%20qa&tag_mode="
+        lifecycle_both = client.get(query + "and")
+        lifecycle_either = client.get(query + "or")
+        assert 'data-total="1"' in lifecycle_both.text
+        assert "Both outcomes" in lifecycle_both.text
+        assert "Alpha outcome" not in lifecycle_both.text and "QA outcome" not in lifecycle_both.text
+        assert 'data-total="3"' in lifecycle_either.text
+        assert all(title in lifecycle_either.text for title in ("Both outcomes", "Alpha outcome", "QA outcome"))
+
 
 
 def test_saved_views_are_scoped_versioned_audited_and_canonical() -> None:

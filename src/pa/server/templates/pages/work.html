@@ -10,7 +10,7 @@
     <button type="button" class="ghost" data-new-card-open>New card</button>
   </header>
 
-  <nav class="work-saved-views" aria-label="Work views">
+  <nav class="work-saved-views" aria-label="Work views" hx-boost="true" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true">
     <span>Views</span>
     <a href="/work?realm={{ active_realm }}&amp;owner={{ principal_id | default('') }}&amp;blocked=unblocked">My active work</a>
     <a href="/work?realm={{ active_realm }}&amp;blocked=blocked">Blocked work</a>
@@ -37,7 +37,7 @@
         <option value="">All projects</option>
         {% for project in projects %}<option value="{{ project.id }}" {% if filters.project == project.id %}selected{% endif %}>{{ project.title }}</option>{% endfor %}
       </select></label>
-      <div class="filter-actions"><button type="submit">Apply filters</button><a href="/work?realm={{ active_realm }}" class="ghost">Reset</a></div>
+      <div class="filter-actions"><button type="submit">Apply filters</button><a href="/work?realm={{ active_realm }}" hx-get="/work?realm={{ active_realm }}" class="ghost">Reset</a></div>
     </div>
     <details class="work-filter-disclosure">
       <summary>Filters <span class="work-filter-count" aria-label="{{ advanced_filter_count }} applied">{{ advanced_filter_count }}</span></summary>
@@ -88,7 +88,7 @@
       </div>
     </details>
     {% if applied_filters %}
-    <nav class="work-applied-filters" aria-label="Applied filters">
+    <nav class="work-applied-filters" aria-label="Applied filters" hx-boost="true" hx-target="#app-view" hx-swap="innerHTML" hx-push-url="true">
       {% for chip in applied_filters %}
       <a class="work-applied-filter" href="{{ chip.remove_url }}" aria-label="Remove {{ chip.label }}: {{ chip.value }}" data-applied-filter="{{ chip.key }}"><span>{{ chip.label }}: {{ chip.value }}</span><span aria-hidden="true">×</span></a>
       {% endfor %}

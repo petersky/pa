@@ -43,7 +43,7 @@ async def test_work_disclosure_chips_results_and_responsive_layout(work_server, 
             (tmp_path / "work-failure.png").write_bytes(await page.screenshot())
             pytest.fail("Browser condition did not become true: " + expression + "\n" + repr(state))
 
-        await wait_for("document.querySelector('[data-work-results]')?.textContent === '2 cards'")
+        await wait_for("document.querySelector('[data-work-results]')?.textContent === '2 cards across all lanes'")
         assert not await page.evaluate("document.querySelector('details.work-filter-disclosure').open")
         (tmp_path / "work-desktop.png").write_bytes(await page.screenshot())
         assert await page.evaluate("document.querySelector('[data-work-board]').getBoundingClientRect().top < 450")
@@ -68,7 +68,7 @@ async def test_work_disclosure_chips_results_and_responsive_layout(work_server, 
         await manager.press(scope, key="ArrowDown")
         await manager.press(scope, key="Enter")
         await manager.click(scope, selector='.work-filter-primary button[type=submit]')
-        await wait_for("!!document.querySelector('[data-applied-filter=tag]') && document.querySelector('[data-work-results]')?.textContent === '1 card'")
+        await wait_for("!!document.querySelector('[data-applied-filter=tag]') && document.querySelector('[data-work-results]')?.textContent === '1 card across all lanes'")
         assert not await page.evaluate("document.querySelector('.work-filter-disclosure').open")
         assert await page.evaluate("new URL(location.href).searchParams.get('tag')") == "ops & qa"
         await manager.type_text(scope, selector='input[name=q]', text="Find", submit=True)
@@ -77,8 +77,14 @@ async def test_work_disclosure_chips_results_and_responsive_layout(work_server, 
         assert await page.evaluate("new URL(location.href).searchParams.get('tag')") == "ops & qa"
         await manager.click(scope, selector='[data-applied-filter=tag]')
         await wait_for("!document.querySelector('[data-applied-filter=tag]') && !!document.querySelector('[data-applied-filter=q]')")
+        # Back restores HTMX's cached HTML; tag handlers must bind to the restored nodes.
+        await page.evaluate("history.back()")
+        await wait_for("!!document.querySelector('[data-applied-filter=tag]')")
+        await manager.click(scope, selector='.work-filter-disclosure summary')
+        await manager.click(scope, selector='[data-remove-tag="ops & qa"]')
+        await wait_for("!document.querySelector('input[name=tag]')")
         await page.navigate_and_wait(base + "/work?tag=alpha&tag=ops%20%26%20qa&tag_mode=or&lane=waiting")
-        await wait_for("document.querySelector('[data-work-results]')?.textContent === '2 cards'")
+        await wait_for("document.querySelector('[data-work-results]')?.textContent === '2 cards across all lanes'")
         for width in (320, 390, 720, 1024, 1440):
             await manager.resize(scope, width=width, height=900)
             assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.querySelector('.page-main').scrollWidth <= document.querySelector('.page-main').clientWidth"), width
@@ -106,6 +112,6 @@ async def test_work_disclosure_chips_results_and_responsive_layout(work_server, 
         await tap('[data-facet-options] [role=option]')
         await wait_for("!!document.querySelector('[data-remove-tag=\"ops & qa\"]')")
         await tap('.filter-actions a')
-        await wait_for("!document.querySelector('[data-applied-filter]') && document.querySelector('[data-work-results]')?.textContent === '2 cards'")
+        await wait_for("!document.querySelector('[data-applied-filter]') && document.querySelector('[data-work-results]')?.textContent === '2 cards across all lanes'")
     finally:
         await browser.close()
