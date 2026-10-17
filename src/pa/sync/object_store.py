@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pa.core.performance import current_observation
+
 if TYPE_CHECKING:
     from pa.sync.object_catalog import ObjectCatalog
 
@@ -48,6 +50,10 @@ class ObjectStore:
         created = not path.exists()
         if created:
             path.write_bytes(data)
+            observation = current_observation.get()
+            if observation is not None:
+                observation.object_put_files += 1
+                observation.object_put_bytes += len(data)
         # Always upsert catalog metadata; avoid an extra catalog.has() round-trip.
         self._record_catalog(h, data)
         return h
@@ -79,10 +85,21 @@ class ObjectStore:
         return actual
 
     def get(self, obj_hash: str) -> bytes | None:
-        path = self._path_for(obj_hash)
-        if not path.exists():
-            return None
-        return path.read_bytes()
+        observation = current_observation.get()
+        started = time.perf_counter() if observation is not None else 0
+        if observation is not None:
+            observation.object_get_calls += 1
+        try:
+            path = self._path_for(obj_hash)
+            if not path.exists():
+                return None
+            raw = path.read_bytes()
+            if observation is not None:
+                observation.object_get_bytes += len(raw)
+            return raw
+        finally:
+            if observation is not None:
+                observation.object_get_ms += (time.perf_counter() - started) * 1000
 
     def get_json(self, obj_hash: str) -> dict | None:
         raw = self.get(obj_hash)

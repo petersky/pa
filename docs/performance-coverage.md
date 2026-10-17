@@ -1,3 +1,22 @@
+# Ref-phase and parent-proof checkpoint — 2026-10-17
+
+The systemic card remains open: **501findings/34concerns**, including all140retained slow names. Every earlier row, outlier and owner remains. [Full matrix](performance-coverage.json); [new numeric evidence](benchmarks/systemic-ref-phases-20261017.json).
+
+PR495 mergedf36d4b38 from exactwatchedf4efd94c after stable10observations and independent5terminalsuccess checks,0requiredapprovals/threads, complete review pagination, attributed commits and CLEAN state. Head/merge trees match62b48efe. Both head and mainCI are5/5green. Activation remains unverified.
+
+The next repair avoids full-history materialization for a canonical direct child of the exact ready index head. A paired10000commit fixture removed300000hashes/20.1MB across30checks; p50/p95/p99/max17.455/20.961/31.852/31.852→2.927/5.308/5.919/5.919ms. The smaller separate1000commit runs are retained, including p50 variation rather than a blanket speedup claim. Forks, additional/missing parents, corrupt tips and non-ready indexes keep authoritative traversal.
+
+Bounded observations now distinguish ref RLock versus advisory file lock, file and directory fsync, rename, and logical object reads/new writes. File fsync→replace→directory fsync and failure cleanup remain unchanged. Byte counts are logical content/attempts, not physical device writes or commit proof; wall intervals include scheduling/GIL delay. No paths, SQL or payloads enter metrics, and no warning/deadline changes.
+
+65broad tests passed;27final focused tests passed in an overlapping run after object counters were added. A further23focused tests pass, including270writes proving lifetime totals remain exact beyond256percentile samples. New source is uninstalled. Managed handoff f6c4e9e1 still has continuation_queued/delivered_atnull; no competing restart. Backup verifier8d373b2d remains scheduler-owned/dispatched with another pending intent; no acceptance asserted. Systemic completion still lacks active/verified/independent acceptance; no repairer receipt created.
+
+
+Final100iteration/29request stage: all21module hashes match;9600ordered events;0operation failures/timeouts/rejections, but5worker warnings/11explicitthreshold violations remain. Completed-worker logical totals:442atomic attempts/114371intended UTF8bytes,442file+442directory fsync calls,7107object reads/3360600returned bytes,274new object files/146907bytes. No helper fsync failures observed; SQLite/repair/native device IO is outside this census. A725.949ms sync push spent523.854ms waiting for Python/projection locks versus0.131msfilefsync; card history1049.585ms had1037.065msSQLwall but30.102msthreadCPU. The3089.536ms full inventory invocation spent2952.993ms in512object gets/259220bytes,329.248msthreadCPU; filesystem/scheduling attribution remains open. Existence-probe amplification, per-SQL-call attribution and transcript row production are next named investigations; no new fix is claimed for them. These specific samples leave native busy/scheduling and other shared causes unresolved. Earlier phase stage5warnings/12violations and every prior outlier remain.
+
+Mixed stages and exact hashes are retained in the numeric artifact as they finish. Their outcome is never assumed. All preceding checkpoint sections below are historical evidence; current follow-up fields supersede old source-stage labels without deleting failures.
+
+---
+
 # Current continuation checkpoint — 2026-10-17
 
 The systemic card remains open. The matrix now retains **499 findings**, including **140 slow names** and **32 concerns**. All prior rows, stage failures and owners remain. Detailed measurements: [read-repair artifact](benchmarks/systemic-read-repair-20261017.json); [full matrix](performance-coverage.json).
