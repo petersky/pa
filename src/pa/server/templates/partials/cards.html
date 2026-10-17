@@ -1,4 +1,8 @@
 {% from "macros/cards.html" import compact_card %}
+{% set has_work_filters = filters is defined and (filters.q or filters.project or filters.kind or filters.owner or filters.instance or filters.blocked or filters.tags or filters.updated or filters.attention) %}
+{% if total_cards is defined and not page_offset %}
+<p class="work-lane-results muted" data-work-lane-results data-total="{{ total_cards }}">{% if total_cards > cards | length %}Showing {{ cards | length }} of {{ total_cards }} cards{% else %}{{ total_cards }} {{ 'card' if total_cards == 1 else 'cards' }}{% endif %}</p>
+{% endif %}
 {% if cards %}
 <div class="compact-card-list">
   {% for card in cards %}
@@ -50,7 +54,7 @@
 {% endif %}
 {% else %}
 <div class="empty-state compact-empty">
-  <h3>No cards here</h3>
-  <p class="muted">Try another filter or capture the next piece of work.</p>
+  <p class="muted">No{% if lane %} {{ lane.value }}{% endif %} cards{% if has_work_filters %} match these filters{% endif %}.</p>
+  {% if lane and lane.value == 'inbox' and not has_work_filters %}<button type="button" class="ghost" data-new-card-open>New card</button>{% endif %}
 </div>
 {% endif %}

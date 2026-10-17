@@ -1626,12 +1626,44 @@ def _work_context(request: Request) -> dict:
         owner_options.insert(0, {"value": filters["owner"], "count": 0})
     if filters["instance"] and filters["instance"] not in {str(option["value"]) for option in instance_options}:
         instance_options.insert(0, {"value": filters["instance"], "count": 0})
+    instances = [{"id": str(option["value"]), "display_name": resolve_instance_identity(request.app.state.ctx, str(option["value"]))["display_name"]} for option in instance_options]
+    pairs = _work_query_pairs(request, realm=realm)
+    # Lane selects the mobile tab, so retain it when removing a filter or applying.
+    if request.query_params.get("lane"):
+        pairs.append(("lane", selected_lane))
+    labels = {
+        "q": "Search", "project": "Project", "kind": "Kind", "owner": "Owner",
+        "instance": "Instance", "blocked": "Blocked state", "tag": "Tag",
+        "tag_mode": "Match", "updated": "Updated", "attention": "Lifecycle",
+    }
+    names = {
+        "project": {project.id: project.title for project in projects},
+        "instance": {instance["id"]: instance["display_name"] for instance in instances},
+        "blocked": {"blocked": "Blocked", "unblocked": "Not blocked"},
+        "updated": {"1": "Past day", "7": "Past week", "30": "Past month"},
+        "tag_mode": {"and": "All tags (AND)", "or": "Any tag (OR)"},
+        "attention": {"actionable": "Actionable", "motion": "In motion", "outcome": "Outcomes"},
+    }
+    applied_filters = []
+    for key, value in pairs:
+        if key not in labels or (key == "tag_mode" and (not filters["tags"] or value != "or")):
+            continue
+        remaining = [(k, v) for k, v in pairs if (k, v) != (key, value)]
+        if key == "tag" and not any(k == "tag" for k, _ in remaining):
+            remaining = [(k, v) for k, v in remaining if k != "tag_mode"]
+        applied_filters.append({
+            "key": key, "label": labels[key],
+            "value": names.get(key, {}).get(value, value),
+            "remove_url": "/work?" + urlencode(remaining),
+        })
     return {
         "kinds": list(CardKind),
         "lanes": list(CardLane),
         "projects": projects,
         "owners": [str(option["value"]) for option in owner_options],
-        "instances": [{"id": str(option["value"]), "display_name": resolve_instance_identity(request.app.state.ctx, str(option["value"]))["display_name"]} for option in instance_options],
+        "instances": instances,
+        "applied_filters": applied_filters,
+        "advanced_filter_count": sum(chip["key"] not in {"q", "project"} for chip in applied_filters),
         "tags": filters["tags"],
         "filters": filters,
         "filter_query": urlencode(_work_query_pairs(request, realm=realm), doseq=True),
@@ -3601,11 +3633,13 @@ def cards_partial(
     )
     filtered_show_more_query = ""
     if filtered_show_more_count:
-        continuation_params = dict(request.query_params)
+        continuation_params = [
+            (key, value) for key, value in request.query_params.multi_items()
+            if key not in {"lane", "limit", "offset"}
+        ]
         if lane:
-            continuation_params["lane"] = lane.value
-        continuation_params["limit"] = str(page_limit)
-        continuation_params["offset"] = str(filtered_visible)
+            continuation_params.append(("lane", lane.value))
+        continuation_params.extend([("limit", str(page_limit)), ("offset", str(filtered_visible))])
         filtered_show_more_query = urlencode(continuation_params)
 
     done_total = 0
@@ -3617,9 +3651,14 @@ def cards_partial(
         done_visible = len(context["cards"])
         done_show_more_count = min(10, done_total - done_visible)
         if done_show_more_count:
-            show_more_params = dict(request.query_params)
-            show_more_params["lane"] = CardLane.DONE.value
-            show_more_params["limit"] = str(done_visible + done_show_more_count)
+            show_more_params = [
+                (key, value) for key, value in request.query_params.multi_items()
+                if key not in {"lane", "limit", "offset"}
+            ]
+            show_more_params.extend([
+                ("lane", CardLane.DONE.value),
+                ("limit", str(done_visible + done_show_more_count)),
+            ])
             done_show_more_query = urlencode(show_more_params)
     return _templates(request).TemplateResponse(
         request,

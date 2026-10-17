@@ -1,6 +1,23 @@
 (function () {
   "use strict";
 
+  function updateResults() {
+    var board = document.querySelector("[data-work-board]");
+    var status = document.querySelector("[data-work-results]");
+    if (!board || !status) return;
+    var counts = board.querySelectorAll("[data-work-lane-results]");
+    if (counts.length !== board.querySelectorAll(".board-column").length) return;
+    counts.forEach(function (node) {
+      var shown = node.closest(".board-column").querySelectorAll(".compact-card").length;
+      var total = Number(node.dataset.total);
+      node.textContent = shown < total ? "Showing " + shown + " of " + total + " cards" : total + (total === 1 ? " card" : " cards");
+    });
+    var total = Array.from(counts).reduce(function (sum, node) { return sum + Number(node.dataset.total); }, 0);
+    var shown = board.querySelectorAll(".compact-card").length;
+    var message = total + (total === 1 ? " card" : " cards") + (shown < total ? " · " + shown + " shown" : "");
+    if (status.textContent !== message) status.textContent = message;
+  }
+
   function init(root) {
     var widget = (root || document).querySelector("[data-work-tag-combobox]");
     if (!widget || widget.dataset.ready) return;
@@ -50,7 +67,8 @@
         var item = document.createElement("li"); item.id = "work-tag-option-" + index;
         item.setAttribute("role", "option"); item.dataset.value = option.value;
         item.textContent = option.value + " (" + option.count + ")";
-        item.addEventListener("mousedown", function (event) { event.preventDefault(); add(option.value); });
+        item.addEventListener("mousedown", function (event) { event.preventDefault(); });
+        item.addEventListener("click", function () { add(option.value); });
         list.append(item);
       });
       list.hidden = false; input.setAttribute("aria-expanded", "true");
@@ -96,6 +114,6 @@
       });
     }
   }
-  document.addEventListener("DOMContentLoaded", function () { init(document); });
-  document.body.addEventListener("htmx:afterSwap", function (event) { init(event.detail.target); });
+  document.addEventListener("DOMContentLoaded", function () { init(document); updateResults(); });
+  document.body.addEventListener("htmx:afterSwap", function (event) { init(event.detail.target); updateResults(); });
 })();
