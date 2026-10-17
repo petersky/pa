@@ -22,13 +22,13 @@ def register_mcp(mcp, ctx: AppContext) -> None:
         )
 
     @mcp.tool()
-    def backup_run(idempotency_key: str) -> dict[str, Any]:
-        """Trigger one idempotent online metadata backup."""
+    def backup_run(idempotency_key: str, preserve_existing: bool = False) -> dict[str, Any]:
+        """Trigger one idempotent backup; optionally protect all current archives from this run's retention."""
         return request_local_pa(
             ctx.settings,
             "POST",
             "/api/backups",
-            json={"idempotency_key": idempotency_key},
+            json={"idempotency_key": idempotency_key, "preserve_existing": preserve_existing},
         )
 
     @mcp.tool()

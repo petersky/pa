@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -38,7 +39,10 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "backup_restore_status",
             }.issubset(tools)
         )
-        self.assertIn("idempotency_key", tools["backup_run"].input_schema["required"])
+        run_schema = tools["backup_run"].input_schema
+        self.assertEqual(run_schema["required"], ["idempotency_key"])
+        self.assertEqual(run_schema["properties"]["preserve_existing"]["type"], "boolean")
+        self.assertFalse(run_schema["properties"]["preserve_existing"]["default"])
         listing = tools["backup_list"].input_schema
         self.assertEqual(listing["properties"]["offset"]["default"], 0)
         self.assertEqual(listing["properties"]["limit"]["default"], 50)
@@ -50,6 +54,46 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BackupHttpAndUiContractTests(unittest.TestCase):
+    def test_manual_and_verify_use_dedicated_worker_and_protect_existing_archives(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = root / "backups"
+            destination.mkdir(mode=0o700)
+            app = Kernel.boot(settings=Settings(
+                data_dir=root / "data", workspace_root=root / "workspaces",
+                backup_destination_dir=destination, backup_enabled=False,
+                backup_retention_count=1, agent_enabled=False,
+            )).build_app()
+            with TestClient(app) as client:
+                client.get("/api/backups/status")
+                headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+                service = app.state.ctx.require_service("backup_service")
+                threads = []
+                original = service.run_backup
+
+                def run(**kwargs):
+                    threads.append(threading.current_thread().name)
+                    return original(**kwargs)
+
+                original_verify = service.verify_backup
+
+                def verify(*args, **kwargs):
+                    threads.append(threading.current_thread().name)
+                    return original_verify(*args, **kwargs)
+
+                with patch.object(service, "run_backup", side_effect=run), patch.object(service, "verify_backup", side_effect=verify):
+                    first = client.post("/api/backups", json={"idempotency_key": "first"}, headers=headers)
+                    self.assertEqual(first.status_code, 201, first.text)
+                    second = client.post("/api/backups", json={"idempotency_key": "second", "preserve_existing": True}, headers=headers)
+                    self.assertEqual(second.status_code, 201, second.text)
+                    self.assertEqual(second.json()["pruned_backup_ids"], [])
+                    checked = client.post(f"/api/backups/{first.json()['backup_id']}/verify", headers=headers)
+                    self.assertEqual(checked.status_code, 200, checked.text)
+                self.assertEqual(len(service.list_backups()), 2)
+                self.assertTrue(threads)
+                self.assertTrue(all(name.startswith("pa-backup-io") for name in threads), threads)
+                self.assertEqual(service.config.retention_count, 1)
+
     def test_backups_page_and_api_are_paginated_fast_and_do_not_open_archives(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

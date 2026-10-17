@@ -418,59 +418,115 @@ class BackupService:
             if self.store is not None and hasattr(self.store, "transcripts")
             else contextlib.nullcontext()
         )
-        with lock, transcript_lock:
-            projection = staging / "projection.sqlite3"
-            self._online_sqlite_backup(projection)
+        # Capture mutable databases/refs together. Cold payloads can be garbage
+        # collected after this point, so pin their immutable inodes on the source
+        # filesystem. Never hash, copy or fsync the object inventory while holding
+        # PA's writer locks. The final archive contains independent durable copies.
+        with contextlib.ExitStack() as pins:
+            cold_files: list[tuple[Path, Path]] = []
+            object_files: list[tuple[Path, Path, str]] = []
+            lock_started = time.monotonic()
+            with lock, transcript_lock:
+                self._metric(
+                    "backup_snapshot_lock_wait_seconds_total",
+                    time.monotonic() - lock_started,
+                )
+                capture_started = time.monotonic()
+                try:
+                    projection, transcript_target, refs = self._capture_snapshot(
+                        staging, pins, cold_files, object_files
+                    )
+                finally:
+                    self._metric(
+                        "backup_snapshot_lock_hold_seconds_total",
+                        time.monotonic() - capture_started,
+                    )
+
             _integrity(projection, self.config.verification_level)
-            transcript_source = self.settings.db_path.with_name(
-                f"{self.settings.db_path.stem}.transcripts.db"
-            )
-            if transcript_source.exists():
-                transcript_target = staging / "transcripts.sqlite3"
-                self._online_sqlite_backup(transcript_target, source_path=transcript_source)
+            if transcript_target is not None:
                 _integrity(transcript_target, self.config.verification_level)
-                cold_target = staging / "transcript_objects"
-                cold_target.mkdir(mode=0o700)
-                cold_source = self.settings.data_dir / "transcript_objects"
-                if cold_source.exists():
-                    for source in sorted(cold_source.glob("*/*.zlib")):
-                        self._copy_file(source, cold_target / source.relative_to(cold_source))
-
-            refs: dict[str, str] = {}
-            if self.store is not None and self.store.event_log is not None:
-                for ref in self.store.event_log.list_refs():
-                    refs[f"{ref.realm_id}/{ref.instance_id}"] = ref.head_hash
-            else:
-                refs_path = self.settings.data_dir / "sync_refs.json"
-                if refs_path.exists():
-                    try:
-                        refs = {
-                            str(key): str(value)
-                            for key, value in json.loads(refs_path.read_text()).items()
-                        }
-                    except (OSError, ValueError) as exc:
-                        raise BackupError(
-                            "sync_refs_unreadable", f"cannot read sync refs: {exc}"
-                        ) from exc
             atomic_write_json(staging / "sync_refs.json", refs, mode=0o600)
+            for source, target in cold_files:
+                self._copy_file(source, target)
+            for source, target, object_id in object_files:
+                self._copy_file(source, target)
+                if _sha256(target) != object_id:
+                    raise BackupError(
+                        "event_object_corrupt",
+                        f"event-log object {object_id[:12]} failed its content hash",
+                    )
 
-            objects_target = staging / "objects"
-            objects_target.mkdir(mode=0o700)
-            if self.settings.objects_dir.exists():
-                for source in sorted(self.settings.objects_dir.rglob("*")):
-                    if not source.is_file():
-                        continue
-                    relative = source.relative_to(self.settings.objects_dir)
-                    object_id = "".join(relative.parts)
-                    if not re.fullmatch(r"[0-9a-f]{64}", object_id):
-                        continue
-                    if _sha256(source) != object_id:
-                        raise BackupError(
-                            "event_object_corrupt",
-                            f"event-log object {object_id[:12]} failed its content hash",
-                        )
-                    self._copy_file(source, objects_target / relative)
+        return self._snapshot_manifest(staging, projection, refs)
 
+    def _capture_snapshot(
+        self, staging: Path, pins: contextlib.ExitStack,
+        cold_files: list[tuple[Path, Path]],
+        object_files: list[tuple[Path, Path, str]],
+    ) -> tuple[Path, Path | None, dict[str, str]]:
+        """Called only under the store and transcript writer locks."""
+        projection = staging / "projection.sqlite3"
+        self._online_sqlite_backup(projection)
+        transcript_target = None
+        transcript_source = self.settings.db_path.with_name(
+            f"{self.settings.db_path.stem}.transcripts.db"
+        )
+        if transcript_source.exists():
+            transcript_target = staging / "transcripts.sqlite3"
+            self._online_sqlite_backup(transcript_target, source_path=transcript_source)
+            cold_target = staging / "transcript_objects"
+            cold_target.mkdir(mode=0o700)
+            cold_source = self.settings.data_dir / "transcript_objects"
+            if cold_source.exists():
+                # Staging/destination may be a different volume. A temporary
+                # directory beside the cold objects guarantees same-volume pins.
+                pin_root = Path(pins.enter_context(tempfile.TemporaryDirectory(
+                    prefix=".pa-backup-pin-", dir=cold_source
+                )))
+                for source in sorted(cold_source.glob("*/*.zlib")):
+                    relative = source.relative_to(cold_source)
+                    pinned = pin_root / relative
+                    pinned.parent.mkdir(parents=True, exist_ok=True)
+                    os.link(source, pinned)
+                    cold_files.append((pinned, cold_target / relative))
+
+        refs: dict[str, str] = {}
+        if self.store is not None and self.store.event_log is not None:
+            for ref in self.store.event_log.list_refs():
+                refs[f"{ref.realm_id}/{ref.instance_id}"] = ref.head_hash
+        else:
+            refs_path = self.settings.data_dir / "sync_refs.json"
+            if refs_path.exists():
+                try:
+                    refs = {
+                        str(key): str(value)
+                        for key, value in json.loads(refs_path.read_text()).items()
+                    }
+                except (OSError, ValueError) as exc:
+                    raise BackupError(
+                        "sync_refs_unreadable", f"cannot read sync refs: {exc}"
+                    ) from exc
+
+        objects_target = staging / "objects"
+        objects_target.mkdir(mode=0o700)
+        # DirEntry caches file type information. Path.rglob + is_file performs
+        # a separate stat per object while blocking every interactive writer.
+        # ObjectStore's canonical layout is exactly two hex characters / 62.
+        if self.settings.objects_dir.exists():
+            with os.scandir(self.settings.objects_dir) as directories:
+                for directory in sorted(directories, key=lambda item: item.name):
+                    if not re.fullmatch(r"[0-9a-f]{2}", directory.name) or not directory.is_dir(follow_symlinks=False):
+                        continue
+                    with os.scandir(directory.path) as entries:
+                        for entry in sorted(entries, key=lambda item: item.name):
+                            if not re.fullmatch(r"[0-9a-f]{62}", entry.name) or not entry.is_file(follow_symlinks=False):
+                                continue
+                            relative = Path(directory.name) / entry.name
+                            object_files.append((Path(entry.path), objects_target / relative, directory.name + entry.name))
+        return projection, transcript_target, refs
+
+    def _snapshot_manifest(
+        self, staging: Path, projection: Path, refs: dict[str, str]
+    ) -> BackupManifest:
         durable = {
             key.split("/", 1)[0]: head
             for key, head in refs.items()
@@ -593,6 +649,7 @@ class BackupService:
         trigger: str = "manual",
         idempotency_key: str | None = None,
         protected_backup_ids: set[str] | None = None,
+        preserve_existing: bool = False,
         queue_wait_seconds: float = 0,
     ) -> BackupRun:
         if idempotency_key:
@@ -638,6 +695,9 @@ class BackupService:
             self._ensure_default_destination()
             self._health_or_raise()
             destination_lock_fd = self._acquire_destination_lock()
+            protected_backup_ids = set(protected_backup_ids or ())
+            if preserve_existing:
+                protected_backup_ids.update(item.backup_id for item in self.list_backups())
             staging_path = Path(
                 tempfile.mkdtemp(
                     prefix=".pa-backup-stage-", dir=self.config.destination_dir
@@ -654,6 +714,9 @@ class BackupService:
             run.backup_id = manifest.backup_id
             run.verification = "verified"
             run.size_bytes = archive.stat().st_size
+            # A protected older recovery point must not make retention select
+            # the archive this successful run has just published instead.
+            protected_backup_ids.add(manifest.backup_id)
             phase_started = time.monotonic()
             run.pruned_backup_ids = self.prune(
                 protected_backup_ids=protected_backup_ids
@@ -1132,6 +1195,22 @@ class BackupService:
             self._metric("backup_maintenance_coalesced_total")
             self._audit("backup_maintenance_coalesced", operation=operation)
             return None
+        return await self.run_io(operation, call, **kwargs)
+
+    async def run_io(
+        self, operation: str, call: Any, *args: Any,
+        timeout: float | None = None, **kwargs: Any,
+    ) -> Any:
+        """Bound manual, verify and scheduled work to the same dedicated worker.
+
+        Admission stays occupied until the thread actually finishes, including
+        after a caller disconnects or times out. Never accumulate a job backlog.
+        """
+        if self._maintenance_pending:
+            raise BackupError(
+                "backup_io_busy",
+                "Backup I/O is already running; inspect backup status before retrying.",
+            )
         self._maintenance_pending = True
         queued_at = time.monotonic()
 
@@ -1140,13 +1219,33 @@ class BackupService:
             if call == self.run_backup:
                 kwargs["queue_wait_seconds"] = wait
             self._metric(f"{operation}_queue_wait_seconds_total", wait)
-            return call(**kwargs)
+            return call(*args, **kwargs)
 
         try:
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(self._maintenance_executor, invoke)
-        finally:
+            future = loop.run_in_executor(self._maintenance_executor, invoke)
+        except BaseException:
             self._maintenance_pending = False
+            raise
+
+        def finished(_future: Any) -> None:
+            self._maintenance_pending = False
+            # A disconnected caller may no longer be awaiting this future.
+            # Retrieve its exception without changing what other awaiters see.
+            if not _future.cancelled():
+                _future.exception()
+
+        future.add_done_callback(finished)
+        try:
+            return await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
+        except TimeoutError as exc:
+            if future.done():
+                raise  # The operation itself failed; it is not still running.
+            raise BackupError(
+                "backup_io_timeout",
+                "Backup I/O is still running after the request deadline; "
+                "inspect backup status before retrying.",
+            ) from exc
 
     def delete_backup(self, backup_id: str) -> None:
         target_path = self._path_for_backup(backup_id)

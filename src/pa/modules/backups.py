@@ -20,6 +20,7 @@ router = APIRouter()
 
 class TriggerRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
+    preserve_existing: bool = False
 
 
 class RestoreStartRequest(BaseModel):
@@ -139,14 +140,16 @@ async def trigger_backup(request: Request, body: TriggerRequest) -> dict[str, An
                 "message": "Provide a stable Idempotency-Key of 1–200 characters.",
             },
         )
-    runtime = request.app.state.ctx.require_service("async_runtime")
-    run = await runtime.run_blocking(
-        "backup.manual",
-        _service(request).run_backup,
-        trigger="manual",
-        idempotency_key=key,
-        timeout=max(300.0, _service(request).config.interval_seconds),
-    )
+    service = _service(request)
+    try:
+        run = await service.run_io(
+            "backup.manual", service.run_backup,
+            trigger="manual", idempotency_key=key,
+            preserve_existing=body.preserve_existing,
+            timeout=max(300.0, service.config.interval_seconds),
+        )
+    except BackupError as exc:
+        _raise(exc)
     if run.status == "failed":
         raise HTTPException(
             status_code=503,
@@ -166,11 +169,11 @@ def inspect_backup(request: Request, backup_id: str) -> dict[str, Any]:
 @router.post("/backups/{backup_id}/verify")
 async def verify_backup(request: Request, backup_id: str) -> dict[str, Any]:
     _admin(request)
-    runtime = request.app.state.ctx.require_service("async_runtime")
+    service = _service(request)
     try:
-        record = await runtime.run_blocking(
+        record = await service.run_io(
             "backup.verify",
-            _service(request).verify_backup,
+            service.verify_backup,
             backup_id,
             timeout=300.0,
         )
