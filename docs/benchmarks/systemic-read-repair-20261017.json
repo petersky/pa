@@ -47891,7 +47891,8 @@
       "Initial new diagnostic test imported nonexistent exception; corrected before assertions ran",
       "One final selection included nonexistent test_instance_module.py; no tests ran, corrected selection retained"
     ],
-    "criteria": "No warning threshold, deadline, durability or acceptance criterion changed."
+    "criteria": "No warning threshold, deadline, durability or acceptance criterion changed.",
+    "post_rebase_integration": "25passed in47.53s: Work facets, receipt, runtime capacity, status; includes concurrent PR494 integration"
   },
   "remaining_gaps": [
     "Full512-object inventory/cold catch-up tails and transcript SQL/reconstruction/drain contention remain",
@@ -58263,7 +58264,33 @@
       "pa.modules.instance": true
     },
     "all_match": true,
-    "interpretation": "Exact final source stage; every failure/outlier retained. No deployed acceptance."
+    "interpretation": "Exact final source stage; every failure/outlier retained. No deployed acceptance.",
+    "source_stage": "Local pre-rebase3782704f, based on integrated4811cca; all18hashes matched at measurement time",
+    "subsequent_integration": {
+      "base": "64ebd23c",
+      "changes": "Concurrent PR494 Work discovery change; no overlap with repaired receipt function",
+      "post_rebase_module_hash_matches": {
+        "pa.core.async_runtime": true,
+        "pa.core.performance": true,
+        "pa.core.sqlite_metrics": true,
+        "pa.domain.projection": true,
+        "pa.domain.transcript_storage": true,
+        "pa.domain.card_summary_service": true,
+        "pa.modules.items": false,
+        "pa.execution.dispatch": true,
+        "pa.fleet.overview": true,
+        "pa.sync.engine": true,
+        "pa.sync.event_log": true,
+        "pa.sync.dag_index": true,
+        "pa.acp.transcript_page": true,
+        "pa.instance.agent_session": true,
+        "pa.pr_supervisor.store": true,
+        "pa.pr_supervisor.service": true,
+        "pa.status.info": true,
+        "pa.modules.instance": true
+      },
+      "acceptance": "Pre-rebase mixed stage is not an exact full current-head replay. Focused Work/receipt/runtime/status regressions run after rebase; full CI required."
+    }
   },
   "final_fixture_link_counts": {
     "slow_names_with_positive_submissions": 37,
