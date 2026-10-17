@@ -205,6 +205,9 @@ class ReadyContractKernelTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaisesRegex(ValueError, "invalid schema"):
                         await kernel.startup(app)
                     self.assertFalse(getattr(app.state, "ready_openapi_warmed", False))
+                    # A failed worker can already be done before shield() is
+                    # awaited. Its accounting callback then runs next turn.
+                    await asyncio.sleep(0)
                     observed = kernel.ctx.require_service("async_runtime").snapshot()["operations"]["startup.openapi"]
                     self.assertEqual(observed["failed"], 1)
                     self.assertEqual(observed["completed"], 0)

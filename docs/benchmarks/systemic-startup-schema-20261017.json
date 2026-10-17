@@ -41821,6 +41821,10 @@
     {
       "stage": "final bounded-offload source",
       "result": "37passed/6subtests in43.50s; full PA schema parity, recursive/generic/alias/enum/dataclass/discriminated variants, both modes, callbacks/webhooks/extensions, concurrent global isolation/appcache, unknown-version fallback, failed/cancelled late worker readiness, existing backend contracts"
+    },
+    {
+      "stage": "CI corrective accounting observation",
+      "result": "33passed/2subtests in18.27s; readiness/schema/backend/unchanged snapshot responsiveness. Snapshot200ms deadline and test unchanged. New head full CI required; original run failure retained."
     }
   ],
   "residuals": [
@@ -60089,5 +60093,607 @@
     "steady_warnings": 3,
     "sampled_threshold_violations": 7,
     "premeasurement_separate": true
-  }
+  },
+  "pr499_initial_ci": {
+    "head": "e2433848b6a2eb2cf672093b78f096e20751ca52",
+    "run": 39076626460,
+    "failed_job": 117525005903,
+    "result": "4success/1failure",
+    "failures": [
+      {
+        "test": "ReadyContractKernelTests.test_schema_failure_blocks_admission_and_is_observed",
+        "actual": "failed0 immediately after ValueError; a future already done before shield awaits does not yield to the queued completion-accounting callback",
+        "correction": "Yield once to the event loop before reading final counter; fail-closed readiness assertion unchanged; no product or timing limit change"
+      },
+      {
+        "test": "AgentSnapshotResponsivenessTests.test_live_metadata_does_not_flush_or_read_large_transcript",
+        "actual": "200ms wait timeout,205ms test-task callback; exact cause unverified",
+        "source_comparison": "agent_chat.py and this test unchanged from175; no fix or threshold increase claimed"
+      }
+    ],
+    "raw_log_sha256": "493cd7c841c515e327f06f7e7f32d60ce4d286b1e1b0040bad997323e02af22f",
+    "raw_log_scope": "Retained locally; bounded sanitized excerpts and public GitHub job identify source, full logs not republished",
+    "report": "f697bc31-bf35-4114-a463-964f43d0ab62 revision1"
+  },
+  "followup_boot_build_profile": {
+    "scope": "Disposable isolated Kernel.boot/build_app only; no lifespan/schema/provider/network/live state. cProfile overhead included, not a baseline or deployed latency. Static function names only; nested cumulative times overlap, never sum.",
+    "boot_ms": 9705.588250013534,
+    "boot_thread_cpu_ms": 7937.324833,
+    "build_app_ms": 4355.203707993496,
+    "total_thread_cpu_ms": 11506.119832999999,
+    "route_count": 548,
+    "top_cumulative": [
+      {
+        "module_path": "<worktree>/src/pa/core/kernel.py",
+        "line": 299,
+        "function": "boot",
+        "calls": 1,
+        "own_ms": 0.12,
+        "cumulative_ms": 9705.093
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 1360,
+        "function": "_find_and_load",
+        "calls": 662,
+        "own_ms": 8.776,
+        "cumulative_ms": 9549.296
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 1308,
+        "function": "_find_and_load_unlocked",
+        "calls": 659,
+        "own_ms": 7.936,
+        "cumulative_ms": 9544.434
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 914,
+        "function": "_load_unlocked",
+        "calls": 617,
+        "own_ms": 4.691,
+        "cumulative_ms": 9531.845
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap_external>",
+        "line": 753,
+        "function": "exec_module",
+        "calls": 605,
+        "own_ms": 3.885,
+        "cumulative_ms": 9528.59
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 483,
+        "function": "_call_with_frames_removed",
+        "calls": 1643,
+        "own_ms": 2.188,
+        "cumulative_ms": 9244.797
+      },
+      {
+        "module_path": "~",
+        "line": 0,
+        "function": "<built-in method builtins.exec>",
+        "calls": 735,
+        "own_ms": 113.807,
+        "cumulative_ms": 9206.827
+      },
+      {
+        "module_path": "<worktree>/src/pa/core/registry.py",
+        "line": 136,
+        "function": "load_all",
+        "calls": 1,
+        "own_ms": 0.019,
+        "cumulative_ms": 9055.131
+      },
+      {
+        "module_path": "<worktree>/src/pa/core/registry.py",
+        "line": 78,
+        "function": "load_builtins",
+        "calls": 1,
+        "own_ms": 0.443,
+        "cumulative_ms": 9025.977
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/routing.py",
+        "line": 1336,
+        "function": "add_api_route",
+        "calls": 1097,
+        "own_ms": 32.999,
+        "cumulative_ms": 7856.315
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/routing.py",
+        "line": 812,
+        "function": "__init__",
+        "calls": 1097,
+        "own_ms": 104.597,
+        "cumulative_ms": 7812.602
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/dependencies/utils.py",
+        "line": 286,
+        "function": "get_dependant",
+        "calls": 1121,
+        "own_ms": 61.213,
+        "cumulative_ms": 4689.017
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/utils.py",
+        "line": 58,
+        "function": "create_model_field",
+        "calls": 2903,
+        "own_ms": 28.51,
+        "cumulative_ms": 4495.097
+      },
+      {
+        "module_path": "<worktree>/src/pa/core/kernel.py",
+        "line": 571,
+        "function": "build_app",
+        "calls": 1,
+        "own_ms": 1.596,
+        "cumulative_ms": 4355.182
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/routing.py",
+        "line": 1578,
+        "function": "include_router",
+        "calls": 40,
+        "own_ms": 17.627,
+        "cumulative_ms": 4226.935
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/applications.py",
+        "line": 1358,
+        "function": "include_router",
+        "calls": 38,
+        "own_ms": 0.329,
+        "cumulative_ms": 4186.891
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/dependencies/utils.py",
+        "line": 393,
+        "function": "analyze_param",
+        "calls": 3284,
+        "own_ms": 91.791,
+        "cumulative_ms": 3916.44
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/_compat/v2.py",
+        "line": 141,
+        "function": "__post_init__",
+        "calls": 2903,
+        "own_ms": 84.482,
+        "cumulative_ms": 3894.163
+      },
+      {
+        "module_path": "~",
+        "line": 0,
+        "function": "<built-in method builtins.__import__>",
+        "calls": 384,
+        "own_ms": 1.479,
+        "cumulative_ms": 3782.399
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/fastapi/routing.py",
+        "line": 1449,
+        "function": "decorator",
+        "calls": 543,
+        "own_ms": 3.836,
+        "cumulative_ms": 3662.018
+      },
+      {
+        "module_path": "~",
+        "line": 0,
+        "function": "<built-in method builtins.__build_class__>",
+        "calls": 2755,
+        "own_ms": 64.443,
+        "cumulative_ms": 3472.371
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_model_construction.py",
+        "line": 84,
+        "function": "__new__",
+        "calls": 1268,
+        "own_ms": 54.348,
+        "cumulative_ms": 3437.215
+      },
+      {
+        "module_path": "<worktree>/src/pa/modules/agent_chat.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 1.23,
+        "cumulative_ms": 3255.271
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 717,
+        "function": "generate_schema",
+        "calls": 11494,
+        "own_ms": 56.938,
+        "cumulative_ms": 3150.812
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/type_adapter.py",
+        "line": 196,
+        "function": "__init__",
+        "calls": 2916,
+        "own_ms": 71.335,
+        "cumulative_ms": 2992.264
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 1017,
+        "function": "_generate_schema_inner",
+        "calls": 20701,
+        "own_ms": 108.993,
+        "cumulative_ms": 2909.349
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/type_adapter.py",
+        "line": 263,
+        "function": "_init_core_attrs",
+        "calls": 2916,
+        "own_ms": 132.913,
+        "cumulative_ms": 2833.961
+      },
+      {
+        "module_path": "<worktree>/src/pa/instance/agent_session.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.287,
+        "cumulative_ms": 2534.05
+      },
+      {
+        "module_path": "<worktree>/src/pa/acp/client.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.304,
+        "cumulative_ms": 2347.986
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 2210,
+        "function": "_apply_annotations",
+        "calls": 9262,
+        "own_ms": 94.96,
+        "cumulative_ms": 2169.567
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_model_construction.py",
+        "line": 600,
+        "function": "complete_model_class",
+        "calls": 1301,
+        "own_ms": 67.488,
+        "cumulative_ms": 1981.504
+      },
+      {
+        "module_path": "<worktree>/src/pa/acp/auxiliary_mcp.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.1,
+        "cumulative_ms": 1548.573
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py",
+        "line": 82,
+        "function": "__call__",
+        "calls": 14127,
+        "own_ms": 23.854,
+        "cumulative_ms": 1536.911
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/__init__.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.075,
+        "cumulative_ms": 1519.469
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 756,
+        "function": "_model_schema",
+        "calls": 3395,
+        "own_ms": 67.09,
+        "cumulative_ms": 1505.685
+      }
+    ]
+  },
+  "followup_mcp_registration_profile": {
+    "scope": "Fresh process built-in MCP registration/tools-list only, not transport initialize/spawn/owner read/SDK teardown. Temporary PA environment without live bindings, no entrypoint plugins, SQL/data writes audited and forbidden, no listener/network/provider. cProfile overhead included; not production or idle baseline. Nested cumulative times overlap.",
+    "registration_ms": 9458.41083303094,
+    "registration_thread_cpu_ms": 8427.641375000001,
+    "list_tools_ms": 6.198875023983419,
+    "tool_count": 221,
+    "data_files_after": [],
+    "top_cumulative": [
+      {
+        "module_path": "<worktree>/src/pa/mcp/server.py",
+        "line": 85,
+        "function": "_get_mcp",
+        "calls": 1,
+        "own_ms": 0.761,
+        "cumulative_ms": 9457.794
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 1360,
+        "function": "_find_and_load",
+        "calls": 657,
+        "own_ms": 10.256,
+        "cumulative_ms": 6560.8
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 1308,
+        "function": "_find_and_load_unlocked",
+        "calls": 647,
+        "own_ms": 9.328,
+        "cumulative_ms": 6557.953
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 914,
+        "function": "_load_unlocked",
+        "calls": 623,
+        "own_ms": 5.401,
+        "cumulative_ms": 6549.632
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap_external>",
+        "line": 753,
+        "function": "exec_module",
+        "calls": 604,
+        "own_ms": 4.538,
+        "cumulative_ms": 6547.602
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 483,
+        "function": "_call_with_frames_removed",
+        "calls": 1587,
+        "own_ms": 2.196,
+        "cumulative_ms": 6507.403
+      },
+      {
+        "module_path": "~",
+        "line": 0,
+        "function": "<built-in method builtins.exec>",
+        "calls": 786,
+        "own_ms": 155.534,
+        "cumulative_ms": 6499.18
+      },
+      {
+        "module_path": "~",
+        "line": 0,
+        "function": "<built-in method builtins.__import__>",
+        "calls": 327,
+        "own_ms": 1.734,
+        "cumulative_ms": 5226.188
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_model_construction.py",
+        "line": 84,
+        "function": "__new__",
+        "calls": 1196,
+        "own_ms": 95.321,
+        "cumulative_ms": 4995.921
+      },
+      {
+        "module_path": "~",
+        "line": 0,
+        "function": "<built-in method builtins.__build_class__>",
+        "calls": 2750,
+        "own_ms": 121.306,
+        "cumulative_ms": 4538.927
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/__init__.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.105,
+        "cumulative_ms": 3791.083
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_model_construction.py",
+        "line": 600,
+        "function": "complete_model_class",
+        "calls": 1230,
+        "own_ms": 108.176,
+        "cumulative_ms": 3123.566
+      },
+      {
+        "module_path": "<worktree>/src/pa/core/mcp_registration.py",
+        "line": 55,
+        "function": "unique",
+        "calls": 227,
+        "own_ms": 4.212,
+        "cumulative_ms": 2795.193
+      },
+      {
+        "module_path": "<worktree>/src/pa/mcp/server.py",
+        "line": 56,
+        "function": "allowlisted",
+        "calls": 227,
+        "own_ms": 1.543,
+        "cumulative_ms": 2790.042
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/server/mcpserver/server.py",
+        "line": 676,
+        "function": "decorator",
+        "calls": 221,
+        "own_ms": 1.233,
+        "cumulative_ms": 2788.499
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/server/mcpserver/server.py",
+        "line": 570,
+        "function": "add_tool",
+        "calls": 221,
+        "own_ms": 1.088,
+        "cumulative_ms": 2787.266
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/server/mcpserver/tools/tool_manager.py",
+        "line": 39,
+        "function": "add_tool",
+        "calls": 221,
+        "own_ms": 2.665,
+        "cumulative_ms": 2786.178
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/server/mcpserver/tools/base.py",
+        "line": 57,
+        "function": "from_function",
+        "calls": 221,
+        "own_ms": 16.471,
+        "cumulative_ms": 2783.04
+      },
+      {
+        "module_path": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/importlib/__init__.py",
+        "line": 71,
+        "function": "import_module",
+        "calls": 33,
+        "own_ms": 0.285,
+        "cumulative_ms": 2463.418
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 1386,
+        "function": "_gcd_import",
+        "calls": 34,
+        "own_ms": 0.254,
+        "cumulative_ms": 2463.138
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 717,
+        "function": "generate_schema",
+        "calls": 6277,
+        "own_ms": 44.328,
+        "cumulative_ms": 2438.519
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 1017,
+        "function": "_generate_schema_inner",
+        "calls": 12217,
+        "own_ms": 90.648,
+        "cumulative_ms": 2363.841
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 756,
+        "function": "_model_schema",
+        "calls": 2607,
+        "own_ms": 98.897,
+        "cumulative_ms": 2284.3
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 1278,
+        "function": "_common_field_schema",
+        "calls": 5862,
+        "own_ms": 125.807,
+        "cumulative_ms": 1928.383
+      },
+      {
+        "module_path": "<frozen importlib._bootstrap>",
+        "line": 1401,
+        "function": "_handle_fromlist",
+        "calls": 2831,
+        "own_ms": 7.834,
+        "cumulative_ms": 1914.903
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 1238,
+        "function": "_generate_md_field_schema",
+        "calls": 5688,
+        "own_ms": 26.075,
+        "cumulative_ms": 1857.169
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_model_construction.py",
+        "line": 566,
+        "function": "set_model_fields",
+        "calls": 1195,
+        "own_ms": 13.246,
+        "cumulative_ms": 1587.37
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_fields.py",
+        "line": 224,
+        "function": "collect_model_fields",
+        "calls": 1195,
+        "own_ms": 126.986,
+        "cumulative_ms": 1570.191
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/types/__init__.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.042,
+        "cumulative_ms": 1525.051
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/types/methods.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.028,
+        "cumulative_ms": 1521.187
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp_types/methods.py",
+        "line": 1,
+        "function": "<module>",
+        "calls": 1,
+        "own_ms": 0.466,
+        "cumulative_ms": 1519.416
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py",
+        "line": 2210,
+        "function": "_apply_annotations",
+        "calls": 5984,
+        "own_ms": 119.392,
+        "cumulative_ms": 1409.23
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/mcp/server/mcpserver/utilities/func_metadata.py",
+        "line": 191,
+        "function": "func_metadata",
+        "calls": 221,
+        "own_ms": 26.754,
+        "cumulative_ms": 1314.647
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/main.py",
+        "line": 561,
+        "function": "model_json_schema",
+        "calls": 311,
+        "own_ms": 2.093,
+        "cumulative_ms": 1272.319
+      },
+      {
+        "module_path": "<worktree>/.venv/lib/python3.14/site-packages/pydantic/json_schema.py",
+        "line": 2518,
+        "function": "model_json_schema",
+        "calls": 311,
+        "own_ms": 8.937,
+        "cumulative_ms": 1270.226
+      }
+    ]
+  },
+  "followup_profile_limits": "Profiler overhead included; not baseline timing or historicalMCPinitialize failure attribution. Built-in221tool fixture has no plugins/live binding/transport and differs from earlier live220tool observation. Boot route/dependency construction and MCP import/registration CPU remain open."
 }
