@@ -153,8 +153,17 @@
       var field = form.elements[name];
       if (!field) return;
       if (field.type === "checkbox") field.checked = !!values[name];
-      else field.value = values[name];
+      else {
+        if (field.hasAttribute("data-saved-value")) {
+          field.dataset.draftValue = values[name];
+          if (values[name] && !Array.from(field.options).some(option => option.value === values[name])) {
+            field.add(new Option(values[name], values[name]));
+          }
+        }
+        field.value = values[name];
+      }
     });
+    form.dispatchEvent(new Event("pa:settings-draft-restored"));
   }
 
   function initSections(root) {

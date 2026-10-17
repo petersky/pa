@@ -4253,6 +4253,61 @@ def get_agent_preferences(request: Request) -> dict:
     }
 
 
+def agent_defaults_preview(settings, principal, *, user=None, instance=None, scope="user"):
+    """Read the same default layers used by new sessions, without selecting or saving."""
+    from pa.execution.selection import merge_preferences
+    from pa.execution.selection_service import preference_layers
+
+    user_id = principal[5:] if principal.startswith("user:") else None
+    instance = instance or get_preferences_store(settings.data_dir).load()
+    user = user or get_preferences_store(settings.data_dir, user_id=user_id).load()
+    layers = preference_layers(
+        settings,
+        principal=principal if scope == "user" else None,
+        surface="chat.default",
+        preference_overrides={"user": user, "installation_surface": instance},
+    )
+    values, sources = merge_preferences(layers)
+    own = (user if scope == "user" else instance).agent_surfaces.get("chat.default")
+    inherited = instance.agent_surfaces.get("chat.default")
+    mode = (own.mode_id if own else None) or (inherited.mode_id if inherited else None)
+    mode_source = "provider"
+    if mode:
+        mode_source = (
+            "user_legacy" if scope == "user" and own and own.mode_id
+            else "installation_surface_legacy"
+        )
+    return {"values": values, "sources": sources, "mode": mode, "mode_source": mode_source}
+
+
+@router.post("/preferences/preview")
+def preview_agent_preferences(request: Request, body: PreferencesBody) -> dict:
+    from pa.core.preferences import SurfaceAgentPrefs
+
+    settings = request.app.state.ctx.settings
+    principal = get_principal_id(request)
+    user_id = _user_id(request)
+    instance = get_preferences_store(settings.data_dir).load()
+    user = get_preferences_store(settings.data_dir, user_id=user_id).load()
+    current = instance if body.scope == "global" else user
+    updates = body.model_dump(exclude_unset=True, exclude={"scope", "agent_surfaces"})
+    if body.agent_surfaces is not None:
+        updates["agent_surfaces"] = {
+            **current.agent_surfaces,
+            **{
+                key: SurfaceAgentPrefs.model_validate(raw)
+                for key, raw in body.agent_surfaces.items()
+            },
+        }
+    staged = current.model_copy(update=updates)
+    return agent_defaults_preview(
+        settings, principal,
+        user=staged if body.scope == "user" else user,
+        instance=staged if body.scope == "global" else instance,
+        scope=body.scope,
+    )
+
+
 @router.put("/preferences")
 def put_agent_preferences(request: Request, body: PreferencesBody) -> dict:
     from pa.core.preferences import SurfaceAgentPrefs

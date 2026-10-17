@@ -5511,3 +5511,29 @@ a.ghost:hover {
 .acw-visualization-dialog { width: min(1200px, 96vw); max-width: 96vw; max-height: 96vh; padding: 12px; box-sizing: border-box; }
 .acw-visualization-dialog iframe { display: block; width: 100%; height: 80vh !important; border: 0; margin-top: 12px; }
 .acw-visualization-dialog::backdrop { background: #0008; }
+
+/* Scoped defaults keep the effective value next to its control. */
+.settings-default-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.settings-default-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: .4rem .6rem;
+  min-width: 0;
+}
+.settings-default-control > label,
+.settings-default-control > select,
+.settings-default-control > [data-effort-reset] {
+  grid-column: 1 / -1;
+}
+.settings-default-control > p { margin: 0; overflow-wrap: anywhere; }
+.settings-default-control > button { width: auto; }
+@media (max-width: 760px) {
+  .settings-default-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.settings-agent-prefs .checkbox-row { flex-direction: row; align-items: center; }
