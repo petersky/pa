@@ -176,11 +176,23 @@ def init(
 @app.command()
 def status() -> None:
     """Show current instance status."""
-    from pa.status.info import build_status_snapshot
+    from pa.mcp.context import registration_context
+    from pa.mcp.local_api import LocalPAServerUnavailable, local_pa_url, request_local_pa
 
-    settings = get_settings()
-    kernel = Kernel.boot(load_modules=True)
-    snap = build_status_snapshot(kernel.ctx, module_count=len(kernel.registry.modules))
+    # Only the owning server can attest its loaded identity and inspect service
+    # projections. A diagnostic CLI must never boot another writer-capable Store.
+    settings = registration_context().settings
+    try:
+        snap = request_local_pa(settings, "GET", "/api/status")
+    except LocalPAServerUnavailable as exc:
+        ui.heading("PA — owner status unavailable")
+        typer.echo(f"  Owner API:   {local_pa_url(settings)}")
+        status_code = getattr(exc, "status", None)
+        if status_code:
+            typer.echo(f"  HTTP status: {status_code}")
+        typer.echo("  Running version, instance identity and counts are unknown.")
+        typer.echo("  Check the owning PA service and its API authentication.")
+        raise typer.Exit(1) from exc
 
     ui.heading(f"PA {snap['version']} — {snap['instance_name']}")
     typer.echo(f"  Instance ID: {snap['instance_id']}")

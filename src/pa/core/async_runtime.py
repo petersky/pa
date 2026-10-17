@@ -79,6 +79,7 @@ class OperationMetrics:
     queue_samples_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     python_lock_wait_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     python_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
+    outer_lock_hold_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     worker_service_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     executor_dispatch_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
     completion_delivery_ms: deque = field(default_factory=lambda: deque(maxlen=SAMPLE_LIMIT))
@@ -139,6 +140,7 @@ class AsyncRuntime:
         self._request_max_ms = 0.0
         self._request_slow: deque[dict[str, Any]] = deque(maxlen=50)
         self._slow_operations: deque[dict[str, Any]] = deque(maxlen=64)
+        self._slow_lock_timelines: deque[dict[str, Any]] = deque(maxlen=64)
         self._request_samples_ms: deque[float] = deque(maxlen=SAMPLE_LIMIT)
         self._request_bytes = 0
         self._request_routes: dict[str, dict] = {}
@@ -420,6 +422,7 @@ class AsyncRuntime:
         if observation:
             metrics.python_lock_wait_ms.append(observation.python_lock_wait_ms)
             metrics.python_lock_hold_ms.append(observation.python_lock_hold_ms)
+            metrics.outer_lock_hold_ms.append(observation.outer_lock_hold_ms)
             metrics.sqlite_statement_ms.append(observation.sqlite_statement_ms)
             metrics.sqlite_commit_ms.append(observation.sqlite_commit_ms)
             metrics.sqlite_calls.append(observation.sqlite_calls)
@@ -468,10 +471,18 @@ class AsyncRuntime:
             phases = {"operation": operation, "elapsed_ms": round(elapsed_ms, 3),
                       "observed_at_monotonic": round(time.perf_counter(), 6)}
             if observation is not None:
-                for name in ("queue_wait_ms", "thread_cpu_ms", "python_lock_wait_ms", "python_lock_hold_ms",
+                for name in ("queue_wait_ms", "thread_cpu_ms", "python_lock_wait_ms", "python_lock_hold_ms", "outer_lock_hold_ms",
                              "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
                              "sqlite_aggregate_items", "sqlite_aggregate_bytes", "sqlite_busy_failures"):
                     phases[name] = round(getattr(observation, name), 3)
+                phases["lock_events_total"] = observation.lock_events_total
+                if observation.lock_events:
+                    self._slow_lock_timelines.append({
+                        "operation": operation,
+                        "observed_at_monotonic": phases["observed_at_monotonic"],
+                        "lock_events_total": observation.lock_events_total,
+                        "events": [dict(item) for item in observation.lock_events],
+                    })
                 if observation.worker_finished_at:
                     phases.update(
                         worker_service_ms=round((observation.worker_finished_at - observation.worker_started_at) * 1000, 3),
@@ -542,7 +553,7 @@ class AsyncRuntime:
             data["queue_ms"] = distribution(list(metrics.queue_samples_ms))
             data["python_lock_wait_ms"] = distribution(list(metrics.python_lock_wait_ms))
             data["python_lock_hold_ms"] = distribution(list(metrics.python_lock_hold_ms))
-            for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms",
+            for phase in ("worker_service_ms", "executor_dispatch_ms", "completion_delivery_ms", "thread_cpu_ms", "outer_lock_hold_ms",
                           "sqlite_statement_ms", "sqlite_commit_ms", "sqlite_calls", "sqlite_rows",
                           "sqlite_aggregate_items", "sqlite_aggregate_bytes"):
                 data[phase] = distribution(list(getattr(metrics, phase)))
@@ -553,7 +564,11 @@ class AsyncRuntime:
         return {
             "slow_operations": {"capacity": 64, "scope": "last completed slow worker invocations; queue time separate from elapsed",
                                 "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+                                "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time",
                                 "observations": [dict(item) for item in self._slow_operations]},
+            "slow_lock_timelines": {"capacity": 64, "events_per_invocation": 64,
+                                    "observations": [{**item, "events": [dict(event) for event in item["events"]]}
+                                                     for item in self._slow_lock_timelines]},
             "executor": {
                 "max_workers": self.max_workers,
                 "max_queue": self.max_queue,

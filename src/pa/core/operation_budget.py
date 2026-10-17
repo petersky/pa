@@ -88,7 +88,7 @@ def report_work_progress():
 
 
 @contextmanager
-def measured_lock(lock):
+def measured_lock(lock, *, name: str = "unnamed"):
     deadline = current_operation.get()
     observation = current_observation.get()
     started = time.monotonic() if observation else 0
@@ -100,9 +100,27 @@ def measured_lock(lock):
     acquired = time.monotonic() if observation else 0
     if observation:
         observation.python_lock_wait_ms += (acquired - started) * 1000
+        depth = observation.lock_depth
+        observation.lock_depth += 1
     try:
         yield
     finally:
         lock.release()
         if observation:
-            observation.python_lock_hold_ms += (time.monotonic() - acquired) * 1000
+            finished = time.monotonic()
+            hold_ms = (finished - acquired) * 1000
+            observation.python_lock_hold_ms += hold_ms
+            observation.lock_depth -= 1
+            if depth == 0:
+                observation.outer_lock_hold_ms += hold_ms
+            observation.lock_events_total += 1
+            observation.lock_events.append({
+                # Only fixed subsystem labels may enter diagnostics, never
+                # caller-controlled identifiers, paths or lock representations.
+                "name": name if name in {"projection.mutation", "transcript.write"} else "unnamed",
+                "started_at_monotonic": round(started, 6),
+                "acquired_at_monotonic": round(acquired, 6),
+                "finished_at_monotonic": round(finished, 6),
+                "wait_ms": round((acquired - started) * 1000, 3),
+                "hold_ms": round(hold_ms, 3), "nesting_depth": depth,
+            })

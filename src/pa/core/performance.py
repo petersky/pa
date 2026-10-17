@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from collections import deque
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock
 
 SAMPLE_LIMIT = 256
@@ -15,6 +15,10 @@ class OperationObservation:
     queue_wait_ms: float = 0.0
     python_lock_wait_ms: float = 0.0
     python_lock_hold_ms: float = 0.0
+    outer_lock_hold_ms: float = 0.0
+    lock_depth: int = 0
+    lock_events_total: int = 0
+    lock_events: deque = field(default_factory=lambda: deque(maxlen=64))
     worker_started_at: float = 0.0
     worker_finished_at: float = 0.0
     thread_cpu_ms: float = 0.0
