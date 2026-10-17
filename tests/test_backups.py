@@ -161,6 +161,71 @@ class BackupTestCase(unittest.TestCase):
         self.assertTrue(any(name.startswith("transcript_objects/") for name in names))
         self.assertTrue(record.verified, record.verification_error)
 
+    def test_snapshot_copy_allows_writes_and_survives_transcript_gc(self) -> None:
+        self.store.create_card(CardCreate(title="captured before backup"))
+        self.store.append_transcript_events([TranscriptEvent(
+            session_id="snapshot-gc", seq=1, event_type="turn_completed",
+            payload={"text": "cold payload " * 2000},
+        )])
+        copying, release = threading.Event(), threading.Event()
+        original = self.service._copy_file
+        results, failures = [], []
+
+        def copy(source, target):
+            copying.set()
+            if not release.wait(5):
+                raise RuntimeError("fixture copy was not released")
+            original(source, target)  # Real fsync; no durability mock.
+
+        def backup():
+            try:
+                results.append(self.service.run_backup(idempotency_key="snapshot-gc"))
+            except Exception as exc:
+                failures.append(exc)
+
+        def mutate():
+            try:
+                self.store.create_card(CardCreate(title="written during copy"))
+                self.store.transcripts.prune(["snapshot-gc"], keep_audit=False)
+            except Exception as exc:
+                failures.append(exc)
+
+        with patch.object(self.service, "_copy_file", side_effect=copy):
+            worker = threading.Thread(target=backup)
+            writer = threading.Thread(target=mutate)
+            worker.start()
+            try:
+                self.assertTrue(copying.wait(5))
+                writer.start()
+                writer.join(2)
+                self.assertFalse(writer.is_alive(), "object copying held a PA writer lock")
+                self.assertFalse(list((self.data_dir / "transcript_objects").glob("[0-9a-f][0-9a-f]/*.zlib")))
+            finally:
+                release.set()
+                worker.join(10)
+                if writer.ident is not None:
+                    writer.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(failures, failures)
+        self.assertEqual(results[0].status, "success", results[0].failure_reason)
+        record = self.service.verify_backup(results[0].backup_id)
+        self.assertTrue(record.verified, record.verification_error)
+        self.assertNotEqual(record.manifest.durable_heads["default"], self.store.event_log.get_head("default"))
+        self.assertFalse(list((self.data_dir / "transcript_objects").glob(".pa-backup-pin-*")))
+
+    def test_snapshot_pin_failure_cleans_up_and_preserves_recovery_point(self) -> None:
+        good = self._run("before-pin-failure")
+        self.store.append_transcript_events([TranscriptEvent(
+            session_id="pin-failure", seq=1, event_type="turn_completed",
+            payload={"text": "cold payload " * 2000},
+        )])
+        with patch("pa.backup.service.os.link", side_effect=OSError("isolated pin failure")):
+            failed = self.service.run_backup(idempotency_key="pin-failure")
+        self.assertEqual(failed.status, "failed")
+        self.assertEqual([row.backup_id for row in self.service.list_backups()], [good.backup_id])
+        self.assertTrue(self.service.verify_backup(good.backup_id).verified)
+        self.assertFalse(list((self.data_dir / "transcript_objects").glob(".pa-backup-pin-*")))
+
     def test_reachable_event_graph_is_verified_and_missing_object_rejected(
         self,
     ) -> None:
@@ -868,6 +933,47 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.sleep(0)
         self.assertIsNotNone(self.service.status()["next_scheduled_run"])
+
+    async def test_manual_io_cancellation_keeps_worker_reserved_until_finished(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+        threads = []
+
+        def blocked():
+            threads.append(threading.current_thread().name)
+            entered.set()
+            release.wait(5)
+
+        task = asyncio.create_task(self.service.run_io("backup.manual", blocked))
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            with self.assertRaisesRegex(BackupError, "already running"):
+                await self.service.run_io("backup.verify", lambda: None)
+            self.assertIsNone(await self.service._run_maintenance("backup.scheduled", lambda: None))
+            self.assertTrue(threads[0].startswith("pa-backup-io"))
+        finally:
+            release.set()
+            for _ in range(100):
+                if not self.service._maintenance_pending:
+                    break
+                await asyncio.sleep(0.01)
+        self.assertEqual(await self.service.run_io("backup.verify", lambda: "verified"), "verified")
+
+    async def test_manual_io_deadline_does_not_admit_overlapping_work(self) -> None:
+        release = threading.Event()
+        try:
+            with self.assertRaisesRegex(BackupError, "still running"):
+                await self.service.run_io("backup.manual", lambda: release.wait(5), timeout=0.01)
+            with self.assertRaisesRegex(BackupError, "already running"):
+                await self.service.run_io("backup.verify", lambda: None)
+        finally:
+            release.set()
+            for _ in range(100):
+                if not self.service._maintenance_pending:
+                    break
+                await asyncio.sleep(0.01)
 
     async def test_paused_scheduler_waits_without_startup_or_scrub_until_manual_recovery(self) -> None:
         self.service._state.consecutive_failures = self.service.config.alert_after_failures

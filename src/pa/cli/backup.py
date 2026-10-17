@@ -57,12 +57,16 @@ def run(
     idempotency_key: Annotated[
         str | None, typer.Option(help="Stable retry key")
     ] = None,
+    preserve_existing: Annotated[
+        bool, typer.Option(help="Protect all current archives from this run's retention")
+    ] = False,
 ) -> None:
     """Trigger an immediate idempotent online backup."""
     result = _api(
         "POST",
         "/api/backups",
-        json_body={"idempotency_key": idempotency_key or f"cli:{uuid4()}"},
+        json_body={"idempotency_key": idempotency_key or f"cli:{uuid4()}",
+                   "preserve_existing": preserve_existing},
     )
     _json(result)
 
