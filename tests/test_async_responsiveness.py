@@ -695,6 +695,14 @@ class WorkerResponsivenessTests(unittest.IsolatedAsyncioTestCase):
 
 class MixedLoadLoopLagTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        # Measure the production-default loop profile. IsolatedAsyncioTestCase
+        # enables per-Future/callback debug stack tracking by default, which
+        # adds CPU to this twelve-request performance workload. The load and
+        # all 20/40ms assertions remain unchanged; lag detection under both
+        # debug modes is covered separately.
+        loop = asyncio.get_running_loop()
+        self.addCleanup(loop.set_debug, loop.get_debug())
+        loop.set_debug(False)
         self.runtime = AsyncRuntime(
             max_workers=4,
             max_queue=16,

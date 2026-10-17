@@ -88,8 +88,10 @@ def report_work_progress():
 
 
 @contextmanager
-def measured_lock(lock, *, name: str = "unnamed", filesystem: bool = False):
-    deadline = current_operation.get()
+def measured_lock(lock, *, name: str = "unnamed", filesystem: bool = False, track_deadline: bool = True):
+    # Previously raw locks can opt into metrics without changing which existing
+    # idle/lock budget applies. Existing callers keep their deadline contract.
+    deadline = current_operation.get() if track_deadline else None
     observation = current_observation.get()
     started = time.monotonic() if observation else 0
     if deadline:

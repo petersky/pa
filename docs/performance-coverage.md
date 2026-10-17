@@ -1,3 +1,23 @@
+# Transcript/backend continuation checkpoint — 2026-10-17
+
+The systemic card remains open: **510inventory rows/41concerns**. These are path/evidence records, not independent incidents or root causes. All140retained log slow names,181baseline runtime entries,115baseline route groups and prior evidence/owners remain. [Full matrix](performance-coverage.json); [numeric stage history](benchmarks/systemic-transcript-backend-20261017.json).
+
+PR496 merged646aff54 from exactwatched4c35fb15 after stable6observations and independent5terminalsuccess head checks, complete review/rules/attribution and CLEAN/head-CAS merge. Head/merge trees matchca16cc02. **Subsequent mainCI39053124584 failed** the unchanged40ms loop assertion at301.933ms; no retry hides it. Source is uninstalled. Review caught effective ref-budget phase selection; new ref metrics are now observation-only, preserving previous deadline behavior before activation.
+
+Message completion reuses transcript handles only within one actual worker invocation:30identical3200chunk pages use180→30connections and720→420SQLcalls, same complete2560000characters/SHA. Public replay p95148.125→127.866ms. Direct calls still close on exit; failed borrows roll back/close; active nested borrows never alias; callbacks follow the current budget; a timed-out worker retains its handle until actual completion. Busy timeout/durability/order are unchanged.
+
+Explicit lag reset now separates pre-boundary timer lateness without hiding a40ms post-reset stall. Pre-window delay remains separately visible. The performance fixture now declares production-default loop debugFalse while retaining every20/40msassertion and12loader requests plus readiness/probe. Functional tests retain debugTrue and real stalls are tested in both modes. Local debug gaps were CPU-bound with thread starts<0.3ms and no long import/GC; the same production-profile workload passed. This corrects validation context, not production flags or an established diagnosis of the exact LinuxCI callback.
+
+Public AnyIO backend preparation now happens once during runtime startup before requests need it. Cost/counters/loop-threadCPU and unchanged-threshold warnings remain visible; no workers/capacity defaults are added.47latest tests pass, including unchanged responsiveness bounds, both debug modes, startup close/concurrency, transcript order/timeout/rollback and ref deadline guards; earlier failed local/CI cases remain in the numeric artifact.
+
+Final100iteration/29request source replay matches21module hashes and retains9600ordered events,0operation failures/timeouts/rejections. **Acceptance still fails:8worker warnings/7sampled violations.** Six summary-write warnings form a convoy; firstSQL675ms/43msthreadCPU then followers wait743–1117ms. Card history/reconciliation/Fleet/full inventory tails remain. Message page max460.192ms and drain max293.521ms in this sample do not close all branches or installed behavior. Backend preparation6.095ms is retained separately; full schema startup still blocks callbacks~2.8s in premeasurement.
+
+Bounded SQL-call instrumentation retained37selected invocations; only2of40slow SQLcalls half-overlapped long GC. One190msfetchall overlapped184msGC; several low-CPU193msPRAGMA/INSERT/SELECT calls did not. Native busy/filesystem/scheduling and database-role attribution remain open. Reverse/JSONaggregate transcript query variants worsened p95 and were rejected. Object probe removes15360Pythonos.stat calls, with modest p95 improvement but161.892mscandidate tail; no source change. A private FastAPI flatten prototype removes3640adapters and cuts schema2516.682→1008.710ms with identical481path canonical schema, but remains over500ms and is not committed/deployed.
+
+Existinghandofff6c4e9e1 continuation remains queued at last read; the normal session queue/controller owns delivery, with no competing restart. Backup verifier8d373b2d remains scheduler-owned; original DB89957scope staysaccepted. Original real-provider/peer/log/leaf and independent-agent acceptance requirements all remain. The prior sections below are retained historical stages; current follow-up fields supersede old source-stage labels without erasing failures.
+
+---
+
 # Ref-phase and parent-proof checkpoint — 2026-10-17
 
 The systemic card remains open: **501findings/34concerns**, including all140retained slow names. Every earlier row, outlier and owner remains. [Full matrix](performance-coverage.json); [new numeric evidence](benchmarks/systemic-ref-phases-20261017.json).

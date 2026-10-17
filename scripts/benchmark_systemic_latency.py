@@ -328,8 +328,10 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
         assert store.get_card(card_id).title == f"Fixture {history + 2 * iterations - 1}"
         return {"hardware": {"machine": platform.machine(), "python": platform.python_version(), "cpus": os.cpu_count()},
             "source_module_sha256": source_hashes,
+            "measurement_start_monotonic": started, "measurement_finish_monotonic": time.perf_counter(),
             "premeasurement": {"scope": "Kernel boot and synthetic fixture seeding; not part of steady mixed window",
                                "slow_calls": sum(value.get("slow_calls", 0) for value in runtime_before["operations"].values()),
+                               "async_backend_initialization": runtime_before.get("async_backend_initialization"),
                                "slow_observations": runtime_before.get("slow_operations", {}),
                                "acceptance": "reported separately; full server cold boot remains unaccepted"},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,

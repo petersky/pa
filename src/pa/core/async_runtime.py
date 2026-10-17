@@ -29,6 +29,14 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+
+async def _prepare_async_backend() -> None:
+    # FastAPI/Starlette streaming and synchronous routes use this backend.
+    # Resolve its lazy initialization before admitting requests, without
+    # starting extra workers or changing either executor's capacity.
+    from anyio.lowlevel import checkpoint
+    await checkpoint()
+
 # These operations are deliberately off-loop and include normal filesystem,
 # SQLite, object traversal, or Git latency. Keep collecting their exact metrics,
 # but reserve warnings for durations that indicate genuine degradation.
@@ -140,6 +148,8 @@ class AsyncRuntime:
         )
         self._slots = asyncio.Semaphore(max_workers)
         self._admission_lock = asyncio.Lock()
+        self._startup_lock = asyncio.Lock()
+        self._backend_initialization = {"state": "not_started"}
         self._operations: defaultdict[str, OperationMetrics] = defaultdict(
             OperationMetrics
         )
@@ -153,6 +163,8 @@ class AsyncRuntime:
         self._lag_task: asyncio.Task[None] | None = None
         self._lag_samples_ms: deque[float] = deque(maxlen=600)
         self._lag_max_ms = 0.0
+        self._lag_window_start_at: float | None = None
+        self._lag_pre_window_ms: deque[float] = deque(maxlen=600)
         self._request_count = 0
         self._request_total_ms = 0.0
         self._request_max_ms = 0.0
@@ -166,16 +178,47 @@ class AsyncRuntime:
         self.work_metrics = PerformanceMetrics()
 
     async def start(self) -> None:
-        if self._lag_task and not self._lag_task.done():
-            return
-        self._lag_task = asyncio.create_task(
-            self._monitor_loop_lag(), name="pa-event-loop-lag"
-        )
+        async with self._startup_lock:
+            if not self._accepting_owned:
+                raise AsyncRuntimeClosed("async runtime is closing")
+            if self._lag_task and not self._lag_task.done():
+                return
+            operation = "startup.async_backend_prepare"
+            started, cpu = time.perf_counter(), time.thread_time()
+            self._backend_initialization = {"state": "preparing"}
+            try:
+                await self.observe(operation, _prepare_async_backend())
+            except BaseException:
+                self._backend_initialization["state"] = "failed_or_cancelled"
+                raise
+            else:
+                self._backend_initialization["state"] = "ready"
+            finally:
+                elapsed = (time.perf_counter() - started) * 1000
+                phases = {"operation": operation, "kind": "async_initialization",
+                          "elapsed_ms": round(elapsed, 3),
+                          "loop_thread_cpu_ms": round((time.thread_time() - cpu) * 1000, 3)}
+                self._backend_initialization.update(phases)
+                if elapsed >= self.slow_call_seconds * 1000:
+                    self._operations[operation].slow_calls += 1
+                    logger.warning("Slow async initialization operation=%s elapsed_ms=%.1f",
+                                   operation, elapsed, extra={"performance_phases": phases})
+            if not self._accepting_owned:
+                raise AsyncRuntimeClosed("async runtime is closing")
+            self._lag_window_start_at = None
+            self._lag_task = asyncio.create_task(
+                self._monitor_loop_lag(), name="pa-event-loop-lag"
+            )
 
     def reset_lag_samples(self) -> None:
         """Drop collected lag so a caller can measure one load window."""
         self._lag_samples_ms.clear()
         self._lag_max_ms = 0.0
+        self._lag_pre_window_ms.clear()
+        self._lag_window_start_at = (
+            self._lag_task.get_loop().time()
+            if self._lag_task and not self._lag_task.done() else None
+        )
 
     async def close(self, *, drain_timeout: float = 5.0) -> None:
         self._accepting_owned = False
@@ -526,7 +569,17 @@ class AsyncRuntime:
         while True:
             target = loop.time() + self.lag_interval_seconds
             await asyncio.sleep(self.lag_interval_seconds)
-            lag_ms = max(0.0, (loop.time() - target) * 1000)
+            now = loop.time()
+            boundary = self._lag_window_start_at
+            # A reset can occur while this timer was already overdue (including
+            # between an isolated test's setup loop and its measurement loop).
+            # Retain that earlier delay separately, without granting any grace
+            # to a stall after the declared boundary.
+            effective_target = max(target, boundary) if boundary is not None else target
+            lag_ms = max(0.0, (now - effective_target) * 1000)
+            pre_window_ms = max(0.0, (min(now, effective_target) - target) * 1000)
+            if pre_window_ms:
+                self._lag_pre_window_ms.append(pre_window_ms)
             self._lag_samples_ms.append(lag_ms)
             self._lag_max_ms = max(self._lag_max_ms, lag_ms)
 
@@ -589,6 +642,7 @@ class AsyncRuntime:
             data["max_runtime_ms"] = round(data["max_runtime_ms"], 3)
             operations[name] = data
         return {
+            "async_backend_initialization": dict(self._backend_initialization),
             "slow_operations": {"capacity": 64, "scope": "last completed slow worker invocations; queue time separate from elapsed",
                                 "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
                                 "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time",
@@ -612,6 +666,7 @@ class AsyncRuntime:
                     self._percentile(self._lag_samples_ms, 0.95), 3
                 ),
                 "max_lag_ms": round(self._lag_max_ms, 3),
+                "pre_window_lag_ms": distribution(list(self._lag_pre_window_ms)),
             },
             "requests": {
                 "window": "last_256_non_sse_requests_per_route",
