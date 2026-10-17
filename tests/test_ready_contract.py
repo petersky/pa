@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from threading import Event
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -174,6 +175,9 @@ class ReadyContractKernelTests(unittest.IsolatedAsyncioTestCase):
             try:
                 self.assertTrue(app.state.ready_openapi_warmed)
                 self.assertIn("/api/cards", app.state.ready_paths)
+                observed = kernel.ctx.require_service("async_runtime").snapshot()["operations"]["startup.openapi"]
+                self.assertEqual(observed["completed"], 1)
+                self.assertEqual(observed["failed"], 0)
                 calls = {"n": 0}
                 original = app.openapi
 
@@ -186,6 +190,59 @@ class ReadyContractKernelTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(calls["n"], 0)
             finally:
                 await kernel.shutdown(app)
+
+    async def test_schema_failure_blocks_admission_and_is_observed(self) -> None:
+        fake_agent = _fake_agent()
+        with tempfile.TemporaryDirectory() as tmp:
+            kernel = Kernel.boot(settings=Settings(
+                data_dir=Path(tmp) / "data", workspace_root=Path(tmp) / "workspaces",
+                agent_enabled=False,
+            ), load_modules=False)
+            app = FastAPI()
+            with patch("pa.instance.agent_session.get_instance_agent", return_value=fake_agent), \
+                 patch.object(app, "openapi", side_effect=ValueError("invalid schema")):
+                try:
+                    with self.assertRaisesRegex(ValueError, "invalid schema"):
+                        await kernel.startup(app)
+                    self.assertFalse(getattr(app.state, "ready_openapi_warmed", False))
+                    observed = kernel.ctx.require_service("async_runtime").snapshot()["operations"]["startup.openapi"]
+                    self.assertEqual(observed["failed"], 1)
+                    self.assertEqual(observed["completed"], 0)
+                finally:
+                    await kernel.shutdown(app)
+
+    async def test_cancelled_startup_does_not_publish_late_schema_readiness(self) -> None:
+        fake_agent = _fake_agent()
+        entered, release = Event(), Event()
+        with tempfile.TemporaryDirectory() as tmp:
+            kernel = Kernel.boot(settings=Settings(
+                data_dir=Path(tmp) / "data", workspace_root=Path(tmp) / "workspaces",
+                agent_enabled=False,
+            ), load_modules=False)
+            app = FastAPI()
+            original = app.openapi
+
+            def delayed_schema():
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("test schema latch was not released")
+                return original()
+
+            with patch("pa.instance.agent_session.get_instance_agent", return_value=fake_agent), \
+                 patch.object(app, "openapi", delayed_schema):
+                task = asyncio.create_task(kernel.startup(app))
+                try:
+                    self.assertTrue(await asyncio.to_thread(entered.wait, 5))
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+                    self.assertFalse(getattr(app.state, "ready_openapi_warmed", False))
+                finally:
+                    release.set()
+                    await asyncio.gather(task, return_exceptions=True)
+                    await kernel.shutdown(app)
+                self.assertIsNotNone(app.openapi_schema)
+                self.assertFalse(getattr(app.state, "ready_openapi_warmed", False))
 
     async def test_ready_blocked_while_agent_lifecycle_is_starting(self) -> None:
         release = asyncio.Event()

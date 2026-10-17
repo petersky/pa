@@ -463,7 +463,13 @@ class Kernel:
         )
         from pa.server.readiness import warm_ready_contract
 
-        warm_ready_contract(app)
+        # Full schema validation still precedes admission. Publish the ready
+        # flags only on this task after the bounded worker actually completes;
+        # cancellation cannot let a late worker declare the app ready.
+        await async_runtime.run_blocking(
+            "startup.openapi", app.openapi, wait_for_completion=True,
+        )
+        warm_ready_contract(app)  # The complete schema is now cached.
         if not self.ctx.settings.agent_enabled:
             # Disabled agents still run workspace housekeeping. Await it so
             # /api/ready is deterministic for tests and `pa start` without ACP.

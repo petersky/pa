@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+from threading import Lock
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
+
+from pa.server.schema_generation import get_openapi
 
 from pa.auth.csrf import COOKIE_NAME as CSRF_COOKIE_NAME
 from pa.auth.csrf import HEADER_NAME as CSRF_HEADER_NAME
@@ -248,7 +250,9 @@ def _document_remote_dispatch(schema: dict[str, Any]) -> None:
 def install_openapi_contract(app: FastAPI) -> None:
     """Install PA's generated-client and interactive-documentation contract."""
 
-    def pa_openapi() -> dict[str, Any]:
+    schema_lock = Lock()
+
+    def generate() -> dict[str, Any]:
         if app.openapi_schema:
             return app.openapi_schema
         schema = get_openapi(
@@ -359,5 +363,9 @@ def install_openapi_contract(app: FastAPI) -> None:
         _document_remote_dispatch(schema)
         app.openapi_schema = schema
         return schema
+
+    def pa_openapi() -> dict[str, Any]:
+        with schema_lock:
+            return generate()
 
     app.openapi = pa_openapi
