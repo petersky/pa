@@ -430,6 +430,15 @@ class EventLog:
         raw = self.store.get(object_hash_value)
         if raw is None:
             return None
+        return self._decode_object(object_hash_value, raw, model, object_kind)
+
+    def _decode_object(
+        self,
+        object_hash_value: str,
+        raw: bytes,
+        model: type[_ObjectModel],
+        object_kind: str,
+    ) -> _ObjectModel:
         if object_hash(raw) != object_hash_value:
             raise EventHistoryObjectError(
                 "corrupt_object", object_hash_value, object_kind
@@ -487,6 +496,10 @@ class EventLog:
 
     def get_commit(self, commit_hash: str) -> SyncCommit | None:
         return self._get_object(commit_hash, SyncCommit, "commit")
+
+    def decode_commit(self, commit_hash: str, raw: bytes) -> SyncCommit:
+        """Validate the exact exported bytes without reading the object again."""
+        return self._decode_object(commit_hash, raw, SyncCommit, "commit")
 
     def _iter_commits_parent_first(
         self,

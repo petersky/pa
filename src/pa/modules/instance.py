@@ -256,6 +256,9 @@ async def ready(request: Request) -> dict:
 def _runtime_status_snapshot(ctx) -> dict:
     runtime = ctx.require_service("async_runtime")
     snapshot = runtime.snapshot()
+    diagnostics = ctx.services.get("runtime_diagnostics")
+    if diagnostics is not None:
+        snapshot["diagnostics_executor"] = diagnostics.snapshot()
     from pa.acp.sandbox_health import sandbox_health_registry
 
     snapshot["sandbox_health"] = sandbox_health_registry.snapshot()
@@ -316,7 +319,8 @@ async def async_runtime_status(request: Request, section: Literal["all", "sse"] 
         return {"sse_connections": sse_connections.snapshot()}
     ctx = request.app.state.ctx
     runtime = ctx.require_service("async_runtime")
-    return await runtime.run_blocking(
+    diagnostics = ctx.services.get("runtime_diagnostics") or runtime
+    return await diagnostics.run_blocking(
         "runtime.status_snapshot", _runtime_status_snapshot, ctx, timeout=5.0
     )
 
@@ -1123,8 +1127,18 @@ class InstanceModule(Module):
     async def on_startup(self, app, ctx: AppContext) -> None:
         if "writer_lock" not in ctx.services:
             return
+        from pa.core.async_runtime import AsyncRuntime
         from pa.instance.maintenance import InstanceMaintenanceService
 
+        # Reading saturation telemetry must not queue behind the saturated
+        # workload itself. Keep this capacity bounded and all budgets unchanged.
+        ctx.register_service("runtime_diagnostics", AsyncRuntime(
+            max_workers=1, max_queue=ctx.settings.blocking_queue_limit,
+            default_timeout=ctx.settings.blocking_default_timeout,
+            operation_budgets=ctx.settings.blocking_operation_budgets,
+            slow_call_seconds=ctx.settings.blocking_slow_call_seconds,
+            lag_interval_seconds=ctx.settings.event_loop_probe_interval,
+        ))
         service = InstanceMaintenanceService(
             ctx.settings,
             ctx.store,
@@ -1136,8 +1150,13 @@ class InstanceModule(Module):
 
     async def on_shutdown(self, app, ctx: AppContext) -> None:
         service = ctx.services.get("instance_maintenance")
-        if service:
-            await service.close()
+        try:
+            if service:
+                await service.close()
+        finally:
+            diagnostics = ctx.services.get("runtime_diagnostics")
+            if diagnostics is not None:
+                await diagnostics.close(drain_timeout=0.1)
 
     def api_routers(self):
         return [("/api", router, ["instance"])]

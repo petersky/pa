@@ -1,3 +1,26 @@
+# Current continuation checkpoint — 2026-10-17
+
+The systemic card remains open. The matrix now retains **499 findings**, including **140 slow names** and **32 concerns**. All prior rows, stage failures and owners remain. Detailed measurements: [read-repair artifact](benchmarks/systemic-read-repair-20261017.json); [full matrix](performance-coverage.json).
+
+PR492 merged as4811cca after stable-green and independent head checks; head/main CI each passed5checks. Installed startup source4297 is independently fingerprinted. The merge also contains concurrent main changes, so its entire tree is not deployed. The unchanged asset build ID is not proof of loaded Python source. The new follow-up source below is not installed.
+
+Confirmed sync amplification: ten complete1000commit collections fell from3000 to2000file reads each, with identical canonical bytes (p95533.820→246.233ms). Twenty protocol-v3 exchanges with a nearly current synthetic peer fell from512 to8reads each (p9583.867→5.110ms), retaining2objects and3HTTPcalls per exchange. Public scripts replay both fixtures. Cold catch-up and shared-ancestry/corruption/spill correctness are covered by60passing sync regressions. These local fixtures do not establish real-network acceptance.
+
+The expanded100iteration/29request fixture retained9600ordered transcript events with no operation failures/timeouts/rejections, but **34worker warnings and54threshold violations**. It adds Home/Work/runtime and bounded512object inventory builders. Full inventory pages reached5192.888ms and transcript drain2257.018ms. The short-prefix optimization does not close this hard-page workload. Earlier corrected4297 replay had6warnings/11violations; both stages and every prior failure remain in the numeric artifacts. An exact final-source replay is recorded separately when complete; no passing result is assumed.
+
+Additional scoped changes reserve bounded read-only runtime diagnostic capacity under the unchanged5second deadline, separate immutable loaded source from mutable installation metadata, and explain stale negative receipt proofs while preserving unknown effects and explicit recovery. Specific historical504/fork timeout causes remain unverified; root retains the original fork key and recovery. No new worker/request was launched.
+
+Fresh macbook logs cover16:13:50Z–16:34:42Z:5842records,2104279bytes,60slow names,704raw emissions including352structured phase records and copies. The window spans old/new processes and overlapped fixtures; all per-name count/p50/p95/p99/max and numeric phases are retained. Exact reported correlations were absent in this bounded window, leaving a coverage gap. No peer-log or exhaustive retention claim is made.
+
+Managed handoff quiescence took254.656s and restart-to-resume114.210s; continuation remained queued at the last read. These are active-work lifecycle intervals, not a cold-start causal attribution. No competing restart was requested. Backup's existing scheduler verifier is now dispatched8d373b2d with another intent pending; no acceptance or competing dispatch is claimed. DB89957's accepted original scope stays closed. Independent final acceptance remains scheduler-owned under unchanged requirement17d034a6.
+
+
+Exact final-source100iteration replay completed with all18module hashes matching:9600ordered events,3worker warnings/17threshold violations,0operation failures/timeouts/rejections. It lasted89.934s; runtime GETp95/max28.727/39.415ms, status76.714/136.509ms, full512-object builder1393.967ms max, drain513.647ms max. This remains a failing acceptance scenario; host variability and remaining shared causes prevent causal attribution of the change between stages. All prior outliers are retained.
+
+The following sections retain the preceding checkpoint verbatim as historical evidence. Current follow-up fields in JSON and the artifact above supersede stage labels such as “not merged/deployed yet”; no historical failure is erased.
+
+---
+
 # Systemic PA performance coverage — 2026-10-17
 
 The card remains open. This consolidates the prior449-row repository matrix and both durable card deltas (452 rows), then accounts for every additional live operation/route and control-plane concern. Every unresolved row retains its owner and next action. Source, merge, loaded build and acceptance are distinct.

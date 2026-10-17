@@ -21,7 +21,12 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
     store = ctx.store
     svc_status = svc.get_status(settings)
     install_meta = load_install_metadata(settings.data_dir)
-    runtime_revision = running_source_revision()
+    # Installation metadata can change while this process remains alive. Only
+    # the existing startup capture can identify its loaded distribution.
+    captured = getattr(ctx.services.get("health_journal"), "runtime_build", None)
+    runtime_build = dict(captured) if isinstance(captured, dict) and captured.get("pid") == os.getpid() else None
+    runtime_revision = runtime_build.get("source_revision") if runtime_build else None
+    installed_revision = running_source_revision()
     pa_bin = svc.find_pa_binary()
     service_bin = svc.find_service_binary()
     counts = store.status_inventory()
@@ -93,9 +98,10 @@ def build_status_snapshot(ctx: AppContext, *, module_count: int = 0) -> dict:
         "installed_version": install_meta.version if install_meta else None,
         "install_method": install_meta.method if install_meta else None,
         "install_channel": install_meta.channel if install_meta else None,
-        "install_revision": runtime_revision
+        "install_revision": installed_revision
         or (install_meta.source_revision if install_meta else None),
         "runtime_revision": runtime_revision,
+        "runtime_build": runtime_build,
         "release_track": settings.release_track,
         "service": {
             "backend": svc_status.backend,

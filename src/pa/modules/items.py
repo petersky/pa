@@ -2407,12 +2407,20 @@ def _operation_outcome_receipts(
     proof_result = (proof or {}).get("result") or {}
     if (not claims and (proof or {}).get("state") == "completed"
             and proof_result.get("status") == "not_found"
-            and "lookup_head" in proof_result
-            and proof_result["lookup_head"] == (store.event_log.read_cached_head(realm_id) if store.event_log else None)):
-        outcome.update(status="not_found", durable=False, accepted=False,
-                       committed=False, projected=False, effect="none",
-                       lookup_head=proof_result["lookup_head"],
-                       recovery_state="verified_absent_at_head", recovery_action=None)
+            and "lookup_head" in proof_result):
+        current_head = store.event_log.read_cached_head(realm_id) if store.event_log else None
+        if proof_result["lookup_head"] == current_head:
+            outcome.update(status="not_found", durable=False, accepted=False,
+                           committed=False, projected=False, effect="none",
+                           lookup_head=proof_result["lookup_head"],
+                           recovery_state="verified_absent_at_head", recovery_action=None)
+        else:
+            # A completed scan of an older head is real work, but not proof
+            # about the new history. Keep unknown effect and explicit recovery.
+            outcome.update(recovery_state="receipt_absent_history_head_changed",
+                           history_lookup={"state": "stale_head",
+                                           "checked_head": proof_result["lookup_head"],
+                                           "current_head": current_head})
 
     def finish_local_receipt(receipt):
         # A lost derived canonical row is not proof that another legacy owner

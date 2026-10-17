@@ -1090,6 +1090,8 @@ class SyncEngine:
         pending: list[str],
         seen_commits: set[str],
         pending_events: list[str] | None = None,
+        *,
+        max_objects: int | None = None,
     ) -> tuple[dict[str, bytes], dict[str, list[str]]]:
         """Read one bounded head-first page without walking known ancestry.
 
@@ -1098,12 +1100,15 @@ class SyncEngine:
         """
         if pending_events is None:
             pending_events = []
+        object_limit = SYNC_INVENTORY_MAX_OBJECTS if max_objects is None else max(
+            1, min(int(max_objects), SYNC_INVENTORY_MAX_OBJECTS)
+        )
         raw: dict[str, bytes] = {}
         parents: dict[str, list[str]] = {}
         inventory_bytes = 0
 
         def _can_add(estimated: int) -> bool:
-            if len(raw) >= SYNC_INVENTORY_MAX_OBJECTS:
+            if len(raw) >= object_limit:
                 return False
             if raw and inventory_bytes + estimated > SYNC_INVENTORY_MAX_BYTES:
                 return False
@@ -1123,13 +1128,13 @@ class SyncEngine:
                 raw[event_hash] = event_data
                 inventory_bytes += estimated
 
-        while pending and len(raw) < SYNC_INVENTORY_MAX_OBJECTS:
+        while pending and len(raw) < object_limit:
             commit_hash = pending.pop()
             if not commit_hash or commit_hash in seen_commits:
                 continue
             seen_commits.add(commit_hash)
             data = self.store.get(commit_hash)
-            commit = self.log.get_commit(commit_hash)
+            commit = self.log.decode_commit(commit_hash, data) if data is not None else None
             if data is None or commit is None:
                 continue
             estimated = len(commit_hash) + 8
@@ -1192,6 +1197,10 @@ class SyncEngine:
         sent_bytes = 0
         inventory_batches = 0
         object_batches = 0
+        # Most anti-entropy passes find a peer at our parent. Probe a short
+        # prefix before reading a full page of already-present objects. Cold
+        # catch-up grows geometrically to the unchanged hard page limit.
+        inventory_limit = min(8, SYNC_INVENTORY_MAX_OBJECTS)
         started = time.perf_counter()
         while pending or pending_events:
             raw, parents = await self._offload(
@@ -1200,6 +1209,7 @@ class SyncEngine:
                 pending,
                 seen_commits,
                 pending_events,
+                max_objects=inventory_limit,
                 timeout=60.0,
             )
             if not raw:
@@ -1321,6 +1331,7 @@ class SyncEngine:
                 sent_bytes += batch_bytes
                 object_batches += 1
             inventory_batches += 1
+            inventory_limit = min(SYNC_INVENTORY_MAX_OBJECTS, inventory_limit * 4)
 
         final = await self._request(
             "POST",
@@ -1614,7 +1625,7 @@ class SyncEngine:
             data = self.store.get(commit_hash)
             if data:
                 add(commit_hash, data)
-            commit = self.log.get_commit(commit_hash)
+            commit = self.log.decode_commit(commit_hash, data) if data is not None else None
             if not commit:
                 continue
             for event_hash in commit.event_hashes:
