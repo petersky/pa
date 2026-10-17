@@ -9,7 +9,7 @@ from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.store import reset_store
 from pa.instance.agent_session import reset_instance_agent
-from tests.test_visualizations import seed, marker
+from tests.test_visualizations import seed, marker, FIXTURES
 
 
 def build_visualization_app(directory: Path):
@@ -25,8 +25,11 @@ def build_visualization_app(directory: Path):
         session, source, text = seed(app,directory/"owned")
         store = app.state.ctx.store
         events = []
+        wrapper = directory/"owned"/"pa-attention-preview.html"
+        wrapper.write_bytes((FIXTURES/wrapper.name).read_bytes())
         for seq, value in enumerate([
         marker(source,title="Default Home preview"),
+        marker(wrapper,title="Standalone Home export"),
         marker("output/missing.html",title="Missing concept"),
         marker("output/denied.html",title="Denied concept"),
         '\ue200visualize\ue202{"title":"Future concept","path":"future.html","version":9}\ue201',
@@ -39,6 +42,7 @@ def build_visualization_app(directory: Path):
         VisualizationCapture(VisualizationStore(settings,store),session).consume(events)
         store.append_transcript_events(events)
         source.unlink()  # Only durable runtime capture can supply the preview.
+        wrapper.unlink()
         return session
 
     @app.get("/fixture")

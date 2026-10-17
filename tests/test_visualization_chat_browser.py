@@ -76,9 +76,9 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
             assert "exceptionDetails" not in result,result
             return result.get("result",{}).get("value")
 
-        await wait_for("document.querySelectorAll('.acw-visualization iframe').length===2")
+        await wait_for("document.querySelectorAll('.acw-visualization iframe').length===3")
         await wait_for("[...document.querySelectorAll('.acw-visualization')].some(e=>e.textContent.includes('not supported'))")
-        assert await page.evaluate("document.querySelectorAll('.acw-visualization').length") == 6
+        assert await page.evaluate("document.querySelectorAll('.acw-visualization').length") == 7
         assert await page.evaluate("document.querySelector('.acw-visualization.is-wide > strong').textContent") == "PA Home concepts"
         assert await page.evaluate("[...document.querySelectorAll('.acw-visualization')].map(e=>e.textContent).join(' ').includes('\\ue200visualize')") is False
         assert await page.evaluate("[...document.querySelectorAll('.acw-visualization')].some(e=>e.textContent.includes('reference is invalid'))")
@@ -123,6 +123,19 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
         assert await frame("getComputedStyle(document.querySelector('.pa-row')).paddingTop") == "10px"
         await asyncio.sleep(.4)
         assert await frame("window.openai.widgetState.privateContent.density") == "Compact"
+        # The supplied standalone wrapper uses the same PA runtime and bridge.
+        assert await frame("document.querySelector('[data-variant]:not([hidden])').dataset.variant",2)=="Action rows"
+        await frame("document.querySelector('[aria-label=\"Next design\"]').click()",2)
+        assert await frame("document.querySelector('[data-variant]:not([hidden])').dataset.variant",2)=="Attention first"
+        for name, expected in (("start","Availability"),("evidence","Permission defaults"),("pr","#464")):
+            await frame("document.querySelector('[data-variant]:not([hidden]) [data-open="+name+"]').click()",2)
+            assert expected in await frame("document.querySelector('[data-variant]:not([hidden]) [data-detail]').textContent",2)
+            await frame("document.querySelector('[data-variant]:not([hidden]) [data-back]').click()",2)
+        await frame("document.querySelector('.pa-viz-tweak').open=true",2)
+        await frame("document.querySelector('.pa-viz-tweak input').click()",2)
+        await frame("(()=>{const s=document.querySelector('.pa-viz-tweak select');s.value='Compact';s.dispatchEvent(new Event('change'));return true})()",2)
+        assert await frame("[...document.querySelectorAll('.pa-machine')].every(e=>e.hidden)",2)
+        assert await frame("getComputedStyle(document.querySelector('.pa-row')).paddingTop",2)=="10px"
         # The bridge grants no credential, DOM, storage, fetch, or application API access.
         assert await frame("(()=>{try{return parent.document.cookie}catch(e){return e.name}})()") == "SecurityError"
         assert await frame("(()=>{try{return document.cookie}catch(e){return e.name}})()") == "SecurityError"
@@ -134,7 +147,7 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
         assert await page.evaluate("document.querySelector('.acw-visualization iframe').style.height") == before
         # Parent route/conversation has not changed while the mockups navigate.
         assert await page.evaluate("new URL(location.href).searchParams.get('session')") == "viz-session"
-        assert len(app.state.ctx.store.list_transcript_events("viz-session")) == 10
+        assert len(app.state.ctx.store.list_transcript_events("viz-session")) == 11
         await frame("window.retainedContext='kept'")
         await page.evaluate("(()=>{const w=document.querySelector('[data-agent-chat]')._acw;w.renderTranscript(w.transcriptEvents.slice());return true})()")
         assert await frame("window.retainedContext") == "kept"
@@ -155,9 +168,10 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
         assert await page.evaluate("document.activeElement.textContent") == "Open full size"
         # Reload with no originating file/process, then a second isolated viewer profile.
         await page.navigate_and_wait(base+"/agent?session=viz-session")
-        await wait_for("document.querySelectorAll('.acw-visualization iframe').length===2")
+        await wait_for("document.querySelectorAll('.acw-visualization iframe').length===3")
         assert await frame("window.openai.widgetState.privateContent.density") == "Compact"
         assert await frame("[...document.querySelectorAll('.pa-machine')].every(e=>e.hidden)")
+        assert await frame("window.openai.widgetState.privateContent.density",2)=="Compact"
         second = BrowserScope("user:test","second-viewer","visualization-test")
         await manager.attach(second,url=base+"/agent?session=viz-session",width=820,height=1000)
         second_page = manager.resolve(second).page

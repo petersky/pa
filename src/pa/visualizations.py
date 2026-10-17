@@ -11,6 +11,7 @@ import os
 import re
 import stat
 import threading
+from html.parser import HTMLParser
 from pathlib import Path
 
 from pa.attachments import AttachmentStore
@@ -30,6 +31,85 @@ CAPABILITIES = {
     "source": "HTML within this session's admitted cwd or an associated card attachment",
 }
 _locks = [threading.RLock() for _ in range(64)]
+
+
+def presentation_html(source: str) -> str:
+    """Import a standalone visualize export without its second host runtime.
+
+    This is compatibility conversion, not sanitization. All returned HTML still
+    runs in PA's opaque sandbox with the same CSP and versioned bridge.
+    """
+    class Export(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.standalone = False
+            self.documents = []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "html" and "data-visualize-standalone" in attrs:
+                self.standalone = True
+            if tag == "iframe" and attrs.get("id") == "codex-visualization" and attrs.get("data-srcdoc"):
+                self.documents.append(attrs["data-srcdoc"])
+
+    export = Export()
+    export.feed(source)
+    if not export.standalone or len(export.documents) != 1:
+        return source
+
+    class Body(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.in_body = False
+            self.depth = 0
+            self.skip_script = False
+            self.parts = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "body":
+                self.in_body = True
+                return
+            if not self.in_body:
+                return
+            if tag == "script" and self.depth == 0:
+                self.skip_script = True  # Export bootstrap and bundled utilities.
+            if not self.skip_script:
+                self.parts.append(self.get_starttag_text())
+            if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
+                self.depth += 1
+
+        def handle_startendtag(self, tag, attrs):
+            if self.in_body and not self.skip_script:
+                self.parts.append(self.get_starttag_text())
+
+        def handle_endtag(self, tag):
+            if tag == "body":
+                self.in_body = False
+                return
+            if not self.in_body:
+                return
+            self.depth = max(0, self.depth - 1)
+            if not self.skip_script:
+                self.parts.append("</" + tag + ">")
+            elif tag == "script":
+                self.skip_script = False
+
+        def handle_data(self, data):
+            if self.in_body and not self.skip_script:
+                self.parts.append(data)
+
+        def handle_entityref(self, name):
+            self.handle_data("&" + name + ";")
+
+        def handle_charref(self, name):
+            self.handle_data("&#" + name + ";")
+
+        def handle_comment(self, data):
+            self.handle_data("<!--" + data + "-->")
+
+    body = Body()
+    body.feed(export.documents[0])
+    return "".join(body.parts)
 
 
 def reference_id(raw: str) -> str:

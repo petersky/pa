@@ -75,7 +75,7 @@ async def get_rendering_capabilities(request: Request, session_id: str):
 
 @router.get("/sessions/{session_id}/visualizations")
 async def get_visualization(request: Request, session_id: str, reference: str):
-    from pa.visualizations import parse_reference, reference_id
+    from pa.visualizations import parse_reference, reference_id, presentation_html
     manager, session, artifacts = await _visualization_context(request, session_id)
     if len(reference) > 8192:
         raise HTTPException(400, "Preview reference is too long")
@@ -89,7 +89,7 @@ async def get_visualization(request: Request, session_id: str, reference: str):
         if not record or record.get("status") != "ready":
             return {"status": "unavailable", "title": parsed["title"], "wide": parsed["wide"]}
         try:
-            return {**record, "html": artifacts.html(session.id, record),
+            return {**record, "html": presentation_html(artifacts.html(session.id, record)),
                     "state": artifacts.state(session.id, key)}
         except (OSError, ValueError, KeyError):
             return {"status": "unavailable", "title": record["title"], "wide": record["wide"]}

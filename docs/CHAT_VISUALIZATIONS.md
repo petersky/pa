@@ -48,6 +48,9 @@ navigation or privileged host calls. State-save failures are visible.
 Missing, malformed, unsupported and denied previews show named readable
 fallbacks. Available previews offer source download and full-size controls.
 Unsupported runtime/network dependencies are outside the v1 contract.
+Standalone visualize exports with a `codex-visualization` iframe are imported
+from their embedded HTML. Export bootstrap scripts are replaced by PA's runtime;
+the original wrapper remains available through the authenticated download action.
 
 Regression coverage uses both original card attachments in
 `tests/fixtures/visualizations/`. `tests/test_visualizations.py` verifies parsing,

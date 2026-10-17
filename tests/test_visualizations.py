@@ -181,3 +181,24 @@ def test_standalone_wrapper_contains_exact_original_fragment():
     wrapper = (FIXTURES/"pa-attention-preview.html").read_text()
     inner = html.unescape(wrapper.split('data-srcdoc="',1)[1].split('"',1)[0])
     assert SOURCE.read_text().strip() in inner
+    from pa.visualizations import presentation_html
+    assert presentation_html(wrapper).strip() == SOURCE.read_text().strip()
+    assert presentation_html(SOURCE.read_text()) == SOURCE.read_text()
+
+
+def test_standalone_api_preserves_download_and_uses_pa_presentation(initialized_app, tmp_path):
+    app=initialized_app
+    session, source, _=seed(app,tmp_path/"wrapper")
+    wrapper=source.parent/"pa-attention-preview.html"
+    wrapper.write_bytes((FIXTURES/wrapper.name).read_bytes())
+    from pa.visualizations import VisualizationCapture
+    artifacts=VisualizationStore(app.state.ctx.settings,app.state.ctx.store)
+    ref=list(references(marker(wrapper,title="Export")))[0]
+    artifacts.capture(session,ref)
+    wrapper.unlink()
+    client=TestClient(app)
+    route=f"/api/agent/sessions/{session.id}/visualizations"
+    rendered=client.get(route,params={"reference":ref["raw"]}).json()
+    assert rendered["status"]=="ready"
+    assert rendered["html"].strip()==SOURCE.read_text().strip()
+    assert client.get(f"{route}/{ref['id']}/source").text==(FIXTURES/"pa-attention-preview.html").read_text()
