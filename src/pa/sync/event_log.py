@@ -310,7 +310,7 @@ class EventLog:
         fd = os.open(self.refs_lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
             lock = _RefFileLock(fd)
-            with measured_lock(lock, name="sync.refs_file", filesystem=True):
+            with measured_lock(lock, name="sync.refs_file", filesystem=True, track_deadline=False):
                 yield
         finally:
             os.close(fd)
@@ -324,7 +324,7 @@ class EventLog:
                 self._refs = {}
 
     def reload_refs(self) -> None:
-        with measured_lock(self._lock, name="sync.refs"):
+        with measured_lock(self._lock, name="sync.refs", track_deadline=False):
             with self._refs_file_lock():
                 self._load_refs()
 
@@ -378,7 +378,7 @@ class EventLog:
             if prepared_parent and event.card_id
             else None
         )
-        with measured_lock(self._lock, name="sync.refs"):
+        with measured_lock(self._lock, name="sync.refs", track_deadline=False):
             with self._refs_file_lock():
                 self._load_refs()
                 parent = self._refs.get(self.ref_key(realm_id))
@@ -1743,7 +1743,7 @@ class EventLog:
         update_index: bool = True,
     ) -> None:
         """Advance a ref with an optional compare-and-swap precondition."""
-        with measured_lock(self._lock, name="sync.refs"):
+        with measured_lock(self._lock, name="sync.refs", track_deadline=False):
             with self._refs_file_lock():
                 self._load_refs()
                 key = self.ref_key(realm_id)

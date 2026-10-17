@@ -26,7 +26,7 @@ from typing import Any, Iterator
 
 from pa.core.operation_budget import measured_lock, report_work_progress
 from pa.core.performance import PerformanceMetrics
-from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import TranscriptEvent
 
 SCHEMA_VERSION = 1
@@ -90,23 +90,40 @@ class TranscriptStorage:
             conn.execute("PRAGMA synchronous=NORMAL")
         self._init_db()
 
+    def _new_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
+        try:
+            conn.row_factory = sqlite3.Row
+            self._set_connection_progress(conn)
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            return conn
+        except BaseException:
+            conn.close()
+            raise
+
+    @staticmethod
+    def _set_connection_progress(conn: sqlite3.Connection) -> None:
+        from pa.core.operation_budget import current_operation
+        budgeted = current_operation.get() is not None
+        conn.set_progress_handler(
+            (lambda: report_work_progress() or 0) if budgeted else None,
+            1000 if budgeted else 0,
+        )
+
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=30, factory=ObservedConnection)
-        conn.row_factory = sqlite3.Row
-        from pa.core.operation_budget import current_operation
-        if current_operation.get() is not None:
-            conn.set_progress_handler(lambda: report_work_progress() or 0, 1000)
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        try:
-            yield conn
-            conn.commit()
-        except BaseException:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        # Reuse only within this one worker invocation. Direct callers still
+        # close on exit; the runtime owns and closes every scoped handle when
+        # its actual worker finishes, including late completion after timeout.
+        with derived_connection(self, self._new_connection) as conn:
+            self._set_connection_progress(conn)
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
     def _init_db(self) -> None:
         with self._conn() as conn:
