@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pa.core.async_runtime import AsyncRuntime
 from pa.acp.configuration import (
@@ -52,6 +52,95 @@ from pa.modules.agent_lifecycle import require_startup_ready
 
 router = APIRouter(prefix="/agent")
 logger = logging.getLogger(__name__)
+
+
+async def _visualization_context(request, session_id):
+    user = require_user(request)
+    manager = _manager(request)
+    session = await _offload(manager, "visualization.session", manager.store.get_session, session_id)
+    if not session:
+        raise HTTPException(404, "Preview conversation unavailable")
+    if session.principal_id not in {None, get_principal_id(request)} and getattr(user, "role", None) != "admin":
+        raise HTTPException(403, "Preview access denied")
+    from pa.visualizations import VisualizationStore
+    return manager, session, VisualizationStore(manager.settings, manager.store)
+
+
+@router.get("/sessions/{session_id}/rendering-capabilities")
+async def get_rendering_capabilities(request: Request, session_id: str):
+    await _visualization_context(request, session_id)
+    from pa.visualizations import CAPABILITIES
+    return {"visualizations": CAPABILITIES}
+
+
+@router.get("/sessions/{session_id}/visualizations")
+async def get_visualization(request: Request, session_id: str, reference: str):
+    from pa.visualizations import parse_reference, reference_id
+    manager, session, artifacts = await _visualization_context(request, session_id)
+    if len(reference) > 8192:
+        raise HTTPException(400, "Preview reference is too long")
+    parsed = parse_reference(reference)
+    if parsed["status"] != "pending":
+        return {k: parsed[k] for k in ("status", "title", "wide")}
+    key = reference_id(reference)
+
+    def read():
+        record = artifacts.get(session.id, key)
+        if not record or record.get("status") != "ready":
+            return {"status": "unavailable", "title": parsed["title"], "wide": parsed["wide"]}
+        try:
+            return {**record, "html": artifacts.html(session.id, record),
+                    "state": artifacts.state(session.id, key)}
+        except (OSError, ValueError, KeyError):
+            return {"status": "unavailable", "title": record["title"], "wide": record["wide"]}
+    result = await _offload(manager, "visualization.read", read)
+    return Response(json.dumps(result), media_type="application/json", headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/sessions/{session_id}/visualizations/{key}/source")
+async def download_visualization(request: Request, session_id: str, key: str):
+    manager, session, artifacts = await _visualization_context(request, session_id)
+
+    def read():
+        record = artifacts.get(session.id, key)
+        if not record or record.get("status") != "ready":
+            raise HTTPException(404, "Preview artifact unavailable")
+        try:
+            return artifacts.html(session.id, record)
+        except (OSError, ValueError, KeyError):
+            raise HTTPException(404, "Preview artifact unavailable")
+    html = await _offload(manager, "visualization.download", read)
+    return Response(html, media_type="text/html", headers={
+        "Content-Disposition": 'attachment; filename="interactive-preview.html"',
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+        "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store",
+    })
+
+
+class VisualizationStateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: Literal[1]
+    state: dict
+
+    @field_validator("state")
+    @classmethod
+    def bounded_state(cls, value):
+        if set(value) - {"modelContent", "privateContent"} or len(json.dumps(value)) > 32768:
+            raise ValueError("Widget state must use modelContent/privateContent and fit in 32 KB")
+        return value
+
+
+@router.put("/sessions/{session_id}/visualizations/{key}/state")
+async def set_visualization_state(request: Request, session_id: str, key: str, body: VisualizationStateBody):
+    manager, session, artifacts = await _visualization_context(request, session_id)
+
+    def write():
+        record = artifacts.get(session.id, key)
+        if not record or record.get("status") != "ready":
+            raise HTTPException(404, "Preview artifact unavailable")
+        artifacts.set_state(session.id, key, body.state)
+        return {"version": 1, "saved": True}
+    return await _offload(manager, "visualization.state", write)
 
 
 def _user_id(request: Request) -> str | None:
@@ -2321,6 +2410,13 @@ async def get_agent_session_history(
 
 
 def _history_payload(request, mgr, session, runtime, events, page, query_started):
+    # Backfill retained pre-feature transcripts from their admitted workspace or
+    # current card attachments. Never change their original payloads.
+    from pa.visualizations import VisualizationCapture, VisualizationStore
+    try:
+        VisualizationCapture(VisualizationStore(request.app.state.ctx.settings, mgr.store), session).consume(events)
+    except Exception:
+        logger.exception("Could not backfill visualization for %s", session.id)
     query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
     session_payload = session.model_dump(mode="json")

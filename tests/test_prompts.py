@@ -648,7 +648,7 @@ class PromptCompositionTests(unittest.TestCase):
         self.assertIn("report_pa_problem", sent)
         self.assertIn("agent.message.wrapper", keys)
         versions = {item["key"]: item["version"] for item in history[-1]["prompts"]}
-        self.assertEqual(versions["agent.context.execution"], 1)
+        self.assertEqual(versions["agent.context.execution"], 2)
         self.assertTrue(any(event.event_type == "prompt_rendered" for event in events))
 
 

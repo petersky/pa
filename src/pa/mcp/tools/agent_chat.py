@@ -14,8 +14,13 @@ def register_mcp(mcp, ctx) -> None:
     register_selection_mcp(mcp, ctx)
 
     @mcp.tool()
+    def get_rendering_capabilities(session_id: str) -> dict:
+        """Inspect versioned PA chat visualization syntax, runtime and ownership limits."""
+        return request_local_pa(ctx.settings, "GET", f"/api/agent/sessions/{session_id}/rendering-capabilities")
+
+    @mcp.tool()
     def get_conversation_capabilities(session_id: str) -> dict:
-        """Inspect negotiated native fork and steering safety for this conversation."""
+        """Inspect native fork, steering safety and versioned visualization renderer capabilities."""
         return request_local_pa(ctx.settings, "GET", f"/api/agent/sessions/{session_id}/conversation-capabilities", timeout_seconds=15.0)
 
     @mcp.tool()

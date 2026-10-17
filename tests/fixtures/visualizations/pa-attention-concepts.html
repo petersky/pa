@@ -1,0 +1,139 @@
+<div id="pa-attention-concepts">
+  <style>
+    #pa-attention-concepts { --pa-bg: light-dark(#f5f3f1,#211e1c); --pa-panel: light-dark(#ffffff,#2a2623); --pa-text: light-dark(#211d1a,#f5efea); --pa-muted: light-dark(#6b6058,#c0b3a9); --pa-border: light-dark(#d9cec6,#574a40); --pa-action: light-dark(#b93300,#ffab7d); --pa-on-action: light-dark(#ffffff,#311303); --pa-warn-bg: light-dark(#f9ece5,#3e2b23); --pa-warn-text: light-dark(#923211,#ffb798); --pa-done: light-dark(#236735,#9bd6a4); color:var(--pa-text); font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #pa-attention-concepts .pa-stage { min-height:560px; padding:20px 0; box-sizing:border-box; }
+    #pa-attention-concepts .pa-product { background:var(--pa-bg); border:1px solid var(--pa-border); border-radius:12px; overflow-wrap:anywhere; color:var(--pa-text); padding:22px; max-width:100%; box-sizing:border-box; }
+    #pa-attention-concepts .pa-product *, #pa-attention-concepts .pa-product *::before, #pa-attention-concepts .pa-product *::after { box-sizing:border-box; }
+    #pa-attention-concepts .pa-product h2 { font-size:24px; line-height:1.2; font-weight:600; letter-spacing:-.025em; margin:0; }
+    #pa-attention-concepts .pa-product h3 { font-size:15px; line-height:1.4; font-weight:600; margin:0; }
+    #pa-attention-concepts .pa-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:22px; padding-right:80px; flex-wrap:wrap; }
+    #pa-attention-concepts .pa-heading span { font-size:12px; color:var(--pa-muted); }
+    #pa-attention-concepts .pa-section { margin-top:22px; }
+    #pa-attention-concepts .pa-section-title { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+    #pa-attention-concepts .pa-count { color:var(--pa-muted); font-size:13px; font-weight:400; }
+    #pa-attention-concepts .pa-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid var(--pa-border); }
+    #pa-attention-concepts .pa-row:first-child { border-top:1px solid var(--pa-border); }
+    #pa-attention-concepts .pa-title { font-size:14px; line-height:1.45; font-weight:600; }
+    #pa-attention-concepts .pa-meta { color:var(--pa-muted); font-size:13px; line-height:1.5; margin-top:4px; }
+    #pa-attention-concepts .pa-state { color:var(--pa-warn-text); }
+    #pa-attention-concepts .pa-success { color:var(--pa-done); }
+    #pa-attention-concepts .pa-product button, #pa-attention-concepts .pa-product summary { font:inherit; font-size:13px; line-height:1.4; }
+    #pa-attention-concepts .pa-product button { border:1px solid var(--pa-border); border-radius:6px; padding:8px 11px; background:var(--pa-panel); color:var(--pa-text); width:fit-content; white-space:normal; }
+    #pa-attention-concepts .pa-product .pa-primary { background:var(--pa-action); color:var(--pa-on-action); border-color:var(--pa-action); }
+    #pa-attention-concepts .pa-product .pa-link { background:transparent; border-color:transparent; color:var(--pa-action); padding:7px 0; }
+    #pa-attention-concepts .pa-focus { background:var(--pa-panel); border:1px solid var(--pa-border); border-left:3px solid var(--pa-action); border-radius:8px; padding:18px; }
+    #pa-attention-concepts .pa-focus .pa-title { font-size:17px; margin:9px 0; }
+    #pa-attention-concepts .pa-tag { display:inline-block; font-size:12px; color:var(--pa-warn-text); background:var(--pa-warn-bg); padding:3px 7px; border-radius:4px; }
+    #pa-attention-concepts .pa-focus .pa-primary { margin-top:14px; }
+    #pa-attention-concepts .pa-machine[hidden], #pa-attention-concepts [hidden] { display:none !important; }
+    #pa-attention-concepts .pa-detail { background:var(--pa-panel); border:1px solid var(--pa-border); border-radius:8px; padding:18px; margin-top:14px; }
+    #pa-attention-concepts .pa-detail h3 { margin:12px 0; }
+    #pa-attention-concepts .pa-facts { margin:0; }
+    #pa-attention-concepts .pa-facts div { display:grid; grid-template-columns:100px minmax(0,1fr); gap:12px; padding:8px 0; border-bottom:1px solid var(--pa-border); font-size:14px; }
+    #pa-attention-concepts .pa-facts dt { color:var(--pa-muted); }
+    #pa-attention-concepts .pa-facts dd { margin:0; }
+    #pa-attention-concepts .pa-product details { margin-top:14px; color:var(--pa-muted); }
+    #pa-attention-concepts .pa-product summary { width:fit-content; color:var(--pa-action); }
+    #pa-attention-concepts .pa-product code { display:block; white-space:normal; overflow-wrap:anywhere; font-size:12px; line-height:1.6; margin-top:10px; color:var(--pa-text); background:transparent; }
+    #pa-attention-concepts .pa-proof { margin:12px 0 0; font-size:14px; line-height:1.6; color:var(--pa-text); }
+    #pa-attention-concepts .pa-row { padding-block:var(--pa-row-space,14px); }
+    @media(max-width:480px) {
+      #pa-attention-concepts .pa-stage { min-height:690px; padding:12px 0; }
+      #pa-attention-concepts .pa-product { padding:16px; }
+      #pa-attention-concepts .pa-heading { padding-right:70px; }
+      #pa-attention-concepts .pa-row { grid-template-columns:minmax(0,1fr); gap:4px; }
+      #pa-attention-concepts .pa-row button { justify-self:start; }
+      #pa-attention-concepts .pa-facts div { grid-template-columns:80px minmax(0,1fr); }
+    }
+    @media(pointer:coarse) { #pa-attention-concepts .pa-product button, #pa-attention-concepts .pa-product summary { min-height:44px; } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="PA attention designs">
+    <section data-variant="Action rows" aria-label="Action rows design">
+      <div class="pa-stage">
+        <div class="pa-product" aria-label="Action rows attention view">
+          <div class="pa-heading"><h2>Home</h2><span>Design concept</span></div>
+          <div data-overview>
+            <div class="pa-section-title"><h3>Needs attention</h3><span class="pa-count">1</span></div>
+            <div class="pa-row">
+              <div><div class="pa-title">Investigate PA problem 44417b66</div><div class="pa-meta"><span class="pa-state">Couldn’t start · Availability unverified</span><span class="pa-machine"> · macbook</span></div></div>
+              <button class="pa-primary cursor-interaction" type="button" data-open="start">Review start</button>
+            </div>
+            <div class="pa-section">
+              <div class="pa-section-title"><h3>Recent outcomes</h3></div>
+              <div class="pa-row"><div><div class="pa-title">Make PA starts reliable and apply permission defaults</div><div class="pa-meta"><span class="pa-success">Done</span> · PA 1.5.5</div></div><button class="pa-link cursor-interaction" type="button" data-open="evidence">View evidence</button></div>
+              <div class="pa-row"><div><div class="pa-title">Polish chat header, sidebar icons, and detail tabs</div><div class="pa-meta"><span class="pa-success">Done</span> · PR #464 merged</div></div><button class="pa-link cursor-interaction" type="button" data-open="pr">View PR outcome</button></div>
+            </div>
+          </div>
+          <div data-detail hidden aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+    <section data-variant="Attention first" aria-label="Attention first design" hidden>
+      <div class="pa-stage">
+        <div class="pa-product" aria-label="Attention first attention view">
+          <div class="pa-heading"><h2>Home</h2><span>Design concept</span></div>
+          <div data-overview>
+            <div class="pa-section-title"><h3>Needs attention</h3><span class="pa-count">1</span></div>
+            <div class="pa-focus">
+              <span class="pa-tag">Couldn’t start</span>
+              <div class="pa-title">Investigate PA problem 44417b66</div>
+              <div class="pa-meta">Execution availability unverified<span class="pa-machine"> · macbook</span></div>
+              <button class="pa-primary cursor-interaction" type="button" data-open="start">Review start</button>
+            </div>
+            <div class="pa-section">
+              <div class="pa-section-title"><h3>Recent outcomes</h3></div>
+              <div class="pa-row"><div><div class="pa-title">Make PA starts reliable and apply permission defaults</div><div class="pa-meta"><span class="pa-success">Done</span> · PA 1.5.5</div></div><button class="pa-link cursor-interaction" type="button" data-open="evidence">View evidence</button></div>
+              <div class="pa-row"><div><div class="pa-title">Polish chat header, sidebar icons, and detail tabs</div><div class="pa-meta"><span class="pa-success">Done</span> · PR #464 merged</div></div><button class="pa-link cursor-interaction" type="button" data-open="pr">View PR outcome</button></div>
+            </div>
+          </div>
+          <div data-detail hidden aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('pa-attention-concepts');
+      const saved = window.openai?.widgetState?.privateContent || {};
+      const settings = { machine: saved.machine ?? true, density: saved.density || 'Comfortable' };
+      const detailMarkup = {
+        start: '<h3>Investigate PA problem 44417b66</h3><dl class="pa-facts"><div><dt>Attempt</dt><dd>Couldn’t start</dd></div><div><dt>Machine</dt><dd>macbook</dd></div><div><dt>Availability</dt><dd>Unverified</dd></div><div><dt>Next step</dt><dd>Review execution options</dd></div></dl><details><summary class="cursor-interaction">Error details</summary><code>readiness_unavailable<br>required_harness_incompatible_or_unknown</code></details>',
+        evidence: '<h3>Make PA starts reliable and apply permission defaults</h3><dl class="pa-facts"><div><dt>Outcome</dt><dd>Done</dd></div><div><dt>Release</dt><dd>PA 1.5.5</dd></div><div><dt>Delivery</dt><dd>Implemented · Tested · Merged · Activated</dd></div></dl><div class="pa-proof">Permission defaults, native/UI agreement, one-shot execution, and duplicate handling passed.</div>',
+        pr: '<h3>Polish chat header, sidebar icons, and detail tabs</h3><dl class="pa-facts"><div><dt>Pull request</dt><dd>#464 · Merged</dd></div><div><dt>Checks</dt><dd>5 passed</dd></div><div><dt>Completion</dt><dd>Accepted</dd></div></dl>'
+      };
+      root.querySelectorAll('.pa-product').forEach(product => {
+        const overview = product.querySelector('[data-overview]');
+        const detail = product.querySelector('[data-detail]');
+        let opener = null;
+        product.addEventListener('click', event => {
+          const openButton = event.target.closest('[data-open]');
+          if (openButton && product.contains(openButton)) {
+            opener = openButton;
+            overview.hidden = true;
+            detail.innerHTML = '<button class="pa-link cursor-interaction" type="button" data-back>← Home</button><div class="pa-detail">' + detailMarkup[openButton.dataset.open] + '</div>';
+            detail.hidden = false;
+            detail.querySelector('[data-back]').focus();
+          }
+          if (event.target.closest('[data-back]')) {
+            detail.hidden = true;
+            overview.hidden = false;
+            opener?.focus();
+          }
+        });
+      });
+      function renderSettings() {
+        root.querySelectorAll('.pa-machine').forEach(el => { el.hidden = !settings.machine; });
+        root.style.setProperty('--pa-row-space', settings.density === 'Compact' ? '10px' : '14px');
+      }
+      renderSettings();
+      if (globalThis.Tweak) {
+        const tweak = new Tweak({ container: root, onChange: () => {
+          renderSettings();
+          window.openai?.setWidgetState({ modelContent: { density: settings.density, showMachine: settings.machine }, privateContent: settings }).catch(() => {});
+        }});
+        tweak.addToggle(settings,'machine',{label:'Show machine'});
+        tweak.addSelect(settings,'density',{label:'Row spacing',options:['Comfortable','Compact']});
+      }
+    })();
+  </script>
+</div>
