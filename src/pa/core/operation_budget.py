@@ -124,3 +124,4 @@ def measured_lock(lock, *, name: str = "unnamed"):
                 "wait_ms": round((acquired - started) * 1000, 3),
                 "hold_ms": round(hold_ms, 3), "nesting_depth": depth,
             })
+            del observation.lock_events[:-64]

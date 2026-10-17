@@ -2,13 +2,13 @@
 
 The card remains open. This consolidates the prior449-row repository matrix and both durable card deltas (452 rows), then accounts for every additional live operation/route and control-plane concern. Every unresolved row retains its owner and next action. Source, merge, loaded build and acceptance are distinct.
 
-Full matrix: [performance-coverage.json](performance-coverage.json), 462 rows. Fresh numeric source: [resume artifact](benchmarks/systemic-resume-20261017.json). Original log/fixture stage evidence: [systemic-inventory-v4.json](benchmarks/systemic-inventory-v4.json).
+Full matrix: [performance-coverage.json](performance-coverage.json), 492 rows. Fresh numeric source: [resume artifact](benchmarks/systemic-resume-20261017.json). Original log/fixture stage evidence: [systemic-inventory-v4.json](benchmarks/systemic-inventory-v4.json).
 
 Fresh owner API confirms macbook0c7d8ecb, PID51003, loaded1.5.9+5caf83e4325a. Status3990.910ms/runtime104.714ms are individual client reads. All154 runtime operations and all observed registered routes are retained, including failures and outliers. Runtime percentiles use bounded windows; counters/maxima can span process lifetime. Loop maximum1064316ms is not attributed to CPU: host suspension remains possible. No peer log coverage or fleet-wide acceptance is claimed.
 
 The status-count fixture retains331cards/359sessions with64KiB synthetic body/metrics each and10active knowledge entries.30reads:20850hydratedmodels, p50/p95/p99/max1179.402/3519.475/3865.728/3865.728ms. Aggregate:0models, identicalcounts,0.060/0.707/3.123/3.123ms.32status/count/CLI/database regressions pass;24lock/runtime/database regressions pass in a separate overlapping suite. New source is not merged/deployed yet. Bounded lock/long-GC attribution does not itself repair a tail.
 
-PR484–488 are integrated, with exact head/merge/watch evidence retained in JSON/card. Their earlier mixed residuals remain:2worker warnings and4sampled violations. Current mixed replay is recorded separately when complete; no failure is discarded. Original log inventory covers16retained files,86440227sourcebytes,570983physical lines,2026-10-08T03:25:05Z–2026-10-16T07:10:18Z;110slow names/22prefixfamilies. Active-file growth, duplicate emissions, unknown timestamps, earlier retention and uninspected peers remain exclusions.
+PR484–488 are integrated, with exact head/merge/watch evidence retained in JSON/card. Their earlier mixed residuals remain:2worker warnings and4sampled violations. Current100iteration mixed replay retained9600ordered events but has18worker warnings/31explicit500msviolations. Statusp50/p95/p99/max59.301/146.942/165.040/198.334ms.41GCpauses>=10ms retained;3slow invocations have overlapping long GC spans (timing overlap only, not sole attribution). Bootstrap2callbacks~13s with<6msservice remain separate. No failure is discarded. Original log inventory covers16retained files,86440227sourcebytes,570983physical lines,2026-10-08T03:25:05Z–2026-10-16T07:10:18Z;110slow names/22prefixfamilies. Active-file growth, duplicate emissions, unknown timestamps, earlier retention and uninspected peers remain exclusions.
 
 Database89957d94 is accepted/Done for original PR471 scope. Backup0331d21a has scheduler-owned independent verification on its actual scope; this session does not dispatch or edit for it. Systemic final acceptance is now scheduler-owned independent_agent_v1 revision17d034a6 with unchanged criteria and0receipts. Every unresolved family remains this systemic card's responsibility.
 
@@ -40,9 +40,11 @@ Database89957d94 is accepted/Done for original PR471 scope. Backup0331d21a has s
 | PR metrics and health hydrate proofs to count lifecycle | metrics() and authority_health() decoded all retained watch policy/state to calculate counts, ownership and maximum active fence; source and3000row/193MB probe confirm unnecessary hydration. | Complete supervised integration and exact-head checks; exercise nonempty active-watch API and real external poll/effect paths, then installed acceptance. |
 | CLI status writer-capable bootstrap, full count hydration and provenance | status calls Kernel.boot(defaultclaim_writerFalse), which constructs Store/CardProjection with schema/migrations; snapshot fullyhydrates items/sessions for counts and reports its ownprocess/version. No live CLI execution or causal attribution to historical latency/logloss. | Integrate stable-green exact head, activate exact build only through supported lifecycle if needed, retest actual status/CLI and mixed workload; retain other causes. |
 | Delayed obsolete and post-merge PR notifications | Repeated queued notifications for PR484–488 arrived after watched heads changed or retired. Fresh GitHub/watch revalidation prevented repeat repairs/merges; delivery cause unverified. | Diagnose observed delivery/receipt behavior with exact IDs; preserve pending versus non-commit, bounded retries and sole-writer semantics. |
-| Checkpoint timeout and passive receipt recovery | Two native progress writes returned unknown outcome; first reconciliation queued. Policy edit validation was separately recovered and corrected with explicit fieldintent, not a latency fix. | Diagnose observed delivery/receipt behavior with exact IDs; preserve pending versus non-commit, bounded retries and sole-writer semantics. |
+| Checkpoint timeout and passive receipt recovery | Two native progress writes returned unknown outcome; first reconciliation queued. Policy edit validation was separately recovered and corrected with explicit fieldintent, not a latency fix. Recovery job later completed but receipt lookup remained pending; success is not inferred. | Diagnose observed delivery/receipt behavior with exact IDs; preserve pending versus non-commit, bounded retries and sole-writer semantics. |
+| Independent verification watch owner capability omitted | Current loaded supervisor advertises completion-requirements:v1 but omits implemented completion-agent-verification:v1, so protected watch492 remains unowned. Source uses existing runtime capability derivation; exact positive/negative lease regression passed. | Integrate/activate exact source through protected lifecycle and verify deployed behavior; do not relax independent acceptance or unknown receipt replay. |
+| Checkpoint authorization dispatch read blocks serving loop | Initial synchronous DispatchStore.get may yield to writer and deep-copy full history before bounded ProgressService read. Read-only full native dispatch measured7413ms/403214JSONcharacters; exact historical timeout causality unproved. Initial read now uses existing bounded progress.dispatch_read; latch regression preserves access/protocol checks and proves event-loop progress. | Integrate/activate exact source through protected lifecycle and verify deployed behavior; do not relax independent acceptance or unknown receipt replay. |
 
-## Every retained slow operation
+## Every original retained slow operation
 
 Raw threshold-selected emissions may duplicate incidents. Milliseconds; distributions cover the declared original retained log window, not a fresh deployed replay.
 
@@ -160,3 +162,120 @@ Raw threshold-selected emissions may duplicate incidents. Milliseconds; distribu
 | `dispatch.session_link` | 2 | 528.8 | 528.8 | 528.8 | 528.8 | Open; per-name cause/repair/tests/status/owner in JSON |
 
 All181baseline runtime names,115baseline routes,6page families,9startup phases and every added observation remain individually retained in JSON.78slow names/150baseline runtime names/94baseline routes lacked current controlled fixture coverage at the preceding checkpoint; live observations alone do not close those branch/acceptance gaps.
+
+
+## Fresh macbook log inventory
+
+Supported logs read:2026-10-17T15:41:26Z–16:11:45Z;12543records/6781652bytes, cap100000 not reached.109slow names/6004raw emissions comprise3002structured numeric phase records and matching stderr copies; no distinct-incident claim. Some isolated fixtures/tests ran concurrently on this host. Full per-name numeric phases, source identity/hash and exclusions are retained in the resume JSON. Status-file failures2396/droppedbytes5640760 are unchanged historical counters, not CLI status command failures.
+
+| Operation | Raw count | p50ms | p95ms | p99ms | Maxms |
+|---|---:|---:|---:|---:|---:|
+| `acp.pa_mcp_owner_probe` | 2 | 764.5 | 764.5 | 764.5 | 764.5 |
+| `acp.wire_append` | 910 | 866.2 | 2776.1 | 6326.9 | 6398.5 |
+| `agent.history_payload` | 2 | 1599.8 | 1599.8 | 1599.8 | 1599.8 |
+| `agent.project_recovery_availability` | 18 | 1083.4 | 1888.6 | 1888.6 | 1888.6 |
+| `agent.recovery_sessions` | 82 | 1397.7 | 3478.0 | 5217.5 | 5217.5 |
+| `agent.session_snapshot` | 2 | 3060.3 | 3060.3 | 3060.3 | 3060.3 |
+| `browser.free_port` | 2 | 515.9 | 515.9 | 515.9 | 515.9 |
+| `cards.attachments.publish` | 2 | 632.8 | 632.8 | 632.8 | 632.8 |
+| `conversation.issues` | 110 | 1051.6 | 2764.1 | 4151.8 | 4151.8 |
+| `conversation.session` | 54 | 1232.4 | 2148.8 | 3773.5 | 3773.5 |
+| `dispatch.block_waiting` | 12 | 1125.8 | 2496.1 | 2496.1 | 2496.1 |
+| `dispatch.cancel_check` | 2 | 1583.6 | 1583.6 | 1583.6 | 1583.6 |
+| `dispatch.completion_pending_read` | 26 | 1203.3 | 3135.1 | 3135.1 | 3135.1 |
+| `dispatch.expire_capacity_reservations` | 16 | 2020.2 | 5819.7 | 5819.7 | 5819.7 |
+| `dispatch.followup_ack` | 6 | 633.7 | 696.6 | 696.6 | 696.6 |
+| `dispatch.followup_bind` | 2 | 940.2 | 940.2 | 940.2 | 940.2 |
+| `dispatch.followup_pending_read` | 16 | 724.9 | 5851.2 | 5851.2 | 5851.2 |
+| `dispatch.followup_started` | 4 | 728.8 | 888.4 | 888.4 | 888.4 |
+| `dispatch.idempotency_read` | 2 | 2963.5 | 2963.5 | 2963.5 | 2963.5 |
+| `dispatch.prompt_bind` | 2 | 676.6 | 676.6 | 676.6 | 676.6 |
+| `dispatch.record_fail` | 2 | 1072.3 | 1072.3 | 1072.3 | 1072.3 |
+| `dispatch.record_read` | 14 | 837.6 | 1548.5 | 1548.5 | 1548.5 |
+| `dispatch.record_write` | 6 | 1676.5 | 1757.9 | 1757.9 | 1757.9 |
+| `dispatch.waiting_read` | 8 | 1346.1 | 1620.9 | 1620.9 | 1620.9 |
+| `filesystem.github_credentials_read` | 2 | 5070.7 | 5070.7 | 5070.7 | 5070.7 |
+| `fleet.overview.activity` | 44 | 993.1 | 6611.2 | 10102.4 | 10102.4 |
+| `fleet.overview.mcp_bootstrap` | 50 | 15888.9 | 21576.2 | 22857.8 | 22857.8 |
+| `fleet.overview.reachability` | 8 | 944.3 | 2289.5 | 2289.5 | 2289.5 |
+| `fleet.overview.repositories` | 42 | 2107.0 | 9870.2 | 10230.8 | 10230.8 |
+| `fleet.overview.status` | 4 | 635.5 | 1115.9 | 1115.9 | 1115.9 |
+| `fleet.overview.sync` | 52 | 1128.9 | 3868.8 | 4747.6 | 4747.6 |
+| `fleet.overview_cache_read` | 600 | 946.1 | 3437.0 | 5235.9 | 6384.5 |
+| `fleet.overview_cache_write` | 336 | 1125.6 | 3393.8 | 6014.7 | 8736.7 |
+| `fleet.overview_response_json` | 14 | 898.2 | 942.0 | 942.0 | 942.0 |
+| `fleet.placement_resolve` | 30 | 1620.3 | 2943.7 | 2943.7 | 2943.7 |
+| `fleet.queued_readiness_resolve` | 6 | 839.2 | 1904.1 | 1904.1 | 1904.1 |
+| `goal.dispatch_admission_trace` | 4 | 544.6 | 939.7 | 939.7 | 939.7 |
+| `goal.dispatch_execution_identity_restore` | 2 | 2706.3 | 2706.3 | 2706.3 | 2706.3 |
+| `goal.dispatch_lifecycle_index` | 4 | 682.7 | 1205.8 | 1205.8 | 1205.8 |
+| `goal.dispatch_reservation_validate` | 8 | 1336.1 | 2361.4 | 2361.4 | 2361.4 |
+| `health.canonical_obligation` | 44 | 714.6 | 2459.1 | 3029.0 | 3029.0 |
+| `history.card_page` | 4 | 625.3 | 1639.2 | 1639.2 | 1639.2 |
+| `http.session_list` | 18 | 1001.9 | 3416.8 | 3416.8 | 3416.8 |
+| `intake.web_prompt` | 12 | 829.7 | 3564.5 | 3564.5 | 3564.5 |
+| `notifications.list_page` | 14 | 1722.2 | 2430.5 | 2430.5 | 2430.5 |
+| `notifications.present_page` | 12 | 694.7 | 2904.4 | 2904.4 | 2904.4 |
+| `operation.canonical_repair` | 8 | 857.4 | 4388.8 | 4388.8 | 4388.8 |
+| `operation.outcome_read` | 50 | 1460.3 | 2822.0 | 3293.7 | 3293.7 |
+| `operation.repair_admission` | 10 | 1788.8 | 2706.5 | 2706.5 | 2706.5 |
+| `operation.repair_finish` | 4 | 927.5 | 1654.9 | 1654.9 | 1654.9 |
+| `operation.repair_start` | 8 | 719.9 | 1646.2 | 1646.2 | 1646.2 |
+| `pr_supervisor.response_json` | 16 | 761.3 | 1937.3 | 1937.3 | 1937.3 |
+| `preferences.agent_auto_approve_read` | 32 | 847.9 | 5119.8 | 5119.8 | 5119.8 |
+| `preferences.agent_surface_read` | 2 | 752.7 | 752.7 | 752.7 | 752.7 |
+| `progress.checkpoint_write` | 68 | 1048.4 | 4400.3 | 7105.4 | 7105.4 |
+| `progress.dispatch_read` | 164 | 836.0 | 2643.1 | 3071.4 | 3071.4 |
+| `progress.heartbeat_write` | 140 | 1361.4 | 3674.4 | 6451.7 | 6451.7 |
+| `progress.pending_read` | 18 | 583.3 | 2921.3 | 2921.3 | 2921.3 |
+| `progress.sequence_allocate` | 188 | 880.4 | 3269.6 | 6314.2 | 6314.2 |
+| `provider.status.codex` | 58 | 3227.5 | 6983.9 | 11776.6 | 11776.6 |
+| `provider.status.cursor` | 58 | 3787.9 | 7261.2 | 10132.5 | 10132.5 |
+| `provider.status.openinterpreter` | 56 | 1219.2 | 5351.0 | 8776.5 | 8776.5 |
+| `reconciliation.completion_evidence_read` | 50 | 805.0 | 2254.1 | 3160.6 | 3160.6 |
+| `reconciliation.dispatch_read` | 74 | 803.0 | 5229.2 | 5668.6 | 5668.6 |
+| `reconciliation.session_read` | 36 | 982.5 | 2827.6 | 2827.6 | 2827.6 |
+| `selection.catalog_enrichment` | 12 | 587.8 | 2362.2 | 2362.2 | 2362.2 |
+| `selection.receipt_write` | 2 | 3043.3 | 3043.3 | 3043.3 | 3043.3 |
+| `selection.target_receipt` | 2 | 698.4 | 698.4 | 698.4 | 698.4 |
+| `selection.target_revalidation` | 4 | 684.0 | 1700.1 | 1700.1 | 1700.1 |
+| `sqlite.agent_runtime_checkpoint` | 14 | 1129.5 | 7292.5 | 7292.5 | 7292.5 |
+| `sqlite.agent_session_read` | 2 | 2482.3 | 2482.3 | 2482.3 | 2482.3 |
+| `sqlite.agent_session_save` | 408 | 1292.7 | 4361.2 | 6543.9 | 6950.0 |
+| `sqlite.card_read` | 30 | 1148.3 | 2792.4 | 2792.4 | 2792.4 |
+| `sqlite.card_summary_read` | 2 | 953.6 | 953.6 | 953.6 | 953.6 |
+| `sqlite.dispatch_queue_admit` | 6 | 1272.0 | 2418.9 | 2418.9 | 2418.9 |
+| `sqlite.execution_binding_materialize` | 2 | 506.5 | 506.5 | 506.5 | 506.5 |
+| `sqlite.notification_create` | 2 | 620.2 | 620.2 | 620.2 | 620.2 |
+| `sqlite.pr_supervisor_capability_read` | 12 | 671.2 | 2293.2 | 2293.2 | 2293.2 |
+| `sqlite.pr_supervisor_capability_write` | 8 | 1357.4 | 3356.1 | 3356.1 | 3356.1 |
+| `sqlite.pr_supervisor_completion_due_read` | 58 | 778.6 | 2506.5 | 5213.9 | 5213.9 |
+| `sqlite.pr_supervisor_due_read` | 24 | 974.1 | 2279.6 | 2279.6 | 2279.6 |
+| `sqlite.pr_supervisor_effect_finish` | 2 | 835.2 | 835.2 | 835.2 | 835.2 |
+| `sqlite.pr_supervisor_event_write` | 10 | 1563.2 | 1920.3 | 1920.3 | 1920.3 |
+| `sqlite.pr_supervisor_lease_write` | 8 | 702.6 | 1336.0 | 1336.0 | 1336.0 |
+| `sqlite.pr_supervisor_metric` | 20 | 820.3 | 2297.5 | 2297.5 | 2297.5 |
+| `sqlite.pr_supervisor_watch_read` | 46 | 922.2 | 2397.1 | 2487.9 | 2487.9 |
+| `sqlite.pr_supervisor_watch_write` | 22 | 916.2 | 3347.2 | 3347.2 | 3347.2 |
+| `sqlite.project_read` | 46 | 909.0 | 1634.6 | 6430.9 | 6430.9 |
+| `sqlite.prompt_acceptance_read` | 26 | 5940.0 | 14827.6 | 14827.6 | 14827.6 |
+| `sqlite.repository_read` | 46 | 899.5 | 1922.2 | 5651.5 | 5651.5 |
+| `sqlite.restart_handoff_completion` | 38 | 1075.4 | 2645.7 | 2645.7 | 2645.7 |
+| `sqlite.restart_handoff_create` | 2 | 3819.5 | 3819.5 | 3819.5 | 3819.5 |
+| `sqlite.restart_handoff_session` | 16 | 872.2 | 3204.4 | 3204.4 | 3204.4 |
+| `sqlite.restart_handoff_waiting` | 2 | 2831.4 | 2831.4 | 2831.4 | 2831.4 |
+| `sqlite.restart_handoffs_pending` | 20 | 762.8 | 1678.0 | 1678.0 | 1678.0 |
+| `sqlite.restart_handoffs_watchdog` | 16 | 567.2 | 1650.2 | 1650.2 | 1650.2 |
+| `sqlite.transcript_append` | 1154 | 1766.8 | 8504.6 | 11219.5 | 15832.3 |
+| `sqlite.transcript_message_page` | 2 | 1280.0 | 1280.0 | 1280.0 | 1280.0 |
+| `sqlite.transcript_read` | 2 | 553.4 | 553.4 | 553.4 | 553.4 |
+| `sync.commit_read` | 34 | 754.5 | 1825.4 | 1825.4 | 1825.4 |
+| `sync.json_decode` | 16 | 745.4 | 2278.2 | 2278.2 | 2278.2 |
+| `sync.json_encode` | 10 | 1153.4 | 1671.6 | 1671.6 | 1671.6 |
+| `sync.object_collect` | 64 | 11318.6 | 32779.7 | 33483.6 | 33483.6 |
+| `sync.object_has` | 16 | 657.9 | 1117.1 | 1117.1 | 1117.1 |
+| `sync.push_transaction` | 78 | 1003.1 | 5963.0 | 8125.4 | 8125.4 |
+| `sync.reconcile_head` | 44 | 1369.8 | 7917.8 | 12053.9 | 12053.9 |
+| `sync.ref_read` | 14 | 736.6 | 2271.4 | 2271.4 | 2271.4 |
+| `workspace.lease_renew` | 4 | 618.5 | 1586.8 | 1586.8 | 1586.8 |
+| `workspace.project_provision` | 6 | 5284.9 | 13819.4 | 13819.4 | 13819.4 |

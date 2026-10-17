@@ -123,7 +123,7 @@ def test_cli_status_unavailable_is_truthful_passive_and_does_not_expose_response
          patch("pa.cli.main.get_settings", side_effect=AssertionError("settings write")), \
          patch("pa.mcp.local_api.request_local_pa", side_effect=failure) as read:
         result = CliRunner().invoke(app, ["status"])
-    assert result.exit_code == 1
+    assert result.exit_code == (1 if getattr(failure, "status", None) else 0)
     assert "unknown" in result.output
     assert "unattested-id" not in result.output and "private body" not in result.output
     read.assert_called_once()

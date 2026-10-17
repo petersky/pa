@@ -18,7 +18,7 @@ class OperationObservation:
     outer_lock_hold_ms: float = 0.0
     lock_depth: int = 0
     lock_events_total: int = 0
-    lock_events: deque = field(default_factory=lambda: deque(maxlen=64))
+    lock_events: list[dict] = field(default_factory=list)
     worker_started_at: float = 0.0
     worker_finished_at: float = 0.0
     thread_cpu_ms: float = 0.0

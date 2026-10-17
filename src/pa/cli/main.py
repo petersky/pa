@@ -192,7 +192,11 @@ def status() -> None:
             typer.echo(f"  HTTP status: {status_code}")
         typer.echo("  Running version, instance identity and counts are unknown.")
         typer.echo("  Check the owning PA service and its API authentication.")
-        raise typer.Exit(1) from exc
+        if status_code:
+            raise typer.Exit(1) from exc
+        # The diagnostic itself succeeded; a stopped/unreachable owner is an
+        # unknown observation, not permission to bootstrap or repair its state.
+        return
 
     ui.heading(f"PA {snap['version']} — {snap['instance_name']}")
     typer.echo(f"  Instance ID: {snap['instance_id']}")
