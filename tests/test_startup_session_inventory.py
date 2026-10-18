@@ -41,7 +41,9 @@ def sessions(store):
             execution_binding={"workspace": "immutable"},
             config_json={"durable_runtime": durable,
                          "configuration": {"effective": {"model_id": "model"}},
-                         "provisioning": {"action": "retained action"}},
+                         "provisioning": {"action": "retained action"},
+                         "execution_selection": {"proof": "x" * 65536},
+                         "future_extension": {"retain_on_resume": True}},
             metrics_json={"diagnostic": "x" * 65536},
             created_at=now, updated_at=now + timedelta(seconds=i),
         ))
@@ -78,12 +80,23 @@ def test_inventory_never_reads_metrics_and_preserves_all_other_fields(tmp_path):
 
     with patch.object(store, "_conn", side_effect=connection):
         observed = store.list_sessions(include_metrics=False)
+        startup = store.list_sessions_for_startup_inventory()
     assert [s.model_dump(exclude={"metrics_json"}) for s in observed] == [
         s.model_dump(exclude={"metrics_json"}) for s in expected
     ]
     assert all(s.metrics_json == {} for s in observed)
     assert all(s.metrics_json for s in store.list_sessions())
     assert all(store.get_session(s.id).metrics_json for s in observed)
+    assert [s.model_dump(exclude={"metrics_json", "config_json"}) for s in startup] == [
+        s.model_dump(exclude={"metrics_json", "config_json"}) for s in expected
+    ]
+    assert all(s.metrics_json == {} for s in startup)
+    for lean, full in zip(startup, expected):
+        assert lean.config_json == {
+            key: full.config_json[key]
+            for key in ("configuration", "durable_runtime", "provisioning")
+        }
+        assert store.get_session(lean.id).config_json == full.config_json
 
 
 def test_inventory_filters_order_and_empty_selection_are_unchanged(tmp_path):
@@ -105,7 +118,7 @@ def test_recovery_decisions_snapshots_and_closed_obligations_are_unchanged(tmp_p
 
     async def check():
         full = store.list_sessions()
-        lean = store.list_sessions(include_metrics=False)
+        lean = store.list_sessions_for_startup_inventory()
         full_decisions = {s.id: await value._automatic_recovery_eligibility(s) for s in full}
         lean_decisions = {s.id: await value._automatic_recovery_eligibility(s) for s in lean}
         assert full_decisions == lean_decisions
@@ -127,11 +140,11 @@ def test_start_requests_inventory_and_keeps_closed_ids_for_quiesce_matching(tmp_
     snapshot = QuiesceSnapshot(reason="fixture", sessions=[
         SessionSnapshot(session_id="s-0", agent_name="fixture", status="prompting")
     ])
-    with patch.object(store, "list_sessions", wraps=store.list_sessions) as read, patch(
+    with patch.object(store, "list_sessions_for_startup_inventory", wraps=store.list_sessions_for_startup_inventory) as read, patch(
         "pa.instance.agent_session.load_quiesce_snapshot", return_value=snapshot
     ):
         asyncio.run(value.start(resume=True))
-    read.assert_called_once_with(include_metrics=False)
+    read.assert_called_once_with()
     recovered = {call.args[0].session_id for call in value._resume_from_snapshot.await_args_list}
     assert recovered == {"s-1", "s-2", "s-3", "s-4", "s-6"}
     # A paused prompting session is retained/deferred even with eager recovery
@@ -145,7 +158,7 @@ def test_resume_refetches_complete_current_session_before_runtime_mutation(tmp_p
     store = CardProjection(tmp_path / "fixture.db")
     sessions(store)
     value = manager(tmp_path, store)
-    inventory = next(s for s in store.list_sessions(include_metrics=False) if s.id == "s-6")
+    inventory = next(s for s in store.list_sessions_for_startup_inventory() if s.id == "s-6")
     snapshot = value._snapshot_from_persisted(inventory)
     current = store.get_session(inventory.id)
     current.metrics_json = {"fresh": "must survive recovery"}
@@ -157,4 +170,68 @@ def test_resume_refetches_complete_current_session_before_runtime_mutation(tmp_p
     actual = value._prepare_workspace.await_args.args[0]
     assert actual.metrics_json == current.metrics_json
     assert actual.config_json["fresh"] is True
+    assert actual.config_json["future_extension"] == {"retain_on_resume": True}
+    assert actual.config_json["execution_selection"]["proof"] == "x" * 65536
     assert store.get_session(current.id).metrics_json == current.metrics_json
+
+
+@pytest.mark.parametrize("raw", [
+    '{}', '[invalid', 'null', '[]', '3', 'false', '"legacy"',
+    '{"configuration":{"model":"first"},"configuration":{"model":"last"}}',
+    r'{"config\u0075ration":{"model":"first"},"configuration":{"model":"last"}}',
+    '{"durable_runtime":{"queue_paused":true},"durable_runtime":{"queue_paused":false}}',
+    '{"configuration":true}',
+    '{"configuration":999999999999999999999999999999999}',
+    '{"provisioning":0}',
+    '{"durable_runtime":[["queue_paused",false]]}',
+    '{"configuration":{"model":"first","model":"last"},"unused":"omit"}',
+])
+def test_startup_projection_preserves_legacy_json_decoding(tmp_path, raw):
+    store = CardProjection(tmp_path / "fixture.db")
+    store.save_session(AgentSession(id="legacy", agent_name="fixture"))
+    # Legacy serialized input belongs only to this disposable test database.
+    with store._conn() as conn:
+        conn.execute("UPDATE agent_sessions SET config_json=? WHERE id='legacy'", (raw,))
+    try:
+        full = store.list_sessions(include_metrics=False)[0]
+    except ValueError as exc:
+        with pytest.raises(type(exc)):
+            store.list_sessions_for_startup_inventory()
+        return
+    lean = store.list_sessions_for_startup_inventory()[0]
+    assert lean.model_dump(exclude={"config_json"}) == full.model_dump(exclude={"config_json"})
+    for key in ("configuration", "durable_runtime", "provisioning"):
+        assert lean.config_json.get(key) == full.config_json.get(key)
+        assert type(lean.config_json.get(key)) is type(full.config_json.get(key))
+
+
+def test_inventory_keeps_archived_and_human_controlled_ids(tmp_path):
+    store = CardProjection(tmp_path / "fixture.db")
+    sessions(store)
+    original = store.get_session("s-6")
+    original.archived_at = datetime.now(UTC)
+    store.save_session(original)
+    human = store.get_session("s-2")
+    human.purpose = "automated_run"
+    human.control_mode = "human"
+    store.save_session(human)
+    value = manager(tmp_path, store)
+    async def check():
+        full, lean = store.list_sessions(include_metrics=False), store.list_sessions_for_startup_inventory()
+        assert [s.id for s in lean] == [s.id for s in full]
+        assert {s.id: await value._automatic_recovery_eligibility(s) for s in full} == {
+            s.id: await value._automatic_recovery_eligibility(s) for s in lean
+        }
+        assert not await value._automatic_recovery_eligibility(next(s for s in lean if s.id == original.id))
+        assert not await value._automatic_recovery_eligibility(next(s for s in lean if s.id == human.id))
+    asyncio.run(check())
+
+
+def test_legacy_adapter_keeps_existing_startup_read_contract():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    read = Mock(return_value=["fixture"])
+    value = object.__new__(AgentSessionManager)
+    value.store = SimpleNamespace(list_sessions=read)
+    assert value._startup_session_inventory() == ["fixture"]
+    read.assert_called_once_with(include_metrics=False)

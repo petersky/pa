@@ -4552,6 +4552,13 @@ class AgentSessionManager:
             "or close it if it is no longer needed."
         )
 
+    def _startup_session_inventory(self) -> list[AgentSession]:
+        read_inventory = getattr(self.store, "list_sessions_for_startup_inventory", None)
+        if callable(read_inventory):
+            return read_inventory()
+        # Preserve the existing contract for legacy Store adapters.
+        return self.store.list_sessions(include_metrics=False)
+
     async def start(self, *, resume: bool | None = None) -> None:
         if self.settings.agent_enabled:
             from pa.execution.selection_service import SelectionService
@@ -4566,10 +4573,11 @@ class AgentSessionManager:
             "agent.startup_state_read",
             lambda: (
                 load_quiesce_snapshot(self.settings.data_dir),
-                # Recovery uses durable obligations, never diagnostic metrics.
+                # Recovery uses durable obligations and snapshot configuration,
+                # never diagnostics or unrelated retained selection proofs.
                 # _resume_from_snapshot re-fetches the complete current session
                 # before constructing or saving a runtime.
-                self.store.list_sessions(include_metrics=False) if will_resume else [],
+                self._startup_session_inventory() if will_resume else [],
             ),
             timeout=30.0,
         )
