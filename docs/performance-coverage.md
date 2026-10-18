@@ -1,3 +1,13 @@
+# Main526 browser polling follow-up — 2026-10-18
+
+All **570 findings and79concerns remain open**. Every prior569row, owner and action is unchanged. The [complete artifact](benchmarks/systemic-main526-browser-20261018.json) preserves the redacted failed shard, exact-source polling probe, all test outputs and activation stop.
+
+PR526 merged exactea9918d7 after stable supervisor and independent5SUCCESS/0reviews0threads/currentrules/CLEAN; source/merge trees equal. Its mainCI39146283029 attempt1 failed one browser test while polling the login URL after a sign-in click: CDP reported “Inspected target navigated or closed”. Other4checks passed. No526install/restart or workflowretry.
+
+The test-only pure-read poll now tolerates only that exact transition response within the same15second deadline and50ms cadence. All URL/auth/receipt/layout assertions remain; persistent closure/false predicates still fail, unrelated errors and cancellation propagate. Generic JavaScript/input/navigation commands do not replay. Five deterministic contracts and both real browser journeys pass (combined7tests/35.82s;274deprecationwarnings retained), under both temporary PA roots and settings-aware guards. The deterministic probe explains the poll behavior; original CI/browser timing remains unverified. Product437files unchanged, so no unchanged mixed performance rerun.
+
+Every earlier latency outlier, failed/negative/unknown stage, peer/log/backup/receipt/browser/testroot gap and normal independentacceptance obligation remains open. Followup integration, fresh exact mainCI, safe combined activation and retest remain required.
+
 # Full ancestry boundary discovery — 2026-10-18
 
 All **569 findings and78concerns remain open**. Every prior568row, owner and action is preserved. The [complete artifact](benchmarks/systemic-ancestor-boundaries-20261018.json) retains source, full test/benchmark commands and failures, exact wheel and all mixed outcomes.

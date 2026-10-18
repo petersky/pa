@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -12,6 +11,7 @@ from pa.browser.manager import BrowserManager, _browser_executable
 from pa.browser.session import BrowserScope, BrowserSessionManager
 from tests.test_local_operator_acceptance import operator_app, make_card
 from tests.test_card_status_browser import operator_server
+from tests.browser_conditions import wait_for_read_condition
 
 
 @pytest.fixture
@@ -37,12 +37,7 @@ async def test_discover_sign_in_return_accept_reopen_and_logout(navigation_card,
         page = manager.resolve(scope).page
 
         async def wait_for(expression):
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                if await page.evaluate(expression):
-                    return
-                await asyncio.sleep(.05)
-            pytest.fail("Browser condition did not become true: " + expression)
+            await wait_for_read_condition(page, expression)
 
         async def layout(selector):
             return await page.evaluate('''(() => {

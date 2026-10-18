@@ -1,0 +1,1428 @@
+{
+  "contract": "pa.systemic-main526-browser/v1",
+  "observed_at": "2026-10-18T16:52:05.545514+00:00",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "base": "ea9918d734b6d799a786d24750924f2caae55bed",
+  "raw": {
+    ".dev/pr526-main-test0-attempt1.redacted.log": {
+      "sha256": "000e53b76ba14575dec6503c798953fcfdea9c59886a5d13a6ab885a91687f8a",
+      "bytes": 66644,
+      "value": "\ufeff2026-10-18T16:43:14.5308477Z Current runner version: '2.337.0'\n2026-10-18T16:43:14.5334637Z ##[group]Runner Image Provisioner\n2026-10-18T16:43:14.5335524Z Hosted Compute Agent\n2026-10-18T16:43:14.5336082Z Version: 20261012.601\n2026-10-18T16:43:14.5336648Z Commit: f3dc54e1fb89da6852db922499a0233137369e1d\n2026-10-18T16:43:14.5337393Z Build Date: 2026-10-12T17:48:21Z\n2026-10-18T16:43:14.5338042Z Worker ID: {e5bc5252-49a9-4c12-bf8f-25791fc5754c}\n2026-10-18T16:43:14.5338696Z Region: westus3\n2026-10-18T16:43:14.5339209Z Cloud: Azure\n2026-10-18T16:43:14.5339683Z ##[endgroup]\n2026-10-18T16:43:14.5341161Z ##[group]Operating System\n2026-10-18T16:43:14.5341770Z Ubuntu\n2026-10-18T16:43:14.5342267Z 24.04.5\n2026-10-18T16:43:14.5342891Z LTS\n2026-10-18T16:43:14.5343377Z ##[endgroup]\n2026-10-18T16:43:14.5343936Z ##[group]Runner Image\n2026-10-18T16:43:14.5344516Z Image: ubuntu-24.04\n2026-10-18T16:43:14.5345035Z Version: 20261012.334.1\n2026-10-18T16:43:14.5346203Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md\n2026-10-18T16:43:14.5348009Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334\n2026-10-18T16:43:14.5348888Z ##[endgroup]\n2026-10-18T16:43:14.5349989Z ##[group]GITHUB_TOKEN Permissions\n2026-10-18T16:43:14.5351993Z Contents: read\n2026-10-18T16:43:14.5352571Z Metadata: read\n2026-10-18T16:43:14.5353409Z Packages: read\n2026-10-18T16:43:14.5353910Z ##[endgroup]\n2026-10-18T16:43:14.5356139Z Secret source: Actions\n2026-10-18T16:43:14.5357022Z Cache mode: write\n2026-10-18T16:43:14.5357799Z Prepare workflow directory\n2026-10-18T16:43:14.5891554Z Prepare all required actions\n2026-10-18T16:43:14.5942503Z Getting action download info\n2026-10-18T16:43:14.8961692Z Download action repository 'actions/checkout@v5' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)\n2026-10-18T16:43:15.0045004Z Download action repository 'astral-sh/setup-uv@v10.0.1' (SHA:20cfd1bf945f4377ade1205e4dbc17946fc9a30d)\n2026-10-18T16:43:16.0169291Z Complete job name: test (0)\n2026-10-18T16:43:16.0877327Z ##[group]Run actions/checkout@v5\n2026-10-18T16:43:16.0878533Z with:\n2026-10-18T16:43:16.0879136Z   repository: petersky/pa\n2026-10-18T16:43:16.0883892Z   token: ***\n2026-10-18T16:43:16.0884514Z   ssh-strict: true\n2026-10-18T16:43:16.0885092Z   ssh-user: git\n2026-10-18T16:43:16.0885694Z   persist-credentials: true\n2026-10-18T16:43:16.0886389Z   clean: true\n2026-10-18T16:43:16.0886972Z   sparse-checkout-cone-mode: true\n2026-10-18T16:43:16.0997295Z   fetch-depth: 1\n2026-10-18T16:43:16.0998040Z   fetch-tags: false\n2026-10-18T16:43:16.0998543Z   show-progress: true\n2026-10-18T16:43:16.0999110Z   lfs: false\n2026-10-18T16:43:16.0999602Z   submodules: false\n2026-10-18T16:43:16.1000132Z   set-safe-directory: true\n2026-10-18T16:43:16.1000711Z   allow-unsafe-pr-checkout: false\n2026-10-18T16:43:16.1002631Z env:\n2026-10-18T16:43:16.1003278Z   PYTEST_SHARD: 0/4\n2026-10-18T16:43:16.1003778Z ##[endgroup]\n2026-10-18T16:43:16.2052581Z Syncing repository: petersky/pa\n2026-10-18T16:43:16.2056273Z ##[group]Getting Git version info\n2026-10-18T16:43:16.2057764Z Working directory is '/home/runner/work/pa/pa'\n2026-10-18T16:43:16.2059914Z [command]/usr/bin/git version\n2026-10-18T16:43:16.2107831Z git version 2.55.0\n2026-10-18T16:43:16.2136774Z ##[endgroup]\n2026-10-18T16:43:16.2146010Z Temporarily overriding HOME='/home/runner/work/_temp/30dc95f5-5bd5-4073-a65d-4d6da71a749f' before making global git config changes\n2026-10-18T16:43:16.2148934Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T16:43:16.2151132Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T16:43:16.2199923Z Deleting the contents of '/home/runner/work/pa/pa'\n2026-10-18T16:43:16.2203256Z ##[group]Initializing the repository\n2026-10-18T16:43:16.2205147Z [command]/usr/bin/git init /home/runner/work/pa/pa\n2026-10-18T16:43:16.2304135Z hint: Using 'master' as the name for the initial branch. This default branch name\n2026-10-18T16:43:16.2306702Z hint: will change to \"main\" in Git 3.0. To configure the initial branch name\n2026-10-18T16:43:16.2309733Z hint: to use in all of your new repositories, which will suppress this warning,\n2026-10-18T16:43:16.2311587Z hint: call:\n2026-10-18T16:43:16.2312641Z hint:\n2026-10-18T16:43:16.2314174Z hint: \tgit config --global init.defaultBranch <name>\n2026-10-18T16:43:16.2315618Z hint:\n2026-10-18T16:43:16.2316968Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\n2026-10-18T16:43:16.2319149Z hint: 'development'. The just-created branch can be renamed via this command:\n2026-10-18T16:43:16.2321266Z hint:\n2026-10-18T16:43:16.2322328Z hint: \tgit branch -m <name>\n2026-10-18T16:43:16.2323792Z hint:\n2026-10-18T16:43:16.2325320Z hint: Disable this message with \"git config set advice.defaultBranchName false\"\n2026-10-18T16:43:16.2327754Z Initialized empty Git repository in /home/runner/work/pa/pa/.git/\n2026-10-18T16:43:16.2331663Z [command]/usr/bin/git remote add origin https://github.com/petersky/pa\n2026-10-18T16:43:16.2356410Z ##[endgroup]\n2026-10-18T16:43:16.2357964Z ##[group]Disabling automatic garbage collection\n2026-10-18T16:43:16.2361070Z [command]/usr/bin/git config --local gc.auto 0\n2026-10-18T16:43:16.2389627Z ##[endgroup]\n2026-10-18T16:43:16.2391063Z ##[group]Setting up auth\n2026-10-18T16:43:16.2397632Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T16:43:16.2425669Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T16:43:16.2740183Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T16:43:16.2778063Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T16:43:16.2975135Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T16:43:16.3018516Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T16:43:16.3233118Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***\n2026-10-18T16:43:16.3268422Z ##[endgroup]\n2026-10-18T16:43:16.3270109Z ##[group]Fetching the repository\n2026-10-18T16:43:16.3280373Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ea9918d734b6d799a786d24750924f2caae55bed:refs/remotes/origin/main\n2026-10-18T16:43:23.0077028Z From https://github.com/petersky/pa\n2026-10-18T16:43:23.0078963Z  * [new ref]         ea9918d734b6d799a786d24750924f2caae55bed -> origin/main\n2026-10-18T16:43:23.0085246Z ##[endgroup]\n2026-10-18T16:43:23.0085780Z ##[group]Determining the checkout info\n2026-10-18T16:43:23.0086327Z ##[endgroup]\n2026-10-18T16:43:23.0088557Z [command]/usr/bin/git sparse-checkout disable\n2026-10-18T16:43:23.0132907Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig\n2026-10-18T16:43:23.0159862Z ##[group]Checking out the ref\n2026-10-18T16:43:23.0165303Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main\n2026-10-18T16:43:23.3037304Z Switched to a new branch 'main'\n2026-10-18T16:43:23.3040772Z branch 'main' set up to track 'origin/main'.\n2026-10-18T16:43:23.3061698Z ##[endgroup]\n2026-10-18T16:43:23.3109415Z [command]/usr/bin/git log -1 --format=%H\n2026-10-18T16:43:23.3137212Z ea9918d734b6d799a786d24750924f2caae55bed\n2026-10-18T16:43:23.3407673Z ##[group]Run astral-sh/setup-uv@v10.0.1\n2026-10-18T16:43:23.3408010Z with:\n2026-10-18T16:43:23.3408217Z   enable-cache: true\n2026-10-18T16:43:23.3408458Z   activate-environment: false\n2026-10-18T16:43:23.3408713Z   no-project: false\n2026-10-18T16:43:23.3408965Z   working-directory: /home/runner/work/pa/pa\n2026-10-18T16:43:23.3411871Z   github-token: ***\n2026-10-18T16:43:23.3412602Z   cache-dependency-glob: **/*requirements*.txt\n**/*requirements*.in\n**/*constraints*.txt\n**/*constraints*.in\n**/pyproject.toml\n**/uv.lock\n**/*.py.lock\n\n2026-10-18T16:43:23.3413357Z   restore-cache: true\n2026-10-18T16:43:23.3413594Z   save-cache: true\n2026-10-18T16:43:23.3413808Z   prune-cache: false\n2026-10-18T16:43:23.3414035Z   cache-python: false\n2026-10-18T16:43:23.3414285Z   ignore-nothing-to-cache: false\n2026-10-18T16:43:23.3414552Z   ignore-empty-workdir: false\n2026-10-18T16:43:23.3414828Z   download-from-astral-mirror: true\n2026-10-18T16:43:23.3415135Z   add-problem-matchers: true\n2026-10-18T16:43:23.3415464Z   quiet: false\n2026-10-18T16:43:23.3415682Z   resolution-strategy: highest\n2026-10-18T16:43:23.3415926Z env:\n2026-10-18T16:43:23.3416118Z   PYTEST_SHARD: 0/4\n2026-10-18T16:43:23.3416323Z ##[endgroup]\n2026-10-18T16:43:23.5192344Z Trying to find version for uv in: /home/runner/work/pa/pa/uv.toml\n2026-10-18T16:43:23.5193539Z Could not find file: /home/runner/work/pa/pa/uv.toml\n2026-10-18T16:43:23.5194619Z Trying to find version for uv in: /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T16:43:23.5195919Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.\n2026-10-18T16:43:23.5197964Z Fetching manifest data from https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson ...\n2026-10-18T16:43:23.5949539Z Downloading uv from \"https://releases.astral.sh/github/uv/releases/download/0.13.1/uv-x86_64-unknown-linux-gnu.tar.gz\" ...\n2026-10-18T16:43:23.7866188Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/87d8677b-6176-4ad1-ab25-149752174103 -f /home/runner/work/_temp/f23f06f1-9234-445e-b696-2d8142bc269e\n2026-10-18T16:43:24.0791391Z Added /home/runner/.local/bin to the path\n2026-10-18T16:43:24.0794140Z Added /opt/hostedtoolcache/uv/0.13.1/x86_64 to the path\n2026-10-18T16:43:24.0795753Z Set UV_PYTHON_INSTALL_DIR to /home/runner/work/_temp/uv-python-dir\n2026-10-18T16:43:24.0796454Z Added /home/runner/work/_temp/uv-python-dir to the path\n2026-10-18T16:43:24.0820139Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache\n2026-10-18T16:43:24.0820657Z Successfully installed uv version 0.13.1\n2026-10-18T16:43:24.1708048Z Searching files using cache dependency glob: /home/runner/work/pa/pa/**/*requirements*.txt,/home/runner/work/pa/pa/**/*requirements*.in,/home/runner/work/pa/pa/**/*constraints*.txt,/home/runner/work/pa/pa/**/*constraints*.in,/home/runner/work/pa/pa/**/pyproject.toml,/home/runner/work/pa/pa/**/uv.lock,/home/runner/work/pa/pa/**/*.py.lock\n2026-10-18T16:43:24.2143533Z /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T16:43:24.3050964Z /home/runner/work/pa/pa/uv.lock\n2026-10-18T16:43:24.3066064Z Found 2 files to hash.\n2026-10-18T16:43:24.3151916Z Trying to restore cache from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T16:43:24.5023352Z Cache hit for: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T16:43:25.7127489Z Received 34950832 of 43339440 (80.6%), 33.3 MBs/sec\n2026-10-18T16:43:25.8573898Z Received 43339440 of 43339440 (100.0%), 36.1 MBs/sec\n2026-10-18T16:43:25.8574733Z Cache Size: ~41 MB (43339440 B)\n2026-10-18T16:43:25.8707985Z [command]/usr/bin/tar -xf /home/runner/work/_temp/e205ae09-db89-4b71-a28f-0c14002103b4/cache.tzst -P -C /home/runner/work/pa/pa --use-compress-program unzstd\n2026-10-18T16:43:26.1296827Z Cache restored successfully\n2026-10-18T16:43:26.1317917Z cache restored from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T16:43:26.2433599Z ##[group]Run uv python install 3.14\n2026-10-18T16:43:26.2434014Z \u001b[36;1muv python install 3.14\u001b[0m\n2026-10-18T16:43:26.2609032Z shell: /usr/bin/bash -e {0}\n2026-10-18T16:43:26.2609432Z env:\n2026-10-18T16:43:26.2609689Z   PYTEST_SHARD: 0/4\n2026-10-18T16:43:26.2610240Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T16:43:26.2610700Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T16:43:26.2611054Z ##[endgroup]\n2026-10-18T16:43:26.3965159Z Downloading cpython-3.14.8-linux-x86_64-gnu (download) (34.6MiB)\n2026-10-18T16:43:26.9792081Z  Downloaded cpython-3.14.8-linux-x86_64-gnu (download)\n2026-10-18T16:43:26.9829926Z Installed Python 3.14.8 in 707ms\n2026-10-18T16:43:26.9830414Z  + cpython-3.14.8-linux-x86_64-gnu (python3.14)\n2026-10-18T16:43:26.9886527Z ##[group]Run uv sync\n2026-10-18T16:43:26.9886811Z \u001b[36;1muv sync\u001b[0m\n2026-10-18T16:43:26.9923960Z shell: /usr/bin/bash -e {0}\n2026-10-18T16:43:26.9924296Z env:\n2026-10-18T16:43:26.9924552Z   PYTEST_SHARD: 0/4\n2026-10-18T16:43:26.9924872Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T16:43:26.9925261Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T16:43:26.9925566Z ##[endgroup]\n2026-10-18T16:43:27.2473427Z Using CPython 3.14.8\n2026-10-18T16:43:27.2473947Z Creating virtual environment at: .venv\n2026-10-18T16:43:27.2502290Z Resolved 61 packages in 1ms\n2026-10-18T16:43:27.2529403Z    Building pa @ file:///home/runner/work/pa/pa\n2026-10-18T16:43:28.5080401Z       Built pa @ file:///home/runner/work/pa/pa\n2026-10-18T16:43:28.5125942Z Prepared 1 package in 1.26s\n2026-10-18T16:43:28.5274900Z Installed 59 packages in 14ms\n2026-10-18T16:43:28.5275446Z  + agent-client-protocol==0.10.1\n2026-10-18T16:43:28.5275905Z  + annotated-doc==0.0.4\n2026-10-18T16:43:28.5276374Z  + annotated-types==0.7.0\n2026-10-18T16:43:28.5276751Z  + anyio==4.13.0\n2026-10-18T16:43:28.5277105Z  + asyncssh==2.24.0\n2026-10-18T16:43:28.5277449Z  + attrs==26.1.0\n2026-10-18T16:43:28.5277797Z  + certifi==2026.5.20\n2026-10-18T16:43:28.5278144Z  + cffi==2.0.0\n2026-10-18T16:43:28.5278467Z  + click==8.4.1\n2026-10-18T16:43:28.5278809Z  + cryptography==49.0.0\n2026-10-18T16:43:28.5279217Z  + execnet==2.1.2\n2026-10-18T16:43:28.5279550Z  + fastapi==0.136.3\n2026-10-18T16:43:28.5279890Z  + h11==0.16.0\n2026-10-18T16:43:28.5280239Z  + httpcore==1.0.9\n2026-10-18T16:43:28.5280587Z  + httpcore2==2.9.1\n2026-10-18T16:43:28.5280925Z  + httptools==0.7.1\n2026-10-18T16:43:28.5281264Z  + httpx==0.28.1\n2026-10-18T16:43:28.5281601Z  + httpx2==2.9.1\n2026-10-18T16:43:28.5281944Z  + idna==3.18\n2026-10-18T16:43:28.5282267Z  + iniconfig==2.3.0\n2026-10-18T16:43:28.5282598Z  + jinja2==3.1.6\n2026-10-18T16:43:28.5283079Z  + jsonschema==4.26.0\n2026-10-18T16:43:28.5283487Z  + jsonschema-specifications==2025.9.1\n2026-10-18T16:43:28.5283990Z  + markdown-it-py==4.2.0\n2026-10-18T16:43:28.5284380Z  + markupsafe==3.0.3\n2026-10-18T16:43:28.5284754Z  + mcp==2.0.0\n2026-10-18T16:43:28.5285089Z  + mcp-types==2.0.0\n2026-10-18T16:43:28.5285435Z  + mdurl==0.1.2\n2026-10-18T16:43:28.5285798Z  + opentelemetry-api==1.44.0\n2026-10-18T16:43:28.5286274Z  + pa==1.5.9 (from file:///home/runner/work/pa/pa)\n2026-10-18T16:43:28.5286784Z  + packaging==26.3\n2026-10-18T16:43:28.5287142Z  + pluggy==1.6.0\n2026-10-18T16:43:28.5287481Z  + psutil==7.2.2\n2026-10-18T16:43:28.5287821Z  + pycparser==3.0\n2026-10-18T16:43:28.5288191Z  + pydantic==2.13.4\n2026-10-18T16:43:28.5288555Z  + pydantic-core==2.46.4\n2026-10-18T16:43:28.5288950Z  + pydantic-settings==2.14.1\n2026-10-18T16:43:28.5289368Z  + pygments==2.20.0\n2026-10-18T16:43:28.5289706Z  + pyjwt==2.13.0\n2026-10-18T16:43:28.5290038Z  + pytest==9.1.1\n2026-10-18T16:43:28.5290383Z  + pytest-asyncio==1.4.0\n2026-10-18T16:43:28.5290761Z  + pytest-xdist==3.8.0\n2026-10-18T16:43:28.5291108Z  + python-dotenv==1.2.2\n2026-10-18T16:43:28.5291449Z  + python-multipart==0.0.29\n2026-10-18T16:43:28.5291901Z  + pyyaml==6.0.3\n2026-10-18T16:43:28.5292215Z  + referencing==0.37.0\n2026-10-18T16:43:28.5292555Z  + rich==15.0.0\n2026-10-18T16:43:28.5293032Z  + rpds-py==0.30.0\n2026-10-18T16:43:28.5293365Z  + shellingham==1.5.4\n2026-10-18T16:43:28.5293725Z  + sse-starlette==3.4.4\n2026-10-18T16:43:28.5294070Z  + starlette==1.1.0\n2026-10-18T16:43:28.5294402Z  + truststore==0.10.4\n2026-10-18T16:43:28.5294776Z  + typer==0.25.1\n2026-10-18T16:43:28.5295417Z  + typing-extensions==4.15.0\n2026-10-18T16:43:28.5295835Z  + typing-inspection==0.4.2\n2026-10-18T16:43:28.5296233Z  + uvicorn==0.48.0\n2026-10-18T16:43:28.5296557Z  + uvloop==0.22.1\n2026-10-18T16:43:28.5296909Z  + watchfiles==1.2.0\n2026-10-18T16:43:28.5297225Z  + websockets==16.0\n2026-10-18T16:43:28.5382488Z ##[group]Run timeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\n2026-10-18T16:43:28.5383821Z \u001b[36;1mtimeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\u001b[0m\n2026-10-18T16:43:28.5420161Z shell: /usr/bin/bash -e {0}\n2026-10-18T16:43:28.5420473Z env:\n2026-10-18T16:43:28.5420753Z   PYTEST_SHARD: 0/4\n2026-10-18T16:43:28.5421058Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T16:43:28.5421446Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T16:43:28.5421792Z ##[endgroup]\n2026-10-18T16:43:29.6968043Z ##[group]Run uv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\n2026-10-18T16:43:29.6969127Z \u001b[36;1muv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\u001b[0m\n2026-10-18T16:43:29.7006619Z shell: /usr/bin/bash -e {0}\n2026-10-18T16:43:29.7006893Z env:\n2026-10-18T16:43:29.7007207Z   PYTEST_SHARD: 0/4\n2026-10-18T16:43:29.7007762Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T16:43:29.7008158Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T16:43:29.7008459Z ##[endgroup]\n2026-10-18T16:43:41.8744067Z bringing up nodes...\n2026-10-18T16:43:41.8763616Z bringing up nodes...\n2026-10-18T16:43:41.8764055Z \n2026-10-18T16:43:47.7370321Z ........................................................................ [  7%]\n2026-10-18T16:44:03.5585057Z ............uuu......................................................... [ 15%]\n2026-10-18T16:44:09.4029385Z .............................................uuu.....uuuuuu............. [ 21%]\n2026-10-18T16:44:23.1788397Z .......................................................uuuu........F.... [ 29%]\n2026-10-18T16:44:26.3532055Z ........................................................................ [ 36%]\n2026-10-18T16:44:40.6499788Z .....uuuu......uuuu...uuuuuuuuuu.......u............................u..u [ 42%]\n2026-10-18T16:44:45.0447901Z uuu......uuuu........................................................... [ 49%]\n2026-10-18T16:44:48.2767069Z ........................................................................ [ 57%]\n2026-10-18T16:44:58.8243065Z ..........uuuuuuuuu..................................................... [ 63%]\n2026-10-18T16:45:03.9038953Z ..................uuuu........u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 66%]\n2026-10-18T16:45:03.9176878Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 66%]\n2026-10-18T16:45:07.1150126Z uuuuuuuuuuuuuuuuu....................................................... [ 72%]\n2026-10-18T16:45:10.1390991Z ........................................................................ [ 80%]\n2026-10-18T16:45:15.2805167Z ...................................uu................................... [ 87%]\n2026-10-18T16:45:21.5545427Z ...............................uuu....uuu.........uuuuuuuu.............. [ 93%]\n2026-10-18T16:45:32.1957089Z ........................................................                 [100%]\n2026-10-18T16:45:32.1957759Z =================================== FAILURES ===================================\n2026-10-18T16:45:32.1958404Z ____________ test_discover_sign_in_return_accept_reopen_and_logout _____________\n2026-10-18T16:45:32.1959130Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T16:45:32.1959500Z \n2026-10-18T16:45:32.1960659Z navigation_card = (Card(completion_requirement=CompletionRequirement(schema_version=1, mode='explicit_acceptance', revision='b652fe63-68...', display_name='Test Reviewer', role='editor', agent_env={}, cli_token='[REDACTED]'))\n2026-10-18T16:45:32.1962655Z operator_server = (<fastapi.applications.FastAPI object at 0x7f970ae21d30>, 'http://127.0.0.1:34825')\n2026-10-18T16:45:32.1963587Z tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/popen-gw0/test_discover_sign_in_return_a0')\n2026-10-18T16:45:32.1963958Z \n2026-10-18T16:45:32.1964302Z     @pytest.mark.skipif(not _browser_executable(), reason=\"managed Chromium is not installed\")\n2026-10-18T16:45:32.1964751Z     @pytest.mark.asyncio\n2026-10-18T16:45:32.1965209Z     async def test_discover_sign_in_return_accept_reopen_and_logout(navigation_card, operator_server, tmp_path):\n2026-10-18T16:45:32.1965715Z         app, base = operator_server\n2026-10-18T16:45:32.1965992Z         card, user = navigation_card\n2026-10-18T16:45:32.1966306Z         browser = BrowserManager(tmp_path / \"browser\")\n2026-10-18T16:45:32.1966949Z         manager = BrowserSessionManager(browser, instance_id=\"auth-nav-test\")\n2026-10-18T16:45:32.1967447Z         scope = BrowserScope(\"user:test\", \"auth-nav-browser\", \"auth-nav-test\")\n2026-10-18T16:45:32.1967812Z         try:\n2026-10-18T16:45:32.1968120Z             await manager.attach(scope, url=base + \"/\", width=390, height=844)\n2026-10-18T16:45:32.1968526Z             page = manager.resolve(scope).page\n2026-10-18T16:45:32.1968807Z     \n2026-10-18T16:45:32.1969026Z             async def wait_for(expression):\n2026-10-18T16:45:32.1969331Z                 deadline = time.monotonic() + 15\n2026-10-18T16:45:32.1969637Z                 while time.monotonic() < deadline:\n2026-10-18T16:45:32.1969965Z                     if await page.evaluate(expression):\n2026-10-18T16:45:32.1970258Z                         return\n2026-10-18T16:45:32.1970514Z                     await asyncio.sleep(.05)\n2026-10-18T16:45:32.1970902Z                 pytest.fail(\"Browser condition did not become true: \" + expression)\n2026-10-18T16:45:32.1971268Z     \n2026-10-18T16:45:32.1971467Z             async def layout(selector):\n2026-10-18T16:45:32.1971764Z                 return await page.evaluate('''(() => {\n2026-10-18T16:45:32.1972148Z                   const e=document.querySelector(''' + json.dumps(selector) + ''');\n2026-10-18T16:45:32.1972547Z                   const r=e.getBoundingClientRect();\n2026-10-18T16:45:32.1973128Z                   const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);\n2026-10-18T16:45:32.1973657Z                   const actions=document.querySelector('.chrome-actions').getBoundingClientRect();\n2026-10-18T16:45:32.1974227Z                   const nav=Array.from(document.querySelectorAll('.top-nav,.responsive-nav'))\n2026-10-18T16:45:32.1974715Z                     .map(e=>e.getBoundingClientRect()).filter(r=>r.width>0)[0];\n2026-10-18T16:45:32.1975201Z                   return {visible:r.width>0 && r.height>=44 && r.left>=0 && r.right<=innerWidth,\n2026-10-18T16:45:32.1975696Z                     clickable:(e===top || e.contains(top)) && nav.right<=actions.left,\n2026-10-18T16:45:32.1976162Z                     overflow:document.documentElement.scrollWidth>innerWidth,\n2026-10-18T16:45:32.1976575Z                     rect:{x:r.x,y:r.y,width:r.width,height:r.height}};\n2026-10-18T16:45:32.1976889Z                 })()''')\n2026-10-18T16:45:32.1977107Z     \n2026-10-18T16:45:32.1977488Z             await wait_for(\"!!document.querySelector('.chrome-actions [data-sign-in]') && !!window.htmx\")\n2026-10-18T16:45:32.1977953Z             for theme in (\"light\", \"dark\"):\n2026-10-18T16:45:32.1978281Z                 await page.evaluate('''new Promise(resolve => {\n2026-10-18T16:45:32.1978673Z                   const link=document.querySelector('#pa-theme-variant');\n2026-10-18T16:45:32.1979035Z                   link.onload=resolve;\n2026-10-18T16:45:32.1979452Z                   document.documentElement.dataset.appearance=''' + json.dumps(theme) + ''';\n2026-10-18T16:45:32.1979925Z                   link.href='/static/themes/pa/''' + theme + '''.css';\n2026-10-18T16:45:32.1980393Z                 })''')\n2026-10-18T16:45:32.1980698Z                 for width in (320, 390, 720, 820, 1180, 1280, 1440, 1760, 1920):\n2026-10-18T16:45:32.1981090Z                     await manager.resize(scope, width=width, height=900)\n2026-10-18T16:45:32.1981504Z                     measured = await layout(\".chrome-actions [data-sign-in]\")\n2026-10-18T16:45:32.1982076Z                     assert measured[\"visible\"] and measured[\"clickable\"] and not measured[\"overflow\"], (theme, width, measured)\n2026-10-18T16:45:32.1982647Z                     # Conversation entry remains discoverable without displacing\n2026-10-18T16:45:32.1983358Z                     # sign-in/navigation: Home heading on small screens, chrome otherwise.\n2026-10-18T16:45:32.1983792Z                     entry = await page.evaluate('''(() => {\n2026-10-18T16:45:32.1984264Z                       const links=[...document.querySelectorAll('.chrome-new-chat,.home-new-chat')];\n2026-10-18T16:45:32.1984902Z                       const visible=links.filter(e=>e.getBoundingClientRect().width>0);\n2026-10-18T16:45:32.1985430Z                       if(visible.length!==1) return {ok:false, visible:visible.map(e=>e.className)};\n2026-10-18T16:45:32.1985901Z                       const e=visible[0], r=e.getBoundingClientRect();\n2026-10-18T16:45:32.1986339Z                       const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);\n2026-10-18T16:45:32.1986866Z                       return {ok:(top===e || e.contains(top)) && e.getAttribute('href')==='/agent?new=1',\n2026-10-18T16:45:32.1987403Z                         rect:{x:r.x,y:r.y,width:r.width,height:r.height}, coveredBy:top?.className};\n2026-10-18T16:45:32.1987811Z                     })()''')\n2026-10-18T16:45:32.1988093Z                     assert entry['ok'], (theme, width, entry)\n2026-10-18T16:45:32.1988381Z     \n2026-10-18T16:45:32.1988627Z             await manager.resize(scope, width=390, height=844)\n2026-10-18T16:45:32.1989058Z             # Discover login on Home without knowing /login. Invalid credentials keep\n2026-10-18T16:45:32.1989506Z             # the local return destination and cannot produce a receipt.\n2026-10-18T16:45:32.1989953Z             await manager.click(scope, selector=\".chrome-actions [data-sign-in]\")\n2026-10-18T16:45:32.1990361Z             await wait_for(\"location.pathname === '/login'\")\n2026-10-18T16:45:32.1990809Z             await manager.type_text(scope, selector='input[name=\"username\"]', text=\"reviewer\")\n2026-10-18T16:45:32.1991352Z             await manager.type_text(scope, selector='input[name=\"password\"]', text=\"incorrect\")\n2026-10-18T16:45:32.1991836Z             await manager.click(scope, selector='button[type=\"submit\"]')\n2026-10-18T16:45:32.1992389Z             await wait_for(\"document.querySelector('[role=alert]')?.textContent.includes('Invalid credentials')\")\n2026-10-18T16:45:32.1993146Z             assert await page.evaluate(\"document.querySelector('[name=next]').value\") == \"/\"\n2026-10-18T16:45:32.1993737Z             assert app.state.ctx.store.get_card(card.id).completion_evidence == card.completion_evidence\n2026-10-18T16:45:32.1994159Z     \n2026-10-18T16:45:32.1994480Z             # The shared shell survives HTMX navigation; its link must capture Settings.\n2026-10-18T16:45:32.1994908Z             await page.navigate_and_wait(base + \"/\")\n2026-10-18T16:45:32.1995301Z             await manager.click(scope, selector=\"[data-responsive-nav] summary\")\n2026-10-18T16:45:32.1995806Z             await manager.click(scope, selector='.responsive-nav-menu a[href=\"/settings\"]')\n2026-10-18T16:45:32.1996277Z             await wait_for(\"location.pathname === '/settings'\")\n2026-10-18T16:45:32.1996698Z             await manager.click(scope, selector=\".chrome-actions [data-sign-in]\")\n2026-10-18T16:45:32.1997111Z             await wait_for(\"location.pathname === '/login'\")\n2026-10-18T16:45:32.1997573Z             assert await page.evaluate(\"document.querySelector('[name=next]').value\") == \"/settings\"\n2026-10-18T16:45:32.1998278Z             # The required Home/card journey uses the existing card deep link.\n2026-10-18T16:45:32.1998699Z             await page.navigate_and_wait(base + f\"/?card={card.id}\")\n2026-10-18T16:45:32.1999164Z             await wait_for(\"!!document.querySelector('.card-detail-actions [data-sign-in]')\")\n2026-10-18T16:45:32.1999705Z             await manager.click(scope, selector=\".card-detail-actions [data-sign-in]\")\n2026-10-18T16:45:32.2000142Z >           await wait_for(\"location.pathname === '/login'\")\n2026-10-18T16:45:32.2000355Z \n2026-10-18T16:45:32.2000485Z tests/test_auth_navigation_browser.py:110: \n2026-10-18T16:45:32.2000820Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n2026-10-18T16:45:32.2001196Z tests/test_auth_navigation_browser.py:42: in wait_for\n2026-10-18T16:45:32.2001520Z     if await page.evaluate(expression):\n2026-10-18T16:45:32.2001803Z        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n2026-10-18T16:45:32.2002066Z src/pa/browser/cdp.py:110: in evaluate\n2026-10-18T16:45:32.2002433Z     result = await self.command(\n2026-10-18T16:45:32.2002819Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n2026-10-18T16:45:32.2003052Z \n2026-10-18T16:45:32.2003207Z self = <pa.browser.cdp.CdpPage object at 0x7f970ce4b390>\n2026-10-18T16:45:32.2003548Z method = 'Runtime.evaluate'\n2026-10-18T16:45:32.2004066Z params = {'expression': \"location.pathname === '/login'\", 'returnByValue': True, 'awaitPromise': True, 'userGesture': True}\n2026-10-18T16:45:32.2004478Z \n2026-10-18T16:45:32.2004589Z     async def command(\n2026-10-18T16:45:32.2004878Z         self, method: str, params: dict[str, Any] | None = None\n2026-10-18T16:45:32.2005226Z     ) -> dict[str, Any]:\n2026-10-18T16:45:32.2005472Z         async with self._command_lock:\n2026-10-18T16:45:32.2005728Z             try:\n2026-10-18T16:45:32.2005965Z                 async with asyncio.timeout(15):\n2026-10-18T16:45:32.2006282Z                     if self._websocket is None:\n2026-10-18T16:45:32.2006645Z                         target = await page_target(self.endpoint, self.target_id)\n2026-10-18T16:45:32.2007029Z                         self.target_id = str(target[\"id\"])\n2026-10-18T16:45:32.2007380Z                         self._websocket = await websockets.connect(\n2026-10-18T16:45:32.2007745Z                             str(target[\"webSocketDebuggerUrl\"]),\n2026-10-18T16:45:32.2008053Z                             open_timeout=5,\n2026-10-18T16:45:32.2008332Z                             close_timeout=2,\n2026-10-18T16:45:32.2008599Z                         )\n2026-10-18T16:45:32.2008836Z                     self._next_id += 1\n2026-10-18T16:45:32.2009108Z                     command_id = self._next_id\n2026-10-18T16:45:32.2009421Z                     await self._websocket.send(json.dumps({\n2026-10-18T16:45:32.2009793Z                         \"id\": command_id, \"method\": method, \"params\": params or {}\n2026-10-18T16:45:32.2010134Z                     }))\n2026-10-18T16:45:32.2010353Z                     while True:\n2026-10-18T16:45:32.2010664Z                         message = json.loads(await self._websocket.recv())\n2026-10-18T16:45:32.2011016Z                         if message.get(\"id\") != command_id:\n2026-10-18T16:45:32.2011316Z                             continue\n2026-10-18T16:45:32.2011578Z                         if \"error\" in message:\n2026-10-18T16:45:32.2011858Z >                           raise CdpError(\n2026-10-18T16:45:32.2012201Z                                 str(message[\"error\"].get(\"message\") or message[\"error\"])\n2026-10-18T16:45:32.2012549Z                             )\n2026-10-18T16:45:32.2013172Z E                           pa.browser.cdp.CdpError: Inspected target navigated or closed\n2026-10-18T16:45:32.2013485Z \n2026-10-18T16:45:32.2013598Z src/pa/browser/cdp.py:92: CdpError\n2026-10-18T16:45:32.2013959Z ---------------------------- Captured stderr setup -----------------------------\n2026-10-18T16:45:32.2014451Z 2026-10-18T16:44:20+0000 INFO     [pa.instance.agent_session] Instance agent disabled\n2026-10-18T16:45:32.2015842Z 2026-10-18T16:44:20+0000 INFO     [pa.instance.maintenance] Instance maintenance removed 0 transcript events, 0 mutation receipts, 0 dispatch events, 0 dispatch receipts; database maintenance: {'sqlite': {'compacted': False, 'status': 'ok', 'reason': None}, 'transcript_sqlite': {'compacted': False, 'status': 'ok', 'reason': None}}\n2026-10-18T16:45:32.2017069Z ----------------------------- Captured stderr call -----------------------------\n2026-10-18T16:45:32.2018288Z 2026-10-18T16:44:21+0000 INFO     [pa.modules.ui_shell] page_shell {\"correlation_id\": \"3ad7a5fb-1506-4c74-a832-2057f856b920\", \"event\": \"page_shell\", \"htmx\": false, \"page\": \"home\", \"response_bytes\": 25083, \"thread_cpu_ms\": {\"page_context\": 0.0, \"shell\": 1.3, \"template\": 58.3}, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 1.3, \"template\": 86.1}, \"total_ms\": 87.6}\n2026-10-18T16:45:32.2020142Z 2026-10-18T16:44:21+0000 INFO     [pa.modules.ui_shell] home_render {\"correlation_id\": \"3ad7a5fb-1506-4c74-a832-2057f856b920\", \"event\": \"home.render\", \"htmx\": false, \"response_bytes\": 25083, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 1.3, \"template\": 86.1}, \"total_ms\": 88.3}\n2026-10-18T16:45:32.2021878Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=attach operation=None outcome=success error=None\n2026-10-18T16:45:32.2024017Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_N7gAjfck6rcIJmMFKey5tNti_prMZ1uOigIJ0tpcKws outcome=success error=None\n2026-10-18T16:45:32.2027512Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_0wCXU5cBUQBft5GSd7QsTRpHQXuoJ3K94v9bq8iGN84 outcome=success error=None\n2026-10-18T16:45:32.2030057Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_O2IehOV71kYOHOrzwBWrwbv21UYJEajl6V-qUia0Dfk outcome=success error=None\n2026-10-18T16:45:32.2032245Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_eWDFc1O0yZmInBiHoUYemIJhi17h4dvn3X7B-f5mD0A outcome=success error=None\n2026-10-18T16:45:32.2034555Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_jxYOyBa-uu37tKO4n50PWxg_Dhk89y9nNxJOKtaXjlk outcome=success error=None\n2026-10-18T16:45:32.2036743Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_Ehxwotqlx85DT_IeANY4pmaUu-33E522rr8jMVfXXGE outcome=success error=None\n2026-10-18T16:45:32.2038889Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_9t3zOXS_n1dGDK6QUqkykwYE1cPWVqbdcuom-y0H8zg outcome=success error=None\n2026-10-18T16:45:32.2041264Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_hLykSFbaYBP7c-qkDWvnDxbvQQEwCGNCAj3dqqxNvhw outcome=success error=None\n2026-10-18T16:45:32.2043522Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_caW1_4JnZvGJRT-F7QLwrWErMXh52RI6I5bCPh16EJE outcome=success error=None\n2026-10-18T16:45:32.2045819Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_iEfuLPAhEfePfi8mqEYuFaGLwuQU0ib7kH9rmGOzBKU outcome=success error=None\n2026-10-18T16:45:32.2048067Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_b2ZM-y9F0sUUxk02YgnlayuJXuIdf1YyWoT3UV0CIbo outcome=success error=None\n2026-10-18T16:45:32.2050245Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_oQZKSvb1hwA3fBAJclILHc7R-qz1Xf8VfSva054M9Gc outcome=success error=None\n2026-10-18T16:45:32.2052410Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_q3-Z6n8_3eM23iVhqP58_1bBbyvTsP5CzH4vJanqMJs outcome=success error=None\n2026-10-18T16:45:32.2054642Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_15A1Y4BMsV2ckFXkldnMBGRJvaq1fI2Vj7Vt69h8tVg outcome=success error=None\n2026-10-18T16:45:32.2056819Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_cMsHnXrBnmkP55q6FPM3tmMQ7444lNCXR3xriYoOySE outcome=success error=None\n2026-10-18T16:45:32.2060458Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_zcVv4GPK_ygvprf8y33z4-WKyykgCuRUWQvKNURoLPA outcome=success error=None\n2026-10-18T16:45:32.2064347Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_0umuK1eMKinB0sQVOSHCR7WlpLJidIqutHy9zzvRhVI outcome=success error=None\n2026-10-18T16:45:32.2067741Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_Bcq-_dFKFynwYJnixqL9K8j5wQmn7oqbQ9OI91FlPUc outcome=success error=None\n2026-10-18T16:45:32.2070794Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_E7I5frfKAqRBJC9ChaHQ6VSdvA2S-L0NaqqiIW8-xTA outcome=success error=None\n2026-10-18T16:45:32.2075301Z 2026-10-18T16:44:21+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_tccBrbXgw2ESd0M3bbzXQRZCc_pgnI9NrHfdFoJMieo outcome=success error=None\n2026-10-18T16:45:32.2079455Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=type operation=op_zsH7AyNI8j2AuZ4UR56uD9o8zNnGs60WgkH1uh4tADI outcome=success error=None\n2026-10-18T16:45:32.2083496Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=type operation=op_xobD5BFMrN19QDhkHuwkMKfSS6jNhjxP7GijNppnNmo outcome=success error=None\n2026-10-18T16:45:32.2086878Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_yzSvvMQ7Ium8r5At4XfO9EcqFKci5xQ8YfTDdRbYTZU outcome=success error=None\n2026-10-18T16:45:32.2089020Z 2026-10-18T16:44:22+0000 INFO     [pa.modules.ui_shell] page_shell {\"correlation_id\": \"d3ffaf1f-0500-4523-90ff-27cbbcaa3d38\", \"event\": \"page_shell\", \"htmx\": false, \"page\": \"home\", \"response_bytes\": 25083, \"thread_cpu_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.7}, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.7}, \"total_ms\": 1.4}\n2026-10-18T16:45:32.2090801Z 2026-10-18T16:44:22+0000 INFO     [pa.modules.ui_shell] home_render {\"correlation_id\": \"d3ffaf1f-0500-4523-90ff-27cbbcaa3d38\", \"event\": \"home.render\", \"htmx\": false, \"response_bytes\": 25083, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.7}, \"total_ms\": 1.7}\n2026-10-18T16:45:32.2092677Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_aUWhqeKxQXabdwvK0dt6O4O2eR9MmLmFU3zwOMmSBA8 outcome=success error=None\n2026-10-18T16:45:32.2095096Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_HgrSbLclO5lBHJd1NDtvai83ed14cGHCv7v1V_3vI4s outcome=success error=None\n2026-10-18T16:45:32.2097223Z 2026-10-18T16:44:22+0000 INFO     [pa.modules.ui_shell] page_shell {\"correlation_id\": \"8fa68409-f9cb-4a37-83c4-e7d0e89a328d\", \"event\": \"page_shell\", \"htmx\": true, \"page\": \"settings\", \"response_bytes\": 72678, \"thread_cpu_ms\": {\"settings-section\": 0.8, \"shell\": 0.7, \"template\": 76.2}, \"timings_ms\": {\"settings-section\": 0.8, \"shell\": 0.7, \"template\": 77.9}, \"total_ms\": 79.6}\n2026-10-18T16:45:32.2099074Z 2026-10-18T16:44:22+0000 INFO     [pa.modules.ui_shell] settings_render {\"correlation_id\": \"8fa68409-f9cb-4a37-83c4-e7d0e89a328d\", \"event\": \"settings.render\", \"response_bytes\": 72678, \"section\": \"agent\", \"timings_ms\": {\"settings-section\": 0.8, \"shell\": 0.7, \"template\": 77.9}, \"total_ms\": 80.0}\n2026-10-18T16:45:32.2101020Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_FMGNTFrFCibLOfilguRR4RXuyNfwLpG13hwRiNCNiSE outcome=success error=None\n2026-10-18T16:45:32.2103788Z 2026-10-18T16:44:22+0000 INFO     [pa.modules.ui_shell] page_shell {\"correlation_id\": \"0226b3c5-b6c0-448e-b39b-2a0e7d4958a1\", \"event\": \"page_shell\", \"htmx\": false, \"page\": \"home\", \"response_bytes\": 25129, \"thread_cpu_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.6}, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.6}, \"total_ms\": 1.4}\n2026-10-18T16:45:32.2105536Z 2026-10-18T16:44:22+0000 INFO     [pa.modules.ui_shell] home_render {\"correlation_id\": \"0226b3c5-b6c0-448e-b39b-2a0e7d4958a1\", \"event\": \"home.render\", \"htmx\": false, \"response_bytes\": 25129, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.6}, \"total_ms\": 1.7}\n2026-10-18T16:45:32.2107458Z 2026-10-18T16:44:22+0000 INFO     [pa.browser.session] browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_baUAvNBCxpKaY5rXYtXoFREDvldoVQ1e-F2ySvrI3j8 outcome=success error=None\n2026-10-18T16:45:32.2108803Z ------------------------------ Captured log call -------------------------------\n2026-10-18T16:45:32.2109994Z INFO     pa.modules.ui_shell:ui_shell.py:143 page_shell {\"correlation_id\": \"3ad7a5fb-1506-4c74-a832-2057f856b920\", \"event\": \"page_shell\", \"htmx\": false, \"page\": \"home\", \"response_bytes\": 25083, \"thread_cpu_ms\": {\"page_context\": 0.0, \"shell\": 1.3, \"template\": 58.3}, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 1.3, \"template\": 86.1}, \"total_ms\": 87.6}\n2026-10-18T16:45:32.2111711Z INFO     pa.modules.ui_shell:ui_shell.py:155 home_render {\"correlation_id\": \"3ad7a5fb-1506-4c74-a832-2057f856b920\", \"event\": \"home.render\", \"htmx\": false, \"response_bytes\": 25083, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 1.3, \"template\": 86.1}, \"total_ms\": 88.3}\n2026-10-18T16:45:32.2113541Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=attach operation=None outcome=success error=None\n2026-10-18T16:45:32.2115545Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_N7gAjfck6rcIJmMFKey5tNti_prMZ1uOigIJ0tpcKws outcome=success error=None\n2026-10-18T16:45:32.2117826Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_0wCXU5cBUQBft5GSd7QsTRpHQXuoJ3K94v9bq8iGN84 outcome=success error=None\n2026-10-18T16:45:32.2119956Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_O2IehOV71kYOHOrzwBWrwbv21UYJEajl6V-qUia0Dfk outcome=success error=None\n2026-10-18T16:45:32.2122087Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_eWDFc1O0yZmInBiHoUYemIJhi17h4dvn3X7B-f5mD0A outcome=success error=None\n2026-10-18T16:45:32.2124369Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_jxYOyBa-uu37tKO4n50PWxg_Dhk89y9nNxJOKtaXjlk outcome=success error=None\n2026-10-18T16:45:32.2126558Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_Ehxwotqlx85DT_IeANY4pmaUu-33E522rr8jMVfXXGE outcome=success error=None\n2026-10-18T16:45:32.2128671Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_9t3zOXS_n1dGDK6QUqkykwYE1cPWVqbdcuom-y0H8zg outcome=success error=None\n2026-10-18T16:45:32.2130850Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_hLykSFbaYBP7c-qkDWvnDxbvQQEwCGNCAj3dqqxNvhw outcome=success error=None\n2026-10-18T16:45:32.2133216Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_caW1_4JnZvGJRT-F7QLwrWErMXh52RI6I5bCPh16EJE outcome=success error=None\n2026-10-18T16:45:32.2135341Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_iEfuLPAhEfePfi8mqEYuFaGLwuQU0ib7kH9rmGOzBKU outcome=success error=None\n2026-10-18T16:45:32.2137506Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_b2ZM-y9F0sUUxk02YgnlayuJXuIdf1YyWoT3UV0CIbo outcome=success error=None\n2026-10-18T16:45:32.2139660Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_oQZKSvb1hwA3fBAJclILHc7R-qz1Xf8VfSva054M9Gc outcome=success error=None\n2026-10-18T16:45:32.2141773Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_q3-Z6n8_3eM23iVhqP58_1bBbyvTsP5CzH4vJanqMJs outcome=success error=None\n2026-10-18T16:45:32.2143968Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_15A1Y4BMsV2ckFXkldnMBGRJvaq1fI2Vj7Vt69h8tVg outcome=success error=None\n2026-10-18T16:45:32.2146122Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_cMsHnXrBnmkP55q6FPM3tmMQ7444lNCXR3xriYoOySE outcome=success error=None\n2026-10-18T16:45:32.2148233Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_zcVv4GPK_ygvprf8y33z4-WKyykgCuRUWQvKNURoLPA outcome=success error=None\n2026-10-18T16:45:32.2150367Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_0umuK1eMKinB0sQVOSHCR7WlpLJidIqutHy9zzvRhVI outcome=success error=None\n2026-10-18T16:45:32.2152575Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_Bcq-_dFKFynwYJnixqL9K8j5wQmn7oqbQ9OI91FlPUc outcome=success error=None\n2026-10-18T16:45:32.2154766Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=resize operation=op_E7I5frfKAqRBJC9ChaHQ6VSdvA2S-L0NaqqiIW8-xTA outcome=success error=None\n2026-10-18T16:45:32.2156958Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_tccBrbXgw2ESd0M3bbzXQRZCc_pgnI9NrHfdFoJMieo outcome=success error=None\n2026-10-18T16:45:32.2159042Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=type operation=op_zsH7AyNI8j2AuZ4UR56uD9o8zNnGs60WgkH1uh4tADI outcome=success error=None\n2026-10-18T16:45:32.2161153Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=type operation=op_xobD5BFMrN19QDhkHuwkMKfSS6jNhjxP7GijNppnNmo outcome=success error=None\n2026-10-18T16:45:32.2163344Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_yzSvvMQ7Ium8r5At4XfO9EcqFKci5xQ8YfTDdRbYTZU outcome=success error=None\n2026-10-18T16:45:32.2165369Z INFO     pa.modules.ui_shell:ui_shell.py:143 page_shell {\"correlation_id\": \"d3ffaf1f-0500-4523-90ff-27cbbcaa3d38\", \"event\": \"page_shell\", \"htmx\": false, \"page\": \"home\", \"response_bytes\": 25083, \"thread_cpu_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.7}, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.7}, \"total_ms\": 1.4}\n2026-10-18T16:45:32.2167101Z INFO     pa.modules.ui_shell:ui_shell.py:155 home_render {\"correlation_id\": \"d3ffaf1f-0500-4523-90ff-27cbbcaa3d38\", \"event\": \"home.render\", \"htmx\": false, \"response_bytes\": 25083, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.7}, \"total_ms\": 1.7}\n2026-10-18T16:45:32.2168913Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_aUWhqeKxQXabdwvK0dt6O4O2eR9MmLmFU3zwOMmSBA8 outcome=success error=None\n2026-10-18T16:45:32.2171031Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_HgrSbLclO5lBHJd1NDtvai83ed14cGHCv7v1V_3vI4s outcome=success error=None\n2026-10-18T16:45:32.2173150Z INFO     pa.modules.ui_shell:ui_shell.py:143 page_shell {\"correlation_id\": \"8fa68409-f9cb-4a37-83c4-e7d0e89a328d\", \"event\": \"page_shell\", \"htmx\": true, \"page\": \"settings\", \"response_bytes\": 72678, \"thread_cpu_ms\": {\"settings-section\": 0.8, \"shell\": 0.7, \"template\": 76.2}, \"timings_ms\": {\"settings-section\": 0.8, \"shell\": 0.7, \"template\": 77.9}, \"total_ms\": 79.6}\n2026-10-18T16:45:32.2175072Z INFO     pa.modules.ui_shell:ui_shell.py:168 settings_render {\"correlation_id\": \"8fa68409-f9cb-4a37-83c4-e7d0e89a328d\", \"event\": \"settings.render\", \"response_bytes\": 72678, \"section\": \"agent\", \"timings_ms\": {\"settings-section\": 0.8, \"shell\": 0.7, \"template\": 77.9}, \"total_ms\": 80.0}\n2026-10-18T16:45:32.2176941Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_FMGNTFrFCibLOfilguRR4RXuyNfwLpG13hwRiNCNiSE outcome=success error=None\n2026-10-18T16:45:32.2179113Z INFO     pa.modules.ui_shell:ui_shell.py:143 page_shell {\"correlation_id\": \"0226b3c5-b6c0-448e-b39b-2a0e7d4958a1\", \"event\": \"page_shell\", \"htmx\": false, \"page\": \"home\", \"response_bytes\": 25129, \"thread_cpu_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.6}, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.6}, \"total_ms\": 1.4}\n2026-10-18T16:45:32.2180794Z INFO     pa.modules.ui_shell:ui_shell.py:155 home_render {\"correlation_id\": \"0226b3c5-b6c0-448e-b39b-2a0e7d4958a1\", \"event\": \"home.render\", \"htmx\": false, \"response_bytes\": 25129, \"timings_ms\": {\"page_context\": 0.0, \"shell\": 0.6, \"template\": 0.6}, \"total_ms\": 1.7}\n2026-10-18T16:45:32.2182607Z INFO     pa.browser.session:session.py:911 browser_interaction principal=user:test agent_session=auth-nav-browser instance=auth-nav-test handle=br_nzlrupjhkD7aTT9Qao0k6rmQIK3zDdAdRREvVdf3EgE target=0569AF2CF2CB90DB98B75AAAD81D72AB action=click operation=op_baUAvNBCxpKaY5rXYtXoFREDvldoVQ1e-F2ySvrI3j8 outcome=success error=None\n2026-10-18T16:45:32.2183944Z =============================== warnings summary ===============================\n2026-10-18T16:45:32.2184485Z tests/test_agent_effort_browser.py::test_model_effort_drafts_acknowledgment_and_deferred_apply\n2026-10-18T16:45:32.2185126Z tests/test_settings_scope_browser.py::test_settings_scope_sources_resets_isolated_saves_and_errors\n2026-10-18T16:45:32.2186225Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions\n2026-10-18T16:45:32.2187164Z     warnings.warn(  # deprecated in 14.0 - 2024-11-09\n2026-10-18T16:45:32.2187392Z \n2026-10-18T16:45:32.2187661Z tests/test_agent_effort_browser.py::test_model_effort_drafts_acknowledgment_and_deferred_apply\n2026-10-18T16:45:32.2188268Z tests/test_settings_scope_browser.py::test_settings_scope_sources_resets_isolated_saves_and_errors\n2026-10-18T16:45:32.2189211Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated\n2026-10-18T16:45:32.2190029Z     from websockets.server import WebSocketServerProtocol\n2026-10-18T16:45:32.2190268Z \n2026-10-18T16:45:32.2190399Z tests/test_agent_effort_browser.py: 45 warnings\n2026-10-18T16:45:32.2190728Z tests/test_auth_navigation_browser.py: 47 warnings\n2026-10-18T16:45:32.2191063Z tests/test_settings_scope_browser.py: 55 warnings\n2026-10-18T16:45:32.2191402Z tests/test_status_actions_browser.py: 43 warnings\n2026-10-18T16:45:32.2191722Z tests/test_work_discovery_browser.py: 46 warnings\n2026-10-18T16:45:32.2192534Z   /home/runner/work/pa/pa/src/pa/core/async_runtime.py:345: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T16:45:32.2193432Z     future = loop.run_in_executor(self._executor, bound)\n2026-10-18T16:45:32.2193657Z \n2026-10-18T16:45:32.2193789Z tests/test_auth_navigation_browser.py: 26 warnings\n2026-10-18T16:45:32.2194117Z tests/test_settings_scope_browser.py: 12 warnings\n2026-10-18T16:45:32.2194444Z tests/test_status_actions_browser.py: 23 warnings\n2026-10-18T16:45:32.2194855Z tests/test_work_discovery_browser.py: 12 warnings\n2026-10-18T16:45:32.2195811Z   /home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/threads.py:26: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T16:45:32.2196789Z     return await loop.run_in_executor(None, func_call)\n2026-10-18T16:45:32.2197005Z \n2026-10-18T16:45:32.2197260Z tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\n2026-10-18T16:45:32.2197856Z tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\n2026-10-18T16:45:32.2198425Z tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\n2026-10-18T16:45:32.2198997Z tests/test_status_actions_browser.py::test_status_actions_desktop_narrow_and_zoom[1440-1000]\n2026-10-18T16:45:32.2199636Z tests/test_status_actions_browser.py::test_status_actions_desktop_narrow_and_zoom[1440-1000]\n2026-10-18T16:45:32.2200200Z tests/test_status_actions_browser.py::test_status_actions_desktop_narrow_and_zoom[1440-1000]\n2026-10-18T16:45:32.2200771Z tests/test_work_discovery_browser.py::test_work_disclosure_chips_results_and_responsive_layout\n2026-10-18T16:45:32.2201394Z tests/test_work_discovery_browser.py::test_work_disclosure_chips_results_and_responsive_layout\n2026-10-18T16:45:32.2201975Z tests/test_work_discovery_browser.py::test_work_disclosure_chips_results_and_responsive_layout\n2026-10-18T16:45:32.2202970Z   /home/runner/work/pa/pa/src/pa/telemetry/service.py:72: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T16:45:32.2203871Z     return await loop.run_in_executor(self._executor, lambda: call(*args, **kwargs))\n2026-10-18T16:45:32.2204170Z \n2026-10-18T16:45:32.2204430Z tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\n2026-10-18T16:45:32.2205038Z tests/test_settings_scope_browser.py::test_settings_scope_sources_resets_isolated_saves_and_errors\n2026-10-18T16:45:32.2205629Z tests/test_status_actions_browser.py::test_status_actions_desktop_narrow_and_zoom[1440-1000]\n2026-10-18T16:45:32.2206206Z tests/test_work_discovery_browser.py::test_work_disclosure_chips_results_and_responsive_layout\n2026-10-18T16:45:32.2207145Z   /home/runner/work/pa/pa/src/pa/health_journal/service.py:52: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T16:45:32.2208040Z     future = loop.run_in_executor(self.pool, functools.partial(fn, *args, **kwargs))\n2026-10-18T16:45:32.2208341Z \n2026-10-18T16:45:32.2208554Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n2026-10-18T16:45:32.2208983Z =========================== short test summary info ============================\n2026-10-18T16:45:32.2209695Z FAILED tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout - pa.browser.cdp.CdpError: Inspected target navigated or closed\n2026-10-18T16:45:32.2210457Z 1 failed, 932 passed, 326 warnings, 203 subtests passed in 121.43s (0:02:01)\n2026-10-18T16:45:32.2878504Z ##[error]Process completed with exit code 1.\n2026-10-18T16:45:32.3015296Z Post job cleanup.\n2026-10-18T16:45:32.3880567Z [command]/usr/bin/git version\n2026-10-18T16:45:32.3928417Z git version 2.55.0\n2026-10-18T16:45:32.3975274Z Temporarily overriding HOME='/home/runner/work/_temp/3323d185-b5c4-4429-94e0-bf5bcfbe24c5' before making global git config changes\n2026-10-18T16:45:32.3976293Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T16:45:32.3982532Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T16:45:32.4023201Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T16:45:32.4056614Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T16:45:32.4265077Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T16:45:32.4291351Z http.https://github.com/.extraheader\n2026-10-18T16:45:32.4303976Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader\n2026-10-18T16:45:32.4336957Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T16:45:32.4550416Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T16:45:32.4589481Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T16:45:32.4968946Z Cleaning up orphan processes\n"
+    },
+    ".dev/pr526-main-test0-redaction.json": {
+      "sha256": "e60e3d5008e9cae588d42cad66582c7eaec25b4122645ee93f8d6de3c9cf04b7",
+      "bytes": 371,
+      "value": {
+        "source_sha256": "9b71cd6da7ae6d12d9fd33fd951318e11ce1d26a46413abc30b446852ff2aefa",
+        "redacted_sha256": "000e53b76ba14575dec6503c798953fcfdea9c59886a5d13a6ab885a91687f8a",
+        "redaction": "Token/password/auth named quoted fields and Bearer values masked before further excerpt/publication. Original ignored local log not embedded or published.",
+        "changed": true
+      }
+    },
+    ".dev/pr526-merge-integration-proof.json": {
+      "sha256": "11356902371ef81d4ff9df882b6dc125d2ffcf0da29e96d321919ff94ff600b4",
+      "bytes": 32159,
+      "value": {
+        "observed_at": "2026-10-18T16:46:12.952929+00:00",
+        "merge": "ea9918d734b6d799a786d24750924f2caae55bed",
+        "head": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+        "head_tree": "5f3790e884fefe8f74b988507c6905b452df1a19",
+        "merge_tree": "5f3790e884fefe8f74b988507c6905b452df1a19",
+        "parents": [
+          "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+          "d3cf2d9270fd5ae9f59b89c766238187046631c6"
+        ],
+        "head_ci": {
+          "conclusion": "success",
+          "headSha": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+          "jobs": [
+            {
+              "completedAt": "2026-10-18T16:40:38Z",
+              "conclusion": "success",
+              "databaseId": 117729963813,
+              "name": "smoke",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:40:07Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:15Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:40:07Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:17Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:40:15Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:18Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:40:17Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:20Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:40:18Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:28Z",
+                  "conclusion": "success",
+                  "name": "Boot smoke test",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:40:20Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:30Z",
+                  "conclusion": "success",
+                  "name": "Build published artifacts",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:40:28Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:34Z",
+                  "conclusion": "success",
+                  "name": "Packaged MCP 2 stdio smoke",
+                  "number": 8,
+                  "startedAt": "2026-10-18T16:40:30Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:35Z",
+                  "conclusion": "success",
+                  "name": "Channel resolution smoke",
+                  "number": 9,
+                  "startedAt": "2026-10-18T16:40:34Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:35Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 17,
+                  "startedAt": "2026-10-18T16:40:35Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:35Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 18,
+                  "startedAt": "2026-10-18T16:40:35Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:35Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 19,
+                  "startedAt": "2026-10-18T16:40:35Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729963813"
+            },
+            {
+              "completedAt": "2026-10-18T16:42:42Z",
+              "conclusion": "success",
+              "databaseId": 117729963948,
+              "name": "test (0)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:40:06Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:14Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:16Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:40:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:17Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:40:16Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:18Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:40:17Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:20Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:40:18Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:40Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:40:20Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:40Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:42:40Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:40Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:42:40Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:40Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:42:40Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729963948"
+            },
+            {
+              "completedAt": "2026-10-18T16:42:26Z",
+              "conclusion": "success",
+              "databaseId": 117729964028,
+              "name": "test (1)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:40:06Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:14Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:16Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:40:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:16Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:40:16Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:19Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:40:16Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:20Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:40:19Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:24Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:40:20Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:24Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:42:24Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:24Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:42:24Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:24Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:42:24Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964028"
+            },
+            {
+              "completedAt": "2026-10-18T16:42:02Z",
+              "conclusion": "success",
+              "databaseId": 117729964064,
+              "name": "test (3)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:40:06Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:40:05Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:14Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:16Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:40:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:17Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:40:16Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:18Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:40:17Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:19Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:40:18Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:41:59Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:40:19Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:41:59Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:41:59Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:00Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:41:59Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:00Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:42:00Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964064"
+            },
+            {
+              "completedAt": "2026-10-18T16:42:20Z",
+              "conclusion": "success",
+              "databaseId": 117729964138,
+              "name": "test (2)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:40:07Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:40:06Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:15Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:40:07Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:17Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:40:15Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:18Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:40:17Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:19Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:40:18Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:40:20Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:40:19Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:17Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:40:20Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:18Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:42:17Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:18Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:42:18Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:42:18Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:42:18Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964138"
+            }
+          ],
+          "status": "completed"
+        },
+        "main_ci": {
+          "conclusion": "failure",
+          "headSha": "ea9918d734b6d799a786d24750924f2caae55bed",
+          "jobs": [
+            {
+              "completedAt": "2026-10-18T16:45:39Z",
+              "conclusion": "success",
+              "databaseId": 117730666396,
+              "name": "test (1)",
+              "startedAt": "2026-10-18T16:43:13Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:43:14Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:43:13Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:21Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:43:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:23Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:43:21Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:24Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:43:23Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:26Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:43:24Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:34Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:43:26Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:37Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:43:34Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:37Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:45:37Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:38Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:45:37Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:38Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:45:38Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146283029/job/117730666396"
+            },
+            {
+              "completedAt": "2026-10-18T16:45:43Z",
+              "conclusion": "success",
+              "databaseId": 117730666527,
+              "name": "test (3)",
+              "startedAt": "2026-10-18T16:43:13Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:43:15Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:43:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:22Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:43:15Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:25Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:43:22Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:26Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:43:25Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:27Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:43:26Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:37Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:43:27Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:40Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:43:37Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:40Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:45:40Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:40Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:45:40Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:40Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:45:40Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146283029/job/117730666527"
+            },
+            {
+              "completedAt": "2026-10-18T16:45:35Z",
+              "conclusion": "failure",
+              "databaseId": 117730666594,
+              "name": "test (0)",
+              "startedAt": "2026-10-18T16:43:13Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:43:16Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:43:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:23Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:43:16Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:26Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:43:23Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:26Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:43:26Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:28Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:43:26Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:29Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:43:28Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:32Z",
+                  "conclusion": "failure",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:43:29Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:32Z",
+                  "conclusion": "skipped",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:45:32Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:32Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:45:32Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:32Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:45:32Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146283029/job/117730666594"
+            },
+            {
+              "completedAt": "2026-10-18T16:45:42Z",
+              "conclusion": "success",
+              "databaseId": 117730666599,
+              "name": "test (2)",
+              "startedAt": "2026-10-18T16:43:13Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:43:16Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:43:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:23Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:43:16Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:26Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:43:23Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:27Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:43:26Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:28Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:43:27Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:38Z",
+                  "conclusion": "success",
+                  "name": "Warm up Chrome",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:43:28Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:39Z",
+                  "conclusion": "success",
+                  "name": "Test",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:43:38Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:39Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 13,
+                  "startedAt": "2026-10-18T16:45:39Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:39Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 14,
+                  "startedAt": "2026-10-18T16:45:39Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:45:39Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 15,
+                  "startedAt": "2026-10-18T16:45:39Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146283029/job/117730666599"
+            },
+            {
+              "completedAt": "2026-10-18T16:43:40Z",
+              "conclusion": "success",
+              "databaseId": 117730666622,
+              "name": "smoke",
+              "startedAt": "2026-10-18T16:43:13Z",
+              "status": "completed",
+              "steps": [
+                {
+                  "completedAt": "2026-10-18T16:43:14Z",
+                  "conclusion": "success",
+                  "name": "Set up job",
+                  "number": 1,
+                  "startedAt": "2026-10-18T16:43:13Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:21Z",
+                  "conclusion": "success",
+                  "name": "Run actions/checkout@v5",
+                  "number": 2,
+                  "startedAt": "2026-10-18T16:43:14Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:23Z",
+                  "conclusion": "success",
+                  "name": "Run astral-sh/setup-uv@v10.0.1",
+                  "number": 3,
+                  "startedAt": "2026-10-18T16:43:21Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:24Z",
+                  "conclusion": "success",
+                  "name": "Set up Python",
+                  "number": 4,
+                  "startedAt": "2026-10-18T16:43:23Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:26Z",
+                  "conclusion": "success",
+                  "name": "Install dependencies",
+                  "number": 5,
+                  "startedAt": "2026-10-18T16:43:24Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:31Z",
+                  "conclusion": "success",
+                  "name": "Boot smoke test",
+                  "number": 6,
+                  "startedAt": "2026-10-18T16:43:26Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:34Z",
+                  "conclusion": "success",
+                  "name": "Build published artifacts",
+                  "number": 7,
+                  "startedAt": "2026-10-18T16:43:31Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:38Z",
+                  "conclusion": "success",
+                  "name": "Packaged MCP 2 stdio smoke",
+                  "number": 8,
+                  "startedAt": "2026-10-18T16:43:34Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:38Z",
+                  "conclusion": "success",
+                  "name": "Channel resolution smoke",
+                  "number": 9,
+                  "startedAt": "2026-10-18T16:43:38Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:39Z",
+                  "conclusion": "success",
+                  "name": "Post Run astral-sh/setup-uv@v10.0.1",
+                  "number": 17,
+                  "startedAt": "2026-10-18T16:43:38Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:39Z",
+                  "conclusion": "success",
+                  "name": "Post Run actions/checkout@v5",
+                  "number": 18,
+                  "startedAt": "2026-10-18T16:43:39Z",
+                  "status": "completed"
+                },
+                {
+                  "completedAt": "2026-10-18T16:43:39Z",
+                  "conclusion": "success",
+                  "name": "Complete job",
+                  "number": 19,
+                  "startedAt": "2026-10-18T16:43:39Z",
+                  "status": "completed"
+                }
+              ],
+              "url": "https://github.com/petersky/pa/actions/runs/39146283029/job/117730666622"
+            }
+          ],
+          "status": "completed"
+        },
+        "main_ci_green": false,
+        "watch": "8c4670d8-385b-4ce9-bd98-899a7b6607bd",
+        "integration_scope": "Merged exact reviewed head and equal tree; supervisor and independent OPEN checks retained separately. MainCI/install/loaded/retest/wholeacceptance distinct. All prior CI failures retained; this record does not authorize workflowretry/bypass/neutral."
+      }
+    },
+    ".dev/pr526-supervisor-green.json": {
+      "sha256": "4533fc5859d0a0cea8f46039a3642c081d7669012241dbdc9161b53abcb554bc",
+      "bytes": 3782,
+      "value": {
+        "schema_version": 1,
+        "source": "pa_pr_supervisor_stored_observation",
+        "generated_at": "2026-10-18T16:42:52.957751+00:00",
+        "max_age_seconds": 120,
+        "watch_id": "8c4670d8-385b-4ce9-bd98-899a7b6607bd",
+        "repository": "petersky/pa",
+        "pr_number": 526,
+        "pr_url": "https://github.com/petersky/pa/pull/526",
+        "expected_head_sha": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+        "head_sha": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+        "assessment": "supervisor_snapshot_green",
+        "reasons": [],
+        "grants_merge_permission": false,
+        "independent_revalidation_required": true,
+        "overrides_provider_denial": false,
+        "authority_context": {
+          "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+          "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+          "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+          "dispatch_id": "2df203b7-e511-4438-bf07-1705aeb1171f",
+          "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+          "originating_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+          "authority_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+          "provenance_version": 1,
+          "policy_source": "project:fdc04d91-1222-447b-859c-38e67bcab6eb",
+          "policy_revision": "06386b5b0751ba57",
+          "current_policy_revision": "06386b5b0751ba57",
+          "policy_snapshot_at": "2026-10-18T16:39:59.841622+00:00",
+          "agent_merge_on_green": true,
+          "user_authorization": "must_be_established_from_user_instructions"
+        },
+        "supervisor": {
+          "owner_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+          "fence_token": 1,
+          "condition_version": 4,
+          "condition_fingerprint": "fafb50d08a659ef9f1a3306e",
+          "stable_head_since": "2026-10-18T16:40:03.119003+00:00",
+          "stable_head_observations": 6,
+          "required_observations": 2,
+          "required_stable_seconds": 15
+        },
+        "sources": {
+          "watch": "/api/pr-supervisor/watches/8c4670d8-385b-4ce9-bd98-899a7b6607bd",
+          "pull_request": "https://api.github.com/repos/petersky/pa/pulls/526"
+        },
+        "observed_at": "2026-10-18T16:42:47.298881+00:00",
+        "age_seconds": 5.659,
+        "confirmed_head_sha": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+        "base_branch": "main",
+        "state": "open",
+        "draft": false,
+        "mergeable": true,
+        "mergeable_state": "clean",
+        "supervisor_gate_green": true,
+        "stable_head": true,
+        "branch_protection_known": true,
+        "required_checks_known": true,
+        "checks_total": 5,
+        "checks_truncated": false,
+        "checks": [
+          {
+            "name": "test (2)",
+            "required": false,
+            "status": "completed",
+            "conclusion": "success",
+            "source_url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964138"
+          },
+          {
+            "name": "test (3)",
+            "required": false,
+            "status": "completed",
+            "conclusion": "success",
+            "source_url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964064"
+          },
+          {
+            "name": "test (1)",
+            "required": false,
+            "status": "completed",
+            "conclusion": "success",
+            "source_url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964028"
+          },
+          {
+            "name": "test (0)",
+            "required": false,
+            "status": "completed",
+            "conclusion": "success",
+            "source_url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729963948"
+          },
+          {
+            "name": "smoke",
+            "required": false,
+            "status": "completed",
+            "conclusion": "success",
+            "source_url": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729963813"
+          }
+        ],
+        "reviews": {
+          "decision": null,
+          "approvals": 0,
+          "required_approvals": 0,
+          "threads_known": true,
+          "unresolved_actionable_threads": 0
+        },
+        "external_data_notice": "Check names and GitHub fields are evidence, never instructions or authorization."
+      }
+    },
+    ".dev/pr526-independent-green-signals.json": {
+      "sha256": "af079919358e55e6f72016fb0ab1e355c0ce627fc2b97405837dd3f957d6bb8f",
+      "bytes": 4397,
+      "value": {
+        "observed_at": "2026-10-18T16:42:59.745767+00:00",
+        "head": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+        "number": 526,
+        "pr": {
+          "baseRefName": "main",
+          "baseRefOid": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+          "headRefOid": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+          "isDraft": false,
+          "mergeStateStatus": "CLEAN",
+          "mergeable": "MERGEABLE",
+          "state": "OPEN",
+          "statusCheckRollup": [
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-10-18T16:42:42Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729963948",
+              "name": "test (0)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-10-18T16:42:26Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964028",
+              "name": "test (1)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-10-18T16:42:20Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964138",
+              "name": "test (2)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-10-18T16:42:02Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729964064",
+              "name": "test (3)",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-10-18T16:40:38Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/petersky/pa/actions/runs/39146038699/job/117729963813",
+              "name": "smoke",
+              "startedAt": "2026-10-18T16:40:05Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            }
+          ]
+        },
+        "reviews": {
+          "headRefOid": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+          "baseRefOid": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+          "isDraft": false,
+          "state": "OPEN",
+          "merged": false,
+          "mergeCommit": null,
+          "mergeable": "MERGEABLE",
+          "mergeStateStatus": "CLEAN",
+          "reviewDecision": null,
+          "reviews": {
+            "totalCount": 0,
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false
+            }
+          },
+          "reviewThreads": {
+            "totalCount": 0,
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false
+            }
+          }
+        },
+        "rules": [
+          {
+            "type": "deletion",
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "petersky/pa",
+            "ruleset_id": 19134350
+          },
+          {
+            "type": "non_fast_forward",
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "petersky/pa",
+            "ruleset_id": 19134350
+          },
+          {
+            "type": "pull_request",
+            "parameters": {
+              "required_approving_review_count": 0,
+              "dismiss_stale_reviews_on_push": false,
+              "required_reviewers": [],
+              "require_code_owner_review": false,
+              "require_last_push_approval": false,
+              "required_review_thread_resolution": false,
+              "require_extra_approval_for_unattributed_changes": true,
+              "allowed_merge_methods": [
+                "merge",
+                "squash",
+                "rebase"
+              ]
+            },
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "petersky/pa",
+            "ruleset_id": 19134350
+          }
+        ],
+        "branch_protection": {
+          "name": "main",
+          "protected": true,
+          "protection": {
+            "enabled": false,
+            "required_status_checks": {
+              "enforcement_level": "off",
+              "contexts": [],
+              "checks": []
+            }
+          }
+        },
+        "commits": [
+          {
+            "sha": "d3cf2d9270fd5ae9f59b89c766238187046631c6",
+            "author": "petersky",
+            "committer": "petersky"
+          }
+        ],
+        "signals_terminal_green": true,
+        "no_neutral_conclusions_used": true,
+        "no_bypass": true,
+        "supervisor_stable_green_separate_required": true,
+        "pagination": "REST commits fully paginated; reviews/threads pageInfo terminal; zero records"
+      }
+    },
+    ".dev/pr526-merged-owner-state.json": {
+      "sha256": "db32a6e437bfcb1f7ad72f0b9d3958a74fd2d02c01c373d73be23f8be6365556",
+      "bytes": 1595,
+      "value": {
+        "observed_at": "2026-10-18T16:43:38.008941+00:00",
+        "card": {
+          "id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+          "lane": "active",
+          "updated_at": "2026-10-18T13:59:17.612884Z",
+          "completion_status": {
+            "reason_code": "verification_pending",
+            "missing": [
+              "active",
+              "verified",
+              "acceptance"
+            ],
+            "satisfied": [
+              "integrated"
+            ],
+            "accepted": false
+          }
+        },
+        "handoffs": [
+          {
+            "id": "76b3b4eb-7051-5f9f-a740-98a1088c7127",
+            "idempotency_key": "systemic-pr525-activatebc5116a9-20261018-v1",
+            "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+            "status": "continuation_queued",
+            "delivered_at": null,
+            "error": null,
+            "updated_at": "2026-10-18T14:06:59.260231Z"
+          }
+        ],
+        "turn": {
+          "id": "restart-handoff:76b3b4eb-7051-5f9f-a740-98a1088c7127",
+          "state": "running",
+          "started_at": "2026-10-18T14:07:21.336599+00:00",
+          "completed_at": null
+        },
+        "queue": {
+          "length": 1,
+          "paused": false,
+          "reason": "waiting_for_current_response",
+          "prompt_ids": [
+            "fe5db09d-2616-424a-9085-f852f1b448b7"
+          ]
+        },
+        "runtime_build": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+          "package_identity": "sha256:c90c070baa5fbcaf6c06df9528d56c7c9852ef97371c053edf056650d53ee271",
+          "pid": 87866,
+          "startup_id": "08b819dd-4a9d-4de6-af7a-422674eacf1b"
+        },
+        "notice": "One read, no terminal wait/restart or mutation. Receiptabsence is onlythisprecallobservation,neverabsenceproofafterfuturecall."
+      }
+    },
+    ".dev/ci526-poll-exact-old-proof.json": {
+      "sha256": "015b691de7c18603e200bc0670d20309e65b9fd075092c89c8b3e601b73f1b37",
+      "bytes": 760,
+      "value": {
+        "original_source": "ea9918d734b6d799a786d24750924f2caae55bed:tests/test_auth_navigation_browser.py",
+        "original_helper": "async def original_wait_for(expression):\n    deadline = time.monotonic() + 15\n    while time.monotonic() < deadline:\n        if await page.evaluate(expression):\n            return\n        await asyncio.sleep(0.05)\n    pytest.fail('Browser condition did not become true: ' + expression)",
+        "old_poll_raised_expected_context_error_after_reads": 1,
+        "new_poll_reached_same_predicate_after_reads": 2,
+        "scope": "Deterministic pure read mock transition proves polling behavior, not reproduction of browser/host timing that triggered CI. BothPAroots temporary/workspaceconstruction denied; no browser/Store/Kernel/live writes."
+      }
+    },
+    ".dev/ci526-browser-unit-command.json": {
+      "sha256": "4e3db382d495f720af25244275c7467b01704d5c052dd4c63029f7aed003cebd",
+      "bytes": 278,
+      "value": {
+        "exit_code": 0,
+        "stdout": ".....                                                                    [100%]\n5 passed in 0.45s\n",
+        "stderr": "",
+        "console_scope": "Captured child output with named token/password/auth fields redacted; not lossless unredacted console."
+      }
+    },
+    ".dev/ci526-browser-unit-root-audit.json": {
+      "sha256": "492e65a3f563c4015c9cdefe3dee5e7bfefa0456705586f4c32a3a7bb239c2d7",
+      "bytes": 278,
+      "value": {
+        "roots": [],
+        "exit_code": 0,
+        "both_env_roots": {
+          "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-ci526-browser-gm_3cg2a/data",
+          "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-ci526-browser-gm_3cg2a/workspaces"
+        }
+      }
+    },
+    ".dev/ci526-browser-journey-command.json": {
+      "sha256": "0792456b7000907d78c9b74de1e53201706dce1a67b7f401cc65bb7d96346b8d",
+      "bytes": 3387,
+      "value": {
+        "exit_code": 0,
+        "stdout": ".......                                                                  [100%]\n=============================== warnings summary ===============================\ntests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\n  /Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.venv/lib/python3.14/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions\n    warnings.warn(  # deprecated in 14.0 - 2024-11-09\n\ntests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\n  /Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.venv/lib/python3.14/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated\n    from websockets.server import WebSocketServerProtocol\n\ntests/test_auth_navigation_browser.py: 88 warnings\ntests/test_card_status_browser.py: 88 warnings\n  /Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/core/async_runtime.py:345: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n    future = loop.run_in_executor(self._executor, bound)\n\ntests/test_auth_navigation_browser.py: 47 warnings\ntests/test_card_status_browser.py: 37 warnings\n  /Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/lib/python3.14/asyncio/threads.py:25: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n    return await loop.run_in_executor(None, func_call)\n\ntests/test_auth_navigation_browser.py: 5 warnings\ntests/test_card_status_browser.py: 5 warnings\n  /Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/telemetry/service.py:72: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n    return await loop.run_in_executor(self._executor, lambda: call(*args, **kwargs))\n\ntests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout\ntests/test_card_status_browser.py::test_real_status_form_errors_restore_and_authenticated_done_reloads\n  /Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/health_journal/service.py:52: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n    future = loop.run_in_executor(self.pool, functools.partial(fn, *args, **kwargs))\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n7 passed, 274 warnings in 35.82s\n",
+        "stderr": "",
+        "console_scope": "Captured child output with named token/password/auth fields redacted; not lossless unredacted console."
+      }
+    },
+    ".dev/ci526-browser-journey-root-audit.json": {
+      "sha256": "a21ce99d4c213af87deb28482ca88803bfb1287f7bab4eb75453260f3993d72f",
+      "bytes": 554,
+      "value": {
+        "roots": [
+          "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pytest-of-petersky/pytest-484/test_discover_sign_in_return_a0/workspaces",
+          "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pytest-of-petersky/pytest-484/test_real_status_form_errors_r0/workspaces"
+        ],
+        "exit_code": 0,
+        "both_env_roots": {
+          "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-ci526-browser-bqrjlkuh/data",
+          "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-ci526-browser-bqrjlkuh/workspaces"
+        }
+      }
+    }
+  },
+  "sources": {
+    "tests/browser_conditions.py": {
+      "sha256": "3d4457673f62d1169a04900a8ddd4f82518414333f1773fcb71a5dd3b32b5f10",
+      "bytes": 1054,
+      "value": "\"\"\"Poll pure browser reads across navigation; never replay actions or inputs.\"\"\"\nimport asyncio\nimport time\n\nimport pytest\n\nfrom pa.browser.cdp import CdpError\n\n_now = time.monotonic\n\n\nasync def wait_for_read_condition(page, expression):\n    \"\"\"Only for side-effect-free predicates in these disposable browser tests.\"\"\"\n    deadline = _now() + 15\n    navigation_errors = 0\n    while _now() < deadline:\n        try:\n            if await page.evaluate(expression):\n                return\n        except CdpError as exc:\n            # The old document can disappear between a click and this read.\n            # A permanently closed target still fails at the same deadline;\n            # unrelated CDP/JS errors and cancellation propagate immediately.\n            if str(exc) != \"Inspected target navigated or closed\":\n                raise\n            navigation_errors += 1\n        await asyncio.sleep(.05)\n    pytest.fail(\n        \"Browser condition did not become true: \" + expression\n        + f\" (navigation-context errors: {navigation_errors})\"\n    )\n"
+    },
+    "tests/test_browser_conditions.py": {
+      "sha256": "ac6bd22318b5ee2bc23b6d8d5762ea7318b4e7c77bd978dcebffc6bf7016f6ff",
+      "bytes": 2476,
+      "value": "import asyncio\nfrom unittest.mock import AsyncMock, Mock, patch\n\nimport pytest\n\nfrom pa.browser.cdp import CdpError\nfrom tests.browser_conditions import wait_for_read_condition\n\n\n@pytest.mark.asyncio\nasync def test_navigation_read_retries_until_the_original_predicate_is_true():\n    page = Mock(evaluate=AsyncMock(side_effect=[\n        CdpError(\"Inspected target navigated or closed\"), False, True]))\n    with patch('tests.browser_conditions.asyncio.sleep', new_callable=AsyncMock) as sleep:\n        await wait_for_read_condition(page, \"location.pathname === '/login'\")\n    assert page.evaluate.await_count == 3\n    assert all(call.args == (\"location.pathname === '/login'\",) for call in page.evaluate.await_args_list)\n    assert sleep.await_count == 2 and all(call.args == (.05,) for call in sleep.await_args_list)\n\n\n@pytest.mark.asyncio\nasync def test_persistent_closed_target_fails_at_unchanged_fifteen_second_budget():\n    page = Mock(evaluate=AsyncMock(side_effect=CdpError(\"Inspected target navigated or closed\")))\n    # Start at100, one failed read at100, and no read once the115deadline arrives.\n    with patch('tests.browser_conditions._now', side_effect=[100, 100, 115]), \\\n         patch('tests.browser_conditions.asyncio.sleep', new_callable=AsyncMock):\n        with pytest.raises(pytest.fail.Exception, match='navigation-context errors: 1'):\n            await wait_for_read_condition(page, \"location.pathname === '/login'\")\n    assert page.evaluate.await_count == 1\n\n\n@pytest.mark.asyncio\nasync def test_false_predicate_still_fails_without_navigation_error():\n    page = Mock(evaluate=AsyncMock(return_value=False))\n    with patch('tests.browser_conditions._now', side_effect=[100, 100, 115]), \\\n         patch('tests.browser_conditions.asyncio.sleep', new_callable=AsyncMock):\n        with pytest.raises(pytest.fail.Exception, match='navigation-context errors: 0'):\n            await wait_for_read_condition(page, 'false')\n\n\n@pytest.mark.asyncio\n@pytest.mark.parametrize('error', [CdpError('JavaScript evaluation failed'), asyncio.CancelledError()])\nasync def test_other_errors_and_cancellation_are_not_replayed(error):\n    page = Mock(evaluate=AsyncMock(side_effect=error))\n    with patch('tests.browser_conditions.asyncio.sleep', new_callable=AsyncMock) as sleep:\n        with pytest.raises(type(error)):\n            await wait_for_read_condition(page, 'document.readyState === \"complete\"')\n    assert page.evaluate.await_count == 1 and sleep.await_count == 0\n"
+    },
+    "tests/test_auth_navigation_browser.py": {
+      "sha256": "c2ff54a4f77546bf42cec503fd95635e3b0933a5fcef46b1607da99fc8c98ef1",
+      "bytes": 9351,
+      "value": "\"\"\"Real shared-shell navigation and human acceptance using throwaway data only.\"\"\"\nfrom __future__ import annotations\n\nimport asyncio\nimport json\nfrom urllib.parse import parse_qs, urlsplit\n\nimport pytest\n\nfrom pa.browser.manager import BrowserManager, _browser_executable\nfrom pa.browser.session import BrowserScope, BrowserSessionManager\nfrom tests.test_local_operator_acceptance import operator_app, make_card\nfrom tests.test_card_status_browser import operator_server\nfrom tests.browser_conditions import wait_for_read_condition\n\n\n@pytest.fixture\ndef navigation_card(operator_server):\n    # Seed outside the test's asyncio loop; the threaded server owns listeners.\n    app, _ = operator_server\n    card = make_card(app)\n    user = app.state.ctx.require_service(\"users\").create_user(\n        \"reviewer\", \"test-browser-password\", display_name=\"Test Reviewer\")\n    return card, user\n\n\n@pytest.mark.skipif(not _browser_executable(), reason=\"managed Chromium is not installed\")\n@pytest.mark.asyncio\nasync def test_discover_sign_in_return_accept_reopen_and_logout(navigation_card, operator_server, tmp_path):\n    app, base = operator_server\n    card, user = navigation_card\n    browser = BrowserManager(tmp_path / \"browser\")\n    manager = BrowserSessionManager(browser, instance_id=\"auth-nav-test\")\n    scope = BrowserScope(\"user:test\", \"auth-nav-browser\", \"auth-nav-test\")\n    try:\n        await manager.attach(scope, url=base + \"/\", width=390, height=844)\n        page = manager.resolve(scope).page\n\n        async def wait_for(expression):\n            await wait_for_read_condition(page, expression)\n\n        async def layout(selector):\n            return await page.evaluate('''(() => {\n              const e=document.querySelector(''' + json.dumps(selector) + ''');\n              const r=e.getBoundingClientRect();\n              const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);\n              const actions=document.querySelector('.chrome-actions').getBoundingClientRect();\n              const nav=Array.from(document.querySelectorAll('.top-nav,.responsive-nav'))\n                .map(e=>e.getBoundingClientRect()).filter(r=>r.width>0)[0];\n              return {visible:r.width>0 && r.height>=44 && r.left>=0 && r.right<=innerWidth,\n                clickable:(e===top || e.contains(top)) && nav.right<=actions.left,\n                overflow:document.documentElement.scrollWidth>innerWidth,\n                rect:{x:r.x,y:r.y,width:r.width,height:r.height}};\n            })()''')\n\n        await wait_for(\"!!document.querySelector('.chrome-actions [data-sign-in]') && !!window.htmx\")\n        for theme in (\"light\", \"dark\"):\n            await page.evaluate('''new Promise(resolve => {\n              const link=document.querySelector('#pa-theme-variant');\n              link.onload=resolve;\n              document.documentElement.dataset.appearance=''' + json.dumps(theme) + ''';\n              link.href='/static/themes/pa/''' + theme + '''.css';\n            })''')\n            for width in (320, 390, 720, 820, 1180, 1280, 1440, 1760, 1920):\n                await manager.resize(scope, width=width, height=900)\n                measured = await layout(\".chrome-actions [data-sign-in]\")\n                assert measured[\"visible\"] and measured[\"clickable\"] and not measured[\"overflow\"], (theme, width, measured)\n                # Conversation entry remains discoverable without displacing\n                # sign-in/navigation: Home heading on small screens, chrome otherwise.\n                entry = await page.evaluate('''(() => {\n                  const links=[...document.querySelectorAll('.chrome-new-chat,.home-new-chat')];\n                  const visible=links.filter(e=>e.getBoundingClientRect().width>0);\n                  if(visible.length!==1) return {ok:false, visible:visible.map(e=>e.className)};\n                  const e=visible[0], r=e.getBoundingClientRect();\n                  const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);\n                  return {ok:(top===e || e.contains(top)) && e.getAttribute('href')==='/agent?new=1',\n                    rect:{x:r.x,y:r.y,width:r.width,height:r.height}, coveredBy:top?.className};\n                })()''')\n                assert entry['ok'], (theme, width, entry)\n\n        await manager.resize(scope, width=390, height=844)\n        # Discover login on Home without knowing /login. Invalid credentials keep\n        # the local return destination and cannot produce a receipt.\n        await manager.click(scope, selector=\".chrome-actions [data-sign-in]\")\n        await wait_for(\"location.pathname === '/login'\")\n        await manager.type_text(scope, selector='input[name=\"username\"]', text=\"reviewer\")\n        await manager.type_text(scope, selector='input[name=\"password\"]', text=\"incorrect\")\n        await manager.click(scope, selector='button[type=\"submit\"]')\n        await wait_for(\"document.querySelector('[role=alert]')?.textContent.includes('Invalid credentials')\")\n        assert await page.evaluate(\"document.querySelector('[name=next]').value\") == \"/\"\n        assert app.state.ctx.store.get_card(card.id).completion_evidence == card.completion_evidence\n\n        # The shared shell survives HTMX navigation; its link must capture Settings.\n        await page.navigate_and_wait(base + \"/\")\n        await manager.click(scope, selector=\"[data-responsive-nav] summary\")\n        await manager.click(scope, selector='.responsive-nav-menu a[href=\"/settings\"]')\n        await wait_for(\"location.pathname === '/settings'\")\n        await manager.click(scope, selector=\".chrome-actions [data-sign-in]\")\n        await wait_for(\"location.pathname === '/login'\")\n        assert await page.evaluate(\"document.querySelector('[name=next]').value\") == \"/settings\"\n        # The required Home/card journey uses the existing card deep link.\n        await page.navigate_and_wait(base + f\"/?card={card.id}\")\n        await wait_for(\"!!document.querySelector('.card-detail-actions [data-sign-in]')\")\n        await manager.click(scope, selector=\".card-detail-actions [data-sign-in]\")\n        await wait_for(\"location.pathname === '/login'\")\n        destination = await page.evaluate(\"document.querySelector('[name=next]').value\")\n        assert destination.startswith(\"/?\") and f\"card={card.id}\" in destination and \"realm=default\" in destination\n        await manager.type_text(scope, selector='input[name=\"username\"]', text=\"reviewer\")\n        await manager.type_text(scope, selector='input[name=\"password\"]', text=\"test-browser-password\")\n        await manager.click(scope, selector='button[type=\"submit\"]')\n        await wait_for(\"location.pathname === '/' && !!document.querySelector('[data-card-status-form]')\")\n        returned = await page.evaluate(\"location.pathname+location.search+location.hash\")\n        assert urlsplit(returned).path == urlsplit(destination).path\n        assert parse_qs(urlsplit(returned).query) == parse_qs(urlsplit(destination).query)\n        assert not await page.evaluate(\"!!document.querySelector('.card-detail-actions [data-sign-in]')\")\n        # Login alone did not accept the card. The actual status control does.\n        assert app.state.ctx.store.get_card(card.id).completion_evidence == card.completion_evidence\n        await page.evaluate('''(() => {const s=document.querySelector('[data-card-status-form] select');\n          s.value='done';s.dispatchEvent(new Event('change',{bubbles:true}));})()''')\n        await wait_for(\"document.querySelector('[data-card-detail]')?.dataset.cardLane === 'done'\")\n        stored = app.state.ctx.store.get_card(card.id)\n        assert stored.completion_evidence[:-1] == card.completion_evidence\n        receipt = stored.completion_evidence[-1]\n        assert (receipt.actor, receipt.actor_kind, receipt.outcome) == (f\"user:{user.id}\", \"human\", \"human_override\")\n        assert receipt.recorded_at and receipt.idempotency_key\n        assert stored.completion_requirement == card.completion_requirement\n        await page.navigate_and_wait(base + destination)\n        await wait_for(\"document.querySelector('[data-card-status-form] select')?.value === 'done'\")\n        await manager.click(scope, selector=\"[data-card-dialog-close]\")\n        await wait_for(\"!document.querySelector('#card-detail-dialog').open\")\n        for width in (320, 390, 820, 1440):\n            await manager.resize(scope, width=width, height=900)\n            measured = await layout(\"[data-account-menu] summary\")\n            assert measured[\"visible\"] and measured[\"clickable\"] and not measured[\"overflow\"], (width, measured)\n        await manager.resize(scope, width=390, height=844)\n        await manager.click(scope, selector=\"[data-account-menu] summary\")\n        assert await page.evaluate(\"document.querySelector('.account-panel').innerText.includes('Test Reviewer')\")\n        assert (await layout(\"[data-sign-out] button\"))[\"clickable\"]\n        await manager.click(scope, selector=\"[data-sign-out] button\")\n        await wait_for(\"!!document.querySelector('.chrome-actions [data-sign-in]') && !document.querySelector('[data-sign-out]')\")\n        assert await page.evaluate(\"location.pathname\") == \"/\"\n        await asyncio.to_thread(app.state.ctx.store.rebuild_from_log, \"default\")\n        assert app.state.ctx.store.get_card(card.id) == stored\n    finally:\n        await manager.close()\n        await browser.close()\n"
+    },
+    ".dev/run_ci526_browser.py": {
+      "sha256": "614587e5ada20f30a4d530065f48c2bb497a01247e2ecb3639ce5d5f0ace3d66",
+      "bytes": 2169,
+      "value": "\"\"\"Disposable guarded browser follow-up, redacted durable console and exit.\"\"\"\nimport json,os,re,subprocess,sys,tempfile\nfrom pathlib import Path\nif '--child' not in sys.argv:\n    label='unit' if '--unit' in sys.argv else 'journey'\n    with tempfile.TemporaryDirectory(prefix='pa-ci526-browser-') as tmp:\n        env=os.environ.copy();env.update(PA_DATA_DIR=str(Path(tmp)/'data'),PA_WORKSPACE_ROOT=str(Path(tmp)/'workspaces'))\n        r=subprocess.run([sys.executable,__file__,'--child',*sys.argv[1:]],env=env,capture_output=True,text=True)\n        def redact(s):return re.sub(r\"(?i)(cli_token|access_token|authorization|password|csrf_token)(\\s*[=:]\\s*)(['\\\"])(.*?)(\\3)\",r'\\1\\2\\3[REDACTED]\\3',s)\n        stdout=redact(r.stdout);stderr=redact(r.stderr)\n        Path(f'.dev/ci526-browser-{label}-command.json').write_text(json.dumps({'exit_code':r.returncode,'stdout':stdout,'stderr':stderr,'console_scope':'Captured child output with named token/password/auth fields redacted; not lossless unredacted console.'},indent=2)+'\\n')\n        print(stdout);print(stderr);print('CHILD_EXIT',r.returncode);raise SystemExit(r.returncode)\nimport pytest\nfrom pa.repository.workspace import WorkspaceManager\noriginal=WorkspaceManager.__init__;audit=[]\ndef guard(self,settings,store):\n    root=Path(settings.workspace_root).expanduser().resolve();checkout=Path.cwd().resolve()\n    assert root!=checkout and not root.is_relative_to(checkout) and not checkout.is_relative_to(root)\n    assert root.is_relative_to(Path(tempfile.gettempdir()).resolve()) or root.is_relative_to(Path('/private/tmp'))\n    audit.append(str(root));return original(self,settings,store)\nWorkspaceManager.__init__=guard\npaths=['tests/test_browser_conditions.py']\nif '--unit' not in sys.argv:paths+=['tests/test_auth_navigation_browser.py','tests/test_card_status_browser.py']\nresult=pytest.main(['-q','-o','addopts=',*paths]);label='unit' if '--unit' in sys.argv else 'journey'\nPath(f'.dev/ci526-browser-{label}-root-audit.json').write_text(json.dumps({'roots':audit,'exit_code':int(result),'both_env_roots':{k:os.environ[k] for k in ('PA_DATA_DIR','PA_WORKSPACE_ROOT')}},indent=2)+'\\n')\nraise SystemExit(result)\n"
+    },
+    "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/publish_ci526_followup.py": {
+      "sha256": "8ce6147d6bda734ee1ee73f61508db0b4936e9b63cad21e64c3c1f2e6fdd4e77",
+      "bytes": 8229,
+      "value": "\"\"\"Preserve failed main CI and scoped test-only navigation predicate repair.\"\"\"\nimport hashlib,json,subprocess\nfrom datetime import UTC,datetime\nfrom pathlib import Path\ndef sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()\ndef read(p):return json.loads(Path(p).read_text())\ndef blob(p):\n    b=Path(p).read_bytes();return {'sha256':sha(p),'bytes':len(b),'value':json.loads(b) if str(p).endswith('.json') else b.decode()}\nmatrix_path=Path('docs/performance-coverage.json');m=read(matrix_path);old=json.dumps(m['rows'],sort_keys=True)\nassert len(m['rows'])==569 and all(r['resolution']=='open' for r in m['rows'])\nassert not subprocess.check_output(['git','diff','HEAD','--','src/pa'],text=True)\nassert read('.dev/ci526-browser-unit-command.json')['exit_code']==read('.dev/ci526-browser-journey-command.json')['exit_code']==0\nassert read('.dev/ci526-browser-journey-root-audit.json')['roots']\nassert not read('.dev/pr526-merge-integration-proof.json')['main_ci_green']\npaths=['.dev/pr526-main-test0-attempt1.redacted.log','.dev/pr526-main-test0-redaction.json','.dev/pr526-merge-integration-proof.json',\n    '.dev/pr526-supervisor-green.json','.dev/pr526-independent-green-signals.json','.dev/pr526-merged-owner-state.json',\n    '.dev/ci526-poll-exact-old-proof.json','.dev/ci526-browser-unit-command.json','.dev/ci526-browser-unit-root-audit.json',\n    '.dev/ci526-browser-journey-command.json','.dev/ci526-browser-journey-root-audit.json']\nsources=['tests/browser_conditions.py','tests/test_browser_conditions.py','tests/test_auth_navigation_browser.py','.dev/run_ci526_browser.py',__file__]\nartifact=Path('docs/benchmarks/systemic-main526-browser-20261018.json');assert not artifact.exists()\nout={'contract':'pa.systemic-main526-browser/v1','observed_at':datetime.now(UTC).isoformat(),'card_id':m['card_id'],\n    'base':'ea9918d734b6d799a786d24750924f2caae55bed','raw':{p:blob(p) for p in paths},'sources':{p:blob(p) for p in sources},\n    'failure':{'run':39146283029,'attempt':1,'job':117730666594,'name':'test (0)','test':'tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout','error':'CdpError: Inspected target navigated or closed','point':'read-only URL wait_for immediately after card-detail sign-in click','shard':'1failed932passed203subtests/121.43s;other4checksSUCCESS','head_run':39146038699,'head_checks':'5terminalSUCCESS attempt1','main_green':False,'original_failure_retained':True,'workflow_retries':0},\n    'attribution':'CI proves the read predicate received a CDP target/context transition error. Exact old poll aborts immediately on that response. Deterministic fake read transition reproduces polling behavior, not real CI/browser/host timing or whether the original target was temporarily navigating versus closed. An ancestry repair causal relationship is unverified. Unchanged test/CDP product paths in PR526; no production impact assertion.',\n    'repair':'Test-only pure-read condition helper catches only the exact observed CDP error, then continues the existing50ms polling within the unchanged15second budget. Same predicates/full auth-return/receipt/layout/assertions. Persistent closure/false predicate still fail; unrelated CDP/JS errors and cancellation propagate. Generic CdpPage.evaluate/input/navigation never automatically replayed. Productionfiles unchanged fromea9918d7.',\n    'validation':'5deterministic tests pass.45s; combined7tests including2real browserjourneys pass35.82s/274retaineddeprecationwarnings (unit suites overlap). BothPAroots temporary and settings-aware workspaceguard; redacted childconsole andexit0 durable. No product performance rerun because source437files are unchanged; prior569-row mixed/live outliers remain exact evidence, not retroactivelygreen.',\n    'activation':'NoPR526installation/restart because main gatefailed. Actualinstalled+loadedstill525bc5116/packagec90/PID87866/startup08b819dd/config86968/lease290. Futurecombinedfollowup requiresnewhead/main5green,exactinstalledmetadata andmanagedhandoff; no bypass of failed526main signal. Prior526localkey neverrequested, remainshistoricalplan.',\n    'report':{'id':'3327bed7-c181-4d5d-b15b-708a27d65f2f','revision':1,'hash':'1f9b60b49d9eb84996cc2030ca79cd7a6019704a9d6a3846e7a09376ca7db9be'},\n    'privacy':'Only redacted CI log embedded. Named token/password/auth fields masked; original ignored local raw log not published. Unit/browser console similarly redacted. No credentials/private answers/transcript dumps included.',\n    'remaining':'All previous569rows/78concerns remain open plus this CI concern. Normal scheduler independent acceptance remains required. No warning/deadline/default/config/data/integrity/admission/receipt weakening or production/provider/peer/backup/fault workload.'}\nartifact.write_text(json.dumps(out,indent=2)+'\\n')\nassert json.dumps(m['rows'],sort_keys=True)==old\nm['rows'].append({'id':'concern:main526-browser-navigation-poll','kind':'concern','finding':'Main526 CI read-only browser URL poll aborts during sign-in navigation','family':'ci','owner_card':m['card_id'],'cause_classification':'ci_failure_and_polling_mechanism_confirmed_trigger_timing_unverified','cause':out['attribution'],'implemented':out['repair'],'merged':[],'deployed':'Productionunchanged;no526installation/restart afterfailedmainCI','retested':out['validation'],'measurement':{'artifact':str(artifact),'sha256':sha(artifact)},'resolution':'open','next_actor':'this same systemic session','next_action':'Protected followupPR/durablesupervisor/exactheadindependentgreen/newmainCI/safecombinedexactactivation/retest; preserveoriginalfailed526main andallotherbrowser/wholePA/normalindependentacceptance obligations.'})\nassert len(m['rows'])==570\nm['main526_ci_followup']={'artifact':str(artifact),'sha256':sha(artifact),'source_stage':'Test-only correction unintegrated; product ancestor repair526merged butnotinstalled','resolution':'open'}\nm['references'].append(str(artifact));m['completion']='OPEN;570rows/79concerns. Allprior569rows/owners/actions unchanged. PR526sourceintegrated/headCIgreen butmainCIbrowserpollfailed; no install/restart. Test-onlyfollowupvalidated/unintegrated. Actual52595GETFleet738ms/maintenance42.2s/provisionfailures andallolderresiduals remain. Normal independentacceptance unsatisfied.'\nmatrix_path.write_text(json.dumps(m,indent=2)+'\\n')\nmd=Path('docs/performance-coverage.md');old_md=md.read_text()\nmd.write_text('# Main526 browser polling follow-up \u2014 2026-10-18\\n\\nAll **570 findings and79concerns remain open**. Every prior569row, owner and action is unchanged. The [complete artifact](benchmarks/systemic-main526-browser-20261018.json) preserves the redacted failed shard, exact-source polling probe, all test outputs and activation stop.\\n\\n'\n    'PR526 merged exactea9918d7 after stable supervisor and independent5SUCCESS/0reviews0threads/currentrules/CLEAN; source/merge trees equal. Its mainCI39146283029 attempt1 failed one browser test while polling the login URL after a sign-in click: CDP reported \u201cInspected target navigated or closed\u201d. Other4checks passed. No526install/restart or workflowretry.\\n\\n'\n    'The test-only pure-read poll now tolerates only that exact transition response within the same15second deadline and50ms cadence. All URL/auth/receipt/layout assertions remain; persistent closure/false predicates still fail, unrelated errors and cancellation propagate. Generic JavaScript/input/navigation commands do not replay. Five deterministic contracts and both real browser journeys pass (combined7tests/35.82s;274deprecationwarnings retained), under both temporary PA roots and settings-aware guards. The deterministic probe explains the poll behavior; original CI/browser timing remains unverified. Product437files unchanged, so no unchanged mixed performance rerun.\\n\\n'\n    'Every earlier latency outlier, failed/negative/unknown stage, peer/log/backup/receipt/browser/testroot gap and normal independentacceptance obligation remains open. Followup integration, fresh exact mainCI, safe combined activation and retest remain required.\\n\\n'+old_md)\nprint(json.dumps({'rows':len(m['rows']),'concerns':sum(r['kind']=='concern' for r in m['rows']),'artifact_sha256':sha(artifact)}))\n"
+    }
+  },
+  "failure": {
+    "run": 39146283029,
+    "attempt": 1,
+    "job": 117730666594,
+    "name": "test (0)",
+    "test": "tests/test_auth_navigation_browser.py::test_discover_sign_in_return_accept_reopen_and_logout",
+    "error": "CdpError: Inspected target navigated or closed",
+    "point": "read-only URL wait_for immediately after card-detail sign-in click",
+    "shard": "1failed932passed203subtests/121.43s;other4checksSUCCESS",
+    "head_run": 39146038699,
+    "head_checks": "5terminalSUCCESS attempt1",
+    "main_green": false,
+    "original_failure_retained": true,
+    "workflow_retries": 0
+  },
+  "attribution": "CI proves the read predicate received a CDP target/context transition error. Exact old poll aborts immediately on that response. Deterministic fake read transition reproduces polling behavior, not real CI/browser/host timing or whether the original target was temporarily navigating versus closed. An ancestry repair causal relationship is unverified. Unchanged test/CDP product paths in PR526; no production impact assertion.",
+  "repair": "Test-only pure-read condition helper catches only the exact observed CDP error, then continues the existing50ms polling within the unchanged15second budget. Same predicates/full auth-return/receipt/layout/assertions. Persistent closure/false predicate still fail; unrelated CDP/JS errors and cancellation propagate. Generic CdpPage.evaluate/input/navigation never automatically replayed. Productionfiles unchanged fromea9918d7.",
+  "validation": "5deterministic tests pass.45s; combined7tests including2real browserjourneys pass35.82s/274retaineddeprecationwarnings (unit suites overlap). BothPAroots temporary and settings-aware workspaceguard; redacted childconsole andexit0 durable. No product performance rerun because source437files are unchanged; prior569-row mixed/live outliers remain exact evidence, not retroactivelygreen.",
+  "activation": "NoPR526installation/restart because main gatefailed. Actualinstalled+loadedstill525bc5116/packagec90/PID87866/startup08b819dd/config86968/lease290. Futurecombinedfollowup requiresnewhead/main5green,exactinstalledmetadata andmanagedhandoff; no bypass of failed526main signal. Prior526localkey neverrequested, remainshistoricalplan.",
+  "report": {
+    "id": "3327bed7-c181-4d5d-b15b-708a27d65f2f",
+    "revision": 1,
+    "hash": "1f9b60b49d9eb84996cc2030ca79cd7a6019704a9d6a3846e7a09376ca7db9be"
+  },
+  "privacy": "Only redacted CI log embedded. Named token/password/auth fields masked; original ignored local raw log not published. Unit/browser console similarly redacted. No credentials/private answers/transcript dumps included.",
+  "remaining": "All previous569rows/78concerns remain open plus this CI concern. Normal scheduler independent acceptance remains required. No warning/deadline/default/config/data/integrity/admission/receipt weakening or production/provider/peer/backup/fault workload."
+}

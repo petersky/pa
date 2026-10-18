@@ -2,7 +2,7 @@
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
   "as_of": "2026-10-18T10:22:20.676947+00:00",
-  "completion": "OPEN;569rows/78concerns, all priorrows/owners/actions preserved. PR525strictloaded/retested with1Fleet738msoutlier andretainedstartup/maintenance/provisionfailures;newboundaryrepairunintegrated. Normal scheduler independentacceptance remainsunsatisfied.",
+  "completion": "OPEN;570rows/79concerns. Allprior569rows/owners/actions unchanged. PR526sourceintegrated/headCIgreen butmainCIbrowserpollfailed; no install/restart. Test-onlyfollowupvalidated/unintegrated. Actual52595GETFleet738ms/maintenance42.2s/provisionfailures andallolderresiduals remain. Normal independentacceptance unsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -113,7 +113,8 @@
     "docs/benchmarks/systemic-mirror-inventory-20261018.json",
     "docs/benchmarks/systemic-reference-index-20261018.json",
     "docs/benchmarks/systemic-525-loaded-20261018.json",
-    "docs/benchmarks/systemic-ancestor-boundaries-20261018.json"
+    "docs/benchmarks/systemic-ancestor-boundaries-20261018.json",
+    "docs/benchmarks/systemic-main526-browser-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -207972,6 +207973,26 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "ReadyprotectedPR/durablesupervisor/exactheadindependentgreen/mainCI/safeexactactivation/retest; continue everyremainingwholePAcriteria andnormalindependentacceptance."
+    },
+    {
+      "id": "concern:main526-browser-navigation-poll",
+      "kind": "concern",
+      "finding": "Main526 CI read-only browser URL poll aborts during sign-in navigation",
+      "family": "ci",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "ci_failure_and_polling_mechanism_confirmed_trigger_timing_unverified",
+      "cause": "CI proves the read predicate received a CDP target/context transition error. Exact old poll aborts immediately on that response. Deterministic fake read transition reproduces polling behavior, not real CI/browser/host timing or whether the original target was temporarily navigating versus closed. An ancestry repair causal relationship is unverified. Unchanged test/CDP product paths in PR526; no production impact assertion.",
+      "implemented": "Test-only pure-read condition helper catches only the exact observed CDP error, then continues the existing50ms polling within the unchanged15second budget. Same predicates/full auth-return/receipt/layout/assertions. Persistent closure/false predicate still fail; unrelated CDP/JS errors and cancellation propagate. Generic CdpPage.evaluate/input/navigation never automatically replayed. Productionfiles unchanged fromea9918d7.",
+      "merged": [],
+      "deployed": "Productionunchanged;no526installation/restart afterfailedmainCI",
+      "retested": "5deterministic tests pass.45s; combined7tests including2real browserjourneys pass35.82s/274retaineddeprecationwarnings (unit suites overlap). BothPAroots temporary and settings-aware workspaceguard; redacted childconsole andexit0 durable. No product performance rerun because source437files are unchanged; prior569-row mixed/live outliers remain exact evidence, not retroactivelygreen.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-main526-browser-20261018.json",
+        "sha256": "af587897f97a5ce7adf5ba3078c598f4d2bc191d2980c0e7228ee8ef384c75fa"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Protected followupPR/durablesupervisor/exactheadindependentgreen/newmainCI/safecombinedexactactivation/retest; preserveoriginalfailed526main andallotherbrowser/wholePA/normalindependentacceptance obligations."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -210528,5 +210549,11 @@
       "sync.object_collect": 3,
       "maintenance.run": 1
     }
+  },
+  "main526_ci_followup": {
+    "artifact": "docs/benchmarks/systemic-main526-browser-20261018.json",
+    "sha256": "af587897f97a5ce7adf5ba3078c598f4d2bc191d2980c0e7228ee8ef384c75fa",
+    "source_stage": "Test-only correction unintegrated; product ancestor repair526merged butnotinstalled",
+    "resolution": "open"
   }
 }
