@@ -1379,7 +1379,7 @@
   AgentChatWidget.prototype._renderHistoryNotice = function () {
     if (!this.els || !this.els.historyNotice) return;
     const pending = Object.values(this.livePendingEvents || {}).sort(function(a,b){return a.seq-b.seq;});
-    const gap = !!this.recentBootstrap || !!this.newerError || (!this.historyPreserveWindow && this.liveGapTarget > this.lastSeq);
+    const gap = !!this.recentBootstrap || (!this.historyPreserveWindow && (!!this.newerError || this.liveGapTarget > this.lastSeq));
     if (this.recentBootstrap) this.clearPlaceholder();
     this.els.historyNotice.hidden = !gap && !this.historyPreserveWindow && !this.hasNewer;
     let noticeText = gap
@@ -2269,15 +2269,17 @@
   AgentChatWidget.prototype.updateNewerControl = function () {
     if (!this.els || !this.els.loadNewer) return;
     const pending = this.historyPreserveWindow && this.liveGapTarget > this.lastSeq;
-    this.els.loadNewer.hidden = !this.hasNewer && !this.newerError && !pending;
+    const noticeOwnsRecovery = !!this.els.historyNotice && !this.historyPreserveWindow &&
+      (!!this.recentBootstrap || !!this.newerError || this.liveGapTarget > this.lastSeq);
+    this.els.loadNewer.hidden = noticeOwnsRecovery || (!this.hasNewer && !this.newerError && !pending);
     this.els.loadNewer.disabled = this.loadingNewer;
     this.els.loadNewer.textContent = this.loadingNewer
       ? "Loading…"
       : this.newerError ? "Retry loading newer messages" : "Load newer messages";
     this.els.loadNewer.setAttribute("aria-busy", this.loadingNewer ? "true" : "false");
     if (this.els.loadNewerStatus) {
-      this.els.loadNewerStatus.hidden = !this.newerError;
-      this.els.loadNewerStatus.textContent = this.newerError;
+      this.els.loadNewerStatus.hidden = noticeOwnsRecovery || !this.newerError;
+      this.els.loadNewerStatus.textContent = noticeOwnsRecovery ? "" : this.newerError;
     }
   };
 
