@@ -1,3 +1,92 @@
+# PR 513 activation and cold-reference query repair — 2026-10-18
+
+**All 545 findings and 60 concerns remain open.** The [full matrix](performance-coverage.json) preserves every previous row, owner and action. The [new evidence artifact](benchmarks/systemic-reference-index-20261018.json) contains every request, runtime family, maintenance phase, native comparison, test, sample journal and retained failure. Older checkpoints below remain historical evidence.
+
+PR 513 is integrated as `6d2febce` from head `cea5b15c`, watch `e9c3f52a`. Independent protected-merge validation and five successful checks each on head CI 39108399380 and main CI 39108646308 are recorded separately. Immutable installation verifies 437 source files, VCS identity, 38 compiled templates, 52 unchanged dependency versions and unchanged configuration. Server capture independently proves source `6d2`, package `8003`, new PID 35604, startup `63967eed`, configuration `86968`, lease 290 and handoff `36489b59` with no error. Its continuation can remain queued while this turn runs. Installation, activation and acceptance are separate states.
+
+The local source is macbook `0c7d8ecb`, using supported owner HTTP reads. The request window is 2026-10-18T07:51:15.516088+00:00–2026-10-18T07:51:47.972025+00:00; the full runtime snapshot is from 2026-10-18T07:51:56.418437+00:00. No peer logs/builds were read and no extra provider, backup or peer workload was injected.
+
+All 95 sequential requests returned HTTP 200, but status (621.730ms), Fleet (697.381ms) and fleet overview (650.208ms) exceed 500ms. The Fleet outlier has context 402.2ms wall/173.4ms CPU, shell 108.2/8.5, template 51.3/50.5 and total server 564.5/235.3; helper time is 697.381ms. Sizes are decoded bytes, not wire bytes. With five page samples, p95 and p99 equal maximum. The first sample is not guaranteed cold, and this window is not acceptance.
+
+| Request | n | p50 / p95 / p99 / max ms | >=500ms | Max decoded bytes |
+|---|---:|---|---:|---:|
+|/|5|29.639 / 35.134 / 35.134 / 35.134|0|25464|
+|/agent|5|107.822 / 169.314 / 169.314 / 169.314|0|117631|
+|/api/fleet/overview|5|163.861 / 650.208 / 650.208 / 650.208|1|936106|
+|/api/health|20|21.304 / 53.954 / 180.961 / 180.961|0|15|
+|/api/runtime|20|77.582 / 120.636 / 173.812 / 173.812|0|330225|
+|/api/status|20|78.169 / 263.554 / 621.73 / 621.73|1|2824|
+|/fleet|5|310.973 / 697.381 / 697.381 / 697.381|1|1185134|
+|/pull-requests|5|52.429 / 109.106 / 109.106 / 109.106|0|25121|
+|/settings?section=agent|5|56.697 / 73.379 / 73.379 / 73.379|0|100559|
+|/work|5|42.984 / 461.229 / 461.229 / 461.229|0|31323|
+
+The separate runtime inventory retains all 81 operations, 24 route groups and 47 slow observations (capacity 64). Thirty-one process maxima exceed 500ms. Workspace provisioning failed once in seven submissions; its cause remains unknown. Process counters and maxima differ from bounded rolling percentiles, operation budgets and the request window above. An initial report said 30 tails; the programmatic correction to 31 preserves the unchanged raw snapshot. Every earlier name and failure remains open.
+
+| Operation | Submitted | Failed / timed out | Window p50 / p95 / p99 ms | Process max ms | Budget slow calls |
+|---|---:|---|---|---:|---:|
+|agent.startup_state_read|1|0 / 0|6224.207 / 6224.207 / 6224.207|6224.207|1|
+|dispatch.completion_pending_read|38|0 / 0|1.762 / 391.299 / 595.297|595.297|1|
+|dispatch.followup_pending_read|38|0 / 0|2.512 / 46.443 / 849.481|849.481|1|
+|dispatch.record_read|560|0 / 0|19.29 / 39.401 / 348.713|711.908|2|
+|filesystem.github_credentials_read|75|0 / 0|1.522 / 57.743 / 717.261|717.261|0|
+|fleet.overview.reachability|13|0 / 0|8.815 / 1217.209 / 1217.209|1217.209|1|
+|fleet.overview.status|13|0 / 0|9.075 / 1223.577 / 1223.577|1223.577|1|
+|fleet.overview.sync|16|0 / 0|44.145 / 1851.481 / 1851.481|1851.481|1|
+|fleet.overview_cache_read|545|0 / 0|1.474 / 9.539 / 101.867|1336.031|8|
+|fleet.overview_cache_write|159|0 / 0|12.464 / 179.606 / 608.575|1198.017|3|
+|fleet.overview_response_json|117|0 / 0|5.718 / 65.19 / 1319.814|1320.128|2|
+|goal.dispatch_lifecycle_index|8|0 / 0|0.492 / 1216.277 / 1216.277|1216.277|1|
+|health.canonical_obligation|33|0 / 0|44.383 / 890.316 / 2188.179|2188.179|3|
+|http.fleet_overview|117|0 / 0|137.885 / 2604.206 / 2669.586|3786.88|0|
+|http.github|1|0 / 0|659.008 / 659.008 / 659.008|659.008|0|
+|http.pr_supervisor_peer|544|0 / 0|46.099 / 103.13 / 268.348|801.701|0|
+|maintenance.run|1|0 / 0|36911.944 / 36911.944 / 36911.944|36911.944|1|
+|progress.checkpoint_write|4|0 / 0|279.495 / 558.775 / 558.775|558.775|1|
+|progress.pending_read|63|0 / 0|11.018 / 47.92 / 531.807|531.807|1|
+|reconciliation.dispatch_read|186|0 / 0|1.878 / 77.863 / 1222.372|3540.773|3|
+|reconciliation.session_read|111|0 / 0|2.043 / 56.027 / 776.712|1336.7|2|
+|sqlite.agent_session_save|36|0 / 0|11.828 / 113.766 / 5347.708|5347.708|1|
+|sqlite.pr_supervisor_watch_write|272|0 / 0|8.885 / 78.0 / 117.155|1296.594|1|
+|sqlite.project_read|567|0 / 0|0.832 / 15.978 / 104.1|871.792|1|
+|startup.openapi|1|0 / 0|1094.203 / 1094.203 / 1094.203|1094.203|1|
+|sync.peer_http|15|0 / 0|76.177 / 2094.408 / 2094.408|2094.408|0|
+|sync.reconcile_head|15|0 / 0|562.06 / 4196.046 / 4196.046|4196.046|8|
+|sync.startup_reconcile|1|0 / 0|1277.43 / 1277.43 / 1277.43|1277.43|1|
+|workspace.collect_garbage|1|0 / 0|9831.295 / 9831.295 / 9831.295|9831.295|1|
+|workspace.project_provision|7|1 / 0|1993.277 / 2550.837 / 2550.837|2550.837|0|
+|workspace.reconcile_terminal_state|1|0 / 0|1362.125 / 1362.125 / 1362.125|1362.125|0|
+
+Cached startup maintenance still takes 36.906s wall/16.602s thread CPU: retention 10.139s, migration plus first health 7.782s, projection database 10.953s, transcript database 4.694s and final fresh health 2.401s. Projection full checks take 2.617s/0.842s around 7.404s VACUUM. The transcript full check takes 4.519s without VACUUM. Parent intervals include children; wall minus CPU does not partition disk, SQLite busy wait or GIL delay. First/final freshness, the missing object and running migration remain distinct. Passive host counters have only collection endpoints, a cumulative first row and buffered interval estimates; they do not establish PA physical I/O or causal pairing.
+
+The candidate adds a two-line partial covering index for **event-derived** cold-reference discovery. A disposable 441,790,464-byte database contains 544,320 events, 12,096 cold rows and 6,048 distinct hashes. Thirty alternating pairs return the exact same complete hash set, including a reference with missing metadata and file. The plan changes from a table scan plus temporary DISTINCT to a covering index. Progress-handler groups fall from 1,675 to 48 (1,000 VM steps per group); query p95 falls from 646.839ms to 25.008ms and maximum from 2002.672ms to 25.048ms. All samples remain. Diagnostic results, both fresh health checks, integrity, transactions, audit, reference counts, GC, pins, backup, retention policy, durability, defaults and thresholds are preserved.
+
+The costs remain visible: one initial index build takes 1823.978ms wall/814.097ms CPU and adds 223 pages (913,408 logical bytes). Fifteen 100-event/20-cold append pairs have p95 69.408/59.298ms. A separate five-pair-per-case WAL probe has identical hot-only frame counts, but cold batches add 3–11 frames and mixed batches add 9–12 frames per 100 events. These are logical frame/file measurements, not device writes or fsync attribution. Existing-database upgrade, idempotent reopening, pinned WAL readers, new publication, replacement, prune, missing metadata and retained quick_check pass.
+
+**Full health is not fixed.** Six pairs have baseline/candidate p50 2052.454/2611.231ms (worse) and p95 5128.379/4565.713ms. Every wall/CPU array and alternating position is retained; no overall health speedup or live causal share is claimed. Full integrity and file checks remain slow, and the initial index upgrade can itself exceed 500ms.
+
+Validation retains one baseline failure/two passes, then 54 storage/retention/maintenance passes, 65 backup passes plus 16 subtests, and two negative constructor-root escape passes. Both PA roots are temporary and guarded. Earlier mixed-run notes incorrectly claimed a constructor guard absent from the inspected runner/script; explicit temporary settings were present, with no evidence of live writes. The correction preserves all older evidence. The benchmark now checks roots throughout boot/lifespan and returns its audit. The initial new helper failed before importing PA because `/var` was compared with resolved `/private/var`; that failure is archived, then the path was resolved and the same wheel reverified.
+
+Both completed mixed stages retain 9,600 ordered active events, expire 5,000 synthetic events under unchanged policy with 16 audit proofs, and have zero operation failures/timeouts/rejections. Their scale differs from the large native query fixture. The first stage takes 92.687s with three worker warnings and six violations: binding 1/max 508.004ms, push 1/max 549.508ms and object collection 4/max 1172.401ms. All 7,221 records remain. Its synchronous journal took 2086.815ms total, with a 168.302ms loop-blocking flush. That observed harness stall justified one replay with serialized, awaited off-loop persistence. The first benchmark source is reconstructed and verified against its recorded SHA `83f662bf`; original custody is not invented.
+
+The final stage uses the same 437-file wheel, 29 matching runtime module hashes, 38 templates and workload. Each latency/error/status/decoded-byte record is hash-chained and flushed before its producer continues. Persistence adds work and has no power-loss/fsync guarantee; these are not controlled whole-system before/after comparisons. Final warnings and every threshold violation remain:
+
+`{"warnings": {}, "violations": {"maintenance.run": 1, "/api/agent/history/session-0?limit=64&message_boundaries=true": 1, "sync.object_collect": 3}}`
+
+| Final mixed residual | n | p50 / p95 / p99 / max ms | Violations |
+|---|---:|---|---:|
+|maintenance.run|1|547.201 / 547.201 / 547.201 / 547.201|1|
+|/api/agent/history/session-0?limit=64&message_boundaries=true|100|185.235 / 318.032 / 490.982 / 528.934|1|
+|sync.object_collect|10|279.003 / 1799.271 / 1799.271 / 1799.271|3|
+
+The final journal verifies 7221 records. Writer wall total/max is 2257.749/27.778ms off-loop, not loop-block time. Premeasurement boot/seeding retains 2 slow calls and schema 1327.277ms; loop maximum 216.553ms is separate. Full queue/service/CPU/SQL/filesystem/GC/byte evidence remains.
+
+Every original family remains open: shared locks/queues and native SQLite busy/WAL/fsync/disk/GIL/GC; full health, VACUUM and freshness; Kernel/OpenAPI/MCP/provider startup; transcript history/drain; sync/object collection and call amplification; Fleet/pages/payloads/nonempty active watches; placement/workspace failures and real external APIs; peer identity/build/log/retention gaps; 5.64MB dropped logs and 2,396 status-file failures; receipt/attachment/lost-raw/test-root concerns; and original 505 DOM, 507 native Tab and 508 CI contradictory-signal causes. The matrix retains all 140 slow names, 181 baseline operations, 115 baseline routes, six page shells and 14 startup records. The new row is a query concern, not an invented live operation name.
+
+Backup card0331/session18fc/dispatchc5/fence308 retains missing cold object5cbb (one reference,819bytes,Sep20), its pending source question, failed backup355, eight archives,207failures/zeroverified, paused automation and unaccepted requirementb527. No backup retry/recovery/restore/delete/ref drop/placeholder/admission or competing worker. Database card89957's accepted originalPR471scope stays closed. Ten attachments, eight preserved empty locks and unknown receipt identities remain. Systemic requirement17d034a6/independent_agent_v1/userlocal/macbook is unchanged; the normal PA scheduler owns independent acceptance. CardActive, integrated-only, acceptedfalse. The new index is source-only and still requires protected review, exact activation and retest. No Done follows from a PR, merge, install, activation or small window.
+
+---
+
 # Loaded PR512 retest and remaining mirror inventory calls — 2026-10-18
 
 **All 544 rows and 59 concerns remain open.** [Full matrix](performance-coverage.json); [every new sample, runtime family, maintenance phase, paired comparison and test result](benchmarks/systemic-mirror-inventory-20261018.json). Earlier checkpoints below remain historical evidence.

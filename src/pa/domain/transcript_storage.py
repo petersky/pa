@@ -145,6 +145,8 @@ class TranscriptStorage:
                     ON transcript_events(session_id, seq);
                 CREATE INDEX IF NOT EXISTS idx_transcript_events_session_type_seq
                     ON transcript_events(session_id, event_type, seq);
+                CREATE INDEX IF NOT EXISTS idx_transcript_events_cold_hash
+                    ON transcript_events(cold_hash) WHERE cold_hash IS NOT NULL;
                 CREATE TABLE IF NOT EXISTS transcript_objects (
                     hash TEXT PRIMARY KEY,
                     codec TEXT NOT NULL,

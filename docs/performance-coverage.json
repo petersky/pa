@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T07:37:22.162087+00:00",
-  "completion": "OPEN544rows59concerns/all140slownames181baselineops115baselineroutes6shells14startuprecords/allpriorowners/outliers/10attachments. DB89957 originalacceptedPR471scopeclosed. Backup0331/18fc/b527/missing5cbb/failed355/8archives/207failures0verified/paused/pendingquestion retains separate scope, no retry/recovery/admission. Requirement17d034a6 explicit_acceptance/independent_agent_v1/userlocal/macbook unchanged; normal PA scheduler owns independent final acceptance. Active/integratedonly/acceptedfalse.",
+  "as_of": "2026-10-18T08:06:40.432732+00:00",
+  "completion": "OPEN545rows60concerns/all140slownames181baselineops115baselineroutes6shells14startuprecords/allpriorowners/outliers/10attachments. Active/17d034a6 explicit_acceptance/independent_agent_v1/userlocal/macbook/integratedonly/acceptedfalse. Normal PA scheduler owns independent final acceptance. DB89957 originalPR471accepted closed; backup0331/18fc/c5/fence308 owns missing5cbb/ref1/819bytes/Sep20/pending sourcequestion/failed355/all8archives/207failures0verified/paused/b527unaccepted. No retry/recovery/restore/delete/refdrop/placeholder/admission/competingworker.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -110,7 +110,8 @@
     "docs/benchmarks/systemic-prune-rollback-20261018.json",
     "docs/benchmarks/systemic-maintenance-phases-20261018.json",
     "docs/benchmarks/systemic-prune-inventory-20261018.json",
-    "docs/benchmarks/systemic-mirror-inventory-20261018.json"
+    "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+    "docs/benchmarks/systemic-reference-index-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -679,6 +680,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.reconcile_head",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.reconcile_head",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -1934,6 +1941,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.transcript_append",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.transcript_append",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -2951,6 +2964,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.collect_garbage",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.collect_garbage",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -3691,6 +3710,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview.sync",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview.sync",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -4363,6 +4388,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.recovery_sessions",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.recovery_sessions",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -4840,6 +4871,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.heartbeat_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.heartbeat_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -5385,6 +5422,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_due_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_due_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -6090,6 +6133,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.dispatch_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.dispatch_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -6657,6 +6706,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.commit_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.commit_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -7224,6 +7279,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview_cache_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview_cache_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -7997,6 +8058,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_completion_due_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -8564,6 +8631,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "acp.wire_append",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "acp.wire_append",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -9041,6 +9114,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.agent_session_save",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.agent_session_save",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -9608,6 +9687,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.sequence_allocate",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.sequence_allocate",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -10085,6 +10170,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.project_provision",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.project_provision",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -10562,6 +10653,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "reconciliation.completion_evidence_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "reconciliation.completion_evidence_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -11039,6 +11136,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.project_recovery_availability",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.project_recovery_availability",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -11405,6 +11508,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.startup_state_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.startup_state_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -12110,6 +12219,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.lease_renew",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.lease_renew",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -12795,6 +12910,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.ref_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.ref_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -13256,6 +13377,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.agent_runtime_checkpoint",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -13823,6 +13950,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "reconciliation.dispatch_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "reconciliation.dispatch_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -14368,6 +14501,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.completion_pending_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.completion_pending_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -14897,6 +15036,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_capability_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -15442,6 +15587,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.pending_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.pending_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -16009,6 +16160,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.checkpoint_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.checkpoint_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -16554,6 +16711,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.followup_pending_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.followup_pending_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -17477,6 +17640,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.card_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.card_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -17954,6 +18123,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.json_decode",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.json_decode",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -18623,6 +18798,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoff_completion",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoff_completion",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -19279,6 +19460,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "reconciliation.session_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "reconciliation.session_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -19846,6 +20033,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview_cache_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview_cache_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -20323,6 +20516,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.repository_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.repository_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -20800,6 +20999,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview_response_json",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview_response_json",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -21345,6 +21550,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview.status",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview.status",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -22289,6 +22500,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "notifications.list_page",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "notifications.list_page",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -22750,6 +22967,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_watch_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -23225,6 +23448,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoffs_pending",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoffs_pending",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -23683,6 +23912,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "preferences.agent_auto_approve_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "preferences.agent_auto_approve_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -24410,6 +24645,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "health.canonical_obligation",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "health.canonical_obligation",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -24887,6 +25128,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_event_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -25423,6 +25670,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_watch_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -25900,6 +26153,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoffs_watchdog",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoffs_watchdog",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -26426,6 +26685,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "filesystem.github_credentials_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "filesystem.github_credentials_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -26887,6 +27152,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.project_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.project_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -27429,6 +27700,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "goal.dispatch_lifecycle_index",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "goal.dispatch_lifecycle_index",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -27906,6 +28183,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoff_session",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoff_session",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -28483,6 +28766,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "pr_supervisor.response_json",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "pr_supervisor.response_json",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -28944,6 +29233,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.record_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.record_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -29470,6 +29765,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.agent_session_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.agent_session_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -29802,6 +30103,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "pr_supervisor.github_response_json",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "pr_supervisor.github_response_json",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -30752,6 +31059,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview.reachability",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview.reachability",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -32691,6 +33004,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.provider_resolve",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.provider_resolve",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -33184,6 +33503,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.startup_reconcile",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.startup_reconcile",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -33513,6 +33838,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "selection.prompt_identity",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "selection.prompt_identity",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -34742,6 +35073,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.prompt_compose",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.prompt_compose",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -35299,6 +35636,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "notifications.present_page",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "notifications.present_page",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -36267,6 +36610,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "selection.configuration_receipt",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "selection.configuration_receipt",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -36986,6 +37335,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.recovery_snapshot",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.recovery_snapshot",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -38981,6 +39336,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.reconcile_head",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.reconcile_head",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -40954,6 +41315,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.peer_http",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.peer_http",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -41946,6 +42313,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "maintenance.run",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "maintenance.run",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -42672,6 +43045,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.heartbeat_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.heartbeat_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -43483,6 +43862,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.transcript_append",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.transcript_append",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -44294,6 +44679,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_due_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_due_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -45020,6 +45411,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.dispatch_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.dispatch_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -45808,6 +46205,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "http.fleet_overview",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "http.fleet_overview",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -46531,6 +46934,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "http.pr_supervisor_peer",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "http.pr_supervisor_peer",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -47257,6 +47666,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.lease_renew",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.lease_renew",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -47983,6 +48398,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.agent_session_save",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.agent_session_save",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -48810,6 +49231,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.sequence_allocate",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.sequence_allocate",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -49637,6 +50064,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "acp.wire_append",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "acp.wire_append",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -50377,6 +50810,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.collect_garbage",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.collect_garbage",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -51392,6 +51831,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "reconciliation.dispatch_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "reconciliation.dispatch_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -52203,6 +52648,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.completion_pending_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.completion_pending_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -52926,6 +53377,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "http.github",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "http.github",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -53670,6 +54127,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.startup_state_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.startup_state_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -54497,6 +54960,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.checkpoint_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.checkpoint_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -55308,6 +55777,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "progress.pending_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "progress.pending_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -56034,6 +56509,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.recovery_sessions",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.recovery_sessions",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -56845,6 +57326,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.ref_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.ref_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -57762,6 +58249,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.json_decode",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.json_decode",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -58573,6 +59066,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview.sync",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview.sync",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -59487,6 +59986,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.project_provision",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.project_provision",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -60912,6 +61417,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "reconciliation.session_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "reconciliation.session_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -61987,6 +62498,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview.status",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview.status",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -62983,6 +63500,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoffs_pending",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoffs_pending",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -63706,6 +64229,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "preferences.agent_auto_approve_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "preferences.agent_auto_approve_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -64629,6 +65158,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_event_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -65440,6 +65975,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.followup_pending_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.followup_pending_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -66166,6 +66707,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_watch_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -66892,6 +67439,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoffs_watchdog",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoffs_watchdog",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -67618,6 +68171,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_watch_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -68344,6 +68903,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoff_completion",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoff_completion",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -69152,6 +69717,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "goal.dispatch_lifecycle_index",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "goal.dispatch_lifecycle_index",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -69979,6 +70550,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview_cache_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview_cache_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -70806,6 +71383,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview_cache_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview_cache_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -71532,6 +72115,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoff_session",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoff_session",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -72672,6 +73261,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.card_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.card_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -73398,6 +73993,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "reconciliation.completion_evidence_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "reconciliation.completion_evidence_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -74124,6 +74725,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.project_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.project_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -74850,6 +75457,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.record_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.record_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -75576,6 +76189,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "pr_supervisor.github_response_json",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "pr_supervisor.github_response_json",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -76631,6 +77250,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview_response_json",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview_response_json",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -77439,6 +78064,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "health.canonical_obligation",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "health.canonical_obligation",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -78165,6 +78796,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.project_recovery_availability",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.project_recovery_availability",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -78992,6 +79629,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.commit_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.commit_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -79788,6 +80431,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "notifications.list_page",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "notifications.list_page",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -80587,6 +81236,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.agent_session_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.agent_session_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -81398,6 +82053,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_completion_due_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -82394,6 +83055,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "filesystem.github_credentials_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "filesystem.github_credentials_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -84104,6 +84771,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.overview.reachability",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.overview.reachability",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -85191,6 +85864,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.provider_resolve",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.provider_resolve",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -86296,6 +86975,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "selection.prompt_identity",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "selection.prompt_identity",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -87738,6 +88423,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.reconcile_terminal_state",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.reconcile_terminal_state",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -88464,6 +89155,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.repository_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.repository_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -89258,6 +89955,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.prompt_compose",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.prompt_compose",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -90122,6 +90825,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "notifications.present_page",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "notifications.present_page",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -90862,6 +91571,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.startup_reconcile",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.startup_reconcile",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -91588,6 +92303,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "pr_supervisor.response_json",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "pr_supervisor.response_json",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -93267,6 +93988,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.agent_runtime_checkpoint",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -94246,6 +94973,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "selection.configuration_receipt",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "selection.configuration_receipt",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -96779,6 +97512,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.pr_supervisor_capability_write",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -98707,6 +99446,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.recovery_snapshot",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.recovery_snapshot",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -101255,6 +102000,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "selection.attempt_authority",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "selection.attempt_authority",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -104929,6 +105680,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "acp.wire_init",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "acp.wire_init",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -106371,6 +107128,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sync.gc_resume",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sync.gc_resume",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -109909,6 +110672,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "acp.pa_mcp_owner_probe",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "acp.pa_mcp_owner_probe",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -111850,6 +112619,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.session_mkdir",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.session_mkdir",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -112952,6 +113727,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.transcript_sequence",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.transcript_sequence",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -114510,6 +115291,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "acp.provider_resolve",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "acp.provider_resolve",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -116093,6 +116880,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "dispatch.workspace_admission_read",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "dispatch.workspace_admission_read",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -117154,6 +117947,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "fleet.update_recovery",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "fleet.update_recovery",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -118021,6 +118820,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "startup.agent_manager",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "startup.agent_manager",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -119699,6 +120504,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "agent.quiesce_snapshot_clear",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "agent.quiesce_snapshot_clear",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -120567,6 +121378,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/status",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/status",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -120947,6 +121764,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/fleet/overview/local",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/fleet/overview/local",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -121421,6 +122244,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/{page_path:path}",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/{page_path:path}",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -121611,6 +122440,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/notifications",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/notifications",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -121964,6 +122799,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/pr-supervisor/replicas",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/pr-supervisor/replicas",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -122600,6 +123441,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/pr-supervisor/capabilities",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/pr-supervisor/capabilities",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -123696,6 +124543,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/agent/sessions/{session_id}/restart-handoffs",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/agent/sessions/{session_id}/restart-handoffs",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -123942,6 +124795,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/sync/refs",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/sync/refs",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -124445,6 +125304,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/instance",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/instance",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -124770,6 +125635,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/pr-supervisor/instances/heartbeat",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/pr-supervisor/instances/heartbeat",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -124886,6 +125757,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/configuration",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/configuration",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -125025,6 +125902,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/ui/assets",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/ui/assets",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -125226,6 +126109,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/agent/observability/v1/sessions/{session_id}",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/agent/observability/v1/sessions/{session_id}",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -125416,6 +126305,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/workspaces",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/workspaces",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -125617,6 +126512,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/fleet/dispatch-jobs/{dispatch_id}",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/fleet/dispatch-jobs/{dispatch_id}",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -126396,6 +127297,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -127480,6 +128387,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/runtime",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/runtime",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -127619,6 +128532,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/ready",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/ready",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -128550,6 +129469,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/health",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/health",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -128852,6 +129777,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/owner-ready",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/owner-ready",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -130986,6 +131917,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131021,6 +131959,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131064,6 +132009,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131099,6 +132051,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131134,6 +132093,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131169,6 +132135,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131204,6 +132177,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131769,6 +132749,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131843,6 +132830,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131878,6 +132872,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131910,6 +132911,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131945,6 +132953,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -131988,6 +133003,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132030,6 +133052,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132072,6 +133101,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132114,6 +133150,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132152,6 +133195,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132194,6 +133244,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132228,6 +133285,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132271,6 +133335,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132702,6 +133773,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -132745,6 +133823,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -135190,6 +136275,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/fleet",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/fleet",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -135306,6 +136397,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/pull-requests",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/pull-requests",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -135367,6 +136464,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -135927,6 +137031,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_continuation_authorization",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_continuation_authorization",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -136740,6 +137850,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoff_queued",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoff_queued",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -137414,6 +138530,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "sqlite.restart_handoff_resuming",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "sqlite.restart_handoff_resuming",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -137607,6 +138729,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -137636,6 +138765,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -138063,6 +139199,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "acp.pa_mcp_owner_probe",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "acp.pa_mcp_owner_probe",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -143150,6 +144292,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -143190,6 +144339,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -143773,6 +144929,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "maintenance.run",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "maintenance.run",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -144101,6 +145263,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "workspace.reconcile_terminal_state",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "workspace.reconcile_terminal_state",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -144146,6 +145314,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144186,6 +145361,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144274,6 +145456,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144314,6 +145503,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144341,6 +145537,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144387,6 +145590,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144438,6 +145648,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144470,6 +145687,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144502,6 +145726,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144534,6 +145765,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144566,6 +145804,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144598,6 +145843,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144869,6 +146121,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -144896,6 +146155,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -145711,6 +146977,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "startup.async_backend_prepare",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "startup.async_backend_prepare",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -146016,6 +147288,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147430,6 +148709,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "operation": "startup.openapi",
         "resolution": "open; allcounters/windows/processmax/phases preserved"
+      },
+      "runtime_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "operation": "startup.openapi",
+        "resolution": "open; full counts/windows/processmax/bytes/phases/failures retained"
       }
     },
     {
@@ -147486,6 +148771,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147535,6 +148827,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147630,6 +148929,12 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/fleet/overview",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/fleet/overview",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
     },
     {
@@ -147755,6 +149060,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147794,6 +149106,19 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
+      },
+      "benchmark_guard_correction": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "status": "source guard and negative tests; actual mixed audit retained; previous guard prose corrected",
+        "report": "754e7d9a revision4",
+        "resolution": "open; audit of remaining older fixtures stillrequired"
       }
     },
     {
@@ -147827,6 +149152,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147875,6 +149207,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147900,6 +149239,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -147982,6 +149328,13 @@
         "stage": "not integrated/installed/loaded",
         "resolution": "open",
         "next_action": "Protected readyPR/durablewatch/exacthead+mainCI/safeactivation/retest; continue nativefullhealth/startup/drain/objectGC and every other family."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148045,6 +149398,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148092,6 +149452,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148154,6 +149521,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148179,6 +149553,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148345,6 +149726,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148424,6 +149812,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148468,6 +149863,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148512,6 +149914,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148554,6 +149963,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "activation513_inventory": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
       }
     },
     {
@@ -148604,7 +150020,40 @@
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
         "route": "/api/instance/maintenance",
         "resolution": "open; counts/bytes/windows preserved"
+      },
+      "route_6d2_followup": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "observed_at": "2026-10-18T07:51:56.418437+00:00",
+        "route": "/api/instance/maintenance",
+        "resolution": "open; all returned counts/bytes/windows retained"
       }
+    },
+    {
+      "id": "concern:transcript-cold-reference-scan",
+      "kind": "concern",
+      "finding": "Cold-reference diagnostics scan hot payload table without covering index",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_disposable_query_amplification_live_share_unverified",
+      "cause": "Event-derived SELECT DISTINCT cold_hash scans544320rows/441.8MB and creates temporaryDISTINCT; partial covering index visits12096cold entries with identical6048hashset, including missing metadata/file. Wholehealth stillslow/mixed, not solelivecause.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+        "query_p95_ms": {
+          "baseline": 646.8387090135366,
+          "candidate": 25.008250027894974
+        },
+        "upgrade_ms": 1823.978458007332,
+        "extra_pages": 223,
+        "health": "all6pairs and p50regression retained",
+        "wal": "hotframes equal;cold+3..11/mixed+9..12logicalframes per100events in5pairs/case; notphysicalwrites"
+      },
+      "implemented": "Two-line partial index in existing idempotent schema initialization; query/diagnostic freshness/integrity/order/refcount/GC/backup/defaults unchanged.",
+      "merged": [],
+      "deployed": "candidate not installed/loaded; currentactual6d2 does not contain index",
+      "retested": "54broad+65backup/16subtests+2harnessnegative; exact-wheel mixed fullraw inartifact",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Ready PR/durable supervisor/exacthead independentgreen/mainCI/safeexactactivation/retest; continue fullhealth/native/retention/startup/history/sync/objectGC/provider/peer/log/receipt and every remaining family; normal scheduler independent acceptance."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -148614,16 +150063,16 @@
   "transcript_backend_artifact": "docs/benchmarks/systemic-transcript-backend-20261017.json",
   "startup_schema_artifact": "docs/benchmarks/systemic-startup-schema-20261017.json",
   "latest_local_activation": {
-    "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
-    "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+    "artifact": "docs/benchmarks/systemic-reference-index-20261018.json",
+    "source": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
     "runtime_build": {
       "loaded_module_version": "1.5.9",
-      "source_revision": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
-      "package_identity": "sha256:8e924e28f3315c0d9d77fbc8afd4413a9aa5476bbcdd1897c64726d75ee2f941",
-      "pid": 31674,
-      "startup_id": "411d0609-b855-4ad7-940d-5b24f74ca43d"
+      "source_revision": "6d2febce9952a014e1c93c5c91f140be9ef23ed9",
+      "package_identity": "sha256:8003ee3ba4002f1ad5a54bf13b692f07c5efb042f52fcf723f016ddd87570f2f",
+      "pid": 35604,
+      "startup_id": "63967eed-501d-4963-b67c-5dff8db1c8e1"
     },
-    "retest": "95GET2violations/81ops24routes29tails+workspacefailure/maintenance34s;noacceptance"
+    "retest": "95GET3violations/81ops24routes47slowrecords31tails+workspacefailure/36.906smaintenance;notacceptance"
   },
   "snapshot_retention_gap": {
     "contract": "pa.diagnostic-snapshot-retention-correction/v1",
@@ -148681,5 +150130,6 @@
   "prune_rollback_artifact": "docs/benchmarks/systemic-prune-rollback-20261018.json",
   "maintenance_phases_artifact": "docs/benchmarks/systemic-maintenance-phases-20261018.json",
   "prune_inventory_artifact": "docs/benchmarks/systemic-prune-inventory-20261018.json",
-  "mirror_inventory_artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json"
+  "mirror_inventory_artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+  "reference_index_artifact": "docs/benchmarks/systemic-reference-index-20261018.json"
 }
