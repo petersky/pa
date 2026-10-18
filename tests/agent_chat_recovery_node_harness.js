@@ -22,7 +22,7 @@ Object.assign(widget, {
   setPlaceholder(message) { placeholder = message; },
   clearPlaceholder() { placeholder = ''; },
   renderTranscript(events) { this.transcriptEvents = events; },
-  renderSessionActions: noop, setTurnActive: noop, setStatus: noop, renderMcpHealth: noop,
+  setTurnActive: noop, setStatus: noop, renderMcpHealth: noop,
   renderQueue: noop, renderModelsModes: noop, renderConfigOptions: noop, renderMetrics: noop,
   addBubble: noop,
   api() { throw new Error('Rendering recovery guidance must not mutate the session'); },
@@ -83,7 +83,7 @@ const cases = [
       const name = fixture.name + (history ? ' (saved history)' : ' (live snapshot)');
       assert.equal(widget.els.recovery.hidden, false, name);
       assert.equal(action.textContent, fixture.expected, name);
-      assert.equal(placeholder, fixture.expected, name + ' empty chat guidance');
+      assert.equal(placeholder, '', name + ' banner owns recovery guidance');
       assert.equal(widget.composerEnabled, false, name);
       assert.equal(widget.els.recoveryRetry.disabled, false, name);
     }

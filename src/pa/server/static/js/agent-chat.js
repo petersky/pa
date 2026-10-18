@@ -62,6 +62,7 @@
       tab.tabIndex = index === 0 ? 0 : -1;
       // Move the live issue count with its label; panel controls remain intact.
       tab.append(...Array.from(summary.childNodes));
+      if (tab.querySelector("[data-issues-count]")) tab.setAttribute("aria-label", tab.textContent.trim());
       summary.hidden = true;
       panel.id = prefix + "-panel-" + index;
       panel.setAttribute("role", "tabpanel");
@@ -504,7 +505,9 @@
     }
     if (this.els.recover) this.els.recover.addEventListener("click", function () {
       self.recoverSession(self.sessionId).catch(function (err) {
-        self.setPlaceholder("Session recovery is still unavailable: " + err.message);
+        self.clearPlaceholder();
+        self._setRecoveryControl(true, "Retry recovery");
+        if (self.els.recoveryAction) self.els.recoveryAction.textContent = "Session recovery is unavailable: " + err.message;
       });
     });
     if (this.els.history) this.els.history.addEventListener("click", function () {
@@ -758,12 +761,14 @@
       ? !!state.recoverable : !!this.sessionRecoverable;
     const ownerUnreachable = !!(this.sessionRoute &&
       (this.sessionRoute.state === "owner_unreachable" || this.sessionRoute.state === "live_degraded"));
+    const session = this.lastSnapshot && this.lastSnapshot.session || {};
+    const blocked = session.status === "recovery_blocked" || ((session.config_json || {}).provisioning || {}).state === "blocked";
     const hasSession = !!this.sessionId;
     const presentation = (this.lastSnapshot && this.lastSnapshot.presentation) || {};
     const isChat = !presentation.purpose || presentation.purpose === "chat";
     const archived = !!(presentation.archive && presentation.archive.archived);
     const canEnd = hasSession && isChat && !archived && !terminal && !ownerUnreachable;
-    const canRestart = hasSession && terminal && recoverable;
+    const canRestart = hasSession && terminal && recoverable && !ownerUnreachable && !blocked;
     if (this.els.end) {
       this.els.end.hidden = !canEnd;
       this.els.end.disabled = !canEnd || this.closePending;
@@ -782,22 +787,30 @@
         : "Session resume is unavailable.";
     }
     if (this.els.recover) {
-      const showRecover = hasSession && this.recoveryControlVisible && !canRestart;
+      const showRecover = hasSession && this.recoveryControlVisible && !canRestart && !blocked;
       this.els.recover.hidden = !showRecover;
       this.els.recover.disabled = !showRecover;
       this.els.recover.setAttribute("aria-disabled", showRecover ? "false" : "true");
       this.els.recover.textContent = this.recoveryControlLabel;
+    }
+    if (this.els.recovery) {
+      this.els.recovery.hidden = !blocked && !this.recoveryControlVisible && !canRestart;
+      const recoveryText = blocked ? recoveryGuidance(this.lastSnapshot)
+        : canRestart ? "This conversation is disconnected. Resume it using its saved provider identity." : this.recoveryControlVisible
+          ? "Live controls are unavailable. Available durable history remains readable. Retry the connection to continue." : "";
+      if (this.els.recoveryAction && this.els.recoveryAction.textContent !== recoveryText) this.els.recoveryAction.textContent = recoveryText;
+      if (this.els.recoveryRetry) this.els.recoveryRetry.hidden = !blocked;
     }
     if (this.els.history) this.els.history.hidden = !this.durableHistoryAvailable;
     if (this.els.sessionActionStatus) {
       this.els.sessionActionStatus.textContent = this.closePending
         ? "Archiving this conversation…"
         : canRestart
-          ? "This session has ended and can be resumed from durable state."
+          ? ""
           : terminal
             ? "This session has ended or is not currently connected."
             : ownerUnreachable
-              ? "Live session controls are unavailable while the owner cannot be reached."
+              ? ""
               : canEnd ? "This conversation is available." : "No session is selected.";
     }
   };
@@ -816,6 +829,8 @@
 
   AgentChatWidget.prototype.clearSelectedSession = function () {
     clearTimeout(this.queueRefreshTimer);
+    const effectiveSettings = this.root && this.root.querySelector && this.root.querySelector("[data-acw-effective-settings]");
+    if (effectiveSettings) effectiveSettings.textContent = "Settings unavailable";
     if (this.issues) this.issues.reset();
     if (this.threads) this.threads.reset();
     this.submitAckMs = null;
@@ -1286,6 +1301,11 @@
     }
     if (history && history.session) {
       this.providerId = history.session.agent_name || this.providerId;
+      if (!this.lastSnapshot || !this.lastSnapshot.connected) {
+        this.lastSnapshot = this._historySnapshot(history);
+        this.renderModelsModes(this.lastSnapshot);
+        this.renderSessionActions();
+      }
     }
     this.recentBootstrap = false;
     arrivals.sort(function(a,b){return a.seq-b.seq;}).forEach(function(event) { this.handleEvent(event, false, true); }, this);
@@ -1335,7 +1355,7 @@
       return result;
     }).catch(function (error) {
       if (current()) {
-        self.olderError = "Recent history is temporarily unavailable. Retry recent messages.";
+        self.olderError = "Recent history is temporarily unavailable.";
         self.updateOlderControl();
         self.recentRetryCount = (self.recentRetryCount || 0) + 1;
         self._renderHistoryNotice();
@@ -1360,9 +1380,10 @@
     if (!this.els || !this.els.historyNotice) return;
     const pending = Object.values(this.livePendingEvents || {}).sort(function(a,b){return a.seq-b.seq;});
     const gap = !!this.recentBootstrap || !!this.newerError || (!this.historyPreserveWindow && this.liveGapTarget > this.lastSeq);
+    if (this.recentBootstrap) this.clearPlaceholder();
     this.els.historyNotice.hidden = !gap && !this.historyPreserveWindow && !this.hasNewer;
-    this.els.historyNoticeText.textContent = gap
-      ? (this.olderError || "Loading recent history…") + " Live preview may be partial until history recovers."
+    let noticeText = gap
+      ? (this.recentBootstrap ? (this.olderError || "Loading recent history…") : (this.newerError || "Recent history is incomplete.")) + " Live preview may be partial until history recovers."
       : "Reading earlier messages. Recent messages are available separately.";
     const useful = [], streams = new Map();
     pending.forEach(function(e) {
@@ -1385,7 +1406,8 @@
     const preview = useful.filter(function(item) { return item.text; }).slice(-8);
     this.els.livePreview.textContent = preview.map(function(item) { return item.text.slice(-600); }).join("\n\n");
     this.els.livePreview.hidden = !preview.length;
-    if (!gap && preview.length) this.els.historyNoticeText.textContent += " Live preview may be partial.";
+    if (!gap && preview.length) noticeText += " Live preview may be partial.";
+    if (this.els.historyNoticeText.textContent !== noticeText) this.els.historyNoticeText.textContent = noticeText;
     this.els.latest.textContent = gap ? "Retry recent messages" : "Jump to latest";
   };
 
@@ -1414,6 +1436,7 @@
   };
 
   AgentChatWidget.prototype._loadLiveSnapshot = function (sessionId, generation) {
+    if (this.issues) this.issues.ready();
     const self = this;
     const restored = this._restoreSessionDomCache(sessionId);
     // Cache is an immediate paint, never evidence that we are still at the tail.
@@ -1442,18 +1465,14 @@
         : self._loadRecentHistory(sessionId, generation).catch(function () { return null; });
       return historyFallback.then(function () {
         if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
-        self.setPlaceholder(
-          "Live controls are temporarily unavailable. Durable history is shown when available; PA will retry automatically."
-        );
+        self.clearPlaceholder();
         self._setRecoveryControl(true, "Retry live state");
         self.reconcilePendingSubmission({
           unreachable: true,
           reason: "Live state timed out before prompt acceptance could be confirmed.",
         });
         if ((self.liveStateRetryCount || 0) >= OWNER_ROUTE_MAX_RETRIES) {
-          self.setPlaceholder(
-            "Live controls remain unavailable after automatic retries. Use Retry live state when ready."
-          );
+          self.renderSessionActions();
           return null;
         }
         self._scheduleLiveStateRetry(sessionId, generation, false);
@@ -1490,6 +1509,8 @@
     this.recentRetryTimer = null; this.recentRetryCount = 0;
     this.recentBootstrap = true; this.historyPreserveWindow = false; this.historyUserIntent = false; this.liveControlSeq = 0; this.heldControlSeq = {}; this.initialLiveCursor = null;
     clearTimeout(this.queueRefreshTimer);
+    const effectiveSettings = this.root && this.root.querySelector && this.root.querySelector("[data-acw-effective-settings]");
+    if (effectiveSettings) effectiveSettings.textContent = "Settings unavailable";
     if (this.issues) this.issues.reset();
     if (this.threads) this.threads.reset();
     this.submitAckMs = null;
@@ -1550,15 +1571,13 @@
           self.root.dataset.apiBase = self.apiBase;
         }
         self._writeSessionUrl(!!options.replace);
+        if (route.state !== "missing" && self.issues) self.issues.ready();
         if (route.state === "owner_unreachable") {
           return loadDurableHistory().catch(function () { return null; }).then(function () {
             if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
             self.setStatus("offline");
             self.setComposerEnabled(false);
-            self.setPlaceholder(
-              route.message ||
-              "The session owner is temporarily unreachable. Durable history is shown when available."
-            );
+            self.clearPlaceholder();
             self._setRecoveryControl(true, "Retry connection");
             self._scheduleLiveStateRetry(sessionId, generation, true);
             return null;
@@ -1633,9 +1652,8 @@
           if (!self._isCurrentSessionRequest(sessionId, generation)) return null;
           self.ownerResolutionPending = false;
           self.sessionRoute = { state: "owner_unreachable" };
-          self.setPlaceholder(
-            "Live state is temporarily unavailable. Durable history is shown when available; PA will retry automatically."
-          );
+          if (self.issues) self.issues.ready();
+          self.clearPlaceholder();
           self.setStatus("offline");
           self.setComposerEnabled(false);
           self._setRecoveryControl(true, "Retry connection");
@@ -1698,9 +1716,10 @@
         if (code === "session_recovery_blocked" || code === "session_closed") {
           return self.loadDurableSession(targetSessionId, requestGeneration);
         }
-        self.setPlaceholder("Session recovery is still unavailable: " + err.message);
-        self.setStatus("offline");
+        self.clearPlaceholder();
         self._setRecoveryControl(true, "Retry recovery");
+        if (self.els.recoveryAction) self.els.recoveryAction.textContent = "Session recovery is unavailable: " + err.message;
+        self.setStatus("offline");
         throw err;
       });
   };
@@ -2033,8 +2052,8 @@
       this.setPlaceholder("Locating session owner…");
       return;
     }
-    if (this.recentBootstrap) {
-      this.setPlaceholder("Recent history is loading or unavailable. Live updates appear in the history notice while PA retries.");
+    if (this.recentBootstrap || (this.els.recovery && !this.els.recovery.hidden)) {
+      this.clearPlaceholder();
       return;
     }
     const session = snap.session || {};
@@ -2057,7 +2076,7 @@
           : "Provider configuration failed. Retry or end the session.")
       );
     } else if (status === "recovery_blocked" || provisioning.state === "blocked") {
-      this.setPlaceholder(recoveryGuidance(snap));
+      this.clearPlaceholder();
     } else if (snap.prompting) {
       this.setPlaceholder("The agent is working…");
     } else if (queue.length) {
@@ -2158,13 +2177,7 @@
     if (recoveryBlocked && this.els.input) {
       this.els.input.placeholder = "Recovery is blocked. Follow the action above, retry, or end the session.";
     }
-    if (this.els.recovery) {
-      this.els.recovery.hidden = !recoveryBlocked;
-      if (this.els.recoveryAction) {
-        this.els.recoveryAction.textContent = recoveryBlocked ? recoveryGuidance(snap) : "";
-      }
-      if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
-    }
+    if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
     this.updateTitle(session.title || (session.conversation_origin && session.conversation_origin.default_title) || (session.purpose === "chat" ? "New chat" : session.label) || "Agent",
       ((session.config_json || {}).naming || {}).version || 0);
     this.queuePaused = !!snap.queue_paused;
@@ -2236,7 +2249,7 @@
   AgentChatWidget.prototype.updateOlderControl = function () {
     if (!this.els.loadOlder) return;
     const anchor = this._captureHistoryAnchor();
-    this.els.loadOlder.hidden = !this.hasOlder && !this.olderError;
+    this.els.loadOlder.hidden = !!this.recentBootstrap || (!this.hasOlder && !this.olderError);
     this.els.loadOlder.disabled = this.loadingOlder;
     const label = this.loadingOlder ? "Loading older messages…"
       : this.recentBootstrap ? "Retry recent messages"
@@ -2246,7 +2259,7 @@
     if (this.els.historySpinner) this.els.historySpinner.hidden = !this.loadingOlder;
     this.els.loadOlder.setAttribute("aria-busy", this.loadingOlder ? "true" : "false");
     if (this.els.loadOlderStatus) {
-      const status = this.loadingOlder ? "Loading older messages." : this.olderError;
+      const status = this.recentBootstrap ? "" : this.loadingOlder ? "Loading older messages." : this.olderError;
       this.els.loadOlderStatus.hidden = !status;
       this.els.loadOlderStatus.textContent = status;
     }
@@ -2777,6 +2790,8 @@
   AgentChatWidget.prototype.destroy = function (reason) {
     if (this.destroyed) return;
     clearTimeout(this.queueRefreshTimer);
+    const effectiveSettings = this.root && this.root.querySelector && this.root.querySelector("[data-acw-effective-settings]");
+    if (effectiveSettings) effectiveSettings.textContent = "Settings unavailable";
     if (this.issues) this.issues.reset();
     if (this.threads) this.threads.destroy();
     this._stashSessionDomCache();
@@ -3809,6 +3824,13 @@
   };
 
   AgentChatWidget.prototype.renderModelsModes = function (snap) {
+    const summary = this.root && this.root.querySelector && this.root.querySelector("[data-acw-effective-settings]");
+    if (summary) {
+      const session = snap.session || {}, confirmed = confirmedSessionFields(sessionRecordFromSnapshot(snap));
+      const native = ((snap.execution_selection || {}).provider_confirmation || {}).effective || {};
+      summary.textContent = [session.agent_name || "Agent unknown", confirmed.modelId || native.model_id || "Model unknown",
+        confirmed.modeId || session.mode_id || "Permissions unknown"].join(" · ") + (snap.selection_history_only ? " · last known" : "");
+    }
     if (this.settingsDirty || this.settingsPending) return;
     if (this.showModel && this.els.model && this.els.modelWrap) {
       const models = (snap.models && (snap.models.availableModels || snap.models.available_models)) || [];

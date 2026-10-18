@@ -51,10 +51,9 @@
       {% endif %}
       <span class="acw-status-dot" data-acw-status title="Session status"></span>
       <span class="acw-title" data-acw-title>Agent</span>
-      <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
     </div>
     <div class="acw-toolbar-right">
-      <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
+      <span class="acw-effective-settings muted small" data-acw-effective-settings aria-label="Effective agent settings">Settings unavailable</span>
       <details class="acw-menu acw-settings-menu">
         <summary>Agent settings…</summary>
         <form class="acw-menu-body acw-settings-body" data-acw-settings-form>
@@ -86,8 +85,6 @@
           <button type="button" class="ghost" data-acw-auto-title>Use automatic title</button>
           <label><input type="checkbox" data-acw-toggle-system> Show system messages</label>
           <label><input type="checkbox" data-acw-toggle-raw> Raw text</label>
-          <button type="button" class="ghost" data-acw-recover hidden>Recover session</button>
-          <button type="button" class="ghost" data-acw-restart hidden>Resume session</button>
           <button type="button" class="ghost" data-acw-history hidden>Open durable history</button>
           {% if allow_card_capture %}<button type="button" class="ghost" data-acw-card-link>Capture in card…</button>{% endif %}
           <a class="text-btn" data-acw-promote
@@ -111,26 +108,53 @@
     <span class="muted small" data-thread-list-status role="status"></span>
   </nav>
 
-  {% if telemetry_enabled and telemetry_session_header != 'hidden' %}
-  <details class="acw-resource-header"
-           data-session-telemetry
-           data-refresh-seconds="{{ telemetry_ui_refresh_seconds }}"
-           {% if telemetry_session_header == 'expanded' %}open{% endif %}>
-    <summary>
-      <span>Resources</span>
-      <span class="muted" data-session-telemetry-summary>Attribution warming up…</span>
-    </summary>
-    <div class="acw-resource-grid" data-session-telemetry-values
-         role="status" aria-live="polite"></div>
-  </details>
-  {% endif %}
-
   <div class="acw-details" data-acw-details>
-    <details data-acw-execution-panel>
-      <summary>Execution selection</summary>
-      <p class="muted small" data-selection-empty>Execution selection is not available for this conversation.</p>
+    <details data-acw-technical-details>
+      <summary>Details</summary>
+      <nav class="acw-activity-rail" aria-label="Session artifacts">
+        <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle
+                aria-label="Tool activity" title="Tools" aria-expanded="false">
+          <svg class="acw-gears" viewBox="0 0 24 24" aria-hidden="true">
+            <g class="acw-gear acw-gear-a"><circle cx="7.5" cy="7.5" r="3"/><path d="M7.5 1.5v2m0 8v2m-6-6h2m8 0h2M3.3 3.3l1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
+            <g class="acw-gear acw-gear-b"><circle cx="17" cy="7" r="2.5"/><path d="M17 2v1.5m0 7V12m-5-5h1.5m7 0H22m-8.5-3.5 1.1 1.1m4.9 4.9 1.1 1.1m0-7.1-1.1 1.1m-4.9 4.9-1.1 1.1"/></g>
+            <g class="acw-gear acw-gear-c"><circle cx="14" cy="16" r="3"/><path d="M14 10v2m0 8v2m-6-6h2m8 0h2m-10.2-4.2 1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
+          </svg>
+        </button>
+        <button type="button" class="ghost acw-rail-button acw-terminal-toggle" data-acw-terminal-toggle
+                aria-label="Terminal" title="Terminal" aria-expanded="false"><span aria-hidden="true">&gt;_</span></button>
+        <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
+                aria-label="Session plans" title="Plans" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
+          <span class="acw-rail-badge" data-acw-plan-count hidden>0</span>
+        </button>
+      </nav>
+      <span class="acw-turn-timer muted" data-acw-turn-timer hidden></span>
+      <button type="button" class="ghost small" data-acw-browser-toggle title="Attach a browser to this session">Attach Browser</button>
+    {% if telemetry_enabled and telemetry_session_header != 'hidden' %}
+    <details class="acw-resource-header"
+             data-session-telemetry
+             data-refresh-seconds="{{ telemetry_ui_refresh_seconds }}"
+             {% if telemetry_session_header == 'expanded' %}open{% endif %}>
+      <summary>
+        <span>Resources</span>
+        <span class="muted" data-session-telemetry-summary>Attribution warming up…</span>
+      </summary>
+      <div class="acw-resource-grid" data-session-telemetry-values
+           role="status" aria-live="polite"></div>
     </details>
-    <details class="acw-timings"><summary>Timing details</summary><p class="muted small" data-acw-timings>Timings appear when PA accepts a message and the provider responds.</p></details>
+    {% endif %}
+
+      <details data-acw-execution-panel>
+        <summary>Execution selection</summary>
+        <p class="muted small" data-selection-empty>Execution selection is not available for this conversation.</p>
+      </details>
+      <details class="acw-timings"><summary>Timing details</summary><p class="muted small" data-acw-timings>Timings appear when PA accepts a message and the provider responds.</p></details>
+    {% if show_metrics %}
+    <div class="acw-metrics muted" data-acw-metrics hidden></div>
+    {% endif %}
+    <p class="muted small" data-conversation-outcome hidden></p>
+
+    </details>
     <details class="acw-threads" data-conversation-threads>
       <summary>Branch from here</summary>
       <p class="muted small" data-thread-status role="status">Open to check branch support for this conversation.</p>
@@ -138,7 +162,7 @@
       <button type="button" class="ghost small" data-thread-copy disabled>Copy recent context</button>
     </details>
     <details class="acw-issues" data-conversation-issues>
-      <summary>Issues <span data-issues-count></span></summary>
+      <summary>Issues <span data-issues-count role="status" aria-label="Issue count" aria-live="polite" aria-atomic="true">(loading…)</span></summary>
       <p class="muted small">Discuss, group, or start selected work</p>
       <p class="muted small" data-issues-status role="status" aria-live="polite">Discussion notes do not start work.</p>
       <ol data-issues-list></ol>
@@ -153,19 +177,6 @@
       </div>
       <div class="small" data-issues-receipts></div>
     </details>
-  </div>
-
-  {% if show_metrics %}
-  <div class="acw-metrics muted" data-acw-metrics hidden></div>
-  {% endif %}
-  <p class="muted small" data-conversation-outcome hidden></p>
-
-  <div class="acw-recovery" data-acw-recovery hidden>
-    <div>
-      <strong>Session recovery is blocked.</strong>
-      <span data-acw-recovery-action></span>
-    </div>
-    <button type="button" class="primary small" data-acw-retry>Retry now</button>
   </div>
 
   <section class="acw-browser" data-acw-browser hidden aria-label="Attached browser">
@@ -187,24 +198,6 @@
 
   <p class="acw-origin-boundary muted small" data-origin-boundary hidden></p>
   <div class="acw-chat-stage">
-    <nav class="acw-activity-rail" aria-label="Session artifacts">
-      <button type="button" class="ghost acw-rail-button" data-acw-tool-toggle
-              aria-label="Tool activity" title="Tools" aria-expanded="false">
-        <svg class="acw-gears" viewBox="0 0 24 24" aria-hidden="true">
-          <g class="acw-gear acw-gear-a"><circle cx="7.5" cy="7.5" r="3"/><path d="M7.5 1.5v2m0 8v2m-6-6h2m8 0h2M3.3 3.3l1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
-          <g class="acw-gear acw-gear-b"><circle cx="17" cy="7" r="2.5"/><path d="M17 2v1.5m0 7V12m-5-5h1.5m7 0H22m-8.5-3.5 1.1 1.1m4.9 4.9 1.1 1.1m0-7.1-1.1 1.1m-4.9 4.9-1.1 1.1"/></g>
-          <g class="acw-gear acw-gear-c"><circle cx="14" cy="16" r="3"/><path d="M14 10v2m0 8v2m-6-6h2m8 0h2m-10.2-4.2 1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"/></g>
-        </svg>
-      </button>
-      <button type="button" class="ghost acw-rail-button acw-terminal-toggle" data-acw-terminal-toggle
-              aria-label="Terminal" title="Terminal" aria-expanded="false"><span aria-hidden="true">&gt;_</span></button>
-      <button type="button" class="ghost acw-rail-button" data-acw-plan-toggle
-              aria-label="Session plans" title="Plans" aria-expanded="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h2V6H7v2Zm4 0h6V6h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Zm-4 5h2v-2H7v2Zm4 0h6v-2h-6v2Z"/></svg>
-        <span class="acw-rail-badge" data-acw-plan-count hidden>0</span>
-      </button>
-    </nav>
-
     <aside class="acw-flyout" data-acw-tool-flyout hidden aria-label="Tool activity">
       <header><strong>Tool activity</strong><button type="button" class="ghost small" data-acw-flyout-close aria-label="Close tool activity">×</button></header>
       <div class="acw-flyout-body acw-tool-activity" data-acw-tool-activity>
@@ -247,6 +240,12 @@
     <div><span data-acw-history-notice-text role="status" aria-live="polite"></span>
       <button type="button" class="ghost small" data-acw-latest>Jump to latest</button></div>
     <pre data-acw-live-preview hidden aria-label="Live preview; history may be incomplete"></pre>
+  </section>
+  <section class="acw-recovery" data-acw-recovery aria-label="Session recovery" hidden>
+    <span data-acw-recovery-action role="status" aria-live="polite" aria-atomic="true"></span>
+    <button type="button" class="ghost small" data-acw-restart hidden>Resume session</button>
+    <button type="button" class="primary small" data-acw-retry hidden>Retry session</button>
+    <button type="button" class="ghost small" data-acw-recover hidden>Recover session</button>
   </section>
   <div class="acw-permissions" data-acw-permissions hidden></div>
 
