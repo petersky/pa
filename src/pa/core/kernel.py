@@ -629,6 +629,12 @@ class Kernel:
         else:
             app.state.templates = Jinja2Templates(directory=template_dirs)
 
+        from pa.server.template_cache import PackagedTemplateCache
+
+        app.state.templates.env.bytecode_cache = PackagedTemplateCache(
+            DEFAULT_TEMPLATES.parent / "template-bytecode.json"
+        )
+
         assets = self.ctx.require_service("assets")
         app.state.templates.env.globals["static_url"] = assets.url
         app.state.templates.env.globals["asset_version"] = assets.version

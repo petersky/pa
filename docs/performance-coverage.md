@@ -1,3 +1,34 @@
+# Exact134044 retest and build-time template compilation — 2026-10-18
+
+**All527 evidence rows /47 concerns remain open.** [Complete matrix](performance-coverage.json); [every new numeric stage, raw sample and evidence hash](benchmarks/systemic-template-cache-20261018.json). This checkpoint supersedes historical current-status labels below while preserving every prior finding, owner, outlier and gap.
+
+PR504 is merged134044 with matching source/merge trees and allfive head/main CI checks successful. Normal frozen installation verified436files/VCS, zero dependency version changes and unchanged configuration. Immutable owner proof now confirms **source134044/packagef29/PID1621/startupc5ec**, uniquelease290. Its80ordinary sequential GETs returned80HTTP200 but **Agent1/5max668.973ms and overview1/5max634.979ms** remain threshold failures. Fleet0/5slow/max452.699 is a small window, not complete acceptance. The slowAgent correlationddd4040b has shell293.7/template224.1/context97.9/server616.1/helper668.973ms. Complete raw timing/decodedbytes/correlations/errors/buildfences and reportd82ea21b revision7 are retained. Fresh bounded runtime snapshot contains **96operations/31routes**, with all counts/percentiles/processmaxima and bytes retained separately; fixtures overlapped, no fullfleet/log audit claimed.
+
+Disposable real Kernel profiling confirms cold Jinja compilation CPU: Agent compile368.341ms inside430.048ms profiled render; warm23.88ms. Profiler overhead is included and live shell/nativewait causes remain unverified. New code compiles38package templates at wheel build, then retains normal source lookup/checksum, plugin precedence, escaping and custom environment behavior at runtime. IncompatiblePython/Jinja/environment/malformed or missingartifact falls back to normal compilation. No runtime writes. Bounded threadCPU phases supplement existing wall timings without changing warning/deadline thresholds. No speculative Fleet JSON repair: installed FastAPI already uses its typed directJSON fastpath.
+
+Twenty alternating first-render pairs on each actual frozen page context preserve complete HTML every time and reduce candidate runtime compilation to zero. Actual wheel artifact wall p50/p95/p99/max in ms:
+
+| Page | Normal compiler | Packaged bytecode |
+|---|---|---|
+| Agent |163.117/182.258/188.522/188.522|7.779/12.581/80.596/80.596|
+| Fleet |217.428/277.984/283.177/283.177|10.087/14.867/16.391/16.391|
+| Home |68.540/90.706/93.351/93.351|5.685/8.349/8.528/8.528|
+| Work |109.211/130.844/135.268/135.268|6.234/8.143/8.418/8.418|
+| PullRequests |154.683/189.460/222.872/222.872|7.511/13.311/14.449/14.449|
+| Settings |195.481/247.388/250.479/250.479|9.659/13.249/14.615/14.615|
+
+Agent80.596ms outlier remains, CPUmax11.024ms; nativewait/scheduling unknown. Initial wrong-autoescape prototype correctly fell back and showed no improvement; its raw results and limited source provenance remain. Build compilation1213ms in a prior disposable stage is separate from readiness; actual wheel manifestload2.812ms/1,102,141bytes. Sourceinstalls without artifact remain correct but receive no claimed speedup.
+
+Source and sdist wheel builds succeed, uv.lock unchanged, lockcheck passes. **51regressions+2subtests** passed with temporary data/workspace roots, then17final cache contracts and18includingCPU timing passed (overlapping suites). Sourceedit/plugin/customfilter/escaping/deterministicbuildroot/malformedartifact contracts preserve semantics. Final actual extractedwheel verifies437sourcefiles,28loadedmodulehashes and38compatiblecacheentries. Its100iteration/29request/73.816s mixed workload retains9600ordered events and zero operation failures/timeouts/rejections, BUT **3worker warnings and5threshold violations** remain: drain533.876ms, messagehistory671.739ms, objectcollect3max2099.407ms. Separate bootstrap3slowcalls/OpenAPI813.393ms/719.543CPU remain. Full raw phases/SQL/locks/GC/CPU/bytes/logicalwrites are retained. This is not performance acceptance; new candidate is unmerged/uninstalled.
+
+Previous testambientworkspace root risk is confirmed;158+2guarded prior rerun and new guarded suites used onlytemporaryroots. Eight old emptylocks were reversibly renamed under exactmetadata/flock checks, zerodeletions; evidence/report754e7d9a revision3 preserved. General reusable harness/otherfixture audit remains open.
+
+Backup35575957 terminally failed280.856222s/transcript_object_missing, all8archives preserved/0published/0pruned/207failures/0verified/automaticpaused. Report5000d93f revision16 and17.658370875s sharedwriterlock capture concern remain open; actualwrite delay/internalcause unmeasured. Verifier explicitly released its coordination hold and closed. Supported lifecycle/lease reads allowed one changed-evidence handoff to the existing repair owner, acceptedqueued/c754742b, consumptionunverified. Old failed7a2292b1 was not replayed; no secondbackup/newworker/competingverification.py edits.
+
+All140retainedslow names/181baselineoperations/115routes/unexercisedbranches, fullstartup/schema/MCPCPU, nativebusy/WAL/GIL/disk/GC/sharedlocks/objectcollection, realprovider/placement/activewatch/externalpaths, peers/unknownidentity/build/logretention, droppedlogs/statusfailures and receipt/lostraw gaps remain required. Schema813ms still fails; one compile speedup does not resolve them. Original10attachments and all historical stages remain. Requirement17d034a6/independent_agent_v1 and backupb5271340 remain schedulerowned and unaccepted; DB89957 original accepted scope stays closed. **No card closure from PR, merge, install or bounded speedup.**
+
+---
+
 # Loaded a90 retest and one Fleet watch snapshot — 2026-10-18
 
 The systemic card remains **open:526 evidence rows /46 concerns**. [Complete matrix](performance-coverage.json); [every new raw observation, profile and workload stage](benchmarks/systemic-fleet-watch-snapshot-20261018.json). All historical findings, failures, owners, unmeasured branches and retention gaps remain. This checkpoint supersedes historical current-status labels below.
