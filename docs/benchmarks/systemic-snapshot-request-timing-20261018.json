@@ -1,0 +1,92 @@
+{
+  "contract": "pa.snapshot-request-timing-stage/v1",
+  "observed_at": "2026-10-18T20:50:08.562166+00:00",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "source_head_before_correction": "d96075e1a71f10a2a19dc7bdb7435a94035b46f4",
+  "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+  "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+  "lease_fence": 290,
+  "failed_head": {
+    "run": 39164667883,
+    "job": 117784999364,
+    "head": "d96075e1a71f10a2a19dc7bdb7435a94035b46f4",
+    "failed": [
+      "tests/test_agent_snapshot_responsiveness.py::AgentSnapshotResponsivenessTests::test_live_metadata_does_not_flush_or_read_large_transcript"
+    ],
+    "summaries": [
+      "1 failed, 954 passed, 1 skipped, 414 warnings, 109 subtests passed in 187.14s (0:03:07)"
+    ],
+    "timeout_expressions": [],
+    "numeric_guards": [
+      [
+        "0.2528143290000031",
+        "0.2"
+      ],
+      [
+        "0.2528143290000031",
+        "0.2"
+      ]
+    ],
+    "raw_sha256": "d0f24df432de3c162b8a460aefa26a30a4e04e20b437ae873f23994e698d521a",
+    "raw_not_published": true,
+    "scope": "New exacthead failure retained; no rerun. Cause requires inspection.",
+    "timing_phases": [
+      {
+        "setup_seconds": 0.249496,
+        "request_seconds": 0.003306,
+        "teardown_seconds": 1.2e-05,
+        "loop_thread_cpu_seconds": 0.248757
+      },
+      {
+        "setup_seconds": 0.249496,
+        "request_seconds": 0.003306,
+        "teardown_seconds": 1.2e-05,
+        "loop_thread_cpu_seconds": 0.248757
+      },
+      {
+        "setup_seconds": 0.249496,
+        "request_seconds": 0.003306,
+        "teardown_seconds": 1.2e-05,
+        "loop_thread_cpu_seconds": 0.248757
+      }
+    ]
+  },
+  "phase_interpretation": "The additional elapsed assertion started before entering three unittest.mock patch contexts. Those fixture contexts/setup consume249.496ms, while the actual awaited metadata request took3.306ms, teardown0.012ms. Full loop-thread CPU248.757ms includes all phases. Exact interpreter/GC/allocation cause within setup is unverified; no production CPU cause inferred.",
+  "correction": "Keep actual asyncio.wait_for(timeout0.2s), and assert request_finished-configured <0.2s using already recorded request-start timestamp. Retain full setup/teardown/loopCPU in failure diagnostics. All zero-transcript-reads/unflushed4096buffer/no-transcript-payload/sequence4096 assertions unchanged. No application threshold, timeout, warning policy or code change.",
+  "tests": {
+    "contract": "pa.snapshot-request-timing-test/v1",
+    "exit_code": 0,
+    "summary": [
+      "1 passed in 3.94s"
+    ],
+    "source_sha256": "8edfa797288884de478a7de73edede0d41115715dc96518e4cb6858bd701e238",
+    "source_unchanged": true,
+    "log_sha256": "41a6e682a361f24bc52e44cd12997ad47be74f9b998147843228e50ff1039df3",
+    "raw_local_only": true,
+    "scope": "Only test timing boundary changes: actualrequest200msassert andwait_for0.2s unchanged. Mocksetup/teardown/fullloopCPU remain failurediagnostics. Nonflush/zeroIO/buffer4096/order/payload assertions unchanged. Bothenvrootsprivate; no actualstore/Kernel/provider/browser/network workload or performanceacceptance."
+  },
+  "raw_log_manifests": {
+    ".dev/pr539-head-ci39164667883-failed.raw.log": {
+      "sha256": "d0f24df432de3c162b8a460aefa26a30a4e04e20b437ae873f23994e698d521a",
+      "raw_not_published": true
+    },
+    ".dev/snapshot-request-timing.log": {
+      "sha256": "41a6e682a361f24bc52e44cd12997ad47be74f9b998147843228e50ff1039df3",
+      "raw_not_published": true
+    }
+  },
+  "test_source_before": "from __future__ import annotations\n\nimport asyncio\nimport time\nimport unittest\nfrom unittest.mock import MagicMock, patch\n\nfrom pa.domain.models import AgentSession\nfrom pa.instance.agent_session import AgentSessionRuntime\nfrom pa.modules.agent_chat import get_session_snapshot\n\n\nclass _ContendedTranscriptStore:\n    def __init__(self) -> None:\n        self.reads = 0\n\n    def list_transcript_events_before(self, *args, **kwargs):\n        self.reads += 1\n        time.sleep(1)\n        return []\n\n\nclass AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):\n    async def test_live_metadata_does_not_flush_or_read_large_transcript(self) -> None:\n        runtime = object.__new__(AgentSessionRuntime)\n        runtime.session = AgentSession(\n            id=\"active-session\",\n            agent_name=\"codex\",\n            status=\"prompting\",\n        )\n        runtime.connection = None\n        runtime._seq = 4096\n        runtime._queue_paused = False\n        runtime._queue = []\n        runtime._in_flight = None\n        runtime._turn_started_at = None\n        runtime._permission_requests = {}\n        runtime._pending_permissions = []\n        runtime._transcript_buffer = [object()] * 4096\n        runtime.store = _ContendedTranscriptStore()\n        request = MagicMock()\n\n        started_cpu = time.thread_time()\n        started = time.monotonic()\n        with (\n            patch(\"pa.modules.agent_chat._runtime_or_404\", return_value=runtime),\n            patch(\n                \"pa.modules.agent_chat._session_reconciliation\",\n                return_value={\"state\": \"not_requested\"},\n            ),\n            patch(\n                \"pa.modules.agent_chat._observability\",\n                return_value={\"session_state\": \"busy\"},\n            ),\n        ):\n            configured = time.monotonic()\n            snapshot = await asyncio.wait_for(\n                get_session_snapshot(request, runtime.session_id),\n                timeout=0.2,\n            )\n            request_finished = time.monotonic()\n        elapsed = time.monotonic() - started\n\n        self.assertLess(\n            elapsed, 0.2,\n            f\"setup={configured - started:.6f}s \"\n            f\"request={request_finished - configured:.6f}s \"\n            f\"teardown={elapsed - (request_finished - started):.6f}s \"\n            f\"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s\",\n        )\n        self.assertEqual(runtime.store.reads, 0)\n        self.assertEqual(len(runtime._transcript_buffer), 4096)\n        self.assertNotIn(\"transcript\", snapshot)\n        self.assertNotIn(\"transcript_page\", snapshot)\n        self.assertEqual(snapshot[\"last_event_seq\"], 4096)\n",
+  "test_diff": "diff --git a/tests/test_agent_snapshot_responsiveness.py b/tests/test_agent_snapshot_responsiveness.py\nindex c34e928b..61354c2c 100644\n--- a/tests/test_agent_snapshot_responsiveness.py\n+++ b/tests/test_agent_snapshot_responsiveness.py\n@@ -61,8 +61,10 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):\n             request_finished = time.monotonic()\n         elapsed = time.monotonic() - started\n \n+        # Mock construction is fixture work, outside the request's deadline.\n+        # Retain setup/teardown and full loop CPU in failure diagnostics.\n         self.assertLess(\n-            elapsed, 0.2,\n+            request_finished - configured, 0.2,\n             f\"setup={configured - started:.6f}s \"\n             f\"request={request_finished - configured:.6f}s \"\n             f\"teardown={elapsed - (request_finished - started):.6f}s \"\n",
+  "test_sha256": "8edfa797288884de478a7de73edede0d41115715dc96518e4cb6858bd701e238",
+  "report": "4ddca18e-0b59-41da-a9af-32e84eca92d1 revision1",
+  "scope": "Corrected test measurement scope only. The original failed head/run remains failed and was not retried. Five unchanged fixture/browser cases from prior scoped stage passed; one changed snapshot test passes. Candidate PR539 title/body must describe both final fixture isolation and request timing corrections. New head requires complete CI/stable supervisor/independent review/current-base/merge/newmain verification.",
+  "limits": [
+    "Do not call this a252\u21923ms product speedup; they are different already measured phases in one failed CI case.",
+    "The actual200ms request requirement and200ms async caller deadline remain intact. Mock setup/interpreter CPU is still recorded, not suppressed from evidence.",
+    "All585findings/89concerns, existing3preboot/5background/fourliveFleet/peer/log/backup/provider/unobserved and normalindependentacceptance remain open. Correctedscalarstartupsource stillunimplemented.",
+    "No production/default/permission/durability change, deployment/restart/acceptance or live store/archive/ref mutation."
+  ],
+  "resolution": "open"
+}

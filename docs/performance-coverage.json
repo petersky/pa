@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T20:29:55.803128+00:00",
-  "completion": "OPEN;583findings/87concerns. Everyprior580row/owner/action preserved. PR537integratedwithdetectedconcurrent536baseadvance; strictsource/mergetreeproofFAILED/unfulfilled, separate1070entryunion/152combinedcontracts pass. Exactmain39162953668failedmobileUX390; newtestfocus/diagnosticchecks2pass216warnings30.33s pendingfollowupintegration. Scalar-defaultCPUproposalUNIMPLEMENTED/unsafevariantrejected. Allprior3boot/5background/fourliveFleetviolations andallremainingacceptance unchanged. No deployment/restart.",
+  "as_of": "2026-10-18T20:50:08.824540+00:00",
+  "completion": "OPEN;585findings/89concerns. Allprior584rowsownersactions preserved. Initial539headd960CI39164667883failedtesttimer249.496msmocksetup+3.306msrequest>200mstotal;other4jobs andUIisolationtests green. Correctedassertionmeasurestheactualrequestwithsame200msdeadline/zeroIOandbufferassertions;1targettestpasses3.94s. Priorfixture/browser5pass338warnings40.31s unchanged. Newhead/integration/deployment/allremainingperformanceacceptance pending; scalarCPUsource stillUNIMPLEMENTED.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -123,7 +123,9 @@
     "docs/benchmarks/systemic-health-reference-probe-20261018.json",
     "docs/benchmarks/systemic-health-reference-source-20261018.json",
     "docs/benchmarks/systemic-pr537-integration-followup-20261018.json",
-    "docs/benchmarks/systemic-schema-scalar-default-probe-20261018.json"
+    "docs/benchmarks/systemic-schema-scalar-default-probe-20261018.json",
+    "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json",
+    "docs/benchmarks/systemic-snapshot-request-timing-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209107,6 +209109,68 @@
       "fix_or_existing_owner": "This systemic session, within existing startup readiness/schema semantics.",
       "next_actor": "this same systemic session",
       "next_action": "After CI follow-up gates, implement narrow version-fenced corrected default path with meaningful configuration/custom-encoder/fallback/full-schema/concurrency contracts and exactsource mixed verification. Preserve every failed hypothesis and remaining latency family."
+    },
+    {
+      "id": "concern:portable-settings-fixture-agent-store-binding",
+      "kind": "concern",
+      "family": "test_isolation",
+      "finding": "Portable UI fixture reuses an agent/workspace reader bound to an expired test database",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_both_CI_sqlite_leaf_and_normal_fixture_lifetime_before_after",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json",
+        "sha256": "7f29aff8ccd256e8b0e9f4e101c6e6ba3a53c0bdb83b1a68cd3a479c9c2905b8"
+      },
+      "implemented": "Test-only builder resets Store/infrastructure and instance-agent singleton before constructing its explicitly owned Settings/Kernel, matching existing portable visualization fixture isolation. Product singleton/Kernel/admission/lease/default/permission/durability behavior unchanged. No retry/timeout/exception masking or UI fallback.",
+      "merged": [],
+      "deployed": "Test-only candidate; product singleton unchanged",
+      "retested": {
+        "regression_before": [
+          "FAILED tests/test_settings_scope_fixture_isolation.py::test_agent_partial_uses_current_fixture_after_prior_directory_expires",
+          "1 failed, 1 warning in 4.00s"
+        ],
+        "final": [
+          "5 passed, 338 warnings in 40.31s"
+        ],
+        "unique_final_cases": 5,
+        "browser_cases": 4,
+        "real_partial": "Positive normal-lifespan ASGI request returns200 andux-worker execution markup after old fixture directory expires. Manager and workspace reader are the current context store. Regression fails immutable5a3fixture before source reset.",
+        "timing_notice": "Functional/browser test durations and338pytest warnings retained. No passing performance distribution or universal zero-warning claim."
+      },
+      "resolution": "open",
+      "report": "17c18750-4f0b-4d0d-a075-0d32eda6a7c9 revision3",
+      "fix_or_existing_owner": "This systemic session owns integration-test isolation; original live/database/backup and other browser findings retain their distinct owners and evidence.",
+      "next_actor": "this same systemic session",
+      "next_action": "Ready supervised PR and allhead/currentreview/stablesupervisor/merge/newmain gates; then corrected scalar-default source and every remaining acceptance finding. No blanket runtime closure."
+    },
+    {
+      "id": "concern:snapshot-responsiveness-mock-setup-budget",
+      "kind": "concern",
+      "family": "test_timing",
+      "finding": "Metadata responsiveness assertion charges mock context setup to its request budget",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_existing_CI_setup_request_teardown_phase_evidence",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-snapshot-request-timing-20261018.json",
+        "sha256": "9ce3fc5f89eb653d858adaf170ecb620e80145fed5c86f21fcd9fe467b7d5a95",
+        "phases": {
+          "setup_seconds": 0.249496,
+          "request_seconds": 0.003306,
+          "teardown_seconds": 1.2e-05,
+          "loop_thread_cpu_seconds": 0.248757
+        }
+      },
+      "implemented": "Keep actual asyncio.wait_for(timeout0.2s), and assert request_finished-configured <0.2s using already recorded request-start timestamp. Retain full setup/teardown/loopCPU in failure diagnostics. All zero-transcript-reads/unflushed4096buffer/no-transcript-payload/sequence4096 assertions unchanged. No application threshold, timeout, warning policy or code change.",
+      "merged": [],
+      "deployed": "Test-only candidate",
+      "retested": [
+        "1 passed in 3.94s"
+      ],
+      "resolution": "open",
+      "report": "4ddca18e-0b59-41da-a9af-32e84eca92d1 revision1",
+      "fix_or_existing_owner": "This same systemic session; production snapshot/GC/nativeCPU concerns remain distinct and open.",
+      "next_actor": "this same systemic session",
+      "next_action": "Push correctedPR539head/rewritefinalscope; requireallfreshheadCI/stablesupervisor/independentcurrent-base/review/merge/newmain gates. Preserve original failure and all remaining acceptance."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -210577,6 +210641,29 @@
       },
       "resolution": "open",
       "source_status": "Test-only correction integrated/verified; original533 failed main retained. No production browser cause or whole performance acceptance inferred."
+    },
+    "concern:main537-mobile-keyboard-detail-timeout": {
+      "artifact": "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json",
+      "sha256": "7f29aff8ccd256e8b0e9f4e101c6e6ba3a53c0bdb83b1a68cd3a479c9c2905b8",
+      "cause_status": "BothCI537/538leafsqliteOperationalError matches confirmed expiredfixturemanager/store reuse. Focuscheck538improvedevidence but didnotrepairbinding. No attributiontolivePA/forkfetchstall/visualizationframefailures.",
+      "implemented": "Test-only builder resets Store/infrastructure and instance-agent singleton before constructing its explicitly owned Settings/Kernel, matching existing portable visualization fixture isolation. Product singleton/Kernel/admission/lease/default/permission/durability behavior unchanged. No retry/timeout/exception masking or UI fallback.",
+      "regression": {
+        "regression_before": [
+          "FAILED tests/test_settings_scope_fixture_isolation.py::test_agent_partial_uses_current_fixture_after_prior_directory_expires",
+          "1 failed, 1 warning in 4.00s"
+        ],
+        "final": [
+          "5 passed, 338 warnings in 40.31s"
+        ],
+        "unique_final_cases": 5,
+        "browser_cases": 4,
+        "real_partial": "Positive normal-lifespan ASGI request returns200 andux-worker execution markup after old fixture directory expires. Manager and workspace reader are the current context store. Regression fails immutable5a3fixture before source reset.",
+        "timing_notice": "Functional/browser test durations and338pytest warnings retained. No passing performance distribution or universal zero-warning claim."
+      },
+      "merged": [],
+      "deployed": "Test-onlycandidate",
+      "resolution": "open",
+      "next_action": "Ready supervised PR and allhead/currentreview/stablesupervisor/merge/newmain gates; then corrected scalar-default source and every remaining acceptance finding. No blanket runtime closure."
     }
   },
   "f7e8_loaded_stage": {
@@ -212526,6 +212613,20 @@
     "artifact": "docs/benchmarks/systemic-schema-scalar-default-probe-20261018.json",
     "sha256": "82015449ed18d8df0771d3694948495cae93a3016d61a78c2b386da7c158e642",
     "implemented": false,
+    "resolution": "open"
+  },
+  "settings_fixture_isolation_stage": {
+    "artifact": "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json",
+    "sha256": "7f29aff8ccd256e8b0e9f4e101c6e6ba3a53c0bdb83b1a68cd3a479c9c2905b8",
+    "rows": 584,
+    "concerns": 88,
+    "resolution": "open"
+  },
+  "snapshot_request_timing_stage": {
+    "artifact": "docs/benchmarks/systemic-snapshot-request-timing-20261018.json",
+    "sha256": "9ce3fc5f89eb653d858adaf170ecb620e80145fed5c86f21fcd9fe467b7d5a95",
+    "rows": 585,
+    "concerns": 89,
     "resolution": "open"
   }
 }
