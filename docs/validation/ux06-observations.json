@@ -1,0 +1,149 @@
+{
+  "date": "2026-10-18",
+  "source_revision": "489122d2fd6a397b12ea201827e96b99071d6e49",
+  "method": "automated real PA browser checks; toy fixture only; not participant metrics",
+  "zoom_method": "1440x1000 physical pixels represented by 720x500 CSS pixels at device scale 2",
+  "audible_screen_reader_tested": false,
+  "observations": [
+    {
+      "starting_width": 1440,
+      "task": "not-started",
+      "width": 1440,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "turn-ended",
+      "width": 1440,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "delivered",
+      "width": 1440,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "delivered-evidence",
+      "width": 1440,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "worker-settings",
+      "width": 1440,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "worker-settings-zoom200",
+      "width": 720,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "personal-default-saved",
+      "width": 1440,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 1440,
+      "task": "personal-default-zoom200",
+      "width": 720,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 390,
+      "task": "not-started",
+      "width": 390,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 390,
+      "task": "turn-ended",
+      "width": 390,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 390,
+      "task": "delivered",
+      "width": 390,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 390,
+      "task": "delivered-evidence",
+      "width": 390,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 390,
+      "task": "worker-settings",
+      "width": 390,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    },
+    {
+      "starting_width": 390,
+      "task": "personal-default-saved",
+      "width": 390,
+      "visible": true,
+      "pageFits": true,
+      "overflow": false,
+      "clipped": [],
+      "helpOpen": false
+    }
+  ]
+}

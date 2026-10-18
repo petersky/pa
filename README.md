@@ -18,6 +18,8 @@ For multi-host fleets (Tailscale, SSH push-install, join tokens), see [docs/MULT
 For durable, fleet-wide GitHub PR lifecycle monitoring and agent-driven merge,
 see [docs/PR_SUPERVISOR.md](docs/PR_SUPERVISOR.md).
 
+For UI changes, use the [UX guidance and journey checks](docs/UX_GUIDANCE.md).
+
 ## Architecture
 
 PA uses a **modular kernel**: built-in features and external plugins implement the same `Module` contract, communicate via a hook bus, and register through setuptools entry points (`pa.modules`). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full guide.
