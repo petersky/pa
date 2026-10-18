@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T02:41:00.111821+00:00",
-  "completion": "OPEN; exact309 loaded; candidate object-read amplification removed with bounded source evidence, current mixed and full acceptance still failing",
+  "as_of": "2026-10-18T02:48:18.150351+00:00",
+  "completion": "OPEN; PR500protectedintegrated but notinstalled; compactFleetselector sourcevalidated only, completeFleet2.95slive residual/all520rows stillopen",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -59942,7 +59942,7 @@
       "retested": "No exact-path integrated measurement yet; open",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
+      "next_action": "Protected integration/exact activation and complete large-data Fleet context/template/serialization retest; retain current1.11MB/2.95s live failure and all remainingpagebranches.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
       "loaded309_fleet_followup": {
         "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
@@ -59958,6 +59958,33 @@
         "report": "d82ea21b-7409-473d-986b-24302d78460a",
         "resolution": "open",
         "next_action": "Use exact Fleet request correlations to separate context/cache/peer/template/serialization costs; reproduce measured large retained-data branches in disposable state, preserve data and semantics."
+      },
+      "fleet_selector_followup": {
+        "artifact": "docs/benchmarks/systemic-fleet-selector-20261018.json",
+        "status": "Implemented source candidate, unmerged/uninstalled",
+        "confirmed": "Unnecessary full-body reads for selector identities; actual full live latency causal share unknown",
+        "pair": {
+          "full": {
+            "samples": 30,
+            "max": 360.775,
+            "p50": 236.748,
+            "p95": 293.538,
+            "p99": 360.775
+          },
+          "selector": {
+            "samples": 30,
+            "max": 83.618,
+            "p50": 44.584,
+            "p95": 81.448,
+            "p99": 83.618
+          }
+        },
+        "body_characters_per_call": {
+          "selector": 0,
+          "full": 21692416
+        },
+        "tests": 92,
+        "resolution": "open"
       }
     },
     {
@@ -70089,5 +70116,6 @@
     "retry_key": "pa-performance-backup-7e7ffd35-resume-20261017-v1:retry-after-drain-v1",
     "independent_acceptance": "withheld; failed12.78sstall retained, repair first"
   },
-  "object_read_artifact": "docs/benchmarks/systemic-object-read-20261018.json"
+  "object_read_artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+  "fleet_selector_artifact": "docs/benchmarks/systemic-fleet-selector-20261018.json"
 }

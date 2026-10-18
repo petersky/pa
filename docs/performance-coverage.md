@@ -1,3 +1,17 @@
+# Fleet selector phase repair — 2026-10-18
+
+The systemic card remains **open: 520 evidence rows / 42 concerns**. [Full matrix](performance-coverage.json); [new phase evidence](benchmarks/systemic-fleet-selector-20261018.json). Every prior measured family, owner, gap and failed stage remains in the preceding immutable artifacts and sections below.
+
+Fleet hydrates full card bodies for a selector that renders only identity, title, project, lane and active-dispatch hints. The source reuses the existing compact card-options query, adding the exact prior recent-first SQL ordering while preserving alphabetical ordering for other selectors. No card content, dispatch/admission logic, limits, warning/deadline threshold or execution default changes. **92 scoped regressions pass**, including field/order/realm parity, exclusion of body hydration, active-dispatch hints, existing page rendering, remote admission, membership and UI state.
+
+In 30 alternating reads of 331 disposable cards with 64 KiB bodies, full reads p50/p95/p99/max were 236.748/293.538/360.775/360.775 ms; compact reads 44.584/81.448/83.618/83.618 ms. Materialized body characters fall from 21,692,416 to zero with exact selector field and ordering parity. Normal GC remains enabled. This isolates one phase, is not a whole-page causal comparison, and is not deployed acceptance. Current loaded309 Fleet still has five HTTP200 samples at 1.11 MB each, p50 2.201 s/max 2.946 s. Numeric overview sizes are 734 KB in node dimensions and 212 KB in edge details. Report d82ea21b revision2 retains the correlations and uncertainty; the full context/template/serialization work remains open.
+
+PR500 merged **e3ac8ae1** from watched0794810d after seven stable supervisor observations and independent five successful checks, complete reviews/threads/rules/authorship validation, and protected head-CAS merge. Source and merge trees match8b343246. Integration CI39091247489 is tracked separately; no deployment is inferred. The server still independently fingerprints **309751f5/packagecad7**, which includes backupPR498 and schemaPR499. The compact selector and object-read repair are not installed. Backup actual-scope independent acceptance and systemic requirement17d034a6 remain scheduler-owned; no repairer acceptance receipt exists.
+
+Previous object-read mixed candidate retains9,600ordered events/zero worker warnings/failures/timeouts/rejections but four500ms inventory violations(max1.478s), plus separate startup warnings. That result remains failing acceptance under the unchanged criteria. All startup/MCP CPU, nativeSQL/WAL/GIL/scheduling/disk/GC, valid nonempty branches, peers/builds/logretention and receipt gaps remain required. Original10attachments are preserved; no new worker/card, productionbackup/deletion/fault, or competing backup scope was introduced.
+
+---
+
 # Loaded309 and immutable-object read checkpoint — 2026-10-18
 
 The systemic card remains **open:520rows/42concerns**, all140 retained slow names,181 baseline operations,115routes and every prior owner/outlier preserved. [Full matrix](performance-coverage.json); [complete numeric stages/activation/coverage](benchmarks/systemic-object-read-20261018.json). This section supersedes older current-status labels; historical failures remain below.
