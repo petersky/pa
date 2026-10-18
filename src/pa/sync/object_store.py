@@ -91,9 +91,17 @@ class ObjectStore:
             observation.object_get_calls += 1
         try:
             path = self._path_for(obj_hash)
-            if not path.exists():
+            try:
+                raw = path.read_bytes()
+            except FileNotFoundError:
                 return None
-            raw = path.read_bytes()
+            except OSError:
+                # Keep the existing missing/inaccessible-path behavior without
+                # a separate metadata lookup for every successful immutable
+                # object read. Other read failures must still reach callers.
+                if not path.exists():
+                    return None
+                raise
             if observation is not None:
                 observation.object_get_bytes += len(raw)
             return raw
