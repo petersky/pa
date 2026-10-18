@@ -2675,8 +2675,6 @@ async def get_session_snapshot(request: Request, session_id: str) -> dict:
 def _session_snapshot(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     snapshot = runtime.snapshot(include_transcript=False)
-    from pa.domain.conversation_origin import conversation_origin
-    snapshot["session"]["conversation_origin"] = conversation_origin(runtime.session)
     normalized_config, confirmed = normalized_session_config_json(
         runtime.session.config_json,
         model_id=runtime.session.model_id,

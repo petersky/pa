@@ -93,6 +93,9 @@ async def test_fork_copy_fresh_source_navigation_reload_and_narrow_layout(operat
         agent._runtimes[session.id] = runtime
         return runtime
     agent.create_session = create
+    # Only provider reconnection is synthetic. The browser still POSTs to the
+    # real recover route and applies the real runtime response immediately.
+    agent.recover_session = AsyncMock(side_effect=lambda sid, **kwargs: agent.get(sid))
     browser = BrowserManager(tmp_path / "browser")
     manager = BrowserSessionManager(browser, instance_id="origin-test")
     scope = BrowserScope("user:test", "origin-test", "origin-test")
@@ -121,7 +124,13 @@ async def test_fork_copy_fresh_source_navigation_reload_and_narrow_layout(operat
             pytest.fail(expression + "\n" + str(diagnostics) + "\n" + str(await page.evaluate("document.body.innerText")))
 
         def selected(sid):
-            return "document.querySelector('[data-agent-chat]')?._acw?.lastSnapshot?.session.id === " + json.dumps(sid)
+            # Recent history can paint before owner resolution has restored the
+            # target draft scope. Wait for both before typing or inspecting it.
+            return """(() => {
+              const w = document.querySelector('[data-agent-chat]')?._acw;
+              return w && !w.ownerResolutionPending && w.lastSnapshot?.session.id === SID
+                && w.drafts?.sessionId === SID;
+            })()""".replace("SID", json.dumps(sid))
 
         async def open_branch_panel():
             tab_id = await page.evaluate("document.querySelector('[data-conversation-threads]').closest('[role=tabpanel]').getAttribute('aria-labelledby')")
@@ -172,10 +181,35 @@ async def test_fork_copy_fresh_source_navigation_reload_and_narrow_layout(operat
         await wait_for("document.querySelector('[data-acw-messages]').innerText.includes('New message only in branch')")
         await wait_for("!!document.querySelector('[data-origin-source] a')")
         assert await page.evaluate("document.querySelector('[data-acw-input]').value") == "Branch draft stays here"
+        recovered = await page.evaluate("""document.querySelector('[data-agent-chat]')._acw.recoverSession().then(snap => ({
+          id: snap.session.id, origin: snap.session.conversation_origin,
+          panelHidden: document.querySelector('[data-conversation-origin]').hidden,
+          boundaryHidden: document.querySelector('[data-origin-boundary]').hidden,
+          sourceHref: document.querySelector('[data-origin-source] a')?.getAttribute('href'),
+          explanation: document.querySelector('[data-origin-explanation]').innerText,
+          title: document.querySelector('[data-acw-title]').innerText,
+          boundary: document.querySelector('[data-origin-boundary]').innerText,
+          draft: document.querySelector('[data-acw-input]').value,
+          messages: document.querySelector('[data-acw-messages]').innerText
+        }))""")
+        assert recovered["id"] == native_id
+        assert not recovered["panelHidden"] and not recovered["boundaryHidden"]
+        assert recovered["origin"]["strategy"] == "native"
+        assert recovered["origin"]["native_state"] == "forked"
+        assert source.id in recovered["sourceHref"]
+        assert recovered["boundary"] == "New messages in this branch"
+        assert "Latest provider history was inherited at fork time" in recovered["explanation"]
+        assert recovered["title"] == "Branch of " + source.title
+        assert recovered["draft"] == "Branch draft stays here"
+        assert "New message only in branch" in recovered["messages"]
+        assert "History only for thread-root" not in recovered["messages"]
+        (tmp_path / "fork-origin-recovered.png").write_bytes(await manager.screenshot(scope))
+        agent.recover_session.assert_awaited_once_with(native_id, provider_override=None)
         # Source navigation uses normal widget switching, preserving both drafts.
         await page.evaluate("window.oldSourceLink = document.querySelector('[data-origin-source] a')")
         await manager.click(scope, selector="[data-origin-source] a")
         await wait_for(selected(source.id))
+        await wait_for("document.querySelector('[data-acw-input]').value === 'Source draft stays here'")
         await page.evaluate("window.oldSourceLink.click()")
         assert await page.evaluate(selected(source.id))
         assert await page.evaluate("document.querySelector('[data-conversation-origin]').hidden")
