@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 import stat
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from pa import __version__
 from pa.acp.mcp_config import McpHandshakeError, OwnerChannelError
@@ -29,6 +32,7 @@ from pa.status.serving import (
     HealthProbe,
     ServingDiagnosis,
     SyncDiagnosis,
+    diagnose_serving,
 )
 
 
@@ -364,6 +368,35 @@ def test_doctor_timeout_without_loopback_recommends_restart_and_rebind() -> None
     commands = [command.command for finding in findings for command in finding.next_commands]
     assert "pa config set host 0.0.0.0" in commands
     assert "pa restart" in commands
+
+
+@pytest.mark.parametrize("serving", ["advertised_unreachable", "timeout"])
+def test_doctor_healthy_loopback_does_not_recommend_restart(serving) -> None:
+    settings = Settings(
+        host="0.0.0.0", port=8080, instance_url="http://100.64.0.1:8080"
+    )
+
+    def probes(url: str, **_kwargs):
+        if "127.0.0.1" in url:
+            return HealthProbe(f"{url}/api/health", True, 21.3, 200, None)
+        return HealthProbe(f"{url}/api/health", False, 3000.0, None, "timeout")
+
+    with patch("pa.status.serving.probe_health", side_effect=probes):
+        diagnosis = diagnose_serving(settings, service_running=True)
+    # Also accept older/externally supplied diagnoses carrying the timeout label.
+    findings = _serving_findings(replace(diagnosis, serving=serving), settings, 2)
+    assert {finding.code for finding in findings} == {
+        "PA-DOC-PUBLIC-HEALTH-UNREACHABLE"
+    }
+    finding = findings[0]
+    assert finding.root_cause == "network"
+    assert "loopback" in finding.cause.lower()
+    assert "starved" not in finding.cause.lower()
+    assert finding.evidence["loopback"]["ok"] is True
+    assert all(not command.mutates_state for command in finding.next_commands)
+    assert any(command.command == "tailscale status" for command in finding.next_commands)
+    assert "100.64.0.1:8080/api/health" in finding.verification_command
+    assert all("restart" not in command.command for command in _dedupe_plan(findings))
 
 
 def test_doctor_sync_inconsistency_recommends_reconcile() -> None:

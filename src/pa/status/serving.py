@@ -252,10 +252,8 @@ def _classify_serving(
     if loopback_ok and (advertised is None or advertised_ok):
         return "ok"
     if loopback_ok and advertised and not advertised_ok:
-        if advertised.error == "refused" or bind.mode == "loopback":
+        if bind.mode == "loopback":
             return "loopback_only"
-        if advertised.error == "timeout":
-            return "timeout"
         return "advertised_unreachable"
     if advertised_ok and not loopback_ok:
         return "no_loopback"
@@ -403,4 +401,10 @@ def format_serving_line(diagnosis: ServingDiagnosis) -> str:
         )
     if serving == "refused":
         return "not serving — connection refused"
+    if serving == "advertised_unreachable":
+        return (
+            "advertised endpoint unreachable "
+            f"(loopback {format_probe(diagnosis.loopback)}; "
+            f"advertised {format_probe(diagnosis.advertised)})"
+        )
     return f"{serving} — /api/health unreachable"
