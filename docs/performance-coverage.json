@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T23:04:04.920729+00:00",
-  "completion": "OPEN;596findings/100concerns; all prior594rows unchanged. Includes independent fork recovery regression/existingowner followthrough and bounded GC cursor fetch source repair.39existing tests pass; exact100iteration mixed retains9600ordered/12511cold with2workerwarnings/8threshold observations. Local source is not integrated/deployed acceptance. PR543 exact0009 head/main CI5success each verified separately. Pendingimmutable53b42 activation decision unchanged; all peer/log/backup/native/startup/coverage and independent requirements remain.",
+  "as_of": "2026-10-18T23:11:24.345905+00:00",
+  "completion": "OPEN;596findings/100concerns, every existing row unchanged with explicit new stage overrides. PR545 original2c9CI5success retained; mainchanged via PR544ee21 and normally merged08c. Fresh exact-source100iteration workload retains9600orderedactive/12511cold with1workerwarnings/6threshold observations; prior2/8 and startup slow observations retained. No performance/deployment/independent acceptance. Final updatedhead CI/supervisor pending. Immutable53b42 operator interaction remains separate; all existing peer/log/backup/native/inventory requirements remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -135,7 +135,8 @@
     "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
     "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
     "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
-    "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json"
+    "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
+    "docs/benchmarks/systemic-gc-fresh-main-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -215772,5 +215773,35 @@
     "artifact": "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
     "sha256": "314550a489d38a8b0f6b61d3ddf08237d71982b4539672dd755240960fdbedbb",
     "resolution": "open"
-  }
+  },
+  "fresh_main_gc_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-fresh-main-20261018.json",
+    "sha256": "65a4e07ad1374369e227abf2add88aa4dd79648650152257614288c03e08f503",
+    "resolution": "open"
+  },
+  "current_stage_overrides_after_pr544": [
+    {
+      "row_id": "concern:independent-fork-recovery-attribution-boundary",
+      "source_merged": {
+        "pr": 544,
+        "head": "d02b6a3684156ecb880f5d6dbc9b4a593b99114b",
+        "merge": "ee21b429a9170123cdcdb79b385d161935453b9d"
+      },
+      "deployed": "Unverified; no root activation performed.",
+      "retested": "New source owner repair integration is not independent running acceptance.",
+      "resolution": "open",
+      "next_actor": "Existing source/activation owners and ordinary scheduler under unchanged requirement36140832.",
+      "next_action": "Align an actually authorized runtime target and complete current independent verification; no duplicate source worker/verifier."
+    },
+    {
+      "row_id": "concern:transcript-gc-bounded-cursor-fetch",
+      "fresh_measurement": {
+        "artifact": "docs/benchmarks/systemic-gc-fresh-main-20261018.json",
+        "sha256": "65a4e07ad1374369e227abf2add88aa4dd79648650152257614288c03e08f503",
+        "resolution": "open"
+      },
+      "resolution": "open",
+      "next_action": "Push final updated head, require fresh full CI/stable supervisor/independent signals, then retain separate authorized activation and whole-inventory acceptance gates."
+    }
+  ]
 }
