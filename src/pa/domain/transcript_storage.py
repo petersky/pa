@@ -581,7 +581,13 @@ class TranscriptStorage:
             "hot_payload_limit": MAX_HOT_PAYLOAD_BYTES}
 
     def referenced_hashes(self) -> set[str]:
-        with self._conn() as conn: return {r[0] for r in conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL")}
+        """Read every event reference with bounded cursor materialization."""
+        with self._conn() as conn:
+            cursor = conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL")
+            hashes = set()
+            while rows := cursor.fetchmany(128):
+                hashes.update(row[0] for row in rows)
+            return hashes
 
     def operation(self, name: str) -> dict[str, Any] | None:
         with self._conn() as conn:

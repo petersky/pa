@@ -1,3 +1,68 @@
+# Fresh-health reference batching source evidence — 2026-10-18
+
+All **580 findings and 84 concerns remain open**. Every earlier row, owner, action and failure is retained; current-status overrides point to the [complete source and mixed evidence](benchmarks/systemic-health-reference-source-20261018.json). PR535 is now integrated as `af14c179`, with all five head and new main checks successful. The original PR533 main failure remains recorded; the readiness repair changes only its test.
+
+Fresh transcript health iterated one observed cursor step per cold reference. The repair uses bounded batches of128rows with the **same DISTINCT query and complete set**. Fresh missing-file and integrity checks remain uncached; GC, writes, locking, retention, warning thresholds and deadlines are unchanged. The actual function body matches the earlier successful prototype. That probe reduced observed execute/fetch calls12,515→102 for the same12,511rows; these are fetch steps, not fewer SQL queries. Its four worker warnings and concurrent CPU regression remain published below.
+
+Six new contracts cover empty/single/multiple batches, duplicate references, hot NULLs, fresh missing-file detection/restoration and failure propagation without partial health. Final storage/GC/retention tests pass61cases; disjoint backup suites pass65cases+16subtests:126unique tests. Initial fixture failures reused an event id; the corrected fixture creates a new id and retains all count assertions. Raw logs remain local with hashes; no production data was changed.
+
+One exact438source/38template wheel fixture ran100iterations in74.233s on this macbook, Python3.14.2/arm64/10CPUs. It retained9,600ordered active events, verified all12,511cold object hashes, and returned2,900HTTP200responses below500ms. All2,927ordinary and100diagnostic worker calls completed with zero failures/timeouts/rejections/steady slow warnings. This candidate-only run is **not a controlled whole-path speedup comparison or deployed acceptance**.
+
+Five500ms background observations remain: four object collections (max1,200.539ms), one inclusive maintenance call13,037.839ms. Maintenance phase evidence includes retention object collection5,484.971ms, migration/health4,533.736ms and final fresh health1,702.435ms; parent/child intervals overlap. Kernel boot/seeding separately had three slow calls. Two reads had0.064/0.678ms service but561.164/643.246ms completion delivery; OpenAPI had586.517ms service/568.731ms threadCPU. These support shared scheduling-delay attribution for the reads, not an assertion that every warning is a slow query; exact CPU/GIL/host contribution remains unverified.
+
+Loop last600max173.441ms; GC last256max107.181ms, while retained long-GC records include178.707ms. The full artifact preserves all windows/counters and phases. Logical I/O counters and reported0rusage disk blocks do not establish physical write amplification. The hash-chained journal retains7,274records and added1,500.833ms total observer wall time outside individual result timers. Sequential snapshot capture13.834ms and postmeasurement verification3,523.071ms are separate. Eleven executor sections plus separate diagnostics were captured; absent auxiliary fixture sections cannot be recovered, and the separate live2e21-section snapshot remains distinct.
+
+No install/restart, live backup/archive mutation, provider workload, peer probing or acceptance submission occurred. The original failed527 receipt remains failed; the scoped process-only response remains applied. All prior native SQL/CPU/disk/startup/provider/peer/log-loss/receipt/browser/backup/unexercised findings and normal PA independent acceptance remain required.
+
+| Operation/request | n | p50 ms | p95 ms | p99 ms | max ms | 500ms observations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| / | 100 | 7.413 | 16.585 | 38.079 | 40.154 | 0 |
+| /agent | 100 | 52.996 | 116.844 | 171.278 | 229.663 | 0 |
+| /api/agent/history/session-0?limit=64 | 100 | 27.785 | 69.616 | 138.647 | 161.841 | 0 |
+| /api/agent/history/session-0?limit=64&message_boundaries=true | 100 | 126.112 | 328.1 | 496.954 | 497.68 | 0 |
+| /api/agent/preferences | 100 | 3.357 | 7.611 | 11.131 | 71.841 | 0 |
+| /api/agent/sessions?view=chats | 100 | 67.241 | 120.183 | 156.337 | 188.466 | 0 |
+| /api/cards | 100 | 6.083 | 10.175 | 21.899 | 23.357 | 0 |
+| /api/cards/fixture-card | 100 | 3.757 | 7.211 | 15.577 | 19.242 | 0 |
+| /api/cards/fixture-card/history | 100 | 20.766 | 61.304 | 75.509 | 96.727 | 0 |
+| /api/execution/defaults | 100 | 3.858 | 6.708 | 12.971 | 27.739 | 0 |
+| /api/fleet/dispatch-jobs | 100 | 24.011 | 43.151 | 58.991 | 213.755 | 0 |
+| /api/fleet/dispatch-queue | 100 | 4.619 | 10.291 | 22.055 | 27.013 | 0 |
+| /api/health | 100 | 2.25 | 3.533 | 4.914 | 28.96 | 0 |
+| /api/health-journal/status | 100 | 5.502 | 16.171 | 28.958 | 41.715 | 0 |
+| /api/notifications | 100 | 3.727 | 11.496 | 19.453 | 21.575 | 0 |
+| /api/pr-supervisor/capabilities | 100 | 5.229 | 12.134 | 18.348 | 18.566 | 0 |
+| /api/pr-supervisor/watches | 100 | 5.247 | 13.903 | 18.763 | 21.217 | 0 |
+| /api/runtime | 100 | 21.777 | 29.447 | 36.373 | 57.281 | 0 |
+| /api/runtime?section=sse | 100 | 3.437 | 5.172 | 8.962 | 17.557 | 0 |
+| /api/status | 100 | 33.393 | 66.963 | 101.298 | 101.642 | 0 |
+| /api/sync/refs | 100 | 3.203 | 8.556 | 21.925 | 40.385 | 0 |
+| /api/sync/status | 100 | 9.141 | 30.753 | 50.572 | 56.998 | 0 |
+| /api/workspaces | 100 | 4.638 | 11.885 | 24.64 | 29.475 | 0 |
+| /fleet | 100 | 75.694 | 164.636 | 293.546 | 352.369 | 0 |
+| /partials/home/sections | 100 | 13.096 | 35.869 | 46.667 | 74.224 | 0 |
+| /pull-requests | 100 | 20.542 | 58.956 | 73.673 | 82.461 | 0 |
+| /settings?section=agent | 100 | 11.911 | 32.969 | 60.251 | 61.702 | 0 |
+| /settings?section=backups | 100 | 11.368 | 49.507 | 66.065 | 76.607 | 0 |
+| /work | 100 | 8.342 | 21.47 | 41.831 | 42.208 | 0 |
+| acp.wire_append | 100 | 3.679 | 12.173 | 16.15 | 34.267 | 0 |
+| dispatch.runnable_read | 100 | 1.854 | 7.28 | 11.711 | 22.332 | 0 |
+| fleet.overview_cache_read | 100 | 1.668 | 6.767 | 12.701 | 17.66 | 0 |
+| fleet.overview_cache_write | 100 | 8.769 | 21.934 | 48.84 | 63.149 | 0 |
+| maintenance.run | 1 | 13037.839 | 13037.839 | 13037.839 | 13037.839 | 1 |
+| progress.checkpoint_write | 100 | 7.479 | 15.531 | 19.622 | 23.98 | 0 |
+| progress.sequence_allocate | 100 | 5.942 | 18.942 | 40.974 | 48.908 | 0 |
+| reconciliation.dispatch_read | 100 | 1.643 | 7.844 | 16.204 | 41.692 | 0 |
+| sqlite.card_write | 10 | 44.144 | 416.136 | 416.136 | 416.136 | 0 |
+| sqlite.execution_binding_materialize | 100 | 49.117 | 133.92 | 198.187 | 276.352 | 0 |
+| sync.commit_read | 100 | 3.651 | 9.381 | 18.946 | 31.125 | 0 |
+| sync.object_collect | 10 | 263.684 | 1200.539 | 1200.539 | 1200.539 | 4 |
+| sync.push_transaction | 100 | 54.775 | 119.165 | 171.952 | 230.746 | 0 |
+| sync.reconcile_head | 100 | 41.913 | 142.298 | 227.357 | 259.114 | 0 |
+| transcript.drain | 300 | 88.923 | 146.368 | 176.225 | 213.126 | 0 |
+
+## Preserved prior inventory and stage history
+
 # Post-integration CI and fresh-health findings — 2026-10-18
 
 All **580 findings and 84 concerns remain open**. The prior 578 rows, owners, actions and evidence are unchanged.
