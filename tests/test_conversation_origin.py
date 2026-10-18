@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from pa.domain.conversation_origin import conversation_origin
 from pa.domain.models import AgentSession
+from pa.instance.agent_session import AgentSessionRuntime
 from pa.modules.conversation_threads import get_conversation_origin
 from tests.test_conversation_issues import setup
 
@@ -83,3 +84,20 @@ def test_unrecognized_workflow_metadata_does_not_break_session_lists(setup, stra
     target.initiating_workflow["strategy"] = "native"
     target.config_json["branch_admission"] = "legacy-unknown"
     assert conversation_origin(target)["native_state"] is None
+
+
+@pytest.mark.parametrize("strategy", ["native", "copy", "empty", None])
+@pytest.mark.parametrize("include_transcript", [True, False])
+def test_runtime_snapshots_preserve_origin_for_recovery_and_live_metadata(setup, strategy, include_transcript):
+    store, manager, _, _ = setup
+    target = branch(store)
+    target.initiating_workflow["strategy"] = strategy
+    runtime = AgentSessionRuntime(manager, target)
+
+    snapshot = runtime.snapshot(include_transcript=include_transcript)
+
+    assert snapshot["session"]["conversation_origin"] == conversation_origin(target)
+    assert snapshot["session"]["id"] == target.id
+    assert ("transcript" in snapshot) is include_transcript
+    # Display metadata is derived, never persisted back into session state.
+    assert "conversation_origin" not in target.model_dump()
