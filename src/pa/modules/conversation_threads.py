@@ -12,6 +12,7 @@ from pa.acp.conversation_capabilities import conversation_capabilities
 from pa.auth.middleware import get_principal_id
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.models import AgentSession
+from pa.domain.conversation_origin import conversation_origin
 from pa.modules.conversation_issues import _call, _context, _preferences
 
 router = APIRouter(prefix="/agent/sessions")
@@ -27,6 +28,25 @@ def chat_group_id(session: AgentSession) -> str:
     """New chats are roots; siblings retain a root without sharing a runtime."""
     root = session.initiating_workflow.get("chat_group_id")
     return root if isinstance(root, str) and root else session.id
+
+
+@router.get("/{session_id}/conversation-origin")
+async def get_conversation_origin(request: Request, session_id: str):
+    manager, session, _ = await _context(request, session_id)
+    origin = conversation_origin(session)
+    if not origin:
+        return {"origin": None}
+    source = await _call(manager, manager.store.get_session, origin["source_session_id"])
+    # A provenance reference never grants access to another owner or realm.
+    available = bool(source and source.purpose == "chat"
+                     and source.principal_id in {None, session.principal_id}
+                     and source.realm_id == session.realm_id)
+    origin.update(source_available=available, source_archived=False)
+    if available:
+        origin.update(source_title=source.title or origin["source_title"],
+                      source_instance_id=source.origin_instance_id,
+                      source_archived=bool(source.archived_at))
+    return {"origin": origin}
 
 
 @router.get("/{session_id}/threads")
@@ -45,9 +65,11 @@ async def list_conversation_threads(request: Request, session_id: str):
         runtime = manager.get(saved.id)
         session = runtime.session if runtime and not runtime._closed else saved
         workflow = session.initiating_workflow
+        origin = conversation_origin(session)
         durable = session.config_json.get("durable_runtime") or {}
         threads.append({
-            "id": session.id, "title": session.title or ("Main thread" if session.id == group_id else "New thread"),
+            "id": session.id, "title": session.title or (origin["default_title"] if origin else "Main thread" if session.id == group_id else "New thread"),
+            "conversation_origin": origin,
             "origin_instance_id": session.origin_instance_id,
             "source_session_id": workflow.get("source_session_id"),
             "strategy": workflow.get("strategy"), "request_id": workflow.get("request_id"),
@@ -94,7 +116,7 @@ async def _branch(request, source_id, body):
                 raise HTTPException(403, "Project membership is required to branch")
         workflow = {"kind": "conversation_thread" if body.strategy == "empty" else "conversation_branch",
                     "chat_group_id": chat_group_id(source), "strategy": body.strategy, "request_id": body.request_id,
-                    "source_session_id": source.id, "source_card_id": source.card_id,
+                    "source_session_id": source.id, "source_title": source.title or "Conversation " + source.id[:8], "source_card_id": source.card_id,
                     "source_instance_id": source.origin_instance_id, "source_external_id": source.external_session_id}
         workflow["source_connection"] = ((source.config_json or {}).get("execution_selection") or {}).get("selected", {}).get("connection")
         if body.strategy == "native":

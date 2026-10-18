@@ -54,7 +54,8 @@
         data-session-id="{{ s.id }}"
         data-session-instance="{{ s.origin_instance_id or '' }}"
         data-session-live="{{ 'true' if s.id in live_session_ids else 'false' }}">
-      {% set session_title = s.title or ('New chat' if s.purpose == 'chat' else s.label) or s.agent_name %}
+      {% set origin = detail.conversation_origin %}
+      {% set session_title = s.title or (origin.default_title if origin else none) or ('New chat' if s.purpose == 'chat' else s.label) or s.agent_name %}
       {% set state = detail.state or s.status or 'unknown' %}
       {% set presentation = detail.presentation or {} %}
       {% if session_view == 'activity' %}<div class="agent-activity-group">{{ detail.activity_group }}</div>{% endif %}
@@ -77,6 +78,7 @@
             <span class="agent-session-state agent-session-state-{{ state }}"><span aria-hidden="true">●</span> {{ presentation.display_status or ('Approval' if detail.pending_approval else state | replace('_', ' ') | title) }}</span>
           </div>
           <span class="agent-session-title-tooltip" role="tooltip">{{ session_title }}</span>
+          {% if origin %}<div class="agent-session-context-line" data-session-origin><span>{{ origin.label }} · {{ 'No inherited context' if origin.strategy == 'empty' else origin.source_title }}</span></div>{% endif %}
           <div class="agent-session-context-line">
             {% if detail.card %}<a href="/work?card={{ detail.card.id }}" title="Current card">Card · {{ detail.card.title }}</a>
             {% elif detail.project %}<a href="/projects?project={{ detail.project.id }}" title="Project">Project · {{ detail.project.title }}</a>

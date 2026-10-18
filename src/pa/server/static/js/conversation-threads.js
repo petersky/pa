@@ -4,6 +4,8 @@
   function Controller(widget) {
     this.widget = widget; this.panel = widget.root.querySelector("[data-conversation-threads]");
     this.generation = 0; this.busy = false;
+    this.originPanel = widget.root.querySelector("[data-conversation-origin]");
+    this.originBoundary = widget.root.querySelector("[data-origin-boundary]");
     this.navigation = widget.root.querySelector("[data-thread-navigation]");
     this.list = widget.root.querySelector("[data-thread-list]");
     this.listStatus = widget.root.querySelector("[data-thread-list-status]");
@@ -26,6 +28,10 @@
     clearTimeout(this.refreshTimer); this.refreshTimer = null; this.listLoading = false;
     this.generation++; this.busy = false; this.loaded = false; this.capabilities = null;
     this.isChat = false; this.branchError = false;
+    this.originLoaded = false; this.originLoading = false; this.source = null;
+    this.originSignature = null;
+    if (this.originPanel) this.originPanel.hidden = true;
+    if (this.originBoundary) this.originBoundary.hidden = true;
     if (this.navigation) this.navigation.hidden = true;
     if (this.list) this.list.replaceChildren();
     if (this.listStatus) this.listStatus.textContent = "";
@@ -51,10 +57,78 @@
   };
   Controller.prototype.ready = function (snap) {
     if (snap && snap.session) this.isChat = snap.session.purpose === "chat";
+    const origin = snap && snap.session && snap.session.conversation_origin;
+    this.renderOrigin(origin);
+    if (origin && origin.strategy !== "empty" && !this.originLoaded && !this.originLoading) this.loadOrigin(origin);
     if (this.navigation) this.navigation.hidden = !this.isChat;
     this.setEmptyDisabled(!this.isChat || this.busy || this.widget.ownerResolutionPending);
     if (this.isChat && !this.refreshTimer && !this.listLoading) this.loadThreads();
     if (this.panel && this.panel.open && !this.loaded) this.load();
+  };
+  Controller.prototype.renderOrigin = function (origin) {
+    if (!this.originPanel) return;
+    this.originPanel.hidden = !origin;
+    if (this.originBoundary) this.originBoundary.hidden = !origin;
+    if (!origin) { this.originSignature = null; return; }
+    const source = Object.assign({}, origin, this.source || {});
+    const signature = JSON.stringify([source, this.originLoaded === true]);
+    // Live/history snapshots can repeat. Keep a focused source link in place.
+    if (signature === this.originSignature) return;
+    this.originSignature = signature;
+    const label = this.originPanel.querySelector("[data-origin-source]");
+    const explanation = this.originPanel.querySelector("[data-origin-explanation]");
+    const boundary = this.originBoundary;
+    this.originPanel.dataset.strategy = origin.strategy;
+    label.replaceChildren();
+    if (origin.strategy === "empty") {
+      label.textContent = "Fresh chat";
+      explanation.textContent = "No conversation history was inherited. This conversation continues independently.";
+      if (boundary) boundary.textContent = "Messages in this conversation";
+      return;
+    }
+    label.appendChild(document.createTextNode(origin.strategy === "native" ? "Branched from " : "Context copied from "));
+    const title = source.source_title || "Source conversation";
+    if (source.source_available) {
+      const link = document.createElement("a");
+      link.textContent = title; link.title = title;
+      link.href = "/agent?session=" + encodeURIComponent(origin.source_session_id);
+      if (source.source_instance_id) link.href += "&instance=" + encodeURIComponent(source.source_instance_id);
+      const sid = this.widget.sessionId, generation = this.generation;
+      link.addEventListener("click", event => {
+        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (this.current(sid, generation)) this.widget.switchSession(origin.source_session_id, true, source.source_instance_id || "");
+      });
+      label.appendChild(link);
+      if (source.source_archived) label.appendChild(document.createTextNode(" · Archived source"));
+    } else {
+      label.appendChild(document.createTextNode(title + (source.source_available === false ? " · Source unavailable" :
+        this.originLoaded ? " · Source availability unknown" : " · Checking source…")));
+    }
+    if (origin.strategy === "native") {
+      explanation.textContent = origin.native_state === "forked"
+        ? "Latest provider history was inherited at fork time. It is held by the provider, not shown here as a copied transcript. This branch continues independently."
+        : "Native fork requested using the latest provider history. History inheritance is not yet confirmed. This branch has its own messages and workspace.";
+    } else {
+      explanation.textContent = "This copy uses recent visible text as context: up to 8000 characters from the last 100 events, with no hidden provider history. This conversation continues independently.";
+    }
+    if (boundary) boundary.textContent = "New messages in this branch";
+  };
+  Controller.prototype.loadOrigin = function (origin) {
+    const sid = this.widget.sessionId, generation = this.generation;
+    this.originLoading = true;
+    this.widget.api("/sessions/" + encodeURIComponent(sid) + "/conversation-origin").then(result => {
+      if (!this.current(sid, generation)) return;
+      const value = result.origin || {};
+      this.source = {source_available: value.source_available, source_archived: value.source_archived,
+        source_title: value.source_title || origin.source_title, source_instance_id: value.source_instance_id};
+    }).catch(() => {
+      // A failed lookup is unknown availability, never a dead or unauthorized link.
+    }).finally(() => {
+      if (!this.current(sid, generation)) return;
+      this.originLoaded = true; this.originLoading = false;
+      this.renderOrigin((this.widget.lastSnapshot && this.widget.lastSnapshot.session.conversation_origin) || origin);
+    });
   };
   Controller.prototype.loadThreads = function () {
     const sid = this.widget.sessionId, generation = this.generation;
@@ -86,7 +160,7 @@
       if (thread.origin_instance_id) link.href += "&instance=" + encodeURIComponent(thread.origin_instance_id);
       if (thread.id === this.widget.sessionId) link.setAttribute("aria-current", "page");
       const source = threads.find(item => item.id === thread.source_session_id);
-      const details = [thread.context, source ? "From: " + source.title : "",
+      const details = [thread.conversation_origin && thread.conversation_origin.label, thread.context, source ? "From: " + source.title : "",
         thread.presentation && thread.presentation.display_status,
         thread.queue_length ? thread.queue_length + " queued" : "", thread.archived ? "Archived" : ""].filter(Boolean).join(" · ");
       const title = document.createElement("strong"); title.textContent = thread.title;
