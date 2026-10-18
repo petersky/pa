@@ -6189,7 +6189,20 @@ class CardProjection:
             )]
         deleted = self.transcripts.prune(session_ids, keep_audit=True)
         # Compatibility rows follow the same evidence-preserving policy.
+        if not session_ids:
+            return deleted
+        # Discover after canonical pruning: publication during prune must still
+        # participate in the fresh sequence read below. Empty mirrors need no
+        # canonical hydration or per-session connection on repeated sweeps.
+        with self._conn() as conn:
+            mirror_ids = {row[0] for row in conn.execute(
+                """SELECT DISTINCT session_id FROM agent_transcript_events
+                   WHERE session_id IN (SELECT value FROM json_each(?))""",
+                (json.dumps(session_ids),),
+            )}
         for session_id in session_ids:
+            if session_id not in mirror_ids:
+                continue
             kept = {event.seq for event in self.transcripts.list_range(session_id)}
             with self._conn() as conn:
                 if conn.execute(

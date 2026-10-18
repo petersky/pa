@@ -159,3 +159,77 @@ def test_empty_compatibility_mirror_never_starts_a_delete(tmp_path):
     # A repeated sweep with no mirror rows must not request SQLite's writer lock.
     with patch.object(store, '_conn', read_only_mirror):
         assert store.prune_closed_session_transcripts(before=cutoff) == 0
+
+
+def test_empty_mirror_inventory_avoids_per_session_canonical_reads(tmp_path):
+    store = CardProjection(tmp_path / 'pa.db')
+    cutoff = datetime.now(UTC)
+    old = (cutoff - timedelta(days=1)).isoformat()
+    with store._conn() as conn:
+        conn.executemany(
+            'INSERT INTO agent_sessions(id,agent_name,status,created_at,updated_at) '
+            'VALUES(?,?,?,?,?)',
+            [(f'expired-{i}', 'codex', 'closed', old, old) for i in range(6000)],
+        )
+    store.append_transcript_events([TranscriptEvent(
+        session_id='live', seq=1, event_type='user_message', payload={'text': 'live'})])
+    original = store._conn
+    statements = []
+
+    @contextmanager
+    def observed():
+        with original() as conn:
+            conn.set_trace_callback(statements.append)
+            try:
+                yield conn
+            finally:
+                conn.set_trace_callback(None)
+
+    with patch.object(store, '_conn', observed), patch.object(
+        store.transcripts, 'list_range', side_effect=AssertionError('empty mirror hydration'),
+    ):
+        assert store.prune_closed_session_transcripts(before=cutoff) == 0
+    mirror_reads = [sql for sql in statements if 'FROM agent_transcript_events' in sql]
+    assert len(mirror_reads) == 1
+    assert 'json_each' in mirror_reads[0]
+    assert not any(sql.lstrip().upper().startswith('DELETE') for sql in statements)
+    with original() as conn:
+        plan = conn.execute(
+            'EXPLAIN QUERY PLAN SELECT DISTINCT session_id FROM agent_transcript_events '
+            'WHERE session_id IN (SELECT value FROM json_each(?))', ('["expired-0"]',),
+        ).fetchall()
+    assert any('idx_transcript_session_seq' in row[3] for row in plan)
+    assert store.list_transcript_events('live')[0].payload == {'text': 'live'}
+
+
+def test_publication_after_empty_mirror_discovery_survives(tmp_path):
+    store = CardProjection(tmp_path / 'pa.db')
+    cutoff = datetime.now(UTC)
+    expired_session(store, 'empty', cutoff)
+    original = store._conn
+    discoveries = []
+
+    @contextmanager
+    def publish_after_discovery():
+        discovered = False
+        with original() as conn:
+            def trace(sql):
+                nonlocal discovered
+                if 'SELECT DISTINCT session_id FROM agent_transcript_events' in sql:
+                    discovered = True
+            conn.set_trace_callback(trace)
+            try:
+                yield conn
+            finally:
+                conn.set_trace_callback(None)
+        if discovered:
+            discoveries.append(True)
+            store.append_transcript_events([TranscriptEvent(
+                session_id='empty', seq=1, event_type='user_message',
+                payload={'text': 'published after canonical prune and mirror discovery'})])
+
+    with patch.object(store, '_conn', publish_after_discovery):
+        assert store.prune_closed_session_transcripts(before=cutoff) == 0
+    assert discoveries == [True]
+    assert [event.seq for event in store.list_transcript_events('empty')] == [1]
+    assert [(session, seq) for session, seq, _ in mirror_rows(store)] == [('empty', 1)]

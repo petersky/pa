@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T07:08:48.265695+00:00",
-  "completion": "OPEN544rows59concerns. All140slownames181baselineops115baselineroutes6shells14startuprecords/allpriorowners/outliers/10attachments retained. DB89957 originalscopeclosed; backup0331/18fc/b527/missing5cbb/failed355/8archives/207failures0verified/paused/pendingquestion separate. Requirement17d034a6 independent_agent_v1 unchanged; normalPAschedulerownsacceptance.",
+  "as_of": "2026-10-18T07:37:22.162087+00:00",
+  "completion": "OPEN544rows59concerns/all140slownames181baselineops115baselineroutes6shells14startuprecords/allpriorowners/outliers/10attachments. DB89957 originalacceptedPR471scopeclosed. Backup0331/18fc/b527/missing5cbb/failed355/8archives/207failures0verified/paused/pendingquestion retains separate scope, no retry/recovery/admission. Requirement17d034a6 explicit_acceptance/independent_agent_v1/userlocal/macbook unchanged; normal PA scheduler owns independent final acceptance. Active/integratedonly/acceptedfalse.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -109,7 +109,8 @@
     "docs/benchmarks/systemic-startup-inventory-20261018.json",
     "docs/benchmarks/systemic-prune-rollback-20261018.json",
     "docs/benchmarks/systemic-maintenance-phases-20261018.json",
-    "docs/benchmarks/systemic-prune-inventory-20261018.json"
+    "docs/benchmarks/systemic-prune-inventory-20261018.json",
+    "docs/benchmarks/systemic-mirror-inventory-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -672,6 +673,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.reconcile_head",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.reconcile_head",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -1921,6 +1928,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.transcript_append",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.transcript_append",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -2932,6 +2945,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.collect_garbage",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.collect_garbage",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -3666,6 +3685,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview.sync",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview.sync",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -4332,6 +4357,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.recovery_sessions",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.recovery_sessions",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -4803,6 +4834,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.heartbeat_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.heartbeat_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -5342,6 +5379,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_due_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_due_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -6041,6 +6084,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.dispatch_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.dispatch_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -6602,6 +6651,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.commit_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.commit_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -7163,6 +7218,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview_cache_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview_cache_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -7930,6 +7991,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_completion_due_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -8491,6 +8558,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "acp.wire_append",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "acp.wire_append",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -8962,6 +9035,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.agent_session_save",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.agent_session_save",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -9523,6 +9602,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.sequence_allocate",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.sequence_allocate",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -9994,6 +10079,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.project_provision",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.project_provision",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -10465,6 +10556,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "reconciliation.completion_evidence_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "reconciliation.completion_evidence_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -10936,6 +11033,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.project_recovery_availability",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.project_recovery_availability",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -11296,6 +11399,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.startup_state_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.startup_state_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -11995,6 +12104,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.lease_renew",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.lease_renew",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -12674,6 +12789,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.ref_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.ref_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -13129,6 +13250,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.agent_runtime_checkpoint",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -13690,6 +13817,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "reconciliation.dispatch_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "reconciliation.dispatch_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -14229,6 +14362,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.completion_pending_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.completion_pending_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -14752,6 +14891,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_capability_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -15291,6 +15436,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.pending_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.pending_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -15852,6 +16003,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.checkpoint_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.checkpoint_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -16391,6 +16548,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.followup_pending_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.followup_pending_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -17308,6 +17471,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.card_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.card_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -17779,6 +17948,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.json_decode",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.json_decode",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -18442,6 +18617,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoff_completion",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoff_completion",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -19092,6 +19273,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "reconciliation.session_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "reconciliation.session_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -19653,6 +19840,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview_cache_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview_cache_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -20124,6 +20317,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.repository_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.repository_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -20595,6 +20794,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview_response_json",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview_response_json",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -21134,6 +21339,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview.status",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview.status",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -22072,6 +22283,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "notifications.list_page",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "notifications.list_page",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -22527,6 +22744,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_watch_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -22996,6 +23219,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoffs_pending",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoffs_pending",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -23448,6 +23677,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "preferences.agent_auto_approve_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "preferences.agent_auto_approve_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -24169,6 +24404,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "health.canonical_obligation",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "health.canonical_obligation",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -24640,6 +24881,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_event_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -25170,6 +25417,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_watch_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -25641,6 +25894,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoffs_watchdog",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoffs_watchdog",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -26161,6 +26420,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "filesystem.github_credentials_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "filesystem.github_credentials_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -26616,6 +26881,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.project_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.project_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -27152,6 +27423,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "goal.dispatch_lifecycle_index",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "goal.dispatch_lifecycle_index",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -27623,6 +27900,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoff_session",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoff_session",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -28194,6 +28477,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "pr_supervisor.response_json",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "pr_supervisor.response_json",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -28649,6 +28938,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.record_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.record_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -29169,6 +29464,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.agent_session_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.agent_session_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -29495,6 +29796,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "pr_supervisor.github_response_json",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "pr_supervisor.github_response_json",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -30439,6 +30746,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview.reachability",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview.reachability",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -32372,6 +32685,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.provider_resolve",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.provider_resolve",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -32859,6 +33178,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.startup_reconcile",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.startup_reconcile",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -33182,6 +33507,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "selection.prompt_identity",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "selection.prompt_identity",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -34405,6 +34736,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.prompt_compose",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.prompt_compose",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -34956,6 +35293,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "notifications.present_page",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "notifications.present_page",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -35918,6 +36261,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "selection.configuration_receipt",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "selection.configuration_receipt",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -36631,6 +36980,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.recovery_snapshot",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.recovery_snapshot",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -38620,6 +38975,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.reconcile_head",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.reconcile_head",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -40587,6 +40948,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.peer_http",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.peer_http",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -41573,6 +41940,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "maintenance.run",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "maintenance.run",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -42293,6 +42666,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.heartbeat_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.heartbeat_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -43098,6 +43477,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.transcript_append",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.transcript_append",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -43903,6 +44288,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_due_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_due_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -44623,6 +45014,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.dispatch_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.dispatch_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -45405,6 +45802,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "http.fleet_overview",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "http.fleet_overview",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -46122,6 +46525,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "http.pr_supervisor_peer",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "http.pr_supervisor_peer",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -46842,6 +47251,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.lease_renew",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.lease_renew",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -47562,6 +47977,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.agent_session_save",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.agent_session_save",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -48383,6 +48804,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.sequence_allocate",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.sequence_allocate",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -49204,6 +49631,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "acp.wire_append",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "acp.wire_append",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -49938,6 +50371,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.collect_garbage",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.collect_garbage",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -50947,6 +51386,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "reconciliation.dispatch_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "reconciliation.dispatch_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -51752,6 +52197,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.completion_pending_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.completion_pending_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -52469,6 +52920,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "http.github",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "http.github",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -53207,6 +53664,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.startup_state_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.startup_state_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -54028,6 +54491,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.checkpoint_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.checkpoint_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -54833,6 +55302,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "progress.pending_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "progress.pending_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -55553,6 +56028,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.recovery_sessions",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.recovery_sessions",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -56358,6 +56839,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.ref_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.ref_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -57269,6 +57756,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.json_decode",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.json_decode",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -58074,6 +58567,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview.sync",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview.sync",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -58982,6 +59481,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.project_provision",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.project_provision",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -60401,6 +60906,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "reconciliation.session_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "reconciliation.session_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -61470,6 +61981,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview.status",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview.status",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -62460,6 +62977,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoffs_pending",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoffs_pending",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -63177,6 +63700,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "preferences.agent_auto_approve_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "preferences.agent_auto_approve_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -64094,6 +64623,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_event_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -64899,6 +65434,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.followup_pending_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.followup_pending_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -65619,6 +66160,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_watch_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -66339,6 +66886,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoffs_watchdog",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoffs_watchdog",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -67059,6 +67612,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_watch_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -67779,6 +68338,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoff_completion",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoff_completion",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -68581,6 +69146,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "goal.dispatch_lifecycle_index",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "goal.dispatch_lifecycle_index",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -69402,6 +69973,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview_cache_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview_cache_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -70223,6 +70800,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview_cache_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview_cache_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -70943,6 +71526,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoff_session",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoff_session",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -72077,6 +72666,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.card_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.card_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -72797,6 +73392,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "reconciliation.completion_evidence_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "reconciliation.completion_evidence_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -73517,6 +74118,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.project_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.project_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -74237,6 +74844,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.record_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.record_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -74957,6 +75570,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "pr_supervisor.github_response_json",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "pr_supervisor.github_response_json",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -76006,6 +76625,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview_response_json",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview_response_json",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -76808,6 +77433,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "health.canonical_obligation",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "health.canonical_obligation",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -77528,6 +78159,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.project_recovery_availability",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.project_recovery_availability",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -78349,6 +78986,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.commit_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.commit_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -79139,6 +79782,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "notifications.list_page",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "notifications.list_page",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -79932,6 +80581,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.agent_session_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.agent_session_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -80737,6 +81392,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_completion_due_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -81727,6 +82388,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "filesystem.github_credentials_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "filesystem.github_credentials_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -83431,6 +84098,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.overview.reachability",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.overview.reachability",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -84512,6 +85185,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.provider_resolve",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.provider_resolve",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -85611,6 +86290,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "selection.prompt_identity",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "selection.prompt_identity",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -87047,6 +87732,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.reconcile_terminal_state",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.reconcile_terminal_state",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -87767,6 +88458,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.repository_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.repository_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -88555,6 +89252,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.prompt_compose",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.prompt_compose",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -89413,6 +90116,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "notifications.present_page",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "notifications.present_page",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -90147,6 +90856,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.startup_reconcile",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.startup_reconcile",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -90867,6 +91582,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "pr_supervisor.response_json",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "pr_supervisor.response_json",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -92540,6 +93261,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.agent_runtime_checkpoint",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -93513,6 +94240,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "selection.configuration_receipt",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "selection.configuration_receipt",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -96040,6 +96773,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.pr_supervisor_capability_write",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -97962,6 +98701,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.recovery_snapshot",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.recovery_snapshot",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -100504,6 +101249,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "selection.attempt_authority",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "selection.attempt_authority",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -104172,6 +104923,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "acp.wire_init",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "acp.wire_init",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -105608,6 +106365,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sync.gc_resume",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sync.gc_resume",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -109140,6 +109903,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "acp.pa_mcp_owner_probe",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "acp.pa_mcp_owner_probe",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -111075,6 +111844,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.session_mkdir",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.session_mkdir",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -112171,6 +112946,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.transcript_sequence",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.transcript_sequence",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -113723,6 +114504,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "acp.provider_resolve",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "acp.provider_resolve",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -115300,6 +116087,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "dispatch.workspace_admission_read",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "dispatch.workspace_admission_read",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -116355,6 +117148,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "fleet.update_recovery",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "fleet.update_recovery",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -117216,6 +118015,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "startup.agent_manager",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "startup.agent_manager",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -118888,6 +119693,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "agent.quiesce_snapshot_clear",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "agent.quiesce_snapshot_clear",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -119750,6 +120561,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/status",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/status",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -120124,6 +120941,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/fleet/overview/local",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/fleet/overview/local",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -120592,6 +121415,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/{page_path:path}",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/{page_path:path}",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -120776,6 +121605,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/notifications",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/notifications",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -121123,6 +121958,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/pr-supervisor/replicas",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/pr-supervisor/replicas",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -121753,6 +122594,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/pr-supervisor/capabilities",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/pr-supervisor/capabilities",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -122843,6 +123690,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/agent/sessions/{session_id}/restart-handoffs",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/agent/sessions/{session_id}/restart-handoffs",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -123083,6 +123936,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/sync/refs",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/sync/refs",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -123580,6 +124439,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/instance",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/instance",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -123899,6 +124764,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/pr-supervisor/instances/heartbeat",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/pr-supervisor/instances/heartbeat",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -124009,6 +124880,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/configuration",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/configuration",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -124142,6 +125019,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/ui/assets",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/ui/assets",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -124337,6 +125220,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/agent/observability/v1/sessions/{session_id}",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/agent/observability/v1/sessions/{session_id}",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -124521,6 +125410,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/workspaces",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/workspaces",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -124716,6 +125611,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/fleet/dispatch-jobs/{dispatch_id}",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/fleet/dispatch-jobs/{dispatch_id}",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -125489,6 +126390,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -126567,6 +127474,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/runtime",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/runtime",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -126700,6 +127613,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/ready",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/ready",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -127625,6 +128544,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/health",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/health",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -127921,6 +128846,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/owner-ready",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/owner-ready",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -130048,7 +130979,14 @@
       "next_actor": "this card/session",
       "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:payloads",
@@ -130076,7 +131014,14 @@
       "next_actor": "this card/session",
       "next_action": "Measure recovery/history detail paging, actual MCP/provider/workspace phases and normal prompt admission.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:loop-executor",
@@ -130112,7 +131057,14 @@
         "main_ci_failure_retained": 39053124584,
         "gc_note": "Only2of40selected slow SQLcalls half-overlapped long GC; no blanket GC explanation."
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:transcript",
@@ -130140,7 +131092,14 @@
       "next_actor": "this card/session",
       "next_action": "Verify wire read/write, cancellation, reconnect and real-provider startup/drain separately from fixture provider.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:control",
@@ -130168,7 +131127,14 @@
       "next_actor": "this card/session",
       "next_action": "Measure normal enqueue, heartbeat, sequence and checkpoints under mixed load; preserve fences and durable acknowledgement.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:placement",
@@ -130196,7 +131162,14 @@
       "next_actor": "this card/session",
       "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:pr-external",
@@ -130224,7 +131197,14 @@
       "next_actor": "this card/session",
       "next_action": "Measure external snapshot vs local lease/read/write/effects; verify bounded repeated-failure/backoff behavior.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:pages",
@@ -130782,7 +131762,14 @@
         },
         "scope": "80ordinaryGETs, exactbuildstable,2violations; notwholeacceptance"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:backups",
@@ -130849,6 +131836,13 @@
         "source": "Ownercapture/SHAverifiedHTTPfixture;7>=500ms/2longcontrols/bytesgap retained",
         "production": "Missingcoldsource/35575957terminalfailure/0verified/b527acceptanceopen",
         "owner": "Existing0331/18fc;no competingedits ornewbackup/recoveryauthority"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -130877,7 +131871,14 @@
       "next_actor": "this card/session",
       "next_action": "Profile isolated representative provision/renew/GC/maintenance with live-worktree fencing assertions.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:other-leaves",
@@ -130902,7 +131903,14 @@
       "next_actor": "this card/session",
       "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:peers",
@@ -130930,7 +131938,14 @@
       "next_actor": "this card/session",
       "next_action": "Measure placement/provider/catalog/overview branches; separate external probes and local CPU; avoid changing admission semantics.",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:observability",
@@ -130966,7 +131981,14 @@
         "meaning": "Initial JSON-only owner wrapper was incorrectly used for15HTML attempts and retained only LocalPAServerUnavailable types/timings. No original status/correlation/body retained; these are observer failures and not proven HTTP availability failures. Corrected call-local decoder records only HTTPmetadata through same authenticated transport, original attempt data preserved. Re-encoded JSON bytes are not HTTP wire bytes.",
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:ambiguous-upload",
@@ -131001,7 +132023,14 @@
         "checks_success": 5
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:incoming-fork-fence",
@@ -131036,7 +132065,14 @@
         "checks_success": 5
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:large-message-copy",
@@ -131071,7 +132107,14 @@
         "checks_success": 5
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:startup-classification",
@@ -131102,7 +132145,14 @@
       "published": "git ancestry confirms included in v1.5.8 tagfe26edfab7899d1c4a64e8063d82093ffd550ef9",
       "report": "e2bed017-d546-49f5-910e-3d8326d80e40 revision3",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:creation-version",
@@ -131137,7 +132187,14 @@
         "checks_success": 5
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:completion-scope",
@@ -131164,7 +132221,14 @@
       "completion_requirement_revision": "c62e575f-d225-42f1-b49e-4ed73e6610f1",
       "report": "861aef1f-3d04-461d-8594-fc5b4260ccf2 revision5",
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:normal-enqueue",
@@ -131200,7 +132264,14 @@
         "head_main_checks_success": 5
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:startup-schema-cpu",
@@ -131624,7 +132695,14 @@
         "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
         "stage": "PR499 protected integration verified, exact immutable436source package loaded; corresponding full-family acceptance remainsOPEN"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:pr-inventory-hydration",
@@ -131660,7 +132738,14 @@
         "source_tree": "db71f9e045139b08e82b88025023d5fdbd8d390e"
       },
       "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "runtime-followup:dispatch.runnable_read",
@@ -134099,6 +135184,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/fleet",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/fleet",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -134209,6 +135300,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/pull-requests",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/pull-requests",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -134263,7 +135360,14 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json",
         "state": "Protected merge/source activation verified; not whole-path performance acceptance"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "runtime-live:cards.attachments.publish",
@@ -134817,6 +135921,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_continuation_authorization",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_continuation_authorization",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -135624,6 +136734,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoff_queued",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoff_queued",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -136292,6 +137408,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "sqlite.restart_handoff_resuming",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "sqlite.restart_handoff_resuming",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -136478,7 +137600,14 @@
       "next_actor": "this systemic session",
       "next_action": "Diagnose observed delivery/receipt behavior with exact IDs; preserve pending versus non-commit, bounded retries and sole-writer semantics.",
       "report": "f3fe47a8-98c9-4638-9a28-044cd50c58e8 revision13",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:resume-control-receipts",
@@ -136500,7 +137629,14 @@
       "next_actor": "this systemic session",
       "next_action": "Diagnose observed delivery/receipt behavior with exact IDs; preserve pending versus non-commit, bounded retries and sole-writer semantics.",
       "report": "03e73f23-a54e-47ad-916d-e56e05d37733",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "slow-followup:acp.pa_mcp_owner_probe",
@@ -136921,6 +138057,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "acp.pa_mcp_owner_probe",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "acp.pa_mcp_owner_probe",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -142001,7 +143143,14 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json",
         "state": "Protected merge/source activation verified; not whole-path performance acceptance"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:checkpoint-serving-read",
@@ -142034,7 +143183,14 @@
         "artifact": "docs/benchmarks/systemic-read-repair-20261017.json",
         "state": "Protected merge/source activation verified; not whole-path performance acceptance"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "slow-followup:maintenance.run",
@@ -142611,6 +143767,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "maintenance.run",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "maintenance.run",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -142933,6 +144095,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "workspace.reconcile_terminal_state",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "workspace.reconcile_terminal_state",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -142971,6 +144139,13 @@
         "artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json",
         "source": "Newunmerged/uninstalledshortforkmembershipcandidate;olderhead/largefallback/compatiblehistory stillopen",
         "observation": "60249\u201388563logicalhashes/4\u20136MB perretainedslowreconcile;notsolecauseproof"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -143004,7 +144179,14 @@
         "head_merge_trees_equal": true,
         "deployment": "Unverified; no new install or restart"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:loaded-runtime-provenance",
@@ -143085,7 +144267,14 @@
         "dependency_version_changes": 0,
         "source_files": 437
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:receipt-stale-head-diagnostics",
@@ -143118,7 +144307,14 @@
         "head_merge_trees_equal": true,
         "deployment": "Unverified; no new install or restart"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:managed-handoff-latency",
@@ -143138,7 +144334,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Attribute waiting/resume phases and reconcile existing continuation through supported ownership; preserve exact session identity.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:direct-child-parent-proof",
@@ -143177,7 +144380,14 @@
         "main_checks": "4success/1failure; original failure retained, not retried",
         "activation": "Not installed; observation-only deadline correction is required before activation"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:filesystem-phase-attribution",
@@ -143221,6 +144431,13 @@
         "artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json",
         "finding": "Warmreadwall expandsunder sameprocessPythonCPUcompetitor whilethreadCPU~27ms;notproductionGIL/diskcauseproof",
         "gap": "Initiallongprobe interrupted;contendedrowsnotdurable,12idle retained;bounded2sampleprobecomplete"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -143246,7 +144463,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Finish protected review/integration, release existing-session continuation normally, verify exact activation and realistic mixed/provider/peer workload; retain every unresolved cause and independent acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:transcript-connection-churn",
@@ -143271,7 +144495,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Finish protected review/integration, release existing-session continuation normally, verify exact activation and realistic mixed/provider/peer workload; retain every unresolved cause and independent acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:lag-window-accounting",
@@ -143296,7 +144527,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Finish protected review/integration, release existing-session continuation normally, verify exact activation and realistic mixed/provider/peer workload; retain every unresolved cause and independent acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:ci-loop-production-profile",
@@ -143321,7 +144559,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Finish protected review/integration, release existing-session continuation normally, verify exact activation and realistic mixed/provider/peer workload; retain every unresolved cause and independent acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:async-backend-cold-init",
@@ -143346,7 +144591,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Finish protected review/integration, release existing-session continuation normally, verify exact activation and realistic mixed/provider/peer workload; retain every unresolved cause and independent acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:object-read-stat-probe",
@@ -143610,7 +144862,14 @@
         },
         "resolution": "open"
       },
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:transcript-query-variants",
@@ -143630,7 +144889,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Validate complete error/ordering semantics and representative benefit before implementing; do not cherry-pick tail or move/raise thresholds.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "runtime-followup:startup.async_backend_prepare",
@@ -144439,6 +145705,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "startup.async_backend_prepare",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "startup.async_backend_prepare",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -144601,7 +145873,8 @@
       "owner_session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
       "resolution": "open",
       "next_action": "Measure branch under representative mixed/deployed load; single normal observation is not acceptance.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "next_actor": "this same systemic session"
     },
     {
       "id": "route-live-followup:/api/backups",
@@ -144652,7 +145925,8 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
-      }
+      },
+      "next_actor": "existing backup0331 repair owner and normal PA scheduler independent verifier"
     },
     {
       "id": "route-live-followup:/api/repositories/{repository_id}",
@@ -144680,7 +145954,8 @@
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "resolution": "open",
       "next_action": "Exercise valid nonempty repository/workspace branches and installed responsiveness.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "next_actor": "this same systemic session"
     },
     {
       "id": "concern:mcp-bootstrap-admission",
@@ -144733,7 +146008,15 @@
       "resolution": "open",
       "next_action": "Bounded per-stage spawn/child-startup/initialize/tools_list/shutdown attribution and ordinary admission verification through existing UX batch owner; correlate executor/lock/CPU and preserve unchanged thresholds/auth/defaults/receipts.",
       "co_owner": "SourceUXbatch and activeworkers retain own exactsavedadmission identities; no competing launches/restarts.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "next_actor": "this systemic session for phase attribution; existing UX batch owner for saved admission",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "runtime-live-followup:dispatch.retry_capacity_admission",
@@ -146141,6 +147424,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "operation": "startup.openapi",
         "resolution": "open; fullcounters/windows/processmax/phases retained"
+      },
+      "runtime_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "operation": "startup.openapi",
+        "resolution": "open; allcounters/windows/processmax/phases preserved"
       }
     },
     {
@@ -146190,7 +147479,14 @@
       "resolution": "open",
       "next_actor": "this systemic executor forintegrationattribution, existingverification/Workshopowners forsourcecoordination",
       "next_action": "Retain originalfailure and independentlyvalidate exactcombinedsource; reproduce causes beforecompetingrepairs, no relaxedCAS/browserassertion/threshold or acceptancepolicy.",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:fleet-dispatch-history-copy",
@@ -146232,7 +147528,14 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Continue completecontext/API/nativecontention and remainingfamilies; nofullclosurefromdispatchcopyspeedup",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "route-b808:/api/fleet/overview",
@@ -146321,6 +147624,12 @@
         "observed_at": "2026-10-18T07:00:57.207281+00:00",
         "route": "/api/fleet/overview",
         "resolution": "open; fullcount/bytes/window retained"
+      },
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/fleet/overview",
+        "resolution": "open; counts/bytes/windows preserved"
       }
     },
     {
@@ -146439,7 +147748,14 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Continue actualnonemptycontext/API/nativeCPU/contention attribution and allremainingcriteria",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:test-workspace-isolation",
@@ -146471,7 +147787,14 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Permanent reusable test harness/audit of otherfixture constructors remainsrequired; no liveDBmutation",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:cold-template-compilation",
@@ -146497,7 +147820,14 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Continue remainingmixed/native/CPU/startup/external/peer acceptance;CI505cause remainsopen",
-      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open."
+      "current5024_status_note": "Original deployed/retested fields retain historical stage labels; current5024 followups supersede them only where new evidence supplied. Every finding remains open.",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "concern:ready-tip-ancestry-membership",
@@ -146538,6 +147868,13 @@
         },
         "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
         "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -146556,6 +147893,13 @@
       "next_actor": "this same systemic session",
       "measurement": {
         "artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -146622,6 +147966,22 @@
         },
         "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
         "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      },
+      "empty_mirror_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "implemented": "source candidate post-canonical indexed discovery",
+        "measurement": "All paired direct and actual worker connection-scope arrays retained separately. See artifact; not full latency attribution.",
+        "retested": "2baseline red/51candidate broad+isolatedbackup/mixed, all completed logs retained",
+        "stage": "not integrated/installed/loaded",
+        "resolution": "open",
+        "next_action": "Protected readyPR/durablewatch/exacthead+mainCI/safeactivation/retest; continue nativefullhealth/startup/drain/objectGC and every other family."
       }
     },
     {
@@ -146678,6 +148038,13 @@
         "stage": "sourcecandidateonly",
         "resolution": "open; notsolecause/wholepath/deployedacceptance",
         "next_action": "ProtectedPR/integration/mainCI/exactactivation/retest; continue allretention/health/native causes"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -146718,6 +148085,13 @@
         "retested": "95GETall200but3violations;81ops25routes47slowrecords28tails+workspacefailure. Nativefixedphasescaptured, remainingcostsunaccepted.",
         "accepted": false,
         "resolution": "open"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -146773,6 +148147,13 @@
         "retested": "95GETall200but3violations;81ops25routes47slowrecords28tails+workspacefailure. Nativefixedphasescaptured, remainingcostsunaccepted.",
         "accepted": false,
         "resolution": "open"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -146791,7 +148172,14 @@
       },
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Investigate nativefocus/CDP mechanism;preserve originalfailure/unchangedassertion"
+      "next_action": "Investigate nativefocus/CDP mechanism;preserve originalfailure/unchangedassertion",
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
+      }
     },
     {
       "id": "startup:mcp-stdio-initialize",
@@ -146950,6 +148338,13 @@
       "convergence_followup": {
         "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
         "facts": "Fresh05:54original85beworkflow/all5jobs/checkssuccess; originalcontradictoryreads preserved, causeunknown/no retries. Newc4f8head+806bmainindependent5success each."
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -147022,6 +148417,13 @@
         "retested": "95GETall200but3violations;81ops25routes47slowrecords28tails+workspacefailure. Nativefixedphasescaptured, remainingcostsunaccepted.",
         "accepted": false,
         "resolution": "open"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -147059,6 +148461,13 @@
         "retested": "95GETall200but3violations;81ops25routes47slowrecords28tails+workspacefailure. Nativefixedphasescaptured, remainingcostsunaccepted.",
         "accepted": false,
         "resolution": "open"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -147096,6 +148505,13 @@
         "retested": "95GETall200but3violations;81ops25routes47slowrecords28tails+workspacefailure. Nativefixedphasescaptured, remainingcostsunaccepted.",
         "accepted": false,
         "resolution": "open"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -147131,6 +148547,13 @@
         "retested": "95ordinaryGET0violations but freshprocess29tails/onefailure; rollbackindependentpeerfixture passesbothauditmodes",
         "accepted": false,
         "resolution": "open"
+      },
+      "activation512_inventory": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+        "loaded": true,
+        "accepted": false,
+        "scope": "95GET/2violations,81ops24routes40slowrecords29processtails+workspacefailure. No blanket closure or complete branch/fleet/log audit."
       }
     },
     {
@@ -147175,7 +148598,13 @@
       "retested": "OnebuildfencedcachedGET;runtimecountsmayincludeotherordinaryreads,notmaintenanceacceptance",
       "resolution": "open",
       "next_actor": "same systemic session",
-      "next_action": "Measuredshared-cause repairs preservingintegrity/freshness/defaults; no manualproductionmaintenance"
+      "next_action": "Measuredshared-cause repairs preservingintegrity/freshness/defaults; no manualproductionmaintenance",
+      "route_5fb3_followup": {
+        "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+        "observed_at": "2026-10-18T07:22:57.585106+00:00",
+        "route": "/api/instance/maintenance",
+        "resolution": "open; counts/bytes/windows preserved"
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -147185,16 +148614,16 @@
   "transcript_backend_artifact": "docs/benchmarks/systemic-transcript-backend-20261017.json",
   "startup_schema_artifact": "docs/benchmarks/systemic-startup-schema-20261017.json",
   "latest_local_activation": {
-    "artifact": "docs/benchmarks/systemic-prune-inventory-20261018.json",
-    "source": "e6b88f027b9824fff85dace78e705b424a911318",
+    "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
+    "source": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
     "runtime_build": {
       "loaded_module_version": "1.5.9",
-      "source_revision": "e6b88f027b9824fff85dace78e705b424a911318",
-      "package_identity": "sha256:66e89d9b873973d3e40785ab3097616ecb387fca3fdef7d26480d5ccd056b8c9",
-      "pid": 28400,
-      "startup_id": "ddfb24fe-1a5a-4440-9741-45f7da7dbf75"
+      "source_revision": "5fb32b7a8f9b5d70b7cd1b4d87456299ad85dc88",
+      "package_identity": "sha256:8e924e28f3315c0d9d77fbc8afd4413a9aa5476bbcdd1897c64726d75ee2f941",
+      "pid": 31674,
+      "startup_id": "411d0609-b855-4ad7-940d-5b24f74ca43d"
     },
-    "retest": "95GET/3violations;maintenance36.4s/fullruntime28tails;noacceptance"
+    "retest": "95GET2violations/81ops24routes29tails+workspacefailure/maintenance34s;noacceptance"
   },
   "snapshot_retention_gap": {
     "contract": "pa.diagnostic-snapshot-retention-correction/v1",
@@ -147251,5 +148680,6 @@
   "startup_inventory_artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
   "prune_rollback_artifact": "docs/benchmarks/systemic-prune-rollback-20261018.json",
   "maintenance_phases_artifact": "docs/benchmarks/systemic-maintenance-phases-20261018.json",
-  "prune_inventory_artifact": "docs/benchmarks/systemic-prune-inventory-20261018.json"
+  "prune_inventory_artifact": "docs/benchmarks/systemic-prune-inventory-20261018.json",
+  "mirror_inventory_artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json"
 }
