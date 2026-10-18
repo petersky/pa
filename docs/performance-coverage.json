@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T21:24:48.373417+00:00",
-  "completion": "OPEN;586findings/90concerns. Everyprior585row retained. PR540exacthead/strictmerge/newmain all5green, notdeployed. Sessionlistsnapshot locallyimplemented/146tests+7subtestspass; complete250response p95673.181\u2192438.815ms with1pairregression andunchanged16.965MBpayload. Earliermodelprototype regression retained/unshipped. Newmixedwarnings={\"Slow off-loop operation\": 13}; universal500msobservations={\"sqlite.execution_binding_materialize\": 2, \"sync.push_transaction\": 1, \"transcript.drain\": 7, \"sync.reconcile_head\": 1, \"/api/agent/history/session-0?limit=64&message_boundaries=true\": 3, \"sync.object_collect\": 4, \"maintenance.run\": 1}. NativeWALdiagnosticdoesnotreproduce580mstail; originalverifierfailed/numericsunknown preserved. Allremaininggates/activation/peer/log/provider/backup/unobserved/normalindependentacceptance open.",
+  "as_of": "2026-10-18T22:06:52.780010+00:00",
+  "completion": "OPEN;588findings/92concerns. Every prior586row preserved plus installed/loaded and owned-schema-filter concerns. PR541 integrated/head+mainCIgreen, not activated. Newsource58tests+9subtestspass/full482pathparity; mixedwarnings1/500msobservations8; all failures/previous stages retained. Missing historical backup payload does not block feasible repairs/prospective validation; no fabricated recovery/acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -128,7 +128,8 @@
     "docs/benchmarks/systemic-snapshot-request-timing-20261018.json",
     "docs/benchmarks/systemic-schema-scalar-source-20261018.json",
     "docs/benchmarks/systemic-session-list-snapshot-20261018.json",
-    "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json"
+    "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json",
+    "docs/benchmarks/systemic-owned-schema-filter-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209194,6 +209195,47 @@
       "fix_or_existing_owner": "This same systemic session owns measurement integrity and remaining nativeattribution.",
       "next_actor": "this same systemic session",
       "next_action": "Preserve original gap; require durable prevalidation phase/child outcomes and complete pagination in futurediagnostics, retain unverified syscall/disk/nativewait causes."
+    },
+    {
+      "id": "concern:installed-loaded-pr534-divergence",
+      "kind": "concern",
+      "family": "activation",
+      "finding": "Installed and loaded source divergence, with subsequent partial alignment evidence",
+      "cause_classification": "confirmed_observation_intent_initially_unknown",
+      "report": "00121831-a139-403a-8fdb-25f3dad5af50 revision2",
+      "implemented": "Existing PR534 owner completed its managed handoff; status and two assets subsequently match0d. Source541/f0 remains separate and unactivated.",
+      "next_action": "Retain historical divergence; use owner activation proof and scheduler-owned current fork verification. No competing install/restart or old527 replay.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session coordinates existing owners and owns source/retest scope.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+        "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+        "resolution": "open"
+      },
+      "merged": [],
+      "deployed": "See separate source/owner/runtime evidence; whole acceptance unverified",
+      "resolution": "open",
+      "next_actor": "this systemic session with existing release/backup owners and normal verification scheduler"
+    },
+    {
+      "id": "concern:startup-owned-json-filter",
+      "kind": "concern",
+      "family": "startup",
+      "finding": "OpenAPI JSON filtering redundantly copies its already-owned serialized container graph",
+      "cause_classification": "confirmed_source_allocation_source_fix_validated_locally",
+      "implemented": "Filter only the freshly owned JSON-mode OpenAPI model dump in place; retain full model validation, serialization, exclude-none/private-key semantics and all general encoder/version fallback paths. Live model data remains unchanged and concurrent encodings independent. No adapter/readiness/durability/dependency/default/threshold changes.",
+      "next_action": "Exact source PR/CI/supervisor/independent integration, coordinated activation and representative retest; retain all startup/host/native tails.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session coordinates existing owners and owns source/retest scope.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+        "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+        "resolution": "open"
+      },
+      "merged": [],
+      "deployed": "See separate source/owner/runtime evidence; whole acceptance unverified",
+      "resolution": "open",
+      "next_actor": "this systemic session with existing release/backup owners and normal verification scheduler"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -211075,11 +211117,135 @@
       "concerns": 90,
       "resolution": "open",
       "implemented": "Read-only typedmetadata for active/chats/all ordering and selection; selected rows use original complete decoder from the same immutable SQLite rows. No second query/stale snapshot mixture, no SQLstatus/ordering/limit/response/schema change, no metrics/config/diagnostic payload omission. Live runtimes dominate; activity workflows and instance/class/legacy list overrides retain existing contracts. Unselected JSON is intentionally opaque and is not validated by sidebar; selected/details/general session APIs retain full decoder/error behavior. All raw SQLite rows/bytes are still read, and response bytes are unchanged: this bounds decode/model work, not database scan/memory/oversized-payload acceptance.",
-      "merged": [],
-      "deployed": "Unverified; no install/restart",
+      "merged": [
+        "https://github.com/petersky/pa/pull/541"
+      ],
+      "deployed": "No activation claim from integration; latest observed runtime0d predates541.",
       "retested": "146tests+7subtests;10actualsource pairs perlimit16/250 preservecomplete response; mixedresiduals in linkedartifact.",
       "next_actor": "this same systemic session",
-      "next_action": "Exactsource readyPR/CI/stablesupervisor/independentreview/currentbase/exactmerge/newmain gates; preserve rawscan/payload/remainingacceptance limits."
+      "next_action": "Exactsource readyPR/CI/stablesupervisor/independentreview/currentbase/exactmerge/newmain gates; preserve rawscan/payload/remainingacceptance limits.",
+      "integration": {
+        "contract": "pa.exact-integration-proof/v1",
+        "observed_at": "2026-10-18T21:29:23.098673+00:00",
+        "PR": 541,
+        "watch": "3ad1d6f6-b780-49ea-988e-743f18b852d8",
+        "head": "cbc7cfe1cf579bdb0c8300e9ae5ce458df4a6e1e",
+        "merge": "f0d163c09806ecb34ba696255d2544659862aa30",
+        "merged_at": "2026-10-18T21:29:12Z",
+        "source_tree": "2d7f247451d186d6bbe84a6461af59727743ebd9",
+        "merge_tree": "2d7f247451d186d6bbe84a6461af59727743ebd9",
+        "parents": [
+          "f1d5e7d89c051917a5739a8f50b770f741b35081",
+          "cbc7cfe1cf579bdb0c8300e9ae5ce458df4a6e1e"
+        ],
+        "tree_equal": true,
+        "independent_review_sha256": "8f2219b765601022355d7813b2278d29294571e726ff9ef5c16b28f613eadae2",
+        "stable_supervisor_sha256": "b25f1707be506019ce622950a168858016730d94047f510c5aa4b4f4b0f53c28",
+        "main_ci_runs": [
+          {
+            "id": 39168043862,
+            "status": "queued",
+            "conclusion": null,
+            "attempt": 1
+          }
+        ],
+        "deployed": false,
+        "restarted": false,
+        "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+      },
+      "new_main_ci": {
+        "observed_at": "2026-10-18T21:33:00.252769+00:00",
+        "run": 39168043862,
+        "head": "f0d163c09806ecb34ba696255d2544659862aa30",
+        "status": "completed",
+        "conclusion": "success",
+        "attempt": 1,
+        "jobs": [
+          {
+            "id": 117795062372,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39168043862/job/117795062372"
+          },
+          {
+            "id": 117795062472,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39168043862/job/117795062472"
+          },
+          {
+            "id": 117795062523,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39168043862/job/117795062523"
+          },
+          {
+            "id": 117795062580,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39168043862/job/117795062580"
+          },
+          {
+            "id": 117795062619,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39168043862/job/117795062619"
+          }
+        ],
+        "complete_job_inventory": true,
+        "five_terminal_success": true,
+        "historical_failures_preserved": true,
+        "deployed": false,
+        "whole_acceptance": false
+      }
+    },
+    "concern:completion-scope": {
+      "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+      "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+      "resolution": "open",
+      "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+      "next_action": "No self acceptance or gate weakening. Continue every feasible repair/validation despite explicit historical backup limitation; normal independent verifier owns acceptance."
+    },
+    "concern:resume-control-receipts": {
+      "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+      "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+      "resolution": "open",
+      "backup_steering_gap": {
+        "report_id": "3f1c34b1-2c29-4fed-9388-19ada409cc88",
+        "revision": 1,
+        "hash": "e6077087367254dfa04c96c3965f34d9e8d9ca5cd5b84b11e2aa4e4847f5c0cc",
+        "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+        "delivery": "pending",
+        "created_at": "2026-10-18T22:05:50.762735+00:00"
+      },
+      "observation": "Exacta529 receipt sayscompleted, but nativefour-entry turninventory omits it and latestbackup progress remains986/21:32. Accepted/consumed/applied remain distinct; no replay or successful work claim.",
+      "next_action": "Coordinate supported lifecycle evidence under existing request identity; continue feasible independent source and prospective validation, no competing worker."
+    },
+    "concern:backups": {
+      "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+      "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+      "resolution": "open",
+      "owner_card": "0331d21a-f014-44c8-9176-bc1e955a9ad2",
+      "owner_session": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
+      "steering_prompt": "a529784d-b316-5b5f-8195-a8b0ca0b4496",
+      "steering_receipt_status": "completed",
+      "historical_limit": "Possibly irrecoverable historical payload; preserve all eight archives/history, no fabricated bytes or destructive reference repair.",
+      "next_action": "Existing owner continues feasible source repair, prospective reliability/performance validation and supported independent verification. Missing historical data must not block that work; retain exact feasible versus historical acceptance limits and unchanged requirementb527."
+    },
+    "concern:fork-fixture-repeated-navigation-fetch-stall": {
+      "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+      "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+      "resolution": "open",
+      "linked_existing_owner_card": "5003628e-7a3c-4d1e-9737-087979061122",
+      "runtime_asset_observation": "Two served JS files match0d under same runtime process fence; not proof of whole browser behavior or historical stall cause.",
+      "verification": "Old0ea9babb assignment superseded; current0eef0edd intent blockedHTTPStatusError, dispatch receipt verified absent at830a35a4. No duplicate verifier or admission replay.",
+      "next_action": "Normal scheduler/current verifier owns followthrough under unchanged36140832. Preserve earlier fixture navigation gap and production-applicability uncertainty."
     }
   },
   "f7e8_loaded_stage": {
@@ -213062,6 +213228,11 @@
   "native_wal_diagnostic_stage": {
     "artifact": "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json",
     "sha256": "b56672482b0f58c5b732b2e1eb070d27ec397e795c5658c067043e9740f5556d",
+    "resolution": "open"
+  },
+  "owned_schema_filter_stage": {
+    "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+    "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
     "resolution": "open"
   }
 }
