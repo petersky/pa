@@ -1989,6 +1989,7 @@ def _session_list_item(
     watch_summaries: dict[str, list[dict]] | None = None,
     card_summaries: dict[str, list[dict]] | None = None,
 ) -> dict:
+    from pa.domain.conversation_origin import conversation_origin
     config, confirmed = normalized_session_config_json(
         session.config_json,
         model_id=session.model_id,
@@ -2035,6 +2036,7 @@ def _session_list_item(
     return {
         "id": session.id,
         "title": session.title,
+        "conversation_origin": conversation_origin(session),
         "label": session.label,
         "agent_name": session.agent_name,
         "origin_instance_id": session.origin_instance_id,
@@ -2420,6 +2422,8 @@ def _history_payload(request, mgr, session, runtime, events, page, query_started
     query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
     session_payload = session.model_dump(mode="json")
+    from pa.domain.conversation_origin import conversation_origin
+    session_payload["conversation_origin"] = conversation_origin(session)
     normalized_config, confirmed = normalized_session_config_json(
         session.config_json,
         model_id=session.model_id,
@@ -2586,6 +2590,8 @@ async def get_session_snapshot(request: Request, session_id: str) -> dict:
 def _session_snapshot(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     snapshot = runtime.snapshot(include_transcript=False)
+    from pa.domain.conversation_origin import conversation_origin
+    snapshot["session"]["conversation_origin"] = conversation_origin(runtime.session)
     normalized_config, confirmed = normalized_session_config_json(
         runtime.session.config_json,
         model_id=runtime.session.model_id,

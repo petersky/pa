@@ -2071,7 +2071,9 @@
       this.sessionRoute && this.sessionRoute.live &&
       snap.connected && this.composerEnabled && !this.sessionClosed
     ) {
-      this.setPlaceholder("Ready to chat — send your first prompt.");
+      this.setPlaceholder(session.conversation_origin && session.conversation_origin.strategy !== "empty"
+        ? "Ready for your first new message in this branch."
+        : "Ready to chat — send your first prompt.");
     } else {
       this.setPlaceholder("Send a message to the agent.");
     }
@@ -2163,7 +2165,7 @@
       }
       if (this.els.recoveryRetry) this.els.recoveryRetry.disabled = false;
     }
-    this.updateTitle(session.title || (session.purpose === "chat" ? "New chat" : session.label) || "Agent",
+    this.updateTitle(session.title || (session.conversation_origin && session.conversation_origin.default_title) || (session.purpose === "chat" ? "New chat" : session.label) || "Agent",
       ((session.config_json || {}).naming || {}).version || 0);
     this.queuePaused = !!snap.queue_paused;
     if (Object.prototype.hasOwnProperty.call(snap, "transcript")) {
@@ -5176,7 +5178,8 @@
       const sessionIdentity = sessionInstanceId && window.PAInstanceIdentity
         ? window.PAInstanceIdentity.html(sessionInstanceId)
         : "";
-      const title = s.title || (s.purpose === "chat" ? "New chat" : s.label) || "Agent";
+      const origin = s.conversation_origin;
+      const title = s.title || (origin && origin.default_title) || (s.purpose === "chat" ? "New chat" : s.label) || "Agent";
       const state = sessionListState(s);
       const presentation = s.presentation || {};
       const stateLabel = state.label + (s.prompting && Number(s.queue_length || 0) > 0
@@ -5240,6 +5243,8 @@
             "</div>" +
             '<span class="agent-session-title-tooltip" role="tooltip">' +
               escapeHtml(title) + "</span>" +
+            (origin ? '<div class="agent-session-context-line" data-session-origin><span>' +
+              escapeHtml(origin.label + (origin.strategy === "empty" ? " · No inherited context" : " · " + origin.source_title)) + "</span></div>" : "") +
             '<div class="agent-session-context-line">' + contextParts.join("") + "</div>" +
             '<div class="agent-session-context-line"><span>' +
               escapeHtml(presentation.explanation || "Session details are limited on this peer.") +

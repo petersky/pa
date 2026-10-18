@@ -5502,6 +5502,17 @@ a.ghost:hover {
 .acw-timings { flex: 0 0 auto; padding: .2rem .75rem; font-size: .75rem; color: var(--pa-text-muted); }
 .acw-timings p { margin: .3rem 0; }
 
+.acw-conversation-origin { flex: 0 0 auto; min-width: 0; padding: .5rem 1rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.acw-conversation-origin[hidden] { display: none; }
+.acw-conversation-origin p { margin: .25rem 0; }
+.acw-conversation-origin a { display: inline-block; max-width: 100%; vertical-align: bottom; text-decoration: underline; }
+.acw-origin-boundary { flex: 0 0 auto; margin: 0; padding: .25rem 1rem; border-bottom: 1px solid var(--border); }
+@media (max-width: 600px) {
+  .acw-conversation-origin a,
+  .agent-chat-widget:has([data-conversation-origin]:not([hidden])) .acw-title {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+}
 .acw-thread-navigation { display: flex; align-items: center; gap: .5rem; padding: .5rem; min-width: 0; border-bottom: 1px solid var(--border); }
 .acw-thread-navigation[hidden] { display: none; }
 .acw-thread-list { display: flex; gap: .375rem; overflow-x: auto; min-width: 0; flex: 1; }
