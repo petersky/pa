@@ -4,6 +4,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Generic, Literal, TypeVar
@@ -132,6 +133,10 @@ class SchemaGenerationTests(TestCase):
             "_sa_hidden": 1, "null": None,
             "array": [None, {"nested_null": None, "keep": Color.red}],
             "when": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "nested": {"_sa_hidden": {"keep": True}, "visible": {
+                3: (None, False, 0, "", Decimal("1.25")),
+                "path": Path("example/schema"), "bytes": b"hello",
+            }},
         }})
         def extensions():
             return {}
@@ -139,6 +144,19 @@ class SchemaGenerationTests(TestCase):
         kwargs = dict(title="extensions", version="1", routes=app.routes)
         self.assertEqual(schema_generation.get_openapi(**kwargs),
                          framework_get_openapi(**kwargs))
+
+    def test_local_encoder_keeps_general_object_and_option_semantics(self):
+        from fastapi.encoders import jsonable_encoder
+        from fastapi.openapi.models import OpenAPI
+
+        document = OpenAPI(openapi="3.1.0", info={"title": "test", "version": "1"},
+                           paths={}, **{"x-values": {"missing": None}})
+        for value, options in ((document, {"by_alias": True, "exclude_none": True}),
+                               (document, {"exclude_none": False}),
+                               ({"_sa_private": 1, "value": Decimal("2.5")}, {})):
+            with self.subTest(options=options, kind=type(value).__name__):
+                self.assertEqual(schema_generation._encode_openapi(value, **options),
+                                 jsonable_encoder(value, **options))
 
     def test_unknown_framework_version_uses_public_generator(self):
         with patch.object(schema_generation.fastapi, "__version__", "future"), \

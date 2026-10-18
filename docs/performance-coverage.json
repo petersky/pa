@@ -207836,6 +207836,26 @@
       "implemented": "Fake timeout receiver closes its coroutine argument before raising and asserts CORO_CLOSED; existing502/recoverability assertions unchanged. No warning filter.",
       "retested": "Original176test run warning preserved; edited timeout case plus four reader contracts5passed4.90s with no warnings. Product code unaffected by this test cleanup.",
       "next_action": "Verify exact-head CI and review cleanup contract; retain original warning and production-impact unknown. No claim that other CI/browser/peer concerns are resolved."
+    },
+    {
+      "id": "concern:startup-openapi-json-projection",
+      "kind": "concern",
+      "family": "startup",
+      "finding": "Complete validated OpenAPI JSON dump traversed through arbitrary-object encoder discovery",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_cpu_cost_source_parity_measured_residual_startup_open",
+      "cause": "Profiling confirms repeated generic encoder type discovery over an already JSON-compatible full model dump. Restricted local filtering retains validation/serialization/privacy/null semantics, reducing this CPU subset; remaining schema model/remapping CPU still exceeds500ms.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-openapi-json-20261018.json",
+        "sha256": "3aa5312a5cd7f7db3aa47e298ab608d00061c5122b32616604790dac8db2912c"
+      },
+      "merged": [],
+      "next_actor": "this same card/session",
+      "implemented": "Version-fenced call-local encoder uses full validated OpenAPI model JSON dump, then preserves recursive None-dict/private-key filtering and None array elements. General objects/options fall back to public encoder; framework globals unchanged.",
+      "deployed": "Not deployed; actual loaded de576ebb predates this source repair.",
+      "retested": "34passed+9subtests. Four alternating previous/current fresh processes retain identical complete schema hash. Final-source schema CPU1123.609ms vs previous1239.314/1247.904ms; full startup1318.720ms retains2slowwarnings. Not whole-PA acceptance.",
+      "resolution": "open",
+      "next_action": "Ready PR/supervisor/exact-head/current-rule checks/mainCI/safe activation/retest; continue remaining startup CPU/shared scheduling and all expanded acceptance criteria."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208814,6 +208834,39 @@
         "checks": "5SUCCESS each attempt1"
       },
       "cause_scope": "Guarded configuration projection is active and locally parity-tested; actual startup still3.837s, not a completed startup repair."
+    },
+    "concern:startup-reconciliation-inventory-copy": {
+      "artifact": "docs/benchmarks/systemic-522-loaded-20261018.json",
+      "sha256": "4d7af0591973534884a702944e5442178b866aabbcfea2ca55ed537a257474a7",
+      "source": "de576ebb2ac1170b97ce7bbd038d0ff6abd75e81",
+      "summary": {
+        "ordinary_gets": 95,
+        "get_errors": 0,
+        "get_500ms_violations": 2,
+        "primary_operations": 81,
+        "diagnostic_operations": 1,
+        "route_groups": 23,
+        "primary_prefix_families": 19,
+        "slow_records_retained": 25,
+        "slow_counters": 25,
+        "primary_process_tails_at_least500ms": 20,
+        "baseline_operations_positive": 76,
+        "baseline_route_groups_positive": 19
+      },
+      "deployed": "Server-captured de576ebb/package6439e272/newPID76726/startup2acd7a30/config86968/lease290 verified",
+      "retested": "Once-only95GET all200/stable with2threshold violations; full21sectionruntime and cached33.126smaintenance retain residuals. Not acceptance.",
+      "resolution": "open",
+      "next_action": "Investigate measured OpenAPI CPU/shared scheduling and summary-write SQL/lock amplification; retain all other findings and normal independent acceptance.",
+      "integration": {
+        "pr": 522,
+        "head": "62eec7b919d562143d670c657e2291fa052ca838",
+        "merge": "de576ebb2ac1170b97ce7bbd038d0ff6abd75e81",
+        "watch": "59745ccb-a310-4884-b8b6-99fe4f3ed343",
+        "head_ci": 39127763277,
+        "main_ci": 39128049888,
+        "checks": "5SUCCESS each attempt1"
+      },
+      "cause_scope": "Source removes discarded copies, candidate/order/durability parity fixture passed. Actual startup dispatch service14.613ms/CPU14.417ms but total1557.043ms including completion delivery1346.684ms; different uncontrolled startup windows are not a paired causal speedup or full-path acceptance."
     }
   },
   "f7e8_loaded_stage": {
@@ -209578,5 +209631,37 @@
     "rows": 562,
     "concerns": 71,
     "status": "Local source measured/tested; new mixed childexit0/verificationcomplete with4workerwarnings8violations. PR/integration/activation/retest/independent acceptance pending. Every prior row/owner/action remains."
+  },
+  "latest_522_loaded_stage": {
+    "artifact": "docs/benchmarks/systemic-522-loaded-20261018.json",
+    "sha256": "4d7af0591973534884a702944e5442178b866aabbcfea2ca55ed537a257474a7",
+    "source": "de576ebb2ac1170b97ce7bbd038d0ff6abd75e81",
+    "summary": {
+      "ordinary_gets": 95,
+      "get_errors": 0,
+      "get_500ms_violations": 2,
+      "primary_operations": 81,
+      "diagnostic_operations": 1,
+      "route_groups": 23,
+      "primary_prefix_families": 19,
+      "slow_records_retained": 25,
+      "slow_counters": 25,
+      "primary_process_tails_at_least500ms": 20,
+      "baseline_operations_positive": 76,
+      "baseline_route_groups_positive": 19
+    },
+    "deployed": "Server-captured de576ebb/package6439e272/newPID76726/startup2acd7a30/config86968/lease290 verified",
+    "retested": "Once-only95GET all200/stable with2threshold violations; full21sectionruntime and cached33.126smaintenance retain residuals. Not acceptance.",
+    "resolution": "open",
+    "next_action": "Investigate measured OpenAPI CPU/shared scheduling and summary-write SQL/lock amplification; retain all other findings and normal independent acceptance."
+  },
+  "openapi_json_stage": {
+    "artifact": "docs/benchmarks/systemic-openapi-json-20261018.json",
+    "sha256": "3aa5312a5cd7f7db3aa47e298ab608d00061c5122b32616604790dac8db2912c",
+    "implemented": "Version-fenced call-local encoder uses full validated OpenAPI model JSON dump, then preserves recursive None-dict/private-key filtering and None array elements. General objects/options fall back to public encoder; framework globals unchanged.",
+    "deployed": "Not deployed; actual loaded de576ebb predates this source repair.",
+    "retested": "34passed+9subtests. Four alternating previous/current fresh processes retain identical complete schema hash. Final-source schema CPU1123.609ms vs previous1239.314/1247.904ms; full startup1318.720ms retains2slowwarnings. Not whole-PA acceptance.",
+    "resolution": "open",
+    "next_action": "Ready PR/supervisor/exact-head/current-rule checks/mainCI/safe activation/retest; continue remaining startup CPU/shared scheduling and all expanded acceptance criteria."
   }
 }

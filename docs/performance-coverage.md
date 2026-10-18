@@ -1,3 +1,260 @@
+# OpenAPI JSON filtering CPU repair — 2026-10-18
+
+All **563 findings and 72 concerns remain open**. Every previous562 row, owner and action is unchanged. The [source artifact](benchmarks/systemic-openapi-json-20261018.json) contains both profiles, every prototype/source timing, commands/exit codes, exact source snapshots, parity hash, test log and guarded temporary roots. This source is not deployed; the actual PR522 loaded evidence and complete runtime inventory are preserved immediately below.
+
+FastAPI’s final generic encoder traversed an already JSON-serialized OpenAPI model dump. The version-fenced, call-local replacement keeps complete OpenAPI validation and Pydantic JSON serialization, then preserves the framework’s recursive null/private-key filtering. Array nulls remain; other objects/options use the public encoder. Framework globals, route/auth/validation contracts, readiness, deadlines and warning thresholds are unchanged.
+
+Four alternating fresh-process schema cases (previous/current/current/previous) kept identical481-path/792795-byte schema hash623e83b9. Wall times were1290.846/1167.272/1196.959/1358.254ms; threadCPU1239.314/1098.357/1123.609/1247.904ms. Between current samples only module documentation/import ordering changed; function ASTs are equal, and the final sample/full startup match final source bytes. Tiny samples and uncontrolled host load do not establish fleet or whole-path improvement. Profile/prototype stages remain separately labeled, with profiler overhead included.
+
+The34 regressions plus9subtests pass, including whole-PA/framework schema equality, recursive/generic/discriminator/webhook variants, extension serialization, fallback, concurrency, security/idempotency and readiness. One full disposable normal startup reached readiness in1318.720ms but retained2warnings: OpenAPI1090.861ms and sync-ref1140.204ms (service0.378ms/completion1139.464ms). This is **not startup acceptance**; remaining native/model/schema/GIL scheduling work stays open. No mixed workload was rerun to hide these warnings. Full numeric runtime is durable; full startup console stdout has no lossless local archive, only provider history, and is not claimed recovered.
+
+Next: supervised review/integration and safe exact activation, then continue shared startup and summary-write causes and every remaining criterion. Normal PA independent acceptance remains unsatisfied; no Done/selfacceptance/default/provider/peer/backup or configuration changes.
+
+## Preserved loaded deployment and all earlier evidence
+
+# PR522 actual activation and remaining latency — 2026-10-18
+
+All **562 findings and 71 concerns remain open**; every existing row, owner and next action is preserved. The [complete loaded-build artifact](benchmarks/systemic-522-loaded-20261018.json) records exact source de576ebb, package6439e272, new PID76726/startup2acd7a30 and unchanged configuration/lease290. Head and main CI each passed all5 checks without retries; integration and installed/loaded proofs remain distinct.
+
+The once-only95 ordinary sequential GETs all returned HTTP200 with stable build fences, but Agent659.990ms and Fleet632.784ms exceeded500ms. Status p95=186.025ms, runtime129.334ms; Fleet returned1,096,583 decoded bytes and overview1,019,876. Single sequential95GET window, all200/stable but Agent659.990ms/Fleet632.784ms violate500ms. Not acceptance or a causal paired comparison. No own tests or fixtures overlapped GETs; host/background uncontrolled, no pressure capture. Per-sample persistence adds work outside timers. Five HTML p95=p99=max, first not guaranteed cold, decoded bytes not wire bytes. Runtime/cachedmaintenance were separate following parallel read-only snapshots. Per-process maxima differ from bounded windows. Zero busy failures does not exclude successful busy waits. Parent phases include children; wall-minusCPU is not disk/GIL attribution. All prior CI failures, negative experiments, old unknown child exit, log gaps, workspace failures, peer/backup/receipt/coverage gaps remain open.
+
+Separate runtime inventory: 81 primary operations plus1 diagnostic,19 prefix families,23 registered routes,25 retained slow records and25 slow counters. Positive current-process baseline coverage is76/181 operations and19/115 routes; unobserved paths/branches remain open. workspace.project_provision has1 failure of7 with cause unknown. Full per-name/family/route count and percentile tables follow; all-call family percentiles cannot be inferred from per-operation summaries.
+
+Startup dispatch recovery took1557.043ms overall but14.613ms worker service/14.417ms threadCPU; completion delivery alone was1346.684ms and dispatch195.831ms. OpenAPI remained1610.451ms/1378.312ms CPU; session read970.791ms had7.042ms service/961.199ms completion delivery. These retain shared scheduling evidence without claiming native busy, disk or GIL isolation. Startup state read1674.196ms/1621.886ms SQLitewall/341.688ms CPU still returned365 rows. Runtime loop max1375ms is a process maximum, separate from GET samples.
+
+Cached startup maintenance took33125.874ms: object collection5016.190ms/3881.801ms SQLwall across13559 API calls and13349 rows; projection maintenance12268.468ms including VACUUM8715.093ms/6207.265ms CPU; initial fresh health6906.627ms/final2535.744ms; transcript integrity4463.092ms. No fresh checks/reclamation were skipped. Missingcold1/migration and linked backup acceptance remain open. Normal PA scheduler independent acceptance17d034a6 remains unsatisfied; accepted-original-scope database89957 is separate.
+
+## Every observed operation, endpoint and family
+
+# Actual522 runtime and ordinary GET inventory
+
+Source: supported bound ownerAPI on macbook0c7d8ecb, sourcede576ebb/PID76726/startup2acd7a30/package6439e272. Runtime snapshot UTC 2026-10-18T12:50:48.580225+00:00; each GET has its own raw UTC timestamp. Every received21section is retained with three explicit opaque privacy omissions. Older window values are not reconstructed.
+
+Runtime counts/maxima are process totals; latency percentiles are per-operation bounded windows. Primary and diagnostic executors are separate namespaces. Slow-record percentiles are from the retained slow-only window, not all requests/operations or distinct incidents. No peer/log-rotation/fleet completeness claim.
+
+No own disposable tests or fixtures overlapped the95GET window; cached maintenance and runtime collectors follow it in a parallel read-only batch and represent separate windows. No host-pressure capture was made in this window. Local per-sample checkpoint writes add observer work outside request timers. Decoded bytes are not wire bytes. Five-page p95=p99=max; first sample is not guaranteed cold.
+
+## Primary executor
+
+| Operation | Submitted | Slow | Failed/timeouts/rejected | Window n | p50 | p95 | p99 | Window max | Process max ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| acp.pa_mcp_owner_probe | 1 | 0 | 0/0/0 | 1 | 57.902 | 57.902 | 57.902 | 57.902 | 57.902 |
+| acp.provider_resolve | 1 | 0 | 0/0/0 | 1 | 0.434 | 0.434 | 0.434 | 0.434 | 0.434 |
+| acp.wire_append | 333 | 0 | 0/0/0 | 256 | 1.066 | 21.815 | 134.65 | 239.549 | 239.549 |
+| acp.wire_init | 1 | 0 | 0/0/0 | 1 | 0.541 | 0.541 | 0.541 | 0.541 | 0.541 |
+| agent.project_recovery_availability | 30 | 0 | 0/0/0 | 30 | 1.725 | 49.897 | 69.461 | 69.461 | 69.461 |
+| agent.prompt_compose | 1 | 0 | 0/0/0 | 1 | 116.375 | 116.375 | 116.375 | 116.375 | 116.375 |
+| agent.provider_resolve | 1 | 0 | 0/0/0 | 1 | 2.341 | 2.341 | 2.341 | 2.341 | 2.341 |
+| agent.quiesce_snapshot_clear | 1 | 0 | 0/0/0 | 1 | 0.946 | 0.946 | 0.946 | 0.946 | 0.946 |
+| agent.recovery_sessions | 14 | 1 | 0/0/0 | 14 | 169.254 | 676.943 | 676.943 | 676.943 | 676.943 |
+| agent.recovery_snapshot | 1 | 0 | 0/0/0 | 1 | 53.402 | 53.402 | 53.402 | 53.402 | 53.402 |
+| agent.session_mkdir | 1 | 0 | 0/0/0 | 1 | 3.951 | 3.951 | 3.951 | 3.951 | 3.951 |
+| agent.startup_state_read | 1 | 1 | 0/0/0 | 1 | 1674.196 | 1674.196 | 1674.196 | 1674.196 | 1674.196 |
+| dispatch.completion_pending_read | 19 | 0 | 0/0/0 | 19 | 3.753 | 90.859 | 90.859 | 90.859 | 90.859 |
+| dispatch.followup_pending_read | 19 | 0 | 0/0/0 | 19 | 2.531 | 208.584 | 208.584 | 208.584 | 208.584 |
+| dispatch.record_read | 281 | 0 | 0/0/0 | 256 | 19.692 | 61.472 | 342.479 | 401.834 | 401.834 |
+| dispatch.workspace_admission_read | 7 | 0 | 0/0/0 | 7 | 2.222 | 57.644 | 57.644 | 57.644 | 57.644 |
+| filesystem.github_credentials_read | 37 | 0 | 0/0/0 | 37 | 1.941 | 228.358 | 258.23 | 258.23 | 258.23 |
+| fleet.overview.reachability | 7 | 0 | 0/0/0 | 7 | 9.115 | 21.83 | 21.83 | 21.83 | 21.83 |
+| fleet.overview.status | 7 | 0 | 0/0/0 | 7 | 11.578 | 14.109 | 14.109 | 14.109 | 14.109 |
+| fleet.overview.sync | 13 | 0 | 0/0/0 | 13 | 58.627 | 264.053 | 264.053 | 264.053 | 264.053 |
+| fleet.overview_cache_read | 298 | 1 | 0/0/0 | 256 | 1.452 | 24.857 | 59.626 | 118.263 | 840.905 |
+| fleet.overview_cache_write | 90 | 2 | 0/0/0 | 90 | 14.668 | 192.349 | 856.583 | 856.583 | 856.583 |
+| fleet.overview_response_json | 63 | 0 | 0/0/0 | 63 | 6.538 | 51.026 | 217.983 | 217.983 | 217.983 |
+| fleet.update_recovery | 1 | 0 | 0/0/0 | 1 | 12.537 | 12.537 | 12.537 | 12.537 | 12.537 |
+| goal.dispatch_lifecycle_index | 5 | 0 | 0/0/0 | 5 | 0.661 | 13.49 | 13.49 | 13.49 | 13.49 |
+| health.canonical_obligation | 29 | 1 | 0/0/0 | 29 | 35.269 | 258.699 | 1260.486 | 1260.486 | 1260.486 |
+| http.fleet_overview | 63 | 0 | 0/0/0 | 63 | 119.131 | 2080.608 | 2108.327 | 2108.327 | 2108.327 |
+| http.github | 1 | 0 | 0/0/0 | 1 | 828.578 | 828.578 | 828.578 | 828.578 | 828.578 |
+| http.pr_supervisor_peer | 274 | 0 | 0/0/0 | 256 | 44.957 | 145.191 | 369.112 | 401.05 | 401.05 |
+| maintenance.run | 1 | 1 | 0/0/0 | 1 | 33129.466 | 33129.466 | 33129.466 | 33129.466 | 33129.466 |
+| notifications.list_page | 2 | 0 | 0/0/0 | 2 | 2.364 | 19.331 | 19.331 | 19.331 | 19.331 |
+| notifications.present_page | 2 | 1 | 0/0/0 | 2 | 234.383 | 777.33 | 777.33 | 777.33 | 777.33 |
+| pr_supervisor.github_response_json | 1 | 0 | 0/0/0 | 1 | 21.664 | 21.664 | 21.664 | 21.664 | 21.664 |
+| pr_supervisor.response_json | 274 | 0 | 0/0/0 | 256 | 0.8 | 14.564 | 95.875 | 285.169 | 285.169 |
+| preferences.agent_auto_approve_read | 4 | 0 | 0/0/0 | 4 | 3.223 | 4.54 | 4.54 | 4.54 | 4.54 |
+| progress.checkpoint_write | 4 | 0 | 0/0/0 | 4 | 296.039 | 308.049 | 308.049 | 308.049 | 308.049 |
+| progress.dispatch_read | 37 | 0 | 0/0/0 | 37 | 61.892 | 113.342 | 156.373 | 156.373 | 156.373 |
+| progress.heartbeat_write | 7 | 0 | 0/0/0 | 7 | 176.73 | 285.003 | 285.003 | 285.003 | 285.003 |
+| progress.pending_read | 33 | 0 | 0/0/0 | 33 | 13.118 | 52.834 | 90.802 | 90.802 | 90.802 |
+| progress.sequence_allocate | 11 | 0 | 0/0/0 | 11 | 151.903 | 242.984 | 242.984 | 242.984 | 242.984 |
+| reconciliation.completion_evidence_read | 57 | 0 | 0/0/0 | 57 | 4.077 | 40.961 | 73.122 | 73.122 | 73.122 |
+| reconciliation.dispatch_read | 96 | 1 | 0/0/0 | 96 | 2.224 | 23.616 | 1557.043 | 1557.043 | 1557.043 |
+| reconciliation.session_read | 57 | 1 | 0/0/0 | 57 | 2.157 | 33.383 | 970.791 | 970.791 | 970.791 |
+| selection.attempt_authority | 1 | 0 | 0/0/0 | 1 | 12.931 | 12.931 | 12.931 | 12.931 | 12.931 |
+| selection.configuration_receipt | 1 | 0 | 0/0/0 | 1 | 27.133 | 27.133 | 27.133 | 27.133 | 27.133 |
+| selection.prompt_identity | 1 | 0 | 0/0/0 | 1 | 41.708 | 41.708 | 41.708 | 41.708 | 41.708 |
+| sqlite.agent_runtime_checkpoint | 2 | 0 | 0/0/0 | 2 | 23.262 | 39.029 | 39.029 | 39.029 | 39.029 |
+| sqlite.agent_session_read | 21 | 0 | 0/0/0 | 21 | 3.501 | 32.111 | 36.974 | 36.974 | 36.974 |
+| sqlite.agent_session_save | 39 | 1 | 0/0/0 | 39 | 13.601 | 232.932 | 1783.073 | 1783.073 | 1783.073 |
+| sqlite.card_read | 419 | 0 | 0/0/0 | 256 | 1.681 | 9.871 | 68.305 | 82.587 | 285.685 |
+| sqlite.pr_supervisor_capability_write | 2 | 0 | 0/0/0 | 2 | 4.645 | 59.124 | 59.124 | 59.124 | 59.124 |
+| sqlite.pr_supervisor_completion_due_read | 35 | 0 | 0/0/0 | 35 | 19.57 | 381.242 | 446.696 | 446.696 | 446.696 |
+| sqlite.pr_supervisor_due_read | 34 | 0 | 0/0/0 | 34 | 3.802 | 71.659 | 99.983 | 99.983 | 99.983 |
+| sqlite.pr_supervisor_event_write | 137 | 0 | 0/0/0 | 137 | 3.469 | 36.114 | 62.783 | 107.321 | 107.321 |
+| sqlite.pr_supervisor_watch_read | 137 | 0 | 0/0/0 | 137 | 5.442 | 65.27 | 101.132 | 140.825 | 140.825 |
+| sqlite.pr_supervisor_watch_write | 137 | 1 | 0/0/0 | 137 | 10.329 | 120.917 | 240.938 | 1246.777 | 1246.777 |
+| sqlite.project_read | 289 | 0 | 0/0/0 | 256 | 0.98 | 12.374 | 35.941 | 137.909 | 188.086 |
+| sqlite.repository_read | 282 | 0 | 0/0/0 | 256 | 1.201 | 29.844 | 151.829 | 260.566 | 260.566 |
+| sqlite.restart_continuation_authorization | 2 | 0 | 0/0/0 | 2 | 1.303 | 5.377 | 5.377 | 5.377 | 5.377 |
+| sqlite.restart_handoff_completion | 60 | 0 | 0/0/0 | 60 | 7.399 | 65.296 | 155.133 | 155.133 | 155.133 |
+| sqlite.restart_handoff_queued | 1 | 0 | 0/0/0 | 1 | 10.847 | 10.847 | 10.847 | 10.847 | 10.847 |
+| sqlite.restart_handoff_resuming | 1 | 0 | 0/0/0 | 1 | 2.547 | 2.547 | 2.547 | 2.547 | 2.547 |
+| sqlite.restart_handoff_session | 30 | 0 | 0/0/0 | 30 | 7.725 | 25.033 | 31.06 | 31.06 | 31.06 |
+| sqlite.restart_handoffs_pending | 15 | 0 | 0/0/0 | 15 | 3.591 | 399.503 | 399.503 | 399.503 | 399.503 |
+| sqlite.restart_handoffs_watchdog | 14 | 0 | 0/0/0 | 14 | 2.239 | 140.298 | 140.298 | 140.298 | 140.298 |
+| sqlite.transcript_append | 54 | 2 | 0/0/0 | 54 | 16.241 | 253.9 | 824.402 | 824.402 | 824.402 |
+| sqlite.transcript_sequence | 1 | 0 | 0/0/0 | 1 | 17.747 | 17.747 | 17.747 | 17.747 | 17.747 |
+| startup.agent_manager | 1 | 0 | 0/0/0 | 1 | 4.43 | 4.43 | 4.43 | 4.43 | 4.43 |
+| startup.async_backend_prepare | 1 | 0 | 0/0/0 | 1 | 8.242 | 8.242 | 8.242 | 8.242 | 8.242 |
+| startup.openapi | 1 | 1 | 0/0/0 | 1 | 1610.451 | 1610.451 | 1610.451 | 1610.451 | 1610.451 |
+| sync.commit_read | 12 | 0 | 0/0/0 | 12 | 2.172 | 50.169 | 50.169 | 50.169 | 50.169 |
+| sync.gc_resume | 1 | 0 | 0/0/0 | 1 | 25.157 | 25.157 | 25.157 | 25.157 | 25.157 |
+| sync.json_decode | 12 | 0 | 0/0/0 | 12 | 3.929 | 23.283 | 23.283 | 23.283 | 23.283 |
+| sync.peer_http | 12 | 0 | 0/0/0 | 12 | 63.466 | 1898.522 | 1898.522 | 1898.522 | 1898.522 |
+| sync.reconcile_head | 12 | 9 | 0/0/0 | 12 | 742.359 | 3307.301 | 3307.301 | 3307.301 | 3307.301 |
+| sync.ref_read | 32 | 0 | 0/0/0 | 32 | 0.984 | 5.348 | 23.692 | 23.692 | 23.692 |
+| sync.startup_reconcile | 1 | 0 | 0/0/0 | 1 | 96.347 | 96.347 | 96.347 | 96.347 | 96.347 |
+| workspace.collect_garbage | 1 | 1 | 0/0/0 | 1 | 7231.688 | 7231.688 | 7231.688 | 7231.688 | 7231.688 |
+| workspace.lease_renew | 1 | 0 | 0/0/0 | 1 | 197.967 | 197.967 | 197.967 | 197.967 | 197.967 |
+| workspace.project_provision | 7 | 0 | 1/0/0 | 7 | 2172.451 | 2495.192 | 2495.192 | 2495.192 | 2495.192 |
+| workspace.reconcile_terminal_state | 1 | 0 | 0/0/0 | 1 | 1280.976 | 1280.976 | 1280.976 | 1280.976 | 1280.976 |
+## Diagnostic executor
+
+| Operation | Submitted | Slow | Failed/timeouts/rejected | Window n | p50 | p95 | p99 | Window max | Process max ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| runtime.status_snapshot | 21 | 0 | 0/0/0 | 20 | 30.622 | 73.678 | 87.31 | 87.31 | 87.31 |
+
+## Primary operation prefix families
+
+Family all-call percentiles cannot be derived from per-operation percentile summaries; raw all-call samples are not exposed by this snapshot. The separate slow-only family table below has its exact declared sample scope.
+
+| Prefix | Names | Submitted | Slow calls | Failed | Timeouts | Maximum process ms |
+|---|---:|---:|---:|---:|---:|---:|
+| acp | 4 | 336 | 0 | 0 | 0 | 239.549 |
+| agent | 8 | 50 | 2 | 0 | 0 | 1674.196 |
+| dispatch | 4 | 326 | 0 | 0 | 0 | 401.834 |
+| filesystem | 1 | 37 | 0 | 0 | 0 | 258.23 |
+| fleet | 7 | 479 | 3 | 0 | 0 | 856.583 |
+| goal | 1 | 5 | 0 | 0 | 0 | 13.49 |
+| health | 1 | 29 | 1 | 0 | 0 | 1260.486 |
+| http | 3 | 338 | 0 | 0 | 0 | 2108.327 |
+| maintenance | 1 | 1 | 1 | 0 | 0 | 33129.466 |
+| notifications | 2 | 4 | 1 | 0 | 0 | 777.33 |
+| pr_supervisor | 2 | 275 | 0 | 0 | 0 | 285.169 |
+| preferences | 1 | 4 | 0 | 0 | 0 | 4.54 |
+| progress | 5 | 92 | 0 | 0 | 0 | 308.049 |
+| reconciliation | 3 | 210 | 2 | 0 | 0 | 1557.043 |
+| selection | 3 | 3 | 0 | 0 | 0 | 41.708 |
+| sqlite | 21 | 1712 | 4 | 0 | 0 | 1783.073 |
+| startup | 3 | 3 | 1 | 0 | 0 | 1610.451 |
+| sync | 7 | 82 | 9 | 0 | 0 | 3307.301 |
+| workspace | 4 | 10 | 1 | 1 | 0 | 7231.688 |
+
+## Registered route windows
+
+| Route | Process count | Decoded bytes total | Window n | p50 | p95 | p99 | Window max ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| / | 5 | 127320 | 5 | 11.959 | 57.843 | 57.843 | 57.843 |
+| /api/agent/observability/v1/sessions/{session_id} | 1 | 4020 | 1 | 66.337 | 66.337 | 66.337 | 66.337 |
+| /api/agent/sessions/{session_id}/restart-handoffs | 2 | 639138 | 2 | 22.17 | 37.765 | 37.765 | 37.765 |
+| /api/configuration | 1 | 169949 | 1 | 16.331 | 16.331 | 16.331 | 16.331 |
+| /api/fleet/dispatch-jobs/{dispatch_id} | 2 | 358948 | 2 | 37.765 | 40.609 | 40.609 | 40.609 |
+| /api/fleet/overview | 5 | 5099380 | 5 | 192.501 | 241.567 | 241.567 | 241.567 |
+| /api/fleet/overview/local | 20 | 575728 | 20 | 59.615 | 185.921 | 191.281 | 191.281 |
+| /api/health | 20 | 300 | 20 | 2.158 | 2.86 | 2.916 | 2.916 |
+| /api/instance | 1 | 560 | 1 | 4.77 | 4.77 | 4.77 | 4.77 |
+| /api/instance/maintenance | 1 | 7454 | 1 | 175.55 | 175.55 | 175.55 | 175.55 |
+| /api/notifications | 2 | 22218 | 2 | 247.604 | 916.618 | 916.618 | 916.618 |
+| /api/owner-ready | 1 | 71 | 1 | 3.919 | 3.919 | 3.919 | 3.919 |
+| /api/pr-supervisor/capabilities | 1 | 2707 | 1 | 16.929 | 16.929 | 16.929 | 16.929 |
+| /api/pr-supervisor/instances/heartbeat | 4 | 68 | 4 | 8.147 | 136.251 | 136.251 | 136.251 |
+| /api/pr-supervisor/replicas | 281 | 1556480 | 256 | 43.709 | 182.134 | 424.474 | 599.083 |
+| /api/ready | 20 | 2234 | 20 | 3.384 | 32.966 | 145.478 | 145.478 |
+| /api/runtime | 20 | 5837092 | 20 | 42.778 | 84.07 | 99.283 | 99.283 |
+| /api/status | 45 | 125550 | 45 | 67.302 | 476.049 | 590.834 | 590.834 |
+| /api/ui/assets | 2 | 158 | 2 | 6.026 | 19.575 | 19.575 | 19.575 |
+| /api/workspaces | 1 | 1439 | 1 | 9.844 | 9.844 | 9.844 | 9.844 |
+| /fleet | 5 | 5482915 | 5 | 328.142 | 598.672 | 598.672 | 598.672 |
+| /pull-requests | 5 | 125605 | 5 | 94.628 | 172.065 | 172.065 | 172.065 |
+| /{page_path:path} | 15 | 1255660 | 15 | 20.748 | 554.324 | 554.324 | 554.324 |
+
+## Retained slow-record names (bounded cap64; counts shown per name)
+
+| Name | Retained records | p50 | p95 | p99 | Max ms |
+|---|---:|---:|---:|---:|---:|
+| agent.recovery_sessions | 1 | 676.943 | 676.943 | 676.943 | 676.943 |
+| agent.startup_state_read | 1 | 1674.196 | 1674.196 | 1674.196 | 1674.196 |
+| fleet.overview_cache_read | 1 | 840.905 | 840.905 | 840.905 | 840.905 |
+| fleet.overview_cache_write | 2 | 844.215 | 856.583 | 856.583 | 856.583 |
+| health.canonical_obligation | 1 | 1260.486 | 1260.486 | 1260.486 | 1260.486 |
+| maintenance.run | 1 | 33129.466 | 33129.466 | 33129.466 | 33129.466 |
+| notifications.present_page | 1 | 777.33 | 777.33 | 777.33 | 777.33 |
+| reconciliation.dispatch_read | 1 | 1557.043 | 1557.043 | 1557.043 | 1557.043 |
+| reconciliation.session_read | 1 | 970.791 | 970.791 | 970.791 | 970.791 |
+| sqlite.agent_session_save | 1 | 1783.073 | 1783.073 | 1783.073 | 1783.073 |
+| sqlite.pr_supervisor_watch_write | 1 | 1246.777 | 1246.777 | 1246.777 | 1246.777 |
+| sqlite.transcript_append | 2 | 614.313 | 824.402 | 824.402 | 824.402 |
+| startup.openapi | 1 | 1610.451 | 1610.451 | 1610.451 | 1610.451 |
+| sync.reconcile_head | 9 | 763.025 | 3307.301 | 3307.301 | 3307.301 |
+| workspace.collect_garbage | 1 | 7231.688 | 7231.688 | 7231.688 | 7231.688 |
+
+## Retained slow-record prefix families ONLY
+
+| Name | Retained records | p50 | p95 | p99 | Max ms |
+|---|---:|---:|---:|---:|---:|
+| agent | 2 | 676.943 | 1674.196 | 1674.196 | 1674.196 |
+| fleet | 3 | 844.215 | 856.583 | 856.583 | 856.583 |
+| health | 1 | 1260.486 | 1260.486 | 1260.486 | 1260.486 |
+| maintenance | 1 | 33129.466 | 33129.466 | 33129.466 | 33129.466 |
+| notifications | 1 | 777.33 | 777.33 | 777.33 | 777.33 |
+| reconciliation | 2 | 970.791 | 1557.043 | 1557.043 | 1557.043 |
+| sqlite | 4 | 824.402 | 1783.073 | 1783.073 | 1783.073 |
+| startup | 1 | 1610.451 | 1610.451 | 1610.451 | 1610.451 |
+| sync | 9 | 763.025 | 3307.301 | 3307.301 | 3307.301 |
+| workspace | 1 | 7231.688 | 7231.688 | 7231.688 | 7231.688 |
+
+## Exact ordinary GET sample window
+
+| Request | n | Errors | p50 | p95 | p99 | Max ms | >=500ms | Decoded bytes max |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| / | 5 | 0 | 77.369 | 119.152 | 119.152 | 119.152 | 0 | 25464 |
+| /agent | 5 | 0 | 159.585 | 659.99 | 659.99 | 659.99 | 1 | 119250 |
+| /api/fleet/overview | 5 | 0 | 283.073 | 452.208 | 452.208 | 452.208 | 0 | 1019876 |
+| /api/health | 20 | 0 | 21.04 | 49.561 | 71.476 | 71.476 | 0 | 15 |
+| /api/runtime | 20 | 0 | 76.314 | 129.334 | 183.381 | 183.381 | 0 | 291994 |
+| /api/status | 20 | 0 | 72.471 | 186.025 | 247.943 | 247.943 | 0 | 2824 |
+| /fleet | 5 | 0 | 343.088 | 632.784 | 632.784 | 632.784 | 1 | 1096583 |
+| /pull-requests | 5 | 0 | 114.351 | 193.288 | 193.288 | 193.288 | 0 | 25121 |
+| /settings?section=agent | 5 | 0 | 39.128 | 47.259 | 47.259 | 47.259 | 0 | 100559 |
+| /work | 5 | 0 | 39.106 | 45.733 | 45.733 | 45.733 | 0 | 31323 |
+
+## Cached maintenance inclusive phases
+
+| Phase | Calls/errors | Wall ms | ThreadCPU ms | Observed SQLite API calls | Rows | SQLite wall ms | Lock wait ms | Lock hold ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| retention_selection | 1/0 | 802.031708 | 7.45625 | 272 | 270 | 71.46986777661368 | 0.0 | 0.0 |
+| retention_discovery | 1/0 | 36.875667 | 7.219458 | 2 | 0 | 36.620792059693485 | 0.0 | 0.0 |
+| retention_transaction | 1/0 | 155.377666 | 28.658833 | 5 | 0 | 152.26266701938584 | 0.001125037670135498 | 155.2906669676304 |
+| retention_object_collection | 1/0 | 5016.190333 | 634.001375 | 13559 | 13349 | 3881.8012553965673 | 0.0015420373529195786 | 0.003958004526793957 |
+| retention_canonical | 1/0 | 5172.01175 | 663.092708 | 13564 | 13349 | 4034.063922415953 | 0.0026670750230550766 | 155.29462497215718 |
+| retention_mirror | 1/0 | 25.138 | 7.457583 | 2 | 0 | 24.228582973591983 | 0.0 | 0.0 |
+| transcript_retention | 1/0 | 5999.443125 | 678.25475 | n/a | n/a | n/a | n/a | n/a |
+| mutation_retention | 1/0 | 0.596625 | 0.483208 | n/a | n/a | n/a | n/a | n/a |
+| transcript_migration_and_health | 1/0 | 6906.62675 | 3044.206417 | n/a | n/a | n/a | n/a | n/a |
+| dispatch_compact | 1/0 | 935.521625 | 642.256542 | n/a | n/a | n/a | n/a | n/a |
+| projection_database | 1/0 | 12268.467916 | 8352.112209 | n/a | n/a | n/a | n/a | n/a |
+| transcript_database | 1/0 | 4479.048959 | 2055.966458 | n/a | n/a | n/a | n/a | n/a |
+| transcript_health_final | 1/0 | 2535.743625 | 1746.9955 | n/a | n/a | n/a | n/a | n/a |
+| total | 1/0 | 33125.874417 | 16520.649667 | n/a | n/a | n/a | n/a | n/a |
+
+Busy failures0 does not prove absence of successful native busy waits. Parent spans include children; wall-minusCPU is not physical IO/GIL attribution. Full fresh checks, projection VACUUM, missing cold content and all older residuals remain open.
+
+Whole-card acceptance remains open. Runtime counts and slow-only observations are separate from the95GET sample window. Unexercised branches/providers/peers/backup/log loss/older retention/receipts and all prior stages remain.
+
+
+## Preserved earlier coverage
+
 # Startup reconciliation inventory repair — 2026-10-18
 
 All **562 findings and71 concerns remain open**. Every prior560 row remains unchanged. The [source and complete measurement artifact](benchmarks/systemic-reconciliation-inventory-20261018.json) retains the targeted improvement, all mixed-workload outliers, both test stages and the original coroutine warning.
