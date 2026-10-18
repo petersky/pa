@@ -180,13 +180,26 @@ async def test_measured_lock_wait_is_distinct_from_executor_queue_and_client_wai
     }})
     lock = threading.Lock()
     lock.acquire()
+    waiting = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    class ReportingLock:
+        def acquire(self):
+            # measured_lock has started both its wall timer and lock budget
+            # before calling acquire; task creation can precede this point.
+            loop.call_soon_threadsafe(waiting.set)
+            return lock.acquire()
+
+        def release(self):
+            lock.release()
 
     def mutation():
-        with measured_lock(lock):
+        with measured_lock(ReportingLock()):
             return "done"
 
     task = asyncio.create_task(executor.run_blocking("mutation", mutation))
     try:
+        await asyncio.wait_for(waiting.wait(), 0.5)
         await asyncio.sleep(0.05)
         assert not task.done()
         lock.release()

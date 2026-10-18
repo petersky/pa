@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T22:35:05.191275+00:00",
-  "completion": "OPEN;593findings/97concerns, every priorrow retained. Complete64name/17family slow-tail inventory and originalCI failures preserved. Corrected543test-only arithmetic proof passes2existingtests; finalheadCI pending. Completed separate100iteration per-SQLite-call diagnostic retains9600ordered+12511cold events/0operation failures, but2workerwarnings/11universal500ms observations+3premeasurement; no causal or performance acceptance. Earlier uninstrumented542stage1/8 retained. Immutable53b42runtime decision remainsoutstanding/current0d unchanged; all peer/log/backup/native/independent acceptance gaps remainopen.",
+  "as_of": "2026-10-18T22:41:17.399011+00:00",
+  "completion": "OPEN;594findings/98concerns, every prior593row unchanged. Complete64name/17family slow-tail inventory, original543decimal/lock-boundaryCI failures and prior8eheadgreen preserved.22existingtests pass after test-only numerical/synchronization corrections, full correctedheadCI pending. Separate100iteration SQLdiagnostic2warnings/11observations+3premeasurement and30iteration fixedrole diagnostic0warnings/4bulkobservations+3premeasurement both retained; no causal/deployed/performanceacceptance. Immutable53b42runtimeapproval still outstanding, actual0d unchanged; all peer/log/backup/native/independent acceptance gaps remainopen.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -133,7 +133,8 @@
     "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
     "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
     "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
-    "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json"
+    "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
+    "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209351,6 +209352,29 @@
       "next_actor": "this same systemic session",
       "next_action": "Preserve original failedrun; require corrected-head supervisor/independent/fullCI integration. Continue real latency/coverage and independent acceptance without numerical-comparison false failure.",
       "report": "213a226d-7566-4eba-944f-7f783859fecc revision1"
+    },
+    {
+      "id": "concern:ci543-lock-wait-fixture-boundary",
+      "kind": "concern",
+      "family": "ci",
+      "finding": "Lock-wait fixture begins its hold at task creation before measured-lock entry",
+      "cause_classification": "confirmed_test_synchronization_assumption",
+      "cause": "50ms fromtaskcreation need not yield>=30ms actual lock wait under delayed worker dispatch. IntermediateCI measured27.238ms. Deterministic actualtest/runtime/lock fixture reproduces oldfailure and synchronizedpass; actualCIqueue duration remainsunmeasured.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
+        "sha256": "b9973830e44e8a0b9907d34c5482557021896e2fbc6c78118ba109d9d2d09b2b",
+        "resolution": "open"
+      },
+      "implemented": "Test ReportingLock signals after measured_lock clocks start; wait for worker entry before unchanged50ms hold. Existing>=30ms and all operation budgets remain.22existing tests pass. No application code changes.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session owns CI measurement integrity; existing backup owner retains all bounded files/work.",
+      "merged": [],
+      "deployed": "Test-only change, no runtime activation",
+      "retested": "Deterministic oldfail/newpass and22existing delivery/discovery cases passed; full correctedheadCI/integration pending",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Complete exact corrected-head CI/supervisor/independent integration; retain earlier failed and priorgreen unmerged heads, all real latency/acceptance gaps.",
+      "report": "5785778c-c797-4b7c-b71f-fe7c1525fc73 revision1"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -215694,6 +215718,11 @@
   "sqlite_call_attribution_stage": {
     "artifact": "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
     "sha256": "25d17eae62249f6ddc2783c2434631d4a3dc55a59c4b1e1510bdeaa54db7b0ce",
+    "resolution": "open"
+  },
+  "ci543_lock_role_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
+    "sha256": "b9973830e44e8a0b9907d34c5482557021896e2fbc6c78118ba109d9d2d09b2b",
     "resolution": "open"
   }
 }
