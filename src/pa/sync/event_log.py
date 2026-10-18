@@ -11,7 +11,7 @@ import json
 import os
 import threading
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Container, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -518,7 +518,7 @@ class EventLog:
         commit_hash: str,
         *,
         seen: set[str] | None = None,
-        stop: set[str] | None = None,
+        stop: Container[str] | None = None,
         max_commits: int = MAX_HISTORY_COMMITS,
         validated_head: SyncCommit | None = None,
     ) -> Iterator[tuple[str, SyncCommit]]:
@@ -1784,6 +1784,18 @@ class EventLog:
             # Validate the new tip, but do not materialize that history just to
             # prove this one edge. Forks and non-ready indexes retain the walk.
             return True
+        with self.index.ready_ancestor_membership(ancestor) as membership:
+            if membership is not None:
+                # Only membership is consumed by this walk. The ready tip's
+                # complete ancestry need not cross SQLite/Python as a JSON set
+                # for each imported fork. Novel objects retain the same bounded
+                # parent-first validation, cycle checks and missing-object errors.
+                return any(
+                    ancestor in commit.parent_hashes
+                    for _, commit in self._iter_commits_parent_first(
+                        descendant, stop=membership, validated_head=tip
+                    )
+                )
         projected = self.index.ancestors(ancestor)
         if projected is None:
             # Unknown ancestry must still validate every canonical reference,
