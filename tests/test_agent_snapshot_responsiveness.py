@@ -61,8 +61,10 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             request_finished = time.monotonic()
         elapsed = time.monotonic() - started
 
+        # Mock construction is fixture work, outside the request's deadline.
+        # Retain setup/teardown and full loop CPU in failure diagnostics.
         self.assertLess(
-            elapsed, 0.2,
+            request_finished - configured, 0.2,
             f"setup={configured - started:.6f}s "
             f"request={request_finished - configured:.6f}s "
             f"teardown={elapsed - (request_finished - started):.6f}s "

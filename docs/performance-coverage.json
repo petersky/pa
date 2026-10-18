@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T20:43:40.934811+00:00",
-  "completion": "OPEN;584findings/88concerns. Allprior583rowsownersactions retained. PR538strictmerge5a3/sourcead921treeequal verified, newmain39163921671FAILED390Agentpanel. Confirmedexpiredfixturemanager/store reuse matchesbothCIstacks; fixture-onlyreset/newregressionbaselineFAIL/final5PASS338warnings40.31s pendingfollowupintegration. Productionunchanged; correctedscalarCPUproposal stillUNIMPLEMENTED. Allpreviousperformance/deployment/peer/log/backup/unobserved/independentacceptance requirements remain.",
+  "as_of": "2026-10-18T20:50:08.824540+00:00",
+  "completion": "OPEN;585findings/89concerns. Allprior584rowsownersactions preserved. Initial539headd960CI39164667883failedtesttimer249.496msmocksetup+3.306msrequest>200mstotal;other4jobs andUIisolationtests green. Correctedassertionmeasurestheactualrequestwithsame200msdeadline/zeroIOandbufferassertions;1targettestpasses3.94s. Priorfixture/browser5pass338warnings40.31s unchanged. Newhead/integration/deployment/allremainingperformanceacceptance pending; scalarCPUsource stillUNIMPLEMENTED.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -124,7 +124,8 @@
     "docs/benchmarks/systemic-health-reference-source-20261018.json",
     "docs/benchmarks/systemic-pr537-integration-followup-20261018.json",
     "docs/benchmarks/systemic-schema-scalar-default-probe-20261018.json",
-    "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json"
+    "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json",
+    "docs/benchmarks/systemic-snapshot-request-timing-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209141,6 +209142,35 @@
       "fix_or_existing_owner": "This systemic session owns integration-test isolation; original live/database/backup and other browser findings retain their distinct owners and evidence.",
       "next_actor": "this same systemic session",
       "next_action": "Ready supervised PR and allhead/currentreview/stablesupervisor/merge/newmain gates; then corrected scalar-default source and every remaining acceptance finding. No blanket runtime closure."
+    },
+    {
+      "id": "concern:snapshot-responsiveness-mock-setup-budget",
+      "kind": "concern",
+      "family": "test_timing",
+      "finding": "Metadata responsiveness assertion charges mock context setup to its request budget",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_existing_CI_setup_request_teardown_phase_evidence",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-snapshot-request-timing-20261018.json",
+        "sha256": "9ce3fc5f89eb653d858adaf170ecb620e80145fed5c86f21fcd9fe467b7d5a95",
+        "phases": {
+          "setup_seconds": 0.249496,
+          "request_seconds": 0.003306,
+          "teardown_seconds": 1.2e-05,
+          "loop_thread_cpu_seconds": 0.248757
+        }
+      },
+      "implemented": "Keep actual asyncio.wait_for(timeout0.2s), and assert request_finished-configured <0.2s using already recorded request-start timestamp. Retain full setup/teardown/loopCPU in failure diagnostics. All zero-transcript-reads/unflushed4096buffer/no-transcript-payload/sequence4096 assertions unchanged. No application threshold, timeout, warning policy or code change.",
+      "merged": [],
+      "deployed": "Test-only candidate",
+      "retested": [
+        "1 passed in 3.94s"
+      ],
+      "resolution": "open",
+      "report": "4ddca18e-0b59-41da-a9af-32e84eca92d1 revision1",
+      "fix_or_existing_owner": "This same systemic session; production snapshot/GC/nativeCPU concerns remain distinct and open.",
+      "next_actor": "this same systemic session",
+      "next_action": "Push correctedPR539head/rewritefinalscope; requireallfreshheadCI/stablesupervisor/independentcurrent-base/review/merge/newmain gates. Preserve original failure and all remaining acceptance."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -212590,6 +212620,13 @@
     "sha256": "7f29aff8ccd256e8b0e9f4e101c6e6ba3a53c0bdb83b1a68cd3a479c9c2905b8",
     "rows": 584,
     "concerns": 88,
+    "resolution": "open"
+  },
+  "snapshot_request_timing_stage": {
+    "artifact": "docs/benchmarks/systemic-snapshot-request-timing-20261018.json",
+    "sha256": "9ce3fc5f89eb653d858adaf170ecb620e80145fed5c86f21fcd9fe467b7d5a95",
+    "rows": 585,
+    "concerns": 89,
     "resolution": "open"
   }
 }

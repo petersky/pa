@@ -1,3 +1,15 @@
+# Snapshot test timing attribution — 2026-10-18
+
+All **585 findings and 89 concerns remain open**. Every prior584row/owner/action remains unchanged. [Exact failed-head phases and corrected test evidence](benchmarks/systemic-snapshot-request-timing-20261018.json) preserve the original CI result and distinguish fixture setup from the production request.
+
+Initial PR539 head `d96075e1` CI39164667883 passed four jobs and the settings/UX isolation cases, but failed an unchanged metadata snapshot responsiveness assertion. Its existing diagnostic message reports setup249.496ms, request3.306ms, teardown0.012ms, full loop-threadCPU248.757ms; total252.814ms exceeded the200ms assertion. The actual request completed within its existing200ms async deadline. The assertion's clock started before entering three mock contexts. Exact interpreter/GC/allocation cost within setup remains unverified; this is not evidence of a252ms production snapshot call.
+
+The corrected assertion measures from the already recorded request-start timestamp. Both the200ms request assertion and `asyncio.wait_for` deadline remain unchanged, along with zero transcript reads, preserved4,096buffer entries, no transcript payload and correct sequence. Full setup/teardown/CPU diagnostics remain. The changed target test passes3.94s; the five unchanged fixture/browser cases from the prior stage remain separately validated. This is a test-boundary correction, **not a252→3ms product speedup or performance acceptance**. No application threshold, warning policy or product code changed.
+
+The original head failure is retained, not retried. Corrected PR539 scope includes fixture singleton isolation and snapshot request timing; it still requires new exact-head CI, stable supervisor, independent current-base/review validation, exact integration and newmain verification. All prior startup/background/liveFleet/provider/peer/log/receipt/browser/backup/unexercised and normal independent acceptance obligations remain. No deployment/restart/default change/acceptance/live-data mutation occurred; corrected scalar-default CPU source remains unimplemented.
+
+## Preserved prior coverage and failures
+
 # Confirmed portable-fixture store lifetime failure — 2026-10-18
 
 All **584 findings and 88 concerns remain open**. Every prior583row, owner, action and failure is preserved. [Complete before/after, CI, source and browser evidence](benchmarks/systemic-settings-fixture-isolation-20261018.json) separates this fixture repair from live PA performance and acceptance.
