@@ -198,7 +198,7 @@ class BrowserManager:
                         "--remote-debugging-address=127.0.0.1",
                         f"--remote-debugging-port={port}",
                         f"--user-data-dir={profile_dir}",
-                        url,
+                        "about:blank",
                         stdout=asyncio.subprocess.DEVNULL,
                         stderr=asyncio.subprocess.DEVNULL,
                         start_new_session=os.name == "posix",
@@ -270,6 +270,12 @@ class BrowserManager:
                         height,
                         device_scale_factor=device_scale_factor,
                     )
+                    # Launch targets can still expose the completed blank
+                    # document while their requested navigation is pending.
+                    # Send the requested navigation once over the established
+                    # CDP connection before publishing this attachment.
+                    if url != "about:blank":
+                        await attachment.page.navigate(url)
                     self._attachments[session_id] = attachment
                     return attachment
                 except BaseException:
