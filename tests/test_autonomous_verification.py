@@ -164,6 +164,91 @@ async def test_dispatch_recovery_exact_assignment_defaults_and_acceptance(system
     assert len(service.store.list()) == 1
 
 
+async def failed_admission_with_new_subject(system):
+    card, _ = ordinary(system)
+    actual = system.health.local_api
+    async def denied(*args, **kwargs):
+        raise httpx.HTTPStatusError('no eligible instance',
+            request=httpx.Request('POST', 'http://owner/api/fleet/dispatch'),
+            response=httpx.Response(503))
+    system.health.local_api = denied
+    await system.service.process(card)
+    old = system.service.store.list()[0]
+    assert old['diagnostic'] == 'HTTPStatusError' and old['dispatch_id'] is None
+    changed = system.ctx.store.update_card(card.id, CardUpdate(expected_version=card.updated_at),
+        principal_id='instance:pr-supervisor', integration_evidence=CompletionEvidence(
+            requirement_revision=card.completion_requirement.revision, subject_revision='b'*40, outcome='integrated'),
+        idempotency_key='second-integration')
+    return changed, old, actual
+
+
+def absent_receipt(old):
+    return {'idempotency_key': 'verification:' + old['id'], 'owner': 'dispatch', 'realm_id': 'default',
+            'status': 'not_found', 'durable': False, 'accepted': False, 'committed': False,
+            'effect': 'none', 'recovery_state': 'verified_absent_at_head', 'lookup_head': 'c'*64}
+
+
+@pytest.mark.asyncio
+async def test_superseded_failed_admission_requires_proven_absence(system):
+    changed, old, actual = await failed_admission_with_new_subject(system)
+    reads = []
+    async def recovered(actor, method, path, **kwargs):
+        if method == 'GET':
+            reads.append(path)
+            return absent_receipt(old)
+        return await actual(actor, method, path, **kwargs)
+    system.health.local_api = recovered
+    await system.service.process(changed)
+    assert system.service.store.get(old['id'])['state'] == 'superseded'
+    current = system.service.store.list()[-1]
+    assert current['state'] == 'dispatched' and current['packet']['subject'] == 'b'*40
+    assert len(reads) == 1 and 'owner=dispatch' in reads[0]
+    assert len(system.calls) == 1  # Only the scheduler's current assignment starts.
+    assert system.calls[0][3] == 'verification:' + current['id']
+    assert system.ctx.store.get_card(changed.id).completion_status['accepted'] is False
+    assert system.service.store.recovery(old['id'], 'admission-absent:' + 'c'*64) == 'confirmed'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', [
+    {'status': 'lookup_pending'}, {'durable': None}, {'committed': True}, {'accepted': True},
+    {'effect': 'unknown'}, {'owner': 'canonical'}, {'realm_id': 'other'},
+    {'idempotency_key': 'other'}, {'recovery_state': 'receipt_absent_history_head_changed'},
+    {'lookup_head': None}, None, 'unavailable',
+])
+async def test_uncertain_or_mismatched_old_admission_never_releases_owner(system, change):
+    changed, old, _ = await failed_admission_with_new_subject(system)
+    reads = []
+    async def receipt(actor, method, path, **kwargs):
+        assert method == 'GET'  # No admission or reconciliation mutation.
+        reads.append(path)
+        if change == 'unavailable':
+            raise httpx.ReadError('receipt unavailable')
+        return {**absent_receipt(old), **change} if isinstance(change, dict) else None
+    system.health.local_api = receipt
+    for _ in range(2):
+        await system.service.process(changed)
+    assert system.service.store.get(old['id'])['state'] == 'blocked'
+    assert not any(job['dispatch_id'] for job in system.service.store.list())
+    assert len(reads) == 2 and not system.calls
+
+
+@pytest.mark.asyncio
+async def test_old_dispatch_arriving_during_receipt_read_remains_the_only_assignment(system):
+    changed, old, actual = await failed_admission_with_new_subject(system)
+    async def arrived(actor, method, path, **kwargs):
+        assert method == 'GET'
+        await actual(actor, 'POST', '/api/fleet/dispatch',
+            body={'card_id': changed.id}, key='verification:' + old['id'])
+        return absent_receipt(old)
+    system.health.local_api = arrived
+    await system.service.process(changed)
+    recovered = system.service.store.get(old['id'])
+    assert recovered['state'] == 'dispatched' and recovered['dispatch_id']
+    assert system.service.store.list()[-1]['dispatch_id'] is None
+    assert len(system.calls) == 1 and system.calls[0][3] == 'verification:' + old['id']
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('changes,diagnostic', [({'acceptance_principals': []}, 'verification_principal_unconfigured'),
                                               ({'verification_principal': None}, 'verification_principal_unconfigured')])
