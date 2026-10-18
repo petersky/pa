@@ -71,7 +71,7 @@ def build_fixture(directory: Path):
         window.addEventListener('DOMContentLoaded',()=>{const p=window.PAAgentChat.AgentChatWidget.prototype;const original=p.applySnapshot;p.applySnapshot=function(s){try{return original.call(this,s);}catch(e){document.querySelector('#result').textContent=e.stack;throw e;}};});
         let sawGapWarning=false;
         setInterval(()=>{const texts=Array.from(document.querySelectorAll('.acw-bubble-agent')).map(e=>e.dataset.markdown||'');
-        const warning=document.querySelector('[data-acw-load-newer-status]');
+        const warning=document.querySelector('[data-acw-history-notice]');
         if(warning&&!warning.hidden&&warning.textContent.includes('waiting for history')) sawGapWarning=true;
         if(sawGapWarning&&texts.filter(t=>t==='Fixture gap: progress.final.').length===1&&warning.hidden&&
           document.querySelector('[data-acw-load-newer]').hidden)

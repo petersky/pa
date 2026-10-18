@@ -40,8 +40,8 @@ window.fixtureCalls = [];
 window.addEventListener('DOMContentLoaded', () => {
   const widget = document.querySelector('#primary-widget [data-agent-chat]')._acw;
   window.fixtureWidget = widget;
-  let issues = {revision: 1, issues: [{id: 'one', title: 'First issue', detail: '', group: '', deferred: false}], requests: []};
-  window.fixtureSnapshot = {session: {id: 'fixture', updated_at: 'v1', agent_name: 'codex'},
+  window.fixtureIssues = {revision: 1, issues: [{id: 'one', title: 'First issue', detail: '', group: '', deferred: false}], requests: []};
+  window.fixtureSnapshot = {session: {id: 'fixture', updated_at: 'v1', agent_name: 'codex', model_id: 'confirmed-model', mode_id: 'workspace-write'},
     execution_selection: {requested: {harness: 'codex', model: 'fixture-model'}, provider_confirmation: {state: 'confirmed', effective: {model_id: 'fixture-model'}}}};
   widget.api = async (path, options = {}) => {
     window.fixtureCalls.push({path, method: options.method || 'GET'});
@@ -50,7 +50,8 @@ window.addEventListener('DOMContentLoaded', () => {
     if (path.endsWith('/conversation-capabilities')) return {native_branch_available: true, copy_available: true, steering_reason: 'Synthetic fixture.'};
     if (path.endsWith('/branch')) return {session: {id: 'fixture-branch', status: 'idle'}};
     if (path.endsWith('/issues')) {
-      if (options.method === 'PUT') issues = {...issues, revision: issues.revision + 1, issues: JSON.parse(options.body).issues};
+      let issues = window.fixtureIssues;
+      if (options.method === 'PUT') window.fixtureIssues = issues = {...issues, revision: issues.revision + 1, issues: JSON.parse(options.body).issues};
       return structuredClone(issues);
     }
     return window.fixtureSnapshot;
@@ -59,6 +60,8 @@ window.addEventListener('DOMContentLoaded', () => {
   window.PAExecutionSelection.renderSession(widget, window.fixtureSnapshot);
   widget.composerReadyMs = 12;
   widget.renderTimings();
+  widget.issues.ready();
+  widget.renderModelsModes(window.fixtureSnapshot);
   window.fixtureReady = true;
 });
 </script></body></html>'''

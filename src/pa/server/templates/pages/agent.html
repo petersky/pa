@@ -30,10 +30,12 @@
        aria-label="All sessions; Show closed sessions and provider attempts">All sessions</a>
   </nav>
   {% set startup_in_progress = not agent_startup.get('complete', true) %}
+  {% if startup_in_progress %}
   <div class="agent-lifecycle-state status status-{{ 'waiting' if startup_in_progress else 'active' }}"
        role="status" aria-live="polite" data-agent-lifecycle-state>
     {{ 'PA is restarting — restoring unfinished work' if startup_in_progress else 'Provider processes start on demand' }}
   </div>
+  {% endif %}
   <div class="agent-session-history-controls">
     {% if session_view == 'chats' %}<a class="text-btn small" href="/agent?view=archived">Archived</a>{% endif %}
     {% if session_view == 'activity' %}<nav class="agent-activity-filters" aria-label="Activity filters">
@@ -248,7 +250,7 @@
   <ul class="muted tip-list">
     <li>Messages queue while the agent is working.</li>
     <li>Stop response affects only the current turn; queue controls are separate.</li>
-    <li>Conversation actions and technical details are in the Session menu.</li>
+    <li>Conversation actions are in Session; resources and execution information are in Details.</li>
     <li>Permission prompts appear inline unless auto-approve is on.</li>
   </ul>
 </details>

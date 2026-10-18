@@ -4,14 +4,19 @@
   function element(tag, text) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; return e; }
   function Controller(widget) {
     this.widget = widget; this.panel = widget.root.querySelector("[data-conversation-issues]");
-    this.state = null; this.selected = new Set(); this.generation = 0; this.busy = false;
+    this.state = null; this.selected = new Set(); this.generation = 0; this.busy = false; this.readRevision = 0;
     if (!this.panel) return;
     this.list = this.panel.querySelector("[data-issues-list]");
     this.status = this.panel.querySelector("[data-issues-status]");
     this.receipts = this.panel.querySelector("[data-issues-receipts]");
     this.addText = this.panel.querySelector("[data-issues-add-text]");
     const self = this;
-    this.panel.addEventListener("toggle", function () { if (self.panel.open) self.load(); });
+    this.panel.addEventListener("toggle", function () {
+      if (self.panel.open) {
+        self.changed = false; self.count();
+        if (!self.state) self.load();
+      }
+    });
     this.panel.querySelector("[data-issues-add]").addEventListener("click", function () {
       const lines = self.addText.value.split("\n").map(s => s.trim()).filter(Boolean);
       if (!lines.length || !self.state) return;
@@ -35,40 +40,72 @@
   }
   Controller.prototype.message = function (text) { if (this.status) this.status.textContent = text; };
   Controller.prototype.reset = function () {
-    this.generation++; clearTimeout(this.timer); this.busy = false; this.state = null; this.selected.clear();
+    this.generation++; clearTimeout(this.timer); this.loading = null; this.busy = false; this.state = null; this.changed = false; this.stale = false; this.selected.clear();
     if (!this.panel) return;
     this.list.replaceChildren(); this.receipts.replaceChildren(); this.addText.value = "";
-    this.widget.root.querySelector("[data-issues-count]").textContent = "";
-    this.message("Open Issues to load this conversation's list.");
+    this.count(); this.controls();
+    this.message("Loading this conversation's list…");
   };
   Controller.prototype.ready = function () {
     if (this.panel && new URL(window.location.href).searchParams.get("issues") === "1") this.panel.open = true;
-    if (this.panel && this.panel.open && !this.state) this.load();
+    if (this.panel && !this.state) this.load();
   };
   Controller.prototype.current = function (sid, generation) { return !this.widget.destroyed && sid === this.widget.sessionId && generation === this.generation; };
   Controller.prototype.controls = function () {
     if (!this.panel) return;
     this.panel.querySelectorAll("button,input,textarea").forEach(e => { e.disabled = this.busy || !this.state || e.dataset.started === "1"; });
   };
+  Controller.prototype.count = function () {
+    const count = this.widget.root.querySelector("[data-issues-count]");
+    if (!count) return;
+    const text = this.state ? "(" + this.state.issues.length + (this.stale ? " · stale" : this.changed ? " · updated" : "") + ")"
+      : this.stale ? "(unavailable)" : "(loading…)";
+    if (count.textContent !== text) count.textContent = text;
+    // Status descendants are excluded from a tab's computed accessible name.
+    const trigger = count.closest && count.closest("[role=tab], summary");
+    const label = "Issues " + text;
+    if (trigger && trigger.getAttribute("aria-label") !== label) trigger.setAttribute("aria-label", label);
+  };
+  Controller.prototype.schedule = function () {
+    clearTimeout(this.timer);
+    if (!this.widget.destroyed) this.timer = setTimeout(() => this.load(), 5000);
+  };
   Controller.prototype.load = function () {
-    const self = this, sid = this.widget.sessionId, generation = this.generation;
-    if (!sid || this.widget.ownerResolutionPending || this.busy) return;
-    this.widget.api("/sessions/" + encodeURIComponent(sid) + "/issues").then(function (state) {
-      if (!self.current(sid, generation) || self.busy) return;
-      self.state = state; self.render();
-      self.message("Discussion list · " + state.issues.length + " issues. Nothing starts until Start selected.");
-      clearTimeout(self.timer);
-      if (state.requests.some(r => r.state === "accepted" || r.state === "admitting")) self.timer = setTimeout(() => self.load(), 2000);
-    }).catch(function (error) { if (self.current(sid, generation)) self.message(error.message); });
+    const self = this, sid = this.widget.sessionId, generation = this.generation, apiBase = this.widget.apiBase;
+    if (!sid || this.widget.destroyed || this.widget.ownerResolutionPending || this.loading) return;
+    // Background reads must not replace a title being edited or race a mutation.
+    if (this.busy || (this.panel && this.panel.contains(document.activeElement) &&
+        /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName))) { this.schedule(); return; }
+    const revision = this.readRevision = this.readRevision || 0;
+    const entry = this.loading = {};
+    const current = () => self.current(sid, generation) && apiBase === self.widget.apiBase;
+    const path = "/sessions/" + encodeURIComponent(sid) + "/issues";
+    const request = this.widget.apiWithTimeout ? this.widget.apiWithTimeout(path, 5000) : this.widget.api(path);
+    entry.promise = request.then(function (state) {
+      if (!current() || self.busy || revision !== self.readRevision) return;
+      if (self.panel && self.panel.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+      const previous = self.state;
+      if (previous && state.revision < previous.revision) return;
+      if (previous && !self.panel.open && state.issues.some(i => !previous.issues.some(old => old.id === i.id))) self.changed = true;
+      self.state = state; self.stale = false; self.count();
+      if (!previous || JSON.stringify([previous.issues, previous.requests]) !== JSON.stringify([state.issues, state.requests])) self.render();
+      if (!previous) self.message("Discussion list · " + state.issues.length + " issues. Nothing starts until Start selected.");
+    }).catch(function (error) {
+      if (current() && revision === self.readRevision) { self.stale = true; self.count(); self.message(error.message); }
+    }).finally(function () {
+      if (self.loading === entry) self.loading = null;
+      if (self.current(sid, generation)) self.schedule();
+    });
+    return entry.promise;
   };
   Controller.prototype.save = function (issues, after) {
     if (this.busy || !this.state) return;
     const self = this, sid = this.widget.sessionId, generation = this.generation;
-    this.busy = true; this.controls();
+    this.readRevision = (this.readRevision || 0) + 1; this.busy = true; this.controls();
     const clean = issues.map(i => { const copy = Object.assign({}, i); delete copy.request_id; return copy; });
     this.widget.api("/sessions/" + encodeURIComponent(sid) + "/issues", {method: "PUT", body: JSON.stringify({revision: this.state.revision, issues: clean})})
       .then(function (state) { if (!self.current(sid, generation)) return; self.state = state; if (after) after(); self.render(); self.message("Issue list saved. Discussion only."); })
-      .catch(function (error) { if (self.current(sid, generation)) self.message(error.message + " Close and reopen Issues to refresh; your composer is unchanged."); })
+      .catch(function (error) { if (self.current(sid, generation)) self.message(error.message + " The list will refresh automatically; your composer is unchanged."); })
       .finally(function () { if (self.current(sid, generation)) { self.busy = false; self.controls(); } });
   };
   Controller.prototype.editSelected = function (edit) {
@@ -79,7 +116,7 @@
     if (this.busy) return;
     const self = this, sid = this.widget.sessionId, generation = this.generation, key = "pa:conversation-start:" + sid;
     try { localStorage.setItem(key, JSON.stringify(body)); } catch (_) { return this.message("Cannot retain a retry identity in this browser. Enable site storage before starting work."); }
-    this.busy = true; this.controls(); this.message("Accepting selected work…");
+    this.readRevision = (this.readRevision || 0) + 1; this.busy = true; this.controls(); this.message("Accepting selected work…");
     this.widget.api("/sessions/" + encodeURIComponent(sid) + "/issues/start", {method: "POST", headers: {"Idempotency-Key": body.request_id}, body: JSON.stringify(body)})
       .then(function (state) {
         try { localStorage.removeItem(key); } catch (_) {}
@@ -91,7 +128,7 @@
   };
   Controller.prototype.render = function () {
     const self = this;
-    this.widget.root.querySelector("[data-issues-count]").textContent = "(" + this.state.issues.length + ")";
+    this.stale = false; this.count();
     this.list.replaceChildren(); this.receipts.replaceChildren();
     this.state.issues.forEach(function (issue) {
       const row = element("li"), check = element("input"), title = element("input");

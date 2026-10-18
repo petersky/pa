@@ -2,13 +2,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const memory = new Map();
-const window = {};
+const window = {location: {href: "http://fixture/"}};
 function element(tag) {
   return {tag, children: [], events: {}, addEventListener(name, callback) {this.events[name] = callback;},
     append(...children) {this.children.push(...children);}, appendChild(child) {this.children.push(child);}, replaceChildren() {this.children = [];}};
 }
 vm.runInNewContext(fs.readFileSync("src/pa/server/static/js/conversation-issues.js", "utf8"), {
-  window, console, document: {createElement: element}, setTimeout: () => 1, clearTimeout() {},
+  window, console, URL, document: {createElement: element}, setTimeout: () => 1, clearTimeout() {},
   localStorage: {getItem: k => memory.get(k), setItem: (k,v) => memory.set(k,v), removeItem: k => memory.delete(k)},
 });
 const proto = window.PAConversationIssues.prototype;
@@ -20,6 +20,39 @@ function controller(api) {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 (async () => {
+  // Counts load on ready while closed, refresh without opening, and never
+  // accept an old owner/thread response or a read racing a successful save.
+  let reply, reads = 0;
+  const live = controller(() => {reads++; return new Promise(resolve => {reply = resolve;});});
+  let countWrites = 0, countText;
+  const count = {get textContent() {return countText;}, set textContent(value) {countWrites++; countText = value;}};
+  Object.assign(live, {state: null, panel: {open: false, contains: () => false},
+    list: element("ol"), receipts: element("div"), addText: {}, render() {this.count();}});
+  live.widget.root = {querySelector: () => count};
+  live.count(); assert.equal(count.textContent, "(loading…)");
+  live.ready(); live.ready(); assert.equal(reads, 1, "initial reads coalesce");
+  reply({revision: 1, issues: [{id: "one"}], requests: []}); await tick();
+  assert.equal(count.textContent, "(1)"); assert.equal(live.panel.open, false);
+  const firstWrites = countWrites;
+  live.load(); reply({revision: 1, issues: [{id: "one"}], requests: []}); await tick();
+  assert.equal(countWrites, firstWrites, "unchanged polls cannot repeat live announcements");
+  live.load(); reply({revision: 2, issues: [{id: "one"}, {id: "two"}], requests: []}); await tick();
+  assert.equal(count.textContent, "(2 · updated)");
+  live.load(); live.widget.apiBase = "other-owner";
+  reply({revision: 999, issues: [], requests: []}); await tick();
+  assert.equal(live.state.revision, 2, "old owner's count cannot paint");
+  live.load(); live.readRevision++; live.state = {revision: 4, issues: [{id: "saved"}], requests: []};
+  reply({revision: 3, issues: [], requests: []}); await tick();
+  assert.equal(live.state.revision, 4, "pre-save read cannot overwrite saved revision");
+  live.load(); live.widget.sessionId = "b"; live.reset();
+  assert.equal(count.textContent, "(loading…)", "switch clears previous count synchronously");
+  reply({revision: 5, issues: [{id: "source"}], requests: []}); await tick();
+  assert.equal(live.state, null, "previous thread cannot leak its count");
+  live.widget.api = () => Promise.reject(new Error("offline"));
+  live.ready(); await tick(); assert.equal(count.textContent, "(unavailable)");
+  live.widget.api = () => Promise.resolve({revision: 0, issues: [], requests: []});
+  live.load(); await tick(); assert.equal(count.textContent, "(0)", "only fetched empty state is zero");
+  live.widget.destroyed = true; live.reset();
   let finish, submitted;
   const c = controller((path, options) => {submitted = {path, options}; return new Promise(resolve => {finish = resolve;});});
   const body = {request_id: "durable-key", revision: 1, issue_ids: ["one"]};

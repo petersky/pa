@@ -293,6 +293,17 @@ const texts=w=>w.els.messages.querySelectorAll('.acw-bubble-agent').map(b=>b.dat
  assert.deepStrictEqual(texts(restored),['Complete recent message']);
  // Returning to the tail releases buffered chunks into the normal transcript.
  // The same scroll at the end of an evicted/paged window must keep its anchor.
+ const gapNotice=make();Object.assign(gapNotice.els,{historyNotice:new Element(),historyNoticeText:new Element(),livePreview:new Element(),latest:new Element()});
+ gapNotice.lastSeq=10;gapNotice.liveGapTarget=12;gapNotice.newerError='Live messages are waiting for history. Retrying…';
+ gapNotice.updateNewerControl();gapNotice._renderHistoryNotice();
+ assert.strictEqual(gapNotice.els.historyNotice.hidden,false);
+ assert.strictEqual(gapNotice.els.loadNewer.hidden,true,'tail recovery has one correlated action');
+ assert.strictEqual(gapNotice.els.loadNewerStatus.hidden,true,'tail recovery has one status');
+ assert.ok(gapNotice.els.historyNoticeText.textContent.includes('partial'));
+ gapNotice.historyPreserveWindow=true;gapNotice.hasNewer=true;
+ gapNotice.updateNewerControl();gapNotice._renderHistoryNotice();
+ assert.strictEqual(gapNotice.els.loadNewer.hidden,false,'older-page recovery stays at the affected boundary');
+ assert.ok(!gapNotice.els.historyNoticeText.textContent.includes('Retrying'));
  const tail=make();Object.assign(tail.els,{historyNotice:new Element(),historyNoticeText:new Element(),livePreview:new Element(),latest:new Element()});
  tail.lastSeq=10;tail.historyPreserveWindow=true;tail.isNearBottom=()=>false;
  tail.handleEvent(chunk(11,'A'));tail.handleEvent(chunk(12,'B'));
