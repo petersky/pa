@@ -72,3 +72,14 @@ def test_old_branches_and_unknown_native_outcomes_remain_distinct_from_copy_and_
         value = conversation_origin(target)
         assert value["label"] == label and value["native_state"] is None
     assert conversation_origin(store.get_session("discussion")) is None
+
+
+@pytest.mark.parametrize("strategy", [[], {}, 1, None, "unknown"])
+def test_unrecognized_workflow_metadata_does_not_break_session_lists(setup, strategy):
+    store, _, _, _ = setup
+    target = branch(store)
+    target.initiating_workflow["strategy"] = strategy
+    assert conversation_origin(target) is None
+    target.initiating_workflow["strategy"] = "native"
+    target.config_json["branch_admission"] = "legacy-unknown"
+    assert conversation_origin(target)["native_state"] is None

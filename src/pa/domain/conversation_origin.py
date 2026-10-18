@@ -9,7 +9,7 @@ from pa.domain.models import AgentSession
 def conversation_origin(session: AgentSession) -> dict | None:
     workflow = session.initiating_workflow or {}
     strategy = workflow.get("strategy")
-    if session.purpose != "chat" or strategy not in {"native", "copy", "empty"}:
+    if session.purpose != "chat" or not isinstance(strategy, str) or strategy not in {"native", "copy", "empty"}:
         return None
     source_id = workflow.get("source_session_id")
     if not isinstance(source_id, str) or not source_id:
@@ -23,6 +23,7 @@ def conversation_origin(session: AgentSession) -> dict | None:
         "copy": "Context copy of " + source_title,
         "empty": "New chat",
     }[strategy]
+    admission = session.config_json.get("branch_admission")
     return {
         "strategy": strategy,
         "label": label,
@@ -30,6 +31,6 @@ def conversation_origin(session: AgentSession) -> dict | None:
         "source_session_id": source_id,
         "source_instance_id": workflow.get("source_instance_id"),
         "source_title": source_title,
-        "native_state": (session.config_json.get("branch_admission") or {}).get("state")
-        if strategy == "native" else None,
+        "native_state": admission.get("state")
+        if strategy == "native" and isinstance(admission, dict) else None,
     }
