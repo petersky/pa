@@ -1,3 +1,112 @@
+# Fresh slow-tail inventory and exact integration — 2026-10-18
+
+All **592 findings and 96 concerns remain open**. Every prior588row is preserved unchanged; additive overrides link fresh observations to existing row IDs. This documentation-only checkpoint publishes the [complete64-operation numeric tail](benchmarks/systemic-live-log-window-20261018T2153-2215.json) and [all17family phases, exact integration/CI/receipt evidence and unshipped query probe](benchmarks/systemic-live-inventory-followup-20261018.json). The immutable proposed runtime target remains53b42d50; there is no new install, restart or acceptance claim.
+
+**Exact source and coverage:** macbook0c7d8ecb; supported installed CLI `pa logs --all --since 2026-10-18T21:53:00Z --lines 100000 --json`;6385records,0malformed,cap not reached; timestamp range **2026-10-18T21:53:01Z–22:15:09Z**. Streams: stdout2698,structured1549,stderr2138; requested supervisor returned0, a coverage gap. **628rawslowwarning emissions include314structured+314stderr copies**, while all numeric phases occur in314structuredrecords. They are not distinct incidents. All64names already map to rows in the prior inventory. Raw logs remainlocal with SHA256b1825d4a1a4a2c0c9940f1455cf1ced20d08c986f53f92bc813f4846e1b66080; numeric artifact SHA256301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e. The retained JSON source-command display omitted spaces after two options; this sentence records the actual argument separation without changing that artifact or its numeric evidence.
+
+The window spans another owner's restart from2e285481 to0d6638, with private fixtures and ordinary host work overlapping. Per-record process build, newPID descriptor/rotation and older retention are unverified; no peer logs were inspected. **These are percentiles of retained slow records only**, not all-call/rolling HTTP percentiles or process maxima. All numeric queue, dispatch, service, completion delivery, CPU, locks, SQL, bytes and filesystem fields remain in JSON. Family percentiles are recomputed from underlying structured records; operation percentiles are never averaged. No endpoint distributions are inferred: the original181runtime operations/115routes and every prior coverage gap remain required.
+
+Confirmed status: PR542 head6fb08417 merged **53b42d5077971b192e824c62acae71a59db95e80**, parents[f0d163c0,6fb08417], source/merge tree4d62c299 equal. Supervisor stable19observations; independent five-success checks/0requiredapprovals/0threads/fullpagination/protection-known. MainCI39171774684 attempt1 is five terminalsuccess. Original headCI39170870092 attempt1 failed unchanged100ms responsiveness budget at197.911ms with191ms own-task callback; four isolated base/patch processes pass and guard shows0schemafilter calls, but do not reproduce/explain/erase the failure. One bounded same-head failed-shard retry passed; no threshold, timer or source changed for that retry. Its CPU/GC/scheduling cause remains unverified.
+
+Full installed438sourcefiles/52dependencyversions/38templatecache and loaded process match **0d6638/PID45958/startup52e06824**; this is separate from later53b42 source integration. Owner784 reports its terminal healthy handoff and no current restart/stability hold. Backupowner1018 confirms unchanged integratedPR536 is in53b42, no new stability hold, and a held prospective capture plan targeting that source. Existing18fc/c5a ownership, all eight archives/history and explicit possibly irrecoverable historical data remain preserved. Missing historical bytes do not block feasible repairs/prospective validation. Fork/backup/systemic independent acceptance stays with the normal scheduler; DB89957 accepted originalscope remains closed. The native exact53b42 activation decision is outstanding; no response is inferred and original527 failed receipt is not retried or relabeled.
+
+Latest exact-source mixed evidence remains **9600orderedactive+12511cold events preserved,0operation failures/timeouts/rejections,1workerwarning/8universal500ms observations+3premeasurement**. Worker transcript-message-page549.510ms includes SQL438.276ms and threadCPU131.417ms; its underlying native cause is unknown. Earlier stages and all residual distributions are retained in the previous artifact, not erased by lower warning counts. The new disposable30pair sort hypothesis has complete selected-event parity and removes a query-plan temporary B-tree: baselinewallp50/p95/max25.498/50.696/54.058ms versuscandidate23.679/29.945/58.601ms. The candidate maximum regressed; **no source repair is shipped**, allcursor/limit/cold/concurrency contracts and representative evidence are still needed. It does not explain the historical549ms tail.
+
+Observability concerns: inventory attachment413/correlationd45a9c95 has failed/ValueError receipt with unknown effect; precise rejection cause is unverified and no existing attachment was removed or resent. This repository publication preserves the full inventory. Release-owner followup transporttimeout8f600791 reconciled under the same key to acceptedqueued prompt1567eca1; later owner784 is separate lifecycle evidence, no duplicate request/approval inference. These concerns and the CI/sort findings are the four added open rows.
+
+## Every retained prefix family — slow records only
+
+| Prefix family | Names | Numeric slow records | p50 ms | p95 ms | p99 ms | max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `acp` | 1 | 11 | 680.803 | 1677.74 | 1677.74 | 1677.74 |
+| `agent` | 5 | 18 | 628.93 | 1911.286 | 1911.286 | 1911.286 |
+| `conversation` | 2 | 5 | 668.121 | 1703.222 | 1703.222 | 1703.222 |
+| `dispatch` | 7 | 16 | 653.532 | 1892.56 | 1892.56 | 1892.56 |
+| `fleet` | 6 | 20 | 663.996 | 6547.797 | 7603.315 | 7603.315 |
+| `health` | 1 | 3 | 1550.513 | 2452.894 | 2452.894 | 2452.894 |
+| `maintenance` | 1 | 1 | 58136.853 | 58136.853 | 58136.853 | 58136.853 |
+| `pr_supervisor` | 1 | 3 | 777.243 | 795.202 | 795.202 | 795.202 |
+| `preferences` | 1 | 2 | 534.025 | 919.244 | 919.244 | 919.244 |
+| `progress` | 5 | 43 | 586.544 | 1631.672 | 2181.492 | 2181.492 |
+| `provider` | 3 | 13 | 1541.384 | 2949.993 | 2949.993 | 2949.993 |
+| `reconciliation` | 4 | 9 | 851.475 | 1709.982 | 1709.982 | 1709.982 |
+| `selection` | 3 | 3 | 842.737 | 1107.428 | 1107.428 | 1107.428 |
+| `sqlite` | 17 | 128 | 679.012 | 2483.386 | 5260.421 | 7069.361 |
+| `startup` | 1 | 1 | 936.707 | 936.707 | 936.707 | 936.707 |
+| `sync` | 2 | 26 | 961.367 | 4764.322 | 6011.065 | 6011.065 |
+| `workspace` | 4 | 12 | 6014.413 | 12012.978 | 12012.978 | 12012.978 |
+
+## Every retained operation — slow records only
+
+| Operation | Raw warning copies | Numeric slow records | p50 ms | p95 ms | p99 ms | max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `acp.wire_append` | 22 | 11 | 680.803 | 1677.74 | 1677.74 | 1677.74 |
+| `agent.history_payload` | 2 | 1 | 885.957 | 885.957 | 885.957 | 885.957 |
+| `agent.project_recovery_availability` | 2 | 1 | 848.524 | 848.524 | 848.524 | 848.524 |
+| `agent.recovery_sessions` | 28 | 14 | 607.416 | 972.424 | 972.424 | 972.424 |
+| `agent.session_snapshot` | 2 | 1 | 1034.482 | 1034.482 | 1034.482 | 1034.482 |
+| `agent.startup_state_read` | 2 | 1 | 1911.286 | 1911.286 | 1911.286 | 1911.286 |
+| `conversation.issues` | 4 | 2 | 554.125 | 1242.454 | 1242.454 | 1242.454 |
+| `conversation.session` | 6 | 3 | 668.121 | 1703.222 | 1703.222 | 1703.222 |
+| `dispatch.completion_pending_read` | 2 | 1 | 1696.415 | 1696.415 | 1696.415 | 1696.415 |
+| `dispatch.expire_capacity_reservations` | 2 | 1 | 1718.166 | 1718.166 | 1718.166 | 1718.166 |
+| `dispatch.followup_ack` | 2 | 1 | 735.636 | 735.636 | 735.636 | 735.636 |
+| `dispatch.followup_record_write` | 2 | 1 | 855.591 | 855.591 | 855.591 | 855.591 |
+| `dispatch.followup_started` | 2 | 1 | 521.52 | 521.52 | 521.52 | 521.52 |
+| `dispatch.reconcile_interrupted` | 2 | 1 | 1892.56 | 1892.56 | 1892.56 | 1892.56 |
+| `dispatch.record_read` | 20 | 10 | 591.055 | 800.121 | 800.121 | 800.121 |
+| `fleet.overview.activity` | 2 | 1 | 547.426 | 547.426 | 547.426 | 547.426 |
+| `fleet.overview.mcp_bootstrap` | 8 | 4 | 6313.281 | 7603.315 | 7603.315 | 7603.315 |
+| `fleet.overview.repositories` | 4 | 2 | 826.314 | 1052.515 | 1052.515 | 1052.515 |
+| `fleet.overview.sync` | 10 | 5 | 663.996 | 1134.958 | 1134.958 | 1134.958 |
+| `fleet.overview_cache_read` | 4 | 2 | 723.56 | 724.903 | 724.903 | 724.903 |
+| `fleet.overview_cache_write` | 12 | 6 | 580.55 | 617.648 | 617.648 | 617.648 |
+| `health.canonical_obligation` | 6 | 3 | 1550.513 | 2452.894 | 2452.894 | 2452.894 |
+| `maintenance.run` | 2 | 1 | 58136.853 | 58136.853 | 58136.853 | 58136.853 |
+| `pr_supervisor.response_json` | 6 | 3 | 777.243 | 795.202 | 795.202 | 795.202 |
+| `preferences.agent_auto_approve_read` | 4 | 2 | 534.025 | 919.244 | 919.244 | 919.244 |
+| `progress.checkpoint_write` | 14 | 7 | 557.246 | 881.891 | 881.891 | 881.891 |
+| `progress.dispatch_read` | 24 | 12 | 537.16 | 874.484 | 874.484 | 874.484 |
+| `progress.heartbeat_write` | 26 | 13 | 598.013 | 2181.492 | 2181.492 | 2181.492 |
+| `progress.pending_read` | 6 | 3 | 739.112 | 2168.179 | 2168.179 | 2168.179 |
+| `progress.sequence_allocate` | 16 | 8 | 525.944 | 1631.672 | 1631.672 | 1631.672 |
+| `provider.status.codex` | 10 | 5 | 1465.365 | 1777.044 | 1777.044 | 1777.044 |
+| `provider.status.cursor` | 10 | 5 | 2753.777 | 2949.993 | 2949.993 | 2949.993 |
+| `provider.status.openinterpreter` | 6 | 3 | 963.491 | 1538.691 | 1538.691 | 1538.691 |
+| `reconciliation.completion_evidence_read` | 4 | 2 | 639.628 | 744.18 | 744.18 | 744.18 |
+| `reconciliation.completion_queue` | 6 | 3 | 594.59 | 851.475 | 851.475 | 851.475 |
+| `reconciliation.dispatch_read` | 6 | 3 | 1155.136 | 1709.982 | 1709.982 | 1709.982 |
+| `reconciliation.session_read` | 2 | 1 | 1050.517 | 1050.517 | 1050.517 | 1050.517 |
+| `selection.configuration_receipt` | 2 | 1 | 1107.428 | 1107.428 | 1107.428 | 1107.428 |
+| `selection.prompt_identity` | 2 | 1 | 514.5 | 514.5 | 514.5 | 514.5 |
+| `selection.prompt_outcome` | 2 | 1 | 842.737 | 842.737 | 842.737 | 842.737 |
+| `sqlite.agent_runtime_checkpoint` | 2 | 1 | 520.054 | 520.054 | 520.054 | 520.054 |
+| `sqlite.agent_session_save` | 18 | 9 | 841.386 | 7069.361 | 7069.361 | 7069.361 |
+| `sqlite.card_read` | 18 | 9 | 580.509 | 1677.771 | 1677.771 | 1677.771 |
+| `sqlite.pr_supervisor_capability_write` | 2 | 1 | 521.589 | 521.589 | 521.589 | 521.589 |
+| `sqlite.pr_supervisor_completion_due_read` | 24 | 12 | 695.891 | 2297.785 | 2297.785 | 2297.785 |
+| `sqlite.pr_supervisor_event_write` | 2 | 1 | 500.492 | 500.492 | 500.492 | 500.492 |
+| `sqlite.pr_supervisor_watch_read` | 14 | 7 | 719.402 | 826.65 | 826.65 | 826.65 |
+| `sqlite.pr_supervisor_watch_write` | 22 | 11 | 665.142 | 2159.708 | 2159.708 | 2159.708 |
+| `sqlite.project_read` | 14 | 7 | 589.559 | 1035.323 | 1035.323 | 1035.323 |
+| `sqlite.prompt_acceptance` | 2 | 1 | 632.179 | 632.179 | 632.179 | 632.179 |
+| `sqlite.prompt_acceptance_read` | 6 | 3 | 1183.824 | 1437.119 | 1437.119 | 1437.119 |
+| `sqlite.repository_read` | 10 | 5 | 615.898 | 1083.295 | 1083.295 | 1083.295 |
+| `sqlite.restart_handoff_completion` | 4 | 2 | 521.867 | 903.058 | 903.058 | 903.058 |
+| `sqlite.restart_handoffs_pending` | 2 | 1 | 632.356 | 632.356 | 632.356 | 632.356 |
+| `sqlite.transcript_append` | 100 | 50 | 703.002 | 2102.6 | 3201.649 | 3201.649 |
+| `sqlite.transcript_message_page` | 4 | 2 | 702.936 | 2626.369 | 2626.369 | 2626.369 |
+| `sqlite.transcript_read` | 12 | 6 | 832.269 | 2877.772 | 2877.772 | 2877.772 |
+| `startup.openapi` | 2 | 1 | 936.707 | 936.707 | 936.707 | 936.707 |
+| `sync.reconcile_head` | 50 | 25 | 1040.655 | 4764.322 | 6011.065 | 6011.065 |
+| `sync.ref_read` | 2 | 1 | 923.537 | 923.537 | 923.537 | 923.537 |
+| `workspace.collect_garbage` | 10 | 5 | 7958.728 | 12012.978 | 12012.978 | 12012.978 |
+| `workspace.lease_renew` | 6 | 3 | 1216.492 | 1511.412 | 1511.412 | 1511.412 |
+| `workspace.project_provision` | 6 | 3 | 8346.696 | 9420.835 | 9420.835 | 9420.835 |
+| `workspace.reconcile_terminal_state` | 2 | 1 | 2283.654 | 2283.654 | 2283.654 | 2283.654 |
+
+## Preserved prior coverage and failures
+
 # Owned schema filtering and coordinated dependency evidence — 2026-10-18
 
 All **588 findings and 92 concerns remain open**. Every prior586row, owner and next action is preserved. [Full source/test/prototype/mixed/dependency evidence](benchmarks/systemic-owned-schema-filter-20261018.json) retains all measurements, rejected variants and gaps. PR541 exact head/merge trees and five-success head/main CI are verified; integration is separate from activation.
