@@ -1,3 +1,156 @@
+# Lock-fixture synchronization and bounded role attribution — 2026-10-18
+
+All **594 findings and98concerns remain open**; every prior593row is unchanged. [Complete intermediate CI failure, deterministic reproduction,22existing tests and fixed-role diagnostic](benchmarks/systemic-ci543-lock-fixture-followup-20261018.json). Application source, dependencies, warning/deadline/admission semantics and immutable53b42 activation proposal are unchanged. The PR includes two test corrections: exact decimal comparison and the lock-entry synchronization below.
+
+Intermediatehead2bbd1d74 CI39172747593 fails a lock-wait test at27.238ms versus its unchanged30ms minimum; other4jobs pass. The test starts a50ms hold timer at taskcreation, before the worker necessarily enters measured_lock. ReportingLock now signals only after measured_lock's wall/deadline clocks start, then the test begins the **same50ms hold and>=30ms assertion**, retaining all idle/lock/queue/absolute budgets and queue/clientwait separation. A new bounded0.5s fixture-entry wait guards synchronization; it changes no production or measured-hold timeout. Actual originaltest/runtime/lock reproduction with controlled dispatch boundary fails baseline and passes correction; real host scheduling gives0.429ms versus50.693ms actual lock waits. This is a private boundary model, not a measurement of CI queue delay. Initial private harness importfailed before either case; original retained, separatev2 adds only currentrepo tosys.path. All **22existing delivery/discovery cases pass in11.08s**. RawCIlogSHAa035c85a060b58087a6f1aaebf7068e343d0e7781a788a00ec9a4023f38fe28c is retainedlocal, no same-head retry. Previous8e197b01 headCI39172904402 was5success but unmerged; only the final correctedhead may pass integration gates.
+
+The separate30iteration fixed-role source diagnostic preserves2880orderedactive+12511cold content hashes,0operation failures/timeouts/rejections,438sourcefiles/38templates/29runtime modules and2220hash-chained journal records. Its32.031s measurement has **0workerwarnings but4universal500ms observations**, plus3premeasurement slow records. Objectcollect3samples p50/p95/p99/max696.239/1613.773/1613.773/1613.773ms; the one inclusive maintenance sweep11415.209ms. This smaller differently instrumented run is not a paired improvement or acceptance; the earlier100iteration2warnings/11observations and uninstrumented1/8 source stages remain retained. The earlier511ms nativeexecute did not recur, so no exact role/cause is assigned retroactively.
+
+Only fixed SQLverbs and trusted packaged internal callsite labels are recorded, never SQLtext/parameters/rowbodies. All observed role buckets/counts/totals/max and each operation's worstworker are published; per-call percentile coverage is unavailable because individual calls/workers are bounded samples, not a complete call log. Unknown/other roles remain explicit gaps. Successfulbusy, disk, GIL and scheduling causes remainunverified. No new runtimeinstall/restart, backup file/archive/default/reference mutation, worker or independent acceptance; existing18fc/c5a prospective work and historical-gap disclosure continue separately.
+
+## Preserved prior inventory, failed and intermediate stages
+
+# Completed native-call attribution; residuals retained — 2026-10-18
+
+All **593 findings and 97 concerns remain open**, with every row unchanged. The separate [complete100iteration per-SQLite-call numeric diagnostic](benchmarks/systemic-sqlite-call-attribution-20261018.json) finished:438sourcefiles/38templates/29runtime modulehashes match the existing source;9600orderedactive and12511cold content hashes are preserved;0operation failures/timeouts/rejections. The113.445s measurement has **2workerwarnings/11universal500ms observations+3premeasurement slow records**. Its numeric wrappers add overhead, so it is not a paired speedup, rollout or performance acceptance result. The earlier uninstrumented source542stage1warning/8observations and every prior stage remain separate and retained. Earlier artifact's running status is historical, not overwritten.
+
+The527.415ms transcript-message-page warning has525.489ms worker service/174.913ms threadCPU. Its5fetchall calls take433.740ms wall/96.219ms CPU;7execute calls take25.747ms wall/14.407ms CPU. The708.558ms reconcile warning has703.860ms service/61.012ms CPU: oneexecute takes511.184ms wall/4.014ms CPU inside an outermost projection.mutation hold525.182ms. Nested holds overlap and cannot be summed. No busyfailure is recorded; successful busy/native/scheduler/GIL/disk cause and exact statement role remainunverified. This is narrower attribution, not proof that each warning is a different slow query. None of the selected worstworker topcalls overlaps the26retainedGCevents>=10ms (all fit the64event window); shortcollections outside thelast256window remainunknown, so this is not blanketGC exclusion.
+
+Startup remains separately slow: OpenAPI685.061ms wall/663.547ms CPU; concurrent refread service0.534ms with754.146ms completiondelivery and followupread service0.093ms with753.136ms delivery. They are not slowSQL evidence. Full call buckets for24named operations, worstworker timelines, GC/lock observations, all raw latency samples and the7274-record verified incremental-journal hash/observer overhead are retained in JSON. No SQL, parameters or row bodies are captured.
+
+| Residual timer | n | p50 ms | p95 ms | p99 ms | max ms | observations>=500ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `sync.reconcile_head` | 100 | 55.762 | 184.196 | 321.726 | 711.898 | 1 |
+| `/api/agent/history/session-0?limit=64&message_boundaries=true` | 100 | 192.645 | 456.659 | 526.296 | 636.632 | 4 |
+| `sync.object_collect` | 10 | 412.402 | 1605.046 | 1605.046 | 1605.046 | 4 |
+| `/fleet` | 100 | 118.444 | 278.853 | 463.806 | 753.615 | 1 |
+| `maintenance.run` | 1 | 18731.252 | 18731.252 | 18731.252 | 18731.252 | 1 |
+
+The first four residuals are individual source fixture timers; maintenance.run is one inclusive background sweep, not an individual query or HTTP request. All remain disclosed. Exact53b42 activation approval is still outstanding; this PR changes documentation and one reproduced decimal-comparison test, leaving application source/dependencies and the proposed runtime target unchanged. No install/restart, backup mutation, duplicate worker, timeout increase or acceptance claim. Existing backup owner retains prospective work and explicit historical-gap disclosure; original archives/history and independent requirements remain intact.
+
+## Preserved earlier inventory and failures
+
+# Exact decimal timing comparison and continued attribution — 2026-10-18
+
+All **593 findings and 97 concerns remain open**; every prior592row is unchanged. The PR now includes one test-only numerical correction alongside the complete64-operation/17-family inventory below. **Application source, dependencies, warning/deadline thresholds and the immutable53b42 runtime proposal are unchanged.** [Full original failure, deterministic reproduction, existing tests and continuing attribution](benchmarks/systemic-ci543-decimal-followup-20261018.json).
+
+InitialPR543CI39172308776 attempt1 has4passingjobs and1failed shard (967passed,172warnings,72subtests). Its session-timing test observes valid rounded decimal milliseconds **54.99 and64.99**, then compares64.99 against binary addition54.99+10, which yields **64.99000000000001**. Actual runtime code rounds both durable fields to2decimal places. Deterministic execution of the original test and real method reproduces baselinefailure and correctedpass by controlling only those two known clock sites; all18event-loop/other monotonic calls stay real. The test now compares decimal values exactly, with **no tolerance or timing-budget increase**. Its>=50ms check, wrong-session rejection and single-emission checks remain. Both existing discovery/timing tests pass in5.39s under isolated roots. OriginalCIlogSHA256256d02c10e9e23fc30f237014568b19e765a749c3261e9cfaf1d1cff4a8dfa56 remainslocal; no same-head retry was used. This is separate from originalPR542's unverified197.9ms responsiveness failure and all real latency tails.
+
+Additional private transcript prototype verification passes72cursor/limitcases,2empty sessions,3invalid-limit exceptions and40stable-cursor reads during100normalappends, retaining2100events with hot/cold parity. It is unshipped; the earlier worse maximum and all source/concurrency/performance obligations remain. Correlated314slow-record phase classification finds260largestworker-service,42completion-delivery and12executor-dispatch records. Counts withphase>=500ms overlap:218service,34delivery,5dispatch,2queue,46workerCPU,60SQL,11Pythonlockwait,0filelockwait. Recorded busy failures are0; successful native busy, GIL reacquisition, scheduling and physical disk causes remainunverified. Queue wait is separate from the warning execution elapsed timer. These are retained slow-tail observations, not all-call percentiles or exact-cause labels.
+
+A separate100iteration disposable source diagnostic with bounded per-SQLite-call execute/fetch/commit wall/threadCPU recording is running as this checkpoint is prepared. It preserves source/warning/deadline semantics and captures no SQL, parameters or rows. Instrumentation adds overhead; no result, speedup, deployment or acceptance is assumed. Inspect its final or partial evidence before further measurement. Existing backup owner remains responsible for its bounded prospective work; no backup file, runtime configuration, archive or independent verification policy is changed here.
+
+## Preserved earlier inventory and failures
+
+# Fresh slow-tail inventory and exact integration — 2026-10-18
+
+All **592 findings and 96 concerns remain open**. Every prior588row is preserved unchanged; additive overrides link fresh observations to existing row IDs. This documentation-only checkpoint publishes the [complete64-operation numeric tail](benchmarks/systemic-live-log-window-20261018T2153-2215.json) and [all17family phases, exact integration/CI/receipt evidence and unshipped query probe](benchmarks/systemic-live-inventory-followup-20261018.json). The immutable proposed runtime target remains53b42d50; there is no new install, restart or acceptance claim.
+
+**Exact source and coverage:** macbook0c7d8ecb; supported installed CLI `pa logs --all --since 2026-10-18T21:53:00Z --lines 100000 --json`;6385records,0malformed,cap not reached; timestamp range **2026-10-18T21:53:01Z–22:15:09Z**. Streams: stdout2698,structured1549,stderr2138; requested supervisor returned0, a coverage gap. **628rawslowwarning emissions include314structured+314stderr copies**, while all numeric phases occur in314structuredrecords. They are not distinct incidents. All64names already map to rows in the prior inventory. Raw logs remainlocal with SHA256b1825d4a1a4a2c0c9940f1455cf1ced20d08c986f53f92bc813f4846e1b66080; numeric artifact SHA256301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e. The retained JSON source-command display omitted spaces after two options; this sentence records the actual argument separation without changing that artifact or its numeric evidence.
+
+The window spans another owner's restart from2e285481 to0d6638, with private fixtures and ordinary host work overlapping. Per-record process build, newPID descriptor/rotation and older retention are unverified; no peer logs were inspected. **These are percentiles of retained slow records only**, not all-call/rolling HTTP percentiles or process maxima. All numeric queue, dispatch, service, completion delivery, CPU, locks, SQL, bytes and filesystem fields remain in JSON. Family percentiles are recomputed from underlying structured records; operation percentiles are never averaged. No endpoint distributions are inferred: the original181runtime operations/115routes and every prior coverage gap remain required.
+
+Confirmed status: PR542 head6fb08417 merged **53b42d5077971b192e824c62acae71a59db95e80**, parents[f0d163c0,6fb08417], source/merge tree4d62c299 equal. Supervisor stable19observations; independent five-success checks/0requiredapprovals/0threads/fullpagination/protection-known. MainCI39171774684 attempt1 is five terminalsuccess. Original headCI39170870092 attempt1 failed unchanged100ms responsiveness budget at197.911ms with191ms own-task callback; four isolated base/patch processes pass and guard shows0schemafilter calls, but do not reproduce/explain/erase the failure. One bounded same-head failed-shard retry passed; no threshold, timer or source changed for that retry. Its CPU/GC/scheduling cause remains unverified.
+
+Full installed438sourcefiles/52dependencyversions/38templatecache and loaded process match **0d6638/PID45958/startup52e06824**; this is separate from later53b42 source integration. Owner784 reports its terminal healthy handoff and no current restart/stability hold. Backupowner1018 confirms unchanged integratedPR536 is in53b42, no new stability hold, and a held prospective capture plan targeting that source. Existing18fc/c5a ownership, all eight archives/history and explicit possibly irrecoverable historical data remain preserved. Missing historical bytes do not block feasible repairs/prospective validation. Fork/backup/systemic independent acceptance stays with the normal scheduler; DB89957 accepted originalscope remains closed. The native exact53b42 activation decision is outstanding; no response is inferred and original527 failed receipt is not retried or relabeled.
+
+Latest exact-source mixed evidence remains **9600orderedactive+12511cold events preserved,0operation failures/timeouts/rejections,1workerwarning/8universal500ms observations+3premeasurement**. Worker transcript-message-page549.510ms includes SQL438.276ms and threadCPU131.417ms; its underlying native cause is unknown. Earlier stages and all residual distributions are retained in the previous artifact, not erased by lower warning counts. The new disposable30pair sort hypothesis has complete selected-event parity and removes a query-plan temporary B-tree: baselinewallp50/p95/max25.498/50.696/54.058ms versuscandidate23.679/29.945/58.601ms. The candidate maximum regressed; **no source repair is shipped**, allcursor/limit/cold/concurrency contracts and representative evidence are still needed. It does not explain the historical549ms tail.
+
+Observability concerns: inventory attachment413/correlationd45a9c95 has failed/ValueError receipt with unknown effect; precise rejection cause is unverified and no existing attachment was removed or resent. This repository publication preserves the full inventory. Release-owner followup transporttimeout8f600791 reconciled under the same key to acceptedqueued prompt1567eca1; later owner784 is separate lifecycle evidence, no duplicate request/approval inference. These concerns and the CI/sort findings are the four added open rows.
+
+## Every retained prefix family — slow records only
+
+| Prefix family | Names | Numeric slow records | p50 ms | p95 ms | p99 ms | max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `acp` | 1 | 11 | 680.803 | 1677.74 | 1677.74 | 1677.74 |
+| `agent` | 5 | 18 | 628.93 | 1911.286 | 1911.286 | 1911.286 |
+| `conversation` | 2 | 5 | 668.121 | 1703.222 | 1703.222 | 1703.222 |
+| `dispatch` | 7 | 16 | 653.532 | 1892.56 | 1892.56 | 1892.56 |
+| `fleet` | 6 | 20 | 663.996 | 6547.797 | 7603.315 | 7603.315 |
+| `health` | 1 | 3 | 1550.513 | 2452.894 | 2452.894 | 2452.894 |
+| `maintenance` | 1 | 1 | 58136.853 | 58136.853 | 58136.853 | 58136.853 |
+| `pr_supervisor` | 1 | 3 | 777.243 | 795.202 | 795.202 | 795.202 |
+| `preferences` | 1 | 2 | 534.025 | 919.244 | 919.244 | 919.244 |
+| `progress` | 5 | 43 | 586.544 | 1631.672 | 2181.492 | 2181.492 |
+| `provider` | 3 | 13 | 1541.384 | 2949.993 | 2949.993 | 2949.993 |
+| `reconciliation` | 4 | 9 | 851.475 | 1709.982 | 1709.982 | 1709.982 |
+| `selection` | 3 | 3 | 842.737 | 1107.428 | 1107.428 | 1107.428 |
+| `sqlite` | 17 | 128 | 679.012 | 2483.386 | 5260.421 | 7069.361 |
+| `startup` | 1 | 1 | 936.707 | 936.707 | 936.707 | 936.707 |
+| `sync` | 2 | 26 | 961.367 | 4764.322 | 6011.065 | 6011.065 |
+| `workspace` | 4 | 12 | 6014.413 | 12012.978 | 12012.978 | 12012.978 |
+
+## Every retained operation — slow records only
+
+| Operation | Raw warning copies | Numeric slow records | p50 ms | p95 ms | p99 ms | max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `acp.wire_append` | 22 | 11 | 680.803 | 1677.74 | 1677.74 | 1677.74 |
+| `agent.history_payload` | 2 | 1 | 885.957 | 885.957 | 885.957 | 885.957 |
+| `agent.project_recovery_availability` | 2 | 1 | 848.524 | 848.524 | 848.524 | 848.524 |
+| `agent.recovery_sessions` | 28 | 14 | 607.416 | 972.424 | 972.424 | 972.424 |
+| `agent.session_snapshot` | 2 | 1 | 1034.482 | 1034.482 | 1034.482 | 1034.482 |
+| `agent.startup_state_read` | 2 | 1 | 1911.286 | 1911.286 | 1911.286 | 1911.286 |
+| `conversation.issues` | 4 | 2 | 554.125 | 1242.454 | 1242.454 | 1242.454 |
+| `conversation.session` | 6 | 3 | 668.121 | 1703.222 | 1703.222 | 1703.222 |
+| `dispatch.completion_pending_read` | 2 | 1 | 1696.415 | 1696.415 | 1696.415 | 1696.415 |
+| `dispatch.expire_capacity_reservations` | 2 | 1 | 1718.166 | 1718.166 | 1718.166 | 1718.166 |
+| `dispatch.followup_ack` | 2 | 1 | 735.636 | 735.636 | 735.636 | 735.636 |
+| `dispatch.followup_record_write` | 2 | 1 | 855.591 | 855.591 | 855.591 | 855.591 |
+| `dispatch.followup_started` | 2 | 1 | 521.52 | 521.52 | 521.52 | 521.52 |
+| `dispatch.reconcile_interrupted` | 2 | 1 | 1892.56 | 1892.56 | 1892.56 | 1892.56 |
+| `dispatch.record_read` | 20 | 10 | 591.055 | 800.121 | 800.121 | 800.121 |
+| `fleet.overview.activity` | 2 | 1 | 547.426 | 547.426 | 547.426 | 547.426 |
+| `fleet.overview.mcp_bootstrap` | 8 | 4 | 6313.281 | 7603.315 | 7603.315 | 7603.315 |
+| `fleet.overview.repositories` | 4 | 2 | 826.314 | 1052.515 | 1052.515 | 1052.515 |
+| `fleet.overview.sync` | 10 | 5 | 663.996 | 1134.958 | 1134.958 | 1134.958 |
+| `fleet.overview_cache_read` | 4 | 2 | 723.56 | 724.903 | 724.903 | 724.903 |
+| `fleet.overview_cache_write` | 12 | 6 | 580.55 | 617.648 | 617.648 | 617.648 |
+| `health.canonical_obligation` | 6 | 3 | 1550.513 | 2452.894 | 2452.894 | 2452.894 |
+| `maintenance.run` | 2 | 1 | 58136.853 | 58136.853 | 58136.853 | 58136.853 |
+| `pr_supervisor.response_json` | 6 | 3 | 777.243 | 795.202 | 795.202 | 795.202 |
+| `preferences.agent_auto_approve_read` | 4 | 2 | 534.025 | 919.244 | 919.244 | 919.244 |
+| `progress.checkpoint_write` | 14 | 7 | 557.246 | 881.891 | 881.891 | 881.891 |
+| `progress.dispatch_read` | 24 | 12 | 537.16 | 874.484 | 874.484 | 874.484 |
+| `progress.heartbeat_write` | 26 | 13 | 598.013 | 2181.492 | 2181.492 | 2181.492 |
+| `progress.pending_read` | 6 | 3 | 739.112 | 2168.179 | 2168.179 | 2168.179 |
+| `progress.sequence_allocate` | 16 | 8 | 525.944 | 1631.672 | 1631.672 | 1631.672 |
+| `provider.status.codex` | 10 | 5 | 1465.365 | 1777.044 | 1777.044 | 1777.044 |
+| `provider.status.cursor` | 10 | 5 | 2753.777 | 2949.993 | 2949.993 | 2949.993 |
+| `provider.status.openinterpreter` | 6 | 3 | 963.491 | 1538.691 | 1538.691 | 1538.691 |
+| `reconciliation.completion_evidence_read` | 4 | 2 | 639.628 | 744.18 | 744.18 | 744.18 |
+| `reconciliation.completion_queue` | 6 | 3 | 594.59 | 851.475 | 851.475 | 851.475 |
+| `reconciliation.dispatch_read` | 6 | 3 | 1155.136 | 1709.982 | 1709.982 | 1709.982 |
+| `reconciliation.session_read` | 2 | 1 | 1050.517 | 1050.517 | 1050.517 | 1050.517 |
+| `selection.configuration_receipt` | 2 | 1 | 1107.428 | 1107.428 | 1107.428 | 1107.428 |
+| `selection.prompt_identity` | 2 | 1 | 514.5 | 514.5 | 514.5 | 514.5 |
+| `selection.prompt_outcome` | 2 | 1 | 842.737 | 842.737 | 842.737 | 842.737 |
+| `sqlite.agent_runtime_checkpoint` | 2 | 1 | 520.054 | 520.054 | 520.054 | 520.054 |
+| `sqlite.agent_session_save` | 18 | 9 | 841.386 | 7069.361 | 7069.361 | 7069.361 |
+| `sqlite.card_read` | 18 | 9 | 580.509 | 1677.771 | 1677.771 | 1677.771 |
+| `sqlite.pr_supervisor_capability_write` | 2 | 1 | 521.589 | 521.589 | 521.589 | 521.589 |
+| `sqlite.pr_supervisor_completion_due_read` | 24 | 12 | 695.891 | 2297.785 | 2297.785 | 2297.785 |
+| `sqlite.pr_supervisor_event_write` | 2 | 1 | 500.492 | 500.492 | 500.492 | 500.492 |
+| `sqlite.pr_supervisor_watch_read` | 14 | 7 | 719.402 | 826.65 | 826.65 | 826.65 |
+| `sqlite.pr_supervisor_watch_write` | 22 | 11 | 665.142 | 2159.708 | 2159.708 | 2159.708 |
+| `sqlite.project_read` | 14 | 7 | 589.559 | 1035.323 | 1035.323 | 1035.323 |
+| `sqlite.prompt_acceptance` | 2 | 1 | 632.179 | 632.179 | 632.179 | 632.179 |
+| `sqlite.prompt_acceptance_read` | 6 | 3 | 1183.824 | 1437.119 | 1437.119 | 1437.119 |
+| `sqlite.repository_read` | 10 | 5 | 615.898 | 1083.295 | 1083.295 | 1083.295 |
+| `sqlite.restart_handoff_completion` | 4 | 2 | 521.867 | 903.058 | 903.058 | 903.058 |
+| `sqlite.restart_handoffs_pending` | 2 | 1 | 632.356 | 632.356 | 632.356 | 632.356 |
+| `sqlite.transcript_append` | 100 | 50 | 703.002 | 2102.6 | 3201.649 | 3201.649 |
+| `sqlite.transcript_message_page` | 4 | 2 | 702.936 | 2626.369 | 2626.369 | 2626.369 |
+| `sqlite.transcript_read` | 12 | 6 | 832.269 | 2877.772 | 2877.772 | 2877.772 |
+| `startup.openapi` | 2 | 1 | 936.707 | 936.707 | 936.707 | 936.707 |
+| `sync.reconcile_head` | 50 | 25 | 1040.655 | 4764.322 | 6011.065 | 6011.065 |
+| `sync.ref_read` | 2 | 1 | 923.537 | 923.537 | 923.537 | 923.537 |
+| `workspace.collect_garbage` | 10 | 5 | 7958.728 | 12012.978 | 12012.978 | 12012.978 |
+| `workspace.lease_renew` | 6 | 3 | 1216.492 | 1511.412 | 1511.412 | 1511.412 |
+| `workspace.project_provision` | 6 | 3 | 8346.696 | 9420.835 | 9420.835 | 9420.835 |
+| `workspace.reconcile_terminal_state` | 2 | 1 | 2283.654 | 2283.654 | 2283.654 | 2283.654 |
+
+## Preserved prior coverage and failures
+
 # Owned schema filtering and coordinated dependency evidence — 2026-10-18
 
 All **588 findings and 92 concerns remain open**. Every prior586row, owner and next action is preserved. [Full source/test/prototype/mixed/dependency evidence](benchmarks/systemic-owned-schema-filter-20261018.json) retains all measurements, rejected variants and gaps. PR541 exact head/merge trees and five-success head/main CI are verified; integration is separate from activation.

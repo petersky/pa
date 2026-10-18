@@ -1,0 +1,769 @@
+{
+  "contract": "pa.ci543-decimal-comparison-followup/v1",
+  "observed_at": "2026-10-18T22:32:56.591960+00:00",
+  "base_head": "c858707de321b1261e4c5851732e17b691d1a227",
+  "runtime_target_unchanged": "53b42d5077971b192e824c62acae71a59db95e80",
+  "initial_ci": {
+    "run": 39172308776,
+    "attempt": 1,
+    "failed_job": 117807748294,
+    "failed_test": "test_first_useful_event_timing_is_session_scoped_and_emitted_once",
+    "result": "1failed,967passed,172warnings,72subtests in121.44s",
+    "other_jobs_success": 4,
+    "raw_log_sha256": "256d02c10e9e23fc30f237014568b19e765a749c3261e9cfaf1d1cff4a8dfa56",
+    "actual_decimal_value": 64.99,
+    "provider_generation_ms": 54.99,
+    "binary_sum_repr": "64.99000000000001",
+    "cause": "Confirmed exact-float test comparison on separately rounded2decimal millisecond fields. Production stores correct decimal64.99; binary sum64.99000000000001 is an assertion artifact, not a latency failure.",
+    "same_head_retry": "None; scoped test correction after deterministic reproduction."
+  },
+  "test_change": "diff --git a/tests/test_conversation_discovery_timing.py b/tests/test_conversation_discovery_timing.py\nindex b9b653c8..ba98a919 100644\n--- a/tests/test_conversation_discovery_timing.py\n+++ b/tests/test_conversation_discovery_timing.py\n@@ -1,6 +1,7 @@\n import asyncio\n import json\n import time\n+from decimal import Decimal\n from types import SimpleNamespace\n from unittest.mock import AsyncMock, MagicMock\n \n@@ -51,5 +52,9 @@ def test_first_useful_event_timing_is_session_scoped_and_emitted_once():\n     timings = [c.args[1] for c in runtime._append_transcript.call_args_list if c.args[0] == \"prompt_timing\"]\n     assert len(timings) == 1\n     assert timings[0][\"provider_generation_ms\"] >= 50\n-    assert timings[0][\"accept_to_useful_ms\"] == timings[0][\"provider_generation_ms\"] + 10\n+    # The durable timing values are rounded decimal milliseconds. Compare\n+    # those values exactly without adding a binary floating-point artifact.\n+    assert Decimal(str(timings[0][\"accept_to_useful_ms\"])) == Decimal(\n+        str(timings[0][\"provider_generation_ms\"])\n+    ) + 10\n     assert runtime.session.metrics_json[\"turn_timing\"][\"prompt_id\"] == \"prompt\"\n",
+  "production_source_changed": false,
+  "assertion_budget_changed": false,
+  "session_scope_once_only_checks_retained": true,
+  "evidence": {
+    ".dev/pr543-decimal-timing-comparison.json": {
+      "sha256": "34123796d17046adf2060692c7fb6a2c2ddf4ff867cead701a9ca70538470a39",
+      "data": {
+        "contract": "pa.ci543-decimal-timing-reproduction/v1",
+        "scope": "Actual existing test and public runtime method; only their two known timing call sites receive deterministic values. All event-loop/other monotonic calls retain real clock. Isolated roots/workspace constructor denied, no live API/state/provider/network. Session fence/emitted-once/unchanged>=50ms assertion retained. Decimal comparison changes no production timing, warning/deadline or tolerance.",
+        "baseline_test_source_sha256": "e43e52f15a85eeae561e79698d6d79ff600f152e8f239dc3345cc6f7cde03688",
+        "candidate_test_source_sha256": "8083bbe9be6e0f8e04da0eb8221f79ab80dc82bf361cc28b93a913589a73b30b",
+        "product_source_sha256": "33f7f6f95f971c37abaac7c81c0d31e1c2bfd5bf26c33092f386504f363d5877",
+        "script_sha256": "c8e644aea50b40c1596fd52825b00514aac90dc2a231c3d6e83d22310f7b1fea",
+        "cases": [
+          {
+            "case": "baseline",
+            "status": "failed",
+            "error": "AssertionError",
+            "clock_calls": {
+              "fixture": 1,
+              "method": 1,
+              "other_real": 18
+            },
+            "fixture_provider_started_monotonic": 100.0,
+            "method_monotonic": 100.05499,
+            "rounded_provider_ms": 54.99,
+            "rounded_accept_ms": 64.99
+          },
+          {
+            "case": "candidate",
+            "status": "passed",
+            "error": null,
+            "clock_calls": {
+              "fixture": 1,
+              "method": 1,
+              "other_real": 18
+            },
+            "fixture_provider_started_monotonic": 100.0,
+            "method_monotonic": 100.05499,
+            "rounded_provider_ms": 54.99,
+            "rounded_accept_ms": 64.99
+          }
+        ],
+        "binary_sum_repr": "64.99000000000001",
+        "decimal_value_repr": "64.99",
+        "reproduced_original_ci": true,
+        "fixed_comparison_passes": true,
+        "deployed": false,
+        "whole_acceptance": false
+      }
+    },
+    ".dev/pr543-timing-tests.json": {
+      "sha256": "78edd7a2071a70725afc5807919e4520a7e360285bc3f43dda30559f43234d2c",
+      "data": {
+        "contract": "pa.ci543-timing-tests/v1",
+        "started_at": "2026-10-18T22:32:13.692883+00:00",
+        "finished_at": "2026-10-18T22:32:22.731812+00:00",
+        "head": "c858707de321b1261e4c5851732e17b691d1a227",
+        "exit_code": 0,
+        "summary": [
+          "2 passed in 5.39s"
+        ],
+        "source_sha256": {
+          "src/pa/instance/agent_session.py": "33f7f6f95f971c37abaac7c81c0d31e1c2bfd5bf26c33092f386504f363d5877",
+          "tests/test_conversation_discovery_timing.py": "8083bbe9be6e0f8e04da0eb8221f79ab80dc82bf361cc28b93a913589a73b30b"
+        },
+        "source_unchanged": true,
+        "log_sha256": "ff34dc2e98b2f392ae9acacb418ef6c29c39b9fb98be9fe968cdfbaff7efba72",
+        "raw_local_only": true,
+        "scope": "Existing discovery301card/body/privacy/pagination and exact session-scoped/emitted-once/first-useful timing cases. Only decimal comparison changed; actual runtime source unchanged. Bothprivateenvroots/ownedTemporaryDirectorysettingsguard/pytestbasetemp. No deployed/live/provider/archive acceptance or budget change."
+      }
+    },
+    ".dev/pr543-timing-tests.roots.json": {
+      "sha256": "a48491e4693f2246ce247c450c1bcc2051f6c703e008527472c7622aca976ee5",
+      "data": {
+        "exit_code": 0,
+        "roots": [],
+        "owned_temporary_roots": [
+          "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-scalar-source-tests-p0n8l2xj"
+        ],
+        "environment_roots": {
+          "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-scalar-source-tests-p0n8l2xj/data",
+          "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-scalar-source-tests-p0n8l2xj/workspaces"
+        }
+      }
+    },
+    ".dev/transcript-reverse-contracts.json": {
+      "sha256": "f3f6120d9a02e72304473063654e6e3bf10bc9f1d9f83a8c609ada1cedca53f1",
+      "data": {
+        "contract": "pa.transcript-reverse-contracts/v1",
+        "source_head": "c858707de321b1261e4c5851732e17b691d1a227",
+        "source_sha256": "18fa2ada514bf52d7eaa4effdc6075692e4a35798448a79dca40fb66bc604db7",
+        "script_sha256": "e9212e2c947ec4922f1cdc1b76828012bd36824dc46de6fc634962f8ad34c551",
+        "source_unchanged": true,
+        "prototype_source": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/check_transcript_reverse_contracts.py",
+        "scope": "Unshipped prototype only. Disposable2000events with200normal cold objects, hot bodies and exact full-model parity across72cursor/limit cases,2empty sessions,3invalid-limit exceptions and40stable-cursor reads during100normal sequential appends. No live PA/provider/peer/API/archive access, missing/corrupt file injection or production faults. Does not prove every snapshot/concurrency/interruption contract or attribute549ms warning; representative paired source measurements still needed.",
+        "roots": {
+          "data": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-transcript-reverse-contracts-jjh7cguu/data",
+          "workspace": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-transcript-reverse-contracts-jjh7cguu/workspaces",
+          "workspace_constructor": "denied"
+        },
+        "cases": [
+          {
+            "before": null,
+            "limit": -4,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": 0,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": 1,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": 9,
+            "rows": 9,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": 1001,
+            "rows": 1001,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": 10000,
+            "rows": 1001,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": "3",
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": true,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": null,
+            "limit": 3.7,
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": -4,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": 0,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": 1,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": 9,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": 1001,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": 10000,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": "3",
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": true,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": -5,
+            "limit": 3.7,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": -4,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": 0,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": 1,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": 9,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": 1001,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": 10000,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": "3",
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": true,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 0,
+            "limit": 3.7,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": -4,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": 0,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": 1,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": 9,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": 1001,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": 10000,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": "3",
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": true,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 1,
+            "limit": 3.7,
+            "rows": 0,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": -4,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": 0,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": 1,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": 9,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": 1001,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": 10000,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": "3",
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": true,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2,
+            "limit": 3.7,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": -4,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": 0,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": 1,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": 9,
+            "rows": 9,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": 1001,
+            "rows": 500,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": 10000,
+            "rows": 500,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": "3",
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": true,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 501,
+            "limit": 3.7,
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": -4,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": 0,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": 1,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": 9,
+            "rows": 9,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": 1001,
+            "rows": 1001,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": 10000,
+            "rows": 1001,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": "3",
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": true,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 2001,
+            "limit": 3.7,
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": -4,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": 0,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": 1,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": 9,
+            "rows": 9,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": 1001,
+            "rows": 1001,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": 10000,
+            "rows": 1001,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": "3",
+            "rows": 3,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": true,
+            "rows": 1,
+            "complete_model_parity": true
+          },
+          {
+            "before": 9999,
+            "limit": 3.7,
+            "rows": 3,
+            "complete_model_parity": true
+          }
+        ],
+        "invalid_limits": [
+          {
+            "case_type": "NoneType",
+            "exception": "TypeError"
+          },
+          {
+            "case_type": "str",
+            "exception": "ValueError"
+          },
+          {
+            "case_type": "float",
+            "exception": "OverflowError"
+          }
+        ],
+        "concurrency_results": [
+          100,
+          20,
+          20
+        ],
+        "final_retained_events": 2100,
+        "implemented": false,
+        "deployed": false,
+        "whole_acceptance": false
+      }
+    },
+    ".dev/live-window-correlated-phases.json": {
+      "sha256": "a8af7bac4c8444e8e8d346952545f12c2a6f94444d6b883d3c6560a77f35bb50",
+      "data": {
+        "contract": "pa.correlated-slow-window-phases/v1",
+        "source_sha256": "b1825d4a1a4a2c0c9940f1455cf1ced20d08c986f53f92bc813f4846e1b66080",
+        "records": 314,
+        "fields_over500ms_counts": {
+          "executor_dispatch_ms": 5,
+          "worker_service_ms": 218,
+          "completion_delivery_ms": 34,
+          "queue_wait_ms": 2,
+          "thread_cpu_ms": 46,
+          "sqlite_statement_ms": 60,
+          "python_lock_wait_ms": 11,
+          "file_lock_wait_ms": 0
+        },
+        "largest_of_three_execution_elapsed_phases": {
+          "worker_service_ms": 260,
+          "executor_dispatch_ms": 12,
+          "completion_delivery_ms": 42
+        },
+        "phase_groups": {
+          "executor_dispatch_ms": {
+            "records": 12,
+            "operations": {
+              "reconciliation.dispatch_read": 1,
+              "acp.wire_append": 3,
+              "sqlite.repository_read": 2,
+              "preferences.agent_auto_approve_read": 2,
+              "sqlite.pr_supervisor_capability_write": 1,
+              "dispatch.record_read": 1,
+              "conversation.session": 1,
+              "sqlite.card_read": 1
+            },
+            "worker_thread_cpu_ms": {
+              "n": 12,
+              "p50": 1.388,
+              "p95": 22.248,
+              "p99": 22.248,
+              "max": 22.248
+            },
+            "worker_service_ms": {
+              "n": 12,
+              "p50": 59.565,
+              "p95": 296.472,
+              "p99": 296.472,
+              "max": 296.472
+            }
+          },
+          "worker_service_ms": {
+            "records": 260,
+            "operations": {
+              "sync.reconcile_head": 25,
+              "dispatch.reconcile_interrupted": 1,
+              "agent.startup_state_read": 1,
+              "startup.openapi": 1,
+              "health.canonical_obligation": 2,
+              "workspace.reconcile_terminal_state": 1,
+              "workspace.collect_garbage": 5,
+              "provider.status.openinterpreter": 3,
+              "provider.status.codex": 5,
+              "provider.status.cursor": 5,
+              "workspace.project_provision": 3,
+              "fleet.overview.mcp_bootstrap": 4,
+              "sqlite.agent_session_save": 9,
+              "sqlite.transcript_append": 49,
+              "progress.checkpoint_write": 6,
+              "sqlite.pr_supervisor_watch_write": 9,
+              "progress.dispatch_read": 11,
+              "sqlite.pr_supervisor_completion_due_read": 12,
+              "maintenance.run": 1,
+              "reconciliation.completion_queue": 3,
+              "progress.sequence_allocate": 7,
+              "sqlite.card_read": 5,
+              "dispatch.followup_record_write": 1,
+              "selection.prompt_outcome": 1,
+              "sqlite.prompt_acceptance_read": 3,
+              "workspace.lease_renew": 2,
+              "agent.recovery_sessions": 12,
+              "acp.wire_append": 4,
+              "sqlite.project_read": 3,
+              "reconciliation.completion_evidence_read": 2,
+              "sync.ref_read": 1,
+              "fleet.overview.repositories": 2,
+              "dispatch.record_read": 8,
+              "progress.pending_read": 3,
+              "selection.prompt_identity": 1,
+              "sqlite.agent_runtime_checkpoint": 1,
+              "progress.heartbeat_write": 11,
+              "sqlite.restart_handoffs_pending": 1,
+              "sqlite.pr_supervisor_watch_read": 6,
+              "fleet.overview.activity": 1,
+              "conversation.issues": 2,
+              "fleet.overview.sync": 4,
+              "sqlite.transcript_read": 6,
+              "agent.session_snapshot": 1,
+              "reconciliation.dispatch_read": 1,
+              "dispatch.expire_capacity_reservations": 1,
+              "sqlite.transcript_message_page": 2,
+              "agent.history_payload": 1,
+              "sqlite.prompt_acceptance": 1,
+              "conversation.session": 1,
+              "agent.project_recovery_availability": 1,
+              "dispatch.followup_started": 1,
+              "dispatch.followup_ack": 1,
+              "fleet.overview_cache_write": 6
+            },
+            "worker_thread_cpu_ms": {
+              "n": 260,
+              "p50": 49.629,
+              "p95": 752.284,
+              "p99": 1696.088,
+              "max": 19922.062
+            },
+            "worker_service_ms": {
+              "n": 260,
+              "p50": 660.045,
+              "p95": 6010.122,
+              "p99": 9419.439,
+              "max": 58135.624
+            }
+          },
+          "completion_delivery_ms": {
+            "records": 42,
+            "operations": {
+              "fleet.overview_cache_read": 2,
+              "reconciliation.session_read": 1,
+              "health.canonical_obligation": 1,
+              "sqlite.project_read": 4,
+              "sqlite.card_read": 3,
+              "acp.wire_append": 4,
+              "progress.sequence_allocate": 1,
+              "dispatch.record_read": 1,
+              "progress.heartbeat_write": 2,
+              "workspace.lease_renew": 1,
+              "sqlite.repository_read": 3,
+              "pr_supervisor.response_json": 3,
+              "sqlite.pr_supervisor_watch_read": 1,
+              "progress.checkpoint_write": 1,
+              "agent.recovery_sessions": 2,
+              "sqlite.transcript_append": 1,
+              "sqlite.restart_handoff_completion": 2,
+              "progress.dispatch_read": 1,
+              "dispatch.completion_pending_read": 1,
+              "conversation.session": 1,
+              "reconciliation.dispatch_read": 1,
+              "selection.configuration_receipt": 1,
+              "sqlite.pr_supervisor_watch_write": 2,
+              "fleet.overview.sync": 1,
+              "sqlite.pr_supervisor_event_write": 1
+            },
+            "worker_thread_cpu_ms": {
+              "n": 42,
+              "p50": 4.223,
+              "p95": 111.618,
+              "p99": 179.291,
+              "max": 179.291
+            },
+            "worker_service_ms": {
+              "n": 42,
+              "p50": 44.297,
+              "p95": 348.973,
+              "p99": 590.258,
+              "max": 590.258
+            }
+          }
+        },
+        "scope": "Retained structured slow records only, window21:53:01\u201322:15:09Z/macbook, mixed534restart/builds and overlapping private fixtures. Counts overlap. Largest execution elapsed phase is not a cause. Queue wait is separate and is excluded from the warning execution elapsed timer; never fold it into execution-phase dominance. Successful busy wait, GIL reacquisition, scheduler, disk/native waits remain unverified; low worker threadCPU is not proof of disk, SQL or another exact cause. No all-call percentiles/endpoint windows/fleet audit/acceptance inference.",
+        "sqlite_busy_failure_records": 0,
+        "script_sha256": "c64049ea92f7889c6af6b20c5b24147322a0152023329606389ff53141206bdd"
+      }
+    }
+  },
+  "reproduction_scripts": {
+    ".dev/reproduce_pr543_decimal_timing.py": "\"\"\"Reproduce exact CI rounding assertion without changing loop clocks or source.\"\"\"\nimport hashlib,json,os,subprocess,sys,tempfile,time,traceback\nfrom pathlib import Path\nfrom unittest.mock import patch\n\nout=Path('.dev/pr543-decimal-timing-comparison.json');assert not out.exists()\nold=subprocess.check_output(['git','show','c858707de321b1261e4c5851732e17b691d1a227:tests/test_conversation_discovery_timing.py'],text=True)\nnew=Path('tests/test_conversation_discovery_timing.py').read_text()\nwith tempfile.TemporaryDirectory(prefix='pa-ci543-decimal-contract-') as tmp:\n    os.environ['PA_DATA_DIR']=str(Path(tmp)/'data');os.environ['PA_WORKSPACE_ROOT']=str(Path(tmp)/'workspaces')\n    from pa.instance.agent_session import AgentSessionRuntime\n    from pa.repository.workspace import WorkspaceManager\n    def denied(*args,**kwargs):raise AssertionError('Workspace construction forbidden')\n    WorkspaceManager.__init__=denied\n    real=time.monotonic;rows=[]\n    for label,text in [('baseline',old),('candidate',new)]:\n        namespace={};exec(compile(text,'<'+label+'-ci543-test>','exec'),namespace)\n        fn=namespace['test_first_useful_event_timing_is_session_scoped_and_emitted_once']\n        calls={'fixture':0,'method':0,'other_real':0}\n        def fixed():\n            caller=sys._getframe(1).f_code\n            if caller is fn.__code__:calls['fixture']+=1;return 100.05\n            if caller is AgentSessionRuntime._on_acp_update.__code__:calls['method']+=1;return 100.05499\n            calls['other_real']+=1;return real()\n        with patch('time.monotonic',fixed):\n            try:fn();status='passed';error=None\n            except AssertionError:status='failed';error='AssertionError'\n        assert calls['fixture']==1 and calls['method']==1 and calls['other_real']>0\n        rows.append({'case':label,'status':status,'error':error,'clock_calls':calls,'fixture_provider_started_monotonic':100.0,'method_monotonic':100.05499,'rounded_provider_ms':54.99,'rounded_accept_ms':64.99})\n    assert [r['status'] for r in rows]==['failed','passed']\n    assert 64.99 != 54.99+10\n    raw={'contract':'pa.ci543-decimal-timing-reproduction/v1','scope':'Actual existing test and public runtime method; only their two known timing call sites receive deterministic values. All event-loop/other monotonic calls retain real clock. Isolated roots/workspace constructor denied, no live API/state/provider/network. Session fence/emitted-once/unchanged>=50ms assertion retained. Decimal comparison changes no production timing, warning/deadline or tolerance.','baseline_test_source_sha256':hashlib.sha256(old.encode()).hexdigest(),'candidate_test_source_sha256':hashlib.sha256(new.encode()).hexdigest(),'product_source_sha256':hashlib.sha256(Path('src/pa/instance/agent_session.py').read_bytes()).hexdigest(),'script_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'cases':rows,'binary_sum_repr':repr(54.99+10),'decimal_value_repr':repr(64.99),'reproduced_original_ci':True,'fixed_comparison_passes':True,'deployed':False,'whole_acceptance':False}\n    data=json.dumps(raw,indent=2)+'\\n';out.write_text(data);print(json.dumps({'path':str(out),'sha256':hashlib.sha256(data.encode()).hexdigest(),'cases':rows,'binary_sum_repr':raw['binary_sum_repr'],'decimal_value_repr':raw['decimal_value_repr']}))\n",
+    ".dev/run_pr543_timing_tests.py": "\"\"\"Existing conversation discovery/session timing contracts after exact decimal comparison correction.\"\"\"\nimport hashlib,json,os,re,subprocess,sys,tempfile\nfrom datetime import UTC,datetime\nfrom pathlib import Path\nbase=Path('.dev/pr543-timing-tests')\nif '--child' not in sys.argv:\n    assert not base.with_suffix('.log').exists()\n    files=['src/pa/instance/agent_session.py','tests/test_conversation_discovery_timing.py'];hashes={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files};started=datetime.now(UTC).isoformat()\n    with tempfile.TemporaryDirectory(prefix='pa-scalar-source-tests-') as tmp:\n        env=os.environ.copy();env.update(PA_DATA_DIR=str(Path(tmp)/'data'),PA_WORKSPACE_ROOT=str(Path(tmp)/'workspaces'))\n        with base.with_suffix('.log').open('w') as stream:r=subprocess.run([sys.executable,__file__,'--child'],env=env,stdout=stream,stderr=subprocess.STDOUT)\n        s=base.with_suffix('.log').read_text();summary=[l for l in s.splitlines() if re.fullmatch(r'\\d+ (?:passed|failed)(?:, \\d+ (?:warnings?|subtests passed|skipped))* in [0-9.]+s(?: \\([0-9:]+\\))?',l) or l.startswith(('FAILED tests/','ERROR tests/'))]\n        out={'contract':'pa.ci543-timing-tests/v1','started_at':started,'finished_at':datetime.now(UTC).isoformat(),'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'exit_code':r.returncode,'summary':summary,'source_sha256':hashes,'source_unchanged':all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==v for p,v in hashes.items()),'log_sha256':hashlib.sha256(base.with_suffix('.log').read_bytes()).hexdigest(),'raw_local_only':True,'scope':'Existing discovery301card/body/privacy/pagination and exact session-scoped/emitted-once/first-useful timing cases. Only decimal comparison changed; actual runtime source unchanged. Bothprivateenvroots/ownedTemporaryDirectorysettingsguard/pytestbasetemp. No deployed/live/provider/archive acceptance or budget change.'};base.with_suffix('.json').write_text(json.dumps(out,indent=2)+'\\n');print(json.dumps({k:out[k] for k in ('exit_code','summary','source_unchanged','log_sha256')}));raise SystemExit(r.returncode)\nroot=Path(os.environ['PA_DATA_DIR']).parent.resolve();owned=[root];original_temp=tempfile.TemporaryDirectory\ndef owned_temp(*a,**k):\n    d=original_temp(*a,**k);owned.append(Path(d.name).resolve());return d\ntempfile.TemporaryDirectory=owned_temp\nfrom pa.repository.workspace import WorkspaceManager\noriginal=WorkspaceManager.__init__;roots=[]\ndef guard(self,settings,store):\n    d=Path(settings.data_dir).resolve();w=Path(settings.workspace_root).resolve()\n    assert any(d.is_relative_to(t) for t in owned) and any(w.is_relative_to(t) for t in owned)\n    roots.append({'data':str(d),'workspace':str(w)});return original(self,settings,store)\nWorkspaceManager.__init__=guard\nimport pytest\nfiles=['tests/test_conversation_discovery_timing.py']\ncode=pytest.main(['-q','-o','addopts=','--basetemp',str(root/'pytest'),*files]);base.with_suffix('.roots.json').write_text(json.dumps({'exit_code':int(code),'roots':roots,'owned_temporary_roots':[str(t) for t in owned],'environment_roots':{k:os.environ[k] for k in ('PA_DATA_DIR','PA_WORKSPACE_ROOT')}},indent=2)+'\\n');raise SystemExit(code)\n",
+    ".dev/check_transcript_reverse_contracts.py": "\"\"\"Verify an unshipped read-order prototype in disposable hot/cold fixtures.\"\"\"\nimport hashlib,json,os,subprocess,tempfile\nfrom concurrent.futures import ThreadPoolExecutor\nfrom datetime import UTC,datetime\nfrom pathlib import Path\n\nout=Path('.dev/transcript-reverse-contracts.json');assert not out.exists()\nsrc=Path('src/pa/domain/transcript_storage.py');source_sha=hashlib.sha256(src.read_bytes()).hexdigest()\nwith tempfile.TemporaryDirectory(prefix='pa-transcript-reverse-contracts-') as tmp:\n    os.environ['PA_DATA_DIR']=str(Path(tmp)/'data');os.environ['PA_WORKSPACE_ROOT']=str(Path(tmp)/'workspaces')\n    from pa.domain.transcript_storage import TranscriptStorage,MAX_PAGE_SIZE\n    from pa.domain.models import TranscriptEvent\n    from pa.repository.workspace import WorkspaceManager\n    def denied(*args,**kwargs):raise AssertionError('Workspace construction forbidden in isolated prototype')\n    WorkspaceManager.__init__=denied\n    data=Path(os.environ['PA_DATA_DIR']);data.mkdir()\n    s=TranscriptStorage(data/'test.db')\n    def candidate(session_id,*,before_seq=None,limit=500):\n        bounded=max(1,min(int(limit),MAX_PAGE_SIZE))\n        clause,params=('AND seq < ?',[session_id,before_seq]) if before_seq is not None else ('',[session_id])\n        params.append(bounded)\n        with s._conn() as conn:\n            rows=conn.execute(f'SELECT * FROM transcript_events WHERE session_id=? {clause} ORDER BY seq DESC LIMIT ?',params).fetchall()\n        rows.reverse()\n        return [s._event(row) for row in rows]\n    def create(i):return TranscriptEvent(session_id='fixture',seq=i,event_type='agent_message_chunk',payload={'text':str(i)+('c'*4096 if i%10==0 else 'h'*100),'message_id':str(i//50)},created_at=datetime.now(UTC))\n    s.append([create(i) for i in range(1,2001)])\n    cases=[]\n    def dump(xs):return [x.model_dump(mode='json') for x in xs]\n    for before in (None,-5,0,1,2,501,2001,9999):\n        for limit in (-4,0,1,9,1001,10000,'3',True,3.7):\n            old=s.list_before('fixture',before_seq=before,limit=limit)\n            new=candidate('fixture',before_seq=before,limit=limit)\n            assert dump(old)==dump(new)\n            assert len(new)<=1001 and all(a.seq<b.seq for a,b in zip(new,new[1:]))\n            cases.append({'before':before,'limit':limit,'rows':len(new),'complete_model_parity':True})\n    for missing in ('missing',''):\n        assert s.list_before(missing)==candidate(missing)==[]\n    invalid=[]\n    for limit in (None,'invalid',float('inf')):\n        errors=[]\n        for call in (s.list_before,candidate):\n            try:call('fixture',limit=limit)\n            except (TypeError,ValueError,OverflowError) as e:errors.append(type(e).__name__)\n        assert len(errors)==2 and errors[0]==errors[1];invalid.append({'case_type':type(limit).__name__,'exception':errors[0]})\n    stable=dump(s.list_before('fixture',before_seq=2001,limit=1001))\n    def append():\n        for i in range(2001,2101):s.append([create(i)])\n        return 100\n    def read_repeatedly():\n        for i in range(20):assert dump(candidate('fixture',before_seq=2001,limit=1001))==stable\n        return 20\n    with ThreadPoolExecutor(max_workers=3) as pool:\n        futures=[pool.submit(append),pool.submit(read_repeatedly),pool.submit(read_repeatedly)]\n        values=[f.result() for f in futures]\n    assert s.next_seq('fixture')==2101 and dump(s.list_before('fixture',limit=1001))==dump(candidate('fixture',limit=1001))\n    assert hashlib.sha256(src.read_bytes()).hexdigest()==source_sha\n    r={'contract':'pa.transcript-reverse-contracts/v1','source_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'source_sha256':source_sha,'script_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'source_unchanged':True,'prototype_source':__file__,'scope':'Unshipped prototype only. Disposable2000events with200normal cold objects, hot bodies and exact full-model parity across72cursor/limit cases,2empty sessions,3invalid-limit exceptions and40stable-cursor reads during100normal sequential appends. No live PA/provider/peer/API/archive access, missing/corrupt file injection or production faults. Does not prove every snapshot/concurrency/interruption contract or attribute549ms warning; representative paired source measurements still needed.','roots':{'data':str(data),'workspace':os.environ['PA_WORKSPACE_ROOT'],'workspace_constructor':'denied'},'cases':cases,'invalid_limits':invalid,'concurrency_results':values,'final_retained_events':2100,'implemented':False,'deployed':False,'whole_acceptance':False}\n    raw=json.dumps(r,indent=2)+'\\n';out.write_text(raw)\n    print(json.dumps({'path':str(out),'sha256':hashlib.sha256(raw.encode()).hexdigest(),'cases':len(cases),'invalid':len(invalid),'concurrent_reads':40,'appends':100,'retained':2100,'source_unchanged':True,'implemented':False}))\n",
+    ".dev/classify_live_window_phases.py": "\"\"\"Correlated numeric phase inventory; elapsed components are not causes.\"\"\"\nimport collections,hashlib,json,math\nfrom pathlib import Path\nsource=Path('.dev/live0d-log-window-20261018T2153.ndjson');output=Path('.dev/live-window-correlated-phases.json');assert not output.exists()\nfields=('executor_dispatch_ms','worker_service_ms','completion_delivery_ms')\nrecords=[]\nfor line in source.open():\n    r=json.loads(line);p=r.get('performance_phases')\n    if r.get('source')=='structured' and isinstance(p,dict) and p.get('operation'):\n        records.append(p)\nassert len(records)==314\ndef dist(values):\n    v=sorted(values)\n    return {'n':len(v),**{k:v[math.ceil(len(v)*q)-1] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]}} if v else {'n':0}\ncounts={field:sum(r.get(field,0)>=500 for r in records) for field in (*fields,'queue_wait_ms','thread_cpu_ms','sqlite_statement_ms','python_lock_wait_ms','file_lock_wait_ms')}\nlargest=collections.Counter(max(fields,key=lambda f:r.get(f,0)) for r in records)\nsplit={}\nfor field in fields:\n    subset=[r for r in records if max(fields,key=lambda f:r.get(f,0))==field]\n    split[field]={'records':len(subset),'operations':dict(collections.Counter(r['operation'] for r in subset)),'worker_thread_cpu_ms':dist([r['thread_cpu_ms'] for r in subset if 'thread_cpu_ms' in r]),'worker_service_ms':dist([r['worker_service_ms'] for r in subset if 'worker_service_ms' in r])}\nresult={'contract':'pa.correlated-slow-window-phases/v1','source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'records':314,'fields_over500ms_counts':counts,'largest_of_three_execution_elapsed_phases':dict(largest),'phase_groups':split,'scope':'Retained structured slow records only, window21:53:01\u201322:15:09Z/macbook, mixed534restart/builds and overlapping private fixtures. Counts overlap. Largest execution elapsed phase is not a cause. Queue wait is separate and is excluded from the warning execution elapsed timer; never fold it into execution-phase dominance. Successful busy wait, GIL reacquisition, scheduler, disk/native waits remain unverified; low worker threadCPU is not proof of disk, SQL or another exact cause. No all-call percentiles/endpoint windows/fleet audit/acceptance inference.','sqlite_busy_failure_records':sum(r.get('sqlite_busy_failures',0)>0 for r in records),'script_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}\nraw=json.dumps(result,indent=2)+'\\n';output.write_text(raw)\nprint(json.dumps({'path':str(output),'sha256':hashlib.sha256(raw.encode()).hexdigest(),'largest_execution_phases':dict(largest),'over500ms':counts,'sqlite_busy_failure_records':result['sqlite_busy_failure_records']}))\n",
+    "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/publish_ci543_decimal_followup.py": "\"\"\"Retain initial CI failure, deterministic correction and continuing diagnostics.\"\"\"\nimport hashlib,json,subprocess\nfrom datetime import UTC,datetime\nfrom pathlib import Path\ndef read(p):return json.loads(Path(p).read_text())\ndef sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()\nmp=Path('docs/performance-coverage.json');m=read(mp);assert len(m['rows'])==592\nprior=json.dumps(m['rows'],sort_keys=True)\ntest=read('.dev/pr543-timing-tests.json');assert test['exit_code']==0 and test['source_unchanged']\ncomparison=read('.dev/pr543-decimal-timing-comparison.json');assert comparison['reproduced_original_ci'] and comparison['fixed_comparison_passes']\nassert not subprocess.check_output(['git','diff','53b42d5077971b192e824c62acae71a59db95e80','--','src','scripts','pyproject.toml','uv.lock'])\nartifact=Path('docs/benchmarks/systemic-ci543-decimal-followup-20261018.json');assert not artifact.exists()\nfiles=['.dev/pr543-decimal-timing-comparison.json','.dev/pr543-timing-tests.json','.dev/pr543-timing-tests.roots.json','.dev/transcript-reverse-contracts.json','.dev/live-window-correlated-phases.json']\nresult={'contract':'pa.ci543-decimal-comparison-followup/v1','observed_at':datetime.now(UTC).isoformat(),'base_head':'c858707de321b1261e4c5851732e17b691d1a227','runtime_target_unchanged':'53b42d5077971b192e824c62acae71a59db95e80','initial_ci':{'run':39172308776,'attempt':1,'failed_job':117807748294,'failed_test':'test_first_useful_event_timing_is_session_scoped_and_emitted_once','result':'1failed,967passed,172warnings,72subtests in121.44s','other_jobs_success':4,'raw_log_sha256':sha('.dev/pr543-ci39172308776-test1.log'),'actual_decimal_value':64.99,'provider_generation_ms':54.99,'binary_sum_repr':repr(54.99+10),'cause':'Confirmed exact-float test comparison on separately rounded2decimal millisecond fields. Production stores correct decimal64.99; binary sum64.99000000000001 is an assertion artifact, not a latency failure.','same_head_retry':'None; scoped test correction after deterministic reproduction.'},'test_change':subprocess.check_output(['git','diff','--','tests/test_conversation_discovery_timing.py'],text=True),'production_source_changed':False,'assertion_budget_changed':False,'session_scope_once_only_checks_retained':True,'evidence':{p:{'sha256':sha(p),'data':read(p)} for p in files},'reproduction_scripts':{p:Path(p).read_text() for p in ['.dev/reproduce_pr543_decimal_timing.py','.dev/run_pr543_timing_tests.py','.dev/check_transcript_reverse_contracts.py','.dev/classify_live_window_phases.py',__file__]},'private_sqlite_call_diagnostic':{'state':'running at publication preparation; no outcome assumed','source':'Exact438sourcefiles/38templates from542wheel; bounded private per-call execute/fetch/commit wall/threadCPU wrappers','limits':'Instrumentation overhead is included in scenario. It is an isolated source attribution run, not deployed/paired performance acceptance; no SQL/parameters/payloads captured. Inspect final/partials and retain every failure before any further measurement.'},'coverage':'All prior592rows unchanged plus1confirmed CI comparison concern; every existing finding remains open. Correlated phase groups describe retained314slow records only:260largestworker_service,42completion_delivery,12executor_dispatch. Largest phase is not a cause.60records haveSQL>=500ms,11Pythonlockwait>=500ms,0recordedbusyfailures; successfulbusy/GIL/scheduling/disk remainunverified.','source_repair_prototype':'72cursor/limitcases,2empty sessions,3invalid-limit exceptions,40stable-cursor reads during100normal appends pass with2100events retained. Private prototype only; no transcript code change or broad performance causality claim.','acceptance':'Open. No new install/restart/backup mutation, old527 replay, interaction response, gate/default/threshold changes or independent acceptance.'}\nartifact.write_text(json.dumps(result,indent=2)+'\\n');stage={'artifact':str(artifact),'sha256':sha(artifact),'resolution':'open'}\nm['rows'].append({'id':'concern:ci543-rounded-decimal-comparison','kind':'concern','family':'ci','finding':'CI compares rounded decimal timing fields with exact binary float addition','cause_classification':'confirmed_test_numerical_comparison_bug','cause':'Stored64.99 is correct rounded54.99+10; binary addition produces64.99000000000001. Deterministic originaltest/runtime-method reproduction fails baseline and passes Decimal comparison.','implemented':'Test uses exact Decimal(str(stored_ms)) equality. No production timing,>=50ms assertion, tolerance, warning/deadline or session/once-only changes. Existing2cases pass.','measurement':stage,'owner_card':m['card_id'],'fix_or_existing_owner':'This systemic session owns CI evidence integrity; original542scheduling failure remains separate.','merged':[],'deployed':'Test-only change; no runtime activation','retested':'Deterministic baselinefail/candidatepass plus2existingtests pass; full corrected-head CI/integration pending','resolution':'open','next_actor':'this same systemic session','next_action':'Preserve original failedrun; require corrected-head supervisor/independent/fullCI integration. Continue real latency/coverage and independent acceptance without numerical-comparison false failure.','report':'213a226d-7566-4eba-944f-7f783859fecc revision1'})\nassert len(m['rows'])==593 and sum(x['kind']=='concern' for x in m['rows'])==97 and json.dumps(m['rows'][:-1],sort_keys=True)==prior\nm['ci543_decimal_followup_stage']=stage;m['references'].append(str(artifact));m['as_of']=result['observed_at']\nm['completion']='OPEN;593findings/97concerns. Every prior592row preserved unchanged. Complete64name/17family slow-tail publication retained; original543CI decimal-comparison failure reproduced and corrected test-only, full newhead CI pending. Source target53b42/runtime0d6638 unchanged, pending interaction outstanding. Latest real mixed1warning/8universal500ms+3premeasurement and all native/peer/log/acceptance gaps remainopen.'\nmp.write_text(json.dumps(m,indent=2)+'\\n')\nintro='''# Exact decimal timing comparison and continued attribution \u2014 2026-10-18\n\nAll **593 findings and 97 concerns remain open**; every prior592row is unchanged. The PR now includes one test-only numerical correction alongside the complete64-operation/17-family inventory below. **Application source, dependencies, warning/deadline thresholds and the immutable53b42 runtime proposal are unchanged.** [Full original failure, deterministic reproduction, existing tests and continuing attribution](benchmarks/systemic-ci543-decimal-followup-20261018.json).\n\nInitialPR543CI39172308776 attempt1 has4passingjobs and1failed shard (967passed,172warnings,72subtests). Its session-timing test observes valid rounded decimal milliseconds **54.99 and64.99**, then compares64.99 against binary addition54.99+10, which yields **64.99000000000001**. Actual runtime code rounds both durable fields to2decimal places. Deterministic execution of the original test and real method reproduces baselinefailure and correctedpass by controlling only those two known clock sites; all18event-loop/other monotonic calls stay real. The test now compares decimal values exactly, with **no tolerance or timing-budget increase**. Its>=50ms check, wrong-session rejection and single-emission checks remain. Both existing discovery/timing tests pass in5.39s under isolated roots. OriginalCIlogSHA256256d02c10e9e23fc30f237014568b19e765a749c3261e9cfaf1d1cff4a8dfa56 remainslocal; no same-head retry was used. This is separate from originalPR542's unverified197.9ms responsiveness failure and all real latency tails.\n\nAdditional private transcript prototype verification passes72cursor/limitcases,2empty sessions,3invalid-limit exceptions and40stable-cursor reads during100normalappends, retaining2100events with hot/cold parity. It is unshipped; the earlier worse maximum and all source/concurrency/performance obligations remain. Correlated314slow-record phase classification finds260largestworker-service,42completion-delivery and12executor-dispatch records. Counts withphase>=500ms overlap:218service,34delivery,5dispatch,2queue,46workerCPU,60SQL,11Pythonlockwait,0filelockwait. Recorded busy failures are0; successful native busy, GIL reacquisition, scheduling and physical disk causes remainunverified. Queue wait is separate from the warning execution elapsed timer. These are retained slow-tail observations, not all-call percentiles or exact-cause labels.\n\nA separate100iteration disposable source diagnostic with bounded per-SQLite-call execute/fetch/commit wall/threadCPU recording is running as this checkpoint is prepared. It preserves source/warning/deadline semantics and captures no SQL, parameters or rows. Instrumentation adds overhead; no result, speedup, deployment or acceptance is assumed. Inspect its final or partial evidence before further measurement. Existing backup owner remains responsible for its bounded prospective work; no backup file, runtime configuration, archive or independent verification policy is changed here.\n\n## Preserved earlier inventory and failures\n\n'''\nmd=Path('docs/performance-coverage.md');md.write_text(intro+md.read_text())\nprint(json.dumps({'artifact':str(artifact),'sha256':sha(artifact),'rows':593,'concerns':97,'prior592rows_unchanged':True,'production_source_unchanged':True,'targeted_tests':test['summary']}))\n"
+  },
+  "private_sqlite_call_diagnostic": {
+    "state": "running at publication preparation; no outcome assumed",
+    "source": "Exact438sourcefiles/38templates from542wheel; bounded private per-call execute/fetch/commit wall/threadCPU wrappers",
+    "limits": "Instrumentation overhead is included in scenario. It is an isolated source attribution run, not deployed/paired performance acceptance; no SQL/parameters/payloads captured. Inspect final/partials and retain every failure before any further measurement."
+  },
+  "coverage": "All prior592rows unchanged plus1confirmed CI comparison concern; every existing finding remains open. Correlated phase groups describe retained314slow records only:260largestworker_service,42completion_delivery,12executor_dispatch. Largest phase is not a cause.60records haveSQL>=500ms,11Pythonlockwait>=500ms,0recordedbusyfailures; successfulbusy/GIL/scheduling/disk remainunverified.",
+  "source_repair_prototype": "72cursor/limitcases,2empty sessions,3invalid-limit exceptions,40stable-cursor reads during100normal appends pass with2100events retained. Private prototype only; no transcript code change or broad performance causality claim.",
+  "acceptance": "Open. No new install/restart/backup mutation, old527 replay, interaction response, gate/default/threshold changes or independent acceptance."
+}

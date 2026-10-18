@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T22:06:52.780010+00:00",
-  "completion": "OPEN;588findings/92concerns. Every prior586row preserved plus installed/loaded and owned-schema-filter concerns. PR541 integrated/head+mainCIgreen, not activated. Newsource58tests+9subtestspass/full482pathparity; mixedwarnings1/500msobservations8; all failures/previous stages retained. Missing historical backup payload does not block feasible repairs/prospective validation; no fabricated recovery/acceptance.",
+  "as_of": "2026-10-18T22:41:17.399011+00:00",
+  "completion": "OPEN;594findings/98concerns, every prior593row unchanged. Complete64name/17family slow-tail inventory, original543decimal/lock-boundaryCI failures and prior8eheadgreen preserved.22existingtests pass after test-only numerical/synchronization corrections, full correctedheadCI pending. Separate100iteration SQLdiagnostic2warnings/11observations+3premeasurement and30iteration fixedrole diagnostic0warnings/4bulkobservations+3premeasurement both retained; no causal/deployed/performanceacceptance. Immutable53b42runtimeapproval still outstanding, actual0d unchanged; all peer/log/backup/native/independent acceptance gaps remainopen.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -129,7 +129,12 @@
     "docs/benchmarks/systemic-schema-scalar-source-20261018.json",
     "docs/benchmarks/systemic-session-list-snapshot-20261018.json",
     "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json",
-    "docs/benchmarks/systemic-owned-schema-filter-20261018.json"
+    "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
+    "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+    "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+    "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
+    "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
+    "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209236,6 +209241,140 @@
       "deployed": "See separate source/owner/runtime evidence; whole acceptance unverified",
       "resolution": "open",
       "next_actor": "this systemic session with existing release/backup owners and normal verification scheduler"
+    },
+    {
+      "id": "concern:ci542-responsive-request-budget",
+      "kind": "concern",
+      "family": "ci",
+      "finding": "CI542 unrelated-surface request exceeds unchanged100ms budget",
+      "cause_classification": "confirmed_observation_remaining_cause_or_acceptance_open",
+      "cause": "Observed197.911ms with191ms own-task callback; native cause not reproduced. Original failed attempt retained; single same-head failed-shard retry green.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session; existing backup owner and normal independent scheduler retain their scopes.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+        "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+        "resolution": "open"
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "No new runtime activation; actual0d6638 separately observed",
+      "retested": "See bounded source/CI/log/receipt evidence; not whole acceptance",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Keep original CI and isolated comparisons; attribute scheduling/GC/interference without moving timer or raising budget."
+    },
+    {
+      "id": "concern:live-inventory-attachment413",
+      "kind": "concern",
+      "family": "attachments",
+      "finding": "Fresh numeric inventory attachment rejected413",
+      "cause_classification": "confirmed_observation_remaining_cause_or_acceptance_open",
+      "cause": "Receiptfailed/errorValueError/effectunknown; precise rejection cause unverified. Original10attachments preserved; publish exact numeric artifact in repository.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session; existing backup owner and normal independent scheduler retain their scopes.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+        "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+        "resolution": "open"
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "No new runtime activation; actual0d6638 separately observed",
+      "retested": "See bounded source/CI/log/receipt evidence; not whole acceptance",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve receipt and attachments; diagnose supported cap/error detail if needed without ambiguous resend."
+    },
+    {
+      "id": "concern:activation-coordination-followup-timeout",
+      "kind": "concern",
+      "family": "dispatch",
+      "finding": "Activation-owner coordination times out before accepted receipt is returned",
+      "cause_classification": "confirmed_observation_remaining_cause_or_acceptance_open",
+      "cause": "Same-key passive lookup recovers durable provider_accepted queued receipt; later owner784 gives no pending restart/stability hold. No resend.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session; existing backup owner and normal independent scheduler retain their scopes.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+        "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+        "resolution": "open"
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "No new runtime activation; actual0d6638 separately observed",
+      "retested": "See bounded source/CI/log/receipt evidence; not whole acceptance",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Retain correlation and verify future exact prompt lifecycle; transport recovery is separate from user authorization and runtime acceptance."
+    },
+    {
+      "id": "concern:transcript-before-temp-sort",
+      "kind": "concern",
+      "family": "transcript",
+      "finding": "Backward transcript page repeats an avoidable temporary SQLite sort",
+      "cause_classification": "confirmed_observation_remaining_cause_or_acceptance_open",
+      "cause": "Disposable30pair complete-event parity; temp B-tree removed by Python reversal. Candidate p95 improved, maximum regressed; no source implementation. Does not establish cause of549ms mixed tail.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session; existing backup owner and normal independent scheduler retain their scopes.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+        "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+        "resolution": "open"
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "No new runtime activation; actual0d6638 separately observed",
+      "retested": "See bounded source/CI/log/receipt evidence; not whole acceptance",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Evaluate full cursor/limit/cold/missing/ordering/concurrency contracts and representative paired evidence before shipping a scoped repair; retain all native tail attribution gaps."
+    },
+    {
+      "id": "concern:ci543-rounded-decimal-comparison",
+      "kind": "concern",
+      "family": "ci",
+      "finding": "CI compares rounded decimal timing fields with exact binary float addition",
+      "cause_classification": "confirmed_test_numerical_comparison_bug",
+      "cause": "Stored64.99 is correct rounded54.99+10; binary addition produces64.99000000000001. Deterministic originaltest/runtime-method reproduction fails baseline and passes Decimal comparison.",
+      "implemented": "Test uses exact Decimal(str(stored_ms)) equality. No production timing,>=50ms assertion, tolerance, warning/deadline or session/once-only changes. Existing2cases pass.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
+        "sha256": "440ad079b37e6530b8743a004768410a4ad3418beefa262cbe00c5a822ade513",
+        "resolution": "open"
+      },
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session owns CI evidence integrity; original542scheduling failure remains separate.",
+      "merged": [],
+      "deployed": "Test-only change; no runtime activation",
+      "retested": "Deterministic baselinefail/candidatepass plus2existingtests pass; full corrected-head CI/integration pending",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve original failedrun; require corrected-head supervisor/independent/fullCI integration. Continue real latency/coverage and independent acceptance without numerical-comparison false failure.",
+      "report": "213a226d-7566-4eba-944f-7f783859fecc revision1"
+    },
+    {
+      "id": "concern:ci543-lock-wait-fixture-boundary",
+      "kind": "concern",
+      "family": "ci",
+      "finding": "Lock-wait fixture begins its hold at task creation before measured-lock entry",
+      "cause_classification": "confirmed_test_synchronization_assumption",
+      "cause": "50ms fromtaskcreation need not yield>=30ms actual lock wait under delayed worker dispatch. IntermediateCI measured27.238ms. Deterministic actualtest/runtime/lock fixture reproduces oldfailure and synchronizedpass; actualCIqueue duration remainsunmeasured.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
+        "sha256": "b9973830e44e8a0b9907d34c5482557021896e2fbc6c78118ba109d9d2d09b2b",
+        "resolution": "open"
+      },
+      "implemented": "Test ReportingLock signals after measured_lock clocks start; wait for worker entry before unchanged50ms hold. Existing>=30ms and all operation budgets remain.22existing tests pass. No application code changes.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session owns CI measurement integrity; existing backup owner retains all bounded files/work.",
+      "merged": [],
+      "deployed": "Test-only change, no runtime activation",
+      "retested": "Deterministic oldfail/newpass and22existing delivery/discovery cases passed; full correctedheadCI/integration pending",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Complete exact corrected-head CI/supervisor/independent integration; retain earlier failed and priorgreen unmerged heads, all real latency/acceptance gaps.",
+      "report": "5785778c-c797-4b7c-b71f-fe7c1525fc73 revision1"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -211228,15 +211367,25 @@
       "next_action": "Coordinate supported lifecycle evidence under existing request identity; continue feasible independent source and prospective validation, no competing worker."
     },
     "concern:backups": {
-      "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
-      "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+      "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+      "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
       "resolution": "open",
       "owner_card": "0331d21a-f014-44c8-9176-bc1e955a9ad2",
       "owner_session": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
       "steering_prompt": "a529784d-b316-5b5f-8195-a8b0ca0b4496",
       "steering_receipt_status": "completed",
       "historical_limit": "Possibly irrecoverable historical payload; preserve all eight archives/history, no fabricated bytes or destructive reference repair.",
-      "next_action": "Existing owner continues feasible source repair, prospective reliability/performance validation and supported independent verification. Missing historical data must not block that work; retain exact feasible versus historical acceptance limits and unchanged requirementb527."
+      "next_action": "Existing18fc/c5a owner continues all feasible prospective work under current authority. Missing historical payload not blanketblocker; retain8archives/history/honest gap and separate normal independent acceptance.",
+      "latest_owner": {
+        "sequence": 1018,
+        "phase": "turn_ended",
+        "summary": "Independently confirmed merged 53b42d50 includes unchanged backup fixes and both CI runs are green. The held capture plan now targets that source. No new backup stability hold exists; all eight archives remain preserved. Activation, production capture and independent acceptance are still pending. No restart consent is inferred.",
+        "occurred_at": "2026-10-18T22:24:52.010278Z",
+        "acp_session_id": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
+        "dispatch_id": "c5a697e5-c62b-4d76-9523-def2f5fc852d",
+        "authority_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1"
+      },
+      "source_fix": "ExistingPR5369e0173f0 included unchanged in53b42; no duplicate repair."
     },
     "concern:fork-fixture-repeated-navigation-fetch-stall": {
       "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
@@ -211246,6 +211395,2327 @@
       "runtime_asset_observation": "Two served JS files match0d under same runtime process fence; not proof of whole browser behavior or historical stall cause.",
       "verification": "Old0ea9babb assignment superseded; current0eef0edd intent blockedHTTPStatusError, dispatch receipt verified absent at830a35a4. No duplicate verifier or admission replay.",
       "next_action": "Normal scheduler/current verifier owns followthrough under unchanged36140832. Preserve earlier fixture navigation gap and production-applicability uncertainty."
+    },
+    "slow:acp.wire_append": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "acp.wire_append",
+        "raw_warning_emissions": 22,
+        "structured_numeric_records": 11,
+        "elapsed_ms": {
+          "samples": 11,
+          "p50": 680.803,
+          "p95": 1677.74,
+          "p99": 1677.74,
+          "max": 1677.74
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:acp.wire_append": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "acp.wire_append",
+        "raw_warning_emissions": 22,
+        "structured_numeric_records": 11,
+        "elapsed_ms": {
+          "samples": 11,
+          "p50": 680.803,
+          "p95": 1677.74,
+          "p99": 1677.74,
+          "max": 1677.74
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:agent.history_payload": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.history_payload",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 885.957,
+          "p95": 885.957,
+          "p99": 885.957,
+          "max": 885.957
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:agent.history_payload": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.history_payload",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 885.957,
+          "p95": 885.957,
+          "p99": 885.957,
+          "max": 885.957
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:agent.project_recovery_availability": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.project_recovery_availability",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 848.524,
+          "p95": 848.524,
+          "p99": 848.524,
+          "max": 848.524
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:agent.project_recovery_availability": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.project_recovery_availability",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 848.524,
+          "p95": 848.524,
+          "p99": 848.524,
+          "max": 848.524
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:agent.recovery_sessions": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.recovery_sessions",
+        "raw_warning_emissions": 28,
+        "structured_numeric_records": 14,
+        "elapsed_ms": {
+          "samples": 14,
+          "p50": 607.416,
+          "p95": 972.424,
+          "p99": 972.424,
+          "max": 972.424
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:agent.recovery_sessions": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.recovery_sessions",
+        "raw_warning_emissions": 28,
+        "structured_numeric_records": 14,
+        "elapsed_ms": {
+          "samples": 14,
+          "p50": 607.416,
+          "p95": 972.424,
+          "p99": 972.424,
+          "max": 972.424
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:agent.session_snapshot": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.session_snapshot",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1034.482,
+          "p95": 1034.482,
+          "p99": 1034.482,
+          "max": 1034.482
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:agent.session_snapshot": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.session_snapshot",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1034.482,
+          "p95": 1034.482,
+          "p99": 1034.482,
+          "max": 1034.482
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:agent.startup_state_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.startup_state_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1911.286,
+          "p95": 1911.286,
+          "p99": 1911.286,
+          "max": 1911.286
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:agent.startup_state_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "agent.startup_state_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1911.286,
+          "p95": 1911.286,
+          "p99": 1911.286,
+          "max": 1911.286
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:conversation.issues": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "conversation.issues",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 554.125,
+          "p95": 1242.454,
+          "p99": 1242.454,
+          "max": 1242.454
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow-followup:conversation.issues": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "conversation.issues",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 554.125,
+          "p95": 1242.454,
+          "p99": 1242.454,
+          "max": 1242.454
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:conversation.session": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "conversation.session",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 668.121,
+          "p95": 1703.222,
+          "p99": 1703.222,
+          "max": 1703.222
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:conversation.session": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "conversation.session",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 668.121,
+          "p95": 1703.222,
+          "p99": 1703.222,
+          "max": 1703.222
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:dispatch.completion_pending_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.completion_pending_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1696.415,
+          "p95": 1696.415,
+          "p99": 1696.415,
+          "max": 1696.415
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:dispatch.completion_pending_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.completion_pending_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1696.415,
+          "p95": 1696.415,
+          "p99": 1696.415,
+          "max": 1696.415
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:dispatch.expire_capacity_reservations": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.expire_capacity_reservations",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1718.166,
+          "p95": 1718.166,
+          "p99": 1718.166,
+          "max": 1718.166
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:dispatch.followup_ack": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.followup_ack",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 735.636,
+          "p95": 735.636,
+          "p99": 735.636,
+          "max": 735.636
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:dispatch.followup_ack": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.followup_ack",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 735.636,
+          "p95": 735.636,
+          "p99": 735.636,
+          "max": 735.636
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:dispatch.followup_record_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.followup_record_write",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 855.591,
+          "p95": 855.591,
+          "p99": 855.591,
+          "max": 855.591
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:dispatch.followup_started": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.followup_started",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 521.52,
+          "p95": 521.52,
+          "p99": 521.52,
+          "max": 521.52
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow-followup:dispatch.followup_started": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.followup_started",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 521.52,
+          "p95": 521.52,
+          "p99": 521.52,
+          "max": 521.52
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:dispatch.reconcile_interrupted": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.reconcile_interrupted",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1892.56,
+          "p95": 1892.56,
+          "p99": 1892.56,
+          "max": 1892.56
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:dispatch.record_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.record_read",
+        "raw_warning_emissions": 20,
+        "structured_numeric_records": 10,
+        "elapsed_ms": {
+          "samples": 10,
+          "p50": 591.055,
+          "p95": 800.121,
+          "p99": 800.121,
+          "max": 800.121
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:dispatch.record_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "dispatch.record_read",
+        "raw_warning_emissions": 20,
+        "structured_numeric_records": 10,
+        "elapsed_ms": {
+          "samples": 10,
+          "p50": 591.055,
+          "p95": 800.121,
+          "p99": 800.121,
+          "max": 800.121
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:fleet.overview.activity": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.activity",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 547.426,
+          "p95": 547.426,
+          "p99": 547.426,
+          "max": 547.426
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:fleet.overview.activity": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.activity",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 547.426,
+          "p95": 547.426,
+          "p99": 547.426,
+          "max": 547.426
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:fleet.overview.mcp_bootstrap": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.mcp_bootstrap",
+        "raw_warning_emissions": 8,
+        "structured_numeric_records": 4,
+        "elapsed_ms": {
+          "samples": 4,
+          "p50": 6313.281,
+          "p95": 7603.315,
+          "p99": 7603.315,
+          "max": 7603.315
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:fleet.overview.mcp_bootstrap": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.mcp_bootstrap",
+        "raw_warning_emissions": 8,
+        "structured_numeric_records": 4,
+        "elapsed_ms": {
+          "samples": 4,
+          "p50": 6313.281,
+          "p95": 7603.315,
+          "p99": 7603.315,
+          "max": 7603.315
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:fleet.overview.repositories": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.repositories",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 826.314,
+          "p95": 1052.515,
+          "p99": 1052.515,
+          "max": 1052.515
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:fleet.overview.repositories": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.repositories",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 826.314,
+          "p95": 1052.515,
+          "p99": 1052.515,
+          "max": 1052.515
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:fleet.overview.sync": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.sync",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 663.996,
+          "p95": 1134.958,
+          "p99": 1134.958,
+          "max": 1134.958
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:fleet.overview.sync": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview.sync",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 663.996,
+          "p95": 1134.958,
+          "p99": 1134.958,
+          "max": 1134.958
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:fleet.overview_cache_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview_cache_read",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 723.56,
+          "p95": 724.903,
+          "p99": 724.903,
+          "max": 724.903
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:fleet.overview_cache_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview_cache_read",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 723.56,
+          "p95": 724.903,
+          "p99": 724.903,
+          "max": 724.903
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:fleet.overview_cache_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview_cache_write",
+        "raw_warning_emissions": 12,
+        "structured_numeric_records": 6,
+        "elapsed_ms": {
+          "samples": 6,
+          "p50": 580.55,
+          "p95": 617.648,
+          "p99": 617.648,
+          "max": 617.648
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:fleet.overview_cache_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "fleet.overview_cache_write",
+        "raw_warning_emissions": 12,
+        "structured_numeric_records": 6,
+        "elapsed_ms": {
+          "samples": 6,
+          "p50": 580.55,
+          "p95": 617.648,
+          "p99": 617.648,
+          "max": 617.648
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:health.canonical_obligation": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "health.canonical_obligation",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1550.513,
+          "p95": 2452.894,
+          "p99": 2452.894,
+          "max": 2452.894
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:health.canonical_obligation": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "health.canonical_obligation",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1550.513,
+          "p95": 2452.894,
+          "p99": 2452.894,
+          "max": 2452.894
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:maintenance.run": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "maintenance.run",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 58136.853,
+          "p95": 58136.853,
+          "p99": 58136.853,
+          "max": 58136.853
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow-followup:maintenance.run": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "maintenance.run",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 58136.853,
+          "p95": 58136.853,
+          "p99": 58136.853,
+          "max": 58136.853
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:pr_supervisor.response_json": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "pr_supervisor.response_json",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 777.243,
+          "p95": 795.202,
+          "p99": 795.202,
+          "max": 795.202
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:pr_supervisor.response_json": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "pr_supervisor.response_json",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 777.243,
+          "p95": 795.202,
+          "p99": 795.202,
+          "max": 795.202
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:preferences.agent_auto_approve_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "preferences.agent_auto_approve_read",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 534.025,
+          "p95": 919.244,
+          "p99": 919.244,
+          "max": 919.244
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:preferences.agent_auto_approve_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "preferences.agent_auto_approve_read",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 534.025,
+          "p95": 919.244,
+          "p99": 919.244,
+          "max": 919.244
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:progress.checkpoint_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.checkpoint_write",
+        "raw_warning_emissions": 14,
+        "structured_numeric_records": 7,
+        "elapsed_ms": {
+          "samples": 7,
+          "p50": 557.246,
+          "p95": 881.891,
+          "p99": 881.891,
+          "max": 881.891
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:progress.checkpoint_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.checkpoint_write",
+        "raw_warning_emissions": 14,
+        "structured_numeric_records": 7,
+        "elapsed_ms": {
+          "samples": 7,
+          "p50": 557.246,
+          "p95": 881.891,
+          "p99": 881.891,
+          "max": 881.891
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:progress.dispatch_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.dispatch_read",
+        "raw_warning_emissions": 24,
+        "structured_numeric_records": 12,
+        "elapsed_ms": {
+          "samples": 12,
+          "p50": 537.16,
+          "p95": 874.484,
+          "p99": 874.484,
+          "max": 874.484
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:progress.dispatch_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.dispatch_read",
+        "raw_warning_emissions": 24,
+        "structured_numeric_records": 12,
+        "elapsed_ms": {
+          "samples": 12,
+          "p50": 537.16,
+          "p95": 874.484,
+          "p99": 874.484,
+          "max": 874.484
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:progress.heartbeat_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.heartbeat_write",
+        "raw_warning_emissions": 26,
+        "structured_numeric_records": 13,
+        "elapsed_ms": {
+          "samples": 13,
+          "p50": 598.013,
+          "p95": 2181.492,
+          "p99": 2181.492,
+          "max": 2181.492
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:progress.heartbeat_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.heartbeat_write",
+        "raw_warning_emissions": 26,
+        "structured_numeric_records": 13,
+        "elapsed_ms": {
+          "samples": 13,
+          "p50": 598.013,
+          "p95": 2181.492,
+          "p99": 2181.492,
+          "max": 2181.492
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:progress.pending_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.pending_read",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 739.112,
+          "p95": 2168.179,
+          "p99": 2168.179,
+          "max": 2168.179
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:progress.pending_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.pending_read",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 739.112,
+          "p95": 2168.179,
+          "p99": 2168.179,
+          "max": 2168.179
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:progress.sequence_allocate": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.sequence_allocate",
+        "raw_warning_emissions": 16,
+        "structured_numeric_records": 8,
+        "elapsed_ms": {
+          "samples": 8,
+          "p50": 525.944,
+          "p95": 1631.672,
+          "p99": 1631.672,
+          "max": 1631.672
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:progress.sequence_allocate": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "progress.sequence_allocate",
+        "raw_warning_emissions": 16,
+        "structured_numeric_records": 8,
+        "elapsed_ms": {
+          "samples": 8,
+          "p50": 525.944,
+          "p95": 1631.672,
+          "p99": 1631.672,
+          "max": 1631.672
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:provider.status.codex": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "provider.status.codex",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 1465.365,
+          "p95": 1777.044,
+          "p99": 1777.044,
+          "max": 1777.044
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:provider.status.codex": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "provider.status.codex",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 1465.365,
+          "p95": 1777.044,
+          "p99": 1777.044,
+          "max": 1777.044
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:provider.status.cursor": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "provider.status.cursor",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 2753.777,
+          "p95": 2949.993,
+          "p99": 2949.993,
+          "max": 2949.993
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:provider.status.cursor": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "provider.status.cursor",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 2753.777,
+          "p95": 2949.993,
+          "p99": 2949.993,
+          "max": 2949.993
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:provider.status.openinterpreter": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "provider.status.openinterpreter",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 963.491,
+          "p95": 1538.691,
+          "p99": 1538.691,
+          "max": 1538.691
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:provider.status.openinterpreter": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "provider.status.openinterpreter",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 963.491,
+          "p95": 1538.691,
+          "p99": 1538.691,
+          "max": 1538.691
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:reconciliation.completion_evidence_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.completion_evidence_read",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 639.628,
+          "p95": 744.18,
+          "p99": 744.18,
+          "max": 744.18
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:reconciliation.completion_evidence_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.completion_evidence_read",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 639.628,
+          "p95": 744.18,
+          "p99": 744.18,
+          "max": 744.18
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:reconciliation.completion_queue": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.completion_queue",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 594.59,
+          "p95": 851.475,
+          "p99": 851.475,
+          "max": 851.475
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:reconciliation.dispatch_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.dispatch_read",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1155.136,
+          "p95": 1709.982,
+          "p99": 1709.982,
+          "max": 1709.982
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:reconciliation.dispatch_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.dispatch_read",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1155.136,
+          "p95": 1709.982,
+          "p99": 1709.982,
+          "max": 1709.982
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:reconciliation.session_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.session_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1050.517,
+          "p95": 1050.517,
+          "p99": 1050.517,
+          "max": 1050.517
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:reconciliation.session_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "reconciliation.session_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1050.517,
+          "p95": 1050.517,
+          "p99": 1050.517,
+          "max": 1050.517
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:selection.configuration_receipt": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "selection.configuration_receipt",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1107.428,
+          "p95": 1107.428,
+          "p99": 1107.428,
+          "max": 1107.428
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:selection.configuration_receipt": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "selection.configuration_receipt",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 1107.428,
+          "p95": 1107.428,
+          "p99": 1107.428,
+          "max": 1107.428
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:selection.prompt_identity": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "selection.prompt_identity",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 514.5,
+          "p95": 514.5,
+          "p99": 514.5,
+          "max": 514.5
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:selection.prompt_identity": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "selection.prompt_identity",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 514.5,
+          "p95": 514.5,
+          "p99": 514.5,
+          "max": 514.5
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:selection.prompt_outcome": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "selection.prompt_outcome",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 842.737,
+          "p95": 842.737,
+          "p99": 842.737,
+          "max": 842.737
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:selection.prompt_outcome": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "selection.prompt_outcome",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 842.737,
+          "p95": 842.737,
+          "p99": 842.737,
+          "max": 842.737
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.agent_runtime_checkpoint": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 520.054,
+          "p95": 520.054,
+          "p99": 520.054,
+          "max": 520.054
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.agent_runtime_checkpoint": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 520.054,
+          "p95": 520.054,
+          "p99": 520.054,
+          "max": 520.054
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.agent_session_save": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.agent_session_save",
+        "raw_warning_emissions": 18,
+        "structured_numeric_records": 9,
+        "elapsed_ms": {
+          "samples": 9,
+          "p50": 841.386,
+          "p95": 7069.361,
+          "p99": 7069.361,
+          "max": 7069.361
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.agent_session_save": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.agent_session_save",
+        "raw_warning_emissions": 18,
+        "structured_numeric_records": 9,
+        "elapsed_ms": {
+          "samples": 9,
+          "p50": 841.386,
+          "p95": 7069.361,
+          "p99": 7069.361,
+          "max": 7069.361
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.card_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.card_read",
+        "raw_warning_emissions": 18,
+        "structured_numeric_records": 9,
+        "elapsed_ms": {
+          "samples": 9,
+          "p50": 580.509,
+          "p95": 1677.771,
+          "p99": 1677.771,
+          "max": 1677.771
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.card_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.card_read",
+        "raw_warning_emissions": 18,
+        "structured_numeric_records": 9,
+        "elapsed_ms": {
+          "samples": 9,
+          "p50": 580.509,
+          "p95": 1677.771,
+          "p99": 1677.771,
+          "max": 1677.771
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.pr_supervisor_capability_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 521.589,
+          "p95": 521.589,
+          "p99": 521.589,
+          "max": 521.589
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.pr_supervisor_capability_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 521.589,
+          "p95": 521.589,
+          "p99": 521.589,
+          "max": 521.589
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.pr_supervisor_completion_due_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "raw_warning_emissions": 24,
+        "structured_numeric_records": 12,
+        "elapsed_ms": {
+          "samples": 12,
+          "p50": 695.891,
+          "p95": 2297.785,
+          "p99": 2297.785,
+          "max": 2297.785
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.pr_supervisor_completion_due_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "raw_warning_emissions": 24,
+        "structured_numeric_records": 12,
+        "elapsed_ms": {
+          "samples": 12,
+          "p50": 695.891,
+          "p95": 2297.785,
+          "p99": 2297.785,
+          "max": 2297.785
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.pr_supervisor_event_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 500.492,
+          "p95": 500.492,
+          "p99": 500.492,
+          "max": 500.492
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.pr_supervisor_event_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 500.492,
+          "p95": 500.492,
+          "p99": 500.492,
+          "max": 500.492
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.pr_supervisor_watch_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "raw_warning_emissions": 14,
+        "structured_numeric_records": 7,
+        "elapsed_ms": {
+          "samples": 7,
+          "p50": 719.402,
+          "p95": 826.65,
+          "p99": 826.65,
+          "max": 826.65
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.pr_supervisor_watch_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "raw_warning_emissions": 14,
+        "structured_numeric_records": 7,
+        "elapsed_ms": {
+          "samples": 7,
+          "p50": 719.402,
+          "p95": 826.65,
+          "p99": 826.65,
+          "max": 826.65
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.pr_supervisor_watch_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "raw_warning_emissions": 22,
+        "structured_numeric_records": 11,
+        "elapsed_ms": {
+          "samples": 11,
+          "p50": 665.142,
+          "p95": 2159.708,
+          "p99": 2159.708,
+          "max": 2159.708
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.pr_supervisor_watch_write": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "raw_warning_emissions": 22,
+        "structured_numeric_records": 11,
+        "elapsed_ms": {
+          "samples": 11,
+          "p50": 665.142,
+          "p95": 2159.708,
+          "p99": 2159.708,
+          "max": 2159.708
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.project_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.project_read",
+        "raw_warning_emissions": 14,
+        "structured_numeric_records": 7,
+        "elapsed_ms": {
+          "samples": 7,
+          "p50": 589.559,
+          "p95": 1035.323,
+          "p99": 1035.323,
+          "max": 1035.323
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.project_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.project_read",
+        "raw_warning_emissions": 14,
+        "structured_numeric_records": 7,
+        "elapsed_ms": {
+          "samples": 7,
+          "p50": 589.559,
+          "p95": 1035.323,
+          "p99": 1035.323,
+          "max": 1035.323
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.prompt_acceptance": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.prompt_acceptance",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 632.179,
+          "p95": 632.179,
+          "p99": 632.179,
+          "max": 632.179
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.prompt_acceptance": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.prompt_acceptance",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 632.179,
+          "p95": 632.179,
+          "p99": 632.179,
+          "max": 632.179
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.prompt_acceptance_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.prompt_acceptance_read",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1183.824,
+          "p95": 1437.119,
+          "p99": 1437.119,
+          "max": 1437.119
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.prompt_acceptance_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.prompt_acceptance_read",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1183.824,
+          "p95": 1437.119,
+          "p99": 1437.119,
+          "max": 1437.119
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.repository_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.repository_read",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 615.898,
+          "p95": 1083.295,
+          "p99": 1083.295,
+          "max": 1083.295
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.repository_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.repository_read",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 615.898,
+          "p95": 1083.295,
+          "p99": 1083.295,
+          "max": 1083.295
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.restart_handoff_completion": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.restart_handoff_completion",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 521.867,
+          "p95": 903.058,
+          "p99": 903.058,
+          "max": 903.058
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.restart_handoff_completion": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.restart_handoff_completion",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 521.867,
+          "p95": 903.058,
+          "p99": 903.058,
+          "max": 903.058
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.restart_handoffs_pending": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.restart_handoffs_pending",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 632.356,
+          "p95": 632.356,
+          "p99": 632.356,
+          "max": 632.356
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.restart_handoffs_pending": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.restart_handoffs_pending",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 632.356,
+          "p95": 632.356,
+          "p99": 632.356,
+          "max": 632.356
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.transcript_append": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.transcript_append",
+        "raw_warning_emissions": 100,
+        "structured_numeric_records": 50,
+        "elapsed_ms": {
+          "samples": 50,
+          "p50": 703.002,
+          "p95": 2102.6,
+          "p99": 3201.649,
+          "max": 3201.649
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.transcript_append": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.transcript_append",
+        "raw_warning_emissions": 100,
+        "structured_numeric_records": 50,
+        "elapsed_ms": {
+          "samples": 50,
+          "p50": 703.002,
+          "p95": 2102.6,
+          "p99": 3201.649,
+          "max": 3201.649
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.transcript_message_page": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.transcript_message_page",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 702.936,
+          "p95": 2626.369,
+          "p99": 2626.369,
+          "max": 2626.369
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.transcript_message_page": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.transcript_message_page",
+        "raw_warning_emissions": 4,
+        "structured_numeric_records": 2,
+        "elapsed_ms": {
+          "samples": 2,
+          "p50": 702.936,
+          "p95": 2626.369,
+          "p99": 2626.369,
+          "max": 2626.369
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sqlite.transcript_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.transcript_read",
+        "raw_warning_emissions": 12,
+        "structured_numeric_records": 6,
+        "elapsed_ms": {
+          "samples": 6,
+          "p50": 832.269,
+          "p95": 2877.772,
+          "p99": 2877.772,
+          "max": 2877.772
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sqlite.transcript_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sqlite.transcript_read",
+        "raw_warning_emissions": 12,
+        "structured_numeric_records": 6,
+        "elapsed_ms": {
+          "samples": 6,
+          "p50": 832.269,
+          "p95": 2877.772,
+          "p99": 2877.772,
+          "max": 2877.772
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime-followup:startup.openapi": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "startup.openapi",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 936.707,
+          "p95": 936.707,
+          "p99": 936.707,
+          "max": 936.707
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow-followup:startup.openapi": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "startup.openapi",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 936.707,
+          "p95": 936.707,
+          "p99": 936.707,
+          "max": 936.707
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sync.reconcile_head": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sync.reconcile_head",
+        "raw_warning_emissions": 50,
+        "structured_numeric_records": 25,
+        "elapsed_ms": {
+          "samples": 25,
+          "p50": 1040.655,
+          "p95": 4764.322,
+          "p99": 6011.065,
+          "max": 6011.065
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sync.reconcile_head": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sync.reconcile_head",
+        "raw_warning_emissions": 50,
+        "structured_numeric_records": 25,
+        "elapsed_ms": {
+          "samples": 25,
+          "p50": 1040.655,
+          "p95": 4764.322,
+          "p99": 6011.065,
+          "max": 6011.065
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:sync.ref_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sync.ref_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 923.537,
+          "p95": 923.537,
+          "p99": 923.537,
+          "max": 923.537
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:sync.ref_read": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "sync.ref_read",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 923.537,
+          "p95": 923.537,
+          "p99": 923.537,
+          "max": 923.537
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:workspace.collect_garbage": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.collect_garbage",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 7958.728,
+          "p95": 12012.978,
+          "p99": 12012.978,
+          "max": 12012.978
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:workspace.collect_garbage": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.collect_garbage",
+        "raw_warning_emissions": 10,
+        "structured_numeric_records": 5,
+        "elapsed_ms": {
+          "samples": 5,
+          "p50": 7958.728,
+          "p95": 12012.978,
+          "p99": 12012.978,
+          "max": 12012.978
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:workspace.lease_renew": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.lease_renew",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1216.492,
+          "p95": 1511.412,
+          "p99": 1511.412,
+          "max": 1511.412
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:workspace.lease_renew": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.lease_renew",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 1216.492,
+          "p95": 1511.412,
+          "p99": 1511.412,
+          "max": 1511.412
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow:workspace.project_provision": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.project_provision",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 8346.696,
+          "p95": 9420.835,
+          "p99": 9420.835,
+          "max": 9420.835
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:workspace.project_provision": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.project_provision",
+        "raw_warning_emissions": 6,
+        "structured_numeric_records": 3,
+        "elapsed_ms": {
+          "samples": 3,
+          "p50": 8346.696,
+          "p95": 9420.835,
+          "p99": 9420.835,
+          "max": 9420.835
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "runtime:workspace.reconcile_terminal_state": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.reconcile_terminal_state",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 2283.654,
+          "p95": 2283.654,
+          "p99": 2283.654,
+          "max": 2283.654
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "slow-followup:workspace.reconcile_terminal_state": {
+      "latest_live_slow_tail": {
+        "artifact": "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
+        "sha256": "301e3470c68732ba449106891bd79a3b2b1e147c15e92c0d185d43f7d49ffd0e",
+        "operation": "workspace.reconcile_terminal_state",
+        "raw_warning_emissions": 2,
+        "structured_numeric_records": 1,
+        "elapsed_ms": {
+          "samples": 1,
+          "p50": 2283.654,
+          "p95": 2283.654,
+          "p99": 2283.654,
+          "max": 2283.654
+        },
+        "scope": "Slow-record tail only; mixed process builds/fixtures; not all-call percentiles or process maxima; every numeric phase retained in artifact."
+      },
+      "resolution": "open"
+    },
+    "concern:startup-owned-json-filter": {
+      "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+      "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+      "resolution": "open",
+      "merged": [
+        "https://github.com/petersky/pa/pull/542"
+      ],
+      "integration": {
+        "contract": "pa.exact-integration-proof/v1",
+        "observed_at": "2026-10-18T22:20:14.517650+00:00",
+        "PR": 542,
+        "watch": "2a779735-98fb-4379-bc84-905f2b23ee17",
+        "head": "6fb08417da31f055356b72dc54eec3735df38010",
+        "merge": "53b42d5077971b192e824c62acae71a59db95e80",
+        "merged_at": "2026-10-18T22:20:10Z",
+        "source_tree": "4d62c299bd818c55adab78412e645387572933bb",
+        "merge_tree": "4d62c299bd818c55adab78412e645387572933bb",
+        "parents": [
+          "f0d163c09806ecb34ba696255d2544659862aa30",
+          "6fb08417da31f055356b72dc54eec3735df38010"
+        ],
+        "tree_equal": true,
+        "independent_review_sha256": "a25a6a97a0b6e9017205415de65f5cb9612a6b883401b322cf1bd0cf09792985",
+        "stable_supervisor_sha256": "571f48911bdaf0a43196b7453107f77ed2e40ffd84bf5821fbdfddc2aaefabb3",
+        "main_ci_runs": [],
+        "deployed": false,
+        "restarted": false,
+        "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+      },
+      "main_ci": {
+        "observed_at": "2026-10-18T22:23:33.776995+00:00",
+        "run": 39171774684,
+        "head": "53b42d5077971b192e824c62acae71a59db95e80",
+        "status": "completed",
+        "conclusion": "success",
+        "attempt": 1,
+        "jobs": [
+          {
+            "id": 117806153032,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39171774684/job/117806153032"
+          },
+          {
+            "id": 117806153169,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39171774684/job/117806153169"
+          },
+          {
+            "id": 117806153218,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39171774684/job/117806153218"
+          },
+          {
+            "id": 117806153226,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39171774684/job/117806153226"
+          },
+          {
+            "id": 117806153311,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39171774684/job/117806153311"
+          }
+        ],
+        "complete_job_inventory": true,
+        "five_terminal_success": true,
+        "historical_failures_preserved": true,
+        "deployed": false,
+        "whole_acceptance": false
+      },
+      "deployed": "Not activated; actual0d6638 predates source542.",
+      "next_action": "Honor pending exact53b42 operator decision, fresh owner/build/lease gates and normal independent acceptance; all startup residuals remainopen."
+    },
+    "concern:installed-loaded-pr534-divergence": {
+      "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+      "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+      "resolution": "open",
+      "current_observation": "Full installed438sourcefiles/52versions/38templatecache and loaded source/package match0d6638/PID45958; owner784 confirms healthy terminal handoff. Earlier divergence retained, no false retroactive closure. Later53b42 is unactivated.",
+      "next_action": "Fresh context checks after correlated runtime decision; no competing restart, old527 retry or acceptance fabrication."
     }
   },
   "f7e8_loaded_stage": {
@@ -213233,6 +215703,26 @@
   "owned_schema_filter_stage": {
     "artifact": "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
     "sha256": "1270d9f937d5158fea6393c24c388f58bf864772efa0e490f1684c684fac0fa5",
+    "resolution": "open"
+  },
+  "live_window_integration_stage": {
+    "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+    "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+    "resolution": "open"
+  },
+  "ci543_decimal_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
+    "sha256": "440ad079b37e6530b8743a004768410a4ad3418beefa262cbe00c5a822ade513",
+    "resolution": "open"
+  },
+  "sqlite_call_attribution_stage": {
+    "artifact": "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
+    "sha256": "25d17eae62249f6ddc2783c2434631d4a3dc55a59c4b1e1510bdeaa54db7b0ce",
+    "resolution": "open"
+  },
+  "ci543_lock_role_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
+    "sha256": "b9973830e44e8a0b9907d34c5482557021896e2fbc6c78118ba109d9d2d09b2b",
     "resolution": "open"
   }
 }
