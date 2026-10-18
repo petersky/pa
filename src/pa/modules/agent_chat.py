@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import re
@@ -1630,6 +1631,8 @@ def list_agent_sessions(
     selected_session_id: str | None = None,
     detail: Literal["summary", "full"] = "summary",
 ) -> list[dict]:
+    from pa.domain.projection import CardProjection
+
     mgr = _require_session_traffic_ready(request)
     runtimes = {
         runtime.session.id: runtime
@@ -1641,7 +1644,21 @@ def list_agent_sessions(
         else {"purposes": ("automated_run", "one_shot_job")} if view == "activity"
         else {"exclude_statuses": ("closed",)} if view == "active" else {}
     )
-    sessions = {session.id: session for session in mgr.store.list_sessions(**filters)}
+    snapshot = None
+    if (
+        view != "activity"
+        and isinstance(mgr.store, CardProjection)
+        and inspect.isfunction(CardProjection.list_sessions)
+        and inspect.getattr_static(mgr.store, "list_sessions") is CardProjection.list_sessions
+        and inspect.getattr_static(mgr.store, "_row_to_session")
+        is inspect.getattr_static(CardProjection, "_row_to_session")
+    ):
+        snapshot = mgr.store.session_list_snapshot(**filters)
+        persisted = snapshot.candidates
+    else:
+        # Preserve custom/legacy Store contracts and workflow-aware filtering.
+        persisted = mgr.store.list_sessions(**filters)
+    sessions = {session.id: session for session in persisted}
     sessions.update({session_id: runtime.session for session_id, runtime in runtimes.items()})
     # Filter durable metadata before reading transcripts, cards and dispatches.
     # Chats must not pay the inspection cost of every historical automated run.
@@ -1733,10 +1750,14 @@ def list_agent_sessions(
         )
         if selected is not None:
             bounded[-1] = selected
+    if snapshot is not None:
+        sessions.update({
+            item["id"]: snapshot.hydrate(item["id"])
+            for item in bounded if item["id"] not in runtimes
+        })
     watch_summaries = None
     card_summaries = None
     if request is not None and detail == "summary":
-        from pa.domain.projection import CardProjection
         from pa.pr_supervisor.store import PRSupervisorStore
         store = request.app.state.ctx.store
         if isinstance(store, CardProjection):

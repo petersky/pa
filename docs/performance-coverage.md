@@ -1,3 +1,33 @@
+# Session selection snapshot and native-WAL coverage — 2026-10-18
+
+All **586 findings and 90 concerns remain open**. Every prior585row/owner/action is preserved; one verifier-integrity gap is added. [Complete source, tests, every prototype/timing and mixed measurement](benchmarks/systemic-session-list-snapshot-20261018.json) and [native-WAL diagnostic including its original failed verifier](benchmarks/systemic-native-wal-diagnostic-20261018.json) retain the full evidence.
+
+Active/chats/all sidebar views now select using a read-only metadata type, then decode complete selected rows from the same SQLite read. Metrics, full configuration, selected-session inclusion, pin/human-activity ordering and live runtime precedence remain. Activity workflow filtering and custom Store contracts keep their original paths; full session APIs remain complete. Unselected JSON is opaque, not validated by this sidebar. Raw SQLite rows/bytes are still read and response bytes are unchanged: this bounds decode/model work, **not scan, memory or payload-size acceptance**.146tests and7subtests pass, including exact summary/full response, filters, snapshot consistency, live precedence, selected decoder/error and extension contracts.
+
+Ten initial-source alternating pairs per limit preserve identical serialized responses. A later two-check custom-decoder guard leaves the default algorithm unchanged, but its extra caller cost is unmeasured by these pairs; hashes remain initialsource, not relabeledfinal. Both instance/subclass extension regressions fail against the pre-guard function; all146finaltests pass, and a separate fresh finalsource mixedrun follows. At16rows/1,085,733bytes, baseline wall p50/p95/p99/max233.854/296.053/296.053/296.053ms →75.490/86.898/86.898/86.898ms. At250rows/16,965,420bytes,407.889/673.181/673.181/673.181ms →352.294/438.815/438.815/438.815ms; one pair regression remains. At n10 p95/p99 equal max. The first model-based prototype regressed default250p95592→815ms and remains rejected/unshipped. Timing is warm same-process on an uncontrolled host; no global speedup or acceptance claim. The large unchanged payload remains a concern.
+
+The exact-source100iteration mixed run preserves9,600ordered active events and verifies12,511cold hashes. It records **13worker warnings and 19universal500ms observations**; all failure/timeout/rejection counters,44timers/24routes, phases, bytes, boot records and journal overhead are retained in the artifact. In the separately retained initialsource run, one approved1second stack sample inspected only that private fixture during cold seeding; the finalsource run had no sampler; symbolication mayoverlap start of steady work and adds unmeasured observer cost. Sparse native stack symbols do not explain the whole prepdelay; the5,000event expired-seed batch lacks an explicit timer, a retained gap. No unchanged replay forgreen.
+
+The corrected final mixed run completed **3,085 ordinary operations plus 100 diagnostics with zero failures/timeouts/rejections**, but it is not performance acceptance. Three premeasurement slow records remain separate: schema723.913ms, sync-ref813.736ms (service1.777ms/delivery810.469ms), and follow-up pending-read811.915ms (service0.097ms/delivery810.088ms). Fast-service completion delays are not evidence of slow SQL. No unchanged replay forgreen.
+
+| Final residual family | n | p50 ms | p95 ms | p99 ms | max ms | ≥500 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| sqlite.execution_binding_materialize | 100 | 75.746 | 203.991 | 879.467 | 2068.02 | 2 |
+| sync.push_transaction | 100 | 76.148 | 213.13 | 466.496 | 787.752 | 1 |
+| transcript.drain | 300 | 114.759 | 226.457 | 864.139 | 1984.652 | 7 |
+| sync.reconcile_head | 100 | 55.235 | 173.94 | 322.284 | 2283.742 | 1 |
+| /api/agent/history/session-0?limit=64&message_boundaries=true | 100 | 195.593 | 415.091 | 693.955 | 871.615 | 3 |
+| sync.object_collect | 10 | 334.663 | 1535.611 | 1535.611 | 1535.611 | 4 |
+| maintenance.run | 1 | 17064.114 | 17064.114 | 17064.114 | 17064.114 | 1 |
+
+Complete slow phases retain native-commit/SQL/lock-wait propagation, including execution-binding wait1,937.727ms and reconcile wait1,792.090ms. The final mixed result is worse than the initial2warning/10observation stage (now13/19); neither host variation nor the small extra identity guard is established as its cause. Both stages remain in full; no global performance gain is claimed.
+
+The separate native-WAL fixture retains6,144ordered events and291commit/close observations. Projection commits max13.108ms, transcript commits22.939ms; checkpoint progress appears in4/5intervals respectively. This **does not reproduce or explain the prior580ms commit tail**. Physical disk/syscalls/successfulbusy/GIL attribution remains unverified; checkpoint/durability policies are unchanged. The original verifier requested2,048events from one clamped page and failed before saving numerics. Its failure/unknown observations remain preserved; the corrected distinct run persists beforevalidation and paginates. Read-only header interpretation follows [SQLite's format table](https://www.sqlite.org/walformat.html#walidxhdr) and [source schematic](https://github.com/sqlite/sqlite/blob/master/src/wal.c), with duplicate-header/version guards and explicit race limits.
+
+PR540 exacthead54c176/strictmergef1d5/newmainCI39166580290 are all independently verified green. Original537/538main failures and539initialhead failure remain failed and retained. New session-list source is not yet committed/integrated/deployed; no installation/restart/default/permission/live-data mutation or acceptance occurred. Original527failedhandoff and separate2eprocess proof remain distinct. Every nativecommit/schemaCPU/payload/provider/peer/log/receipt/backup/unobserved and normal independent acceptance obligation stays open.
+
+## Preserved prior coverage and failures
+
 # Corrected scalar-default source and complete residuals — 2026-10-18
 
 All **585 findings and 89 concerns remain open**. Every retained row, owner and action is preserved. [Complete source, test, paired timing, mixed workload and callback evidence](benchmarks/systemic-schema-scalar-source-20261018.json) includes every measured operation, route, phase, byte counter and residual, with source/merge/deployment states separate.

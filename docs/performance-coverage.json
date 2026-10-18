@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T21:04:57.423599+00:00",
-  "completion": "OPEN;585findings/89concerns preserved.539corrected exacthead/merge/newmain terminalgreen. Corrected scalar-default source locally implemented/tested/built, adapter1912\u2192200;8pair p50583\u2192489ms but3pair regressions/max649ms remain. Exact100iteration source run9600ordered/12511coldverified/0failures/timeouts/rejections,5workerwarnings/11universal500msobservations+2preboot slowrecords. Shared580msmirrorcommit admission propagation confirmed; nativecause unverified. Not yet committed/integrated/deployed/retested/accepted. All prior and linked obligations remain open.",
+  "as_of": "2026-10-18T21:24:48.373417+00:00",
+  "completion": "OPEN;586findings/90concerns. Everyprior585row retained. PR540exacthead/strictmerge/newmain all5green, notdeployed. Sessionlistsnapshot locallyimplemented/146tests+7subtestspass; complete250response p95673.181\u2192438.815ms with1pairregression andunchanged16.965MBpayload. Earliermodelprototype regression retained/unshipped. Newmixedwarnings={\"Slow off-loop operation\": 13}; universal500msobservations={\"sqlite.execution_binding_materialize\": 2, \"sync.push_transaction\": 1, \"transcript.drain\": 7, \"sync.reconcile_head\": 1, \"/api/agent/history/session-0?limit=64&message_boundaries=true\": 3, \"sync.object_collect\": 4, \"maintenance.run\": 1}. NativeWALdiagnosticdoesnotreproduce580mstail; originalverifierfailed/numericsunknown preserved. Allremaininggates/activation/peer/log/provider/backup/unobserved/normalindependentacceptance open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -126,7 +126,9 @@
     "docs/benchmarks/systemic-schema-scalar-default-probe-20261018.json",
     "docs/benchmarks/systemic-settings-fixture-isolation-20261018.json",
     "docs/benchmarks/systemic-snapshot-request-timing-20261018.json",
-    "docs/benchmarks/systemic-schema-scalar-source-20261018.json"
+    "docs/benchmarks/systemic-schema-scalar-source-20261018.json",
+    "docs/benchmarks/systemic-session-list-snapshot-20261018.json",
+    "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209172,6 +209174,26 @@
       "fix_or_existing_owner": "This same systemic session; production snapshot/GC/nativeCPU concerns remain distinct and open.",
       "next_actor": "this same systemic session",
       "next_action": "Push correctedPR539head/rewritefinalscope; requireallfreshheadCI/stablesupervisor/independentcurrent-base/review/merge/newmain gates. Preserve original failure and all remaining acceptance."
+    },
+    {
+      "id": "concern:wal-diagnostic-verifier-page-clamp",
+      "kind": "concern",
+      "family": "benchmark_observability",
+      "finding": "WAL fixture verifier treated one bounded transcript page as complete history and lost prevalidation numerics",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_fixture_verifier_bug_and_measurement_gap",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json",
+        "sha256": "b56672482b0f58c5b732b2e1eb070d27ec397e795c5658c067043e9740f5556d"
+      },
+      "implemented": "Corrected separate diagnostic paginates and persists observations beforeverification; original failedrun/numericalunknown retained. No applicationbug/productioncause inferred.",
+      "merged": [],
+      "deployed": "Private diagnostic only",
+      "resolution": "open",
+      "report": "5b3f9d09-78f4-4e27-a3fc-7ad2da49b299 revision1",
+      "fix_or_existing_owner": "This same systemic session owns measurement integrity and remaining nativeattribution.",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve original gap; require durable prevalidation phase/child outcomes and complete pagination in futurediagnostics, retain unverified syscall/disk/nativewait causes."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -210959,11 +210981,105 @@
       "concerns": 89,
       "resolution": "open",
       "implemented": "Within existing Pydantic2.13.4/FastAPI0.136.3 version fences, exact None/bool/int/str defaults with no configured custom JSON encoders use the same pydantic_core JSON conversion without constructing a TypeAdapter. Custom encoders, subclasses, float/bytes/date/models and other values use upstream. No request validation, readiness/admission, warning/deadline, durability or dependency change.",
-      "merged": [],
+      "merged": [
+        "https://github.com/petersky/pa/pull/540"
+      ],
       "deployed": "Unverified; no installation/restart",
       "retested": "52passed/9subtests;8complete-schema alternating pairs;100iteration mixed scenario retains5warnings/11observations; separate directstartup649mswarning.",
       "next_actor": "this same systemic session",
-      "next_action": "Commit/push ready supervised source PR; exact-head CI/stable supervisor/independent currentbase/review/exactmerge/newmain gates, then correctly scoped activation/retest and remaining CPU attribution."
+      "next_action": "Commit/push ready supervised source PR; exact-head CI/stable supervisor/independent currentbase/review/exactmerge/newmain gates, then correctly scoped activation/retest and remaining CPU attribution.",
+      "integration": {
+        "contract": "pa.exact-integration-proof/v1",
+        "observed_at": "2026-10-18T21:09:40.982316+00:00",
+        "PR": 540,
+        "watch": "1db4d8bd-df00-450c-acb7-68bc7382b5c8",
+        "head": "54c1760138e238af1110c7138d9330f1a6e9ab8b",
+        "merge": "f1d5e7d89c051917a5739a8f50b770f741b35081",
+        "merged_at": "2026-10-18T21:09:33Z",
+        "source_tree": "4fc527ad16a3ed46783f9d32909496008d9644db",
+        "merge_tree": "4fc527ad16a3ed46783f9d32909496008d9644db",
+        "parents": [
+          "7ed5cd11c027d3afa847390e930199efe7c41ae1",
+          "54c1760138e238af1110c7138d9330f1a6e9ab8b"
+        ],
+        "tree_equal": true,
+        "independent_review_sha256": "16fdcc46dbd266bbcd4d00ece73b2e2e31b7065e76a30264da702628880fafb4",
+        "stable_supervisor_sha256": "a48938c5f3d0ca1014e848d9ccd8dfbcc3de01376a9e03713314f080b658e7bd",
+        "main_ci_runs": [
+          {
+            "id": 39166580290,
+            "status": "queued",
+            "conclusion": null,
+            "attempt": 1
+          }
+        ],
+        "deployed": false,
+        "restarted": false,
+        "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+      },
+      "new_main_ci": {
+        "observed_at": "2026-10-18T21:13:25.101979+00:00",
+        "run": 39166580290,
+        "head": "f1d5e7d89c051917a5739a8f50b770f741b35081",
+        "status": "completed",
+        "conclusion": "success",
+        "attempt": 1,
+        "jobs": [
+          {
+            "id": 117790673501,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39166580290/job/117790673501"
+          },
+          {
+            "id": 117790673712,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39166580290/job/117790673712"
+          },
+          {
+            "id": 117790673714,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39166580290/job/117790673714"
+          },
+          {
+            "id": 117790673753,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39166580290/job/117790673753"
+          },
+          {
+            "id": 117790673784,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/petersky/pa/actions/runs/39166580290/job/117790673784"
+          }
+        ],
+        "complete_job_inventory": true,
+        "five_terminal_success": true,
+        "historical_failures_preserved": true,
+        "deployed": false,
+        "whole_acceptance": false
+      }
+    },
+    "runtime-followup:http.session_list": {
+      "artifact": "docs/benchmarks/systemic-session-list-snapshot-20261018.json",
+      "sha256": "3aac879b3414866639cdd085075bb17305227d5812afc174547b384e1907810c",
+      "rows": 586,
+      "concerns": 90,
+      "resolution": "open",
+      "implemented": "Read-only typedmetadata for active/chats/all ordering and selection; selected rows use original complete decoder from the same immutable SQLite rows. No second query/stale snapshot mixture, no SQLstatus/ordering/limit/response/schema change, no metrics/config/diagnostic payload omission. Live runtimes dominate; activity workflows and instance/class/legacy list overrides retain existing contracts. Unselected JSON is intentionally opaque and is not validated by sidebar; selected/details/general session APIs retain full decoder/error behavior. All raw SQLite rows/bytes are still read, and response bytes are unchanged: this bounds decode/model work, not database scan/memory/oversized-payload acceptance.",
+      "merged": [],
+      "deployed": "Unverified; no install/restart",
+      "retested": "146tests+7subtests;10actualsource pairs perlimit16/250 preservecomplete response; mixedresiduals in linkedartifact.",
+      "next_actor": "this same systemic session",
+      "next_action": "Exactsource readyPR/CI/stablesupervisor/independentreview/currentbase/exactmerge/newmain gates; preserve rawscan/payload/remainingacceptance limits."
     }
   },
   "f7e8_loaded_stage": {
@@ -212934,6 +213050,18 @@
     "sha256": "f169439a9e38a0d62faad5f324151239791d4ab55a205d3e93576e7c5729d2b0",
     "rows": 585,
     "concerns": 89,
+    "resolution": "open"
+  },
+  "session_list_snapshot_stage": {
+    "artifact": "docs/benchmarks/systemic-session-list-snapshot-20261018.json",
+    "sha256": "3aac879b3414866639cdd085075bb17305227d5812afc174547b384e1907810c",
+    "rows": 586,
+    "concerns": 90,
+    "resolution": "open"
+  },
+  "native_wal_diagnostic_stage": {
+    "artifact": "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json",
+    "sha256": "b56672482b0f58c5b732b2e1eb070d27ec397e795c5658c067043e9740f5556d",
     "resolution": "open"
   }
 }
