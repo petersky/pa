@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T22:41:17.399011+00:00",
-  "completion": "OPEN;594findings/98concerns, every prior593row unchanged. Complete64name/17family slow-tail inventory, original543decimal/lock-boundaryCI failures and prior8eheadgreen preserved.22existingtests pass after test-only numerical/synchronization corrections, full correctedheadCI pending. Separate100iteration SQLdiagnostic2warnings/11observations+3premeasurement and30iteration fixedrole diagnostic0warnings/4bulkobservations+3premeasurement both retained; no causal/deployed/performanceacceptance. Immutable53b42runtimeapproval still outstanding, actual0d unchanged; all peer/log/backup/native/independent acceptance gaps remainopen.",
+  "as_of": "2026-10-18T23:11:24.345905+00:00",
+  "completion": "OPEN;596findings/100concerns, every existing row unchanged with explicit new stage overrides. PR545 original2c9CI5success retained; mainchanged via PR544ee21 and normally merged08c. Fresh exact-source100iteration workload retains9600orderedactive/12511cold with1workerwarnings/6threshold observations; prior2/8 and startup slow observations retained. No performance/deployment/independent acceptance. Final updatedhead CI/supervisor pending. Immutable53b42 operator interaction remains separate; all existing peer/log/backup/native/inventory requirements remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -134,7 +134,9 @@
     "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
     "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
     "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
-    "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json"
+    "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
+    "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
+    "docs/benchmarks/systemic-gc-fresh-main-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209375,6 +209377,48 @@
       "next_actor": "this same systemic session",
       "next_action": "Complete exact corrected-head CI/supervisor/independent integration; retain earlier failed and priorgreen unmerged heads, all real latency/acceptance gaps.",
       "report": "5785778c-c797-4b7c-b71f-fe7c1525fc73 revision1"
+    },
+    {
+      "id": "concern:independent-fork-recovery-attribution-boundary",
+      "kind": "concern",
+      "family": "linked_browser_acceptance",
+      "finding": "Independent fork-recovery browser probe hides source attribution and new-message boundary",
+      "owner_card": "5003628e-7a3c-4d1e-9737-087979061122",
+      "linked_systemic_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "independent_verifier_observation_root_source_cause_unverified",
+      "measurement": "Verifierbd9f9665/session195c6f30 checkpoint58 at2026-10-18T22:11:29.031915Z:39originalchecks pass, actual browser recovery probe fails attribution/boundary. Runningbuild reconciles; not merely old asset-mismatch state. This root has not independently reproduced the browser failure.",
+      "source_integration": "ExistingPR529 integrated; reuse implementation, no duplicate repair of already merged behavior.",
+      "implemented": "New recovery regression repair not yet verified; existing originalsource session8524edb1 resumed via same dispatch463c4f75.",
+      "deployed": "No new repair/deployment claim; runtime0d6638 remains.",
+      "retested": "Independent rejection retained; no acceptance receipt fabricated.",
+      "resolution": "open",
+      "next_actor": "Originalfork sourceowner8524edb1/463c4f75; normal scheduler owns later independent verifier under unchanged requirement36140832.",
+      "next_action": "Existing source owner handles scoped recovery/attribution/new-message-boundary repair with isolated browser regression and ready supervisedPR. Fresh ownrepo/worktree/lease verification before source work, no backup files or competing restart/default changes.",
+      "followup_key": "systemic-fork-bd9-independent-boundary-repair-20261018-v1",
+      "followup_prompt": "4e0a996b-2836-5d64-8043-61b4205b4c40",
+      "followup_status": "Nativeacceptedqueued, then liveness confirms same original8524session busy/live and exactprompt running since2026-10-18T22:51:21.126188Z; no replacementworker/verifier/card created."
+    },
+    {
+      "id": "concern:transcript-gc-bounded-cursor-fetch",
+      "kind": "concern",
+      "family": "transcript",
+      "finding": "Retained cold-object GC performs a Python/instrumentation cursor call for each row despite bounded128-row results",
+      "cause_classification": "confirmed_local_call_amplification_not_shared_tail_root_cause",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
+        "sha256": "314550a489d38a8b0f6b61d3ddf08237d71982b4539672dd755240960fdbedbb",
+        "resolution": "open"
+      },
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause": "Each live-result set comprehension iterates ObservedCursor perrow, invoking observation/context/timing bookkeeping. Fetching the existing bounded results together retains all returned rows and actual SELECTs.",
+      "implemented": "Two fetchall calls on already128bounded hash query batches; same lock/recheck/pin/deletion semantics.39existing GC/storage/pruning/retention regressions pass.",
+      "merged": [],
+      "deployed": "Not installed; immutable53b42 operator proposal remains separate and unchanged.",
+      "retested": "30alternatingpairs exact4096event/file parity. One exact438file/38template100iteration mixed run:9600orderedactive/12511cold verified;2workerwarnings/8threshold observations. All failures and residuals retained in artifact.",
+      "resolution": "open",
+      "fix_or_existing_owner": "This same systemic session; backup owner retains only its bounded backup scope.",
+      "next_actor": "This systemic session for supervised integration and later authorized runtime verification; independent PA scheduler retains final acceptance.",
+      "next_action": "Integrate only exact current head after CI/supervisor/independent gates; preserve existing53b42 activation decision identity; continue all residual CPU/SQL/maintenance/page/peer/log and full inventory obligations."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -215724,5 +215768,40 @@
     "artifact": "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
     "sha256": "b9973830e44e8a0b9907d34c5482557021896e2fbc6c78118ba109d9d2d09b2b",
     "resolution": "open"
-  }
+  },
+  "gc_bounded_fetch_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
+    "sha256": "314550a489d38a8b0f6b61d3ddf08237d71982b4539672dd755240960fdbedbb",
+    "resolution": "open"
+  },
+  "fresh_main_gc_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-fresh-main-20261018.json",
+    "sha256": "65a4e07ad1374369e227abf2add88aa4dd79648650152257614288c03e08f503",
+    "resolution": "open"
+  },
+  "current_stage_overrides_after_pr544": [
+    {
+      "row_id": "concern:independent-fork-recovery-attribution-boundary",
+      "source_merged": {
+        "pr": 544,
+        "head": "d02b6a3684156ecb880f5d6dbc9b4a593b99114b",
+        "merge": "ee21b429a9170123cdcdb79b385d161935453b9d"
+      },
+      "deployed": "Unverified; no root activation performed.",
+      "retested": "New source owner repair integration is not independent running acceptance.",
+      "resolution": "open",
+      "next_actor": "Existing source/activation owners and ordinary scheduler under unchanged requirement36140832.",
+      "next_action": "Align an actually authorized runtime target and complete current independent verification; no duplicate source worker/verifier."
+    },
+    {
+      "row_id": "concern:transcript-gc-bounded-cursor-fetch",
+      "fresh_measurement": {
+        "artifact": "docs/benchmarks/systemic-gc-fresh-main-20261018.json",
+        "sha256": "65a4e07ad1374369e227abf2add88aa4dd79648650152257614288c03e08f503",
+        "resolution": "open"
+      },
+      "resolution": "open",
+      "next_action": "Push final updated head, require fresh full CI/stable supervisor/independent signals, then retain separate authorized activation and whole-inventory acceptance gates."
+    }
+  ]
 }
