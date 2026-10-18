@@ -1,3 +1,25 @@
+# Post-integration CI and fresh-health findings — 2026-10-18
+
+All **580 findings and 84 concerns remain open**. The prior 578 rows, owners, actions and evidence are unchanged.
+
+PR533 merged as `a89284fd` from exact reviewed head `992c6b46`; both trees are `1027513d`. Its five head checks passed, the supervisor reported stable green, independent rules/reviews/attribution/current-base validation passed, and the durable watch confirms merged. Main CI39159151624 then failed one visualization browser test; the other four jobs passed. [Full sanitized failure and readiness correction evidence](benchmarks/systemic-ci533-visualization-readiness-20261018.json) retains the original failure. Main is not claimed green.
+
+After reload, the fixture waited for three iframe elements before resolving a child document. Its initial navigation already required the preview's authenticated ready signal. The narrow correction applies that same condition after reload within the existing15-second wait, retaining saved-state, controls and isolation assertions. It adds no sleep, exception retry, timeout increase or product recovery code. The changed real browser journey passed in38.14s (349 pytest deprecation warnings retained); six backend contracts passed in12.75s. Production source is unchanged. CI frame detachment is not equated with the separately reported fork fetch stall or earlier browser findings.
+
+A separate [fresh-health reference-read prototype](benchmarks/systemic-health-reference-probe-20261018.json) remains **unimplemented**. It batches up to128cursor rows using the identical DISTINCT query and full reference set; fresh filesystem health checks remain uncached. All12,511cold and6,144hot payloads and sequences passed verification. Its observed calls include fetch steps, not distinct SQL statements:12,515→102calls still return12,511rows.
+
+| Disposable health/reference workload | Trials per method | Baseline wall p50 / p95 / max ms | Batched wall p50 / p95 / max ms |
+| --- | ---: | ---: | ---: |
+| references | 8 | 53.444 / 57.918 / 57.918 | 31.63 / 35.61 / 35.61 |
+| health | 8 | 406.497 / 446.639 / 446.639 | 360.626 / 407.461 / 407.461 |
+| concurrent | 3 | 712.24 / 2836.348 / 2836.348 | 534.105 / 671.541 / 671.541 |
+
+Concurrent append max was406.094ms versus287.528ms. Four worker slow warnings remain (two per method); batched concurrent health max671.541ms and CPU max506.424ms prevent a passing claim. Reference-probe timers include sorting/digest comparison; full-health timers do not. Small samples, uncontrolled host activity and unmeasured physical I/O limit causal attribution. Filesystem checkpoint creation/modification bounds are retained because producer UTC start/finish were not recorded; exact per-trial durations are available.
+
+Fresh supported card metadata at19:41:28Z shows acceptancefalse under unchanged requirement17d034a6, in Waiting. No acceptance evidence, default change, deployment or restart was submitted. The original failed527 handoff remains failed and the correlated process-only decision remains applied. The original source mixed five violations, observed2e four Fleet violations, peers/log gaps/backup/browser/startup/receipt/unobserved paths and normal independent acceptance remain required.
+
+## Preserved prior inventory
+
 # Rejected GC hypothesis and current integration boundary — 2026-10-18
 
 The [bounded positive-reference aggregate experiment](benchmarks/systemic-gc-positive-aggregate-probe-20261018.json) is **not implemented**. It tested one aggregate row per128hash page, leaving the fresh locked deletion/pin/unlink proof unchanged. All42timing cases and both helper failures are preserved. Earlier rejected fetch-all evidence remains unchanged.
