@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-17T22:48:50.228300+00:00",
-  "completion": "OPEN; startup schema CPU improved in disposable source, all schema samples still>500ms, final performance and independent acceptance missing",
+  "as_of": "2026-10-18T02:41:00.111821+00:00",
+  "completion": "OPEN; exact309 loaded; candidate object-read amplification removed with bounded source evidence, current mixed and full acceptance still failing",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -371,6 +371,20 @@
           "slow_calls": 1
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 480.552,
+          "p50": 35.889,
+          "p95": 148.263,
+          "p99": 433.337
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -641,6 +655,20 @@
           "slow_calls": 2
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 433.136,
+          "p50": 51.258,
+          "p95": 158.715,
+          "p99": 253.213
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -895,6 +923,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 302.497,
+          "p50": 32.769,
+          "p95": 142.829,
+          "p99": 282.295
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -1036,6 +1078,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 10,
+        "runtime_ms": {
+          "samples": 10,
+          "max": 87.809,
+          "p50": 46.12,
+          "p95": 87.809,
+          "p99": 87.809
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -1284,6 +1340,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 300,
+        "runtime_ms": {
+          "samples": 256,
+          "max": 235.224,
+          "p50": 70.996,
+          "p95": 169.189,
+          "p99": 225.081
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -1490,6 +1560,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 10,
+        "runtime_ms": {
+          "samples": 10,
+          "max": 1477.501,
+          "p50": 296.745,
+          "p95": 1477.501,
+          "p99": 1477.501
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -1730,6 +1814,20 @@
         },
         "structured_numeric_phases": null,
         "scope": "Window spans old/new process; records do not consistently carry PID. Some local tests/fixtures overlapped. Raw704 emissions include352 structured phase records and copies; not704distinct incidents. No peer log files or exhaustive retention coverage."
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 6.04,
+          "p50": 6.04,
+          "p95": 6.04,
+          "p99": 6.04
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -2172,6 +2270,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 8,
+        "runtime_ms": {
+          "samples": 8,
+          "max": 35.367,
+          "p50": 19.366,
+          "p95": 35.367,
+          "p99": 35.367
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -3002,6 +3114,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 58,
+        "runtime_ms": {
+          "samples": 58,
+          "max": 32.347,
+          "p50": 4.587,
+          "p95": 21.516,
+          "p99": 32.347
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -3215,6 +3341,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 200,
+        "runtime_ms": {
+          "samples": 200,
+          "max": 55.363,
+          "p50": 5.477,
+          "p95": 12.056,
+          "p99": 20.444
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -3679,6 +3819,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 33.011,
+          "p50": 4.853,
+          "p95": 16.255,
+          "p99": 27.704
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -3949,6 +4103,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 124,
+        "runtime_ms": {
+          "samples": 124,
+          "max": 84.935,
+          "p50": 8.866,
+          "p95": 30.126,
+          "p99": 51.551
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -4162,6 +4330,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 402.884,
+          "p50": 107.242,
+          "p95": 286.496,
+          "p99": 398.523
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -4410,6 +4592,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 59,
+        "runtime_ms": {
+          "samples": 58,
+          "max": 65.558,
+          "p50": 9.753,
+          "p95": 51.884,
+          "p99": 65.558
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -4680,6 +4876,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 100.628,
+          "p50": 3.691,
+          "p95": 25.903,
+          "p99": 100.153
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -5144,6 +5354,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 41.283,
+          "p50": 6.548,
+          "p95": 23.991,
+          "p99": 31.172
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -5791,6 +6015,20 @@
         },
         "structured_numeric_phases": null,
         "scope": "Window spans old/new process; records do not consistently carry PID. Some local tests/fixtures overlapped. Raw704 emissions include352 structured phase records and copies; not704distinct incidents. No peer log files or exhaustive retention coverage."
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 6.153,
+          "p50": 6.153,
+          "p95": 6.153,
+          "p99": 6.153
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -6004,6 +6242,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 200,
+        "runtime_ms": {
+          "samples": 200,
+          "max": 88.922,
+          "p50": 25.841,
+          "p95": 47.527,
+          "p99": 71.095
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -6339,6 +6591,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 15.987,
+          "p50": 2.039,
+          "p95": 8.998,
+          "p99": 15.623
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -6571,6 +6837,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 13,
+        "runtime_ms": {
+          "samples": 13,
+          "max": 580.544,
+          "p50": 13.456,
+          "p95": 580.544,
+          "p99": 580.544
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -7019,6 +7299,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 125,
+        "runtime_ms": {
+          "samples": 125,
+          "max": 35.339,
+          "p50": 1.302,
+          "p95": 9.339,
+          "p99": 19.11
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -7267,6 +7561,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 24,
+        "runtime_ms": {
+          "samples": 24,
+          "max": 6.58,
+          "p50": 0.918,
+          "p95": 3.671,
+          "p99": 6.58
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -7499,6 +7807,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 2,
+        "runtime_ms": {
+          "samples": 2,
+          "max": 185.521,
+          "p50": 10.193,
+          "p95": 185.521,
+          "p99": 185.521
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -7747,6 +8069,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 40,
+        "runtime_ms": {
+          "samples": 40,
+          "max": 52.646,
+          "p50": 0.959,
+          "p95": 6.877,
+          "p99": 52.646
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -8017,6 +8353,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 128.402,
+          "p50": 7.703,
+          "p95": 30.157,
+          "p99": 98.742
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -8265,6 +8615,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 24,
+        "runtime_ms": {
+          "samples": 24,
+          "max": 589.666,
+          "p50": 0.804,
+          "p95": 9.969,
+          "p99": 589.666
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -8888,6 +9252,20 @@
         },
         "structured_numeric_phases": null,
         "scope": "Window spans old/new process; records do not consistently carry PID. Some local tests/fixtures overlapped. Raw704 emissions include352 structured phase records and copies; not704distinct incidents. No peer log files or exhaustive retention coverage."
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 3.956,
+          "p50": 3.956,
+          "p95": 3.956,
+          "p99": 3.956
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -10109,6 +10487,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 172,
+        "runtime_ms": {
+          "samples": 172,
+          "max": 117.898,
+          "p50": 1.19,
+          "p95": 7.714,
+          "p99": 19.264
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -10745,6 +11137,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 8,
+        "runtime_ms": {
+          "samples": 8,
+          "max": 3.94,
+          "p50": 0.701,
+          "p95": 3.94,
+          "p99": 3.94
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -11389,6 +11795,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 6.232,
+          "p50": 1.227,
+          "p95": 2.667,
+          "p99": 5.49
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -11745,6 +12165,20 @@
           }
         },
         "scope": "Raw selected emissions may duplicate incidents.3002 structured slow records retain bounded numeric phases; stderr copies account for the other3002. No fast-call denominator, peer logs or older rotated retention established. Some source fixture/tests ran concurrently on this host; do not treat this as an idle production-only baseline."
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 18.133,
+          "p50": 18.133,
+          "p95": 18.133,
+          "p99": 18.133
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -12343,6 +12777,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 9,
+        "runtime_ms": {
+          "samples": 9,
+          "max": 182.412,
+          "p50": 0.615,
+          "p95": 182.412,
+          "p99": 182.412
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -13212,6 +13660,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 61,
+        "runtime_ms": {
+          "samples": 61,
+          "max": 308.015,
+          "p50": 1.025,
+          "p95": 7.907,
+          "p99": 308.015
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -13635,6 +14097,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 5,
+        "runtime_ms": {
+          "samples": 5,
+          "max": 18.856,
+          "p50": 1.117,
+          "p95": 18.856,
+          "p99": 18.856
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -14528,6 +15004,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 200,
+        "runtime_ms": {
+          "samples": 200,
+          "max": 20.408,
+          "p50": 1.53,
+          "p95": 3.759,
+          "p99": 7.994
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -15227,6 +15717,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 8,
+        "runtime_ms": {
+          "samples": 8,
+          "max": 3.554,
+          "p50": 0.784,
+          "p95": 3.554,
+          "p99": 3.554
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -16302,7 +16806,21 @@
       "resolution": "open",
       "next_actor": "this card/session",
       "next_action": "Exercise remaining sync reads/object collection and every affected waiter under mixed load; inspect supported peer evidence.",
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 8.568,
+          "p50": 8.568,
+          "p95": 8.568,
+          "p99": 8.568
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "slow:selection.prompt_identity",
@@ -17290,6 +17808,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 3.744,
+          "p50": 0.315,
+          "p95": 0.705,
+          "p99": 2.494
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -18963,6 +19495,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 433.136,
+          "p50": 51.258,
+          "p95": 158.715,
+          "p99": 253.213
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -19240,6 +19786,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 302.497,
+          "p50": 32.769,
+          "p95": 142.829,
+          "p99": 282.295
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -19504,6 +20064,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 10,
+        "runtime_ms": {
+          "samples": 10,
+          "max": 1477.501,
+          "p50": 296.745,
+          "p95": 1477.501,
+          "p99": 1477.501
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -19819,6 +20393,20 @@
           "slow_calls": 1
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 480.552,
+          "p50": 35.889,
+          "p95": 148.263,
+          "p99": 433.337
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -20096,6 +20684,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 10,
+        "runtime_ms": {
+          "samples": 10,
+          "max": 87.809,
+          "p50": 46.12,
+          "p95": 87.809,
+          "p99": 87.809
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -20914,7 +21516,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 565.151,
+          "p50": 565.151,
+          "p95": 565.151,
+          "p99": 565.151
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:progress.heartbeat_write",
@@ -21365,6 +21981,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 300,
+        "runtime_ms": {
+          "samples": 256,
+          "max": 235.224,
+          "p50": 70.996,
+          "p95": 169.189,
+          "p99": 225.081
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -21626,6 +22256,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 58,
+        "runtime_ms": {
+          "samples": 58,
+          "max": 32.347,
+          "p50": 4.587,
+          "p95": 21.516,
+          "p99": 32.347
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -22911,6 +23555,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 41.283,
+          "p50": 6.548,
+          "p95": 23.991,
+          "p99": 31.172
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -23188,6 +23846,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 100.628,
+          "p50": 3.691,
+          "p95": 25.903,
+          "p99": 100.153
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -23378,7 +24050,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 6.04,
+          "p50": 6.04,
+          "p95": 6.04,
+          "p99": 6.04
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:http.fleet_sync_head",
@@ -23842,6 +24528,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 125,
+        "runtime_ms": {
+          "samples": 125,
+          "max": 35.339,
+          "p50": 1.302,
+          "p95": 9.339,
+          "p99": 19.11
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -24103,6 +24803,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 24,
+        "runtime_ms": {
+          "samples": 24,
+          "max": 6.58,
+          "p50": 0.918,
+          "p95": 3.671,
+          "p99": 6.58
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -24480,7 +25194,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 6.153,
+          "p50": 6.153,
+          "p95": 6.153,
+          "p99": 6.153
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:progress.checkpoint_write",
@@ -24757,6 +25485,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 128.402,
+          "p50": 7.703,
+          "p95": 30.157,
+          "p99": 98.742
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -25018,6 +25760,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 40,
+        "runtime_ms": {
+          "samples": 40,
+          "max": 52.646,
+          "p50": 0.959,
+          "p95": 6.877,
+          "p99": 52.646
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -25469,6 +26225,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 13,
+        "runtime_ms": {
+          "samples": 13,
+          "max": 580.544,
+          "p50": 13.456,
+          "p95": 580.544,
+          "p99": 580.544
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -26110,6 +26880,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 8,
+        "runtime_ms": {
+          "samples": 8,
+          "max": 35.367,
+          "p50": 19.366,
+          "p95": 35.367,
+          "p99": 35.367
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -27113,6 +27897,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 200,
+        "runtime_ms": {
+          "samples": 200,
+          "max": 55.363,
+          "p50": 5.477,
+          "p95": 12.056,
+          "p99": 20.444
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -27374,6 +28172,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 8,
+        "runtime_ms": {
+          "samples": 8,
+          "max": 3.94,
+          "p50": 0.701,
+          "p95": 3.94,
+          "p99": 3.94
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -27818,7 +28630,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 18.133,
+          "p50": 18.133,
+          "p95": 18.133,
+          "p99": 18.133
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:preferences.agent_auto_approve_read",
@@ -28646,6 +29472,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 24,
+        "runtime_ms": {
+          "samples": 24,
+          "max": 589.666,
+          "p50": 0.804,
+          "p95": 9.969,
+          "p99": 589.666
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -29664,6 +30504,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 5,
+        "runtime_ms": {
+          "samples": 5,
+          "max": 18.856,
+          "p50": 1.117,
+          "p95": 18.856,
+          "p99": 18.856
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -29941,6 +30795,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 124,
+        "runtime_ms": {
+          "samples": 124,
+          "max": 84.935,
+          "p50": 8.866,
+          "p95": 30.126,
+          "p99": 51.551
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -30218,6 +31086,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 172,
+        "runtime_ms": {
+          "samples": 172,
+          "max": 117.898,
+          "p50": 1.19,
+          "p95": 7.714,
+          "p99": 19.264
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -30724,6 +31606,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 200,
+        "runtime_ms": {
+          "samples": 200,
+          "max": 88.922,
+          "p50": 25.841,
+          "p95": 47.527,
+          "p99": 71.095
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -30981,7 +31877,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 3.956,
+          "p50": 3.956,
+          "p95": 3.956,
+          "p99": 3.956
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:reconciliation.completion_evidence_read",
@@ -31990,6 +32900,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 402.884,
+          "p50": 107.242,
+          "p95": 286.496,
+          "p99": 398.523
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -32502,6 +33426,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 9,
+        "runtime_ms": {
+          "samples": 9,
+          "max": 182.412,
+          "p50": 0.615,
+          "p95": 182.412,
+          "p99": 182.412
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -32969,6 +33907,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 33.011,
+          "p50": 4.853,
+          "p95": 16.255,
+          "p99": 27.704
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -33215,6 +34167,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 6.232,
+          "p50": 1.227,
+          "p95": 2.667,
+          "p99": 5.49
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -33464,6 +34430,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 200,
+        "runtime_ms": {
+          "samples": 200,
+          "max": 20.408,
+          "p50": 1.53,
+          "p95": 3.759,
+          "p99": 7.994
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -33725,6 +34705,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 59,
+        "runtime_ms": {
+          "samples": 58,
+          "max": 65.558,
+          "p50": 9.753,
+          "p95": 51.884,
+          "p99": 65.558
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -34170,6 +35164,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 61,
+        "runtime_ms": {
+          "samples": 61,
+          "max": 308.015,
+          "p50": 1.025,
+          "p95": 7.907,
+          "p99": 308.015
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -34811,6 +35819,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 8,
+        "runtime_ms": {
+          "samples": 8,
+          "max": 3.554,
+          "p50": 0.784,
+          "p95": 3.554,
+          "p99": 3.554
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -36325,7 +37347,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 13.622,
+          "p50": 13.622,
+          "p95": 13.622,
+          "p99": 13.622
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:sqlite.repository_read",
@@ -37085,6 +38121,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 3.744,
+          "p50": 0.315,
+          "p95": 0.705,
+          "p99": 2.494
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -37275,7 +38325,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 8.568,
+          "p50": 8.568,
+          "p95": 8.568,
+          "p99": 8.568
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:pr_supervisor.response_json",
@@ -40250,6 +41314,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 2,
+        "runtime_ms": {
+          "samples": 2,
+          "max": 185.521,
+          "p50": 10.193,
+          "p95": 185.521,
+          "p99": 185.521
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -44618,7 +45696,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 4.595,
+          "p50": 4.595,
+          "p95": 4.595,
+          "p99": 4.595
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:dispatch.record_complete",
@@ -50095,7 +51187,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 7.027,
+          "p50": 7.027,
+          "p95": 7.027,
+          "p99": 7.027
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:repository.path_resolve",
@@ -50410,7 +51516,21 @@
           }
         }
       },
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 15.197,
+          "p50": 15.197,
+          "p95": 15.197,
+          "p99": 15.197
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "runtime:goal.dispatch_followup_reserve",
@@ -58823,7 +59943,22 @@
       "resolution": "open",
       "next_actor": "this card/session",
       "next_action": "Reproduce this exact path in an isolated representative mixed workload, split phases, repair measured cost and retain correctness assertions.",
-      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance."
+      "linked_database_acceptance": "89957d94 is accepted/Done for original PR471 scope; do not reopen it or infer systemic acceptance.",
+      "loaded309_fleet_followup": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "latency_ms": {
+          "samples": 5,
+          "p50": 2201.105,
+          "p95": 2945.675,
+          "p99": 2945.675,
+          "max": 2945.675
+        },
+        "response_bytes_each": 1114058,
+        "http_status": 200,
+        "report": "d82ea21b-7409-473d-986b-24302d78460a",
+        "resolution": "open",
+        "next_action": "Use exact Fleet request correlations to separate context/cache/peer/template/serialization costs; reproduce measured large retained-data branches in disposable state, preserve data and semantics."
+      }
     },
     {
       "id": "concern:backups",
@@ -58982,7 +60117,12 @@
         "status": "Original uncommitted live161operation/58route raw snapshot was overwritten by repeated latest-only observer before immutable archive existed. Original derived new-row values, counters, top15max/window data, progress2712/report03revision7 and coverageoverlay remain, but complete original per-name rawwindows cannot be reattested from currentfile. Do not present currentfile as originalcb33. Canonical committed log/baseline/source artifacts unchanged.",
         "fix": "Read-only observer now retains SHA-addressed immutable snapshot before updating latest alias. Existingcurrentloaded and successfulMCPsnapshot archived; all subsequentreads preserved. No production store/log mutation or successclaim."
       },
-      "owner_session": "1eb4393e-26a0-471b-9b01-0b96763d2c01"
+      "owner_session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+      "html_observer_gap": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "meaning": "Initial JSON-only owner wrapper was incorrectly used for15HTML attempts and retained only LocalPAServerUnavailable types/timings. No original status/correlation/body retained; these are observer failures and not proven HTTP availability failures. Corrected call-local decoder records only HTTPmetadata through same authenticated transport, original attempt data preserved. Re-encoded JSON bytes are not HTTP wire bytes.",
+        "resolution": "open"
+      }
     },
     {
       "id": "concern:ambiguous-upload",
@@ -59626,6 +60766,12 @@
           }
         },
         "residual": "All schema samples still>500ms and capability-write tail remains; no startup acceptance."
+      },
+      "loaded309_followup": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "source": "309751f5d555834d30c2a4503ffb576b2078ae61",
+        "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
+        "stage": "PR499 protected integration verified, exact immutable436source package loaded; corresponding full-family acceptance remainsOPEN"
       }
     },
     {
@@ -59883,6 +61029,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 15.987,
+          "p50": 2.039,
+          "p95": 8.998,
+          "p99": 15.623
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -60130,6 +61290,20 @@
           "slow_calls": 1
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 108.333,
+          "p50": 22.737,
+          "p95": 56.053,
+          "p99": 106.05
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -60462,6 +61636,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 124.377,
+          "p50": 24.956,
+          "p95": 64.374,
+          "p99": 116.666
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -60794,6 +61982,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 75.633,
+          "p50": 23.94,
+          "p95": 49.572,
+          "p99": 68.287
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -61129,6 +62331,20 @@
           "slow_calls": 0
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 17,
+        "runtime_ms": {
+          "samples": 17,
+          "max": 9.622,
+          "p50": 4.544,
+          "p95": 9.622,
+          "p99": 9.622
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -61379,6 +62595,20 @@
           "slow_calls": 6
         },
         "scope": "Source-only measured submissions, not all branches/deployment/acceptance"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 17,
+        "runtime_ms": {
+          "samples": 17,
+          "max": 410.134,
+          "p50": 148.929,
+          "p95": 410.134,
+          "p99": 410.134
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -64602,6 +65832,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 108.333,
+          "p50": 22.737,
+          "p95": 56.053,
+          "p99": 106.05
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -64758,6 +66002,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 100,
+        "runtime_ms": {
+          "samples": 100,
+          "max": 75.633,
+          "p50": 23.94,
+          "p95": 49.572,
+          "p99": 68.287
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -65778,6 +67036,20 @@
           "slow_calls": 0
         },
         "scope": "Positive measured submissions; does not cover every branch or deployed behavior"
+      },
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 17,
+        "runtime_ms": {
+          "samples": 17,
+          "max": 9.622,
+          "p50": 4.544,
+          "p95": 9.622,
+          "p99": 9.622
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
       }
     },
     {
@@ -66593,7 +67865,21 @@
       "retested": "Threshold-selected log emissions only; no fast denominator",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Attribute shared phase costs and verify representative branch workload."
+      "next_action": "Attribute shared phase costs and verify representative branch workload.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 565.151,
+          "p50": 565.151,
+          "p95": 565.151,
+          "p99": 565.151
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "slow-followup:workspace.reconcile_terminal_state",
@@ -66624,7 +67910,21 @@
       "retested": "Threshold-selected log emissions only; no fast denominator",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Attribute shared phase costs and verify representative branch workload."
+      "next_action": "Attribute shared phase costs and verify representative branch workload.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 13.622,
+          "p50": 13.622,
+          "p95": 13.622,
+          "p99": 13.622
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "concern:sync-read-amplification",
@@ -66748,6 +68048,12 @@
           "retry_key": "pa-performance-backup-7e7ffd35-resume-20261017-v1:retry-after-drain-v1",
           "independent_acceptance": "withheld; failed12.78sstall retained, repair first"
         }
+      },
+      "loaded309_followup": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "source": "309751f5d555834d30c2a4503ffb576b2078ae61",
+        "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
+        "stage": "PR499 protected integration verified, exact immutable436source package loaded; corresponding full-family acceptance remainsOPEN"
       }
     },
     {
@@ -67000,21 +68306,265 @@
     {
       "id": "concern:object-read-stat-probe",
       "kind": "concern",
-      "finding": "Redundant object existence-probe amplification candidate",
+      "finding": "Redundant immutable-object existence probe",
       "family": "cross_cutting",
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-      "cause_classification": "measured_hypothesis_not_repaired",
+      "cause_classification": "confirmed_avoidable_pathname_metadata_probe",
       "cause": "15360Pythonos.stat probes disappear in paired read prototype, but candidate tail161.892ms remains; physical I/O/scheduling/error behavior unverified.",
-      "implemented": false,
+      "implemented": "Read bytes first with missingNone and original otherOSError visibility fallback; no read cache or writes changed",
       "merged": [],
-      "deployed": "New source uninstalled; no competing restart",
+      "deployed": "Candidate uninstalled; actual loaded309 predates object-read edit",
       "measurement": {
         "artifact": "docs/benchmarks/systemic-transcript-backend-20261017.json"
       },
-      "retested": "Paired disposable probes only; no passing representative benefit",
+      "retested": "44scoped correctness tests; alternating30x512 at512B/16KiB exactbytes and metadata counters; current mixed source retained in artifact",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Validate complete error/ordering semantics and representative benefit before implementing; do not cherry-pick tail or move/raise thresholds."
+      "next_action": "Protected integration and exact activation after all gates, then mixed/deployed/native-filesystem attribution without blanket closure.",
+      "read_repair_followup": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "pair": {
+          "scope": "Alternating 512 immutable object reads, 512B and16KiB payloads, temporary state, exact byte parity, normal GC retained. Python os.stat counts exclude native open/fstat/disk work. Warm filesystem, no concurrent writers/provider/peer; no deployed or mixed-load acceptance claim.",
+          "source_sha256": "1b7660c2e28e881d207efa0f5f7fd0dcd3280889438c13d03a15f5af0ae1812b",
+          "stages": [
+            {
+              "objects_per_batch": 512,
+              "bytes_per_object": 512,
+              "logical_bytes_per_batch": 262144,
+              "latency_ms": {
+                "baseline": {
+                  "samples": 30,
+                  "max": 85.119,
+                  "p50": 50.472,
+                  "p95": 75.847,
+                  "p99": 85.119
+                },
+                "source": {
+                  "samples": 30,
+                  "max": 74.756,
+                  "p50": 39.603,
+                  "p95": 72.127,
+                  "p99": 74.756
+                }
+              },
+              "thread_cpu_ms": {
+                "baseline": {
+                  "samples": 30,
+                  "max": 62.034,
+                  "p50": 45.06,
+                  "p95": 58.673,
+                  "p99": 62.034
+                },
+                "source": {
+                  "samples": 30,
+                  "max": 53.213,
+                  "p50": 35.866,
+                  "p95": 51.854,
+                  "p99": 53.213
+                }
+              },
+              "samples_ms": {
+                "baseline": [
+                  85.11908299988136,
+                  75.8472919696942,
+                  66.95195898646489,
+                  60.21487497491762,
+                  57.275792001746595,
+                  44.92079099873081,
+                  48.558374983258545,
+                  53.96887502865866,
+                  55.92708301264793,
+                  51.310415961779654,
+                  38.65983401192352,
+                  39.79683300713077,
+                  28.2750420155935,
+                  31.76612500101328,
+                  57.2969579952769,
+                  39.90112501196563,
+                  67.18241603812203,
+                  62.15033296030015,
+                  39.478749968111515,
+                  36.9764170027338,
+                  40.47241702210158,
+                  55.820583016611636,
+                  55.58166699483991,
+                  40.59195803711191,
+                  50.471500027924776,
+                  54.21979195671156,
+                  39.63999997358769,
+                  43.17383299348876,
+                  51.11875000875443,
+                  41.28870798740536
+                ],
+                "source": [
+                  59.86212502466515,
+                  74.7562080505304,
+                  72.12708302540705,
+                  50.54508399916813,
+                  56.00187502568588,
+                  35.71879200171679,
+                  42.12716704932973,
+                  52.4761249544099,
+                  38.40974997729063,
+                  39.60291598923504,
+                  43.56362501857802,
+                  29.23874999396503,
+                  29.409874987322837,
+                  37.3916249955073,
+                  49.91983302170411,
+                  46.48558294866234,
+                  65.66987500991672,
+                  33.38300000177696,
+                  37.16320899548009,
+                  32.30320801958442,
+                  34.74383300635964,
+                  40.495292050763965,
+                  40.17204197589308,
+                  43.43695897841826,
+                  30.691583990119398,
+                  35.42241605464369,
+                  36.53637500246987,
+                  31.156667042523623,
+                  50.36387499421835,
+                  33.295625005848706
+                ]
+              },
+              "python_os_stat_calls": {
+                "baseline": 15360,
+                "source": 0
+              },
+              "observations": {
+                "baseline": {
+                  "calls": 15360,
+                  "bytes": 7864320
+                },
+                "source": {
+                  "calls": 15360,
+                  "bytes": 7864320
+                }
+              }
+            },
+            {
+              "objects_per_batch": 512,
+              "bytes_per_object": 16384,
+              "logical_bytes_per_batch": 8388608,
+              "latency_ms": {
+                "baseline": {
+                  "samples": 30,
+                  "max": 149.565,
+                  "p50": 50.708,
+                  "p95": 109.784,
+                  "p99": 149.565
+                },
+                "source": {
+                  "samples": 30,
+                  "max": 76.833,
+                  "p50": 44.033,
+                  "p95": 66.766,
+                  "p99": 76.833
+                }
+              },
+              "thread_cpu_ms": {
+                "baseline": {
+                  "samples": 30,
+                  "max": 83.159,
+                  "p50": 43.915,
+                  "p95": 71.841,
+                  "p99": 83.159
+                },
+                "source": {
+                  "samples": 30,
+                  "max": 58.561,
+                  "p50": 38.556,
+                  "p95": 56.538,
+                  "p99": 58.561
+                }
+              },
+              "samples_ms": {
+                "baseline": [
+                  53.931083995848894,
+                  50.70791702019051,
+                  46.1702499887906,
+                  50.327375007327646,
+                  53.7578749936074,
+                  63.629915995988995,
+                  53.319291037041694,
+                  49.0909589570947,
+                  64.20283298939466,
+                  59.82783297076821,
+                  54.76525000995025,
+                  46.97345802560449,
+                  43.319999997038394,
+                  48.59325004508719,
+                  45.26104097021744,
+                  37.49883297132328,
+                  36.37141699437052,
+                  42.074874974787235,
+                  37.548082997091115,
+                  34.3022919842042,
+                  44.312290963716805,
+                  57.769292034208775,
+                  56.33329204283655,
+                  46.072374971117824,
+                  57.90129100205377,
+                  72.29862501844764,
+                  72.44745799107477,
+                  149.56545905442908,
+                  109.78441697079688,
+                  79.55420797225088
+                ],
+                "source": [
+                  48.12925000442192,
+                  36.16854199208319,
+                  33.10250001959503,
+                  55.52904197247699,
+                  50.434332981240004,
+                  44.03266601730138,
+                  44.71333301626146,
+                  65.0630840100348,
+                  60.04191702231765,
+                  58.11529199127108,
+                  49.85941603081301,
+                  34.44604098331183,
+                  38.45200000796467,
+                  38.39145798701793,
+                  36.254749982617795,
+                  29.102416010573506,
+                  26.962541975080967,
+                  33.73133298009634,
+                  33.525874954648316,
+                  35.92837502947077,
+                  28.090208012145013,
+                  52.33649996807799,
+                  56.46491702646017,
+                  37.287458952050656,
+                  35.53870803443715,
+                  53.93037502653897,
+                  47.56712500238791,
+                  65.16704201931134,
+                  76.83316699694842,
+                  66.76629197318107
+                ]
+              },
+              "python_os_stat_calls": {
+                "baseline": 15360,
+                "source": 0
+              },
+              "observations": {
+                "baseline": {
+                  "calls": 15360,
+                  "bytes": 251658240
+                },
+                "source": {
+                  "calls": 15360,
+                  "bytes": 251658240
+                }
+              }
+            }
+          ]
+        },
+        "resolution": "open"
+      }
     },
     {
       "id": "concern:transcript-query-variants",
@@ -67298,7 +68848,21 @@
       "retested": "Cold fixture phase and initialization failure/concurrency/close tests; real provider cold start unverified",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Activate exact source and verify full cold startup/admission, preserve schema and provider phases."
+      "next_action": "Activate exact source and verify full cold startup/admission, preserve schema and provider phases.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 10.185,
+          "p50": 10.185,
+          "p95": 10.185,
+          "p99": 10.185
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      }
     },
     {
       "id": "startup_phase:async_backend_prepare",
@@ -68418,7 +69982,27 @@
       "retested": "Disposable fixture only, no real provider/network or performance acceptance",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Measure remaining cold startup phases/CPU and exact deployed responsiveness, retaining all residuals."
+      "next_action": "Measure remaining cold startup phases/CPU and exact deployed responsiveness, retaining all residuals.",
+      "object_read_stage_observation": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "scope": "Current candidate local mixed runtime operation, not every branch or deployed acceptance",
+        "submitted": 1,
+        "runtime_ms": {
+          "samples": 1,
+          "max": 1093.098,
+          "p50": 1093.098,
+          "p95": 1093.098,
+          "p99": 1093.098
+        },
+        "source_stage": "candidate unmerged/uninstalled",
+        "resolution": "open"
+      },
+      "loaded309_followup": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "source": "309751f5d555834d30c2a4503ffb576b2078ae61",
+        "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
+        "stage": "PR499 protected integration verified, exact immutable436source package loaded; corresponding full-family acceptance remainsOPEN"
+      }
     },
     {
       "id": "startup_phase:kernel_boot_and_app_build",
@@ -68437,7 +70021,13 @@
       "retested": "Disposable fixture only, no real provider/network or performance acceptance",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Measure remaining cold startup phases/CPU and exact deployed responsiveness, retaining all residuals."
+      "next_action": "Measure remaining cold startup phases/CPU and exact deployed responsiveness, retaining all residuals.",
+      "loaded309_followup": {
+        "artifact": "docs/benchmarks/systemic-object-read-20261018.json",
+        "source": "309751f5d555834d30c2a4503ffb576b2078ae61",
+        "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
+        "stage": "PR499 protected integration verified, exact immutable436source package loaded; corresponding full-family acceptance remainsOPEN"
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -68448,31 +70038,29 @@
   "startup_schema_artifact": "docs/benchmarks/systemic-startup-schema-20261017.json",
   "latest_local_activation": {
     "contract": "pa.loaded-activation-proof/v1",
-    "observation": "2026-10-17T22:32:17.717957+00:00",
+    "observation": "2026-10-17T23:10:11.351254+00:00",
     "runtime_build": {
       "loaded_module_version": "1.5.9",
-      "source_revision": "175ccb4f7bfd08696d1bea51f39584a6d9797f9a",
-      "package_identity": "sha256:e708ba4b7ebae168ce742e9e1215260b7c6ad9f3e7ef286dc3f4438f62f07c6f",
-      "pid": 69926,
-      "startup_id": "6c897a27-db6d-490a-83b6-1c3f8ad25d6d"
+      "source_revision": "309751f5d555834d30c2a4503ffb576b2078ae61",
+      "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
+      "pid": 81657,
+      "startup_id": "3a55a396-db3c-4d05-9a95-7775464448fb"
     },
     "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
-    "status_ms": 191.341,
-    "runtime_read_ms": 85.086,
-    "raw_sha256": "0464bc8ac593c13c8b94dee7545ca2ef9b6e2dfb886bf46ae943c651d589e9a9",
-    "scope": "Authenticated owner GET with immutable same-PID server startup capture matches installed435file Git175 proof. Single read timings are not acceptance distributions; historical report7context in same rawsnapshot belongs previousPID50716 and is deliberately not currentloadedproof.",
     "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
     "configuration_unchanged": true,
-    "handoff": "ae7bd5ae-e589-5fc2-95a4-20cb77f47b67",
-    "receipt_status": "continuation_queued; current175service restarted, originalcontinuation remainsqueued behindPR497notification",
-    "card_acceptance": "open; missingactive/verified/independentacceptance unchanged",
-    "backup_repair": {
-      "dispatch_id": "c5a697e5-c62b-4d76-9523-def2f5fc852d",
-      "session_id": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
-      "state": "running",
-      "retry_key": "pa-performance-backup-7e7ffd35-resume-20261017-v1:retry-after-drain-v1",
-      "independent_acceptance": "withheld; failed12.78sstall retained, repair first"
-    }
+    "source_files_verified": 436,
+    "installed_package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
+    "handoff": {
+      "id": "8c99c30b-db6c-5809-9e60-f69d410bbf87",
+      "status": "continuation_queued",
+      "delivered_at": null,
+      "updated_at": "2026-10-17T23:09:23.456413Z",
+      "reason_code": null,
+      "error": null,
+      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01"
+    },
+    "scope": "Immutable server-captured new PID/startup/source/package match installed436file Git309 proof. Config/dependency versions unchanged. Loaded code proof alone does not establish any whole-family or independent acceptance."
   },
   "snapshot_retention_gap": {
     "contract": "pa.diagnostic-snapshot-retention-correction/v1",
@@ -68500,5 +70088,6 @@
     "state": "running",
     "retry_key": "pa-performance-backup-7e7ffd35-resume-20261017-v1:retry-after-drain-v1",
     "independent_acceptance": "withheld; failed12.78sstall retained, repair first"
-  }
+  },
+  "object_read_artifact": "docs/benchmarks/systemic-object-read-20261018.json"
 }
