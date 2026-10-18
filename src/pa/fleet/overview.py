@@ -32,6 +32,7 @@ from pa.fleet.capacity import (
 from pa.fleet.endpoints import request_peer
 from pa.fleet.update import TERMINAL_PHASES
 from pa.pr_supervisor.models import (
+    PRWatch,
     PRWatchStatus,
     canonical_repository_name,
 )
@@ -891,7 +892,9 @@ def _local_repositories(ctx: Any) -> dict[str, Any]:
     return {"observations": observations, "workspaces": leases}
 
 
-def _local_supervisor(ctx: Any) -> dict[str, Any]:
+def _local_supervisor(
+    ctx: Any, *, watches: list[PRWatch] | None = None,
+) -> dict[str, Any]:
     service = ctx.services.get("pr_supervisor")
     store = ctx.services.get("pr_supervisor_store")
     health = (
@@ -899,16 +902,12 @@ def _local_supervisor(ctx: Any) -> dict[str, Any]:
         if service
         else {"state": "unavailable", "role": "unavailable"}
     )
-    watches = (
-        [
-            item.model_dump(mode="json")
-            for item in store.list_watches(include_retired=False)
-            if item.actionable
-        ]
-        if store
-        else []
-    )
-    return {**health, "watches": watches}
+    if watches is None:
+        watches = store.list_watches(include_retired=False) if store else []
+    public_watches = [
+        item.model_dump(mode="json") for item in watches if item.actionable
+    ]
+    return {**health, "watches": public_watches}
 
 
 def local_dimension(ctx: Any, dimension: str) -> Any:
@@ -1355,6 +1354,14 @@ def build_overview(
     dispatch_store = ctx.services.get("dispatch_store")
     if not isinstance(dispatch_store, DispatchStore):
         dispatch_store = None
+    supervisor_store = ctx.services.get("pr_supervisor_store")
+    # Both local status and topology need the same complete active watches.
+    # Hydrate once per overview, then serialize each public view independently
+    # so callers cannot mutate one view through the other.
+    supervisor_watches = (
+        supervisor_store.list_watches(include_retired=False)
+        if supervisor_store else []
+    )
     for inst in instances:
         dimensions = {
             dimension: _cached_or_default(cache, inst, dimension)
@@ -1372,7 +1379,9 @@ def build_overview(
                 try:
                     dimensions[dimension] = field(
                         "fresh",
-                        local_dimension(ctx, dimension),
+                        (_local_supervisor(ctx, watches=supervisor_watches)
+                         if dimension == "supervisor"
+                         else local_dimension(ctx, dimension)),
                         observed_at=_now(),
                         duration_ms=0,
                     )
@@ -1479,9 +1488,8 @@ def build_overview(
                 value.update({"state": lifecycle, "update_job": job.public_dict()})
                 node["dimensions"]["activity"] = {**activity, "value": value}
 
-    supervisor_store = ctx.services.get("pr_supervisor_store")
     if supervisor_store:
-        for watch in supervisor_store.list_watches(include_retired=False):
+        for watch in supervisor_watches:
             if not watch.actionable:
                 continue
             owner = watch.owner_instance_id or local_id

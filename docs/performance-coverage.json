@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T03:20:42.684524+00:00",
-  "completion": "OPEN; b808 activated with allretainedresiduals; Fleet projection candidate uninstalled. 524rows/44concerns, including98actualruntimeops34routes,4mixedworkerwarnings6violations; no wholePA acceptance.",
+  "as_of": "2026-10-18T03:44:21.563852+00:00",
+  "completion": "OPEN; exacta90activated/retested80HTTP200 but Fleet1/5slow andoverview1/5slow. Watchsnapshot candidateuninstalled. All526rows46concerns remainrequired.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -100,7 +100,8 @@
     "report:d09ac79d-3df3-49e9-a426-8e0b3e156355",
     "report:19c44107-99dc-4b64-92ea-fda8d22a3418",
     "report:e58d4d65-5332-4dac-8de9-5ae244739ac5",
-    "docs/benchmarks/systemic-fleet-dispatch-20261018.json"
+    "docs/benchmarks/systemic-fleet-dispatch-20261018.json",
+    "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -84171,6 +84172,65 @@
           "threshold_violations_all_attempts": 3
         },
         "resolution": "open"
+      },
+      "a90_followup": {
+        "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+        "fleet": {
+          "all_attempt_latency_ms": {
+            "max": 500.349,
+            "p50": 238.177,
+            "p95": 500.349,
+            "p99": 500.349,
+            "samples": 5
+          },
+          "decoded_response_bytes": {
+            "max": 1136999,
+            "p50": 1136999,
+            "p95": 1136999,
+            "p99": 1136999,
+            "samples": 5
+          },
+          "errors": 0,
+          "requested": 5,
+          "successes": 5,
+          "successful_latency_ms": {
+            "max": 500.349,
+            "p50": 238.177,
+            "p95": 500.349,
+            "p99": 500.349,
+            "samples": 5
+          },
+          "threshold_violations_all_attempts": 1
+        },
+        "overview": {
+          "all_attempt_latency_ms": {
+            "max": 623.252,
+            "p50": 157.463,
+            "p95": 623.252,
+            "p99": 623.252,
+            "samples": 5
+          },
+          "decoded_response_bytes": {
+            "max": 974503,
+            "p50": 974503,
+            "p95": 974503,
+            "p99": 974503,
+            "samples": 5
+          },
+          "errors": 0,
+          "requested": 5,
+          "successes": 5,
+          "successful_latency_ms": {
+            "max": 623.252,
+            "p50": 157.463,
+            "p95": 623.252,
+            "p99": 623.252,
+            "samples": 5
+          },
+          "threshold_violations_all_attempts": 1
+        },
+        "scope": "5sequentialGETseach; exactsource/packagestable, notwholebranchacceptance",
+        "resolution": "open"
       }
     },
     {
@@ -84965,6 +85025,65 @@
           },
           "threshold_violations_all_attempts": 3
         },
+        "resolution": "open"
+      },
+      "a90_followup": {
+        "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+        "fleet": {
+          "all_attempt_latency_ms": {
+            "max": 500.349,
+            "p50": 238.177,
+            "p95": 500.349,
+            "p99": 500.349,
+            "samples": 5
+          },
+          "decoded_response_bytes": {
+            "max": 1136999,
+            "p50": 1136999,
+            "p95": 1136999,
+            "p99": 1136999,
+            "samples": 5
+          },
+          "errors": 0,
+          "requested": 5,
+          "successes": 5,
+          "successful_latency_ms": {
+            "max": 500.349,
+            "p50": 238.177,
+            "p95": 500.349,
+            "p99": 500.349,
+            "samples": 5
+          },
+          "threshold_violations_all_attempts": 1
+        },
+        "overview": {
+          "all_attempt_latency_ms": {
+            "max": 623.252,
+            "p50": 157.463,
+            "p95": 623.252,
+            "p99": 623.252,
+            "samples": 5
+          },
+          "decoded_response_bytes": {
+            "max": 974503,
+            "p50": 974503,
+            "p95": 974503,
+            "p99": 974503,
+            "samples": 5
+          },
+          "errors": 0,
+          "requested": 5,
+          "successes": 5,
+          "successful_latency_ms": {
+            "max": 623.252,
+            "p50": 157.463,
+            "p95": 623.252,
+            "p99": 623.252,
+            "samples": 5
+          },
+          "threshold_violations_all_attempts": 1
+        },
+        "scope": "5sequentialGETseach; exactsource/packagestable, notwholebranchacceptance",
         "resolution": "open"
       }
     },
@@ -87947,6 +88066,65 @@
           }
         },
         "scope": "macbook/PID92567/sourceb808, timestamped supportedGET snapshot,98operations/21prefixfamilies/34registered routegroups. Operation/route counters and explicit process maxima cover currentprocess; percentiles are reported bounded windows, not process percentiles. Some reads overlap disposable local test/benchmark CPU/disk use, no causal claim or controlledacceptance. Peer logs/builds remain uninspected. Historical report03runtime context is explicitly historical and differs from current status.",
+        "resolution": "open"
+      },
+      "a90_followup": {
+        "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+        "fleet": {
+          "all_attempt_latency_ms": {
+            "max": 500.349,
+            "p50": 238.177,
+            "p95": 500.349,
+            "p99": 500.349,
+            "samples": 5
+          },
+          "decoded_response_bytes": {
+            "max": 1136999,
+            "p50": 1136999,
+            "p95": 1136999,
+            "p99": 1136999,
+            "samples": 5
+          },
+          "errors": 0,
+          "requested": 5,
+          "successes": 5,
+          "successful_latency_ms": {
+            "max": 500.349,
+            "p50": 238.177,
+            "p95": 500.349,
+            "p99": 500.349,
+            "samples": 5
+          },
+          "threshold_violations_all_attempts": 1
+        },
+        "overview": {
+          "all_attempt_latency_ms": {
+            "max": 623.252,
+            "p50": 157.463,
+            "p95": 623.252,
+            "p99": 623.252,
+            "samples": 5
+          },
+          "decoded_response_bytes": {
+            "max": 974503,
+            "p50": 974503,
+            "p95": 974503,
+            "p99": 974503,
+            "samples": 5
+          },
+          "errors": 0,
+          "requested": 5,
+          "successes": 5,
+          "successful_latency_ms": {
+            "max": 623.252,
+            "p50": 157.463,
+            "p95": 623.252,
+            "p99": 623.252,
+            "samples": 5
+          },
+          "threshold_violations_all_attempts": 1
+        },
+        "scope": "5sequentialGETseach; exactsource/packagestable, notwholebranchacceptance",
         "resolution": "open"
       }
     },
@@ -93810,7 +93988,7 @@
       "retested": "Current/foreign/absent PID and mutable install fixtures preserve truthful unknowns and detached output.",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Retain exactb808activation; next candidate projection is notinstalled. Verify future exactprotectedbuilds and every acceptance scenario; no provenance-only closure.",
+      "next_action": "Retainexacta90identity; futuresnapshots/rollouts requirefreshfencedproof; no provenanceonlyacceptance",
       "pr495_integration": {
         "head": "f4efd94c8b9fc0bbef91276cb1e24777629231db",
         "merge": "f36d4b38cc362024579cbf2ae917c011f88a148c",
@@ -93856,24 +94034,20 @@
         "package_identity": "sha256:cad7c09b1239aca5fab1e6e2445e6d9a2fe1fc5585ab0bc09698adbfb36ab3b0",
         "stage": "PR499 protected integration verified, exact immutable436source package loaded; corresponding full-family acceptance remainsOPEN"
       },
-      "installed_source": "b808b03945807e7669bc9da80270d7760822cc9b",
-      "loaded_source": "b808b03945807e7669bc9da80270d7760822cc9b",
+      "installed_source": "a90d89d0d62745f6cc5639209d6a412126a9868a",
+      "loaded_source": "a90d89d0d62745f6cc5639209d6a412126a9868a",
       "followup_verification": {
-        "artifact": "docs/benchmarks/systemic-fleet-dispatch-20261018.json",
-        "proof": {
-          "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
-          "process_id": 92567,
-          "runtime_build": {
-            "loaded_module_version": "1.5.9",
-            "source_revision": "b808b03945807e7669bc9da80270d7760822cc9b",
-            "package_identity": "sha256:89ae52b71251b9f2e64f97fb6f224a91c77022a8463405cc9a648f04568aefca",
-            "pid": 92567,
-            "startup_id": "185b37c9-7ee3-4d8d-81d8-cd1ff7726383"
-          }
+        "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+        "runtime_build": {
+          "loaded_module_version": "1.5.9",
+          "package_identity": "sha256:b20ece70c6eda566c8712478cc04476e1c5679e1c2937ed5900ab79898831126",
+          "pid": 96628,
+          "source_revision": "a90d89d0d62745f6cc5639209d6a412126a9868a",
+          "startup_id": "6a40d968-7a9a-46fe-a4ae-4bac50b8282a"
         },
         "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
-        "dependency_version_changes": 0,
-        "source_files": 436
+        "source_files": 436,
+        "dependency_version_changes": 0
       }
     },
     {
@@ -96409,12 +96583,14 @@
         "live_phase": "3ordinaryb808FleetServer-Timing context1429.8\u20132208.9ms/template39.4\u201355.7ms"
       },
       "implemented": "active-first fully detached public projection, same indexed choice/realm and exact active public values; sourcecandidate only",
-      "merged": [],
-      "deployed": "New dispatch projection candidate uninstalled; b808 activation independentlyverified",
-      "retested": "37scoped +101Fleet/2subtests; paired20iterations; fullmixedsource included without acceptance inference",
+      "merged": [
+        "https://github.com/petersky/pa/pull/503"
+      ],
+      "deployed": "Exacta90/PID96628/startup6a40/packageb20 verified; configunchanged",
+      "retested": "80ordinaryGETs: Fleetp50238.177/max500.349ms,1violation; overviewmax623.252ms,1violation; leafshare/completeacceptanceopen",
       "resolution": "open",
       "next_actor": "this systemic session",
-      "next_action": "Protected readyPR/integration/exact activation and realistic largeFleet retest; attribute remaining context leaves and retain fullcriteria."
+      "next_action": "Continue completecontext/API/nativecontention and remainingfamilies; nofullclosurefromdispatchcopyspeedup"
     },
     {
       "id": "route-b808:/api/fleet/overview",
@@ -96497,6 +96673,81 @@
       "resolution": "open",
       "next_actor": "this systemic session",
       "next_action": "Expand valid nonempty branch/phase measurement and address residuals; preserve receipt/ownership/admission semantics."
+    },
+    {
+      "id": "concern:fleet-duplicate-watch-hydration",
+      "kind": "concern",
+      "finding": "Fleet overview hydrates complete active PR watch snapshot twice per request",
+      "family": "fleet",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmedsourceamplification_and_isolatedpairedmeasurement_liveleafshareunknown",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+        "pair": {
+          "baseline": {
+            "samples": 20,
+            "max": 193.163,
+            "p50": 175.344,
+            "p95": 192.535,
+            "p99": 193.163
+          },
+          "source": {
+            "samples": 20,
+            "max": 171.113,
+            "p50": 90.345,
+            "p95": 106.534,
+            "p99": 171.113
+          }
+        },
+        "hydration": {
+          "baseline": {
+            "hydrated_rows": 4000,
+            "state_policy_bytes": 257448000
+          },
+          "source": {
+            "hydrated_rows": 2000,
+            "state_policy_bytes": 128724000
+          }
+        }
+      },
+      "implemented": "Requestscoped complete watchsnapshot reused for localdimension andedges; independentlyserialized publicresults; candidateonly",
+      "merged": [],
+      "deployed": "Newcandidateuninstalled; currentrunninga90stillduplicatesreads",
+      "retested": "158regressions/2subtests;20alternating archiveda90pairs/exactcompleteoutputs;100iterationmixedsource residuals retained inartifact",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "ProtectedreadyPR/integration/actualmergedCI/exactactivation, retestnonemptyFleet andallremainingcriteria; no selfacceptance"
+    },
+    {
+      "id": "concern:test-workspace-isolation",
+      "kind": "concern",
+      "finding": "Broad regression suite leaves empty admission lock files in checkout",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "observedtesttimefootprint_exactcreatingfixtureunverified",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+        "report": {
+          "report_id": "754e7d9a-a1da-4a69-8c12-0f85da37ff44",
+          "revision": 1,
+          "hash": "150087d90bbf982ad70b2bd7267b912649661534b4575235e81c7aa3ade53d30",
+          "source_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+          "incarnation": "01422ec3-8a75-4967-91d1-4819d0ac72d8",
+          "delivery": "pending",
+          "created_at": "2026-10-18T03:42:36.656497+00:00"
+        },
+        "files": 8,
+        "sizes": "allzero",
+        "creation_mtime_range": "2026-10-18T03:39:31Z\u201303:39:42Z",
+        "open_handles_at_observation": 0
+      },
+      "implemented": "No deletion or suppression; preservefiles/excludecommit, stop furtherbroadtest reruns untilfixtureisolationunderstood; addedtest/benchmarks useexplicitTemporaryDirectoryroots",
+      "merged": [],
+      "deployed": "No newproductdeployment; no evidence oflivePAstorewrites; priorcheckoutdbtransientfootprintretained",
+      "retested": "Metadata/lsofonly; exactcreatingtest/mocknotyetproven",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Traceincorrectworkspace_root/mockfixture inisolatedcwd, repairfixtureisolation, coordinateknownemptyartifactcleanup withoutdiscardinguserchanges. No directliveStore mutation."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -96506,30 +96757,18 @@
   "transcript_backend_artifact": "docs/benchmarks/systemic-transcript-backend-20261017.json",
   "startup_schema_artifact": "docs/benchmarks/systemic-startup-schema-20261017.json",
   "latest_local_activation": {
-    "contract": "pa.loaded-activation-proof/v1",
-    "observation": "2026-10-18T03:10:27.634158+00:00",
     "runtime_build": {
       "loaded_module_version": "1.5.9",
-      "source_revision": "b808b03945807e7669bc9da80270d7760822cc9b",
-      "package_identity": "sha256:89ae52b71251b9f2e64f97fb6f224a91c77022a8463405cc9a648f04568aefca",
-      "pid": 92567,
-      "startup_id": "185b37c9-7ee3-4d8d-81d8-cd1ff7726383"
+      "package_identity": "sha256:b20ece70c6eda566c8712478cc04476e1c5679e1c2937ed5900ab79898831126",
+      "pid": 96628,
+      "source_revision": "a90d89d0d62745f6cc5639209d6a412126a9868a",
+      "startup_id": "6a40d968-7a9a-46fe-a4ae-4bac50b8282a"
     },
-    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
     "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
-    "configuration_unchanged": true,
     "source_files_verified": 436,
-    "handoff": {
-      "id": "689e2c99-5e25-5670-bb25-5d36f83f7753",
-      "status": "continuation_queued",
-      "delivered_at": null,
-      "updated_at": "2026-10-18T03:09:44.511486Z",
-      "reason_code": null,
-      "error": null,
-      "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
-      "idempotency_key": "systemic-pr502-activateb808b039-20261018-v1"
-    },
-    "scope": "Exactb808/newPID/startup/package/config proof and bounded80GET+3phase observations; no wholefamily acceptance. Newprojection sourcecandidate uninstalled."
+    "dependency_version_changes": 0,
+    "proof_sha256": "e4f3426c8176b6ee4fd7d1276ecf61b03518fff579d2cdc8de1a6c997766c1f8",
+    "scope": "Exacta90loadedproof+80ordinaryGETs; no wholefamilyacceptance"
   },
   "snapshot_retention_gap": {
     "contract": "pa.diagnostic-snapshot-retention-correction/v1",
@@ -96572,5 +96811,11 @@
       "/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}"
     ],
     "interpretation": "macbook/PID92567/sourceb808, timestamped supportedGET snapshot,98operations/21prefixfamilies/34registered routegroups. Operation/route counters and explicit process maxima cover currentprocess; percentiles are reported bounded windows, not process percentiles. Some reads overlap disposable local test/benchmark CPU/disk use, no causal claim or controlledacceptance. Peer logs/builds remain uninspected. Historical report03runtime context is explicitly historical and differs from current status."
+  },
+  "fleet_watch_snapshot_artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+  "latest_deployed_retest": {
+    "artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
+    "sample_counts": "status/runtime/health20each;Agent/Fleet/Home/overview5each",
+    "runtime_inventory": "No newfullruntime/logaudit; prior98operations34routes processsnapshot retained separately, notoverwrittenby80GETresults"
   }
 }
