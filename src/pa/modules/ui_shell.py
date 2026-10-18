@@ -335,6 +335,7 @@ def _agent_context(request: Request) -> dict:
     now = datetime.now(UTC)
     session_details = {}
     from pa.execution.session_presentation import build_session_presentation
+    from pa.domain.conversation_origin import conversation_origin
 
     dispatch_store = ctx.services.get("dispatch_store")
     from pa.domain.projection import CardProjection
@@ -395,6 +396,7 @@ def _agent_context(request: Request) -> dict:
         lifecycle = (lifecycle_summaries[session.id] if lifecycle_summaries is not None
                      else ctx.store.transcript_lifecycle_summary(session.id))
         session_details[session.id] = {
+            "conversation_origin": conversation_origin(session),
             "card": cards.get(session.card_id),
             "cards": associated_cards,
             "project": projects.get(session.project_id),

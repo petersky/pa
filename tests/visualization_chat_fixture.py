@@ -13,6 +13,7 @@ from tests.test_visualizations import seed, marker, FIXTURES
 
 
 def build_visualization_app(directory: Path):
+    directory = directory.resolve()
     reset_store()
     reset_instance_agent()
     settings = Settings(data_dir=directory/"data",workspace_root=directory/"workspaces",

@@ -48,7 +48,7 @@ class AgentChatSessionActionTests(unittest.TestCase):
             widget.closePending = false;
             widget.els = {
               end: control(), restart: control(), recover: control(),
-              history: control(), sessionActionStatus: control(),
+              history: control(), sessionActionStatus: control(), recovery: control(), recoveryAction: control(), recoveryRetry: control(),
             };
 
             // Live snapshots expose only End session.
@@ -64,7 +64,7 @@ class AgentChatSessionActionTests(unittest.TestCase):
             widget.renderSessionActions();
             if (!widget.els.end.hidden || widget.els.restart.hidden) throw new Error("recoverable terminal actions");
             if (widget.els.restart.attrs["aria-disabled"] !== "false") throw new Error("restart aria state");
-            if (!widget.els.sessionActionStatus.textContent.includes("ended")) throw new Error("missing explanation");
+            if (!widget.els.recoveryAction.textContent.includes("disconnected")) throw new Error("missing visible explanation");
 
             // Nonrecoverable durable history exposes neither End nor Restart.
             widget.sessionRecoverable = false;
@@ -85,7 +85,8 @@ class AgentChatSessionActionTests(unittest.TestCase):
             widget.recoveryControlLabel = "Retry connection";
             widget.renderSessionActions();
             if (!widget.els.end.hidden || widget.els.recover.hidden) throw new Error("owner unreachable actions");
-            if (!widget.els.sessionActionStatus.textContent.includes("owner")) throw new Error("owner explanation");
+            if (widget.els.recovery.hidden || !widget.els.recoveryAction.textContent.includes("Live controls")) throw new Error("visible recovery explanation");
+            if (widget.els.sessionActionStatus.textContent) throw new Error("duplicated recovery explanation");
             """
         )
         completed = subprocess.run(

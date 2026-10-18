@@ -2417,7 +2417,7 @@ code {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
@@ -2511,10 +2511,10 @@ code {
 .acw-flyout {
   position: absolute;
   z-index: 15;
-  left: 4.5rem;
+  left: 0;
   top: 0;
   bottom: 0;
-  width: min(36rem, calc(100% - 4.5rem));
+  width: min(36rem, 100%);
   overflow: auto;
   border: 1px solid var(--pa-border);
   border-left: 0;
@@ -2538,7 +2538,7 @@ code {
 .acw-flyout-body { padding: 0.6rem; }
 
 .acw-messages {
-  grid-column: 2;
+  grid-column: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -5502,6 +5502,17 @@ a.ghost:hover {
 .acw-timings { flex: 0 0 auto; padding: .2rem .75rem; font-size: .75rem; color: var(--pa-text-muted); }
 .acw-timings p { margin: .3rem 0; }
 
+.acw-conversation-origin { flex: 0 0 auto; min-width: 0; padding: .5rem 1rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.acw-conversation-origin[hidden] { display: none; }
+.acw-conversation-origin p { margin: .25rem 0; }
+.acw-conversation-origin a { display: inline-block; max-width: 100%; vertical-align: bottom; text-decoration: underline; }
+.acw-origin-boundary { flex: 0 0 auto; margin: 0; padding: .25rem 1rem; border-bottom: 1px solid var(--border); }
+@media (max-width: 600px) {
+  .acw-conversation-origin a,
+  .agent-chat-widget:has([data-conversation-origin]:not([hidden])) .acw-title {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+}
 .acw-thread-navigation { display: flex; align-items: center; gap: .5rem; padding: .5rem; min-width: 0; border-bottom: 1px solid var(--border); }
 .acw-thread-navigation[hidden] { display: none; }
 .acw-thread-list { display: flex; gap: .375rem; overflow-x: auto; min-width: 0; flex: 1; }
@@ -5563,3 +5574,19 @@ a.ghost:hover {
 }
 
 .settings-agent-prefs .checkbox-row { flex-direction: row; align-items: center; }
+
+/* Keep conversation controls compact; technical state is disclosed on demand. */
+.acw-effective-settings { max-width: 32rem; overflow-wrap: anywhere; }
+[data-acw-technical-details] .acw-activity-rail { position: static; display: flex; flex-direction: row; width: auto; border: 0; }
+[data-acw-technical-details] .acw-resource-header { margin: .5rem 0; }
+.acw-history-notice > div, .acw-recovery { flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .acw-toolbar-right { flex-wrap: wrap; }
+  .acw-effective-settings { flex-basis: 100%; font-size: .75rem; }
+}
+/* Keep the discovery row reachable when a short viewport compresses chat. */
+.acw-details { flex-shrink: 0; }
+@media (max-width: 768px) {
+  .page-agent-main .agent-chat-widget { overflow-y: auto; }
+  .page-agent-main .acw-chat-stage { flex-shrink: 0; min-height: 8rem; }
+}

@@ -1009,6 +1009,39 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                         startup_trace=startup_trace,
                     )
                     created_runtime = True
+                elif stored and stored.status in {"closed", "quiesced"} and (
+                    dispatch_record.session_retry is not None
+                    and dispatch_record.session_retry.session_id == linked_session_id
+                    and dispatch_record.state in {"materializing", "provisioning", "starting_session"}
+                    and dispatch_record.completion_payload is None
+                    and dispatch_record.completion_envelope is None
+                    and dispatch_record.completion_received_at is None
+                    and dispatch_record.acknowledged_at is None
+                    and not dispatch_record.terminal_repair_reservation
+                ):
+                    if not stored.external_session_id or any((
+                        stored.dispatch_id != dispatch_record.dispatch_id,
+                        stored.authority_instance_id != dispatch_record.authority_instance_id,
+                        stored.origin_instance_id != settings.instance_id,
+                        stored.realm_id != dispatch_record.realm_id,
+                        stored.principal_id != dispatch_record.principal_id,
+                        stored.card_id != dispatch_record.card_id,
+                        stored.project_id != dispatch_record.project_id,
+                    )):
+                        raise HTTPException(409, detail={
+                            "code": "linked_session_restore_unavailable",
+                            "message": "The original provider identity and execution binding must be available before retrying this session.",
+                            "session_id": linked_session_id, "recoverable": False,
+                        })
+                    # Recovery serializes admission, requires native restore,
+                    # revalidates selection and the existing workspace lease,
+                    # and restores durable queued work without a sibling session.
+                    new_logical_session = False
+                    runtime = await mgr.recover_session(linked_session_id)
+                    created_runtime = True
+                    await _bind_live_dispatch_session(
+                        mgr, runtime, dispatch_record, dispatch_session_kwargs, body,
+                    )
                 elif not stored or stored.status in {"closed", "quiesced"}:
                     raise HTTPException(
                         status_code=409,
@@ -1989,6 +2022,7 @@ def _session_list_item(
     watch_summaries: dict[str, list[dict]] | None = None,
     card_summaries: dict[str, list[dict]] | None = None,
 ) -> dict:
+    from pa.domain.conversation_origin import conversation_origin
     config, confirmed = normalized_session_config_json(
         session.config_json,
         model_id=session.model_id,
@@ -2035,6 +2069,7 @@ def _session_list_item(
     return {
         "id": session.id,
         "title": session.title,
+        "conversation_origin": conversation_origin(session),
         "label": session.label,
         "agent_name": session.agent_name,
         "origin_instance_id": session.origin_instance_id,
@@ -2420,6 +2455,8 @@ def _history_payload(request, mgr, session, runtime, events, page, query_started
     query_ms = (perf_counter() - query_started) * 1000
     settings = request.app.state.ctx.settings
     session_payload = session.model_dump(mode="json")
+    from pa.domain.conversation_origin import conversation_origin
+    session_payload["conversation_origin"] = conversation_origin(session)
     normalized_config, confirmed = normalized_session_config_json(
         session.config_json,
         model_id=session.model_id,
@@ -2586,6 +2623,8 @@ async def get_session_snapshot(request: Request, session_id: str) -> dict:
 def _session_snapshot(request: Request, session_id: str) -> dict:
     runtime = _runtime_or_404(request, session_id)
     snapshot = runtime.snapshot(include_transcript=False)
+    from pa.domain.conversation_origin import conversation_origin
+    snapshot["session"]["conversation_origin"] = conversation_origin(runtime.session)
     normalized_config, confirmed = normalized_session_config_json(
         runtime.session.config_json,
         model_id=runtime.session.model_id,

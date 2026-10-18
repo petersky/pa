@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from pa.config import Settings
 from pa.status.serving import (
@@ -98,6 +99,29 @@ def test_diagnose_serving_classifies_alex_and_macmini_shapes() -> None:
     assert diagnosis.serving == "timeout"
     assert diagnosis.bind.mode == "specific"
     assert "timeout" in format_serving_line(diagnosis)
+
+
+@pytest.mark.parametrize("error", ["timeout", "refused", "unreachable"])
+def test_healthy_loopback_with_wildcard_bind_is_advertised_path_failure(error) -> None:
+    from pa.status.serving import HealthProbe
+
+    settings = Settings(
+        host="0.0.0.0", port=8080, instance_url="http://100.64.0.1:8080"
+    )
+
+    def probes(url: str, **_kwargs):
+        if "127.0.0.1" in url:
+            return HealthProbe(f"{url}/api/health", True, 33.7, 200, None)
+        return HealthProbe(f"{url}/api/health", False, 3000.0, None, error)
+
+    with patch("pa.status.serving.probe_health", side_effect=probes):
+        diagnosis = diagnose_serving(settings, service_running=True)
+
+    assert diagnosis.serving == "advertised_unreachable"
+    assert diagnosis.health_ok is False
+    line = format_serving_line(diagnosis)
+    assert "loopback ok" in line
+    assert f"advertised {error}" in line
 
 
 def test_diagnose_sync_reads_projection_head_without_opening_store(

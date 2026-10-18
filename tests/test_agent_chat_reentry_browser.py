@@ -62,12 +62,15 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         assert await page.evaluate("window.historyPaint.connectedWhilePending")
         assert not await page.evaluate("window.historyPaint.falseEmpty")
         assert (await texts()) == []
+        assert await page.evaluate("document.querySelector('[data-acw-placeholder]').hidden && document.querySelector('[data-acw-load-older]').hidden && document.querySelector('[data-acw-load-older-status]').hidden")
+        assert await page.evaluate("[...document.querySelectorAll('button')].filter(b => b.textContent.trim() === 'Retry recent messages' && b.getClientRects().length).length") == 1
         await client.post("/fixture/append")
         await wait_for("document.querySelector('[data-acw-live-preview]').textContent.includes('Newest fixture message 1')")
         assert "partial" in await page.evaluate("document.querySelector('[data-acw-history-notice-text]').textContent")
         assert "first prompt" not in await page.evaluate("document.querySelector('[data-acw-placeholder]').textContent")
         assert not any(r["after"] == 0 for r in app.state.history_requests)
         app.state.history_start_delay = 0
+        requests_before_recovery = len(app.state.history_requests)
         recovery_start = await page.evaluate("performance.now()")
         await manager.click(scope, selector="#recover")
         await latest(1)
@@ -75,7 +78,7 @@ async def test_recent_reentry_failed_history_live_preview_anchors_and_thread_iso
         assert not await page.evaluate("window.historyPaint.falseEmpty")
         # Recent reads are bounded; a failed initial page never walks the archive.
         assert await page.evaluate("document.querySelector('[data-acw-load-older-label]').textContent") == "Load older messages"
-        assert len(app.state.history_requests) <= 3
+        assert len(app.state.history_requests) <= requests_before_recovery + 1
         assert all(r["before"] is None and r["after"] is None for r in app.state.history_requests)
         print(json.dumps({"history_recovery_paint_ms":await page.evaluate("window.historyPaint.firstUsefulMs")-recovery_start,
                           "initial_history_requests":len(app.state.history_requests),"retained_events":3442}))

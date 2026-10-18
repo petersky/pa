@@ -240,6 +240,29 @@ def _serving_findings(
     advertised = (
         settings.instance_url or diagnosis.advertised_url or diagnosis.loopback_url
     )
+    if (
+        diagnosis.loopback
+        and diagnosis.loopback.ok
+        and diagnosis.advertised
+        and not diagnosis.advertised.ok
+        and diagnosis.bind.mode != "loopback"
+    ):
+        return [
+            Finding(
+                "PA-DOC-PUBLIC-HEALTH-UNREACHABLE",
+                "error",
+                f"Local /api/health responds on loopback, but the advertised endpoint at {advertised} is unreachable; check network routing, firewall rules, and Tailscale connectivity/authentication.",
+                "Peers and fleet clients cannot reach the advertised URL; local HTTP is responding.",
+                evidence,
+                [
+                    Command("pa status"),
+                    Command("tailscale status"),
+                    Command(f"curl -fsS --max-time 5 {advertised.rstrip('/')}/api/health"),
+                ],
+                f"curl -fsS --max-time 5 {advertised.rstrip('/')}/api/health",
+                root_cause="network",
+            )
+        ]
     if diagnosis.serving == "loopback_only" or (
         diagnosis.service_running
         and diagnosis.bind.mode == "loopback"
@@ -277,7 +300,7 @@ def _serving_findings(
             Finding(
                 "PA-DOC-HEALTH-TIMEOUT",
                 "error",
-                "The service is running but /api/health did not respond in time; the event loop or thread pool is likely starved.",
+                "The service is running but /api/health did not respond in time; the probes do not establish whether the cause is service overload or network connectivity.",
                 "The fleet page marks this node error and Home/sync probes time out.",
                 evidence,
                 [
@@ -285,7 +308,7 @@ def _serving_findings(
                     Command("pa restart", True, True, active_sessions > 0),
                 ],
                 "curl -fsS --max-time 5 http://127.0.0.1:%s/api/health" % settings.port,
-                root_cause="overload",
+                root_cause="http",
             )
         )
     if diagnosis.serving == "refused":
