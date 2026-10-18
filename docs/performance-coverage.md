@@ -1,3 +1,70 @@
+# Corrected build activation and bounded maintenance phase evidence — 2026-10-18
+
+**All543 evidence rows /59 concerns remain open.** [Full matrix](performance-coverage.json); [all new samples, phase results, parity and retained failures](benchmarks/systemic-maintenance-phases-20261018.json). Older checkpoints below remain historical; this stage supersedes their current-build labels.
+
+PR510 is protected-integrated asaa58 from exact5ec/watch27587faf with five head and five main checks successful and matching trees. Server-capturedaa58/packagec0f2/PID24980/startup08bea/config86968/lease290 proves actual activation; installed437files/38templates/52unchangedversions was verified separately. The original rollback counterexample was independently repeated by the backup owner against exactaa58: both audit modes now preserve events/refcounts/evidence/bytes after failure. This is narrow source verification, not production fault injection or backup/performance acceptance. It does not explain the older missing cold object or failed backup.
+
+The95 ordinary sequential GETs from06:35:56.702757 to06:36:26.928613Z return95HTTP200, zero errors and zero>=500ms violations. Every sample is retained, including decoded response bytes and Server-Timing when present. The initial socket-sandbox failure is archived separately and the native-approved identical rerun passed. Five page samples givep95/p99=max; these are not guaranteed cold or whole-system acceptance.
+
+| Ordinary request | n | p50/p95/p99/max ms | decoded payload max bytes |
+|---|---:|---|---:|
+|/|5|28.442/65.746/65.746/65.746|25464|
+|/agent|5|205.963/440.868/440.868/440.868|117088|
+|/api/fleet/overview|5|127.61/279.279/279.279/279.279|993308|
+|/api/health|20|17.977/61.737/156.418/156.418|15|
+|/api/runtime|20|64.693/153.735/223.867/223.867|307014|
+|/api/status|20|69.057/206.154/400.832/400.832|2824|
+|/fleet|5|199.045/372.792/372.792/372.792|1156303|
+|/pull-requests|5|110.155/127.967/127.967/127.967|25121|
+|/settings?section=agent|5|29.795/43.697/43.697/43.697|100559|
+|/work|5|35.014/41.825/41.825/41.825|31323|
+
+The separate current-process snapshot at06:36:47.402094Z retains all77operations,22routegroups and39slow worker records(capacity64). **29operations still have processmax>=500ms**, and workspace provision failed1of7 times (underlyingcauseunknown). Earlier806b and all source fixture outliers remain. Budgets differ by operation; slow_calls is not a universal500ms count. Maxima and bounded-window percentiles are distinct and cannot be added or paired by assumption.
+
+| Operation | submissions | failed/timeouts | window p50/p95/p99 ms | processmax ms | budget slow calls |
+|---|---:|---|---|---:|---:|
+|agent.startup_state_read|1|0/0|6378.905/6378.905/6378.905|6378.905|1|
+|dispatch.completion_pending_read|23|0/0|1.604/55.119/1182.275|1182.275|1|
+|dispatch.followup_pending_read|23|0/0|2.325/68.872/519.667|519.667|1|
+|fleet.overview.reachability|7|0/0|18.948/1183.024/1183.024|1183.024|1|
+|fleet.overview.status|7|0/0|14.625/1164.889/1164.889|1164.889|1|
+|fleet.overview.sync|18|0/0|27.91/528.804/528.804|528.804|1|
+|fleet.overview_cache_read|309|0/0|1.929/21.584/53.303|1466.433|5|
+|fleet.overview_cache_write|95|0/0|15.19/79.81/940.639|940.639|3|
+|goal.dispatch_lifecycle_index|5|0/0|0.511/1181.377/1181.377|1181.377|1|
+|health.canonical_obligation|29|0/0|38.427/292.82/1182.266|1182.266|1|
+|http.fleet_overview|63|0/0|208.231/2210.981/3263.874|3263.874|0|
+|http.github|1|0/0|533.689/533.689/533.689|533.689|0|
+|http.pr_supervisor_peer|320|0/0|50.879/154.376/463.176|709.781|0|
+|maintenance.run|1|0/0|31301.278/31301.278/31301.278|31301.278|1|
+|notifications.present_page|2|0/0|154.627/740.612/740.612|740.612|1|
+|progress.checkpoint_write|7|0/0|197.824/602.656/602.656|602.656|1|
+|progress.heartbeat_write|8|0/0|141.453/537.607/537.607|537.607|1|
+|progress.pending_read|40|0/0|9.908/111.317/1193.19|1193.19|1|
+|reconciliation.completion_evidence_read|66|0/0|4.365/92.878/1482.483|1482.483|1|
+|reconciliation.dispatch_read|111|0/0|2.443/53.994/1182.923|1969.732|3|
+|sqlite.agent_session_save|36|0/0|12.93/507.059/3067.029|3067.029|2|
+|sqlite.pr_supervisor_watch_write|160|0/0|8.116/89.943/221.447|1008.597|1|
+|sqlite.transcript_append|39|0/0|14.573/376.582/5344.012|5344.012|1|
+|startup.openapi|1|0/0|929.72/929.72/929.72|929.72|1|
+|sync.peer_http|12|0/0|61.061/2149.111/2149.111|2149.111|0|
+|sync.reconcile_head|12|0/0|613.144/2498.134/2498.134|2498.134|8|
+|workspace.collect_garbage|1|0/0|7305.764/7305.764/7305.764|7305.764|1|
+|workspace.project_provision|7|1/0|1449.159/2707.979/2707.979|2707.979|0|
+|workspace.reconcile_terminal_state|1|0/0|898.757/898.757/898.757|898.757|0|
+
+Startup-state reading is6.379s total/5.246s worker/1.131s completion delivery/501ms CPU/4.923s observed SQL,365rows/3calls. Maintenance is31.301s total/12.829s CPU/25.492s observedSQL/4.798s outerhold. Transcript append processmax5.344s remains. These phases are not a physical disk/busy/GIL partition and maxima are independent windows. The artifact retains every route/count/byte distribution, including four current route groups with>=500ms window maxima, beyond the95request retest.
+
+The candidate source adds fixed internal phase call/error counts and wall/threadCPU to maintenance diagnostics: connection/close, before/after integrity, optimize/checkpoint, size reads, disk-space check, VACUUM, inclusive total, and sweep retention/migration-with-health/database/final-health work. It adds no SQL or health reads and preserves the two distinct freshness points. No busy timeout, stop/error/retry, integrity/reclamation, warning/deadline/default or backup policy change. Escaping fatal exceptions still propagate; their private map is not a durable failure journal. Native returned-busy rows need not increment exception counts.
+
+Validation:23initial contracts pass; broad run111tests+16subtests pass with one new fixture setup failure before product code (missing temporarydata parent), preserved in full. Corrected fixture then passes all24focused contracts, including publication between first/final health reads. Six disposable native cases preserve exact prior SQL traces, results (excluding added diagnostics) and retained row hashes across compaction, no-free-pages, busy writer, low disk space, stopping and interrupted VACUUM.
+
+Four declared529311-row307/394MB scale cases retain full integrity/status/counts and expose remaining cost: no-compaction quick checks602/788ms; small-freelist VACUUM9382/9753ms and total11991/13143ms. They overlap broad-test host activity, are sequential/nonrandomized, and do not establish a speed regression, controlled before/after improvement, exact live layout or physicalI/O. Instrumentation adds overhead and does not fix full-check/rewrite complexity. All earlier scale/mixed/page failures remain. Native busy/GIL/disk and fullforeground contention attribution remain open.
+
+This source instrumentation is unmerged and uninstalled at publication. The already accepted e7dd managed handoff continuation is queued behind this old509notice; no duplicate restart and no next activation until its terminal delivery is verified. Every provider/placement/workspace/peer/log-loss/older-retention/receipt/unexercised-branch criterion remains open. Backup0331/18fc/b527 and its missing-source question, eight archives,207failures/0verified and paused automatic attempts retain their separate ownership. Normal PA scheduler owns independent systemic acceptance under unchanged requirement17d034a6.
+
+---
+
 # Non-audit transcript rollback correction — 2026-10-18
 
 **All543 evidence rows /59 concerns remain open.** [Full matrix](performance-coverage.json); [correction, original failures, tests and maintenance overlay](benchmarks/systemic-prune-rollback-20261018.json). This checkpoint supersedes older current-stage and blanket rollback claims below; all original artifacts remain intact.
