@@ -207794,6 +207794,48 @@
       "report": "73ab3f07-5788-4623-a764-5bf8a71476d6",
       "next_actor": "this same card/session",
       "next_action": "Push corrected head; obtain new exact-head CI and stable supervisor evidence, independently validate all gates, integrate/main CI and safe activation/retest; preserve all recovery/GC obligations."
+    },
+    {
+      "kind": "concern",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-reconciliation-inventory-20261018.json",
+        "sha256": "a5e634156ae235a1b581081f0161e4c75ab05567117ffdf34d4ec82be2121a9c"
+      },
+      "merged": [],
+      "deployed": "Not deployed; live6b7 predates this local repair.",
+      "resolution": "open",
+      "next_actor": "this same card/session",
+      "report": "c24abbbd-7f97-406c-9dbb-498127b093e4 revision1",
+      "id": "concern:startup-reconciliation-inventory-copy",
+      "family": "reconciliation",
+      "finding": "Startup completion recovery deep-copies retained records before eligibility filtering",
+      "cause_classification": "confirmed_source_and_paired_fixture_live_share_unverified",
+      "cause": "Old startup recovery takes the newest1000 full deep snapshots then discards terminal/noncard/missing-payload records. New explicit reader keeps same newest window BEFORE eligibility filtering, full candidate snapshots outside indexed lock, same complete recovery/parsing/save logic, guarded legacy fallback. Dedicated fixture confirms1000->3 copies and CPU reduction with exact full records/order and no durable writes.",
+      "implemented": "Dedicated newest-window-before-filter reader and explicit-adapter fallback; full candidates copied outside index lock. General listing/recovery/outbox mutations unchanged.",
+      "retested": "20pairs1000->3fullcopies/read/p95704.942->10.103ms/max737.371->10.162ms; full parity/order1005retained/unchangedDB+WALhashes.176+6subtests and5final contracts pass. Mixed4workerwarnings8violations remain.",
+      "next_action": "Ready supervised PR/exact-head gates/main CI/safe activation/retest actual startup/shared CPU/SQL/cache tails; continue every broader requirement and independent acceptance."
+    },
+    {
+      "kind": "concern",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-reconciliation-inventory-20261018.json",
+        "sha256": "a5e634156ae235a1b581081f0161e4c75ab05567117ffdf34d4ec82be2121a9c"
+      },
+      "merged": [],
+      "deployed": "Not deployed; live6b7 predates this local repair.",
+      "resolution": "open",
+      "next_actor": "this same card/session",
+      "report": "c24abbbd-7f97-406c-9dbb-498127b093e4 revision1",
+      "id": "concern:timeout-mock-coroutine-ownership",
+      "family": "ci",
+      "finding": "Timeout test mock leaves its rejected peer coroutine unawaited",
+      "cause_classification": "confirmed_test_receiver_cleanup_production_impact_unverified",
+      "cause": "The preexisting Fleet timeout test replaced _fleet_http with an immediately raising AsyncMock, leaving the request_peer coroutine argument unawaited. Its fake receiver now closes the rejected coroutine and asserts CORO_CLOSED; all original502/recoverable assertions remain. No production defect is established.",
+      "implemented": "Fake timeout receiver closes its coroutine argument before raising and asserts CORO_CLOSED; existing502/recoverability assertions unchanged. No warning filter.",
+      "retested": "Original176test run warning preserved; edited timeout case plus four reader contracts5passed4.90s with no warnings. Product code unaffected by this test cleanup.",
+      "next_action": "Verify exact-head CI and review cleanup contract; retain original warning and production-impact unknown. No claim that other CI/browser/peer concerns are resolved."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208701,36 +208743,77 @@
       "next_action": "Boundeddisposable all-holder projection/sharedmutation timeline and SQL/CPU/GC attribution, every remaining finding and normal independent acceptance."
     },
     "concern:global-lock": {
-      "artifact": "docs/benchmarks/systemic-startup-config-20261018.json",
-      "finding": "Measured session-save SQLstall propagation and fixture all-holder graph; original8summary/3append/2push attribution kept numeric; rawlock/nativebusy/disk/GIL causesnotclosed.",
-      "rejected": "Projectiontransactiongroupinglatencytailsworse/sameWALbytes, notimplemented.",
+      "artifact": "docs/benchmarks/systemic-reconciliation-inventory-20261018.json",
       "resolution": "open",
-      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-      "next_actor": "this samecard/session",
-      "next_action": "Continue specificholderSQL/nativeCPU/hostattribution anddurablewriteamplification repairs; preservealllocks/receipt/CAS/admission/sync semantics."
+      "source_evidence": "Changed-source fixture23923events/30workload waits>=100ms. Summary holders overlap7summarywaits/6appendwaits/1bindingwait/1pushwait; append holders overlap10appendwaits/6bindingwaits. Exact raw edges/intervals retained; counts overlap and are not distinct incidents.",
+      "next_actor": "this same card/session",
+      "next_action": "Continue specific holder SQL/nativeCPU/host attribution and measured durability-preserving repairs; no new transaction-grouping claim or unlocked mutation."
     },
     "concern:startup-configuration-hydration": {
-      "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
-      "corrected_source_fixture": {
-        "baseline": {
-          "samples": 20,
-          "max_ms": 649.0216659731232,
-          "p50_ms": 552.8148750308901,
-          "p95_ms": 615.2722500264645,
-          "p99_ms": 649.0216659731232
-        },
-        "candidate": {
-          "samples": 20,
-          "max_ms": 258.9107910171151,
-          "p50_ms": 174.92495803162456,
-          "p95_ms": 231.03862500283867,
-          "p99_ms": 258.9107910171151
-        }
+      "artifact": "docs/benchmarks/systemic-521-loaded-20261018.json",
+      "sha256": "7ed9e2f76ed1b474035a5cc037b981a901600a5af17e173cd139dbaa2650906d",
+      "source": "6b7ec220924a25e5e0fc2caa04cdc6d9c40075bb",
+      "summary": {
+        "ordinary_gets": 95,
+        "get_errors": 0,
+        "get_500ms_violations": 0,
+        "primary_operations": 77,
+        "diagnostic_operations": 1,
+        "route_groups": 22,
+        "primary_prefix_families": 19,
+        "slow_records_retained": 29,
+        "slow_counters": 29,
+        "primary_process_tails_at_least500ms": 20,
+        "baseline_operations_positive": 73,
+        "baseline_route_groups_positive": 19
       },
-      "status": "Original source-stage tests excluded live-events; CI exposed adapter compatibility bug now corrected and expanded151+1 tests passed. Query unchanged; corrected manager separately measured.",
+      "deployed": "Server-captured exact6b7ec220/package8abdf60e/newPID72162/startup8fd8d8da/config86968/lease290 verified",
+      "retested": "Single95GET window all200/stable/0threshold violations; separate full21sectionruntime29slowcounters/2workspacefailures and cached37.079smaintenance remain. Not acceptance.",
       "resolution": "open",
-      "next_actor": "this same card/session",
-      "next_action": "New exact-head CI/stable supervisor, independent merge gates/main CI, safe activation/full startup retest; retain previous measurements and every acceptance gap."
+      "next_action": "Continue measured startup reconciliation copy/SQL/CPU/shared lock/native IO attribution and every remaining finding; normal independent acceptance only.",
+      "integration": {
+        "pr": 521,
+        "head": "f3b78ce0a57c39c1875aabaf83a40d17a0a06e79",
+        "merge": "6b7ec220924a25e5e0fc2caa04cdc6d9c40075bb",
+        "watch": "d3ba1e6f-6c07-402b-be86-1dec7d2ebab5",
+        "head_ci": 39125703082,
+        "main_ci": 39125954633,
+        "checks": "5SUCCESS each attempt1"
+      },
+      "cause_scope": "Guarded configuration projection is active and locally parity-tested; actual startup still3.837s, not a completed startup repair."
+    },
+    "concern:startup-inventory-adapter-discovery": {
+      "artifact": "docs/benchmarks/systemic-521-loaded-20261018.json",
+      "sha256": "7ed9e2f76ed1b474035a5cc037b981a901600a5af17e173cd139dbaa2650906d",
+      "source": "6b7ec220924a25e5e0fc2caa04cdc6d9c40075bb",
+      "summary": {
+        "ordinary_gets": 95,
+        "get_errors": 0,
+        "get_500ms_violations": 0,
+        "primary_operations": 77,
+        "diagnostic_operations": 1,
+        "route_groups": 22,
+        "primary_prefix_families": 19,
+        "slow_records_retained": 29,
+        "slow_counters": 29,
+        "primary_process_tails_at_least500ms": 20,
+        "baseline_operations_positive": 73,
+        "baseline_route_groups_positive": 19
+      },
+      "deployed": "Server-captured exact6b7ec220/package8abdf60e/newPID72162/startup8fd8d8da/config86968/lease290 verified",
+      "retested": "Single95GET window all200/stable/0threshold violations; separate full21sectionruntime29slowcounters/2workspacefailures and cached37.079smaintenance remain. Not acceptance.",
+      "resolution": "open",
+      "next_action": "Continue measured startup reconciliation copy/SQL/CPU/shared lock/native IO attribution and every remaining finding; normal independent acceptance only.",
+      "integration": {
+        "pr": 521,
+        "head": "f3b78ce0a57c39c1875aabaf83a40d17a0a06e79",
+        "merge": "6b7ec220924a25e5e0fc2caa04cdc6d9c40075bb",
+        "watch": "d3ba1e6f-6c07-402b-be86-1dec7d2ebab5",
+        "head_ci": 39125703082,
+        "main_ci": 39125954633,
+        "checks": "5SUCCESS each attempt1"
+      },
+      "cause_scope": "Guarded configuration projection is active and locally parity-tested; actual startup still3.837s, not a completed startup repair."
     }
   },
   "f7e8_loaded_stage": {
@@ -209465,5 +209548,35 @@
     "rows": 560,
     "concerns": 69,
     "status": "Original failed head and all eight CI cases retained; corrected source verified locally, new-head CI/integration/deployment/whole acceptance pending."
+  },
+  "latest_521_loaded_stage": {
+    "artifact": "docs/benchmarks/systemic-521-loaded-20261018.json",
+    "sha256": "7ed9e2f76ed1b474035a5cc037b981a901600a5af17e173cd139dbaa2650906d",
+    "source": "6b7ec220924a25e5e0fc2caa04cdc6d9c40075bb",
+    "summary": {
+      "ordinary_gets": 95,
+      "get_errors": 0,
+      "get_500ms_violations": 0,
+      "primary_operations": 77,
+      "diagnostic_operations": 1,
+      "route_groups": 22,
+      "primary_prefix_families": 19,
+      "slow_records_retained": 29,
+      "slow_counters": 29,
+      "primary_process_tails_at_least500ms": 20,
+      "baseline_operations_positive": 73,
+      "baseline_route_groups_positive": 19
+    },
+    "deployed": "Server-captured exact6b7ec220/package8abdf60e/newPID72162/startup8fd8d8da/config86968/lease290 verified",
+    "retested": "Single95GET window all200/stable/0threshold violations; separate full21sectionruntime29slowcounters/2workspacefailures and cached37.079smaintenance remain. Not acceptance.",
+    "resolution": "open",
+    "next_action": "Continue measured startup reconciliation copy/SQL/CPU/shared lock/native IO attribution and every remaining finding; normal independent acceptance only."
+  },
+  "reconciliation_inventory_stage": {
+    "artifact": "docs/benchmarks/systemic-reconciliation-inventory-20261018.json",
+    "sha256": "a5e634156ae235a1b581081f0161e4c75ab05567117ffdf34d4ec82be2121a9c",
+    "rows": 562,
+    "concerns": 71,
+    "status": "Local source measured/tested; new mixed childexit0/verificationcomplete with4workerwarnings8violations. PR/integration/activation/retest/independent acceptance pending. Every prior row/owner/action remains."
   }
 }

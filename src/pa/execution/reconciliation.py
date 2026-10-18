@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import logging
 import random
 from collections.abc import Callable
@@ -100,7 +101,7 @@ class CompletionReconciler:
     async def recover(self) -> None:
         """Adopt pre-restart missing dispositions before the outbox can send."""
         records = await self._offload(
-            "reconciliation.dispatch_read", self.dispatch_store.list, limit=1000
+            "reconciliation.dispatch_read", self._startup_recovery_records
         )
         for record in records:
             if not record.card_id or record.state not in {
@@ -146,6 +147,14 @@ class CompletionReconciler:
                 "Recovered missing card disposition for bounded reconciliation.",
             )
         self._wake.set()
+
+    def _startup_recovery_records(self) -> list[DispatchRecord]:
+        # Legacy dynamic adapters must not fabricate an optional new reader.
+        declared = inspect.getattr_static(self.dispatch_store, "startup_recovery_records", None)
+        reader = getattr(self.dispatch_store, "startup_recovery_records", None) if declared is not None else None
+        if callable(reader):
+            return reader(limit=1000)
+        return self.dispatch_store.list(limit=1000)
 
     async def retry(self, dispatch_id: str) -> DispatchRecord:
         """Idempotently re-arm a legacy or exhausted reconciliation."""

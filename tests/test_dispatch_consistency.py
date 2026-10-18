@@ -2834,6 +2834,8 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(body.idempotency_key, persisted.control_operations)
 
     async def test_remote_target_evidence_timeout_is_normalized(self) -> None:
+        import inspect
+
         settings = Settings(
             instance_id="authority",
             instance_url="http://authority",
@@ -2865,10 +2867,19 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
             expected_state="running",
         )
 
+        timed_out_calls = []
+
+        async def timeout_before_admission(_request, _operation, call, **_kwargs):
+            # The fake receiver owns the coroutine it rejects before awaiting.
+            # Keep the timeout assertion without leaking it into a later test's GC.
+            timed_out_calls.append(call)
+            call.close()
+            raise TimeoutError
+
         with (
             patch(
                 "pa.modules.fleet._fleet_http",
-                AsyncMock(side_effect=TimeoutError),
+                new=timeout_before_admission,
             ),
             self.assertRaises(HTTPException) as raised,
         ):
@@ -2882,6 +2893,8 @@ class PeerLocalAuthorityTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(raised.exception.detail["target_instance_id"], "target")
         self.assertTrue(raised.exception.detail["recoverable"])
+        self.assertEqual(len(timed_out_calls), 1)
+        self.assertEqual(inspect.getcoroutinestate(timed_out_calls[0]), "CORO_CLOSED")
 
     async def test_mixed_version_target_without_proof_route_fails_closed(
         self,
