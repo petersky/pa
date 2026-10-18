@@ -53,6 +53,7 @@ from pa.config import Settings
 from pa.core.async_runtime import AsyncRuntimeClosed
 from pa.core.preferences import get_preferences_store
 from pa.acp.session_titles import apply_provider_title, clean_title
+from pa.domain.conversation_origin import conversation_origin
 from pa.domain.models import AgentSession, RestartHandoff, TranscriptEvent
 from pa.domain.store import Store
 from pa.execution.progress import sanitize_text
@@ -3015,7 +3016,12 @@ class AgentSessionRuntime:
         )
         from pa.execution.selection import selection_presentation
         snapshot = {
-            "session": self.session.model_dump(mode="json"),
+            # Recovery and session actions return this snapshot directly, so
+            # origin must be present here as well as in durable history.
+            "session": {
+                **self.session.model_dump(mode="json"),
+                "conversation_origin": conversation_origin(self.session),
+            },
             "last_event_seq": self._seq,
             "presentation": build_session_presentation(
                 self.session,
