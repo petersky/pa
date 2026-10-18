@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.execution.dispatch import DispatchStoreReadOnlyError
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def _maintain_database(
         return {**result, "status": "deferred", "reason": "stopping"}
     with closing(sqlite3.connect(
         path.resolve().as_uri() + "?mode=rw", uri=True,
-        timeout=0.1, isolation_level=None,
+        timeout=0.1, isolation_level=None, factory=ObservedConnection,
     )) as conn:
         if stop is not None:
             conn.set_progress_handler(lambda: int(stop.is_set()), 100_000)
