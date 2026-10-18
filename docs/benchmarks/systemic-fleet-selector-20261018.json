@@ -1,0 +1,700 @@
+{
+  "contract": "pa.performance-fleet-selector/v1",
+  "observed_at": "2026-10-18T02:48:18.139534+00:00",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "provenance": {
+    "instance": "macbook0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "repository": "petersky/pa",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "working_base": "e3ac8ae16cc365ad59b64568bc9ac13d8af37fd0",
+    "lease_fence": 290
+  },
+  "previous_artifact": {
+    "path": "docs/benchmarks/systemic-object-read-20261018.json",
+    "commit": "0794810d50a9894550d3bf43c5738335f266c92b",
+    "sha256": "2837ef149975600ca87ee38c7e1f1a2821cb6353b7ea646c606e75b273c32bd9",
+    "meaning": "Full before/candidate mixed stages,436file loaded309 proof, allpriorreferences/520rowownership and currentAPI/page observations preserved there, not replaced by this selector-phase fixture."
+  },
+  "pr500_integration": {
+    "pr": 500,
+    "head": "0794810d50a9894550d3bf43c5738335f266c92b",
+    "merge": "e3ac8ae16cc365ad59b64568bc9ac13d8af37fd0",
+    "merged_at": "2026-10-18T02:45:55Z",
+    "watch": "65051856-0708-40ef-8df1-b95cdd85ecc5",
+    "supervisor_stable_observations": 7,
+    "independent": "Exacthead5successCI39091014888,0requiredapprovals/reviews/threads completepagination,attributedcommit,currentprotectedrules,CLEAN,headCAS normalmerge.",
+    "head_merge_tree": "8b343246dc06420a3db6af6b9a36f4ec55639970",
+    "main_ci": 39091247489,
+    "main_ci_status": "See durable current checkpoint; not assumed by this phase fixture",
+    "source_installed": false,
+    "loaded_source": "309751f5d555834d30c2a4503ffb576b2078ae61"
+  },
+  "loaded_fleet_html": {
+    "observed_at": "2026-10-18T02:39:45.100795+00:00",
+    "scope": "Five sequential ordinary owner HTML GETs per page; same supported authenticated transport, call-local decoder returns only status/type/byte count/correlation. Full response read is timed; no body or credentials retained. Existing JSON-only observer errors retained separately, not counted as proven HTTP failures. No concurrency injection/provider/peer/write/backup/restart.",
+    "routes": {
+      "/agent": {
+        "latency_ms": {
+          "samples": 5,
+          "max": 275.523,
+          "p50": 111.02,
+          "p95": 275.523,
+          "p99": 275.523
+        },
+        "response_bytes": {
+          "samples": 5,
+          "max": 115472,
+          "p50": 115472,
+          "p95": 115472,
+          "p99": 115472
+        },
+        "samples": [
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 115472,
+            "correlation_id": "47edf791-5675-48a2-b69e-ee349e0d0ebb"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 115472,
+            "correlation_id": "fc131349-675d-4205-a106-522bf6892720"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 115472,
+            "correlation_id": "f2aaf6a1-90e9-4862-b0cc-2adb4775dc71"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 115472,
+            "correlation_id": "762a6389-8526-49fc-826f-f0c45797d145"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 115472,
+            "correlation_id": "f1a3a473-e088-4bf2-b244-f6502b312858"
+          }
+        ],
+        "errors": []
+      },
+      "/fleet": {
+        "latency_ms": {
+          "samples": 5,
+          "max": 2945.675,
+          "p50": 2201.105,
+          "p95": 2945.675,
+          "p99": 2945.675
+        },
+        "response_bytes": {
+          "samples": 5,
+          "max": 1114058,
+          "p50": 1114058,
+          "p95": 1114058,
+          "p99": 1114058
+        },
+        "samples": [
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 1114058,
+            "correlation_id": "3324c429-78f5-4612-b36d-7595a4cbd866"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 1114058,
+            "correlation_id": "ac5e042f-bb66-4395-bb62-9fdbf064961f"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 1114058,
+            "correlation_id": "39782c33-fce0-4ac6-bae7-77cfa9c0fd10"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 1114058,
+            "correlation_id": "3b396124-bf53-4465-993c-bbaea59fafe0"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 1114058,
+            "correlation_id": "8e8d681f-b329-4544-9367-13bf87f13d11"
+          }
+        ],
+        "errors": []
+      },
+      "/": {
+        "latency_ms": {
+          "samples": 5,
+          "max": 89.12,
+          "p50": 34.009,
+          "p95": 89.12,
+          "p99": 89.12
+        },
+        "response_bytes": {
+          "samples": 5,
+          "max": 25464,
+          "p50": 25464,
+          "p95": 25464,
+          "p99": 25464
+        },
+        "samples": [
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 25464,
+            "correlation_id": "5fd8c901-dafe-4b49-ab56-5be190fece05"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 25464,
+            "correlation_id": "7a18a34f-4da6-4610-9509-3e5f64e907be"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 25464,
+            "correlation_id": "336f9b34-387d-4226-8e8a-320dae07129e"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 25464,
+            "correlation_id": "cf9a0aae-8027-4d1a-9665-95087525eb65"
+          },
+          {
+            "status": 200,
+            "content_type": "text/html",
+            "response_bytes": 25464,
+            "correlation_id": "36cfac0f-24b5-4692-ba43-50c0a4201f2e"
+          }
+        ],
+        "errors": []
+      }
+    },
+    "finished_at": "2026-10-18T02:39:58.093583+00:00"
+  },
+  "fixed_numeric_overview_shape": {
+    "request_ms": 256.678,
+    "top": {
+      "version": {
+        "type": "int",
+        "items": null,
+        "json_bytes": 1
+      },
+      "snapshot_version": {
+        "type": "int",
+        "items": null,
+        "json_bytes": 7
+      },
+      "membership_version": {
+        "type": "int",
+        "items": null,
+        "json_bytes": 2
+      },
+      "generated_at": {
+        "type": "str",
+        "items": 32,
+        "json_bytes": 34
+      },
+      "local_instance_id": {
+        "type": "str",
+        "items": 36,
+        "json_bytes": 38
+      },
+      "dimensions": {
+        "type": "list",
+        "items": 9,
+        "json_bytes": 108
+      },
+      "nodes": {
+        "type": "list",
+        "items": 4,
+        "json_bytes": 733515
+      },
+      "edges": {
+        "type": "list",
+        "items": 9,
+        "json_bytes": 211786
+      }
+    },
+    "nodes": [
+      {
+        "fields": {
+          "id": {
+            "type": "str",
+            "items": 36,
+            "json_bytes": 38
+          },
+          "name": {
+            "type": "str",
+            "items": 7,
+            "json_bytes": 9
+          },
+          "url": {
+            "type": "str",
+            "items": 24,
+            "json_bytes": 26
+          },
+          "zone": {
+            "type": "str",
+            "items": 7,
+            "json_bytes": 9
+          },
+          "capabilities": {
+            "type": "list",
+            "items": 2,
+            "json_bytes": 65
+          },
+          "dispatch_capacity": {
+            "type": "NoneType",
+            "items": null,
+            "json_bytes": 4
+          },
+          "dispatch_provider_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "dispatch_queue_capacity": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 3
+          },
+          "dispatch_provider_queue_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "lifecycle_state": {
+            "type": "str",
+            "items": 6,
+            "json_bytes": 8
+          },
+          "membership_generation": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 2
+          },
+          "local": {
+            "type": "bool",
+            "items": null,
+            "json_bytes": 5
+          },
+          "last_seen": {
+            "type": "str",
+            "items": 32,
+            "json_bytes": 34
+          },
+          "dimensions": {
+            "type": "dict",
+            "items": 9,
+            "json_bytes": 171558
+          },
+          "topology_status": {
+            "type": "str",
+            "items": 5,
+            "json_bytes": 7
+          }
+        }
+      },
+      {
+        "fields": {
+          "id": {
+            "type": "str",
+            "items": 36,
+            "json_bytes": 38
+          },
+          "name": {
+            "type": "str",
+            "items": 7,
+            "json_bytes": 9
+          },
+          "url": {
+            "type": "str",
+            "items": 26,
+            "json_bytes": 28
+          },
+          "zone": {
+            "type": "str",
+            "items": 7,
+            "json_bytes": 9
+          },
+          "capabilities": {
+            "type": "list",
+            "items": 2,
+            "json_bytes": 65
+          },
+          "dispatch_capacity": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 1
+          },
+          "dispatch_provider_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "dispatch_queue_capacity": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 3
+          },
+          "dispatch_provider_queue_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "lifecycle_state": {
+            "type": "str",
+            "items": 6,
+            "json_bytes": 8
+          },
+          "membership_generation": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 2
+          },
+          "local": {
+            "type": "bool",
+            "items": null,
+            "json_bytes": 4
+          },
+          "last_seen": {
+            "type": "str",
+            "items": 32,
+            "json_bytes": 34
+          },
+          "dimensions": {
+            "type": "dict",
+            "items": 9,
+            "json_bytes": 332926
+          },
+          "topology_status": {
+            "type": "str",
+            "items": 5,
+            "json_bytes": 7
+          }
+        }
+      },
+      {
+        "fields": {
+          "id": {
+            "type": "str",
+            "items": 36,
+            "json_bytes": 38
+          },
+          "name": {
+            "type": "str",
+            "items": 6,
+            "json_bytes": 8
+          },
+          "url": {
+            "type": "str",
+            "items": 26,
+            "json_bytes": 28
+          },
+          "zone": {
+            "type": "str",
+            "items": 7,
+            "json_bytes": 9
+          },
+          "capabilities": {
+            "type": "list",
+            "items": 1,
+            "json_bytes": 30
+          },
+          "dispatch_capacity": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 1
+          },
+          "dispatch_provider_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "dispatch_queue_capacity": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 3
+          },
+          "dispatch_provider_queue_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "lifecycle_state": {
+            "type": "str",
+            "items": 6,
+            "json_bytes": 8
+          },
+          "membership_generation": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 2
+          },
+          "local": {
+            "type": "bool",
+            "items": null,
+            "json_bytes": 5
+          },
+          "last_seen": {
+            "type": "str",
+            "items": 32,
+            "json_bytes": 34
+          },
+          "dimensions": {
+            "type": "dict",
+            "items": 9,
+            "json_bytes": 194167
+          },
+          "topology_status": {
+            "type": "str",
+            "items": 5,
+            "json_bytes": 7
+          }
+        }
+      },
+      {
+        "fields": {
+          "id": {
+            "type": "str",
+            "items": 36,
+            "json_bytes": 38
+          },
+          "name": {
+            "type": "str",
+            "items": 4,
+            "json_bytes": 6
+          },
+          "url": {
+            "type": "str",
+            "items": 26,
+            "json_bytes": 28
+          },
+          "zone": {
+            "type": "str",
+            "items": 7,
+            "json_bytes": 9
+          },
+          "capabilities": {
+            "type": "list",
+            "items": 1,
+            "json_bytes": 30
+          },
+          "dispatch_capacity": {
+            "type": "NoneType",
+            "items": null,
+            "json_bytes": 4
+          },
+          "dispatch_provider_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "dispatch_queue_capacity": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 3
+          },
+          "dispatch_provider_queue_capacities": {
+            "type": "dict",
+            "items": 0,
+            "json_bytes": 2
+          },
+          "lifecycle_state": {
+            "type": "str",
+            "items": 6,
+            "json_bytes": 8
+          },
+          "membership_generation": {
+            "type": "int",
+            "items": null,
+            "json_bytes": 2
+          },
+          "local": {
+            "type": "bool",
+            "items": null,
+            "json_bytes": 5
+          },
+          "last_seen": {
+            "type": "str",
+            "items": 32,
+            "json_bytes": 34
+          },
+          "dimensions": {
+            "type": "dict",
+            "items": 9,
+            "json_bytes": 33026
+          },
+          "topology_status": {
+            "type": "str",
+            "items": 5,
+            "json_bytes": 7
+          }
+        }
+      }
+    ]
+  },
+  "initial_selector_probe": {
+    "scope": "Disposable331cards64KiBbody,20alternating full/options reads with exact selector id/title/project/lane/updated-order parity. This isolates proposed reuse of existing projection; actual Fleetcontext/template/overview/dispatch not executed. No product repair or deployed cause attribution yet.",
+    "latency_ms": {
+      "full": {
+        "samples": 20,
+        "max": 440.872,
+        "p50": 176.194,
+        "p95": 334.71,
+        "p99": 440.872
+      },
+      "options": {
+        "samples": 20,
+        "max": 106.383,
+        "p50": 36.968,
+        "p95": 75.699,
+        "p99": 106.383
+      }
+    },
+    "body_characters_materialized_per_call": {
+      "options": 0,
+      "full": 21692416
+    },
+    "counts": 331
+  },
+  "source_selector_pair": {
+    "scope": "Disposable cards with64KiB bodies, alternating read order, exact identity/realm/kind/title/lane/project/timestamp/order parity. Isolates the selector phase; does not time complete Fleet context, template, peers or production. Normal GC retained; no durability/threshold changes.",
+    "cards": 331,
+    "iterations": 30,
+    "latency_ms": {
+      "full": {
+        "samples": 30,
+        "max": 360.775,
+        "p50": 236.748,
+        "p95": 293.538,
+        "p99": 360.775
+      },
+      "selector": {
+        "samples": 30,
+        "max": 83.618,
+        "p50": 44.584,
+        "p95": 81.448,
+        "p99": 83.618
+      }
+    },
+    "samples_ms": {
+      "full": [
+        249.88608295097947,
+        233.29095804365352,
+        237.4306669807993,
+        227.50062501290813,
+        237.70587501348928,
+        278.14912499161437,
+        244.9174999492243,
+        231.74033302348107,
+        250.42862503323704,
+        264.9424170376733,
+        184.92829200113192,
+        224.65437499340624,
+        191.32837501820177,
+        229.0787500096485,
+        217.81541698146611,
+        212.02429197728634,
+        215.51829105010256,
+        231.95579095045105,
+        221.937624970451,
+        360.7754589756951,
+        279.3091249768622,
+        293.53808402083814,
+        289.57933402853087,
+        241.74024997046217,
+        236.7483329726383,
+        246.46362499333918,
+        252.3593750083819,
+        243.30491700675339,
+        230.6863329722546,
+        197.20045797294006
+      ],
+      "selector": [
+        53.803207993041724,
+        73.63529101712629,
+        42.081666993908584,
+        40.243249968625605,
+        37.29429200757295,
+        44.968958012759686,
+        41.977541986852884,
+        51.15645797923207,
+        48.56841696891934,
+        44.35545898741111,
+        32.568583032116294,
+        46.59262503264472,
+        40.94279196579009,
+        38.574833946768194,
+        39.95825001038611,
+        39.743749948684126,
+        44.584124989341944,
+        83.61825003521517,
+        38.31162501592189,
+        48.68312500184402,
+        44.674083997961134,
+        81.44849998643622,
+        56.83537502773106,
+        39.803292020224035,
+        51.50487500941381,
+        72.82670895801857,
+        37.49200003221631,
+        49.31337502785027,
+        46.93212499842048,
+        41.632667009253055
+      ]
+    },
+    "body_characters_materialized_per_call": {
+      "selector": 0,
+      "full": 21692416
+    },
+    "projection_source_sha256": "2c7f520b74929e2a8b07b4840a7418b40cfd93d52128f485b7020b72e361ef2a"
+  },
+  "source_files": {
+    "src/pa/domain/projection.py": "2c7f520b74929e2a8b07b4840a7418b40cfd93d52128f485b7020b72e361ef2a",
+    "src/pa/modules/fleet.py": "498da26e8bf4d2483e4e61db909fc26321774caf1936db3d2517d04580c6362a",
+    "scripts/benchmark_fleet_card_options.py": "a927652ae8a8132c4471deabaec1de1bf78725cc8cfb318849d6ce525ff02a39",
+    "tests/test_fleet_card_options.py": "653d44fd6001c3fce0cac2a827400d7d0c85261153e84511bb250654f5a917be"
+  },
+  "implementation": {
+    "cause": "Fleetcontext called full list_cards despite selector consuming only id/title/project/lane and active-dispatch identities.331x64KiBfixture materializes21692416bodychars per call unnecessarily.",
+    "change": "Reuse existing minimal list_card_options query with optionalrecent_first boolean selecting the exact former SQL ORDER BY updated_at DESC; default alphabetical selectors unchanged. Allrealms/lanes/identities retained asbefore; existing active-dispatch hint canonicalization/admission unchanged.",
+    "no_change": "No card writes/durable content, limits, deadline/warning thresholds, instance configuration/model/permission/capacity defaults, provider/peer calls, backup retention or acceptance policy changed.",
+    "test_validation": "92scoped tests pass: new field/order/realm/nohydration/activehint regressions plus existingFleetpage/overview/remoteadmission/membership/UI state tests.",
+    "reproduction": "uv run python scripts/benchmark_fleet_card_options.py --output /tmp/pa-fleet-card-options.json --iterations 30",
+    "scope": "Isolated selector phase only; new source unmerged/uninstalled, no wholeFleet performance acceptance. LiveFleet5slow HTTP200samples remain attributable only inpart until completecontext/template proof.",
+    "report": "d82ea21b-7409-473d-986b-24302d78460a revision2"
+  },
+  "residuals": [
+    "Live309 Fleet5HTTP200samples1.114MB/p50 2201.105ms/max2945.675ms; cache/context/template/serialization split stillopen. JSONoverview256.678ms/733515nodebytes/211786edgebytes doesnot prove HTMLdelay solelyfromselectors.",
+    "Object-read candidate previousstage0workerwarnings BUT4inventory500msviolations/max1477.686ms, original2swarningthresholdunchanged; premeasurementstartup1093ms/ref/followupwarnings separate.",
+    "Currentrowcount520/42concerns allopen; original140slow names181runtimeops115routes, allpriorfamilycoveragegaps/providers/workspace/activewatch/external/peer/logretention/receiptissues and original10attachments preserved.",
+    "NativePAtools absentthisturncatalog; supportedauthenticatedownerAPI used, causeunknown. Old0b79/f403/systemicsuccessor outcomes remainunknown/unreplayed; existingbackup/UX/fork savedidentities preserved.",
+    "Backup0331 independentrequirementb5271340 remains scheduler-owned/unaccepted; original12.78s/2.265sfailures and own2s scope separate from systemic500mscriteria. DB89957 originalscopeacceptedclosed staysclosed."
+  ],
+  "completion": {
+    "accepted": false,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "policy": "independent_agent_v1",
+    "missing": [
+      "active",
+      "verified",
+      "acceptance"
+    ],
+    "owner": "normal PA scheduler"
+  },
+  "observer_range_correction": "Earlier PR500 prose/progress used1.39\u20132.95s range mixing initial JSON-only observer attempt durations with corrected HTTPmetadata samples. The initial range is not a verified successful-page range. Corrected five HTTP200samples have p50 2201.105ms/max2945.675ms; rawper-sampletimes/min notretained. Those are the supported current values; old observation errors and statements remain historically traceable."
+}

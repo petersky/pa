@@ -3450,7 +3450,7 @@ def _fleet_context(request: Request) -> dict:
             or route.target_url.rstrip("/") in canonical_urls
         )
     ]
-    cards = ctx.store.list_cards(realm_id=primary_realm)
+    cards = ctx.store.list_card_options(realm_id=primary_realm, recent_first=True)
     dispatch_store = ctx.services.get("dispatch_store")
     active_card_dispatches = {}
     if dispatch_store:

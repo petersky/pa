@@ -2897,12 +2897,15 @@ class CardProjection:
             rows = conn.execute(query, params).fetchall()
         return {row["id"]: row["lane"] for row in rows}
 
-    def list_card_options(self, *, realm_id: str) -> list[Card]:
+    def list_card_options(
+        self, *, realm_id: str, recent_first: bool = False
+    ) -> list[Card]:
         """Minimal card identities for session selectors; no bodies or evidence."""
+        order = "updated_at DESC" if recent_first else "title, id"
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT id, realm_id, kind, title, lane, project_id, created_at, updated_at "
-                "FROM cards WHERE realm_id=? ORDER BY title, id",
+                "FROM cards WHERE realm_id=? ORDER BY " + order,
                 (realm_id,),
             ).fetchall()
         return [Card(**dict(row)) for row in rows]
