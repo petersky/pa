@@ -35,13 +35,25 @@ async def test_actions_results_evidence_and_permission_labels_without_help(opera
         await manager.attach(scope, url=base + '/work', width=width, height=1000)
         page = manager.resolve(scope).page
 
-        async def wait(expression):
-            deadline = time.monotonic() + 15
+        async def wait(expression, *, deadline=None):
+            if deadline is None:
+                deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
                 if await page.evaluate(expression):
                     return
                 await asyncio.sleep(.05)
-            pytest.fail('Browser condition timed out: ' + expression)
+            # Keep failure evidence bounded to UI state, without card text,
+            # preference values, tokens or response bodies.
+            state = await page.evaluate('''(() => ({
+              ready: document.readyState,
+              focusedTab: document.activeElement?.dataset?.cardTab || null,
+              tabs: [...document.querySelectorAll('[data-card-tab]')].slice(0,3)
+                .map(t=>({name:t.dataset.cardTab,selected:t.getAttribute('aria-selected')})),
+              panels: [...document.querySelectorAll('[data-card-tab-panel]')].slice(0,3)
+                .map(p=>({name:p.dataset.cardTabPanel,state:p.dataset.cardTabState || null,hidden:p.hidden})),
+              executionCount: document.querySelectorAll('[data-execution-id]').length
+            }))()''')
+            pytest.fail('Browser condition timed out: ' + expression + '; UI state: ' + json.dumps(state))
 
         async def inspect(name, selector):
             result = await page.evaluate(f'''(() => {{
@@ -93,8 +105,13 @@ async def test_actions_results_evidence_and_permission_labels_without_help(opera
         await page.navigate_and_wait(f'{base}/work?card={cards["Turn ended"].id}')
         await wait("!!document.querySelector('[data-card-tab=summary]')")
         await manager.click(scope, selector='[data-card-tab=summary]')
+        # Keyboard input requires the intended native focus target. Both
+        # focus and lazy-tab completion share the original 15-second budget.
+        transition_deadline = time.monotonic() + 15
+        await wait("document.activeElement === document.querySelector('[data-card-tab=summary]')",
+                   deadline=transition_deadline)
         await manager.press(scope, key='ArrowRight')
-        await wait("!!document.querySelector('[data-execution-id]')")
+        await wait("!!document.querySelector('[data-execution-id]')", deadline=transition_deadline)
         assert await page.evaluate("document.activeElement.getAttribute('data-card-tab')") == 'agent'
         assert await page.evaluate("document.querySelector('[data-card-tab=agent]').getAttribute('aria-selected')") == 'true'
         assert 'agent tab loaded' in await page.evaluate("document.querySelector('[data-card-tab-announcer]').textContent.toLowerCase()")
