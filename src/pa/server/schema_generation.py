@@ -32,15 +32,23 @@ from fastapi.openapi.utils import get_openapi as framework_get_openapi
 
 
 def _filter_schema_json(value: Any) -> Any:
-    """Apply the encoder's filters to an already JSON-serialized model dump."""
-    if type(value) is dict:
-        return {
-            key: _filter_schema_json(item) for key, item in value.items()
-            if item is not None and not key.startswith("_sa")
-        }
-    if type(value) is list:
-        # None elements in arrays survive exclude_none, just as upstream.
-        return [_filter_schema_json(item) for item in value]
+    """Filter the freshly owned JSON-mode model dump without copying it again.
+
+    This must only receive the result of model_dump(mode="json"), never a
+    model's live dictionaries. None array elements survive exclude_none.
+    """
+    pending = [value]
+    while pending:
+        container = pending.pop()
+        if type(container) is dict:
+            for key in tuple(container):
+                item = container[key]
+                if item is None or key.startswith("_sa"):
+                    del container[key]
+                elif type(item) in (dict, list):
+                    pending.append(item)
+        elif type(container) is list:
+            pending.extend(item for item in container if type(item) in (dict, list))
     return value
 
 

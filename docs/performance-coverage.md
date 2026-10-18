@@ -1,3 +1,31 @@
+# Owned schema filtering and coordinated dependency evidence — 2026-10-18
+
+All **588 findings and 92 concerns remain open**. Every prior586row, owner and next action is preserved. [Full source/test/prototype/mixed/dependency evidence](benchmarks/systemic-owned-schema-filter-20261018.json) retains all measurements, rejected variants and gaps. PR541 exact head/merge trees and five-success head/main CI are verified; integration is separate from activation.
+
+The schema encoder filters only its freshly owned JSON-mode model dump without copying the container graph again. Full OpenAPI validation/serialization, null/private-key filtering, array nulls and general/version fallback semantics remain. Live model input stays unchanged and concurrent encodings are independent. **58 tests and 9 subtests pass**, with five existing warnings retained. No readiness, deadline, dependency, permission, durability or admission policy changes.
+
+Eight alternating complete-schema pairs preserve all482paths and identical canonical hashes. Wall p50/p95/p99/max baseline **721.296/1007.022/1007.022/1007.022ms**, source **701.311/961.695/961.695/961.695ms**. Adapter counts remain200/200. Warm-process/uncontrolled-host timing is modest and not complete startup acceptance; the earlier recursive hash-memo prototype regressed and remains rejected.
+
+The exact-wheel100iteration mixed fixture retains9600ordered active events and verifies12511cold content hashes. It records **1 worker warning and 8 universal500ms observations**; every ordinary/diagnostic failure, timeout and rejection counter, raw timer, route, response byte, SQL/lock/GC/native phase, startup record and observer cost remains in the full artifact. The113.094s workload completes3063ordinary operations and100diagnostics with zero failures/timeouts/rejections. The difference from the preceding13warning/19observation stage is not a paired comparison and cannot establish a global source speedup. This is not whole-PA performance acceptance. No unchanged replay forgreen.
+
+Three premeasurement slow records remain separate: startup.openapi778.388ms (worker770.947ms/threadCPU687.382ms), sync.ref_read869.453ms (worker1.399ms/delivery864.910ms), and dispatch.followup_pending_read867.204ms (worker0.101ms/delivery866.708ms). Full cold-start acceptance still fails the unchanged500ms observation target. The fast-service completion delays are not evidence of slow SQL; GIL/OS scheduling attribution remains unverified.
+
+| Current residual | n | p50 ms | p95 ms | p99 ms | max ms | ≥500 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| /api/agent/history/session-0?limit=64&message_boundaries=true | 100 | 191.042 | 408.538 | 604.457 | 637.034 | 3 |
+| sync.object_collect | 10 | 414.172 | 1465.766 | 1465.766 | 1465.766 | 4 |
+| maintenance.run | 1 | 18389.186 | 18389.186 | 18389.186 | 18389.186 | 1 |
+
+The prior installed0d/loaded2e mismatch is preserved. Fresh later status reports0d/PID45958, and the two served fork JavaScript files hash-match0d under one process fence. Existing PR534 owner reports activation healthy; this session did not install or restart. Fork requirement36140832 remains unaccepted; its current scheduler intent was blocked with genericHTTPStatusError. Exact-key receipt reconciliation confirmed no dispatch admitted at the observed head; no new verifier or replay was started.
+
+User steering removes the missing historical backup payload as a blanket blocker to feasible repairs, prospective reliability/performance validation and independent verification. Its exact existing-owner prompt receipt now reportscompleted; this is not proof that all owner work is done. Preserve the historical recovery limitation, all eight archives/history and unchanged independent acceptance requirements. Do not fabricate bytes, silently omit data or destructively repair references. Existing backup0331/18fc retains its bounded scope; database89957accepted original scope stays closed.
+
+The same prompt is absent from the native four-entry turn inventory and latest backup progress remains986/21:32. Report3f1c34b1 retains that observability discrepancy; completed receipt, provider-turn visibility and applied work are separate claims. No steering replay or replacement worker was started, and this gap does not block feasible systemic work.
+
+Unshipped native-JSON timing and its concurrency semantic counterexample, instrumented startup phase/profile results, syntax/comparator/preparer/build failures and all measurement gaps are retained. None establish an underlying GIL/OS/disk/busy cause or deployed acceptance. Every remaining route, operation, page, startup/drain, native-commit, payload, provider/peer, log-loss/retention and unexercised-branch obligation stays open under systemic17d034a6. All original attachments remain.
+
+## Preserved prior coverage and failures
+
 # Session selection snapshot and native-WAL coverage — 2026-10-18
 
 All **586 findings and 90 concerns remain open**. Every prior585row/owner/action is preserved; one verifier-integrity gap is added. [Complete source, tests, every prototype/timing and mixed measurement](benchmarks/systemic-session-list-snapshot-20261018.json) and [native-WAL diagnostic including its original failed verifier](benchmarks/systemic-native-wal-diagnostic-20261018.json) retain the full evidence.
