@@ -9,6 +9,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager, nullcontext
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -76,6 +77,35 @@ from pa.sync.event_log import DagIndexStaleError, EventHistoryError, EventLog
 from pa.workloads import WorkloadProfile, canonical_default_scope_key
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class SessionListMetadata:
+    """Read-only ordering/filter fields, never a session to save or resume."""
+
+    id: str
+    status: str
+    purpose: str
+    archived_at: datetime | None
+    pinned_at: datetime | None
+    human_activity_at: datetime | None
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class SessionListSnapshot:
+    """Select cheaply, then decode complete selected rows from the same read.
+
+    Raw rows retain their original JSON and SQLite snapshot. No second query
+    can mix newer diagnostics/configuration with older selection metadata.
+    """
+
+    candidates: tuple[SessionListMetadata, ...]
+    _rows: dict[str, sqlite3.Row] = field(repr=False)
+
+    def hydrate(self, session_id: str) -> AgentSession:
+        return CardProjection._row_to_session(self._rows[session_id])
+
 
 _SESSION_COLUMNS_WITHOUT_METRICS = """
     id, agent_name, external_session_id, origin_instance_id,
@@ -5310,6 +5340,45 @@ class CardProjection:
         or constructing its runtime. All durable recovery and provenance fields
         remain present; status alone does not determine recovery eligibility.
         """
+        return [self._row_to_session(row) for row in self._list_session_rows(
+            label=label, statuses=statuses, exclude_statuses=exclude_statuses,
+            include_archived=include_archived, purposes=purposes,
+            archived=archived, session_ids=session_ids, chat_group_id=chat_group_id,
+            include_metrics=include_metrics,
+        )]
+
+    def session_list_snapshot(self, **filters) -> SessionListSnapshot:
+        """Read all selection fields and retain opaque details until selected.
+
+        Only metadata-based sidebar views use this projection. Activity views
+        need full workflow configuration before filtering and keep list_sessions.
+        Selected rows receive the existing complete decoder, including its error
+        behavior. Unselected configuration/diagnostics are intentionally opaque.
+        No durable data or response fields are omitted.
+        """
+        rows = self._list_session_rows(**filters)
+        candidates = tuple(SessionListMetadata(
+            id=row["id"], status=row["status"], purpose=row["purpose"],
+            archived_at=datetime.fromisoformat(row["archived_at"]) if row["archived_at"] else None,
+            pinned_at=datetime.fromisoformat(row["pinned_at"]) if row["pinned_at"] else None,
+            human_activity_at=datetime.fromisoformat(row["human_activity_at"]) if row["human_activity_at"] else None,
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        ) for row in rows)
+        return SessionListSnapshot(candidates, {row["id"]: row for row in rows})
+
+    def _list_session_rows(
+        self,
+        *,
+        label: str | None = None,
+        statuses: tuple[str, ...] | list[str] | None = None,
+        exclude_statuses: tuple[str, ...] | list[str] | None = None,
+        include_archived: bool = True,
+        purposes: tuple[str, ...] | None = None,
+        archived: bool | None = None,
+        session_ids: set[str] | None = None,
+        chat_group_id: str | None = None,
+        include_metrics: bool = True,
+    ) -> list[sqlite3.Row]:
         columns = "*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS
         query = f"SELECT {columns} FROM agent_sessions WHERE 1=1"
         if not include_archived:
@@ -5343,8 +5412,7 @@ class CardProjection:
             params.extend(exclude_statuses)
         query += " ORDER BY updated_at DESC"
         with self._conn() as conn:
-            rows = conn.execute(query, params).fetchall()
-        return [self._row_to_session(row) for row in rows]
+            return conn.execute(query, params).fetchall()
 
     def create_restart_handoff(self, handoff: RestartHandoff) -> RestartHandoff:
         """Insert once and serialize each session's nonterminal restart lifecycle."""
