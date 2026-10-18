@@ -1,3 +1,64 @@
+# Exact-source mixed result and remaining violations — 2026-10-18
+
+All **578 findings / 82 concerns remain open**. [Full result, 7,274 verified journal records, logical I/O counters, runtime windows and reproduction source](benchmarks/systemic-fleet-config-mixed-20261018.json) retain the one completed exact547 candidate scenario. Prior artifacts and every coverage row are unchanged.
+
+The 100-iteration fixture ran65.862s on Darwin25.6.0/arm64/Python3.14.2,10CPU/24GiB (Mac16,13), with30sessions carrying128KiB diagnostics and128KiB unrelated configuration proofs each. All9,600active transcript events remain ordered and all12,511retained cold payloads pass independent compressed-content-hash verification. All2,900HTTP responses returned200;2,879worker submissions completed with zero failures/timeouts/cancellations/rejections/slow-worker warnings. This is source-fixture evidence, not live performance acceptance.
+
+Five unchanged500ms-threshold violations remain: message-history1(max556.894ms), sync objectcollection3(max927.791ms), maintenance1(11257.464ms inclusive parent). Fleet100requests max236.661ms; transcriptdrain300max180.394ms; executionbinding100max134.300ms. StartupOpenAPI497.324ms with zero premeasurement slow calls is one full Kernel fixture; actual provider/MCP/peer cold-start acceptance remains open. No before/after wholepath speedup is inferred.
+
+| Explicit measured family/request | Samples | p50 ms | p95 ms | p99 ms | max ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `/` | 100 | 6.959 | 10.98 | 27.78 | 29.076 |
+| `/agent` | 100 | 50.069 | 109.71 | 184.339 | 268.378 |
+| `/api/agent/history/session-0?limit=64` | 100 | 25.784 | 59.397 | 110.07 | 140.702 |
+| `/api/agent/history/session-0?limit=64&message_boundaries=true` | 100 | 114.835 | 243.253 | 442.668 | 556.894 |
+| `/api/agent/preferences` | 100 | 3.102 | 7.134 | 9.939 | 14.923 |
+| `/api/agent/sessions?view=chats` | 100 | 60.21 | 90.394 | 141.787 | 143.467 |
+| `/api/cards` | 100 | 5.542 | 10.359 | 13.245 | 16.159 |
+| `/api/cards/fixture-card` | 100 | 3.401 | 5.673 | 10.918 | 11.024 |
+| `/api/cards/fixture-card/history` | 100 | 17.065 | 41.634 | 72.314 | 100.228 |
+| `/api/execution/defaults` | 100 | 3.696 | 5.884 | 8.631 | 29.423 |
+| `/api/fleet/dispatch-jobs` | 100 | 22.203 | 31.59 | 49.683 | 65.399 |
+| `/api/fleet/dispatch-queue` | 100 | 4.399 | 7.302 | 15.306 | 17.709 |
+| `/api/health` | 100 | 2.171 | 3.452 | 4.316 | 7.067 |
+| `/api/health-journal/status` | 100 | 5.227 | 9.816 | 18.178 | 22.283 |
+| `/api/notifications` | 100 | 3.498 | 7.249 | 15.323 | 17.189 |
+| `/api/pr-supervisor/capabilities` | 100 | 4.835 | 10.31 | 16.472 | 20.601 |
+| `/api/pr-supervisor/watches` | 100 | 4.947 | 13.072 | 16.538 | 21.196 |
+| `/api/runtime` | 100 | 19.899 | 23.496 | 29.176 | 33.543 |
+| `/api/runtime?section=sse` | 100 | 3.243 | 4.862 | 9.978 | 13.798 |
+| `/api/status` | 100 | 35.527 | 58.519 | 64.646 | 65.362 |
+| `/api/sync/refs` | 100 | 2.993 | 5.904 | 15.197 | 16.347 |
+| `/api/sync/status` | 100 | 8.274 | 31.892 | 46.664 | 64.996 |
+| `/api/workspaces` | 100 | 4.567 | 9.96 | 19.657 | 24.225 |
+| `/fleet` | 100 | 69.622 | 164.126 | 228.762 | 236.661 |
+| `/partials/home/sections` | 100 | 12.536 | 22.984 | 46.357 | 48.408 |
+| `/pull-requests` | 100 | 19.407 | 47.797 | 74.466 | 81.408 |
+| `/settings?section=agent` | 100 | 10.853 | 26.848 | 49.668 | 57.808 |
+| `/settings?section=backups` | 100 | 10.157 | 26.074 | 58.712 | 65.493 |
+| `/work` | 100 | 7.931 | 10.918 | 49.122 | 81.876 |
+| `acp.wire_append` | 100 | 3.242 | 11.956 | 31.047 | 34.189 |
+| `dispatch.runnable_read` | 100 | 1.815 | 5.48 | 10.924 | 87.243 |
+| `fleet.overview_cache_read` | 100 | 1.279 | 6.7 | 11.865 | 13.368 |
+| `fleet.overview_cache_write` | 100 | 7.342 | 13.933 | 28.817 | 30.58 |
+| `maintenance.run` | 1 | 11257.464 | 11257.464 | 11257.464 | 11257.464 |
+| `progress.checkpoint_write` | 100 | 6.977 | 12.946 | 17.097 | 33.923 |
+| `progress.sequence_allocate` | 100 | 5.476 | 15.209 | 24.785 | 31.97 |
+| `reconciliation.dispatch_read` | 100 | 1.582 | 5.128 | 7.749 | 10.337 |
+| `sqlite.card_write` | 10 | 28.494 | 261.398 | 261.398 | 261.398 |
+| `sqlite.execution_binding_materialize` | 100 | 50.77 | 110.469 | 132.17 | 134.3 |
+| `sync.commit_read` | 100 | 3.142 | 9.3 | 17.888 | 31.806 |
+| `sync.object_collect` | 10 | 243.914 | 927.791 | 927.791 | 927.791 |
+| `sync.push_transaction` | 100 | 45.86 | 110.711 | 140.053 | 143.862 |
+| `sync.reconcile_head` | 100 | 37.301 | 145.902 | 201.195 | 213.505 |
+| `transcript.drain` | 300 | 75.751 | 130.073 | 155.227 | 180.394 |
+
+The journal observer added1.436s of awaited off-loop persistence across7,274records (max22.891ms); it sits outside individual result timers but adds workload. Validation took3.550s after the measured window. Host background activity was uncontrolled; one passive load snapshot is not an idle/pressure trace. Logical filesystem bytes/fsyncs, nested lock holds and reported0rusage disk blocks are not physical disk amplification or proof of no contention. The artifact contains all50executor operation and24canonical route-group windows; its11-section executor snapshot plus separate diagnostics is not the distinct live21-section service capture. Missing auxiliary fixture snapshots cannot be recovered retroactively.
+
+Exact547headCI39157944577 passed all5jobs at attempt1 and supervisor observed stablegreen8times, but this subsequent evidence commit still requires fresh exact-head checks and independent final revalidation. Original4c24dispatch449msCI failure and isolated passing diagnostic remain unresolved evidence. No install/restart occurred; original527handoff stays failed. Every other latency/coverage/provider/peer/log/backup/browser/receipt obligation and normal independent acceptance remains required.
+
+## Preserved prior findings
+
 # Fleet configuration decoding and remaining acceptance — 2026-10-18
 
 All **578 findings and 82 concerns remain open**. The prior 576 rows, owners, actions and historical evidence are unchanged. [Complete source comparison, phase probes and CI history](benchmarks/systemic-fleet-config-20261018.json) retain every measured sample and limitation.

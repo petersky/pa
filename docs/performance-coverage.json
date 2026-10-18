@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T19:15:09.300682+00:00",
-  "completion": "OPEN;578 retained findings/82concerns. All prior576rows/owners/actions unchanged. New Fleet config-proof amplification repaired in source only, original CI dispatch timing failure retained; current2e4Fleet violations and all broader criteria/normal independent acceptance remain open. No deployment/restart.",
+  "as_of": "2026-10-18T19:20:09.629454+00:00",
+  "completion": "OPEN;578retainedfindings/82concerns. Exact547sourcefixture preserves9600ordered events/12511coldobjects with0workerwarnings/failures/timeouts but5thresholdviolations(messagehistory1,objectcollection3,maintenance1). All prior source/live/CI failures retained; no deployment/restart or wholeacceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -116,7 +116,8 @@
     "docs/benchmarks/systemic-ancestor-boundaries-20261018.json",
     "docs/benchmarks/systemic-main526-browser-20261018.json",
     "docs/benchmarks/systemic-current-process-20261018.json",
-    "docs/benchmarks/systemic-fleet-config-20261018.json"
+    "docs/benchmarks/systemic-fleet-config-20261018.json",
+    "docs/benchmarks/systemic-fleet-config-mixed-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209983,6 +209984,73 @@
       "managed_handoff_verified": false,
       "resolution": "open",
       "next_action": "Continue all576 findings/80 concerns, beginning bounded attribution of Fleet page-context cost and native SQLite/session/transcript/maintenance tails, plus all remaining startup/provider/peer/log/backup/receipt/browser/coverage gaps and normal independent acceptance."
+    },
+    "concern:fleet-session-config-proof-hydration": {
+      "artifact": "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
+      "sha256": "bfd9085a72ce1ec12008db0fc037e88de0ff93f3dbd416cccf3c67f317de5a2c",
+      "summary": {
+        "duration_seconds": 65.862,
+        "timed_names": 44,
+        "runtime_operations": 50,
+        "canonical_route_groups": 24,
+        "http_status_counts": {
+          "200": 2900
+        },
+        "threshold_violations": {
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
+          "sync.object_collect": 3,
+          "maintenance.run": 1
+        },
+        "worker_deltas": {
+          "submitted": 2879,
+          "completed": 2879,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "transcript_retained": 9600,
+        "retained_cold_objects_verified": 12511,
+        "loop": {
+          "samples": 600,
+          "latest_lag_ms": 0.525,
+          "p95_lag_ms": 15.11,
+          "max_lag_ms": 119.967,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "logical_filesystem_totals": {
+          "file_lock_wait_ms": 37.94724424369633,
+          "file_lock_hold_ms": 1725.3459134371951,
+          "atomic_write_calls": 434,
+          "atomic_write_bytes": 103089,
+          "file_fsync_calls": 434,
+          "file_fsync_ms": 162.91274508694187,
+          "directory_fsync_calls": 434,
+          "directory_fsync_ms": 52.72642325144261,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 360.5056245578453,
+          "object_get_calls": 7079,
+          "object_get_bytes": 3357114,
+          "object_get_ms": 5255.541667225771,
+          "object_put_files": 268,
+          "object_put_bytes": 141336
+        },
+        "process_cpu_ms": 71539.592,
+        "disk_output_blocks_reported": 0,
+        "native_disk_notice": "Logical completed-worker counters and rusage0diskblocks are not physical device write amplification or proof of no I/O. Nested wall/lock spans overlap.",
+        "fixture_runtime_capture": "11 executor runtime sections plus separate diagnostics_runtime retained. This fixture snapshot is not the live21-sectionAPI capture; omitted auxiliary service sections cannot be reconstructed here. Current2e live21 snapshot remains separately preserved."
+      },
+      "resolution": "open",
+      "deployed": "Not installed or restarted; sourcefixture only",
+      "next_actor": "this same systemic session",
+      "next_action": "Publishfinalhead/terminalgreen/stablesupervisor/independentcurrentrevalidation/normalmerge; continue five residual violations and all578findings/normalindependentacceptance, honoring noanotherrestart boundary."
     }
   },
   "f7e8_loaded_stage": {
@@ -211659,5 +211727,72 @@
       "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1"
     },
     "resolution": "open"
+  },
+  "fleet_configuration_mixed_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
+    "sha256": "bfd9085a72ce1ec12008db0fc037e88de0ff93f3dbd416cccf3c67f317de5a2c",
+    "summary": {
+      "duration_seconds": 65.862,
+      "timed_names": 44,
+      "runtime_operations": 50,
+      "canonical_route_groups": 24,
+      "http_status_counts": {
+        "200": 2900
+      },
+      "threshold_violations": {
+        "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
+        "sync.object_collect": 3,
+        "maintenance.run": 1
+      },
+      "worker_deltas": {
+        "submitted": 2879,
+        "completed": 2879,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "transcript_retained": 9600,
+      "retained_cold_objects_verified": 12511,
+      "loop": {
+        "samples": 600,
+        "latest_lag_ms": 0.525,
+        "p95_lag_ms": 15.11,
+        "max_lag_ms": 119.967,
+        "pre_window_lag_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        }
+      },
+      "logical_filesystem_totals": {
+        "file_lock_wait_ms": 37.94724424369633,
+        "file_lock_hold_ms": 1725.3459134371951,
+        "atomic_write_calls": 434,
+        "atomic_write_bytes": 103089,
+        "file_fsync_calls": 434,
+        "file_fsync_ms": 162.91274508694187,
+        "directory_fsync_calls": 434,
+        "directory_fsync_ms": 52.72642325144261,
+        "fsync_failures": 0,
+        "atomic_replace_ms": 360.5056245578453,
+        "object_get_calls": 7079,
+        "object_get_bytes": 3357114,
+        "object_get_ms": 5255.541667225771,
+        "object_put_files": 268,
+        "object_put_bytes": 141336
+      },
+      "process_cpu_ms": 71539.592,
+      "disk_output_blocks_reported": 0,
+      "native_disk_notice": "Logical completed-worker counters and rusage0diskblocks are not physical device write amplification or proof of no I/O. Nested wall/lock spans overlap.",
+      "fixture_runtime_capture": "11 executor runtime sections plus separate diagnostics_runtime retained. This fixture snapshot is not the live21-sectionAPI capture; omitted auxiliary service sections cannot be reconstructed here. Current2e live21 snapshot remains separately preserved."
+    },
+    "resolution": "open",
+    "deployed": "Not installed or restarted; sourcefixture only",
+    "next_actor": "this same systemic session",
+    "next_action": "Publishfinalhead/terminalgreen/stablesupervisor/independentcurrentrevalidation/normalmerge; continue five residual violations and all578findings/normalindependentacceptance, honoring noanotherrestart boundary."
   }
 }
