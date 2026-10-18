@@ -126,6 +126,12 @@ def _fenced_session_admission(method):
     @wraps(method)
     async def admitted(self, *args, **kwargs):
         arguments = signature.bind(self, *args, **kwargs).arguments
+        if arguments.get("context_source_session_id"):
+            # Boundary resolution serializes the source and re-enters this
+            # fence for its exact target before any provider startup. Acquiring
+            # the target here would reject that nested admission and would
+            # invent a new reserved ID for standalone boundary replays.
+            return await method(self, *args, **kwargs)
         existing = arguments.get("existing")
         snapshot = arguments.get("snap")
         session_id = (
