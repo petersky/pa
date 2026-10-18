@@ -20,6 +20,7 @@ import zlib
 from collections import Counter, defaultdict
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
+from glob import iglob
 from itertools import islice
 from pathlib import Path
 from typing import Any, Iterator
@@ -532,9 +533,14 @@ class TranscriptStorage:
         with measured_lock(self._lock, name="transcript.write", track_deadline=False):
             if self._object_readers:
                 return removed
-        paths = self.objects_dir.glob("*/*.zlib")
+        # Preserve hidden-name matching without constructing a full Path for
+        # every live object, or parsing its parent and stem twice.
+        paths = iglob("*/*.zlib", root_dir=self.objects_dir, include_hidden=True)
         while batch := list(islice(paths, 128)):
-            digests = [path.parent.name + path.stem for path in batch]
+            digests = [
+                directory + Path(name).stem
+                for directory, name in map(os.path.split, batch)
+            ]
             with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
                 if self._object_readers:
                     return removed
@@ -542,10 +548,9 @@ class TranscriptStorage:
                 live = {row[0] for row in conn.execute(
                     f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
                 )}
-                for path in batch:
-                    digest = path.parent.name + path.stem
+                for path, digest in zip(batch, digests):
                     if digest not in live:
-                        path.unlink(missing_ok=True)
+                        (self.objects_dir / path).unlink(missing_ok=True)
                         removed += 1
         return removed
 

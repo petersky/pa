@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T08:06:40.432732+00:00",
-  "completion": "OPEN545rows60concerns/all140slownames181baselineops115baselineroutes6shells14startuprecords/allpriorowners/outliers/10attachments. Active/17d034a6 explicit_acceptance/independent_agent_v1/userlocal/macbook/integratedonly/acceptedfalse. Normal PA scheduler owns independent final acceptance. DB89957 originalPR471accepted closed; backup0331/18fc/c5/fence308 owns missing5cbb/ref1/819bytes/Sep20/pending sourcequestion/failed355/all8archives/207failures0verified/paused/b527unaccepted. No retry/recovery/restore/delete/refdrop/placeholder/admission/competingworker.",
+  "as_of": "2026-10-18T09:37:35.686348+00:00",
+  "completion": "OPEN:553 rows/62 concerns; all prior findings, owners, next actions and failures retained. Actual17a observations have2/95 ordinary GET threshold violations and workspace failures. Both expanded mixed cases have9 sampled violations; candidate not yet integrated/deployed. Requirement17d034a6 independent_agent_v1 unchanged; normal PA scheduler owns final verification. Backup0331 acceptance remains separate; DB89957 accepted original scope closed.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -206529,6 +206529,198 @@
       "resolution": "open",
       "next_actor": "thiscard/session",
       "next_action": "Usecorrectedschemaforfuturebuilds; retainirrecoverableoldernested/log/peer gaps. Finishallremaininglatencyrepairs andnormal independentacceptance, no completenessclaimfromsupplement."
+    },
+    {
+      "id": "concern:transcript-gc-path-materialization",
+      "kind": "concern",
+      "finding": "Full Path materialization and repeated digest parsing during retained cold-object collection",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_removable_cpu_work_shared_tail_unresolved",
+      "cause": "Every live path created a full Path and parsed parent/stem twice; real retained-object walks confirm unnecessary CPU. Most mixed GC wall time still includes publication-lock waiting and SQL observation wall time.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-gc-paths-20261018.json",
+        "prototype": {
+          "baseline": {
+            "method_wall_ms": {
+              "samples": 30,
+              "max": 537.722,
+              "p50": 425.475,
+              "p95": 526.122,
+              "p99": 537.722
+            },
+            "method_thread_cpu_ms": {
+              "samples": 30,
+              "max": 460.376,
+              "p50": 414.587,
+              "p95": 454.09,
+              "p99": 460.376
+            },
+            "caller_wall_ms": {
+              "samples": 30,
+              "max": 540.431,
+              "p50": 428.313,
+              "p95": 529.204,
+              "p99": 540.431
+            }
+          },
+          "candidate": {
+            "method_wall_ms": {
+              "samples": 30,
+              "max": 624.07,
+              "p50": 320.233,
+              "p95": 431.967,
+              "p99": 624.07
+            },
+            "method_thread_cpu_ms": {
+              "samples": 30,
+              "max": 381.609,
+              "p50": 306.149,
+              "p95": 332.506,
+              "p99": 381.609
+            },
+            "caller_wall_ms": {
+              "samples": 30,
+              "max": 627.431,
+              "p50": 323.657,
+              "p95": 434.69,
+              "p99": 627.431
+            }
+          }
+        },
+        "mixed": {
+          "baseline": {
+            "duration_seconds": 96.683,
+            "worker_warnings": {
+              "Slow off-loop operation": 5
+            },
+            "threshold_violations": {
+              "sync.push_transaction": 1,
+              "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+              "sync.object_collect": 5,
+              "maintenance.run": 1
+            },
+            "failure_counter_deltas": {
+              "operation_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              },
+              "diagnostics_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              }
+            },
+            "gc": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 10977.325625,
+              "thread_cpu_ms": 1102.902959,
+              "sqlite_calls": 12707,
+              "sqlite_rows": 12511,
+              "sqlite_statement_ms": 3891.7452744790353,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 5909.965620026924,
+              "python_lock_hold_ms": 4083.2191687077284,
+              "outer_lock_hold_ms": 4083.2191687077284
+            },
+            "retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 11287.058917,
+              "thread_cpu_ms": 1226.9305
+            },
+            "maintenance_total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 20281.000791,
+              "thread_cpu_ms": 4001.0955
+            },
+            "retained_cold_verification": {
+              "events": 12511,
+              "unique_objects": 12511,
+              "all_compressed_content_hashes_verified": true,
+              "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+            },
+            "journal_records": 7274,
+            "journal_range_utc": [
+              "2026-10-18T09:28:22.216919+00:00",
+              "2026-10-18T09:31:23.011335+00:00"
+            ]
+          },
+          "candidate": {
+            "duration_seconds": 97.628,
+            "worker_warnings": {
+              "Slow off-loop operation": 1
+            },
+            "threshold_violations": {
+              "sync.reconcile_head": 2,
+              "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+              "sync.object_collect": 4,
+              "maintenance.run": 1
+            },
+            "failure_counter_deltas": {
+              "operation_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              },
+              "diagnostics_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              }
+            },
+            "gc": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 10959.769958,
+              "thread_cpu_ms": 903.034833,
+              "sqlite_calls": 12707,
+              "sqlite_rows": 12511,
+              "sqlite_statement_ms": 3913.303518202156,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 6028.539879480377,
+              "python_lock_hold_ms": 4036.0812886501662,
+              "outer_lock_hold_ms": 4036.0812886501662
+            },
+            "retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 11290.558875,
+              "thread_cpu_ms": 1036.076125
+            },
+            "maintenance_total": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 19799.973291,
+              "thread_cpu_ms": 3722.627334
+            },
+            "retained_cold_verification": {
+              "events": 12511,
+              "unique_objects": 12511,
+              "all_compressed_content_hashes_verified": true,
+              "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+            },
+            "journal_records": 7274,
+            "journal_range_utc": [
+              "2026-10-18T09:32:05.189285+00:00",
+              "2026-10-18T09:35:08.061855+00:00"
+            ]
+          }
+        }
+      },
+      "fix_or_existing_owner": "This systemic card/session; path representation only. Preserve128path batching, exact live-query recheck under original lock, reader pins, unlink failures/refcounts/audits/transactions.",
+      "implemented": "Local string glob rooted literally with hidden names; one basename Path.stem and reused digest; full Path only for original unlink policy. No bulkfetch.",
+      "merged": [],
+      "deployed": "Unverified candidate; actual server17a precedes this repair.",
+      "retested": "62 broad tests (including5 new),65 backup tests plus16 subtests,4 native SQLite contracts,2 permanent benchmark guards pass. Initial native-error test assumption failure and setup/import/empty-trace gaps retained.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Ready PR, durable supervisor, exact-head independent green integration/main CI; after prior ba0 continuation terminal, safely activate exact build and retest. Continue GC publication-lock/SQL/host tails and every other inventory/acceptance gap."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -206686,5 +206878,261 @@
       "provider_context": "Ownsessionchecking/providerprobePending/serverprobeConnected; currentproviderPA tools absent. Cause,duration,impact unverified; no restart/reconnect/config/default changes."
     },
     "scope": "Append-onlyobservations/explicitcoveragegap; nooldmeasurements/owners/actions removed."
+  },
+  "gc_path_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-paths-20261018.json",
+    "sha256": "e9ef1bb0445f67c1a753e760ebd0f36cff0ed4bde51e76b96d1a87eea90bfa5d",
+    "observed_at": "2026-10-18T09:37:35.686348+00:00",
+    "actual_loaded_source": "17a060185f37b10f643a6027f826a14617827974",
+    "candidate_source_sha256": "7697a725b72f1d4dd9c37b8e4cecc4f65f9496e22774668ee73e100c15b5a18c",
+    "source_status": "Local candidate; no PR/integration/activation yet. Subsequent exact-head evidence is recorded on the durable watch/card.",
+    "summary": {
+      "mixed": {
+        "baseline": {
+          "duration_seconds": 96.683,
+          "worker_warnings": {
+            "Slow off-loop operation": 5
+          },
+          "threshold_violations": {
+            "sync.push_transaction": 1,
+            "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+            "sync.object_collect": 5,
+            "maintenance.run": 1
+          },
+          "failure_counter_deltas": {
+            "operation_counter_deltas": {
+              "failed": 0,
+              "timed_out": 0,
+              "rejected": 0
+            },
+            "diagnostics_counter_deltas": {
+              "failed": 0,
+              "timed_out": 0,
+              "rejected": 0
+            }
+          },
+          "gc": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 10977.325625,
+            "thread_cpu_ms": 1102.902959,
+            "sqlite_calls": 12707,
+            "sqlite_rows": 12511,
+            "sqlite_statement_ms": 3891.7452744790353,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 5909.965620026924,
+            "python_lock_hold_ms": 4083.2191687077284,
+            "outer_lock_hold_ms": 4083.2191687077284
+          },
+          "retention": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 11287.058917,
+            "thread_cpu_ms": 1226.9305
+          },
+          "maintenance_total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 20281.000791,
+            "thread_cpu_ms": 4001.0955
+          },
+          "retained_cold_verification": {
+            "events": 12511,
+            "unique_objects": 12511,
+            "all_compressed_content_hashes_verified": true,
+            "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+          },
+          "journal_records": 7274,
+          "journal_range_utc": [
+            "2026-10-18T09:28:22.216919+00:00",
+            "2026-10-18T09:31:23.011335+00:00"
+          ]
+        },
+        "candidate": {
+          "duration_seconds": 97.628,
+          "worker_warnings": {
+            "Slow off-loop operation": 1
+          },
+          "threshold_violations": {
+            "sync.reconcile_head": 2,
+            "/api/agent/history/session-0?limit=64&message_boundaries=true": 2,
+            "sync.object_collect": 4,
+            "maintenance.run": 1
+          },
+          "failure_counter_deltas": {
+            "operation_counter_deltas": {
+              "failed": 0,
+              "timed_out": 0,
+              "rejected": 0
+            },
+            "diagnostics_counter_deltas": {
+              "failed": 0,
+              "timed_out": 0,
+              "rejected": 0
+            }
+          },
+          "gc": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 10959.769958,
+            "thread_cpu_ms": 903.034833,
+            "sqlite_calls": 12707,
+            "sqlite_rows": 12511,
+            "sqlite_statement_ms": 3913.303518202156,
+            "sqlite_commit_ms": 0.0,
+            "sqlite_busy_failures": 0,
+            "python_lock_wait_ms": 6028.539879480377,
+            "python_lock_hold_ms": 4036.0812886501662,
+            "outer_lock_hold_ms": 4036.0812886501662
+          },
+          "retention": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 11290.558875,
+            "thread_cpu_ms": 1036.076125
+          },
+          "maintenance_total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 19799.973291,
+            "thread_cpu_ms": 3722.627334
+          },
+          "retained_cold_verification": {
+            "events": 12511,
+            "unique_objects": 12511,
+            "all_compressed_content_hashes_verified": true,
+            "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+          },
+          "journal_records": 7274,
+          "journal_range_utc": [
+            "2026-10-18T09:32:05.189285+00:00",
+            "2026-10-18T09:35:08.061855+00:00"
+          ]
+        }
+      },
+      "probe": {
+        "baseline": {
+          "method_wall_ms": {
+            "samples": 30,
+            "max": 537.722,
+            "p50": 425.475,
+            "p95": 526.122,
+            "p99": 537.722
+          },
+          "method_thread_cpu_ms": {
+            "samples": 30,
+            "max": 460.376,
+            "p50": 414.587,
+            "p95": 454.09,
+            "p99": 460.376
+          },
+          "caller_wall_ms": {
+            "samples": 30,
+            "max": 540.431,
+            "p50": 428.313,
+            "p95": 529.204,
+            "p99": 540.431
+          }
+        },
+        "candidate": {
+          "method_wall_ms": {
+            "samples": 30,
+            "max": 624.07,
+            "p50": 320.233,
+            "p95": 431.967,
+            "p99": 624.07
+          },
+          "method_thread_cpu_ms": {
+            "samples": 30,
+            "max": 381.609,
+            "p50": 306.149,
+            "p95": 332.506,
+            "p99": 381.609
+          },
+          "caller_wall_ms": {
+            "samples": 30,
+            "max": 627.431,
+            "p50": 323.657,
+            "p95": 434.69,
+            "p99": 627.431
+          }
+        }
+      },
+      "actual17a": {
+        "total_requests": 95,
+        "errors": 0,
+        "violations": [
+          {
+            "route": "/agent",
+            "sample": {
+              "attempt": 0,
+              "content_type": "text/html",
+              "correlation_id": "71fce102-8c3e-41c4-bdc3-87ee8d758141",
+              "decoded_response_bytes": 117988,
+              "elapsed_ms": 619.653,
+              "observed_at": "2026-10-18T09:14:10.283816+00:00",
+              "ok": true,
+              "server_timings_ms": {
+                "page_context": 420.8,
+                "page_context_cpu": 386.8,
+                "shell": 44.7,
+                "shell_cpu": 6.8,
+                "template": 22.3,
+                "template_cpu": 20.1,
+                "total": 488.1,
+                "total_cpu": 414.0
+              },
+              "status": 200
+            }
+          },
+          {
+            "route": "/fleet",
+            "sample": {
+              "attempt": 4,
+              "content_type": "text/html",
+              "correlation_id": "f054654a-794d-4b8c-9835-ed3773d5acdc",
+              "decoded_response_bytes": 1096631,
+              "elapsed_ms": 684.1,
+              "observed_at": "2026-10-18T09:14:15.017164+00:00",
+              "ok": true,
+              "server_timings_ms": {
+                "page_context": 596.6,
+                "page_context_cpu": 162.3,
+                "shell": 3.8,
+                "shell_cpu": 3.4,
+                "template": 41.2,
+                "template_cpu": 39.1,
+                "total": 643.9,
+                "total_cpu": 207.1
+              },
+              "status": 200
+            }
+          }
+        ],
+        "primary_ops": 77,
+        "diagnostic_ops": 1,
+        "route_groups": 24,
+        "retained_slow_records": 23,
+        "slow_call_sum": 23,
+        "primary_max_ge500": 20,
+        "failures": [
+          {
+            "name": "workspace.project_provision",
+            "failed": 2,
+            "timeouts": 0,
+            "rejected": 0
+          }
+        ]
+      },
+      "tests": "62 broad tests (including5 new),65 backup tests plus16 subtests,4 native SQLite contracts,2 permanent benchmark guards pass. Initial native-error test assumption failure and setup/import/empty-trace gaps retained.",
+      "interpretation": "Path materialization is confirmed removable CPU work. Isolated30 alternating pairs: method p95 526.122 to431.967ms, CPU median414.587 to306.149ms; maximum537.722 to624.070ms worsened. Mixed GC still10.977/10.960s, lock wait5.910/6.029s and SQL API wall3.892/3.913s: shared contention remains. Sequential host conditions uncontrolled; no paired whole-path speedup, live causal share, physical disk/busy/GIL partition or performance acceptance.",
+      "rejected": "Bulk fetch prototype reduced API calls but worsened p95/max; not shipped. Its first trace capture was empty/invalid. Corrected path-only prototype has98 identical real executed SQL trace statements. All original evidence retained.",
+      "limits": "Mixed fixture12511 retained objects matches the observed count, not full production layout: roughly25MB transcript and11MB projection versus417MB/318MB live. One expired session,100iterations,synthetic providers/Fleet,one measured sweep (multiple coalesced callers). No real provider/peer/backup acceptance. Postvalidation cold reads and journal persistence add work outside sampled result timers.",
+      "policy": "All553 rows remain open; independent_agent_v1 requirement17d034a6 unchanged. Normal PA scheduler owns verifier. Backup0331 scope/owner/missing source/paused failed archives/unaccepted b527 remain separate; DB89957 accepted original scope stays closed.",
+      "native_catalog": "PA MCP tools unavailable earlier this turn, then available again at09:37Z; native instance_info and progress5628 succeeded. Cause of transient catalog absence unverified; no reconnect/restart/config changes."
+    },
+    "rows": 553,
+    "concerns": 62
   }
 }
