@@ -460,10 +460,16 @@ class TranscriptStorage:
         if not session_ids: return 0
         changed = 0
         with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
-            for session_id in session_ids:
-                if not conn.execute(
-                    "SELECT 1 FROM transcript_events WHERE session_id=? LIMIT 1", (session_id,)
-                ).fetchone():
+            # Publication is fenced for this entire transaction, so discover
+            # nonempty sessions once rather than querying every expired ID on
+            # each sweep. A single JSON parameter avoids the variable limit.
+            existing = {row[0] for row in conn.execute(
+                """SELECT DISTINCT session_id FROM transcript_events
+                   WHERE session_id IN (SELECT value FROM json_each(?))""",
+                (json.dumps(session_ids),),
+            )}
+            for session_id in dict.fromkeys(session_ids):
+                if session_id not in existing:
                     continue
                 # A leading WITH ... UPDATE does not start Python sqlite's
                 # legacy implicit transaction. Begin before either mutation so
