@@ -2,7 +2,7 @@
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
   "as_of": "2026-10-18T10:22:20.676947+00:00",
-  "completion": "OPEN:555rows64concerns; all554priorrows unchanged, current status overrides explicit. NewGCprefilter local only, all warnings/violations/failures/outliers retained in stage. PR517 benchmark correction integrated/mainCI5green; running productbcd5. WholePA/backup/peer/log/independentacceptance remain open.",
+  "completion": "OPEN;569rows/78concerns, all priorrows/owners/actions preserved. PR525strictloaded/retested with1Fleet738msoutlier andretainedstartup/maintenance/provisionfailures;newboundaryrepairunintegrated. Normal scheduler independentacceptance remainsunsatisfied.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -111,7 +111,9 @@
     "docs/benchmarks/systemic-maintenance-phases-20261018.json",
     "docs/benchmarks/systemic-prune-inventory-20261018.json",
     "docs/benchmarks/systemic-mirror-inventory-20261018.json",
-    "docs/benchmarks/systemic-reference-index-20261018.json"
+    "docs/benchmarks/systemic-reference-index-20261018.json",
+    "docs/benchmarks/systemic-525-loaded-20261018.json",
+    "docs/benchmarks/systemic-ancestor-boundaries-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -207950,6 +207952,26 @@
       "deployed": "Notdeployed; no productcode change fromthisCIstage.",
       "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
       "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
+    },
+    {
+      "id": "concern:full-fork-boundary-membership",
+      "kind": "concern",
+      "finding": "Full imported-fork ancestry copies unused ready-tip set before exact boundary sets",
+      "family": "sync",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_disposable_fixture_confirmed_live_share_unverified",
+      "cause": "Full imported-fork ancestry copied complete ready-tip history merely for stop membership, then copied exact reached boundaries again. Use existing pinned ready membership for discovery; still materialize exact boundaries for full set consumers. Existing64probe fallback bounds query amplification; canonical bounded walk/missing/cycle/limit/realm/CAS/object/ref/durability/admission/receipt/acceptance contracts unchanged. No global cache/framework/default changes.",
+      "implemented": "Pinnedreadytipmembershipforboundarydiscovery;exactboundarymaterialization andcanonicalfallbackretained",
+      "merged": [],
+      "deployed": "CurrentexactPR525bc5116isloaded;newboundaryrepairunmerged/uninstalled",
+      "retested": "5targetedcontracts thenbroadsyncsuite;20alternatingpairs at5k/30k andoneexactwheel100iterationmixed;rawresults/limitsretained",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ancestor-boundaries-20261018.json",
+        "sha256": "a6deb85491ec702777e220c3a74a1df00dc3fc19d72b6f8f74de79cedf9fffcc"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "ReadyprotectedPR/durablesupervisor/exactheadindependentgreen/mainCI/safeexactactivation/retest; continue everyremainingwholePAcriteria andnormalindependentacceptance."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -209041,6 +209063,35 @@
       "deployed": "Notdeployed; no productcode change fromthisCIstage.",
       "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
       "next_action": "Useexplicitboundhelpers forfutureactivation, freshlivecontext/installedmetadata/nativepreview gates stillrequired. NevercloneoperationalUUIDs byPRdigitsubstitution."
+    },
+    "concern:startup-definition-hash-amplification": {
+      "artifact": "docs/benchmarks/systemic-525-loaded-20261018.json",
+      "sha256": "0708fd8af0108937a3e75f56c3808a9edc29eda881b10d61030342913b8e671f",
+      "source": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+      "summary": {
+        "ordinary_gets": 95,
+        "get_errors": 0,
+        "get_500ms_violations": 1,
+        "primary_operations": 82,
+        "diagnostic_operations": 1,
+        "route_groups": 26,
+        "primary_prefix_families": 19,
+        "slow_records_retained": 35,
+        "slow_counters": 35,
+        "primary_process_tails_at_least500ms": 25,
+        "baseline_operations_positive": 77,
+        "baseline_route_groups_positive": 22,
+        "workspace_provision_failures": 2
+      },
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+        "package_identity": "sha256:c90c070baa5fbcaf6c06df9528d56c7c9852ef97371c053edf056650d53ee271",
+        "pid": 87866,
+        "startup_id": "08b819dd-4a9d-4de6-af7a-422674eacf1b"
+      },
+      "resolution": "open",
+      "next_action": "Continue all568 findings/77 concerns, full startup/schema/sharedCPU/summarySQL/nativebusy/GC/physicalIO, every unexercised/provider/peer/backup/log/receipt concern and normal scheduler independent acceptance."
     }
   },
   "f7e8_loaded_stage": {
@@ -210434,5 +210485,48 @@
     "deployed": "Notdeployed; no productcode change fromthisCIstage.",
     "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
     "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
+  },
+  "latest_525_loaded_stage": {
+    "artifact": "docs/benchmarks/systemic-525-loaded-20261018.json",
+    "sha256": "0708fd8af0108937a3e75f56c3808a9edc29eda881b10d61030342913b8e671f",
+    "source": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+    "summary": {
+      "ordinary_gets": 95,
+      "get_errors": 0,
+      "get_500ms_violations": 1,
+      "primary_operations": 82,
+      "diagnostic_operations": 1,
+      "route_groups": 26,
+      "primary_prefix_families": 19,
+      "slow_records_retained": 35,
+      "slow_counters": 35,
+      "primary_process_tails_at_least500ms": 25,
+      "baseline_operations_positive": 77,
+      "baseline_route_groups_positive": 22,
+      "workspace_provision_failures": 2
+    },
+    "deployed": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "bc5116a9c6d18bdae92082aef985ea1f7eb43724",
+      "package_identity": "sha256:c90c070baa5fbcaf6c06df9528d56c7c9852ef97371c053edf056650d53ee271",
+      "pid": 87866,
+      "startup_id": "08b819dd-4a9d-4de6-af7a-422674eacf1b"
+    },
+    "resolution": "open",
+    "next_action": "Continue all568 findings/77 concerns, full startup/schema/sharedCPU/summarySQL/nativebusy/GC/physicalIO, every unexercised/provider/peer/backup/log/receipt concern and normal scheduler independent acceptance."
+  },
+  "ancestor_boundary_stage": {
+    "artifact": "docs/benchmarks/systemic-ancestor-boundaries-20261018.json",
+    "sha256": "a6deb85491ec702777e220c3a74a1df00dc3fc19d72b6f8f74de79cedf9fffcc",
+    "source_sha256": "0ac99f8e55e466d3d6621dbeb6bfa42b0ac56358bbb1a41c3d7828120604b19a",
+    "resolution": "open",
+    "mixed_warnings": {
+      "Slow off-loop operation": 1
+    },
+    "mixed_violations": {
+      "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
+      "sync.object_collect": 3,
+      "maintenance.run": 1
+    }
   }
 }
