@@ -29,7 +29,7 @@ from tests.test_repository_workspaces import cache_workspace_test_provider, make
 
 
 @pytest.fixture
-def admitted(tmp_path, monkeypatch):
+def admitted(tmp_path, monkeypatch, request):
     monkeypatch.delenv("PA_WORKSPACE_ROOT", raising=False)
     kernel = _kernel(tmp_path / "data")
     ctx = kernel.ctx
@@ -44,7 +44,7 @@ def admitted(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "list_project_repositories", lambda *a, **kw: [
         (repository, ProjectRepository(project_id=project.id, repository_id=repository.id, branch="main"))
     ])
-    ledger = DispatchStore(tmp_path / "dispatch")
+    ledger = DispatchStore(ctx.settings.data_dir)
     manager = AgentSessionManager(ctx.settings, store, dispatch_store=ledger)
     ctx.register_service("instance_agent", manager)
     ctx.register_service("dispatch_store", ledger)
@@ -57,6 +57,23 @@ def admitted(tmp_path, monkeypatch):
         request_payload={"provider": "codex", "message": "Wait for the scope decision"},
         materialization_plan={"profile": "repository"},
     ))
+    linked_source = None
+    if getattr(request, "param", None) == "linked":
+        linked_source = store.save_session(AgentSession(
+            id="lost-source", agent_name="codex", dispatch_id="source-dispatch",
+            origin_instance_id="local", authority_instance_id="local",
+            realm_id=record.realm_id, principal_id=record.principal_id,
+            card_id=card.id, project_id=project.id, status="closed",
+        ))
+        ledger.put(DispatchRecord(
+            dispatch_id=linked_source.dispatch_id, mutation_id="source-mutation",
+            session_id=linked_source.id, state="failed",
+            authority_instance_id="local", authority_url="http://pa.test",
+            target_instance_id="local", card_id=card.id, project_id=project.id,
+            principal_id=record.principal_id, realm_id=record.realm_id,
+        ))
+        record.request_payload["context_source_session_id"] = linked_source.id
+        ledger.put(record)
     request = MagicMock()
     request.app.state.ctx = ctx
     request.state.user = None
@@ -76,6 +93,11 @@ def admitted(tmp_path, monkeypatch):
         assert audit["binding"] == persisted.execution_binding
         runtime.session.external_session_id = "native-successor"
         runtime.session.status = "connected"
+        if linked_source:
+            source = store.get_session(linked_source.id)
+            boundary = runtime.session.config_json["execution_context_boundary_from"]
+            assert source.config_json["execution_context_boundary"]["id"] == boundary["id"]
+            assert boundary["target_session_id"] == runtime.session_id
         store.save_session(runtime.session)
         runtime._queue_paused = True
 
@@ -112,7 +134,10 @@ def admitted(tmp_path, monkeypatch):
     asyncio.run(dispatch())
     successor = store.get_session(record.session_id)
     runtime = manager.get(successor.id)
-    runtime.connection = SimpleNamespace(connected=True)
+    runtime.connection = SimpleNamespace(
+        connected=True, models=None, modes=None, config_options=None,
+        pa_mcp_health=None,
+    )
     old = store.save_session(AgentSession(
         id="lost-session", agent_name="codex", dispatch_id="lost-dispatch",
         origin_instance_id="local", authority_instance_id="local",
@@ -150,6 +175,7 @@ def admitted(tmp_path, monkeypatch):
         dispatch=dispatch,
         start_calls=start_calls,
         request=request,
+        linked_source=linked_source,
     )
 
 

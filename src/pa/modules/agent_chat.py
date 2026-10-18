@@ -684,6 +684,9 @@ async def _bind_live_dispatch_session(
             else None
         ),
     }
+    boundary = (session.config_json or {}).get("execution_context_boundary_from")
+    if boundary:
+        session.initiating_workflow["context_boundary"] = dict(boundary)
     binding = dict(session.execution_binding or {})
     bound_card = binding.get("execution_card_id")
     bound_project = binding.get("execution_project_id")
@@ -973,6 +976,31 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
     try:
         if dispatch_record:
             linked_session_id = dispatch_record.session_id
+            context_source_id = dispatch_record.request_payload.get("context_source_session_id")
+            if context_source_id and linked_session_id:
+                target = await _offload(
+                    mgr, "sqlite.agent_boundary_target_read", mgr.store.get_session,
+                    linked_session_id,
+                )
+                if target:
+                    source = await _offload(
+                        mgr, "sqlite.agent_boundary_source_read", mgr.store.get_session,
+                        context_source_id,
+                    )
+                    boundary = (target.config_json or {}).get("execution_context_boundary_from") or {}
+                    fence = (source.config_json or {}).get("execution_context_boundary") if source else None
+                    if not (
+                        fence and boundary.get("id") == fence.get("id")
+                        and boundary.get("source_session_id") == context_source_id
+                        and boundary.get("source_dispatch_id") == source.dispatch_id
+                        and boundary.get("target_session_id") == linked_session_id
+                        and fence.get("target_session_id") == linked_session_id
+                    ):
+                        raise HTTPException(409, detail={
+                            "code": "dispatch_context_boundary_missing",
+                            "message": "The existing target has no matching linked-context receipt and source fence; it cannot be adopted as a linked attempt.",
+                            "recoverable": False,
+                        })
             linked_runtime = mgr.get(linked_session_id) if linked_session_id else None
             if linked_runtime and not getattr(linked_runtime, "_closed", False):
                 new_logical_session = False
@@ -993,6 +1021,9 @@ async def create_session(request: Request, body: CreateSessionBody) -> dict:
                 )
                 if not stored and not body.resume:
                     runtime = await mgr.create_session(
+                        context_source_session_id=dispatch_record.request_payload.get(
+                            "context_source_session_id"
+                        ),
                         session_id=linked_session_id,
                         label=body.label,
                         title=body.title,
