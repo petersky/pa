@@ -263,15 +263,12 @@ def test_gc_directory_walk_does_not_block_transcript_writes(tmp_path):
     orphan.parent.mkdir()
     orphan.write_bytes(b"unreferenced fixture")
     entered, release = threading.Event(), threading.Event()
-    original = Path.glob
-    def stalled_walk(path, pattern):
-        if path == store.objects_dir:
-            yield orphan
-            entered.set()
-            assert release.wait(5)
-        else:
-            yield from original(path, pattern)
-    with ThreadPoolExecutor() as pool, patch.object(Path, "glob", stalled_walk):
+    def stalled_walk(pattern, *, root_dir, include_hidden):
+        assert pattern == "*/*.zlib" and root_dir == store.objects_dir and include_hidden
+        yield str(orphan.relative_to(root_dir))
+        entered.set()
+        assert release.wait(5)
+    with ThreadPoolExecutor() as pool, patch("pa.domain.transcript_storage.iglob", stalled_walk):
         gc = pool.submit(store.collect_unreferenced_objects)
         assert entered.wait(2)
         try:

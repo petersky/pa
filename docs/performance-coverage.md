@@ -1,3 +1,9 @@
+# PR516 CI correction — 2026-10-18
+
+Initial head841ed238 CI39116112746 failed the existing directory-walk concurrency test: it still paused `Path.glob` after the collector moved to `iglob`, so its entry latch never opened. The original test reproduces locally (one failure); this is a confirmed obsolete hook, not an unexplained timing failure. The initial selected suite omitted this existing database performance file.
+
+The test-only correction pauses the actual iterator and yields the same orphan while preserving every two/five-second deadline and the concurrent append/history assertion. The full database performance file plus five GC path contracts now passes16 tests in8.50s under both temporary roots and workspace guard. Product and benchmark bytes are identical to the measured initial head; no performance rerun was needed. Original CI log, original test, failing local reproduction and corrected results/root audits are retained in [the correction artifact](benchmarks/systemic-gc-path-ci-correction-20261018.json). No failed-head retry was requested. New-head CI, supervisor integration, deployment and whole-card acceptance remain separate and pending; all553 findings/62 concerns remain open.
+
 # Current GC path evidence — 2026-10-18
 
 All **553 findings and 62 concerns remain open**. This stage adds a small path-representation repair and an expanded cold-object workload. The full JSON preserves every preceding row unchanged and links every raw stage in [the GC artifact](benchmarks/systemic-gc-paths-20261018.json). Commit, integration, activation and acceptance are separate facts; the candidate is not yet integrated or deployed at measurement time.

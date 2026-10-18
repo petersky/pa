@@ -206720,7 +206720,21 @@
       "retested": "62 broad tests (including5 new),65 backup tests plus16 subtests,4 native SQLite contracts,2 permanent benchmark guards pass. Initial native-error test assumption failure and setup/import/empty-trace gaps retained.",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Ready PR, durable supervisor, exact-head independent green integration/main CI; after prior ba0 continuation terminal, safely activate exact build and retest. Continue GC publication-lock/SQL/host tails and every other inventory/acceptance gap."
+      "next_action": "Ready PR, durable supervisor, exact-head independent green integration/main CI; after prior ba0 continuation terminal, safely activate exact build and retest. Continue GC publication-lock/SQL/host tails and every other inventory/acceptance gap.",
+      "ci_correction": {
+        "artifact": "docs/benchmarks/systemic-gc-path-ci-correction-20261018.json",
+        "sha256": "7899d4ae641c93f49427720a49e7edde6b8a86a2ec5f6a5adb6f28b71a31aa54",
+        "cause": "Confirmed source-coupled test latch still patched Path.glob after implementation moved to iglob. entered.wait(2) could not observe enumeration; guarded local original reproduces. Initial scoped suite omitted the existing database performance file. No flaky/environment attribution.",
+        "repair": "Test only: patch actual iglob, yield same relative orphan, assert rooted hidden pattern. Preserve2s entered/append and5s release deadlines, actual concurrent append/result and retainedhistory assertions. No product or benchmark bytechange.",
+        "validation": "Original isolated1failure7.68s; corrected entire database file plus five GC path contracts16passed8.50s. Both temporary roots and workspace guard. Earlier62/65+16/4/2passed and all mixed/probeoutliers retained; no redundant performance rerun.",
+        "failed_head": "841ed238d68b6c6b42020fb76592100f75f04067",
+        "failed_ci": 39116112746,
+        "report": {
+          "id": "c3f16ef6-892f-4a2f-9497-b99290766ec5",
+          "revision": 1,
+          "hash": "3f4718ed5f3b5e06cd9191c83bc3d9d15a7894d0de01d97e1b1679c773cd6778"
+        }
+      }
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -207133,6 +207147,20 @@
       "native_catalog": "PA MCP tools unavailable earlier this turn, then available again at09:37Z; native instance_info and progress5628 succeeded. Cause of transient catalog absence unverified; no reconnect/restart/config changes."
     },
     "rows": 553,
-    "concerns": 62
+    "concerns": 62,
+    "ci_correction": {
+      "artifact": "docs/benchmarks/systemic-gc-path-ci-correction-20261018.json",
+      "sha256": "7899d4ae641c93f49427720a49e7edde6b8a86a2ec5f6a5adb6f28b71a31aa54",
+      "cause": "Confirmed source-coupled test latch still patched Path.glob after implementation moved to iglob. entered.wait(2) could not observe enumeration; guarded local original reproduces. Initial scoped suite omitted the existing database performance file. No flaky/environment attribution.",
+      "repair": "Test only: patch actual iglob, yield same relative orphan, assert rooted hidden pattern. Preserve2s entered/append and5s release deadlines, actual concurrent append/result and retainedhistory assertions. No product or benchmark bytechange.",
+      "validation": "Original isolated1failure7.68s; corrected entire database file plus five GC path contracts16passed8.50s. Both temporary roots and workspace guard. Earlier62/65+16/4/2passed and all mixed/probeoutliers retained; no redundant performance rerun.",
+      "failed_head": "841ed238d68b6c6b42020fb76592100f75f04067",
+      "failed_ci": 39116112746,
+      "report": {
+        "id": "c3f16ef6-892f-4a2f-9497-b99290766ec5",
+        "revision": 1,
+        "hash": "3f4718ed5f3b5e06cd9191c83bc3d9d15a7894d0de01d97e1b1679c773cd6778"
+      }
+    }
   }
 }
