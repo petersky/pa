@@ -20,6 +20,7 @@ import sqlite3
 import sys
 import tempfile
 import time
+import zlib
 from collections import Counter, defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -69,7 +70,9 @@ class Counts:
 
 
 async def run(root, *, history=1000, iterations=30, inventory_reads=False, retention_events=0,
-              sample_observer=None):
+              retained_cold_objects=0, sample_observer=None):
+    assert 0 <= retained_cold_objects <= 15000
+    assert not retained_cold_objects or retention_events
     root = Path(root).resolve()
     temporary = Path(tempfile.gettempdir()).resolve()
     assert root != temporary and root.is_relative_to(temporary), "benchmark root must be temporary"
@@ -89,13 +92,13 @@ async def run(root, *, history=1000, iterations=30, inventory_reads=False, reten
         async with app.router.lifespan_context(app):
             result = await run_app(app, root, history=history, iterations=iterations,
                                    inventory_reads=inventory_reads, retention_events=retention_events,
-                                   sample_observer=sample_observer)
+                                   retained_cold_objects=retained_cold_objects, sample_observer=sample_observer)
     result["workspace_root_audit"] = roots
     return result
 
 
 async def run_app(app, root, *, history, iterations, inventory_reads=False, retention_events=0,
-                  sample_observer=None):
+                  retained_cold_objects=0, sample_observer=None):
     from pa.server.template_cache import _compatible
     template_cache = app.state.templates.env.bytecode_cache
     template_artifact = {
@@ -168,6 +171,21 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
             store.save_session(expired)
             assert store.transcripts.next_seq(expired.id) == retention_events + 1
         await asyncio.to_thread(seed_expired)
+    if retained_cold_objects:
+        await asyncio.to_thread(store.save_session, AgentSession(
+            id="retention-live-cold", agent_name="codex", status="idle"))
+        for start in range(0, retained_cold_objects, 256):
+            stop = min(start + 256, retained_cold_objects)
+            await asyncio.to_thread(store.append_transcript_events, [
+                TranscriptEvent(session_id="retention-live-cold", seq=i + 1,
+                    event_type="chunk", payload={"text": f"{i}:" + "retained cold fixture " * 300})
+                for i in range(start, stop)
+            ])
+            if sample_observer is not None:
+                pending = sample_observer({"kind": "retained_cold_seed", "through_seq": stop,
+                                           "expected": retained_cold_objects})
+                if inspect.isawaitable(pending):
+                    await pending
     # Synthetic sessions have no provider; enable only the read/list admission
     # used by this fixture while agent_enabled=False prevents process creation.
     manager._accepting = True
@@ -408,6 +426,26 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                 cursor = page[-1].seq
             assert cursor == iterations * 32
         assert actual == expected
+        cold_verified = None
+        if retained_cold_objects:
+            def verify_retained_cold():
+                with store.transcripts._conn() as conn:
+                    rows = conn.execute(
+                        "SELECT seq,cold_hash FROM transcript_events WHERE session_id=? ORDER BY seq",
+                        ("retention-live-cold",),
+                    ).fetchall()
+                assert [row[0] for row in rows] == list(range(1, retained_cold_objects + 1))
+                for _, digest in rows:
+                    raw = zlib.decompress(store.transcripts._object_path(digest).read_bytes())
+                    assert hashlib.sha256(raw).hexdigest() == digest
+                return {"events": len(rows), "unique_objects": len({row[1] for row in rows}),
+                        "all_compressed_content_hashes_verified": True,
+                        "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."}
+            cold_verified = await asyncio.to_thread(verify_retained_cold)
+            if sample_observer is not None:
+                pending = sample_observer({"kind": "retained_cold_verified", **cold_verified})
+                if inspect.isawaitable(pending):
+                    await pending
         assert store.get_projection_head("default") == log.get_head("default")
         assert store.get_card(card_id).title == f"Fixture {history + 2 * iterations - 1}"
         return {"hardware": {"machine": platform.machine(), "python": platform.python_version(), "cpus": os.cpu_count()},
@@ -421,8 +459,10 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                                "slow_observations": runtime_before.get("slow_operations", {}),
                                "acceptance": "reported separately; full server cold boot remains unaccepted"},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,
-                "workload_version": 6 if retention_events else (5 if inventory_reads else 3),
+                "workload_version": 7 if retained_cold_objects else (6 if retention_events else (5 if inventory_reads else 3)),
                 "expired_retention_events": retention_events, "retention_outcome": retention_result,
+                "retained_cold_objects": retained_cold_objects, "retained_cold_verification": cold_verified,
+                "retention_fixture_sessions": int(bool(retention_events)) + int(bool(retained_cold_objects)),
                 "foreground_inventory_reads": inventory_reads,
                 "sync_pushes": iterations, "incoming_reconciliations": iterations,
                 "controlled_compatible_forks": (iterations + 9) // 10,
@@ -488,13 +528,18 @@ if __name__ == "__main__":
                         help="Include 19 additional local read/page paths from the findings inventory")
     parser.add_argument("--retention-events", type=int, default=0,
                         help="Seed up to10000expired events and measure one real concurrent retention sweep")
+    parser.add_argument("--retained-cold-objects", type=int, default=0,
+                        help="Seed up to15000retained cold objects for the concurrent retention traversal")
     args = parser.parse_args()
     if args.history < 1 or args.iterations < 1:
         parser.error("history and iterations must be positive")
     if not 0 <= args.retention_events <= 10000:
         parser.error("retention-events must be0..10000")
+    if not 0 <= args.retained_cold_objects <= 15000 or (args.retained_cold_objects and not args.retention_events):
+        parser.error("retained-cold-objects must be0..15000 and requires retention-events")
     with tempfile.TemporaryDirectory(prefix="pa-systemic-benchmark-") as tmp:
         result = asyncio.run(run(Path(tmp), history=args.history, iterations=args.iterations,
-                                 inventory_reads=args.inventory_reads, retention_events=args.retention_events))
+                                 inventory_reads=args.inventory_reads, retention_events=args.retention_events,
+                                 retained_cold_objects=args.retained_cold_objects))
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"output": str(args.output), "warnings": result["warnings"], "latency": result["latency"]}, indent=2))
