@@ -207,6 +207,14 @@ COMPLETION_OUTBOX_ERROR_CLASSES = {
 }
 
 
+class DispatchSessionRetry(BaseModel):
+    """Authority-admitted recovery of the exact existing execution session."""
+
+    key: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    generation: int = Field(ge=1)
+
+
 class DispatchRecord(BaseModel):
     dispatch_id: str = Field(default_factory=lambda: str(uuid4()))
     mutation_id: str
@@ -271,6 +279,7 @@ class DispatchRecord(BaseModel):
     session_id: str | None = None
     resume_requested: bool = False
     resume_session_id: str | None = None
+    session_retry: DispatchSessionRetry | None = None
     state: str = "queued"
     stage_attempts: int = 0
     attempts: int = 0
@@ -404,6 +413,26 @@ class DispatchRecord(BaseModel):
             "current_card": self.reconciliation_current_card,
         }
 
+    @property
+    def retryable(self) -> bool:
+        # Older targets made a closed session a permanent startup failure.
+        # Retry may now restore that exact identity through normal admission;
+        # completion evidence and terminal repair must never be replayed as work.
+        closed_start = (
+            self.state == "failed"
+            and self.error_code == "linked_session_unavailable"
+            and bool(self.session_id)
+            and not self.terminal_repair_reservation
+            and self.completion_payload is None
+            and self.completion_envelope is None
+            and self.completion_received_at is None
+            and self.acknowledged_at is None
+            and self.completion_delivery_class != "acknowledged"
+        )
+        return self.state in {"failed", "cancelled"} and (
+            self.recoverable or closed_start
+        )
+
     def public_dict(self, *, summary: bool = False) -> dict[str, Any]:
         data = self.model_dump(
             mode="json",
@@ -415,7 +444,7 @@ class DispatchRecord(BaseModel):
                 "progress_next_sequence",
             },
         )
-        data["can_retry"] = self.state in {"failed", "cancelled"} and self.recoverable
+        data["can_retry"] = self.retryable
         data["execution_selection"] = self.request_payload.get("execution_selection")
         data["can_cancel"] = self.state in {
             "waiting_capacity",
@@ -3573,7 +3602,7 @@ class DispatchStore:
             current = self._snapshot(stored) if stored else None
             if not current or current.mutation_id != record.mutation_id:
                 raise ValueError("dispatch changed before retry admission")
-            if current.state not in {"failed", "cancelled"} or not current.recoverable:
+            if not current.retryable:
                 raise ValueError(f"dispatch in {current.state} is not retryable")
             # Another dispatch may have taken ownership while this attempt was
             # terminal. Reuse the same atomic gate as new admission on retry.
@@ -3603,6 +3632,15 @@ class DispatchStore:
             current.cancel_requested = False
             current.last_error = None
             current.error_code = None
+            if current.session_id:
+                current.session_retry = DispatchSessionRetry(
+                    key=idempotency_key,
+                    session_id=current.session_id,
+                    generation=(
+                        current.session_retry.generation + 1
+                        if current.session_retry else 1
+                    ),
+                )
             current.control_operations[idempotency_key] = "retry"
             if execution_full and not capacity.override:
                 if capacity.queue_limit is None:

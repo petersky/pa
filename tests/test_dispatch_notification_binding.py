@@ -39,10 +39,7 @@ def admitted(tmp_path, monkeypatch):
     project = store.create_project(ProjectCreate(title="Scope"), via_log=False)
     card = store.create_card(CardCreate(title="Pending scope", project_id=project.id), via_log=False)
     remote = make_remote(tmp_path)
-    url = "https://github.com/pa-test/provenance.git"
-    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
-    monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.{remote}.insteadOf")
-    monkeypatch.setenv("GIT_CONFIG_VALUE_0", url)
+    url = str(remote)
     repository = Repository(id="repo-1", name="Scope", url=url)
     monkeypatch.setattr(store, "list_project_repositories", lambda *a, **kw: [
         (repository, ProjectRepository(project_id=project.id, repository_id=repository.id, branch="main"))
@@ -66,8 +63,10 @@ def admitted(tmp_path, monkeypatch):
     request.state.principal_id = "user:local"
     request.state.instance_authenticated = True
     spec = AgentProviderSpec(id="codex", display_name="Codex", command="unused-test-provider")
+    start_calls = []
 
     async def provider_start(runtime, **kwargs):
+        start_calls.append(kwargs)
         # Only the external provider process is replaced. Admission and workspace
         # materialization, including the audited SQLite CAS, run normally.
         persisted = store.get_session(runtime.session_id)
@@ -99,7 +98,7 @@ def admitted(tmp_path, monkeypatch):
                 "session_id": ledger.get(record.dispatch_id).session_id,
                 "dispatch_id": body["dispatch_id"], "prompt_id": body["dispatch_prompt_id"]}
 
-    async def dispatch():
+    async def dispatch(attempt=record):
         with (
             patch("pa.modules.fleet._wait_for_dispatch_sync_health", AsyncMock(return_value={})),
             patch("pa.modules.fleet._peer_dispatch_json", side_effect=materialize),
@@ -108,7 +107,7 @@ def admitted(tmp_path, monkeypatch):
             patch("pa.acp.providers.resolve.resolve_provider_id", return_value=("codex", "instance")),
             patch.object(AgentSessionRuntime, "start", provider_start),
         ):
-            await _process_remote_dispatch(request.app, record)
+            await _process_remote_dispatch(request.app, attempt)
 
     asyncio.run(dispatch())
     successor = store.get_session(record.session_id)
@@ -148,6 +147,9 @@ def admitted(tmp_path, monkeypatch):
         store=store, manager=manager, record=record, card=card,
         successor=successor, runtime=runtime, old=old,
         service=service, notice=notice, transfer=transfer,
+        dispatch=dispatch,
+        start_calls=start_calls,
+        request=request,
     )
 
 
