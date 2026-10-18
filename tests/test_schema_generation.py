@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -16,6 +17,7 @@ from fastapi._compat import v2
 from fastapi.openapi.utils import get_openapi as framework_get_openapi
 from fastapi.routing import APIRouter
 from pydantic import BaseModel, Field, RootModel, computed_field
+from pydantic import json_schema
 
 from pa.config import Settings
 from pa.core.kernel import Kernel
@@ -88,6 +90,75 @@ def variant_app() -> FastAPI:
 
 
 class SchemaGenerationTests(TestCase):
+    def test_definition_collisions_and_recursive_remapping_match_framework(self):
+        definitions = {
+            "left": {"type": "object", "properties": {"child": {"$ref": "#/$defs/inner-left"}}},
+            "right": {"type": "object", "properties": {"child": {"$ref": "#/$defs/inner-right"}}},
+            "inner-left": {"type": "integer"},
+            "inner-right": {"type": "integer"},
+            "different": {"type": "string"},
+        }
+        choices = {
+            "left": ["Outer", "left"], "right": ["Outer", "right"],
+            "inner-left": ["Inner", "inner-left"],
+            "inner-right": ["Inner", "inner-right"],
+            "different": ["Outer", "different"],
+        }
+        results = []
+        for cls in (json_schema.GenerateJsonSchema,
+                    schema_generation._schema_generator(json_schema.GenerateJsonSchema)):
+            generator = cls()
+            generator.definitions = deepcopy(definitions)
+            generator._prioritized_defsref_choices = deepcopy(choices)
+            remapping = generator._build_definitions_remapping()
+            results.append((remapping.defs_remapping, remapping.json_remapping,
+                            remapping.remap_json_schema({"$defs": deepcopy(definitions)})))
+            self.assertEqual(generator.definitions, definitions)
+        self.assertEqual(results[0], results[1])
+
+    def test_definition_memo_is_invalidated_before_in_place_remapping(self):
+        # Observe real remapping boundaries: upstream mutates these same dicts.
+        # A hash from a previous pass must never survive into the next pass.
+        original_hash = json_schema._make_json_hashable
+        original_remapping = json_schema._DefinitionsRemapping
+        passes, seen = [], set()
+
+        def fingerprint(value):
+            if id(value) in seen:
+                self.fail("same definition traversed twice within a remapping pass")
+            seen.add(id(value))
+            with patch.object(json_schema, "_make_json_hashable", original_hash):
+                return original_hash(value)
+
+        def boundary(*args):
+            passes.append(len(seen))
+            seen.clear()
+            return original_remapping(*args)
+
+        # Keep the original static method available while observing construction.
+        boundary.from_prioritized_choices = original_remapping.from_prioritized_choices
+        with patch.object(json_schema, "_make_json_hashable", fingerprint), \
+             patch.object(json_schema, "_DefinitionsRemapping", boundary):
+            generator = schema_generation._schema_generator(json_schema.GenerateJsonSchema)()
+            generator.definitions = {"a": {"type": "integer"}, "b": {"type": "integer"}}
+            generator._prioritized_defsref_choices = {"a": ["Shared", "a"], "b": ["Shared", "b"]}
+            result = generator._build_definitions_remapping()
+        self.assertEqual(result.defs_remapping, {"a": "Shared", "b": "Shared"})
+        # Upstream retains both original entries in copied_definitions even
+        # after their output names collapse. Each pass must hash both again.
+        self.assertEqual(passes, [2, 2])
+
+    def test_remapping_error_and_unrecognized_pydantic_version_use_framework_contract(self):
+        base = json_schema.GenerateJsonSchema
+        for cls in (base, schema_generation._schema_generator(base)):
+            generator = cls()
+            generator.definitions = {"a": {"enum": [{1}]}}
+            generator._prioritized_defsref_choices = {"a": ["a"]}
+            with self.assertRaises(TypeError):
+                generator._build_definitions_remapping()
+        with patch.object(schema_generation.pydantic, "__version__", "future"):
+            self.assertIs(schema_generation._schema_generator(base), base)
+
     def test_variants_match_framework_in_both_schema_modes(self):
         app = variant_app()
         for separate in (True, False):

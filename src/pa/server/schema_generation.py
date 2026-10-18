@@ -7,6 +7,8 @@ validation/serialization schema generation still needs those adapters.
 The final validated OpenAPI model dump is already JSON-compatible; retain its
 null/private-key filtering without rediscovering arbitrary Python encoders for
 every JSON scalar.
+Definition-name collision checks reuse each schema's hashable representation
+within one simplification pass, then discard it before in-place remapping.
 
 Keep the framework's traversal and rendering, with private function bindings
 local to this call. Nothing in FastAPI's module globals, request validation,
@@ -20,6 +22,7 @@ from types import FunctionType, SimpleNamespace
 from typing import Any
 
 import fastapi
+import pydantic
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.models import OpenAPI
 from fastapi.openapi.utils import get_openapi as framework_get_openapi
@@ -58,6 +61,50 @@ def _bind(function: FunctionType, namespace: dict[str, Any]) -> FunctionType:
     return bound
 
 
+def _schema_generator(base: type) -> type:
+    """Reuse a definition's hashable representation within one remapping pass."""
+    if pydantic.__version__ != "2.13.4":
+        return base
+
+    from pydantic import json_schema
+
+    class SchemaGenerator(base):
+        def _build_definitions_remapping(self) -> Any:
+            # One schema appears under several candidate names. Keep strong
+            # references so identity reuse cannot alias a different schema.
+            memo: dict[int, tuple[Any, Any]] = {}
+
+            def hash_schema(value: Any) -> Any:
+                key = id(value)
+                if key not in memo:
+                    memo[key] = (value, json_schema._make_json_hashable(value))
+                return memo[key][1]
+
+            deduplicate = _bind(json_schema._deduplicate_schemas, {
+                **json_schema._deduplicate_schemas.__globals__,
+                "_make_json_hashable": hash_schema,
+            })
+
+            def remapping(*args: Any) -> Any:
+                # The upstream remapper mutates schema dictionaries in place.
+                # Invalidate before mutation and before any subsequent pass.
+                memo.clear()
+                return json_schema._DefinitionsRemapping(*args)
+
+            choices = _bind(json_schema._DefinitionsRemapping.from_prioritized_choices, {
+                **json_schema._DefinitionsRemapping.from_prioritized_choices.__globals__,
+                "_deduplicate_schemas": deduplicate,
+                "_DefinitionsRemapping": remapping,
+            })
+            build = _bind(base._build_definitions_remapping, {
+                **base._build_definitions_remapping.__globals__,
+                "_DefinitionsRemapping": SimpleNamespace(from_prioritized_choices=choices),
+            })
+            return build(self)
+
+    return SchemaGenerator
+
+
 def get_openapi(**kwargs: Any) -> dict[str, Any]:
     if fastapi.__version__ != "0.136.3":
         return framework_get_openapi(**kwargs)
@@ -88,7 +135,10 @@ def get_openapi(**kwargs: Any) -> dict[str, Any]:
                 return SimpleNamespace(**values)
             return v2.ModelField(**values)
 
-        namespace = {**traversal, "ModelField": model_field}
+        namespace = {
+            **traversal, "ModelField": model_field,
+            "GenerateJsonSchema": _schema_generator(v2.GenerateJsonSchema),
+        }
         return _bind(v2.get_definitions, namespace)(fields=fields, **options)
 
     generation = dict(framework_get_openapi.__globals__)

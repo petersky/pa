@@ -207898,6 +207898,58 @@
       "retested": "Separate2write diagnostic confirms body/summary equal and parsed instants equal; original fullprobe remains failed and larger sizeclass unexecuted. New append-prior80trials verify semanticversion/head parity.",
       "next_action": "Retain original failure and raw assessments; improve reusable benchmark outcome/semantic-validation boundaries while continuing remaining performance repairs and normal independent acceptance.",
       "report": "ed04f90a-cc4f-43d3-ac61-c6f75fd47c5d"
+    },
+    {
+      "id": "concern:activation-helper-identifier-replacement",
+      "kind": "concern",
+      "finding": "Unscoped PR-number replacement changes unrelated backup dispatch UUID in an activation helper",
+      "family": "observability",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_client_helper_selector_corruption",
+      "cause": "Copy523->524 altered9523insidebackupdispatchUUIDto9524. Read-onlygate404correlation5d15dba1-62e1-459f-9940-eeb708bd73ef. Gateexit1waschecked; noinstallran. This is a client helper failure, not service data loss or521-style ignored-gate sequencing.",
+      "implemented": "Exact supplied backupUUID restored inpreinstall/futurehandoff gates. Correctedcompletegate passed BEFOREimmutableUV. Installer independently requiresfresh successfulgate age<120s, exactmerge/mainCI, constraints, cleanGit and persistschildexit/log. Originalfailedhelper/hash/exit retained.",
+      "merged": [],
+      "deployed": "Localcard-scopedhelpercorrection only; productPR524 source integrated separately. No productionconfig/default/backup/admission/acceptance change.",
+      "retested": "Correctedgate7747745d thenfresh ef20eab5 passedbeforeinstallation; exactinstall exit0 andpostinstalledproofa1c3adbe9da9f9579a45ffa784ccd43db9addb7d0a8c54dd9eeb38252c666769 verified. Firstfailedgate remainsfailed; notretroactivelygreen.",
+      "report": "d60472de-bf7c-40fa-9ad4-cf51ca13ca98",
+      "resolution": "open",
+      "next_actor": "this same card/session",
+      "next_action": "Publish thisoverlay in nextrepositorycoverage update and replace broad operational-helper string substitution with explicit immutable bindings plus selector/gate regression coverage beforefuturecloning; continue all latency and independentacceptance requirements."
+    },
+    {
+      "id": "concern:startup-definition-hash-amplification",
+      "kind": "concern",
+      "finding": "Repeated structural schema hashing under candidate definition names",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "next_actor": "this same card/session",
+      "cause_classification": "confirmed_redundant_cpu_work_source_parity_measured_fullstartup_open",
+      "cause": "Same copied definition traversed repeatedly under six naming alternatives within each simplification pass; corrected prototype5616requests936computations3passes. Memo is invalidated before upstream in-place mutation; full schema hash unchanged.",
+      "artifact": "docs/benchmarks/systemic-schema-remapping-20261018.json",
+      "sha256": "bfc8c6c4c69918c7b728936144009d74f06fff068f6fb1ee6da0cb378ee4ddb9",
+      "implemented": "Call-local version-fenced per-pass schema hashable representation memo; invalidate before in-place remapping. Keep upstream full definitions/modelvalidation/encoder/security/readiness behavior.",
+      "merged": [],
+      "deployed": "Not deployed; actuald6e4/PR524 loaded proof and complete inventory retained separately.",
+      "retested": "37tests+9subtests pass28.66s; alternating previous/current/current/previous complete schema equality, wall1175.949/968.139/943.029/1187.534ms. Full normal startup1257.927ms ready but1OpenAPI1046.817ms warning remains. Not acceptance.",
+      "resolution": "open",
+      "next_action": "Ready PR/durable supervisor/exact-head independent gates/mainCI/safe exact activation/retest; continue all remaining startup/sharedCPU/nativeSQL/GC/health/history/sync/provider/peer/log/backup/receipt and normal independent acceptance."
+    },
+    {
+      "id": "concern:ci525-snapshot-latency-attribution",
+      "kind": "concern",
+      "finding": "OriginalCI200ms snapshot assertion fails at256ms with insufficient phase attribution",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "next_actor": "this same card/session",
+      "cause_classification": "ci_failure_confirmed_root_cause_unverified",
+      "cause": "UNKNOWN; failedtest/agent_chat/agent_session unchanged fromparentd6e4. Timer includesmocksetup/request/teardown. Local3observations not reproduceCI; no nativebusy/GIL/CPU/GC attribution. Valueauditmockpaths empty, no claim fabricated outputmetadata causedfailure.",
+      "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+      "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+      "resolution": "open",
+      "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
+      "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+      "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+      "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208942,6 +208994,53 @@
         "checks": "5SUCCESS each attempt1"
       },
       "cause_scope": "Source parity and bounded fresh-process CPU subset measured; actualstartup1478.644ms/1317.585CPU remains slow. Different uncontrolled startups are not paired speedup or full-path acceptance."
+    },
+    "concern:append-unused-card-prior": {
+      "artifact": "docs/benchmarks/systemic-524-loaded-20261018.json",
+      "sha256": "411c9b38c45816791576c906c7c3c080ae3169064b083dc291aab54eeaeb1eed",
+      "source": "d6e4ca08af657e5963df0325ee742b63f19dc4c6",
+      "summary": {
+        "ordinary_gets": 95,
+        "get_errors": 0,
+        "get_500ms_violations": 3,
+        "primary_operations": 81,
+        "diagnostic_operations": 1,
+        "route_groups": 23,
+        "primary_prefix_families": 19,
+        "slow_records_retained": 32,
+        "slow_counters": 32,
+        "primary_process_tails_at_least500ms": 24,
+        "baseline_operations_positive": 76,
+        "baseline_route_groups_positive": 19
+      },
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "d6e4ca08af657e5963df0325ee742b63f19dc4c6",
+        "package_identity": "sha256:b34c8068418e4a2162f6a94a48a2cdf7998873ff0c52e159d7aa49269cbf5ce4",
+        "pid": 84056,
+        "startup_id": "9a36d89d-3dc9-4117-b8a7-d861927ed1c1"
+      },
+      "resolution": "open",
+      "next_action": "Continue all566findings75concerns, measured startup/schema/sharedCPU, summarySQL/nativebusy/GC/physicalIO, every unexercised/provider/peer/backup/log/receipt concern and normal scheduler independent acceptance."
+    },
+    "concern:test-workspace-isolation": {
+      "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+      "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+      "resolution": "open",
+      "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
+      "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+      "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+      "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green.",
+      "notice": "Directinvocation didnotexplicitlysetbothtemporaryroots orconstructor guard; not isolationproof. No full localraw console archive claimed. Source body objectnewruntime/fakestore/MagicMockrequest, noKernel/Storeconstruction inbody and no observedlivewrites; no runtimewriteaudit asserted. Guardedreplacement fullrawoutcome retained separately. Existingtest-workspace-isolationconcern staysopen."
+    },
+    "concern:activation-helper-identifier-replacement": {
+      "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+      "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+      "resolution": "open",
+      "implemented": "Frozen explicit session bindings/selectors,3puretests pass, wronghistorical9524backupUUID rejected and PRnumber altersonlyGitHubselector. Newgenerichelpers prepared/parsed only, no install/restart executed. Futurelivegate validation remainsopen; previousUUIDfailure notretroactivelygreen.",
+      "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+      "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+      "next_action": "Useexplicitboundhelpers forfutureactivation, freshlivecontext/installedmetadata/nativepreview gates stillrequired. NevercloneoperationalUUIDs byPRdigitsubstitution."
     }
   },
   "f7e8_loaded_stage": {
@@ -210258,5 +210357,82 @@
       "verification_status": "complete"
     },
     "status": "Measured local source; CI/integration/activation/deployed acceptance pending, every row remains open."
+  },
+  "latest_524_loaded_stage": {
+    "artifact": "docs/benchmarks/systemic-524-loaded-20261018.json",
+    "sha256": "411c9b38c45816791576c906c7c3c080ae3169064b083dc291aab54eeaeb1eed",
+    "source": "d6e4ca08af657e5963df0325ee742b63f19dc4c6",
+    "summary": {
+      "ordinary_gets": 95,
+      "get_errors": 0,
+      "get_500ms_violations": 3,
+      "primary_operations": 81,
+      "diagnostic_operations": 1,
+      "route_groups": 23,
+      "primary_prefix_families": 19,
+      "slow_records_retained": 32,
+      "slow_counters": 32,
+      "primary_process_tails_at_least500ms": 24,
+      "baseline_operations_positive": 76,
+      "baseline_route_groups_positive": 19
+    },
+    "deployed": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "d6e4ca08af657e5963df0325ee742b63f19dc4c6",
+      "package_identity": "sha256:b34c8068418e4a2162f6a94a48a2cdf7998873ff0c52e159d7aa49269cbf5ce4",
+      "pid": 84056,
+      "startup_id": "9a36d89d-3dc9-4117-b8a7-d861927ed1c1"
+    },
+    "resolution": "open",
+    "next_action": "Continue all566findings75concerns, measured startup/schema/sharedCPU, summarySQL/nativebusy/GC/physicalIO, every unexercised/provider/peer/backup/log/receipt concern and normal scheduler independent acceptance."
+  },
+  "activation_helper_control_overlay": {
+    "contract": "pa.performance-coverage-update/v1",
+    "observed_at": "2026-10-18T13:35:39.924082+00:00",
+    "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "base_matrix": "https://github.com/petersky/pa/blob/d6e4ca08af657e5963df0325ee742b63f19dc4c6/docs/performance-coverage.json",
+    "base_sha256": "54b842ebf6bc9b229a8cd57fb1b1ac05e826f36512a5278e141efce374058ea4",
+    "base_rows": 565,
+    "rows_after_update": 566,
+    "concerns": 75,
+    "coverage_counts_unchanged": true,
+    "new_rows": [
+      {
+        "id": "concern:activation-helper-identifier-replacement",
+        "kind": "concern",
+        "finding": "Unscoped PR-number replacement changes unrelated backup dispatch UUID in an activation helper",
+        "family": "observability",
+        "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "cause_classification": "confirmed_client_helper_selector_corruption",
+        "cause": "Copy523->524 altered9523insidebackupdispatchUUIDto9524. Read-onlygate404correlation5d15dba1-62e1-459f-9940-eeb708bd73ef. Gateexit1waschecked; noinstallran. This is a client helper failure, not service data loss or521-style ignored-gate sequencing.",
+        "implemented": "Exact supplied backupUUID restored inpreinstall/futurehandoff gates. Correctedcompletegate passed BEFOREimmutableUV. Installer independently requiresfresh successfulgate age<120s, exactmerge/mainCI, constraints, cleanGit and persistschildexit/log. Originalfailedhelper/hash/exit retained.",
+        "merged": [],
+        "deployed": "Localcard-scopedhelpercorrection only; productPR524 source integrated separately. No productionconfig/default/backup/admission/acceptance change.",
+        "retested": "Correctedgate7747745d thenfresh ef20eab5 passedbeforeinstallation; exactinstall exit0 andpostinstalledproofa1c3adbe9da9f9579a45ffa784ccd43db9addb7d0a8c54dd9eeb38252c666769 verified. Firstfailedgate remainsfailed; notretroactivelygreen.",
+        "report": "d60472de-bf7c-40fa-9ad4-cf51ca13ca98",
+        "resolution": "open",
+        "next_actor": "this same card/session",
+        "next_action": "Publish thisoverlay in nextrepositorycoverage update and replace broad operational-helper string substitution with explicit immutable bindings plus selector/gate regression coverage beforefuturecloning; continue all latency and independentacceptance requirements."
+      }
+    ]
+  },
+  "schema_remapping_stage": {
+    "artifact": "docs/benchmarks/systemic-schema-remapping-20261018.json",
+    "sha256": "bfc8c6c4c69918c7b728936144009d74f06fff068f6fb1ee6da0cb378ee4ddb9",
+    "implemented": "Call-local version-fenced per-pass schema hashable representation memo; invalidate before in-place remapping. Keep upstream full definitions/modelvalidation/encoder/security/readiness behavior.",
+    "merged": [],
+    "deployed": "Not deployed; actuald6e4/PR524 loaded proof and complete inventory retained separately.",
+    "retested": "37tests+9subtests pass28.66s; alternating previous/current/current/previous complete schema equality, wall1175.949/968.139/943.029/1187.534ms. Full normal startup1257.927ms ready but1OpenAPI1046.817ms warning remains. Not acceptance.",
+    "resolution": "open",
+    "next_action": "Ready PR/durable supervisor/exact-head independent gates/mainCI/safe exact activation/retest; continue all remaining startup/sharedCPU/nativeSQL/GC/health/history/sync/provider/peer/log/backup/receipt and normal independent acceptance."
+  },
+  "ci525_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+    "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+    "resolution": "open",
+    "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
+    "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+    "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+    "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
   }
 }

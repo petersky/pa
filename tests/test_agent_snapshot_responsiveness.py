@@ -40,6 +40,7 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         runtime.store = _ContendedTranscriptStore()
         request = MagicMock()
 
+        started_cpu = time.thread_time()
         started = time.monotonic()
         with (
             patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
@@ -52,13 +53,21 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
                 return_value={"session_state": "busy"},
             ),
         ):
+            configured = time.monotonic()
             snapshot = await asyncio.wait_for(
                 get_session_snapshot(request, runtime.session_id),
                 timeout=0.2,
             )
+            request_finished = time.monotonic()
         elapsed = time.monotonic() - started
 
-        self.assertLess(elapsed, 0.2)
+        self.assertLess(
+            elapsed, 0.2,
+            f"setup={configured - started:.6f}s "
+            f"request={request_finished - configured:.6f}s "
+            f"teardown={elapsed - (request_finished - started):.6f}s "
+            f"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s",
+        )
         self.assertEqual(runtime.store.reads, 0)
         self.assertEqual(len(runtime._transcript_buffer), 4096)
         self.assertNotIn("transcript", snapshot)
