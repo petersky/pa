@@ -269,7 +269,7 @@ class BackupTestCase(unittest.TestCase):
         self.assertNotEqual(record.manifest.durable_heads["default"], self.store.event_log.get_head("default"))
         self.assertGreater(self.store.transcripts.collect_unreferenced_objects(), 0)
 
-    def test_missing_captured_cold_reference_fails_before_payload_copy_and_archive(self) -> None:
+    def test_missing_captured_cold_reference_is_disclosed_without_rewriting_history(self) -> None:
         good = self._run("before-missing-cold")
         self.store.append_transcript_events([TranscriptEvent(
             session_id="missing-cold", seq=1, event_type="turn_completed",
@@ -277,15 +277,20 @@ class BackupTestCase(unittest.TestCase):
         )])
         for path in self.store.transcripts.objects_dir.glob("*/*.zlib"):
             path.unlink()  # Disposable fixture only; never alter live recovery data.
+        self.store.create_card(CardCreate(title="Available current data is still copied"))
         with patch.object(self.service, "_copy_file", wraps=self.service._copy_file) as copied, \
              patch.object(self.service, "_archive", wraps=self.service._archive) as archived:
-            failed = self.service.run_backup(idempotency_key="missing-cold-preflight")
-        self.assertEqual(failed.status, "failed")
-        self.assertIn("transcript_object_missing", failed.failure_reason)
-        self.assertEqual(copied.call_count, 0)
-        self.assertEqual(archived.call_count, 0)
-        self.assertIn("snapshot", failed.phase_seconds)
-        self.assertEqual([row.backup_id for row in self.service.list_backups()], [good.backup_id])
+            limited = self.service.run_backup(idempotency_key="missing-cold-preflight")
+        self.assertEqual(limited.status, "success")
+        self.assertTrue(limited.integrity_verified)
+        self.assertFalse(limited.data_complete)
+        self.assertEqual(limited.verification, "failed")  # Never an intact proof.
+        self.assertEqual(limited.missing_transcript_object_count, 1)
+        self.assertGreater(copied.call_count, 0)
+        self.assertEqual(archived.call_count, 1)
+        self.assertIn("snapshot", limited.phase_seconds)
+        self.assertEqual({row.backup_id for row in self.service.list_backups()}, {good.backup_id, limited.backup_id})
+        self.assertEqual(len(self.store.transcripts.referenced_hashes()), 1)
 
     def test_cold_pinning_releases_writer_locks_and_gc_resumes_after_pins(self) -> None:
         self.store.append_transcript_events([TranscriptEvent(

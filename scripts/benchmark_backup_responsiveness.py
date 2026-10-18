@@ -62,6 +62,13 @@ def run(args):
             session_id="isolated-backup-transcripts", seq=index + 1,
             event_type="turn_completed", payload={"text": f"payload {index} " * 2000},
         ) for index in range(offset, min(offset + 128, args.cold_transcripts))])
+    if not 0 <= args.missing_cold_transcripts <= args.cold_transcripts:
+        raise ValueError("missing cold payload count must fit the disposable fixture")
+    missing = sorted(store.transcripts.referenced_hashes())[:args.missing_cold_transcripts]
+    for digest in missing:
+        # Pre-existing historical absence in this newly created fixture only.
+        # The real capture must preserve its database reference and disclose it.
+        store.transcripts._object_path(digest).unlink()
     database_bytes = {}
     for database, minimum in (
         (settings.db_path, args.projection_bytes),
@@ -81,6 +88,7 @@ def run(args):
         "backup_module_sha256": hashlib.sha256(Path(backup_module.__file__).read_bytes()).hexdigest(),
         "backup_module": str(Path(backup_module.__file__).resolve()),
         "objects": args.objects, "cold_transcripts": args.cold_transcripts, "real_fsync": True,
+        "expected_missing_payloads": missing,
         "database_logical_bytes": database_bytes,
         "production_requests": 0, "archives_preserved": True, "samples": [], "operations": [],
         "manual_only": args.manual_only,
@@ -155,14 +163,23 @@ def run(args):
                 result["archives"].append({
                     "backup_id": record.backup_id, "manifest_bytes": member.size,
                     "manifest_files": len(manifest["files"]), "verified": record.verified,
+                    "integrity_verified": getattr(record, "integrity_verified", record.verified),
+                    "data_complete": getattr(record, "data_complete", True if record.verified else None),
+                    "missing_transcript_objects": manifest.get("missing_transcript_objects", []),
                 })
+                assert {item["sha256"] for item in manifest.get("missing_transcript_objects", [])} == set(missing)
                 if args.objects >= 12_000:
                     assert member.size > 2 * 1024 * 1024
-        assert all(item["verified"] for item in result["archives"])
-        result["health"] = {key: service.status()[key] for key in (
+        assert result["archives"]
+        assert all(item["integrity_verified"] and item["data_complete"] == (not missing)
+                   and item["verified"] == (not missing) for item in result["archives"])
+        status = service.status()
+        result["health"] = {key: status.get(key) for key in (
             "backup_count", "verified_backup_count", "last_success", "last_known_good",
-            "consecutive_failures",
+            "consecutive_failures", "limited_backup_count", "historical_data_warning", "last_completed",
         )}
+        assert store.transcripts.referenced_hashes() >= set(missing)
+        assert all(not store.transcripts._object_path(digest).exists() for digest in missing)
         assert all(value["status"] == "success" for value in result["runs"])
         assert not any(value["pruned_backup_ids"] for value in result["runs"])
         result["distributions"] = {
@@ -184,6 +201,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--objects", type=int, default=12_000)
     parser.add_argument("--cold-transcripts", type=int, default=128)
+    parser.add_argument("--missing-cold-transcripts", type=int, default=0,
+                        help="Pre-existing absent payloads in the new disposable fixture only")
     parser.add_argument("--projection-bytes", type=int, default=0,
                         help="Minimum disposable projection size, including inert fixture padding")
     parser.add_argument("--transcript-bytes", type=int, default=0,

@@ -40,6 +40,9 @@ def status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     typer.echo(f"Next run:      {data.get('next_scheduled_run') or '—'}")
     typer.echo(f"Last attempt:  {data.get('last_attempt') or '—'}")
     typer.echo(f"Last success:  {data.get('last_success') or '—'}")
+    typer.echo(f"Last capture:  {data.get('last_completed') or data.get('last_success') or '—'}")
+    if data.get("historical_data_warning"):
+        typer.echo(f"Limited data:  {data['historical_data_warning']}")
     typer.echo(f"Destination:   {destination['path']}")
     typer.echo(
         f"Health:        {'writable' if destination['writable'] else destination.get('error') or 'unhealthy'}"
@@ -94,6 +97,8 @@ def list_cmd(
         )
         if item.get("verification_error"):
             typer.echo(f"  {item['verification_error']}")
+        if item.get("coverage_warning"):
+            typer.echo(f"  {item['coverage_warning']}")
 
 
 @backup_app.command("inspect")

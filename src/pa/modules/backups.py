@@ -179,7 +179,7 @@ async def verify_backup(request: Request, backup_id: str) -> dict[str, Any]:
         )
     except BackupError as exc:
         _raise(exc)
-    if not record.verified:
+    if not record.integrity_verified:
         raise HTTPException(
             status_code=409,
             detail={
@@ -217,7 +217,10 @@ def download_backup(request: Request, backup_id: str) -> FileResponse:
 def backup_export_info(request: Request, backup_id: str) -> dict[str, Any]:
     _admin(request)
     try:
-        path = _service(request).download_path(backup_id)
+        record = _service(request).verify_backup(backup_id)
+        if not record.integrity_verified:
+            raise BackupError("backup_not_verified", "backup is not safe to export")
+        path = record.path
     except BackupError as exc:
         _raise(exc)
     digest = hashlib.sha256()
@@ -231,6 +234,9 @@ def backup_export_info(request: Request, backup_id: str) -> dict[str, Any]:
         "sha256": digest.hexdigest(),
         "download_url": f"/api/backups/{backup_id}/download",
         "authorization": "PA administrator session required",
+        **{key: value for key, value in record.public_dict(exclude_manifest=True).items()
+           if key in {"verified", "integrity_verified", "data_complete", "coverage_warning",
+                      "verification_status", "missing_transcript_object_count", "missing_transcript_bytes"}},
     }
 
 
@@ -300,6 +306,28 @@ class BackupsModule(Module):
             )
 
         service.failure_notifier = notify_failure
+
+        def notify_missing_data(key: str, warning: str) -> None:
+            from pa.domain.notifications import NotificationAction, NotificationCreate
+
+            ctx.require_service("notifications").create(
+                NotificationCreate(
+                    realm_id=next(iter(ctx.settings.subscribed_realms), "default"),
+                    type="service_health", severity="warning", priority="high",
+                    title="Backup completed with missing historical data",
+                    body=(f"{ctx.settings.instance_name}: {warning} "
+                          "Future backups can continue protecting available data. "
+                          "Intact recovery points remain protected; inspect the disclosed limitation on the Backups page."),
+                    source_instance_id=ctx.settings.instance_id,
+                    source_instance_name=ctx.settings.instance_name,
+                    deduplication_key=key,
+                    actions=[NotificationAction(id="backups", kind="navigate", label="Review limitation",
+                                                href="/settings?section=backups")],
+                ),
+                principal_id=f"instance:{ctx.settings.instance_id}",
+            )
+
+        service.missing_data_notifier = notify_missing_data
         await service.start(
             ctx.require_service("async_runtime")
         )

@@ -32,6 +32,7 @@ from pa.backup.models import (
     BackupRun,
     BackupState,
     ManifestFile,
+    MissingTranscriptObject,
     RestoreRequest,
     validate_backup_destination_path,
 )
@@ -222,13 +223,75 @@ def _verify_event_graph(objects_root: Path, refs: dict[str, str]) -> None:
         )
 
 
-def _verify_transcript_store(database: Path, objects_root: Path) -> None:
+def _missing_transcript_objects(database: Path, present: set[str]) -> list[MissingTranscriptObject]:
+    """Describe absences from the captured index, without changing references."""
+    missing: list[MissingTranscriptObject] = []
+    with contextlib.closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+        rows = conn.execute("""
+            SELECT e.cold_hash,COUNT(*),o.codec,o.uncompressed_bytes,o.compressed_bytes,o.ref_count,
+                   SUM(CASE WHEN e.payload_hash!=e.cold_hash THEN 1 ELSE 0 END)
+            FROM transcript_events AS e LEFT JOIN transcript_objects AS o ON o.hash=e.cold_hash
+            WHERE e.cold_hash IS NOT NULL GROUP BY e.cold_hash ORDER BY e.cold_hash
+        """)
+        for index, (digest, count, codec, raw_bytes, stored_bytes, ref_count, mismatches) in enumerate(rows):
+            if index >= MAX_MANIFEST_FILES:
+                raise BackupError("manifest_limit_exceeded", "too many referenced transcript objects")
+            if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) or mismatches:
+                raise BackupError("transcript_object_corrupt", "captured transcript index has invalid content hashes")
+            if digest in present:
+                continue
+            if codec != "zlib" or ref_count != count:
+                raise BackupError("transcript_object_corrupt", "missing transcript payload has inconsistent index metadata")
+            try:
+                missing.append(MissingTranscriptObject(
+                    sha256=digest, uncompressed_bytes=raw_bytes,
+                    compressed_bytes=stored_bytes, reference_count=count,
+                ))
+            except ValueError as exc:
+                raise BackupError("transcript_object_corrupt", "missing transcript payload has invalid size metadata") from exc
+    return missing
+
+
+def _coverage(manifest: BackupManifest | None) -> dict[str, Any]:
+    missing = manifest.missing_transcript_objects if manifest else []
+    count = len(missing)
+    size = sum(item.uncompressed_bytes for item in missing)
+    return {
+        "data_complete": manifest.data_complete if manifest else None,
+        "missing_transcript_object_count": count,
+        "missing_transcript_bytes": size,
+        "coverage_warning": (
+            f"{count} historical transcript payload(s), {size} decoded bytes, were absent from the source. "
+            "Available data and all references are preserved. This is not a fully intact recovery point."
+            if count else None
+        ),
+        "missing_data_fingerprint": hashlib.sha256(json.dumps(
+            [item.model_dump(mode="json") for item in missing], sort_keys=True,
+        ).encode()).hexdigest() if count else None,
+    }
+
+
+def _verify_transcript_store(database: Path, objects_root: Path,
+                             declared_missing: list[MissingTranscriptObject] | None = None) -> None:
     if not database.exists():
+        if declared_missing:
+            raise BackupError("transcript_missing_declaration_mismatch", "missing-data declarations require a captured transcript index")
         return
+    present = {path.parent.name + path.stem for path in objects_root.glob("*/*.zlib") if path.is_file()}
+    actual_missing = _missing_transcript_objects(database, present)
+    declarations = {item.sha256: item for item in declared_missing or []}
+    if {item.sha256: item for item in actual_missing} != declarations:
+        if actual_missing and not declarations:
+            raise BackupError("transcript_object_missing", "cold transcript payload is missing without an explicit limitation declaration")
+        raise BackupError("transcript_missing_declaration_mismatch", "declared transcript limitations differ from the captured index and files")
     with contextlib.closing(sqlite3.connect(f"file:{database}?mode=ro", uri=True)) as conn:
         refs = conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL").fetchall()
     for (digest,) in refs:
         path = objects_root / str(digest)[:2] / f"{str(digest)[2:]}.zlib"
+        if digest in declarations:
+            if path.exists():
+                raise BackupError("transcript_missing_declaration_mismatch", "a declared absent payload has an archive member")
+            continue
         if not path.is_file():
             raise BackupError("transcript_object_missing", f"cold transcript object {str(digest)[:12]} is missing")
         try:
@@ -252,6 +315,7 @@ class BackupService:
         self._state_lock = threading.RLock()
         self._verifying: set[str] = set()
         self.failure_notifier: Any = None
+        self.missing_data_notifier: Any = None
         self._failure_log_key: str | None = None
         self._stop_event: asyncio.Event | None = None
         self._config_event: asyncio.Event | None = None
@@ -460,15 +524,20 @@ class BackupService:
             self._metric("backup_snapshot_cold_pin_seconds_total", time.monotonic() - started)
             self._metric("backup_snapshot_cold_pin_files_total", len(cold_files) - before)
 
-    def _preflight_cold_references(self, database: Path, cold_files: list[tuple[Path, Path]]) -> None:
-        """Reject an incomplete captured source before copying or archiving it."""
+    def _preflight_cold_references(self, database: Path, cold_files: list[tuple[Path, Path]]) -> list[MissingTranscriptObject]:
+        """Record exact source absences; corruption and incomplete pinning fail."""
         captured = {target.parent.name + target.stem for _, target in cold_files}
-        with contextlib.closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
-            for (digest,) in conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL"):
-                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-                    raise BackupError("transcript_object_corrupt", "captured transcript index has an invalid cold object hash")
-                if digest not in captured:
-                    raise BackupError("transcript_object_missing", f"cold transcript object {digest[:12]} is missing from captured source inventory")
+        missing = _missing_transcript_objects(database, captured)
+        source = getattr(getattr(self.store, "transcripts", None), "objects_dir",
+                         self.settings.db_path.parent / "transcript_objects")
+        for item in missing:
+            path = source / item.sha256[:2] / f"{item.sha256[2:]}.zlib"
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                continue
+            raise BackupError("transcript_inventory_changed", "a source payload exists but was not pinned; no missing-data declaration is allowed")
+        return missing
 
     def _snapshot(self, staging: Path) -> BackupManifest:
         lock = (
@@ -514,10 +583,11 @@ class BackupService:
                 if defer_pins and transcript_target is not None:
                     self._pin_cold_objects(staging, pins, cold_files)
 
+            missing_objects: list[MissingTranscriptObject] = []
             _integrity(projection, self.config.verification_level)
             if transcript_target is not None:
                 _integrity(transcript_target, self.config.verification_level)
-                self._preflight_cold_references(transcript_target, cold_files)
+                missing_objects = self._preflight_cold_references(transcript_target, cold_files)
             atomic_write_json(staging / "sync_refs.json", refs, mode=0o600)
             for source, target in cold_files:
                 self._copy_file(source, target)
@@ -529,7 +599,7 @@ class BackupService:
                         f"event-log object {object_id[:12]} failed its content hash",
                     )
 
-        return self._snapshot_manifest(staging, projection, refs)
+        return self._snapshot_manifest(staging, projection, refs, missing_objects)
 
     def _capture_snapshot(
         self, staging: Path, pins: contextlib.ExitStack,
@@ -590,7 +660,8 @@ class BackupService:
         return projection, transcript_target, refs
 
     def _snapshot_manifest(
-        self, staging: Path, projection: Path, refs: dict[str, str]
+        self, staging: Path, projection: Path, refs: dict[str, str],
+        missing_objects: list[MissingTranscriptObject] | None = None,
     ) -> BackupManifest:
         durable = {
             key.split("/", 1)[0]: head
@@ -608,7 +679,7 @@ class BackupService:
                 + "; run PA sync reconciliation before retrying",
             )
         schema_version, fingerprint = _schema_info(projection)
-        manifest = BackupManifest(
+        metadata = dict(
             instance_id=self.settings.instance_id,
             instance_name=self.settings.instance_name,
             pa_version=__version__,
@@ -634,7 +705,12 @@ class BackupService:
                         sha256=_sha256(path),
                     )
                 )
-        manifest.files = files
+        limited = bool(missing_objects)
+        manifest = BackupManifest(
+            **metadata, files=files, missing_transcript_objects=missing_objects or [],
+            format=f"pa.metadata-backup/v{2 if limited else 1}",
+            format_version=2 if limited else 1,
+        )
         atomic_write_json(
             staging / "manifest.json",
             manifest.model_dump(mode="json"),
@@ -690,7 +766,7 @@ class BackupService:
                 phase_seconds["verify"] = round(
                     time.monotonic() - verify_started, 6
                 )
-            if not verification.verified:
+            if not verification.integrity_verified:
                 raise BackupError(
                     "temporary_verification_failed",
                     verification.verification_error
@@ -779,30 +855,43 @@ class BackupService:
             # atomically renames those exact immutable bytes into visibility.
             run.status = "success"
             run.backup_id = manifest.backup_id
-            run.verification = "verified"
+            run.integrity_verified = True
+            for key, value in _coverage(manifest).items():
+                setattr(run, key, value)
+            run.verification = "verified" if manifest.data_complete else "failed"
+            # Keep old state readers fail-closed: their verification flag still
+            # means intact recovery, and their reason column shows the warning.
+            run.failure_reason = run.coverage_warning
             run.size_bytes = archive.stat().st_size
             # A protected older recovery point must not make retention select
             # the archive this successful run has just published instead.
             protected_backup_ids.add(manifest.backup_id)
+            if not manifest.data_complete:
+                # A limited capture cannot replace any intact recovery point.
+                protected_backup_ids.update(item.backup_id for item in self.list_backups() if item.verified)
             phase_started = time.monotonic()
             run.pruned_backup_ids = self.prune(
                 protected_backup_ids=protected_backup_ids
             )
             run.phase_seconds["prune"] = round(time.monotonic() - phase_started, 6)
             with self._state_lock:
-                self._state.last_success = datetime.now(UTC)
+                self._state.last_completed = datetime.now(UTC)
+                if manifest.data_complete:
+                    self._state.last_success = self._state.last_completed
+                    self._state.missing_data_alert_key = None
                 self._state.consecutive_failures = 0
                 self._state.failure_alert_key = None
-            self._metric("backup_success_total")
+            self._metric("backup_success_total" if manifest.data_complete else "backup_limited_total")
             self._metric("backup_bytes_total", run.size_bytes)
             self._audit(
-                "backup_succeeded",
+                "backup_succeeded" if manifest.data_complete else "backup_completed_with_missing_data",
                 run_id=run.id,
                 backup_id=run.backup_id,
                 size_bytes=run.size_bytes,
                 pruned_backup_ids=run.pruned_backup_ids,
                 queue_wait_seconds=run.queue_wait_seconds,
                 phase_seconds=run.phase_seconds,
+                **_coverage(manifest),
             )
         except BackupError as exc:
             if exc.code == "backup_overlap_process":
@@ -861,6 +950,8 @@ class BackupService:
             self._schedule_next()
             if self._loop and self._config_event:
                 self._loop.call_soon_threadsafe(self._config_event.set)
+        if run.status == "success" and run.data_complete is False:
+            self._notify_missing_data(run)
         return run
 
     def _record_finished(self, run: BackupRun) -> None:
@@ -1010,7 +1101,7 @@ class BackupService:
                 transcript_projection = root / "transcripts.sqlite3"
                 if transcript_projection.exists():
                     _integrity(transcript_projection, manifest.verification_level)
-                    _verify_transcript_store(transcript_projection, root / "transcript_objects")
+                    _verify_transcript_store(transcript_projection, root / "transcript_objects", manifest.missing_transcript_objects)
                 version, fingerprint = _schema_info(projection)
                 if (
                     version != manifest.projection_schema_version
@@ -1040,17 +1131,20 @@ class BackupService:
                 _verify_event_graph(root / "objects", refs)
             if self._archive_identity(path) != identity:
                 raise BackupError("archive_changed", "archive changed during verification; verify it again")
-            self._metric("backup_verification_success_total")
+            self._metric("backup_verification_success_total" if manifest.data_complete else "backup_verification_limited_total")
             self._remember_verification(path, backup_id, manifest, None, identity=identity)
-            self._audit("backup_verified", backup_id=backup_id)
+            self._audit("backup_verified" if manifest.data_complete else "backup_integrity_verified_with_missing_data",
+                        backup_id=backup_id, **_coverage(manifest))
             return BackupRecord(
                 backup_id=backup_id,
                 path=path,
                 created_at=manifest.created_at,
                 size_bytes=path.stat().st_size,
-                verified=True,
-                verification_status="verified",
+                verified=manifest.data_complete,
+                integrity_verified=True,
+                verification_status="verified" if manifest.data_complete else "verified_with_missing_data",
                 manifest=manifest,
+                **_coverage(manifest),
             )
         except Exception as exc:  # noqa: BLE001 - restore must always roll back
             reason = (
@@ -1074,6 +1168,7 @@ class BackupService:
                 verification_status="failed",
                 verification_error=reason,
                 manifest=manifest,
+                **_coverage(manifest),
             )
 
     @staticmethod
@@ -1093,11 +1188,14 @@ class BackupService:
             return
         with self._state_lock:
             self._state.verifications[backup_id] = {
-                "verified": error is None, "error": error,
+                "verified": error is None and manifest is not None and manifest.data_complete,
+                "integrity_verified": error is None and manifest is not None,
+                "error": error,
                 "verified_at": datetime.now(UTC).isoformat(),
                 "created_at": manifest.created_at.isoformat() if manifest else None,
                 "filename": path.name, "destination": str(path.parent.resolve()),
                 "identity": identity or self._archive_identity(path),
+                **_coverage(manifest),
             }
             self._save_state()
 
@@ -1128,7 +1226,9 @@ class BackupService:
             state = "unverified"
             reason = "Verification has not been recorded for these archive bytes. Select Verify to check integrity."
             if current:
-                state = "verified" if cached.get("verified") else "failed"
+                state = ("verified" if cached.get("verified") else "verified_with_missing_data"
+                         if cached.get("integrity_verified") and cached.get("data_complete") is False
+                         and cached.get("missing_transcript_object_count", 0) > 0 else "failed")
                 reason = cached.get("error")
             elif cached:
                 reason = "Archive changed or has no recorded file identity. Select Verify to check integrity."
@@ -1141,7 +1241,12 @@ class BackupService:
                     else datetime.fromtimestamp(identity["mtime_ns"] / 1e9, UTC)
                 ),
                 size_bytes=identity["size"], verified=state == "verified",
+                integrity_verified=state in {"verified", "verified_with_missing_data"},
                 verification_status=state, verification_error=reason,
+                **({key: cached.get(key) for key in (
+                    "data_complete", "missing_transcript_object_count", "missing_transcript_bytes",
+                    "coverage_warning", "missing_data_fingerprint",
+                ) if key in cached} if current else {}),
             )
             records.append(record)
         records = sorted(
@@ -1154,7 +1259,8 @@ class BackupService:
 
     def prune(self, *, protected_backup_ids: set[str] | None = None) -> list[str]:
         protected_backup_ids = protected_backup_ids or set()
-        # Every published archive is fully verified before it is recorded, and
+        # Every published archive has an integrity proof before it is recorded;
+        # incomplete historical coverage is explicit and never an intact point.
         # restore/delete paths perform their own fresh verification.  Retention
         # only needs that durable verification record; re-extracting every
         # retained archive here makes each scheduled backup scale with the
@@ -1168,7 +1274,12 @@ class BackupService:
                 key: value for key, value in self._state.verifications.items()
                 if key in retained_ids
             }
-        records = [item for item in inventory if item.verified]
+        records = [item for item in inventory if item.integrity_verified]
+        # Preserve every intact point while the newest capture has a limitation.
+        # Limited captures can still follow the unchanged retention bounds among
+        # themselves; unknown/changed archives are never candidates.
+        if records and not records[0].verified:
+            protected_backup_ids = set(protected_backup_ids) | {item.backup_id for item in records if item.verified}
         records.sort(key=lambda item: (item.created_at, item.backup_id))
         if len(records) <= 1:
             return []
@@ -1230,14 +1341,16 @@ class BackupService:
         return deleted
 
     def deep_scrub(self) -> dict[str, bool]:
-        """Freshly verify every retained archive outside the normal backup path."""
+        """Refresh integrity/coverage proofs; legacy booleans mean fully intact."""
         started = time.monotonic()
         results: dict[str, bool] = {}
+        corrupt = limited = 0
         self._audit("backup_scrub_started")
         for record in self.list_backups():
-            results[record.backup_id] = self.verify_backup(
-                record.backup_id, path=record.path
-            ).verified
+            checked = self.verify_backup(record.backup_id, path=record.path)
+            results[record.backup_id] = checked.verified
+            corrupt += not checked.integrity_verified
+            limited += checked.integrity_verified and checked.data_complete is False
         elapsed = round(time.monotonic() - started, 6)
         with self._state_lock:
             self._state.last_scrub = datetime.now(UTC)
@@ -1252,7 +1365,7 @@ class BackupService:
             "backup_scrub_finished",
             duration_seconds=elapsed,
             checked=len(results),
-            corrupt=sum(not verified for verified in results.values()),
+            corrupt=corrupt, limited=limited,
         )
         return results
 
@@ -1342,7 +1455,7 @@ class BackupService:
 
     def download_path(self, backup_id: str) -> Path:
         record = self.verify_backup(backup_id)
-        if not record.verified:
+        if not record.integrity_verified:
             raise BackupError("backup_not_verified", "backup is not safe to export")
         return record.path
 
@@ -1353,7 +1466,7 @@ class BackupService:
         with self._state_lock:
             state = self._state.model_dump(
                 mode="json",
-                exclude={"verifications", "idempotency", "last_scrub_results", "failure_alert_key"},
+                exclude={"verifications", "idempotency", "last_scrub_results", "failure_alert_key", "missing_data_alert_key"},
             )
             paused = self._automatic_paused()
             running = bool(self._verifying) or any(
@@ -1362,6 +1475,8 @@ class BackupService:
         if paused or not self.config.enabled:
             state["next_scheduled_run"] = None
         good = next((item for item in backups if item.verified), None)
+        completed = next((item for item in backups if item.integrity_verified), None)
+        limited = completed if completed and completed.data_complete is False else None
         failed = next(
             (run for run in reversed(state["runs"]) if run["status"] == "failed"), None
         )
@@ -1374,7 +1489,10 @@ class BackupService:
                 "A successful backup resumes automatic attempts."
             )
         elif self.config.enabled:
-            next_actor, next_action = "PA", "Wait for the next scheduled backup."
+            next_actor, next_action = "PA", (
+                "Continue scheduled backups of available data; the historical limitation remains disclosed."
+                if limited else "Wait for the next scheduled backup."
+            )
         else:
             next_actor = "Administrator"
             next_action = "Enable scheduled backups or select Back up now."
@@ -1388,8 +1506,11 @@ class BackupService:
             "storage_used_bytes": used,
             "backup_count": len(backups),
             "verified_backup_count": sum(1 for item in backups if item.verified),
+            "limited_backup_count": sum(1 for item in backups if item.integrity_verified and item.data_complete is False),
             "last_known_good": good.public_dict() if good else None,
-            "backup_state": "in_progress" if running else "failed" if paused else "idle",
+            "last_completed_backup": completed.public_dict() if completed else None,
+            "historical_data_warning": limited.coverage_warning if limited else None,
+            "backup_state": "in_progress" if running else "failed" if paused else "limited" if limited else "idle",
             "automatic_backups_paused": paused,
             "next_actor": next_actor,
             "next_action": next_action,
@@ -1444,6 +1565,30 @@ class BackupService:
             # Keep the pause effective even if the notification backend is down.
             logger.exception("backup.failure_notification_failed")
 
+    def _notify_missing_data(self, record: BackupRun) -> None:
+        """One durable notice per limitation set, separate from I/O failures."""
+        if record.data_complete is not False or not record.integrity_verified:
+            return
+        with self._state_lock:
+            key = (f"backup-missing-data:{self.settings.instance_id}:"
+                   f"{self._state.last_success or 'never'}:{record.missing_data_fingerprint}")
+            if self._state.missing_data_alert_key == key:
+                return
+        if self.missing_data_notifier is None:
+            logger.warning("backup.historical_data_missing count=%s bytes=%s",
+                           record.missing_transcript_object_count, record.missing_transcript_bytes)
+            return
+        try:
+            self._audit("backup_historical_data_disclosed", backup_id=record.backup_id,
+                        missing_transcript_object_count=record.missing_transcript_object_count,
+                        missing_transcript_bytes=record.missing_transcript_bytes)
+            self.missing_data_notifier(key, record.coverage_warning)
+            with self._state_lock:
+                self._state.missing_data_alert_key = key
+                self._save_state()
+        except Exception:
+            logger.exception("backup.missing_data_notification_failed")
+
     def _config_sources(self) -> dict[str, str]:
         persisted: dict[str, Any] = {}
         path = self.settings.data_dir / "config.json"
@@ -1481,6 +1626,8 @@ class BackupService:
         self, backup_id: str, *, requested_by: str, confirm_instance_id: str
     ) -> RestoreRequest:
         record = self.verify_backup(backup_id)
+        if record.integrity_verified and record.data_complete is False:
+            raise BackupError("backup_contains_missing_data", "This limited archive cannot provide a fully intact restore. Historical missing-data declarations must remain visible; no live state was changed.")
         if not record.verified or not record.manifest:
             raise BackupError(
                 "backup_not_verified", "backup must verify before restore"
@@ -1575,6 +1722,8 @@ class BackupService:
             )
         try:
             record = self.verify_backup(backup_id)
+            if record.integrity_verified and record.data_complete is False:
+                raise BackupError("backup_contains_missing_data", "This limited archive cannot provide a fully intact restore. No live state was changed.")
             if not record.verified or not record.manifest:
                 raise BackupError(
                     "backup_not_verified", "backup must verify before restore"
@@ -1623,7 +1772,7 @@ class BackupService:
             idempotency_key=f"pre-restore:{request.id}",
             protected_backup_ids={backup_id},
         )
-        if pre.status != "success" or not pre.backup_id:
+        if pre.status != "success" or pre.verification != "verified" or not pre.backup_id:
             request.status = "failed"
             request.failure_reason = (
                 "pre-restore backup failed; live state was not changed"
@@ -1835,8 +1984,11 @@ class BackupService:
                 self._save_state()
 
         async def scheduler() -> None:
+            completed = next((run for run in reversed(self._state.runs) if run.status == "success"), None)
+            if completed and completed.data_complete is False:
+                await self._run_maintenance("backup.missing_data_notice", self._notify_missing_data, completed)
             now = datetime.now(UTC)
-            last = self._state.last_success
+            last = self._state.last_completed or self._state.last_success
             startup_due = (
                 self.config.enabled
                 and not self._automatic_paused()
