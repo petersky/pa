@@ -541,6 +541,18 @@ class TranscriptStorage:
                 directory + Path(name).stem
                 for directory, name in map(os.path.split, batch)
             ]
+            # A speculative positive reference can only keep bytes for this
+            # pass. Avoid contending with publishers for wholly live batches;
+            # every possible deletion still needs fresh proof under their lock.
+            with self._conn() as conn:
+                marks = ",".join("?" for _ in digests)
+                prelive = {row[0] for row in conn.execute(
+                    f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
+                )}
+            candidates = [(path, digest) for path, digest in zip(batch, digests) if digest not in prelive]
+            if not candidates:
+                continue
+            batch, digests = map(list, zip(*candidates))
             with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
                 if self._object_readers:
                     return removed

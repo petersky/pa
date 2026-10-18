@@ -1,3 +1,119 @@
+# GC publication-lock evidence — 2026-10-18
+
+All **555 findings and64concerns remain open**. Every554preceding row is unchanged; explicit current status overrides separate prior integration and activation from historical stage labels. The [complete artifact](benchmarks/systemic-gc-prefilter-20261018.json) preserves every new trial, lock event, timing, byte/count, source/root proof, journal and failure. This prefilter is a local candidate, not yet integrated or deployed. PR517 benchmark correction is separately integrated with five green head/main checks; running product remainsbcd5.
+
+The candidate reads each bounded live-hash batch outside the append publication lock and can only keep bytes based on that speculation. Every possible deletion still requires the original fresh locked query and reader-pin check. Stale positive rows can only defer byte collection until a later pass. Initial pin check is unchanged; later wholly-live batches may continue scanning under a new pin, without unlink. No refcount/audit/transaction/durability/SQLpredicate/batchlimit/threshold/default change.
+
+Complete numeric lock timelines confirm mutual GC/append contention in a disposable workload. Three alternating concurrent pairs reduced median GC168.434->134.889ms and appendtotal242.242->197.764ms, but maxima worsened200.619->236.151 and268.804->280.638ms. GCbatchlockhold35-38ms became0.001-0.005ms and appendlockwait~28ms became0.6-1.1ms. A separate orphan-heavy prototype worsened median138.080->151.678ms. These small samples and all regressions remain retained; no live causal share or whole-path tail success is claimed.
+
+The first publication-race controller started the paused publisher before GC initial pin lock, so its speculative-query latch was unreachable. Original source/log/results are retained. Corrected sequencing starts GC first and pauses enumeration, then starts the publisher; commit and failed-publication cases pass. Late reference, late pin and stale positive contracts also pass. Ten focused,67 broader,65 backup plus16subtests and four nativeSQLite tests pass. Build cache sandboxdenial and approved native retry are retained; no live backup action occurred.
+
+| Mixed observation | Exact517 product baseline | Prefilter candidate |
+|---|---:|---:|
+| Workload seconds | 96.259 | 96.993 |
+| Worker warning count | 4 | 3 |
+| Sampled target violations | 12 | 10 |
+| GC wall ms | 10611.193584 | 7283.442708 |
+| GC CPU ms | 908.085041 | 1095.157542 |
+| GC lockwait ms | 5808.851956971921 | 138.76312505453825 |
+| GC lockhold ms | 3926.3510448508896 | 0.014833000022917986 |
+| GC SQLAPI wall ms | 3801.8784732557833 | 5728.137255238835 |
+| GC SQLAPI calls | 12707 | 12707 |
+| GC rows | 12511 | 12511 |
+
+GC SQL API wall increased from3.802s to5.728s and thread CPU from908ms to1095ms. Full workload duration increased96.259s to96.993s; GC lock elimination does not establish a whole-path speedup. Baseline/candidate recorded4/3workerwarnings and12/10sampled violations. Each100iteration case ran once, serialized after all own tests. Both retain9600ordered active events,12511cold objects with every content hash verified,5000policy-expired events removed and16audit proofs. Each7274record journal is hash-chain validated. Workload finish, sequential capture and postvalidation times are distinct and checked. All operation failure/timeout/rejection totals, warnings/violations, CPU/logical block/SQL/filesystem counters, raw route/operation windows and bytes remain in the artifact. Hostactivity is uncontrolled; object count alone does not match production417MB/318MB databases. Inclusive phases overlap; nonCPU wall is not physical disk/nativebusy/GIL attribution. Existing warning overrides differ from declared500ms sample target; neither was changed.
+
+## Every measured operation/request and byte distribution
+
+Each cell is n/p50/p95/p99/max in ms. These are exact workload samples, separate from process maxima and last256runtime windows.
+
+| Operation/request | Baseline | Candidate | >=500ms baseline/candidate |
+|---|---|---|---:|
+| / | 100/13.628/27.133/42.954/79.63 | 100/13.479/25.87/53.908/71.719 | 0/0 |
+| /agent | 100/61.716/139.851/214.804/220.364 | 100/62.398/130.928/190.546/205.019 | 0/0 |
+| /api/agent/history/session-0?limit=64 | 100/38.26/83.162/128.487/138.954 | 100/37.557/77.321/131.585/178.076 | 0/0 |
+| /api/agent/history/session-0?limit=64&message_boundaries=true | 100/179.684/407.353/605.991/612.574 | 100/180.682/430.913/516.301/579.267 | 3/3 |
+| /api/agent/preferences | 100/5.264/9.313/19.729/25.796 | 100/5.161/9.169/18.086/24.56 | 0/0 |
+| /api/agent/sessions?view=chats | 100/33.064/85.351/104.141/138.342 | 100/32.465/82.107/125.646/138.342 | 0/0 |
+| /api/cards | 100/9.166/16.534/28.186/110.755 | 100/9.163/14.866/21.641/76.608 | 0/0 |
+| /api/cards/fixture-card | 100/5.515/12.052/16.734/18.014 | 100/5.463/14.554/36.039/101.592 | 0/0 |
+| /api/cards/fixture-card/history | 100/29.002/52.724/110.282/121.204 | 100/28.846/74.896/114.667/121.635 | 0/0 |
+| /api/execution/defaults | 100/6.015/9.048/38.409/102.313 | 100/5.861/8.534/15.179/40.614 | 0/0 |
+| /api/fleet/dispatch-jobs | 100/36.806/86.925/135.088/142.221 | 100/36.667/98.745/146.915/163.426 | 0/0 |
+| /api/fleet/dispatch-queue | 100/7.297/15.846/19.363/22.915 | 100/7.203/14.824/25.145/31.374 | 0/0 |
+| /api/health | 100/3.648/5.992/7.306/38.609 | 100/3.617/6.461/8.414/16.87 | 0/0 |
+| /api/health-journal/status | 100/8.447/16.573/20.799/44.621 | 100/8.764/14.465/37.711/38.603 | 0/0 |
+| /api/notifications | 100/5.778/12.455/19.8/21.587 | 100/5.613/14.777/33.532/36.801 | 0/0 |
+| /api/pr-supervisor/capabilities | 100/8.276/21.104/29.174/39.811 | 100/8.481/13.854/21.125/33.939 | 0/0 |
+| /api/pr-supervisor/watches | 100/8.257/18.362/27.366/38.124 | 100/8.155/16.778/44.78/50.727 | 0/0 |
+| /api/runtime | 100/33.243/40.303/52.989/78.273 | 100/32.984/39.542/44.07/45.648 | 0/0 |
+| /api/runtime?section=sse | 100/5.348/8.659/20.415/45.313 | 100/5.369/7.987/14.554/22.6 | 0/0 |
+| /api/status | 100/49.62/85.66/103.715/173.035 | 100/49.923/85.162/95.666/102.246 | 0/0 |
+| /api/sync/refs | 100/4.816/12.463/19.783/19.795 | 100/4.838/8.244/17.958/22.728 | 0/0 |
+| /api/sync/status | 100/13.112/39.783/73.129/75.571 | 100/13.435/48.523/80.79/96.229 | 0/0 |
+| /api/workspaces | 100/7.597/20.565/28.822/124.002 | 100/7.458/14.359/45.029/46.688 | 0/0 |
+| /fleet | 100/93.596/215.27/290.286/306.268 | 100/93.24/266.651/418.547/493.505 | 0/0 |
+| /partials/home/sections | 100/20.049/49.276/73.106/85.198 | 100/19.898/58.676/83.269/97.576 | 0/0 |
+| /pull-requests | 100/32.268/91.11/135.36/141.813 | 100/32.122/69.734/140.558/140.633 | 0/0 |
+| /settings?section=agent | 100/20.434/59.254/85.031/105.668 | 100/20.259/74.449/116.376/117.473 | 0/0 |
+| /settings?section=backups | 100/19.099/48.074/90.202/104.39 | 100/19.086/41.463/100.117/109.553 | 0/0 |
+| /work | 100/15.101/33.58/47.694/78.453 | 100/15.17/31.992/71.066/76.407 | 0/0 |
+| acp.wire_append | 100/4.647/14.966/33.17/58.643 | 100/4.012/13.337/23.919/29.285 | 0/0 |
+| dispatch.runnable_read | 100/2.688/28.521/34.472/105.353 | 100/2.966/11.416/16.342/23.25 | 0/0 |
+| fleet.overview_cache_read | 100/2.248/11.318/28.631/77.475 | 100/2.055/8.273/23.304/30.345 | 0/0 |
+| fleet.overview_cache_write | 100/12.44/34.097/42.928/60.604 | 100/13.581/32.86/37.759/43.329 | 0/0 |
+| maintenance.run | 1/20645.674/20645.674/20645.674/20645.674 | 1/18057.533/18057.533/18057.533/18057.533 | 1/1 |
+| progress.checkpoint_write | 100/9.969/22.232/28.115/40.588 | 100/10.658/21.881/30.753/87.762 | 0/0 |
+| progress.sequence_allocate | 100/9.429/27.321/60.664/60.686 | 100/8.207/32.269/38.901/43.146 | 0/0 |
+| reconciliation.dispatch_read | 100/1.93/12.81/30.318/77.487 | 100/1.763/7.274/9.999/16.4 | 0/0 |
+| sqlite.card_write | 10/50.478/113.583/113.583/113.583 | 10/73.141/112.901/112.901/112.901 | 0/0 |
+| sqlite.execution_binding_materialize | 100/31.688/108.664/141.294/572.445 | 100/62.149/162.744/214.372/440.972 | 1/0 |
+| sync.commit_read | 100/4.189/15.75/23.896/27.441 | 100/4.617/14.537/18.601/19.443 | 0/0 |
+| sync.object_collect | 10/559.511/1334.429/1334.429/1334.429 | 10/346.187/1445.595/1445.595/1445.595 | 6/3 |
+| sync.push_transaction | 100/77.824/158.884/276.48/364.091 | 100/74.19/183.308/432.965/524.153 | 0/1 |
+| sync.reconcile_head | 100/56.368/186.005/243.064/423.809 | 100/51.341/212.99/665.114/670.384 | 0/2 |
+| transcript.drain | 300/116.966/222.96/280.181/529.045 | 300/118.239/183.205/221.243/420.178 | 1/0 |
+
+Decoded response bytes are payload bytes, not wire bytes. Cells are n/p50/p95/p99/max.
+
+| Request | Baseline decoded bytes | Candidate decoded bytes |
+|---|---|---|
+| / | 100/23368/23368/23368/23368 | 100/23368/23368/23368/23368 |
+| /agent | 100/120912/120912/120942/120942 | 100/120912/120912/120942/120942 |
+| /api/agent/history/session-0?limit=64 | 100/260542/260543/260543/260544 | 100/260542/260543/260543/260543 |
+| /api/agent/history/session-0?limit=64&message_boundaries=true | 100/2775466/2775466/2775466/2775466 | 100/2775466/2775466/2775466/2775466 |
+| /api/agent/preferences | 100/351/351/351/351 | 100/351/351/351/351 |
+| /api/agent/sessions?view=chats | 100/75522/75522/75522/75522 | 100/75522/75522/75522/75522 |
+| /api/cards | 100/23031/23031/23031/23031 | 100/23031/23031/23031/23031 |
+| /api/cards/fixture-card | 100/2196/2196/2196/2196 | 100/2196/2196/2196/2196 |
+| /api/cards/fixture-card/history | 100/102882/102882/102882/102882 | 100/102882/102882/102882/102882 |
+| /api/execution/defaults | 100/2733/2733/2733/2733 | 100/2733/2733/2733/2733 |
+| /api/fleet/dispatch-jobs | 100/247350/247350/247350/247350 | 100/247350/247350/247350/247350 |
+| /api/fleet/dispatch-queue | 100/1072/1072/1072/1072 | 100/1073/1073/1073/1073 |
+| /api/health | 100/15/15/15/15 | 100/15/15/15/15 |
+| /api/health-journal/status | 100/521/521/521/521 | 100/521/521/521/521 |
+| /api/notifications | 100/75/75/75/75 | 100/75/75/75/75 |
+| /api/pr-supervisor/capabilities | 100/1284/1284/1284/1284 | 100/1284/1284/1284/1284 |
+| /api/pr-supervisor/watches | 100/2/2/2/2 | 100/2/2/2/2 |
+| /api/runtime | 100/183211/183249/183252/183497 | 100/189969/190069/190072/190324 |
+| /api/runtime?section=sse | 100/303/303/303/303 | 100/303/303/303/303 |
+| /api/status | 100/2133/2133/2133/2133 | 100/2134/2134/2134/2135 |
+| /api/sync/refs | 100/259/259/259/260 | 100/259/259/259/259 |
+| /api/sync/status | 100/3618/3618/3619/3621 | 100/3603/3617/3618/3619 |
+| /api/workspaces | 100/26/26/26/26 | 100/26/26/26/26 |
+| /fleet | 100/278789/278790/278790/278790 | 100/278774/278775/278775/278784 |
+| /partials/home/sections | 100/3791/3791/3791/3791 | 100/3791/3791/3791/3791 |
+| /pull-requests | 100/23352/23352/23352/23352 | 100/23352/23352/23352/23352 |
+| /settings?section=agent | 100/94049/94049/94049/94049 | 100/94051/94051/94051/94051 |
+| /settings?section=backups | 100/97682/97682/97682/97682 | 100/97685/97685/97685/97685 |
+| /work | 100/28419/28419/28419/28419 | 100/28419/28419/28419/28419 |
+
+## Remaining acceptance and coverage
+
+All prior measured and unmeasured families remain open: nativebusy/WAL/fsync/disk/GIL/GC, freshhealth/integrity/VACUUM, fullKernel/OpenAPI/MCP/modelCPU, history/drain/sync/inventory amplification, realprovider/placement/workspace/activewatch, peers/builds/logs,5.64MBdroppedlogs/2396statusfailures/olderrotation, receipts/lostraw/attachments/testroots and unexplained browser/CI failures. Loadedbcd5 ordinary95GET window had3thresholdviolations; its runtime snapshot77/181baselineops and22/115routes positive still leaves104/93unobserved. Named observations do not cover every branch. Backup0331 retains separate ownership/missingcoldsource/paused failedarchives and independent acceptance; DB89957 accepted original scope remains closed. Normal PA scheduling owns final independent verification under unchanged17d034a6; no repairer self-acceptance, no Done from any PR or activation.
+
+## Preserved earlier coverage
+
 # Current loaded bcd5 inventory and measurement correction — 2026-10-18
 
 All **554 findings and 63 concerns remain open**. The full JSON preserves every preceding553 row unchanged; this stage appends an explicit measurement-boundary finding and the [complete numeric artifact](benchmarks/systemic-bcd5-boundaries-20261018.json). Earlier candidate/integration/deployment labels below are historical stages. PR516 is now merged and loaded, independently verified at exact source/package/PID/startup/config/lease; that does not establish performance acceptance.
