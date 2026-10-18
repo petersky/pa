@@ -1,3 +1,23 @@
+# Fleet configuration decoding and remaining acceptance — 2026-10-18
+
+All **578 findings and 82 concerns remain open**. The prior 576 rows, owners, actions and historical evidence are unchanged. [Complete source comparison, phase probes and CI history](benchmarks/systemic-fleet-config-20261018.json) retain every measured sample and limitation.
+
+Fleet's read-only session summary still decoded unrelated configuration proofs after the earlier metrics projection repair. It now reuses the existing guarded three-key startup projection and the same bounded selection, count and ordering query. Full session APIs (including `include_metrics=False`) retain complete configuration; durable prompt, admission, recovery, receipt and transcript behavior are unchanged. Malformed, duplicate-key and legacy JSON decoding keeps its existing behavior. The presenter matches complete reads exactly in the fixture.
+
+| 160 retained sessions; 80 selected; 20 alternating pairs | Full configuration | Implemented summary |
+| --- | ---: | ---: |
+| Decoded configuration bytes/read | 10,510,504 | 21,704 |
+| Wall p50 / p95 / p99 / max (ms) | 187.859 / 262.747 / 312.758 / 312.758 | 72.048 / 137.332 / 233.621 / 233.621 |
+| Thread CPU p50 / p95 / p99 / max (ms) | 165.896 / 185.665 / 190.681 / 190.681 | 66.470 / 75.783 / 83.165 / 83.165 |
+
+The exact implementation comparison overlapped the guarded regression run; retain that contention limitation. An earlier separate prototype measured wall p95 237.793→89.511ms. These are disposable leaf measurements, not causal live-page or deployed acceptance. SQLite still parses the stored configuration; decoded bytes are not physical disk or write-amplification measurements. Nested phase probes also retain automatic GC and SQL wall/CPU costs, without claiming isolated lock/GIL/disk causality.
+
+21 focused tests and 148 broader Fleet/Workshop/startup tests plus 2 subtests pass (the broader set includes the focused set). Original evidence-only PR533 head4c24 CI39157390577 failed an unchanged dispatch admission assertion at449.269ms against200ms; other4jobs passed. Initial327e CI39157175222 passed. One immutable exact4c24-source diagnostic passes separately, but the timing cause remains unknown. No deadline/assertion was changed and no same-head CI retry was used.
+
+The completed current2e read-only window still has four Fleet≥500ms requests, maximum1252.611ms. No candidate install, restart or live retest has occurred. The correlated process-verification decision is applied; the failed527 handoff remains failed. Every other startup/transcript/maintenance/provider/peer/logging/backup/browser/receipt/unobserved-path finding and normal independent acceptance remains required.
+
+## Preserved prior inventory
+
 # Current process verification and residual inventory — 2026-10-18
 
 All **576 findings and80concerns remain open**. Original570rows, owners and actions are preserved. The [complete artifact](benchmarks/systemic-current-process-20261018.json) contains exact-process proof, failed receipt, all21runtime sections,95GET outcomes, cached maintenance, control overlays and helper failure history.

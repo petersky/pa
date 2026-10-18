@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T19:04:52.457237+00:00",
-  "completion": "OPEN;576 findings/80 concerns. Original570 rows/owners/actions unchanged; linked fork-fixture concern plus2newruntime/1route/2slow names retained. Exact current descendant2e process separately verified under correlated authorization, original PR527 handoff remains failed.95GETs all200/stable but4Fleet500ms violations. All independent acceptance and every residual remain open.",
+  "as_of": "2026-10-18T19:15:09.300682+00:00",
+  "completion": "OPEN;578 retained findings/82concerns. All prior576rows/owners/actions unchanged. New Fleet config-proof amplification repaired in source only, original CI dispatch timing failure retained; current2e4Fleet violations and all broader criteria/normal independent acceptance remain open. No deployment/restart.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -115,7 +115,8 @@
     "docs/benchmarks/systemic-525-loaded-20261018.json",
     "docs/benchmarks/systemic-ancestor-boundaries-20261018.json",
     "docs/benchmarks/systemic-main526-browser-20261018.json",
-    "docs/benchmarks/systemic-current-process-20261018.json"
+    "docs/benchmarks/systemic-current-process-20261018.json",
+    "docs/benchmarks/systemic-fleet-config-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -208719,6 +208720,121 @@
       "resolution": "open",
       "next_actor": "This same systemic session",
       "next_action": "Attribute exact phase cost or failure and exercise representative valid branches; preserve all existing semantics and unresolved external/backup/acceptance obligations."
+    },
+    {
+      "id": "concern:fleet-session-config-proof-hydration",
+      "kind": "concern",
+      "finding": "Fleet read-only session summary decodes unrelated retained configuration proofs",
+      "family": "fleet",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_disposable_confirmed_live_leaf_share_unverified",
+      "cause": "Summary omitsmetrics butdecodes fullconfig; presenter usesdurable_runtime/provisioning. Existing startup guardedthree-key projection safely avoids unrelatedproof decoding in readonlysummary; no cache/policy/budget change.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-fleet-config-20261018.json",
+        "sha256": "39c764ca28692c82734148b35a1f16c674d381da18611512355204c55740f55b",
+        "summary": {
+          "full_config": {
+            "wall_ms": {
+              "samples": 20,
+              "max": 312.758,
+              "p50": 187.859,
+              "p95": 262.747,
+              "p99": 312.758
+            },
+            "cpu_ms": {
+              "samples": 20,
+              "max": 190.681,
+              "p50": 165.896,
+              "p95": 185.665,
+              "p99": 190.681
+            },
+            "config_json_bytes": {
+              "samples": 20,
+              "max": 10510504,
+              "p50": 10510504,
+              "p95": 10510504,
+              "p99": 10510504
+            }
+          },
+          "implemented": {
+            "wall_ms": {
+              "samples": 20,
+              "max": 233.621,
+              "p50": 72.048,
+              "p95": 137.332,
+              "p99": 233.621
+            },
+            "cpu_ms": {
+              "samples": 20,
+              "max": 83.165,
+              "p50": 66.47,
+              "p95": 75.783,
+              "p99": 83.165
+            },
+            "config_json_bytes": {
+              "samples": 20,
+              "max": 21704,
+              "p50": 21704,
+              "p95": 21704,
+              "p99": 21704
+            }
+          }
+        },
+        "bytes_before": 10510504,
+        "bytes_after": 21704,
+        "limitations": [
+          "Live95GET current2e process window was completed before these probes, four Fleet violations remain; no current live causal leaf share or deployed repair acceptance. No repeated completed windows.",
+          "160retained sessions/128KiB unrelated config proof each/80selected,20alternatingpairs per method. Byte counts are decoded config JSON bytes, not wire bytes, disk reads or physical write amplification. SQLite still scans/parses config to project it.",
+          "Exact implementation pair overlapped own guarded broader regression process. Timings retain that contention; prototype source-independent probe is separate. Neither is a controlled live before/after comparison. No unchanged rerun to seek a green sample.",
+          "Phase attribution is nested/inclusive; native phase probe retains automatic GC events and SQL wall/CPU, not isolated successful busy/GIL/disk/CPU scheduler attribution. No forced GC/lock/busy/fault injection. Fixture lacks real sync/repository/runtime/authority services.",
+          "Normal full default APIs and include_metrics=False retain complete config. Read-only summary reuses existing guarded startup projection; duplicate top-level known keys/malformed/legacy types fall back to original decoder, preserving errors and last-key-wins. No saving projected models.",
+          "Original failed PR527 handoff stays failed; correlated process-only authorization is applied and does not authorize another restart. No install/restart/config/default/data mutation occurred here. All peers/logging/provider/startup/backup/browser/receipt/unobserved-path and normal independent acceptance gates remain open."
+        ]
+      },
+      "fix_or_existing_owner": "Same systemiccard/session, reuses existing startup projection ratherthan another worker/competing repair.",
+      "implemented": "Local guarded summary-only query plus exact selection/count/order/fullread/legacydecoder/presentation contracts;21focused/148broader+2subtests(overlap).",
+      "merged": [],
+      "deployed": "Not deployed; current independentlyverified2e process predates this repair.",
+      "retested": "20alternatingexact implementation/frozenoriginal pairs; not live or wholepathacceptance.",
+      "resolution": "open",
+      "report": "026848e5-6d84-42a2-a670-a871b75a0261 revision1",
+      "next_actor": "this same systemic session",
+      "next_action": "Ready supervised sourcePR, exactheadterminalgreen and independentrevalidation/integration; retain activation boundary and then remainingall-findings/nativecontention/deployedacceptance obligations."
+    },
+    {
+      "id": "concern:ci533-dispatch-admission-latency",
+      "kind": "concern",
+      "finding": "Original PR533 CI dispatch admission200ms assertion failed at449ms with unknown timing cause",
+      "family": "ci",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_ci_failure_cause_unverified",
+      "measurement": {
+        "failed_source_head": "4c24be2cd0c032256b2d5f52c790185001908534",
+        "run": 39157390577,
+        "attempt": 1,
+        "conclusion": "failure",
+        "failed_job": 117763318819,
+        "assertion": "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait",
+        "measured_seconds": 0.44926924200001395,
+        "unchanged_budget_seconds": 0.2,
+        "shard_summary": "1failed/940passed/1skipped/188subtests in150.45s;other4jobs success",
+        "raw_log_sha256": "1878c4fa53f4d8b9af5e98fe97b31a85bed8a54dc46b9611b629ee403caacb59",
+        "raw_log_not_published": "May contain fixture secrets; only bounded sanitized failure metadata retained here.",
+        "initial_head": "327e241ecd419c9de95dff4b8e369b55a1ab21d6",
+        "initial_run": 39157175222,
+        "initial_attempt": 1,
+        "initial_conclusion": "success",
+        "diagnostic": "One frozen exact4c24 source export diagnostic passes1test2.50s; does not resolve original449ms cause or replace CI. No same-head retry; no assertion/deadline change.",
+        "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1"
+      },
+      "implemented": "No product or test timing workaround; originalfailedCI retained and onefrozen-source diagnostic passes separately.",
+      "merged": [],
+      "deployed": "Not applicable; test evidence is not runtime acceptance.",
+      "retested": "Originalunchanged4c24diagnostic1passed2.50s; no sameheadCIretry or deadline increase.",
+      "resolution": "open",
+      "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve failure; require newexactheadallgreen and investigate recurrence with bounded phase/host evidence, never infer fixed from isolatedpass."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -211448,5 +211564,100 @@
       ],
       "activation_boundary": "Required operator choice systemic-pr527-recovery-choice-v1 remains pending. This coordination report is not an answer or authority for restart, gate exception, dependent measurements, source repair, acceptance or completion."
     }
-  ]
+  ],
+  "fleet_configuration_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-config-20261018.json",
+    "sha256": "39c764ca28692c82734148b35a1f16c674d381da18611512355204c55740f55b",
+    "summary": {
+      "full_config": {
+        "wall_ms": {
+          "samples": 20,
+          "max": 312.758,
+          "p50": 187.859,
+          "p95": 262.747,
+          "p99": 312.758
+        },
+        "cpu_ms": {
+          "samples": 20,
+          "max": 190.681,
+          "p50": 165.896,
+          "p95": 185.665,
+          "p99": 190.681
+        },
+        "config_json_bytes": {
+          "samples": 20,
+          "max": 10510504,
+          "p50": 10510504,
+          "p95": 10510504,
+          "p99": 10510504
+        }
+      },
+      "implemented": {
+        "wall_ms": {
+          "samples": 20,
+          "max": 233.621,
+          "p50": 72.048,
+          "p95": 137.332,
+          "p99": 233.621
+        },
+        "cpu_ms": {
+          "samples": 20,
+          "max": 83.165,
+          "p50": 66.47,
+          "p95": 75.783,
+          "p99": 83.165
+        },
+        "config_json_bytes": {
+          "samples": 20,
+          "max": 21704,
+          "p50": 21704,
+          "p95": 21704,
+          "p99": 21704
+        }
+      }
+    },
+    "tests": {
+      "fleet-config-focused.log": {
+        "sha256": "2eb23a3c0b4bbf4831de587950e861f6f05aa2aa2c7f6d683667b5f65068a590",
+        "bytes": 99,
+        "summary": [
+          "21 passed in 2.36s"
+        ]
+      },
+      "fleet-config-broad.log": {
+        "sha256": "b4d2c236ecec03b30675e97a4cccfac0ab03d3236d24dec472acddd951b85a0f",
+        "bytes": 278,
+        "summary": [
+          "148 passed, 2 subtests passed in 29.82s"
+        ]
+      },
+      "pr533-original-admission-diagnostic.log": {
+        "sha256": "45ad9d216a01074084792a93ab133857031a94566ecc81f165dd00186717a65a",
+        "bytes": 98,
+        "summary": [
+          "1 passed in 2.50s"
+        ]
+      }
+    },
+    "ci_history": {
+      "failed_source_head": "4c24be2cd0c032256b2d5f52c790185001908534",
+      "run": 39157390577,
+      "attempt": 1,
+      "conclusion": "failure",
+      "failed_job": 117763318819,
+      "assertion": "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait",
+      "measured_seconds": 0.44926924200001395,
+      "unchanged_budget_seconds": 0.2,
+      "shard_summary": "1failed/940passed/1skipped/188subtests in150.45s;other4jobs success",
+      "raw_log_sha256": "1878c4fa53f4d8b9af5e98fe97b31a85bed8a54dc46b9611b629ee403caacb59",
+      "raw_log_not_published": "May contain fixture secrets; only bounded sanitized failure metadata retained here.",
+      "initial_head": "327e241ecd419c9de95dff4b8e369b55a1ab21d6",
+      "initial_run": 39157175222,
+      "initial_attempt": 1,
+      "initial_conclusion": "success",
+      "diagnostic": "One frozen exact4c24 source export diagnostic passes1test2.50s; does not resolve original449ms cause or replace CI. No same-head retry; no assertion/deadline change.",
+      "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1"
+    },
+    "resolution": "open"
+  }
 }
