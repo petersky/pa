@@ -2272,6 +2272,26 @@ class DispatchStore:
         with measured_lock(self._index_lock):
             return sum(record.state in QUEUE_CONSUMING_STATES for record in self._records.values())
 
+    def startup_recovery_records(self, *, limit: int = 1000) -> list[DispatchRecord]:
+        """Copy only possible completion recoveries in the existing newest window.
+
+        Apply the limit before eligibility, just as startup's previous list/read
+        and subsequent filter did. Keep full detached records for recovery;
+        terminal plans and histories do not need copying to discard them.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            self._refresh_queue_positions_locked()
+            selected = sorted(self._records.values(),
+                              key=lambda record: record.updated_at, reverse=True)[:limit]
+            records = [record for record in selected if (
+                record.card_id and record.state in {"running", "completion_pending"}
+                and record.completion_payload is not None
+            )]
+        # Preserve the general reader's short publication-lock boundary.
+        return [self._snapshot(record) for record in records]
+
     def list(
         self,
         *,
