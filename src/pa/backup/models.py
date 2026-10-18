@@ -75,9 +75,21 @@ class ManifestFile(BaseModel):
         return value
 
 
+class MissingTranscriptObject(BaseModel):
+    """An unavailable source payload, never a substitute for its bytes."""
+
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    uncompressed_bytes: int = Field(ge=0)
+    compressed_bytes: int = Field(ge=0)
+    reference_count: int = Field(ge=1)
+    reason: Literal["absent_from_source_snapshot"] = "absent_from_source_snapshot"
+
+
 class BackupManifest(BaseModel):
-    format: Literal["pa.metadata-backup/v1"] = "pa.metadata-backup/v1"
-    format_version: Literal[1] = BACKUP_FORMAT_VERSION
+    # Complete archives keep v1 compatibility. A limited archive MUST use v2 so
+    # an old reader cannot ignore its limitation and claim an intact recovery.
+    format: Literal["pa.metadata-backup/v1", "pa.metadata-backup/v2"] = "pa.metadata-backup/v1"
+    format_version: Literal[1, 2] = BACKUP_FORMAT_VERSION
     backup_id: str = Field(default_factory=lambda: str(uuid4()))
     instance_id: str
     instance_name: str
@@ -91,6 +103,9 @@ class BackupManifest(BaseModel):
     projection_heads: dict[str, str] = Field(default_factory=dict)
     consistent: bool
     files: list[ManifestFile] = Field(default_factory=list, max_length=MAX_MANIFEST_FILES)
+    missing_transcript_objects: list[MissingTranscriptObject] = Field(
+        default_factory=list, max_length=MAX_MANIFEST_FILES
+    )
     included: list[str] = Field(
         default_factory=lambda: [
             "projection_database_online_snapshot",
@@ -116,12 +131,28 @@ class BackupManifest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_consistency_claim(self) -> BackupManifest:
+        limited = bool(self.missing_transcript_objects)
+        version = 2 if limited else 1
+        if self.format_version != version or self.format != f"pa.metadata-backup/v{version}":
+            raise ValueError("limited backups require v2; complete backups use v1")
         expected = self.projection_heads == self.durable_heads
         if self.consistent != expected:
             raise ValueError("manifest consistency claim does not match recorded heads")
         if len({item.path for item in self.files}) != len(self.files):
             raise ValueError("manifest contains duplicate file paths")
+        hashes = {item.sha256 for item in self.missing_transcript_objects}
+        if len(hashes) != len(self.missing_transcript_objects):
+            raise ValueError("manifest contains duplicate missing transcript hashes")
+        paths = {item.path for item in self.files}
+        if any(f"transcript_objects/{h[:2]}/{h[2:]}.zlib" in paths for h in hashes):
+            raise ValueError("a declared missing transcript object is also included")
+        if limited and "transcripts.sqlite3" not in paths:
+            raise ValueError("missing transcript declarations require the captured index")
         return self
+
+    @property
+    def data_complete(self) -> bool:
+        return not self.missing_transcript_objects
 
 
 class BackupRun(BaseModel):
@@ -136,6 +167,14 @@ class BackupRun(BaseModel):
     failure_reason: str | None = None
     idempotency_key: str | None = None
     verification: Literal["pending", "verified", "failed"] = "pending"
+    # Legacy verification means fully intact, so limited captures retain
+    # verification=failed. Their available bytes have a separate integrity proof.
+    integrity_verified: bool = False
+    data_complete: bool | None = None
+    missing_transcript_object_count: int = 0
+    missing_transcript_bytes: int = 0
+    coverage_warning: str | None = None
+    missing_data_fingerprint: str | None = None
     pruned_backup_ids: list[str] = Field(default_factory=list)
     queue_wait_seconds: float = 0
     phase_seconds: dict[str, float] = Field(default_factory=dict)
@@ -166,6 +205,7 @@ class BackupState(BaseModel):
     next_scheduled_run: datetime | None = None
     last_attempt: datetime | None = None
     last_success: datetime | None = None
+    last_completed: datetime | None = None
     consecutive_failures: int = 0
     runs: list[BackupRun] = Field(default_factory=list)
     idempotency: dict[str, str] = Field(default_factory=dict)
@@ -176,6 +216,7 @@ class BackupState(BaseModel):
     next_scrub_run: datetime | None = None
     last_scrub_results: dict[str, bool] = Field(default_factory=dict)
     failure_alert_key: str | None = None
+    missing_data_alert_key: str | None = None
 
 
 class BackupRecord(BaseModel):
@@ -184,11 +225,26 @@ class BackupRecord(BaseModel):
     created_at: datetime
     size_bytes: int
     verified: bool
+    integrity_verified: bool = False
+    data_complete: bool | None = None
+    missing_transcript_object_count: int = Field(default=0, ge=0)
+    missing_transcript_bytes: int = Field(default=0, ge=0)
+    coverage_warning: str | None = None
+    missing_data_fingerprint: str | None = None
     verification_error: str | None = None
     manifest: BackupManifest | None = None
     verification_status: Literal[
-        "verified", "failed", "unverified", "in_progress"
+        "verified", "verified_with_missing_data", "failed", "unverified", "in_progress"
     ] = "unverified"
+
+    @model_validator(mode="after")
+    def _intact_claim(self) -> BackupRecord:
+        if self.verified:
+            if self.data_complete is False or self.missing_transcript_object_count:
+                raise ValueError("a limited archive is not an intact recovery point")
+            self.integrity_verified = True
+            self.data_complete = True
+        return self
 
     def public_dict(
         self, *, include_path: bool = False, exclude_manifest: bool = False

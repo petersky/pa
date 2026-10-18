@@ -1,7 +1,8 @@
 # Metadata backups and restore
 
-PA creates verified local metadata recovery points independently on every
-instance. The default interval is six hours, with bounded deterministic jitter
+PA captures local metadata independently on every instance and distinguishes
+fully intact recovery points from captures with disclosed historical data missing.
+The default interval is six hours, with bounded deterministic jitter
 so a fleet does not start storage I/O at the same instant. A process-local
 single-flight lock and durable idempotency keys prevent overlapping or duplicate
 jobs after restarts.
@@ -11,10 +12,12 @@ jobs after restarts.
 The `pa.metadata-backup/v1` archive is the minimal coherent PA metadata recovery
 set:
 
-- `projection.sqlite3`: created with SQLite's online backup API while PA's
-  event/projection mutation boundary is held;
+- `projection.sqlite3`: created with SQLite's online backup API from a read view
+  anchored at PA's event/projection mutation boundary;
 - `sync_refs.json`: the exact durable realm refs at that boundary;
 - `objects/`: verified content-addressed event and commit objects;
+- `transcripts.sqlite3` and `transcript_objects/`: the transcript index and
+  content-addressed cold payloads, when the source has a transcript store;
 - `manifest.json`: instance identity, PA/schema version and fingerprint,
   durable and projection heads, verification policy, exclusions, sizes, and
   SHA-256 checksums.
@@ -43,6 +46,46 @@ reachable event/transcript objects.
 The local backend boundary is intentionally small (`health`, `publish`, `list`,
 and `delete`) so object-storage backends can preserve the same manifest,
 verification, atomic-publication, retention, and restore semantics later.
+
+## Historical data missing
+
+A cold transcript payload may already be absent from the source. PA preserves
+the captured index, its live references and all available data, and records the
+exact absent SHA-256, decoded/stored byte counts and reference count in
+`missing_transcript_objects`. Such a capture uses **`pa.metadata-backup/v2`**.
+Complete captures remain v1; older readers reject v2 rather than overlook the
+limitation. The existing file-count and manifest-size limits still apply.
+
+Verification checks that declarations match exactly the absent payloads in the
+captured index. It still rejects corruption, undeclared missing files, changed
+hashes or reference metadata, event-graph damage, unsafe paths, schema damage
+and inconsistent durable heads. An existing source file that was not captured
+is an error, not permission to declare it missing. No missing bytes or replacement
+references are created.
+
+A limited archive has `integrity_verified=true`, `data_complete=false`, and
+`verification_status=verified_with_missing_data`. **`verified=false`** still
+means it is not a fully intact recovery point. The UI, CLI and API disclose the
+limitation and its size; PA creates one durable warning per limitation set.
+`last_success` and `last_known_good` retain their fully intact meanings.
+`last_completed` and `last_completed_backup` separately identify captures that
+preserve the available state. Legacy run history keeps `status=success` for
+publication but `verification=failed` and an explicit reason for a limited
+capture, so an older state reader cannot treat it as intact.
+
+After an integrity-checked limited publication, future scheduled captures can
+continue at the unchanged configured cadence. The operational failure streak
+clears, while the historical warning and earlier failed runs remain. Limited
+captures follow retention bounds among themselves; while the newest capture
+is limited, every fully intact recovery point is protected. Unknown or changed
+archives remain excluded from automatic pruning. A preserving manual capture
+(`preserve_existing=true`) protects every current archive for that run.
+
+Limited archives can be inspected, verified and exported with their v2
+declarations. Full restore refuses them before changing live state. A limited
+pre-restore capture also cannot satisfy the intact rollback-backup requirement.
+This supports future capture of available data; it does not recover the missing
+historical payload or provide a fully intact restore.
 
 ## Configuration
 
@@ -115,8 +158,9 @@ At `alert_after_failures`, automatic startup, scheduled backups and periodic
 scrubs pause. PA creates one durable service-health notification per failure
 streak with a link to Backups. The page shows the reason, last recovery point,
 and Administrator as the next actor. Correct the cause and explicitly run a
-manual backup; a successful verified publication clears the streak and resumes
-scheduling. The pause survives restart. Raising the configured threshold can
+manual backup; an integrity-checked publication clears the operational streak
+and resumes scheduling, with any historical limitation still disclosed as above.
+The pause survives restart. Raising the configured threshold can
 also make automatic attempts eligible again. Temporary attempts are recorded
 as runs, not retained archives; successful maintenance removes obsolete
 verification entries left by earlier versions.

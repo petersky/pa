@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.domain.instance_config import InstanceConfig, save_instance_config
+from pa.domain.models import TranscriptEvent
 from pa.modules.backups import BackupsModule
 from pa.backup.service import BackupError
 
@@ -54,6 +55,60 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BackupHttpAndUiContractTests(unittest.TestCase):
+    def test_limited_capture_is_disclosed_in_api_ui_and_one_durable_notice(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = root / "backups"
+            destination.mkdir(mode=0o700)
+            app = Kernel.boot(settings=Settings(
+                data_dir=root / "data", workspace_root=root / "workspaces",
+                backup_destination_dir=destination, backup_enabled=False,
+                agent_enabled=False,
+            )).build_app()
+            with TestClient(app) as client:
+                store = app.state.ctx.store
+                store.append_transcript_events([TranscriptEvent(
+                    session_id="disposable-gap", seq=1, event_type="prompt_rendered",
+                    payload={"text": "isolated missing payload " * 300},
+                )])
+                digest = next(iter(store.transcripts.referenced_hashes()))
+                store.transcripts._object_path(digest).unlink()  # Fixture setup only.
+                client.get("/api/backups/status")
+                headers = {"X-CSRF-Token": client.cookies.get("pa_csrf")}
+                first = client.post("/api/backups", json={"idempotency_key":"limited-http"}, headers=headers)
+                self.assertEqual(first.status_code, 201, first.text)
+                self.assertTrue(first.json()["integrity_verified"])
+                self.assertFalse(first.json()["data_complete"])
+                self.assertEqual(first.json()["verification"], "failed")
+                checked = client.post(f"/api/backups/{first.json()['backup_id']}/verify", headers=headers)
+                self.assertEqual(checked.status_code, 200, checked.text)
+                self.assertEqual(checked.json()["verification_status"], "verified_with_missing_data")
+                self.assertFalse(checked.json()["verified"])
+                self.assertEqual(len(checked.json()["manifest"]["missing_transcript_objects"]), 1)
+                status = client.get("/api/backups/status").json()
+                self.assertEqual(status["verified_backup_count"], 0)
+                self.assertEqual(status["limited_backup_count"], 1)
+                self.assertIsNone(status["last_known_good"])
+                self.assertIsNone(status["last_success"])
+                page = client.get("/settings?section=backups")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("not a fully intact recovery point", page.text)
+                self.assertIn("Completed with historical data missing", page.text)
+                self.assertIn('disabled title="A limited capture cannot provide a fully intact restore"', page.text)
+                exported = client.get(f"/api/backups/{first.json()['backup_id']}/export-info")
+                self.assertEqual(exported.status_code, 200, exported.text)
+                self.assertFalse(exported.json()["verified"])
+                self.assertFalse(exported.json()["data_complete"])
+                self.assertTrue(exported.json()["coverage_warning"])
+                second = client.post("/api/backups", json={"idempotency_key":"future-limited-http"}, headers=headers)
+                self.assertEqual(second.status_code, 201, second.text)
+                self.assertTrue(second.json()["integrity_verified"])
+                notices = store.list_notifications(realm_id="default", notification_type="service_health")
+                self.assertEqual(len(notices), 1)
+                self.assertIn("missing historical data", notices[0].title)
+                self.assertEqual(notices[0].coalesced_count, 1)
+                self.assertEqual(notices[0].actions[0].href, "/settings?section=backups")
+
     def test_manual_and_verify_use_dedicated_worker_and_protect_existing_archives(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

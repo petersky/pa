@@ -634,11 +634,13 @@
       <dt>Instance</dt><dd><code>{{ backup_status.instance_id }}</code></dd>
       <dt>Next scheduled run</dt><dd>{{ backup_status.next_scheduled_run or 'Not scheduled' }}</dd>
       <dt>Last attempt</dt><dd>{{ backup_status.last_attempt or 'Never' }}</dd>
-      <dt>Last success</dt><dd>{{ backup_status.last_success or 'Never' }}</dd>
-      <dt>Last known good recovery point</dt><dd>{% if backup_status.last_known_good %}{{ backup_status.last_known_good.created_at }} · <code>{{ backup_status.last_known_good.backup_id }}</code>{% else %}No retained archive has a current verification record. Select Verify to check an existing archive.{% endif %}</dd>
+      <dt>Last fully intact backup</dt><dd>{{ backup_status.last_success or 'Never' }}</dd>
+      <dt>Last completed capture</dt><dd>{% if backup_status.last_completed_backup %}{{ backup_status.last_completed_backup.created_at }}{% if backup_status.last_completed_backup.data_complete == false %} · historical data missing{% endif %}{% else %}No currently integrity-checked archive{% endif %}</dd>
+      <dt>Last known good recovery point</dt><dd>{% if backup_status.last_known_good %}{{ backup_status.last_known_good.created_at }} · <code>{{ backup_status.last_known_good.backup_id }}</code>{% else %}No retained archive is currently verified as fully intact. Limited captures are shown separately.{% endif %}</dd>
       <dt>Activity</dt><dd>{{ backup_status.backup_state }}{% if backup_status.automatic_backups_paused %} · automatic attempts paused{% endif %}</dd>
       <dt>Next actor</dt><dd>{{ backup_status.next_actor }} · {{ backup_status.next_action }}</dd>
       {% if backup_status.latest_failure_reason %}<dt>Latest failure</dt><dd>{{ backup_status.latest_failure_reason }}</dd>{% endif %}
+      {% if backup_status.historical_data_warning %}<dt>Historical data limitation</dt><dd role="status">{{ backup_status.historical_data_warning }} Future captures can continue protecting available data.</dd>{% endif %}
       <dt>Destination health</dt>
       <dd>
         <span class="status status-{{ 'ready' if backup_status.destination_health.writable else 'error' }}">
@@ -646,7 +648,7 @@
         </span>
         {% if backup_status.destination_health.error %}{{ backup_status.destination_health.error }}{% endif %}
       </dd>
-      <dt>Storage</dt><dd>{{ backup_status.backup_count }} archives · {{ backup_status.storage_used_bytes }} bytes</dd>
+      <dt>Storage</dt><dd>{{ backup_status.backup_count }} archives · {{ backup_status.storage_used_bytes }} bytes · {{ backup_status.verified_backup_count }} fully intact · {{ backup_status.limited_backup_count }} with disclosed missing data</dd>
       <dt>Failures</dt>
       <dd>{{ backup_status.consecutive_failures }} consecutive{% if backup_status.alerting.active %} · alert threshold reached{% endif %}</dd>
     </dl>
@@ -731,12 +733,12 @@
             <td>{{ backup.created_at }}</td>
             <td><code>{{ backup.backup_id }}</code></td>
             <td>{{ backup.size_bytes }}</td>
-            <td><span class="status status-{{ 'ready' if backup.verification_status == 'verified' else 'error' if backup.verification_status == 'failed' else 'pending' }}">{{ backup.verification_status }}</span>{% if backup.verification_error %}<p class="small">{{ backup.verification_error }}</p>{% endif %}</td>
+            <td><span class="status status-{{ 'ready' if backup.verification_status == 'verified' else 'error' if backup.verification_status == 'failed' else 'pending' }}">{{ 'Integrity checked · historical data missing' if backup.verification_status == 'verified_with_missing_data' else backup.verification_status }}</span>{% if backup.coverage_warning %}<p class="small">{{ backup.coverage_warning }}</p>{% endif %}{% if backup.verification_error %}<p class="small">{{ backup.verification_error }}</p>{% endif %}</td>
             <td>
               <a class="button secondary small" href="/api/backups/{{ backup.backup_id }}/download">Export</a>
               <button type="button" class="secondary small" data-backup-verify="{{ backup.backup_id }}">Verify</button>
               <button type="button" class="danger small" data-backup-delete="{{ backup.backup_id }}">Delete</button>
-              <button type="button" class="danger small" data-backup-restore="{{ backup.backup_id }}">Prepare restore</button>
+              <button type="button" class="danger small" data-backup-restore="{{ backup.backup_id }}" {% if backup.data_complete == false %}disabled title="A limited capture cannot provide a fully intact restore"{% endif %}>Prepare restore</button>
             </td>
           </tr>
         {% endfor %}
@@ -766,10 +768,10 @@
     <div class="panel-header"><h3>Recent runs</h3></div>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Duration</th><th>Size</th><th>Failure</th></tr></thead>
+        <thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Duration</th><th>Size</th><th>Failure or limitation</th></tr></thead>
         <tbody>
         {% for run in backup_status.runs | reverse %}
-          <tr><td>{{ run.started_at }}</td><td>{{ run.trigger }}</td><td>{{ run.status }}</td><td>{{ run.duration_seconds or '—' }}</td><td>{{ run.size_bytes or '—' }}</td><td>{{ run.failure_reason or '' }}</td></tr>
+          <tr><td>{{ run.started_at }}</td><td>{{ run.trigger }}</td><td>{{ 'Completed with historical data missing' if run.integrity_verified and run.data_complete == false else run.status }}</td><td>{{ run.duration_seconds or '—' }}</td><td>{{ run.size_bytes or '—' }}</td><td>{{ run.failure_reason or '' }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -1412,7 +1414,11 @@
         method: "POST",
         body: JSON.stringify({idempotency_key: "ui:" + Date.now()})
       });
-      report("Backup " + result.backup_id + " verified. Reload to view it.");
+      if (result.integrity_verified && result.data_complete === false)
+        report("Backup " + result.backup_id + " completed with a limitation. " + result.coverage_warning + " Reload to view it.");
+      else if (result.verification === "verified")
+        report("Backup " + result.backup_id + " verified as fully intact. Reload to view it.");
+      else report(result.failure_reason || "Backup did not complete. Inspect its run status before retrying.", true);
     } catch (error) {
       report((error.detail && error.detail.message) || "Backup failed.", true);
     } finally {
@@ -1423,8 +1429,10 @@
     button.addEventListener("click", async function () {
       report("Verifying " + button.dataset.backupVerify + "…");
       try {
-        await api("/api/backups/" + encodeURIComponent(button.dataset.backupVerify) + "/verify", {method: "POST"});
-        report("Backup verified.");
+        var result = await api("/api/backups/" + encodeURIComponent(button.dataset.backupVerify) + "/verify", {method: "POST"});
+        if (result.verified) report("Backup verified as fully intact.");
+        else if (result.integrity_verified) report("Archive integrity checked. " + result.coverage_warning);
+        else report(result.verification_error || "Backup verification failed.", true);
       } catch (error) {
         report((error.detail && error.detail.message) || "Verification failed.", true);
       }
