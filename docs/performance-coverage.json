@@ -207634,6 +207634,87 @@
       "resolution": "open",
       "next_actor": "this card/session",
       "next_action": "ReadyPR/durablewatch/exactheadindependentgreen/mainCI/safeexactactivation/retest; continue everyotherfinding and normalPAscheduler independent acceptance."
+    },
+    {
+      "id": "concern:browser-initial-document-readiness",
+      "kind": "concern",
+      "finding": "Initial browser attachment can report completed blank document before target navigation commits",
+      "family": "browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "native_disposable_source_race_confirmed_original_CI_share_unverified",
+      "cause": "ChromiumCLI startup exposedcompletedaboutblank while requestedHTTPheadersheld; directattachpublisheditandwait_until_usable acceptedit. Navigate helperdiscardednewloaderidentity. Nativeold1case/synthetic2cases confirmdefect; no originalCIloader/bodycapture.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-browser-navigation-20261018.json",
+        "sha256": "c4c97b758255ae24270f8040a9d554523afa5d57c9401322aa8ee43f9a554c60",
+        "native_before": [
+          {
+            "case": "initial_attachment",
+            "attach_completed_before_headers": true,
+            "premature_ready": {
+              "ready_state": "complete",
+              "url": "about:blank",
+              "title": ""
+            },
+            "old_document_accepted": true
+          },
+          {
+            "case": "sameURL_reload",
+            "navigation_completed_before_headers": false,
+            "old_document_accepted": false
+          }
+        ],
+        "native_after": [
+          {
+            "case": "initial_attachment",
+            "attach_completed_before_headers": false
+          },
+          {
+            "case": "sameURL_reload",
+            "navigation_completed_before_headers": false,
+            "old_document_accepted": false
+          }
+        ]
+      },
+      "fix_or_existing_owner": "This same systemic session; oneexplicitnavigation andcommitted-document readinessfence, no input replay/default/threshold change.",
+      "implemented": "Localsource2files with8focused/54broader+11subtests/5nativepass, overlapping. Initialsandboxfailure retained andapprovednative escalation used.",
+      "merged": [],
+      "deployed": "Not deployed. Runningf7 doesnotcontainthisrepair orintegrated519summaryrepair.",
+      "retested": "Nativeheaderbarrier oldblankacceptedbefore, fixedcandidate doesnotpublishbeforetargetheaders; actualnativeUI/privacy/ownership/transport/deadlinecases pass.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "ReadyPR/durablewatch/exactheadindependentgreen/mainCI/safecombinedexactactivation/retest; continueallstartup/browser/provider/peer/nativeSQL/log/receipt/backup/wholePAcriteria."
+    },
+    {
+      "id": "concern:main519-validation",
+      "kind": "concern",
+      "finding": "Exact PR519 merge CI metadata deadline and two browser failures, causes not fully attributed",
+      "family": "integration",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "three_failures_confirmed_original_causes_unverified",
+      "cause": "Equalhead/mergetree andhead5green, butmainattempt1 failedmetadata272.137msvs200ms, visualizationstalebackendnodeafterreload, Workshopinitialrootnull.dataset. Originallogs lackedloader/URL/bodycapture. Snapshotclock includesmocksetup/teardown; originalcausalshareunmeasured.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-browser-navigation-20261018.json",
+        "sha256": "c4c97b758255ae24270f8040a9d554523afa5d57c9401322aa8ee43f9a554c60",
+        "CI": 39121383664,
+        "original_failed_jobs": [
+          117657534984,
+          117657535075
+        ],
+        "original_log_sha256": "3e4baa0b381394888ae5534cf9c3e162dc9b70db42908f7dac52f70e213fa064",
+        "current_native": "3unchangedpass46.13s",
+        "baseline_native": "3unchangedpass42.50s",
+        "single_failed_shard_retry": "all5terminalSUCCESS attempt2; originalfailedattemptretained"
+      },
+      "fix_or_existing_owner": "This same systemic session. Sourcebrowserinitialreadinessrepair isseparatelynativeconfirmed; doNOTcloseoriginalCIcausesfromretries/nativepasses.",
+      "implemented": "No metadataassertion/deadlinechange. Onejustifiedsame-sourcefailed-shardretryaftercandidate/baseline/staticpathchecks, no blindretries/flakeclaim.",
+      "merged": [
+        "https://github.com/petersky/pa/pull/519"
+      ],
+      "deployed": "PR519 integrationverified, notactivated; latestbrowserrepairislocalcandidate.",
+      "retested": "Current00e0andimmutablef7threeunchangednativecasespass; thenoneCIretryallgreen. Originalcauses/hardware/runtime-specificconditions remainopen.",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Retain exactoriginalCI/provenance andunknowns; improveboundeddiagnostics/reproducecauses withoutassertion/200msbudgetrelaxation. ContinueallwholePAacceptance andnormalindependentverification."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208511,6 +208592,21 @@
       "retested": "Single95GET window and later cached maintenance/full21section snapshot. Three500ms violations/workspacefailure/startup36.021s remain.",
       "resolution": "open",
       "artifact": "docs/benchmarks/systemic-f7e8-loaded-20261018.json"
+    },
+    "concern:fleet-workshop-metrics-hydration": {
+      "merged": [
+        "https://github.com/petersky/pa/pull/519"
+      ],
+      "head": "856609c3dfe19e4eed51a22d0f2a389bb87b0502",
+      "merge": "00e01133404b870fe0eea9df38fe1de59924f3ed",
+      "watch": "1a7dde51-2cd2-434b-92cb-15acef0fd63b",
+      "head_ci": 39121148254,
+      "main_ci": 39121383664,
+      "main_ci_attempt": 2,
+      "main_ci_original_failures_retained": true,
+      "integration_proof_sha256": "72f16745775a71369c198ee97e77abacf12ec93effa5b4a938613a9d431038e3",
+      "deployed": "Notactivated; plannedcombinedexacttargetafterthisbrowserPRverification. Neverinstall/restart519fromstalenotice.",
+      "resolution": "open"
     }
   },
   "f7e8_loaded_stage": {
@@ -209197,5 +209293,12 @@
       }
     },
     "status": "Local candidate, all556rowsopen; no deployment or acceptance claim."
+  },
+  "browser_navigation_stage": {
+    "artifact": "docs/benchmarks/systemic-browser-navigation-20261018.json",
+    "sha256": "c4c97b758255ae24270f8040a9d554523afa5d57c9401322aa8ee43f9a554c60",
+    "rows": 558,
+    "concerns": 67,
+    "status": "Localcandidate; all558findingsremainopen. PR519merged/mainretrygreen butnotactivated; originalCIcausesretained."
   }
 }

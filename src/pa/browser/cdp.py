@@ -54,6 +54,7 @@ class CdpPage:
         # Emulation belongs to the CDP connection. Closing it after each command
         # immediately discards a successful viewport override in Chromium.
         self._websocket: ClientConnection | None = None
+        self._pending_navigation: tuple[str, str] | None = None
 
     async def _disconnect(self) -> None:
         websocket, self._websocket = self._websocket, None
@@ -133,28 +134,70 @@ class CdpPage:
         return remote.get("value")
 
     async def navigate(self, url: str) -> None:
-        result = await self.command("Page.navigate", {"url": validate_browser_url(url)})
-        if result.get("errorText"):
-            raise CdpError(str(result["errorText"]))
+        url = validate_browser_url(url)
+        try:
+            # The read and the single navigation share the existing command
+            # budget. Never replay navigation after an ambiguous transport loss.
+            async with asyncio.timeout(15):
+                previous = await self._main_frame()
+                result = await self.command("Page.navigate", {"url": url})
+                if result.get("errorText"):
+                    raise CdpError(str(result["errorText"]))
+                # Same-document navigation deliberately has no new loader.
+                self._pending_navigation = (
+                    (str(result.get("frameId") or previous["id"]),
+                     str(previous.get("loaderId") or ""))
+                    if result.get("loaderId") else None
+                )
+        except TimeoutError as exc:
+            raise CdpError("Browser navigation exceeded the 15 second command deadline") from exc
+
+    async def _main_frame(self) -> dict[str, Any]:
+        tree = await self.command("Page.getFrameTree")
+        frame = (tree.get("frameTree") or {}).get("frame") or {}
+        if not frame.get("id"):
+            raise CdpError("Browser has no main frame")
+        return frame
 
     async def wait_until_usable(self, *, timeout: float = 10.0) -> dict[str, Any]:
         deadline = asyncio.get_running_loop().time() + timeout
         diagnostic: dict[str, Any] = {}
-        while asyncio.get_running_loop().time() < deadline:
-            diagnostic = await self.evaluate(
-                "({ready_state: document.readyState, url: location.href, "
-                "title: document.title, body_text: (document.body?.innerText || '').trim().slice(0, 1000)})"
-            )
-            if diagnostic.get("ready_state") == "complete":
-                url = str(diagnostic.get("url") or "")
-                title = str(diagnostic.get("title") or "")
-                body = str(diagnostic.get("body_text") or "")
-                if url.startswith(("chrome-error://", "edge-error://")):
-                    raise CdpError(f"Browser navigation failed: {title or body or url}")
-                return diagnostic
-            await asyncio.sleep(0.05)
+        pending = self._pending_navigation
+        try:
+            async with asyncio.timeout_at(deadline):
+                while asyncio.get_running_loop().time() < deadline:
+                    frame = await self._main_frame() if pending else None
+                    if pending and (
+                        frame["id"] != pending[0]
+                        or str(frame.get("loaderId") or "") == pending[1]
+                    ):
+                        await asyncio.sleep(0.05)
+                        continue
+                    diagnostic = await self.evaluate(
+                        "({ready_state: document.readyState, url: location.href, "
+                        "title: document.title, body_text: (document.body?.innerText || '').trim().slice(0, 1000)})"
+                    )
+                    if self._pending_navigation is not pending:
+                        raise CdpError("Browser navigation changed during readiness inspection")
+                    if diagnostic.get("ready_state") == "complete":
+                        if pending:
+                            after = await self._main_frame()
+                            if (after.get("id"), after.get("loaderId")) != (
+                                frame.get("id"), frame.get("loaderId")
+                            ):
+                                continue
+                        url = str(diagnostic.get("url") or "")
+                        title = str(diagnostic.get("title") or "")
+                        body = str(diagnostic.get("body_text") or "")
+                        if url.startswith(("chrome-error://", "edge-error://")):
+                            raise CdpError(f"Browser navigation failed: {title or body or url}")
+                        self._pending_navigation = None
+                        return diagnostic
+                    await asyncio.sleep(0.05)
+        except TimeoutError:
+            pass
         raise CdpError(
-            "Browser page did not finish loading before the 10 second deadline "
+            f"Browser page did not finish loading before the {timeout:g} second deadline "
             f"(last_state={diagnostic!r})."
         )
 
