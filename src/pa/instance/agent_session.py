@@ -4553,7 +4553,16 @@ class AgentSessionManager:
         )
 
     def _startup_session_inventory(self) -> list[AgentSession]:
-        read_inventory = getattr(self.store, "list_sessions_for_startup_inventory", None)
+        # Dynamic legacy adapters can fabricate a callable for any attribute.
+        # Opt in only when the new reader is actually declared on the instance
+        # or its type, then bind the existing descriptor normally.
+        declared = inspect.getattr_static(
+            self.store, "list_sessions_for_startup_inventory", None
+        )
+        read_inventory = (
+            getattr(self.store, "list_sessions_for_startup_inventory", None)
+            if declared is not None else None
+        )
         if callable(read_inventory):
             return read_inventory()
         # Preserve the existing contract for legacy Store adapters.

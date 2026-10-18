@@ -1,3 +1,13 @@
+# Startup inventory compatibility correction — 2026-10-18
+
+All **560 findings and 69 concerns remain open**. The previous 559 rows remain unchanged. The [correction artifact](benchmarks/systemic-startup-config-correction-20261018.json) preserves all eight failures from original PR521 head3618/CI39125018198, the native before/after regressions, expanded tests, and corrected-source measurements. The failed head was never merged or deployed; its CI was not retried.
+
+The optional reader lookup fabricated a callable on dynamic legacy adapters, producing an empty startup inventory. The corrected helper checks that the reader is declared before binding it; legacy adapters retain their existing list_sessions contract. Three unchanged recovery tests failed before and passed after. The expanded suite passes151 tests in72.80s, including the full live-event module; the workspace GC protection case passes in8.04s. Two adapter contracts were added, with no assertion or deadline relaxation.
+
+The guarded SQL is unchanged. A separate20-pair fixture measures the corrected helper and implemented read together:160 rows/models per read,41,988,864 to35,744 configuration characters; baseline p50/p95/p99/max 552.815/615.272/649.022/649.022ms, corrected 174.925/231.039/258.911/258.911ms. Ordering, snapshots, recovery decisions/actions, nonconfiguration fields and15 legacy JSON cases match. This is fixture evidence, not deployed or full startup acceptance. Every original measurement and failure remains linked below.
+
+Actual c43f still has three threshold violations in its95-GET window,35.414s cached maintenance and an unexplained workspace failure. The instrumented mixed fixture still has six threshold violations and an unknown child exit status after the parent verifier failed. All native busy/IO/GIL/GC, startup/schema, history/sync, endpoint/provider/peer, log-loss/receipt/retention, browser and backup concerns retain their owners and next actions. Normal PA scheduler acceptance remains independent and unsatisfied.
+
 The [complete disposable sample/lock journals and fixture log](benchmarks/systemic-all-holder-journals-20261018.json) retain every sourcefixture sample and lock event; losslessgzip manifests include originalSHA256s. Parentverifierfailed/childexituncaptured remain explicit.
 
 # Startup configuration repair and complete lock-holder evidence — 2026-10-18

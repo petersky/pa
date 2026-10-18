@@ -235,3 +235,27 @@ def test_legacy_adapter_keeps_existing_startup_read_contract():
     value.store = SimpleNamespace(list_sessions=read)
     assert value._startup_session_inventory() == ["fixture"]
     read.assert_called_once_with(include_metrics=False)
+
+
+def test_dynamic_legacy_adapter_does_not_advertise_a_new_inventory_reader():
+    from unittest.mock import MagicMock
+    store = MagicMock()
+    store.list_sessions.return_value = ["durable obligation"]
+    value = object.__new__(AgentSessionManager)
+    value.store = store
+    assert value._startup_session_inventory() == ["durable obligation"]
+    store.list_sessions.assert_called_once_with(include_metrics=False)
+    assert "list_sessions_for_startup_inventory" not in store._mock_children
+
+
+def test_declared_adapter_inventory_reader_is_used():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    inventory = Mock(return_value=["declared inventory"])
+    old_read = Mock(side_effect=AssertionError("Should use explicitly declared inventory"))
+    value = object.__new__(AgentSessionManager)
+    value.store = SimpleNamespace(
+        list_sessions_for_startup_inventory=inventory, list_sessions=old_read
+    )
+    assert value._startup_session_inventory() == ["declared inventory"]
+    inventory.assert_called_once_with()

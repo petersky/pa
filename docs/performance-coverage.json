@@ -207756,6 +207756,44 @@
       "report": "ee271531-522a-4c05-aea3-df1db4453d58 revision1",
       "next_actor": "this samecard/session",
       "next_action": "ReadyPR/durablesupervisor/exactheadindependentgreen/mainCI/safeexactactivation/retest; verifyrealstartup/resumption/fullconfig andallremainingcriteria/normalindependentacceptance."
+    },
+    {
+      "id": "concern:startup-inventory-adapter-discovery",
+      "kind": "concern",
+      "family": "startup",
+      "finding": "Optional inventory reader discovery fabricates a callable on dynamic legacy adapters",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_CI_and_native_before_after",
+      "cause": "Original3618 getattr lookup treated fabricated MagicMock/dynamic adapter members as an implemented startup reader; empty inventory lost recovery and workspace GC protection. Eight CI failures, three native before/after regressions confirm. Bad head never deployed.",
+      "fix_or_existing_owner": "Same systemic card/session; inspect.getattr_static requires declaration before normal descriptor binding; legacy list_sessions fallback preserved.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
+        "sha256": "248bbcb0f6f26e5f7579df3f31dc130456f3b1cf9747ba358004149ed2ec7389",
+        "corrected_source_fixture": {
+          "baseline": {
+            "samples": 20,
+            "max_ms": 649.0216659731232,
+            "p50_ms": 552.8148750308901,
+            "p95_ms": 615.2722500264645,
+            "p99_ms": 649.0216659731232
+          },
+          "candidate": {
+            "samples": 20,
+            "max_ms": 258.9107910171151,
+            "p50_ms": 174.92495803162456,
+            "p95_ms": 231.03862500283867,
+            "p99_ms": 258.9107910171151
+          }
+        }
+      },
+      "implemented": "Corrected manager guard plus two adapter contracts; 151 expanded tests and one workspace protection case passed, unchanged assertions/deadlines.",
+      "merged": [],
+      "deployed": "Not deployed; actual c43f remains loaded.",
+      "retested": "Three unchanged cases fail before/pass after; full live-event module and workspace GC protection pass. New20pair fixture measures corrected guard plus inventory.",
+      "resolution": "open",
+      "report": "73ab3f07-5788-4623-a764-5bf8a71476d6",
+      "next_actor": "this same card/session",
+      "next_action": "Push corrected head; obtain new exact-head CI and stable supervisor evidence, independently validate all gates, integrate/main CI and safe activation/retest; preserve all recovery/GC obligations."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208670,6 +208708,29 @@
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "next_actor": "this samecard/session",
       "next_action": "Continue specificholderSQL/nativeCPU/hostattribution anddurablewriteamplification repairs; preservealllocks/receipt/CAS/admission/sync semantics."
+    },
+    "concern:startup-configuration-hydration": {
+      "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
+      "corrected_source_fixture": {
+        "baseline": {
+          "samples": 20,
+          "max_ms": 649.0216659731232,
+          "p50_ms": 552.8148750308901,
+          "p95_ms": 615.2722500264645,
+          "p99_ms": 649.0216659731232
+        },
+        "candidate": {
+          "samples": 20,
+          "max_ms": 258.9107910171151,
+          "p50_ms": 174.92495803162456,
+          "p95_ms": 231.03862500283867,
+          "p99_ms": 258.9107910171151
+        }
+      },
+      "status": "Original source-stage tests excluded live-events; CI exposed adapter compatibility bug now corrected and expanded151+1 tests passed. Query unchanged; corrected manager separately measured.",
+      "resolution": "open",
+      "next_actor": "this same card/session",
+      "next_action": "New exact-head CI/stable supervisor, independent merge gates/main CI, safe activation/full startup retest; retain previous measurements and every acceptance gap."
     }
   },
   "f7e8_loaded_stage": {
@@ -209397,5 +209458,12 @@
       "path": "docs/benchmarks/systemic-all-holder-journals-20261018.json",
       "sha256": "a42d8ac39a8e44821935dba7e68d73b75638b004c3bcf7afe2c5531a9e632e93"
     }
+  },
+  "startup_configuration_correction_stage": {
+    "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
+    "sha256": "248bbcb0f6f26e5f7579df3f31dc130456f3b1cf9747ba358004149ed2ec7389",
+    "rows": 560,
+    "concerns": 69,
+    "status": "Original failed head and all eight CI cases retained; corrected source verified locally, new-head CI/integration/deployment/whole acceptance pending."
   }
 }
