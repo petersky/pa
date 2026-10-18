@@ -6175,10 +6175,22 @@ class CardProjection:
         for session_id in session_ids:
             kept = {event.seq for event in self.transcripts.list_range(session_id)}
             with self._conn() as conn:
-                rows = conn.execute("SELECT seq FROM agent_transcript_events WHERE session_id=?", (session_id,)).fetchall()
-                for row in rows:
-                    if int(row[0]) not in kept:
-                        conn.execute("DELETE FROM agent_transcript_events WHERE session_id=? AND seq=?", (session_id, row[0]))
+                if conn.execute(
+                    "SELECT 1 FROM agent_transcript_events WHERE session_id=? LIMIT 1",
+                    (session_id,),
+                ).fetchone() is None:
+                    # A repeated sweep of an empty mirror stays read-only:
+                    # even an empty DELETE would request SQLite's writer lock.
+                    continue
+                # Retain the exact post-prune canonical sequence set, including
+                # events published before this read. One bound JSON parameter
+                # avoids a statement/row handoff per expired mirror event and
+                # does not depend on SQLite's variable limit.
+                conn.execute(
+                    """DELETE FROM agent_transcript_events WHERE session_id=?
+                       AND seq NOT IN (SELECT value FROM json_each(?))""",
+                    (session_id, json.dumps(sorted(kept))),
+                )
         return deleted
 
     def prune_mutation_operations(self, *, before: datetime) -> int:

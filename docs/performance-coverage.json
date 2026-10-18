@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T04:55:44.070271+00:00",
-  "completion": "OPEN;all530rows/49concerns.5024deployed95GETs0violations smallwindowonly;ancestrycandidateunmerged/uninstalled;allmixed/startup/native/peer/backup/CI/receiptgaps retained.",
+  "as_of": "2026-10-18T05:33:52.412884+00:00",
+  "completion": "OPEN;all538rows/54concerns.507merged1705/notactivated;5024smallwindow95GETpasses only. Retentioncandidateunmerged/uninstalled;everypriorfailure/outlier/gap retained.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -103,7 +103,8 @@
     "docs/benchmarks/systemic-fleet-dispatch-20261018.json",
     "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
     "docs/benchmarks/systemic-template-cache-20261018.json",
-    "docs/benchmarks/systemic-ancestry-membership-20261018.json"
+    "docs/benchmarks/systemic-ancestry-membership-20261018.json",
+    "docs/benchmarks/systemic-retention-batching-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -10962,6 +10963,10 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "retention_stage_followup": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "scope": "Source evidence and disposable fixture only; native measurement coverage gap and startup recovery obligations remain open."
       }
     },
     {
@@ -40204,6 +40209,10 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "retention_stage_followup": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "scope": "Source evidence and disposable fixture only; native measurement coverage gap and startup recovery obligations remain open."
       }
     },
     {
@@ -51564,6 +51573,10 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "retention_stage_followup": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "scope": "Source evidence and disposable fixture only; native measurement coverage gap and startup recovery obligations remain open."
       }
     },
     {
@@ -139189,6 +139202,10 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "retention_stage_followup": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "scope": "Source evidence and disposable fixture only; native measurement coverage gap and startup recovery obligations remain open."
       }
     },
     {
@@ -143012,15 +143029,26 @@
       "family": "sync",
       "cause_classification": "source_and_fixture_confirmed_live_share_unverified",
       "implemented": "PinnedreadyWALmembership/64probeexactbulkfallback;canonicalwalkunchanged",
-      "merged": [],
-      "deployed": "Newcandidateunmerged/uninstalled;actual5024baseline",
+      "merged": [
+        "https://github.com/petersky/pa/pull/507"
+      ],
+      "deployed": "Notactivated;runtime5024unchanged",
       "retested": "67+5subtests then6finalcontracts;5k/30k20pairs;combined28modulewheelmixed retained",
-      "next_action": "ProtectedPR/integration/mainCI/exactactivation/retest andallremainingwholeacceptance",
+      "next_action": "Exact protected integrated activation/retest and all remaining whole-system criteria",
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "resolution": "open",
       "next_actor": "this same systemic session",
       "measurement": {
         "artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json"
+      },
+      "integration_evidence": {
+        "watch": "174c955b-291d-409a-b9e3-5b5682381b4a",
+        "head": "da41473e05aec75d2abd1443a9e428c603ad7907",
+        "merge": "1705a66504e810edc3b4dfc4f81f673573ff47b6",
+        "head_ci": 39098821473,
+        "main_ci": 39099338638,
+        "trees_equal": "8c1ca4a6ad3882de752431382d6b88955fd156a0",
+        "independent_green": "5terminalsuccess,0reviews/threads,completepagination,attributedcommits,currentprotection,CLEAN,normalheadCASmerge;no bypass"
       }
     },
     {
@@ -143076,6 +143104,228 @@
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "resolution": "open",
       "next_actor": "this same systemic session"
+    },
+    {
+      "id": "concern:transcript-mirror-prune-amplification",
+      "kind": "concern",
+      "finding": "Compatibility mirror per-event DELETE amplification",
+      "family": "maintenance",
+      "cause_classification": "confirmed_source_and_disposable_leaf",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "implemented": true,
+      "merged": [],
+      "deployed": "Not deployed/repair unimplemented unless explicitly noted",
+      "retested": "6finalmirrorcontracts;pairedleaf;fourmixedstagesallretained",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Integrate/protect/exactactivate/retest; retain end-to-end regressions"
+    },
+    {
+      "id": "concern:canonical-prune-amplification",
+      "kind": "concern",
+      "finding": "Canonical per-event reference release and delete under writer lock",
+      "family": "transcript",
+      "cause_classification": "confirmed_source_and_fixture",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "implemented": true,
+      "merged": [],
+      "deployed": "Not deployed/repair unimplemented unless explicitly noted",
+      "retested": "8contracts/43broader/65backup+16subtests;finalwheelmixed",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Integrate/protect/exactactivate/retest with backup retention semantics; no recovery authority"
+    },
+    {
+      "id": "concern:maintenance-duplicate-health",
+      "kind": "concern",
+      "finding": "Maintenance returns full transcript health twice",
+      "family": "maintenance",
+      "cause_classification": "source_confirmed_time_share_unmeasured",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Not deployed/repair unimplemented unless explicitly noted",
+      "retested": "Static source;twofreshnesspoints",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Measure actual duplicated work;preserve independent integrity/final freshness in any repair"
+    },
+    {
+      "id": "concern:maintenance-native-sql-observability",
+      "kind": "concern",
+      "finding": "Native maintenance SQLite phases absent from worker SQL counters",
+      "family": "observability",
+      "cause_classification": "source_confirmed_coverage_gap",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Not deployed/repair unimplemented unless explicitly noted",
+      "retested": "PlainSQLiteconnection inspected, allnative timings unknown",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Instrument bounded numeric native phases without SQL/payload/deadline changes;retake baseline"
+    },
+    {
+      "id": "concern:ci507-native-tab",
+      "kind": "concern",
+      "finding": "PR507 original browser nativeTab focus failure",
+      "family": "ci",
+      "cause_classification": "failure_confirmed_cause_unknown",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Not deployed/repair unimplemented unless explicitly noted",
+      "retested": "Isolatedcandidate/baselinepass;one sameheadretrygreen",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json"
+      },
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Investigate nativefocus/CDP mechanism;preserve originalfailure/unchangedassertion"
+    },
+    {
+      "id": "startup:mcp-stdio-initialize",
+      "kind": "startup_phase",
+      "finding": "MCP stdio initialize",
+      "family": "startup",
+      "cause_classification": "measured_disposable_child_build_unattested",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "all_three_phase_evidence": {
+          "scope": "One cold childprocess realMCPstdio initialize/toolslist/clean shutdown; warmOSfilesystem cache uncontrolled. Disposabledata/workspaceroots; unreachabletemporaryowner socket, no toolinvocation/provider/network/listener/productiondata. Timeout10s is unchangedpublicprobe default. ParentphaseCPU is not childCPU; aggregate childuser/systemCPU recordedseparately. Not fullproviderstart or performanceacceptance.",
+          "phases": {
+            "initialize": {
+              "wall_ms": 3114.8448750027455,
+              "parent_loop_thread_cpu_ms": 2.442041000000117
+            },
+            "tools_list": {
+              "wall_ms": 41.883083002176136,
+              "parent_loop_thread_cpu_ms": 23.130000000000095
+            }
+          },
+          "principal_scope": "Generated user in this disposable fixture directory only; no live/fallback credential lookup or credential output.",
+          "result": {
+            "state": "connected",
+            "classification": "ok",
+            "tool_count": 221
+          },
+          "wall_ms": 4143.1998329935595,
+          "parent_thread_cpu_ms": 65.49574999999975,
+          "child_user_cpu_ms": 3640.941,
+          "child_system_cpu_ms": 287.456,
+          "temporary_files": [
+            "data/users.json"
+          ]
+        }
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "Unverified;actualtemporaryprobe,notwholeacceptance",
+      "retested": "221toolsconnected;pre-spawnfixtureerrorretained;profileoverheadseparate",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve221tool/schema/auth/ownerbinding parity while measuring import/model work; full provider startup remains open"
+    },
+    {
+      "id": "startup:mcp-stdio-tools-list",
+      "kind": "startup_phase",
+      "finding": "MCP stdio tools-list",
+      "family": "startup",
+      "cause_classification": "measured_disposable_child_build_unattested",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "all_three_phase_evidence": {
+          "scope": "One cold childprocess realMCPstdio initialize/toolslist/clean shutdown; warmOSfilesystem cache uncontrolled. Disposabledata/workspaceroots; unreachabletemporaryowner socket, no toolinvocation/provider/network/listener/productiondata. Timeout10s is unchangedpublicprobe default. ParentphaseCPU is not childCPU; aggregate childuser/systemCPU recordedseparately. Not fullproviderstart or performanceacceptance.",
+          "phases": {
+            "initialize": {
+              "wall_ms": 3114.8448750027455,
+              "parent_loop_thread_cpu_ms": 2.442041000000117
+            },
+            "tools_list": {
+              "wall_ms": 41.883083002176136,
+              "parent_loop_thread_cpu_ms": 23.130000000000095
+            }
+          },
+          "principal_scope": "Generated user in this disposable fixture directory only; no live/fallback credential lookup or credential output.",
+          "result": {
+            "state": "connected",
+            "classification": "ok",
+            "tool_count": 221
+          },
+          "wall_ms": 4143.1998329935595,
+          "parent_thread_cpu_ms": 65.49574999999975,
+          "child_user_cpu_ms": 3640.941,
+          "child_system_cpu_ms": 287.456,
+          "temporary_files": [
+            "data/users.json"
+          ]
+        }
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "Unverified;actualtemporaryprobe,notwholeacceptance",
+      "retested": "221toolsconnected;pre-spawnfixtureerrorretained;profileoverheadseparate",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve221tool/schema/auth/ownerbinding parity while measuring import/model work; full provider startup remains open"
+    },
+    {
+      "id": "startup:mcp-stdio-end-to-end",
+      "kind": "startup_phase",
+      "finding": "MCP stdio end-to-end",
+      "family": "startup",
+      "cause_classification": "measured_disposable_child_build_unattested",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
+        "all_three_phase_evidence": {
+          "scope": "One cold childprocess realMCPstdio initialize/toolslist/clean shutdown; warmOSfilesystem cache uncontrolled. Disposabledata/workspaceroots; unreachabletemporaryowner socket, no toolinvocation/provider/network/listener/productiondata. Timeout10s is unchangedpublicprobe default. ParentphaseCPU is not childCPU; aggregate childuser/systemCPU recordedseparately. Not fullproviderstart or performanceacceptance.",
+          "phases": {
+            "initialize": {
+              "wall_ms": 3114.8448750027455,
+              "parent_loop_thread_cpu_ms": 2.442041000000117
+            },
+            "tools_list": {
+              "wall_ms": 41.883083002176136,
+              "parent_loop_thread_cpu_ms": 23.130000000000095
+            }
+          },
+          "principal_scope": "Generated user in this disposable fixture directory only; no live/fallback credential lookup or credential output.",
+          "result": {
+            "state": "connected",
+            "classification": "ok",
+            "tool_count": 221
+          },
+          "wall_ms": 4143.1998329935595,
+          "parent_thread_cpu_ms": 65.49574999999975,
+          "child_user_cpu_ms": 3640.941,
+          "child_system_cpu_ms": 287.456,
+          "temporary_files": [
+            "data/users.json"
+          ]
+        }
+      },
+      "implemented": false,
+      "merged": [],
+      "deployed": "Unverified;actualtemporaryprobe,notwholeacceptance",
+      "retested": "221toolsconnected;pre-spawnfixtureerrorretained;profileoverheadseparate",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve221tool/schema/auth/ownerbinding parity while measuring import/model work; full provider startup remains open"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -143161,5 +143411,6 @@
     "scope": "Smallsequentiallocalwindow;processmaxima/windowsseparate,notwholefleet/log/acceptance"
   },
   "template_cache_artifact": "docs/benchmarks/systemic-template-cache-20261018.json",
-  "ancestry_membership_artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json"
+  "ancestry_membership_artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json",
+  "retention_batch_artifact": "docs/benchmarks/systemic-retention-batching-20261018.json"
 }

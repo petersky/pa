@@ -461,16 +461,34 @@ class TranscriptStorage:
         changed = 0
         with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
             for session_id in session_ids:
+                if not conn.execute(
+                    "SELECT 1 FROM transcript_events WHERE session_id=? LIMIT 1", (session_id,)
+                ).fetchone():
+                    continue
                 if keep_audit:
                     marks = ",".join("?" for _ in _AUDIT_TYPES)
                     conn.execute(f"""INSERT OR IGNORE INTO transcript_evidence(session_id,seq,event_type,payload_hash,created_at)
                         SELECT session_id,seq,event_type,payload_hash,created_at FROM transcript_events
                         WHERE session_id=? AND event_type IN ({marks}) ORDER BY seq DESC LIMIT 16""", [session_id, *_AUDIT_TYPES])
-                rows = conn.execute("SELECT seq,cold_hash FROM transcript_events WHERE session_id=?", (session_id,)).fetchall()
-                for row in rows:
-                    self._release_object(conn, row["cold_hash"])
-                    conn.execute("DELETE FROM transcript_events WHERE session_id=? AND seq=?", (session_id, row["seq"]))
-                    changed += 1
+                # Same positive-only decrements as releasing each event, grouped
+                # before deletion while the original publication lock and one
+                # transaction still fence all affected references.
+                conn.execute(
+                    """WITH releases AS (
+                           SELECT cold_hash,COUNT(*) AS amount FROM transcript_events
+                           WHERE session_id=? AND cold_hash IS NOT NULL AND cold_hash!=''
+                           GROUP BY cold_hash
+                       )
+                       UPDATE transcript_objects AS obj
+                       SET ref_count=MAX(0,obj.ref_count-releases.amount)
+                       FROM releases
+                       WHERE obj.hash=releases.cold_hash AND obj.ref_count>0""",
+                    (session_id,),
+                )
+                deleted = conn.execute(
+                    "DELETE FROM transcript_events WHERE session_id=?", (session_id,)
+                )
+                changed += max(0, deleted.rowcount)
             conn.execute("DELETE FROM transcript_objects WHERE ref_count=0")
         self.collect_unreferenced_objects()
         return changed

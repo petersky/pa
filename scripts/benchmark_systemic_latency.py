@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 from collections import Counter, defaultdict, deque
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from unittest.mock import patch
@@ -31,7 +32,7 @@ from pa.acp import transcript_page  # Include lazy history compaction in source 
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.core.performance import FILESYSTEM_PHASES
-from pa.domain.models import AgentSession, CardEvent, EventType, SyncCommit
+from pa.domain.models import AgentSession, CardEvent, EventType, SyncCommit, TranscriptEvent
 from pa.execution.dispatch import DispatchRecord
 from pa.execution.progress import DispatchProgressEventV1, ProgressPhase
 from pa.fleet.overview import FleetOverviewCache, field
@@ -65,15 +66,16 @@ class Counts:
         return conn
 
 
-async def run(root, *, history=1000, iterations=30, inventory_reads=False):
+async def run(root, *, history=1000, iterations=30, inventory_reads=False, retention_events=0):
     settings = Settings(data_dir=root / "data", workspace_root=root / "workspaces",
         agent_enabled=False, telemetry_enabled=False, auth_required=False)
     app = Kernel.boot(settings=settings).build_app()
     async with app.router.lifespan_context(app):
-        return await run_app(app, root, history=history, iterations=iterations, inventory_reads=inventory_reads)
+        return await run_app(app, root, history=history, iterations=iterations,
+                             inventory_reads=inventory_reads, retention_events=retention_events)
 
 
-async def run_app(app, root, *, history, iterations, inventory_reads=False):
+async def run_app(app, root, *, history, iterations, inventory_reads=False, retention_events=0):
     from pa.server.template_cache import _compatible
     template_cache = app.state.templates.env.bytecode_cache
     template_artifact = {
@@ -125,6 +127,27 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
             state="running", progress_protocol_version=1, placement_decision=proof))
         return sessions, active
     sessions, active = await asyncio.to_thread(seed)
+    maintenance = ctx.services.get("instance_maintenance")
+    retention_result = {}
+    if retention_events:
+        # Finish the initial sweep before adding an explicitly expired fixture.
+        # The measured sweep below is the real service path, concurrent with the
+        # other workloads. No production maintenance or retention change.
+        await maintenance.run_once()
+        def seed_expired():
+            expired = AgentSession(id="retention-expired", agent_name="codex", status="closed")
+            store.save_session(expired)
+            store.append_transcript_events([
+                TranscriptEvent(session_id=expired.id, seq=i + 1,
+                    event_type="turn_completed" if i % 128 == 0 else "chunk",
+                    payload={"text": "expired synthetic fixture"})
+                for i in range(retention_events)
+            ])
+            expired.updated_at = datetime.now(UTC) - timedelta(
+                days=int(settings.transcript_retention_days) + 1)
+            store.save_session(expired)
+            assert store.transcripts.next_seq(expired.id) == retention_events + 1
+        await asyncio.to_thread(seed_expired)
     # Synthetic sessions have no provider; enable only the read/list admission
     # used by this fixture while agent_enabled=False prevents process creation.
     manager._accepting = True
@@ -246,6 +269,19 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                     reason="workspace_binding_initialized", expected_binding={})
             await offload("sqlite.execution_binding_materialize", bind)
             await asyncio.sleep(0.005)
+    async def retention_work():
+        if retention_events:
+            result = await measure("maintenance.run", maintenance.run_once())
+            assert result["transcript_events_deleted"] == retention_events
+            assert not store.list_transcript_events("retention-expired")
+            with store.transcripts._conn() as conn:
+                proofs = conn.execute(
+                    "SELECT COUNT(*) FROM transcript_evidence WHERE session_id=?",
+                    ("retention-expired",),
+                ).fetchone()[0]
+            assert proofs == min(16, (retention_events + 127) // 128)
+            retention_result.update(deleted=retention_events, independent_audit_proofs=proofs,
+                                    result=result)
     async def transcript_work(worker):
         for i in range(iterations):
             for j in range(32):
@@ -319,6 +355,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
     try:
         with patch("sqlite3.connect", counts.connection), patch.object(log.store, "get", side_effect=read_object):
             await asyncio.gather(sync_work(), startup_work(), progress_work(), cache_and_wire(), foreground(),
+                                 retention_work(),
                                  *(transcript_work(worker) for worker in transcript_runtimes))
         elapsed = time.perf_counter() - started
         after_io = resource.getrusage(resource.RUSAGE_SELF)
@@ -337,6 +374,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
         assert store.get_card(card_id).title == f"Fixture {history + 2 * iterations - 1}"
         return {"hardware": {"machine": platform.machine(), "python": platform.python_version(), "cpus": os.cpu_count()},
             "source_module_sha256": source_hashes,
+            "benchmark_script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "measurement_start_monotonic": started, "measurement_finish_monotonic": time.perf_counter(),
             "premeasurement": {"scope": "Kernel boot and synthetic fixture seeding; not part of steady mixed window",
                                "slow_calls": sum(value.get("slow_calls", 0) for value in runtime_before["operations"].values()),
@@ -345,7 +383,8 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                "slow_observations": runtime_before.get("slow_operations", {}),
                                "acceptance": "reported separately; full server cold boot remains unaccepted"},
             "fixture": {"history_commits": history, "retained_dispatches": 101, "sessions": 30,
-                "workload_version": 5 if inventory_reads else 3,
+                "workload_version": 6 if retention_events else (5 if inventory_reads else 3),
+                "expired_retention_events": retention_events, "retention_outcome": retention_result,
                 "foreground_inventory_reads": inventory_reads,
                 "sync_pushes": iterations, "incoming_reconciliations": iterations,
                 "controlled_compatible_forks": (iterations + 9) // 10,
@@ -354,6 +393,13 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                 "executor_workers": runtime.max_workers, "duration_seconds": round(elapsed, 3),
                 "limits": "single process, local disposable storage, synthetic providers, no external peer/provider time"},
             "latency": {key: distribution(values) for key, values in samples.items()},
+            "raw_latency_samples_ms": dict(samples),
+            "raw_decoded_response_bytes": dict(sizes),
+            "threshold_policy_ms": {"default": 500, "dispatch.runnable_read": 2000},
+            "universal_500ms_observations": {
+                key: sum(value >= 500 for value in values)
+                for key, values in samples.items() if any(value >= 500 for value in values)
+            },
             "response_bytes": {key: {"min": min(values), "max": max(values)} for key, values in sizes.items()},
             "warnings": dict(warnings), "sql_statements": dict(counts.statements),
             "sync_outcomes": dict(sync_outcomes),
@@ -402,11 +448,15 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", type=int, default=30)
     parser.add_argument("--inventory-reads", action="store_true",
                         help="Include 19 additional local read/page paths from the findings inventory")
+    parser.add_argument("--retention-events", type=int, default=0,
+                        help="Seed up to10000expired events and measure one real concurrent retention sweep")
     args = parser.parse_args()
     if args.history < 1 or args.iterations < 1:
         parser.error("history and iterations must be positive")
+    if not 0 <= args.retention_events <= 10000:
+        parser.error("retention-events must be0..10000")
     with tempfile.TemporaryDirectory(prefix="pa-systemic-benchmark-") as tmp:
         result = asyncio.run(run(Path(tmp), history=args.history, iterations=args.iterations,
-                                 inventory_reads=args.inventory_reads))
+                                 inventory_reads=args.inventory_reads, retention_events=args.retention_events))
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"output": str(args.output), "warnings": result["warnings"], "latency": result["latency"]}, indent=2))
