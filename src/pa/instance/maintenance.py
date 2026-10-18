@@ -7,7 +7,9 @@ import logging
 import shutil
 import sqlite3
 import threading
-from contextlib import closing
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,42 @@ logger = logging.getLogger(__name__)
 
 _MAINTENANCE_TIMEOUT_SECONDS = 120.0
 
+_PhaseTimes = dict[str, dict[str, float | int]]
+
+
+@contextmanager
+def _maintenance_phase(phases: _PhaseTimes, name: str) -> Iterator[None]:
+    """Fixed internal phase names; wall/CPU include nested work, not I/O bytes."""
+    wall, cpu = time.perf_counter_ns(), time.thread_time_ns()
+    errors = 0
+    try:
+        yield
+    except BaseException:
+        errors = 1
+        raise
+    finally:
+        phase = phases.setdefault(name, {
+            "calls": 0, "errors": 0, "wall_ms": 0.0, "thread_cpu_ms": 0.0,
+        })
+        phase["calls"] += 1
+        phase["errors"] += errors
+        phase["wall_ms"] += (time.perf_counter_ns() - wall) / 1_000_000
+        phase["thread_cpu_ms"] += (time.thread_time_ns() - cpu) / 1_000_000
+
+
+@contextmanager
+def _maintenance_connection(path: Path, phases: _PhaseTimes) -> Iterator[sqlite3.Connection]:
+    with _maintenance_phase(phases, "connect"):
+        conn = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=rw", uri=True,
+            timeout=0.1, isolation_level=None, factory=ObservedConnection,
+        )
+    try:
+        yield conn
+    finally:
+        with _maintenance_phase(phases, "close"):
+            conn.close()
+
 
 def _maintain_database(
     path: Path, *, stop: threading.Event | None = None
@@ -28,64 +66,81 @@ def _maintain_database(
     A short busy timeout yields to other database users. VACUUM rewrites the
     existing file transactionally; it never swaps files underneath live readers.
     """
-    result: dict[str, Any] = {"compacted": False, "status": "ok"}
+    phases: _PhaseTimes = {}
+    with _maintenance_phase(phases, "total"):
+        return _maintain_database_measured(path, stop=stop, phases=phases)
+
+
+def _maintain_database_measured(
+    path: Path, *, stop: threading.Event | None, phases: _PhaseTimes,
+) -> dict[str, Any]:
+    # Keep the mapping by reference: close/total finish after a return, including
+    # deferred copies of result. Readers see their completed timings, too.
+    result: dict[str, Any] = {"compacted": False, "status": "ok", "phases": phases}
     if stop is not None and stop.is_set():
         return {**result, "status": "deferred", "reason": "stopping"}
-    with closing(sqlite3.connect(
-        path.resolve().as_uri() + "?mode=rw", uri=True,
-        timeout=0.1, isolation_level=None, factory=ObservedConnection,
-    )) as conn:
+    with _maintenance_connection(path, phases) as conn:
         if stop is not None:
             conn.set_progress_handler(lambda: int(stop.is_set()), 100_000)
 
-        def sizes() -> dict[str, int]:
-            page_size = conn.execute("PRAGMA page_size").fetchone()[0]
-            pages = conn.execute("PRAGMA page_count").fetchone()[0]
-            free = conn.execute("PRAGMA freelist_count").fetchone()[0]
-            return {
-                "page_count": pages, "page_size": page_size,
-                "freelist_count": free,
-                "bytes": pages * page_size, "free_bytes": free * page_size,
-            }
+        def sizes(name: str) -> dict[str, int]:
+            with _maintenance_phase(phases, name):
+                page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+                pages = conn.execute("PRAGMA page_count").fetchone()[0]
+                free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+                return {
+                    "page_count": pages, "page_size": page_size,
+                    "freelist_count": free,
+                    "bytes": pages * page_size, "free_bytes": free * page_size,
+                }
 
-        def check_integrity() -> None:
-            if conn.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
-                raise RuntimeError(f"Database integrity check failed: {path.name}")
+        def check_integrity(name: str) -> None:
+            with _maintenance_phase(phases, name):
+                if conn.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                    raise RuntimeError(f"Database integrity check failed: {path.name}")
+
+        def checkpoint(name: str) -> tuple[int, int, int]:
+            with _maintenance_phase(phases, name):
+                return conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
 
         try:
-            before = sizes()
+            before = sizes("size_initial")
             result.update(before=before, after=before, **before)
-            check_integrity()
+            check_integrity("integrity_before")
             result["quick_check"] = "ok"
             # This is a fresh connection: consider all tables for planner stats.
-            conn.execute("PRAGMA optimize(0x10002)")
-            checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            with _maintenance_phase(phases, "optimize"):
+                conn.execute("PRAGMA optimize(0x10002)")
+            checkpoint_result = checkpoint("checkpoint_before")
             result.update(zip(
-                ("wal_busy", "wal_log", "wal_checkpointed"), checkpoint
+                ("wal_busy", "wal_log", "wal_checkpointed"), checkpoint_result
             ))
-            if checkpoint[0]:
+            if checkpoint_result[0]:
                 return {**result, "status": "deferred", "reason": "busy"}
-            before = sizes()
+            before = sizes("size_pre_compact")
             result.update(before=before, after=before, **before)
             if before["free_bytes"]:
                 # SQLite can need twice the original size for its copy/journal.
-                if shutil.disk_usage(path.parent).free < 2 * before["bytes"]:
+                with _maintenance_phase(phases, "disk_space"):
+                    free_disk_bytes = shutil.disk_usage(path.parent).free
+                if free_disk_bytes < 2 * before["bytes"]:
                     return {
                         **result, "status": "deferred",
                         "reason": "insufficient_disk_space",
                     }
                 if stop is not None and stop.is_set():
                     return {**result, "status": "deferred", "reason": "stopping"}
-                conn.execute("VACUUM")
+                with _maintenance_phase(phases, "vacuum"):
+                    conn.execute("VACUUM")
                 result["compacted"] = True
-                check_integrity()
-                checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                check_integrity("integrity_after")
+                checkpoint_result = checkpoint("checkpoint_after")
                 result.update(zip(
-                    ("wal_busy", "wal_log", "wal_checkpointed"), checkpoint
+                    ("wal_busy", "wal_log", "wal_checkpointed"), checkpoint_result
                 ))
-                if checkpoint[0]:
+                if checkpoint_result[0]:
                     result.update(status="deferred", reason="busy")
-            after = sizes()
+            after = sizes("size_final")
             result.update(after=after, **after)
             return result
         except sqlite3.OperationalError as exc:
@@ -124,38 +179,57 @@ def run_maintenance(
     stop: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Apply retention to local projection/dispatch state without deleting cards."""
+    phases: _PhaseTimes = {}
+    with _maintenance_phase(phases, "total"):
+        return _run_maintenance_measured(
+            settings, store, dispatch_store, now=now, stop=stop, phases=phases,
+        )
+
+
+def _run_maintenance_measured(
+    settings: Any, store: Any, dispatch_store: Any | None, *,
+    now: datetime | None, stop: threading.Event | None, phases: _PhaseTimes,
+) -> dict[str, Any]:
     now = now or datetime.now(UTC)
     transcript_cutoff = now - timedelta(days=int(settings.transcript_retention_days))
     mutation_cutoff = now - timedelta(
         days=int(settings.mutation_operation_retention_days)
     )
+    with _maintenance_phase(phases, "transcript_retention"):
+        transcript_deleted = store.prune_closed_session_transcripts(before=transcript_cutoff)
+    with _maintenance_phase(phases, "mutation_retention"):
+        mutation_deleted = store.prune_mutation_operations(before=mutation_cutoff)
     result: dict[str, Any] = {
         "ran_at": now.isoformat(),
         "transcript_cutoff": transcript_cutoff.isoformat(),
         "mutation_cutoff": mutation_cutoff.isoformat(),
-        "transcript_events_deleted": store.prune_closed_session_transcripts(
-            before=transcript_cutoff
-        ),
-        "mutation_operations_deleted": store.prune_mutation_operations(
-            before=mutation_cutoff
-        ),
+        "transcript_events_deleted": transcript_deleted,
+        "mutation_operations_deleted": mutation_deleted,
         "dispatch_compact": {"events": 0, "receipts": 0},
         "sqlite": {},
         "transcript_storage": {},
+        "phases": phases,
     }
     if hasattr(store, "migrate_legacy_transcripts"):
-        result["transcript_migration"] = store.migrate_legacy_transcripts()
+        # Migration includes its own fresh health snapshot. The final health
+        # read below remains distinct; do not substitute one for the other.
+        with _maintenance_phase(phases, "transcript_migration_and_health"):
+            result["transcript_migration"] = store.migrate_legacy_transcripts()
     if dispatch_store is not None:
         try:
-            result["dispatch_compact"] = dispatch_store.compact(now=now)
+            with _maintenance_phase(phases, "dispatch_compact"):
+                result["dispatch_compact"] = dispatch_store.compact(now=now)
         except DispatchStoreReadOnlyError:
             result["dispatch_compact"] = {"skipped": "read_only"}
-    result["sqlite"] = _maintain_database(store.db_path, stop=stop)
-    result["transcript_sqlite"] = _maintain_database(
-        store.transcripts.db_path, stop=stop
-    )
+    with _maintenance_phase(phases, "projection_database"):
+        result["sqlite"] = _maintain_database(store.db_path, stop=stop)
+    with _maintenance_phase(phases, "transcript_database"):
+        result["transcript_sqlite"] = _maintain_database(
+            store.transcripts.db_path, stop=stop
+        )
     if (stop is None or not stop.is_set()) and hasattr(store, "transcript_storage_metrics"):
-        result["transcript_storage"] = store.transcript_storage_metrics()
+        with _maintenance_phase(phases, "transcript_health_final"):
+            result["transcript_storage"] = store.transcript_storage_metrics()
     return result
 
 
