@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T19:20:09.629454+00:00",
+  "as_of": "2026-10-18T19:25:25.435921+00:00",
   "completion": "OPEN;578retainedfindings/82concerns. Exact547sourcefixture preserves9600ordered events/12511coldobjects with0workerwarnings/failures/timeouts but5thresholdviolations(messagehistory1,objectcollection3,maintenance1). All prior source/live/CI failures retained; no deployment/restart or wholeacceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -117,7 +117,8 @@
     "docs/benchmarks/systemic-main526-browser-20261018.json",
     "docs/benchmarks/systemic-current-process-20261018.json",
     "docs/benchmarks/systemic-fleet-config-20261018.json",
-    "docs/benchmarks/systemic-fleet-config-mixed-20261018.json"
+    "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
+    "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209699,18 +209700,180 @@
       "status": "Exact bcd5/package2c2c/PID53309/startup7164 loaded.95GET all200 but3>=500ms; cached startupGC5.720s; wholeacceptance open. Current uncommitted prefilter is separate."
     },
     "concern:transcript-gc-live-publication-lock": {
-      "pr": 518,
-      "watch": "eb0364bb-6c2c-47bd-8c35-14a405f793bb",
-      "head": "9f309e1d7e41500ad6df2c3f987db87b174acb06",
-      "merge": "f7e877101f2733fcee2dd86cfee34270547fa844",
-      "head_ci": 39119023802,
-      "main_ci": 39119310154,
-      "proof_sha256": "7827bcbcd7386b6d1b16ba9073c2a9247ca3152783b9431ff5d8da123e7d6301",
-      "status": "Merged after stable green and independent revalidation;5SUCCESS head+main/no retry or bypass; exact actual loaded proof separate.",
-      "deployed": "Exact server-captured source/package/newPID/startup verified; not acceptance",
-      "retested": "Single95GET window and later cached maintenance/full21section snapshot. Three500ms violations/workspacefailure/startup36.021s remain.",
+      "artifact": "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json",
+      "sha256": "00e3def12f63b4275355481a6dd1a86edce8e831010323702ea01fe8178d3344",
       "resolution": "open",
-      "artifact": "docs/benchmarks/systemic-f7e8-loaded-20261018.json"
+      "decision": "Not implemented; reduced fetch-step amplification doesnotestablish broadtail/correctness/deployedacceptance",
+      "summary": {
+        "live": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 202.588,
+              "p50": 195.538,
+              "p95": 202.588,
+              "p99": 202.588
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 199.932,
+              "p50": 192.8,
+              "p95": 199.932,
+              "p99": 199.932
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 186.688,
+              "p50": 168.286,
+              "p95": 186.688,
+              "p99": 186.688
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 179.994,
+              "p50": 165.967,
+              "p95": 179.994,
+              "p99": 179.994
+            }
+          }
+        },
+        "mixed": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 58.581,
+              "p50": 54.069,
+              "p95": 58.581,
+              "p99": 58.581
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 56.443,
+              "p50": 53.37,
+              "p95": 56.443,
+              "p99": 56.443
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 78.327,
+              "p50": 52.554,
+              "p95": 78.327,
+              "p99": 78.327
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 58.339,
+              "p50": 52.221,
+              "p95": 58.339,
+              "p99": 58.339
+            }
+          }
+        },
+        "orphan": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 107.252,
+              "p50": 89.989,
+              "p95": 107.252,
+              "p99": 107.252
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 103.362,
+              "p50": 87.378,
+              "p95": 103.362,
+              "p99": 103.362
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 85.104,
+              "p50": 81.713,
+              "p95": 85.104,
+              "p99": 85.104
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 84.232,
+              "p50": 80.893,
+              "p95": 84.232,
+              "p99": 84.232
+            }
+          }
+        },
+        "concurrent": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 3,
+              "max": 321.049,
+              "p50": 306.878,
+              "p95": 321.049,
+              "p99": 321.049
+            },
+            "cpu_ms": {
+              "samples": 3,
+              "max": 263.163,
+              "p50": 252.312,
+              "p95": 263.163,
+              "p99": 263.163
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 3,
+              "max": 253.409,
+              "p50": 240.428,
+              "p95": 253.409,
+              "p99": 253.409
+            },
+            "cpu_ms": {
+              "samples": 3,
+              "max": 219.064,
+              "p50": 211.0,
+              "p95": 219.064,
+              "p99": 219.064
+            }
+          }
+        }
+      },
+      "append_ms": {
+        "baseline": {
+          "samples": 3,
+          "max": 191.518,
+          "p50": 189.213,
+          "p95": 191.518,
+          "p99": 191.518
+        },
+        "aggregate": {
+          "samples": 3,
+          "max": 201.834,
+          "p50": 192.376,
+          "p95": 201.834,
+          "p99": 201.834
+        }
+      },
+      "validation_failure": [
+        {
+          "phase": "beforeseeding",
+          "type": "AssertionError",
+          "source": "initial-source-assert.py"
+        },
+        {
+          "phase": "after42timings",
+          "type": "AttributeError",
+          "method": "TranscriptStorage.read",
+          "actual_api": "list",
+          "cold_payload_validation": "notcompleted; fixturecontextdisposed"
+        }
+      ],
+      "next_actor": "this same systemic session",
+      "next_action": "Continue remainingnativeSQL/IO/GC/scheduling attribution and allcriteria; do notrerununchangedprobe orship aspassingfix. Preservebounded freshlocked deletionproof."
     },
     "concern:fleet-workshop-metrics-hydration": {
       "pr": 520,
@@ -211794,5 +211957,181 @@
     "deployed": "Not installed or restarted; sourcefixture only",
     "next_actor": "this same systemic session",
     "next_action": "Publishfinalhead/terminalgreen/stablesupervisor/independentcurrentrevalidation/normalmerge; continue five residual violations and all578findings/normalindependentacceptance, honoring noanotherrestart boundary."
+  },
+  "gc_positive_aggregate_probe_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json",
+    "sha256": "00e3def12f63b4275355481a6dd1a86edce8e831010323702ea01fe8178d3344",
+    "resolution": "open",
+    "decision": "Not implemented; reduced fetch-step amplification doesnotestablish broadtail/correctness/deployedacceptance",
+    "summary": {
+      "live": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 202.588,
+            "p50": 195.538,
+            "p95": 202.588,
+            "p99": 202.588
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 199.932,
+            "p50": 192.8,
+            "p95": 199.932,
+            "p99": 199.932
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 186.688,
+            "p50": 168.286,
+            "p95": 186.688,
+            "p99": 186.688
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 179.994,
+            "p50": 165.967,
+            "p95": 179.994,
+            "p99": 179.994
+          }
+        }
+      },
+      "mixed": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 58.581,
+            "p50": 54.069,
+            "p95": 58.581,
+            "p99": 58.581
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 56.443,
+            "p50": 53.37,
+            "p95": 56.443,
+            "p99": 56.443
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 78.327,
+            "p50": 52.554,
+            "p95": 78.327,
+            "p99": 78.327
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 58.339,
+            "p50": 52.221,
+            "p95": 58.339,
+            "p99": 58.339
+          }
+        }
+      },
+      "orphan": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 107.252,
+            "p50": 89.989,
+            "p95": 107.252,
+            "p99": 107.252
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 103.362,
+            "p50": 87.378,
+            "p95": 103.362,
+            "p99": 103.362
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 85.104,
+            "p50": 81.713,
+            "p95": 85.104,
+            "p99": 85.104
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 84.232,
+            "p50": 80.893,
+            "p95": 84.232,
+            "p99": 84.232
+          }
+        }
+      },
+      "concurrent": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 3,
+            "max": 321.049,
+            "p50": 306.878,
+            "p95": 321.049,
+            "p99": 321.049
+          },
+          "cpu_ms": {
+            "samples": 3,
+            "max": 263.163,
+            "p50": 252.312,
+            "p95": 263.163,
+            "p99": 263.163
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 3,
+            "max": 253.409,
+            "p50": 240.428,
+            "p95": 253.409,
+            "p99": 253.409
+          },
+          "cpu_ms": {
+            "samples": 3,
+            "max": 219.064,
+            "p50": 211.0,
+            "p95": 219.064,
+            "p99": 219.064
+          }
+        }
+      }
+    },
+    "append_ms": {
+      "baseline": {
+        "samples": 3,
+        "max": 191.518,
+        "p50": 189.213,
+        "p95": 191.518,
+        "p99": 191.518
+      },
+      "aggregate": {
+        "samples": 3,
+        "max": 201.834,
+        "p50": 192.376,
+        "p95": 201.834,
+        "p99": 201.834
+      }
+    },
+    "validation_failure": [
+      {
+        "phase": "beforeseeding",
+        "type": "AssertionError",
+        "source": "initial-source-assert.py"
+      },
+      {
+        "phase": "after42timings",
+        "type": "AttributeError",
+        "method": "TranscriptStorage.read",
+        "actual_api": "list",
+        "cold_payload_validation": "notcompleted; fixturecontextdisposed"
+      }
+    ],
+    "next_actor": "this same systemic session",
+    "next_action": "Continue remainingnativeSQL/IO/GC/scheduling attribution and allcriteria; do notrerununchangedprobe orship aspassingfix. Preservebounded freshlocked deletionproof."
   }
 }

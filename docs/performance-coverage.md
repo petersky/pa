@@ -1,3 +1,22 @@
+# Rejected GC hypothesis and current integration boundary — 2026-10-18
+
+The [bounded positive-reference aggregate experiment](benchmarks/systemic-gc-positive-aggregate-probe-20261018.json) is **not implemented**. It tested one aggregate row per128hash page, leaving the fresh locked deletion/pin/unlink proof unchanged. All42timing cases and both helper failures are preserved. Earlier rejected fetch-all evidence remains unchanged.
+
+| Disposable workload | Trials/method | Baseline wall p50 / p95 / max ms | Aggregate wall p50 / p95 / max ms |
+| --- | ---: | ---: | ---: |
+| live | 6 | 195.538 / 202.588 / 202.588 | 168.286 / 186.688 / 186.688 |
+| mixed | 6 | 54.069 / 58.581 / 58.581 | 52.554 / 78.327 / 78.327 |
+| orphan | 6 | 89.989 / 107.252 / 107.252 | 81.713 / 85.104 / 85.104 |
+| concurrent | 3 | 306.878 / 321.049 / 321.049 | 240.428 / 253.409 / 253.409 |
+
+Concurrent append max rose191.518→201.834ms and mixed max58.581→78.327ms in these small samples, despite improvements elsewhere. All-live observed SQLite calls fell12,709→198: those counters include cursor fetch steps and are not distinct query counts; aggregate98rows represent12,511logical reference hashes. No broad improvement is established. The final helper called nonexistent `TranscriptStorage.read` after all timings; cold-payload verification did not complete, the fixture was disposed, and complete correctness is not claimed. The initial source-needle assertion also failed before seeding/timing. Neither failed validation was hidden or rerun for a passing performance sample.
+
+PR533's prior final head1af619c3 passed all5CI39158334146 jobs. Independent validation then stopped on current-base drift(PR862c2f6b/main0d6638cc), before any merge. Normal local mergee9ac00b8 brings PR534's reserved-dispatch context fix into the dedicated branch without conflicts. Scoped integration tests are retained with temporary-root fencing; the resulting evidence head still requires fresh CI, stable supervisor and independent revalidation. The source547mixed result remains labeled as that earlier source, not the later combined tree.
+
+All **578 findings and82concerns remain open**. No product GC edit, install, restart, default/config/backup/admission change or whole-PA acceptance occurred. Every earlier source/live/CI failure, remaining latency and acceptance requirement is preserved.
+
+## Preserved prior inventory
+
 # Exact-source mixed result and remaining violations — 2026-10-18
 
 All **578 findings / 82 concerns remain open**. [Full result, 7,274 verified journal records, logical I/O counters, runtime windows and reproduction source](benchmarks/systemic-fleet-config-mixed-20261018.json) retain the one completed exact547 candidate scenario. Prior artifacts and every coverage row are unchanged.
