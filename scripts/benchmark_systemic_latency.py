@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import gc
 import hashlib
+import inspect
 import json
 import logging
 import math
@@ -40,6 +41,7 @@ from pa.instance.agent_session import AgentSessionRuntime
 from pa.modules.sync import _apply_sync_push_local
 from pa.modules import instance as instance_module  # Attest runtime diagnostics before measurement.
 from pa.pr_supervisor.models import PRWatch
+from pa.repository.workspace import WorkspaceManager
 from pa.status import info as status_info  # Attest the lazy status count path before measurement.
 
 
@@ -66,16 +68,34 @@ class Counts:
         return conn
 
 
-async def run(root, *, history=1000, iterations=30, inventory_reads=False, retention_events=0):
+async def run(root, *, history=1000, iterations=30, inventory_reads=False, retention_events=0,
+              sample_observer=None):
+    root = Path(root).resolve()
+    temporary = Path(tempfile.gettempdir()).resolve()
+    assert root != temporary and root.is_relative_to(temporary), "benchmark root must be temporary"
     settings = Settings(data_dir=root / "data", workspace_root=root / "workspaces",
         agent_enabled=False, telemetry_enabled=False, auth_required=False)
-    app = Kernel.boot(settings=settings).build_app()
-    async with app.router.lifespan_context(app):
-        return await run_app(app, root, history=history, iterations=iterations,
-                             inventory_reads=inventory_reads, retention_events=retention_events)
+    original = WorkspaceManager.__init__
+    roots = []
+    def guarded(manager, settings, store):
+        data = Path(settings.data_dir).resolve()
+        workspace = Path(settings.workspace_root).expanduser().resolve()
+        assert data.is_relative_to(root), "benchmark data root escaped fixture"
+        assert workspace.is_relative_to(root), "benchmark workspace root escaped fixture"
+        roots.append({"data_dir": str(data), "workspace_root": str(workspace)})
+        return original(manager, settings, store)
+    with patch.object(WorkspaceManager, "__init__", guarded):
+        app = Kernel.boot(settings=settings).build_app()
+        async with app.router.lifespan_context(app):
+            result = await run_app(app, root, history=history, iterations=iterations,
+                                   inventory_reads=inventory_reads, retention_events=retention_events,
+                                   sample_observer=sample_observer)
+    result["workspace_root_audit"] = roots
+    return result
 
 
-async def run_app(app, root, *, history, iterations, inventory_reads=False, retention_events=0):
+async def run_app(app, root, *, history, iterations, inventory_reads=False, retention_events=0,
+                  sample_observer=None):
     from pa.server.template_cache import _compatible
     template_cache = app.state.templates.env.bytecode_cache
     template_artifact = {
@@ -194,9 +214,23 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
         return value
     async def measure(name, awaitable):
         started = time.perf_counter()
-        value = await awaitable
-        samples[name].append((time.perf_counter() - started) * 1000)
+        try:
+            value = await awaitable
+        except BaseException as exc:
+            if sample_observer is not None:
+                await observe_sample({"kind": "error", "name": name,
+                                      "elapsed_ms": (time.perf_counter() - started) * 1000,
+                                      "error_type": type(exc).__name__})
+            raise
+        elapsed = (time.perf_counter() - started) * 1000
+        samples[name].append(elapsed)
+        if sample_observer is not None:
+            await observe_sample({"kind": "latency", "name": name, "elapsed_ms": elapsed})
         return value
+    async def observe_sample(record):
+        pending = sample_observer(record)
+        if inspect.isawaitable(pending):
+            await pending
     async def offload(name, call, *args, **kwargs):
         return await measure(name, runtime.run_blocking(name, call, *args, **kwargs))
     async def sync_work():
@@ -329,6 +363,10 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
             for _ in range(iterations):
                 for path in paths:
                     response = await measure(path, client.get(path))
+                    if sample_observer is not None:
+                        await observe_sample({"kind": "http_response", "name": path,
+                                              "status": response.status_code,
+                                              "decoded_response_bytes": len(response.content)})
                     response.raise_for_status()
                     if path == "/agent":
                         assert "PR #1 · closed" in response.text
