@@ -88,7 +88,7 @@ _SESSION_COLUMNS_WITHOUT_METRICS = """
     created_at, updated_at
 """
 
-# Startup decisions and SessionSnapshot use these three configuration keys.
+# Startup decisions, SessionSnapshot and Fleet presentation use these keys.
 # A resumed runtime re-fetches its complete current session before mutation.
 # Keep unusual legacy values unchanged so the existing Python decoder retains
 # last-key-wins behavior and handles malformed/unsupported values as before.
@@ -5615,10 +5615,10 @@ class CardProjection:
         """Read-only Fleet presentation; re-fetch a full session before saving.
 
         Preserve lifecycle, recovery, binding and config fields used by the
-        presentation, without fetching or decoding unrelated diagnostic metrics.
+        presentation, without decoding unrelated config proofs or diagnostic metrics.
         """
-        return self.list_sessions_for_workshop(
-            realm_id=realm_id, limit=limit, include_metrics=False,
+        return self._list_sessions_for_workshop(
+            realm_id=realm_id, limit=limit, columns=_STARTUP_SESSION_COLUMNS,
         )
 
     def list_sessions_for_workshop(
@@ -5630,6 +5630,15 @@ class CardProjection:
         both row materialization and the fleet heartbeat bounded while the count
         makes any omitted active rows explicit.
         """
+        return self._list_sessions_for_workshop(
+            realm_id=realm_id, limit=limit,
+            columns="*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS,
+        )
+
+    def _list_sessions_for_workshop(
+        self, *, realm_id: str, limit: int, columns: str
+    ) -> tuple[list[AgentSession], int]:
+        """Share selection/count ordering across full and read-only projections."""
         active_statuses = (
             "working",
             "prompting",
@@ -5642,7 +5651,6 @@ class CardProjection:
         )
         placeholders = ",".join("?" for _ in active_statuses)
         params = (realm_id, *active_statuses)
-        columns = "*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS
         with self._conn() as conn:
             total = int(
                 conn.execute(

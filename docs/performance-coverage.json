@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T10:22:20.676947+00:00",
-  "completion": "OPEN;570rows/79concerns. Allprior569rows/owners/actions unchanged. PR526sourceintegrated/headCIgreen butmainCIbrowserpollfailed; no install/restart. Test-onlyfollowupvalidated/unintegrated. Actual52595GETFleet738ms/maintenance42.2s/provisionfailures andallolderresiduals remain. Normal independentacceptance unsatisfied.",
+  "as_of": "2026-10-18T19:25:25.435921+00:00",
+  "completion": "OPEN;578retainedfindings/82concerns. Exact547sourcefixture preserves9600ordered events/12511coldobjects with0workerwarnings/failures/timeouts but5thresholdviolations(messagehistory1,objectcollection3,maintenance1). All prior source/live/CI failures retained; no deployment/restart or wholeacceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -114,7 +114,11 @@
     "docs/benchmarks/systemic-reference-index-20261018.json",
     "docs/benchmarks/systemic-525-loaded-20261018.json",
     "docs/benchmarks/systemic-ancestor-boundaries-20261018.json",
-    "docs/benchmarks/systemic-main526-browser-20261018.json"
+    "docs/benchmarks/systemic-main526-browser-20261018.json",
+    "docs/benchmarks/systemic-current-process-20261018.json",
+    "docs/benchmarks/systemic-fleet-config-20261018.json",
+    "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
+    "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -207993,6 +207997,846 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Protected followupPR/durablesupervisor/exactheadindependentgreen/newmainCI/safecombinedexactactivation/retest; preserveoriginalfailed526main andallotherbrowser/wholePA/normalindependentacceptance obligations."
+    },
+    {
+      "id": "concern:fork-fixture-repeated-navigation-fetch-stall",
+      "kind": "concern",
+      "family": "browser",
+      "finding": "Repeated full-page navigation stalls browser fetch in a temporary fork UI fixture",
+      "cause_classification": "linked_owner_fixture_observation_cause_unknown",
+      "cause": "Existing owner reports a repeated navigation sequence fork/open/reload/source/copy/empty with browser fetch stall. Independent HTTP snapshot succeeds and applySnapshot renders without exception. These observations do not establish the root cause, production applicability, or identity with prior CDP/readiness failures.",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "linked_existing_owner_card": "5003628e-7a3c-4d1e-9737-087979061122",
+      "linked_existing_owner_session": "8524edb1-0a2c-4716-9ca1-901d49dcc245",
+      "linked_existing_owner_dispatch": "463c4f75-a01e-4abf-9dd7-b80de2ef253c",
+      "fix_or_existing_owner": "Existing fork UI owner investigates the isolated fixture; systemic owner retains cross-cutting latency coverage. No competing source repair or recovery-framework expansion.",
+      "implemented": "No source fix for this stall reported.",
+      "merged": [],
+      "deployed": "Production applicability and active behavior unverified.",
+      "retested": "Owner reports an existing full reload test passing and normal thread-list switching for source-state assertions; neither establishes that repeated full-page fetch stall is repaired.",
+      "measurement_limits": "No latency distribution, exact source/host/time range, raw browser network trace or independent systemic reproduction supplied in this coordination message. Do not invent counts, percentiles, root-cause attribution or deployed acceptance.",
+      "report": "3dc8cdc1-815e-4c65-8efd-eccadeafa616 revision2",
+      "related_rows_not_assumed_same_cause": [
+        "concern:main505-browser-reload",
+        "concern:browser-initial-document-readiness",
+        "concern:main526-browser-navigation-poll"
+      ],
+      "resolution": "open",
+      "next_actor": "Existing fork UI owner for fixture diagnosis; same systemic session for coverage and shared-cause coordination.",
+      "next_action": "Retain the linked report and exact fixture failure evidence; obtain bounded network/navigation phase attribution before causal repair or production applicability claims. Preserve all prior browser failures and passing-test distinctions. Publish this overlay with the next repository evidence update."
+    },
+    {
+      "id": "runtime-live-followup:dispatch.sandbox_admission_failure",
+      "kind": "runtime_operation_live_followup",
+      "finding": "dispatch.sandbox_admission_failure",
+      "family": "dispatch",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 37.00000001117587,
+        "max_wait_ms": 37.00000001117587,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 37.4,
+        "max_runtime_ms": 37.4,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 1,
+          "max": 37.4,
+          "p50": 37.4,
+          "p95": 37.4,
+          "p99": 37.4
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.003,
+          "p50": 0.003,
+          "p95": 0.003,
+          "p99": 0.003
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 43.911,
+          "p50": 43.911,
+          "p95": 43.911,
+          "p99": 43.911
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 36.423,
+          "p50": 36.423,
+          "p95": 36.423,
+          "p99": 36.423
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.277,
+          "p50": 0.277,
+          "p95": 0.277,
+          "p99": 0.277
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.697,
+          "p50": 0.697,
+          "p95": 0.697,
+          "p99": 0.697
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 33.595,
+          "p50": 33.595,
+          "p95": 33.595,
+          "p99": 33.595
+        },
+        "outer_lock_hold_ms": {
+          "samples": 1,
+          "max": 35.067,
+          "p50": 35.067,
+          "p95": 35.067,
+          "p99": 35.067
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_rows": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_items": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "atomic_write_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_write_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "directory_fsync_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "directory_fsync_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "fsync_failures": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_replace_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_get_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_put_files": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_put_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "cause_classification": "observed_process_cost_cause_unverified",
+      "fix_or_existing_owner": "This same systemic card/session; reuse linked existing repairs.",
+      "implemented": "Current descendant build contains previous repairs, but this observation does not prove every branch or a causal improvement.",
+      "merged": [],
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+        "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+        "pid": 14454,
+        "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+      },
+      "retested": "Exact process runtime observation only; not independent acceptance.",
+      "resolution": "open",
+      "next_actor": "This same systemic session",
+      "next_action": "Attribute exact phase cost or failure and exercise representative valid branches; preserve all existing semantics and unresolved external/backup/acceptance obligations."
+    },
+    {
+      "id": "runtime-live-followup:workspace.session_fence",
+      "kind": "runtime_operation_live_followup",
+      "finding": "workspace.session_fence",
+      "family": "workspace",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "submitted": 2,
+        "completed": 2,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 47.999999951571226,
+        "max_wait_ms": 27.999999932944775,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 48.28,
+        "max_runtime_ms": 27.592,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 2,
+          "max": 27.592,
+          "p50": 20.688,
+          "p95": 27.592,
+          "p99": 27.592
+        },
+        "queue_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_wait_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 2,
+          "max": 27.316,
+          "p50": 20.359,
+          "p95": 27.316,
+          "p99": 27.316
+        },
+        "executor_dispatch_ms": {
+          "samples": 2,
+          "max": 0.126,
+          "p50": 0.065,
+          "p95": 0.126,
+          "p99": 0.126
+        },
+        "completion_delivery_ms": {
+          "samples": 2,
+          "max": 0.207,
+          "p50": 0.196,
+          "p95": 0.207,
+          "p99": 0.207
+        },
+        "thread_cpu_ms": {
+          "samples": 2,
+          "max": 19.283,
+          "p50": 15.495,
+          "p95": 19.283,
+          "p99": 19.283
+        },
+        "outer_lock_hold_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_statement_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_commit_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_rows": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_items": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_lock_wait_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_hold_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "atomic_write_calls": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_write_bytes": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_calls": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "directory_fsync_calls": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "directory_fsync_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "fsync_failures": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_replace_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_get_calls": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_bytes": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_ms": {
+          "samples": 2,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_put_files": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_put_bytes": {
+          "samples": 2,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "cause_classification": "observed_process_cost_cause_unverified",
+      "fix_or_existing_owner": "This same systemic card/session; reuse linked existing repairs.",
+      "implemented": "Current descendant build contains previous repairs, but this observation does not prove every branch or a causal improvement.",
+      "merged": [],
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+        "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+        "pid": 14454,
+        "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+      },
+      "retested": "Exact process runtime observation only; not independent acceptance.",
+      "resolution": "open",
+      "next_actor": "This same systemic session",
+      "next_action": "Attribute exact phase cost or failure and exercise representative valid branches; preserve all existing semantics and unresolved external/backup/acceptance obligations."
+    },
+    {
+      "id": "route-live-followup:/api/notifications/{notification_id}/read",
+      "kind": "http_route_live_followup",
+      "finding": "/api/notifications/{notification_id}/read",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": {
+        "count": 1,
+        "response_bytes": 5344,
+        "latency_ms": {
+          "samples": 1,
+          "max": 35.741,
+          "p50": 35.741,
+          "p95": 35.741,
+          "p99": 35.741
+        },
+        "response_size_bytes": {
+          "samples": 1,
+          "max": 5344,
+          "p50": 5344,
+          "p95": 5344,
+          "p99": 5344
+        }
+      },
+      "cause_classification": "observed_process_cost_cause_unverified",
+      "fix_or_existing_owner": "This same systemic card/session; reuse linked existing repairs.",
+      "implemented": "Current descendant build contains previous repairs, but this observation does not prove every branch or a causal improvement.",
+      "merged": [],
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+        "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+        "pid": 14454,
+        "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+      },
+      "retested": "Exact process runtime observation only; not independent acceptance.",
+      "resolution": "open",
+      "next_actor": "This same systemic session",
+      "next_action": "Attribute exact phase cost or failure and exercise representative valid branches; preserve all existing semantics and unresolved external/backup/acceptance obligations."
+    },
+    {
+      "id": "slow-followup:http.dispatch_list",
+      "kind": "slow_log_followup",
+      "finding": "http.dispatch_list",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": [
+        {
+          "operation": "http.dispatch_list",
+          "elapsed_ms": 541.773,
+          "observed_at_monotonic": 514388.921592,
+          "queue_wait_ms": 0.0,
+          "thread_cpu_ms": 258.284,
+          "python_lock_wait_ms": 0.001,
+          "python_lock_hold_ms": 195.906,
+          "outer_lock_hold_ms": 195.906,
+          "sqlite_statement_ms": 0.0,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_calls": 0,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 1,
+          "worker_service_ms": 523.291,
+          "executor_dispatch_ms": 0.366,
+          "completion_delivery_ms": 18.184
+        }
+      ],
+      "cause_classification": "observed_process_cost_cause_unverified",
+      "fix_or_existing_owner": "This same systemic card/session; reuse linked existing repairs.",
+      "implemented": "Current descendant build contains previous repairs, but this observation does not prove every branch or a causal improvement.",
+      "merged": [],
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+        "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+        "pid": 14454,
+        "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+      },
+      "retested": "Exact process runtime observation only; not independent acceptance.",
+      "resolution": "open",
+      "next_actor": "This same systemic session",
+      "next_action": "Attribute exact phase cost or failure and exercise representative valid branches; preserve all existing semantics and unresolved external/backup/acceptance obligations."
+    },
+    {
+      "id": "slow-followup:startup.openapi",
+      "kind": "slow_log_followup",
+      "finding": "startup.openapi",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "measurement": [
+        {
+          "operation": "startup.openapi",
+          "elapsed_ms": 761.965,
+          "observed_at_monotonic": 513280.427518,
+          "queue_wait_ms": 1.0,
+          "thread_cpu_ms": 667.581,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0,
+          "sqlite_statement_ms": 0.0,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_calls": 0,
+          "sqlite_rows": 0,
+          "sqlite_aggregate_items": 0,
+          "sqlite_aggregate_bytes": 0,
+          "sqlite_busy_failures": 0,
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0,
+          "lock_events_total": 0,
+          "worker_service_ms": 695.113,
+          "executor_dispatch_ms": 1.116,
+          "completion_delivery_ms": 65.774
+        }
+      ],
+      "cause_classification": "observed_process_cost_cause_unverified",
+      "fix_or_existing_owner": "This same systemic card/session; reuse linked existing repairs.",
+      "implemented": "Current descendant build contains previous repairs, but this observation does not prove every branch or a causal improvement.",
+      "merged": [],
+      "deployed": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+        "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+        "pid": 14454,
+        "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+      },
+      "retested": "Exact process runtime observation only; not independent acceptance.",
+      "resolution": "open",
+      "next_actor": "This same systemic session",
+      "next_action": "Attribute exact phase cost or failure and exercise representative valid branches; preserve all existing semantics and unresolved external/backup/acceptance obligations."
+    },
+    {
+      "id": "concern:fleet-session-config-proof-hydration",
+      "kind": "concern",
+      "finding": "Fleet read-only session summary decodes unrelated retained configuration proofs",
+      "family": "fleet",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_disposable_confirmed_live_leaf_share_unverified",
+      "cause": "Summary omitsmetrics butdecodes fullconfig; presenter usesdurable_runtime/provisioning. Existing startup guardedthree-key projection safely avoids unrelatedproof decoding in readonlysummary; no cache/policy/budget change.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-fleet-config-20261018.json",
+        "sha256": "39c764ca28692c82734148b35a1f16c674d381da18611512355204c55740f55b",
+        "summary": {
+          "full_config": {
+            "wall_ms": {
+              "samples": 20,
+              "max": 312.758,
+              "p50": 187.859,
+              "p95": 262.747,
+              "p99": 312.758
+            },
+            "cpu_ms": {
+              "samples": 20,
+              "max": 190.681,
+              "p50": 165.896,
+              "p95": 185.665,
+              "p99": 190.681
+            },
+            "config_json_bytes": {
+              "samples": 20,
+              "max": 10510504,
+              "p50": 10510504,
+              "p95": 10510504,
+              "p99": 10510504
+            }
+          },
+          "implemented": {
+            "wall_ms": {
+              "samples": 20,
+              "max": 233.621,
+              "p50": 72.048,
+              "p95": 137.332,
+              "p99": 233.621
+            },
+            "cpu_ms": {
+              "samples": 20,
+              "max": 83.165,
+              "p50": 66.47,
+              "p95": 75.783,
+              "p99": 83.165
+            },
+            "config_json_bytes": {
+              "samples": 20,
+              "max": 21704,
+              "p50": 21704,
+              "p95": 21704,
+              "p99": 21704
+            }
+          }
+        },
+        "bytes_before": 10510504,
+        "bytes_after": 21704,
+        "limitations": [
+          "Live95GET current2e process window was completed before these probes, four Fleet violations remain; no current live causal leaf share or deployed repair acceptance. No repeated completed windows.",
+          "160retained sessions/128KiB unrelated config proof each/80selected,20alternatingpairs per method. Byte counts are decoded config JSON bytes, not wire bytes, disk reads or physical write amplification. SQLite still scans/parses config to project it.",
+          "Exact implementation pair overlapped own guarded broader regression process. Timings retain that contention; prototype source-independent probe is separate. Neither is a controlled live before/after comparison. No unchanged rerun to seek a green sample.",
+          "Phase attribution is nested/inclusive; native phase probe retains automatic GC events and SQL wall/CPU, not isolated successful busy/GIL/disk/CPU scheduler attribution. No forced GC/lock/busy/fault injection. Fixture lacks real sync/repository/runtime/authority services.",
+          "Normal full default APIs and include_metrics=False retain complete config. Read-only summary reuses existing guarded startup projection; duplicate top-level known keys/malformed/legacy types fall back to original decoder, preserving errors and last-key-wins. No saving projected models.",
+          "Original failed PR527 handoff stays failed; correlated process-only authorization is applied and does not authorize another restart. No install/restart/config/default/data mutation occurred here. All peers/logging/provider/startup/backup/browser/receipt/unobserved-path and normal independent acceptance gates remain open."
+        ]
+      },
+      "fix_or_existing_owner": "Same systemiccard/session, reuses existing startup projection ratherthan another worker/competing repair.",
+      "implemented": "Local guarded summary-only query plus exact selection/count/order/fullread/legacydecoder/presentation contracts;21focused/148broader+2subtests(overlap).",
+      "merged": [],
+      "deployed": "Not deployed; current independentlyverified2e process predates this repair.",
+      "retested": "20alternatingexact implementation/frozenoriginal pairs; not live or wholepathacceptance.",
+      "resolution": "open",
+      "report": "026848e5-6d84-42a2-a670-a871b75a0261 revision1",
+      "next_actor": "this same systemic session",
+      "next_action": "Ready supervised sourcePR, exactheadterminalgreen and independentrevalidation/integration; retain activation boundary and then remainingall-findings/nativecontention/deployedacceptance obligations."
+    },
+    {
+      "id": "concern:ci533-dispatch-admission-latency",
+      "kind": "concern",
+      "finding": "Original PR533 CI dispatch admission200ms assertion failed at449ms with unknown timing cause",
+      "family": "ci",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_ci_failure_cause_unverified",
+      "measurement": {
+        "failed_source_head": "4c24be2cd0c032256b2d5f52c790185001908534",
+        "run": 39157390577,
+        "attempt": 1,
+        "conclusion": "failure",
+        "failed_job": 117763318819,
+        "assertion": "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait",
+        "measured_seconds": 0.44926924200001395,
+        "unchanged_budget_seconds": 0.2,
+        "shard_summary": "1failed/940passed/1skipped/188subtests in150.45s;other4jobs success",
+        "raw_log_sha256": "1878c4fa53f4d8b9af5e98fe97b31a85bed8a54dc46b9611b629ee403caacb59",
+        "raw_log_not_published": "May contain fixture secrets; only bounded sanitized failure metadata retained here.",
+        "initial_head": "327e241ecd419c9de95dff4b8e369b55a1ab21d6",
+        "initial_run": 39157175222,
+        "initial_attempt": 1,
+        "initial_conclusion": "success",
+        "diagnostic": "One frozen exact4c24 source export diagnostic passes1test2.50s; does not resolve original449ms cause or replace CI. No same-head retry; no assertion/deadline change.",
+        "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1"
+      },
+      "implemented": "No product or test timing workaround; originalfailedCI retained and onefrozen-source diagnostic passes separately.",
+      "merged": [],
+      "deployed": "Not applicable; test evidence is not runtime acceptance.",
+      "retested": "Originalunchanged4c24diagnostic1passed2.50s; no sameheadCIretry or deadline increase.",
+      "resolution": "open",
+      "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve failure; require newexactheadallgreen and investigate recurrence with bounded phase/host evidence, never infer fixed from isolatedpass."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208856,18 +209700,180 @@
       "status": "Exact bcd5/package2c2c/PID53309/startup7164 loaded.95GET all200 but3>=500ms; cached startupGC5.720s; wholeacceptance open. Current uncommitted prefilter is separate."
     },
     "concern:transcript-gc-live-publication-lock": {
-      "pr": 518,
-      "watch": "eb0364bb-6c2c-47bd-8c35-14a405f793bb",
-      "head": "9f309e1d7e41500ad6df2c3f987db87b174acb06",
-      "merge": "f7e877101f2733fcee2dd86cfee34270547fa844",
-      "head_ci": 39119023802,
-      "main_ci": 39119310154,
-      "proof_sha256": "7827bcbcd7386b6d1b16ba9073c2a9247ca3152783b9431ff5d8da123e7d6301",
-      "status": "Merged after stable green and independent revalidation;5SUCCESS head+main/no retry or bypass; exact actual loaded proof separate.",
-      "deployed": "Exact server-captured source/package/newPID/startup verified; not acceptance",
-      "retested": "Single95GET window and later cached maintenance/full21section snapshot. Three500ms violations/workspacefailure/startup36.021s remain.",
+      "artifact": "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json",
+      "sha256": "00e3def12f63b4275355481a6dd1a86edce8e831010323702ea01fe8178d3344",
       "resolution": "open",
-      "artifact": "docs/benchmarks/systemic-f7e8-loaded-20261018.json"
+      "decision": "Not implemented; reduced fetch-step amplification doesnotestablish broadtail/correctness/deployedacceptance",
+      "summary": {
+        "live": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 202.588,
+              "p50": 195.538,
+              "p95": 202.588,
+              "p99": 202.588
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 199.932,
+              "p50": 192.8,
+              "p95": 199.932,
+              "p99": 199.932
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 186.688,
+              "p50": 168.286,
+              "p95": 186.688,
+              "p99": 186.688
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 179.994,
+              "p50": 165.967,
+              "p95": 179.994,
+              "p99": 179.994
+            }
+          }
+        },
+        "mixed": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 58.581,
+              "p50": 54.069,
+              "p95": 58.581,
+              "p99": 58.581
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 56.443,
+              "p50": 53.37,
+              "p95": 56.443,
+              "p99": 56.443
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 78.327,
+              "p50": 52.554,
+              "p95": 78.327,
+              "p99": 78.327
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 58.339,
+              "p50": 52.221,
+              "p95": 58.339,
+              "p99": 58.339
+            }
+          }
+        },
+        "orphan": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 107.252,
+              "p50": 89.989,
+              "p95": 107.252,
+              "p99": 107.252
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 103.362,
+              "p50": 87.378,
+              "p95": 103.362,
+              "p99": 103.362
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 6,
+              "max": 85.104,
+              "p50": 81.713,
+              "p95": 85.104,
+              "p99": 85.104
+            },
+            "cpu_ms": {
+              "samples": 6,
+              "max": 84.232,
+              "p50": 80.893,
+              "p95": 84.232,
+              "p99": 84.232
+            }
+          }
+        },
+        "concurrent": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 3,
+              "max": 321.049,
+              "p50": 306.878,
+              "p95": 321.049,
+              "p99": 321.049
+            },
+            "cpu_ms": {
+              "samples": 3,
+              "max": 263.163,
+              "p50": 252.312,
+              "p95": 263.163,
+              "p99": 263.163
+            }
+          },
+          "aggregate": {
+            "wall_ms": {
+              "samples": 3,
+              "max": 253.409,
+              "p50": 240.428,
+              "p95": 253.409,
+              "p99": 253.409
+            },
+            "cpu_ms": {
+              "samples": 3,
+              "max": 219.064,
+              "p50": 211.0,
+              "p95": 219.064,
+              "p99": 219.064
+            }
+          }
+        }
+      },
+      "append_ms": {
+        "baseline": {
+          "samples": 3,
+          "max": 191.518,
+          "p50": 189.213,
+          "p95": 191.518,
+          "p99": 191.518
+        },
+        "aggregate": {
+          "samples": 3,
+          "max": 201.834,
+          "p50": 192.376,
+          "p95": 201.834,
+          "p99": 201.834
+        }
+      },
+      "validation_failure": [
+        {
+          "phase": "beforeseeding",
+          "type": "AssertionError",
+          "source": "initial-source-assert.py"
+        },
+        {
+          "phase": "after42timings",
+          "type": "AttributeError",
+          "method": "TranscriptStorage.read",
+          "actual_api": "list",
+          "cold_payload_validation": "notcompleted; fixturecontextdisposed"
+        }
+      ],
+      "next_actor": "this same systemic session",
+      "next_action": "Continue remainingnativeSQL/IO/GC/scheduling attribution and allcriteria; do notrerununchangedprobe orship aspassingfix. Preservebounded freshlocked deletionproof."
     },
     "concern:fleet-workshop-metrics-hydration": {
       "pr": 520,
@@ -209113,6 +210119,101 @@
       },
       "resolution": "open",
       "next_action": "Continue all568 findings/77 concerns, full startup/schema/sharedCPU/summarySQL/nativebusy/GC/physicalIO, every unexercised/provider/peer/backup/log/receipt concern and normal scheduler independent acceptance."
+    },
+    "concern:managed-handoff-latency": {
+      "artifact": "docs/benchmarks/systemic-current-process-20261018.json",
+      "sha256": "ff4c77b9599fa9e18e536d9074ae75277f145eee03fdcce28fcff388a90ed98a",
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+        "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+        "pid": 14454,
+        "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+      },
+      "summary": {
+        "ordinary_gets": 95,
+        "get_errors": 0,
+        "get_500ms_violations": 4,
+        "primary_operations": 150,
+        "diagnostic_operations": 1,
+        "route_groups": 71,
+        "primary_prefix_families": 23,
+        "slow_records_retained": 62,
+        "slow_counters": 62,
+        "primary_process_tails_at_least500ms": 38,
+        "baseline_operations_positive": 138,
+        "baseline_route_groups_positive": 63
+      },
+      "managed_handoff_verified": false,
+      "resolution": "open",
+      "next_action": "Continue all576 findings/80 concerns, beginning bounded attribution of Fleet page-context cost and native SQLite/session/transcript/maintenance tails, plus all remaining startup/provider/peer/log/backup/receipt/browser/coverage gaps and normal independent acceptance."
+    },
+    "concern:fleet-session-config-proof-hydration": {
+      "artifact": "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
+      "sha256": "bfd9085a72ce1ec12008db0fc037e88de0ff93f3dbd416cccf3c67f317de5a2c",
+      "summary": {
+        "duration_seconds": 65.862,
+        "timed_names": 44,
+        "runtime_operations": 50,
+        "canonical_route_groups": 24,
+        "http_status_counts": {
+          "200": 2900
+        },
+        "threshold_violations": {
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
+          "sync.object_collect": 3,
+          "maintenance.run": 1
+        },
+        "worker_deltas": {
+          "submitted": 2879,
+          "completed": 2879,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "slow_calls": 0
+        },
+        "transcript_retained": 9600,
+        "retained_cold_objects_verified": 12511,
+        "loop": {
+          "samples": 600,
+          "latest_lag_ms": 0.525,
+          "p95_lag_ms": 15.11,
+          "max_lag_ms": 119.967,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "logical_filesystem_totals": {
+          "file_lock_wait_ms": 37.94724424369633,
+          "file_lock_hold_ms": 1725.3459134371951,
+          "atomic_write_calls": 434,
+          "atomic_write_bytes": 103089,
+          "file_fsync_calls": 434,
+          "file_fsync_ms": 162.91274508694187,
+          "directory_fsync_calls": 434,
+          "directory_fsync_ms": 52.72642325144261,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 360.5056245578453,
+          "object_get_calls": 7079,
+          "object_get_bytes": 3357114,
+          "object_get_ms": 5255.541667225771,
+          "object_put_files": 268,
+          "object_put_bytes": 141336
+        },
+        "process_cpu_ms": 71539.592,
+        "disk_output_blocks_reported": 0,
+        "native_disk_notice": "Logical completed-worker counters and rusage0diskblocks are not physical device write amplification or proof of no I/O. Nested wall/lock spans overlap.",
+        "fixture_runtime_capture": "11 executor runtime sections plus separate diagnostics_runtime retained. This fixture snapshot is not the live21-sectionAPI capture; omitted auxiliary service sections cannot be reconstructed here. Current2e live21 snapshot remains separately preserved."
+      },
+      "resolution": "open",
+      "deployed": "Not installed or restarted; sourcefixture only",
+      "next_actor": "this same systemic session",
+      "next_action": "Publishfinalhead/terminalgreen/stablesupervisor/independentcurrentrevalidation/normalmerge; continue five residual violations and all578findings/normalindependentacceptance, honoring noanotherrestart boundary."
     }
   },
   "f7e8_loaded_stage": {
@@ -210555,5 +211656,482 @@
     "sha256": "af587897f97a5ce7adf5ba3078c598f4d2bc191d2980c0e7228ee8ef384c75fa",
     "source_stage": "Test-only correction unintegrated; product ancestor repair526merged butnotinstalled",
     "resolution": "open"
+  },
+  "current_authorized_process_stage": {
+    "artifact": "docs/benchmarks/systemic-current-process-20261018.json",
+    "sha256": "ff4c77b9599fa9e18e536d9074ae75277f145eee03fdcce28fcff388a90ed98a",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "2e28548166de66131d19b1c8867b9d3f0c871907",
+      "package_identity": "sha256:fb90a5db90f19e2859234b175397ebb466b751d80ca494877822418e7d7b7d9b",
+      "pid": 14454,
+      "startup_id": "ba25d624-ebe6-4649-b4a4-04d2ee7c798f"
+    },
+    "summary": {
+      "ordinary_gets": 95,
+      "get_errors": 0,
+      "get_500ms_violations": 4,
+      "primary_operations": 150,
+      "diagnostic_operations": 1,
+      "route_groups": 71,
+      "primary_prefix_families": 23,
+      "slow_records_retained": 62,
+      "slow_counters": 62,
+      "primary_process_tails_at_least500ms": 38,
+      "baseline_operations_positive": 138,
+      "baseline_route_groups_positive": 63
+    },
+    "managed_handoff_verified": false,
+    "resolution": "open",
+    "next_action": "Continue all576 findings/80 concerns, beginning bounded attribution of Fleet page-context cost and native SQLite/session/transcript/maintenance tails, plus all remaining startup/provider/peer/log/backup/receipt/browser/coverage gaps and normal independent acceptance."
+  },
+  "current_control_overlays": [
+    {
+      "contract": "pa.performance-coverage-update/v1",
+      "observed_at": "2026-10-18T17:09:16.869132+00:00",
+      "base_rows": 570,
+      "rows_after_update": 570,
+      "concerns": 79,
+      "coverage_counts_unchanged": true,
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "updates": [
+        {
+          "row_id": "concern:completion-scope",
+          "observation": "RepeatedautomaticWaitingafterknownActiveCAS; preinstallgate1aborted. Supportedlane-onlyCASv2Active17:00:39.989059Z/requirement17d034a6acceptedfalse unchanged. No installationafterfailure.",
+          "resolution": "open",
+          "next_actor": "this same systemic session",
+          "next_action": "Publishthesecontrolupdatesnextrepositoryevidenceupdate; diagnoseautomaticlaneprojectionwithoutselfacceptance."
+        },
+        {
+          "row_id": "concern:backups",
+          "observation": "Old615coordinationstale; gate2aborted. Exactexistingowner18fc receiveddurable86cdcoordinationprompt,runningproofthenfinal690No material backup stability hold/noactivebackuprestoreverifier,endedturnnull/queue0. Freshgatevalidatesexactcheckpoint+ownerqueue+noactivebackupruns; no BINDINGIDs/config/defaultchanges. Missingbytes/eightarchives/b527acceptance remainopen.",
+          "resolution": "open",
+          "next_actor": "this session foractivation/owner18fc forboundedbackupscope",
+          "next_action": "Freshcoordinationrevalidationaftershutdown; no backupretry/recovery/newadmission."
+        },
+        {
+          "row_id": "concern:managed-handoff-latency",
+          "observation": "ThirdpreinstallgateGETownrestart-handoffs503agent_draining correlation385db99a-3326-45f9-899f-04e82185c26a. NoUVornewhandoffissued. Externalshutdowninitiator/outcome unverified.",
+          "resolution": "open",
+          "next_actor": "this same session afterquiescence",
+          "next_action": "Endcurrentturnnormally; queuedoldnotices alreadydurable. Firstreconcileactualinstance/receiptswithoutnewrestart/fallbackcredential; freshfullpreinstallgate beforeinstallation."
+        }
+      ]
+    },
+    {
+      "contract": "pa.performance-coverage-update/v1",
+      "observed_at": "2026-10-18T18:20:18.656118+00:00",
+      "base_rows": 570,
+      "rows_after_update": 570,
+      "concerns": 79,
+      "coverage_counts_unchanged": true,
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "prior_overlay": ".dev/systemic-coverage-update-after527-control.json",
+      "updates": [
+        {
+          "row_id": "concern:managed-handoff-latency",
+          "observation": "Exact527 receipt d44863ff-b7cd-5c55-94bf-53e7877ec5fe definitively failed during quiescing at17:30:16Z. Passive owner outcome says committed/failed/effectunknown/inspect_failure. A later process reports exact target3f/package d361/PID6012/startupa55b22fa, but restart attribution and continuation delivery are unverified; no strict loaded proof or observer window exists.",
+          "source_inspection": "restart_lifecycle.retryable_owner_failure only accepts failed/resuming/owner_not_ready. _resume_pending_restart_handoffs skips failed/quiescing receipts. Generic operation_recovery_endpoint does not admit repair for an already failed restart owner receipt. Therefore this source does not promise automatic replay or receipt recovery for this occurrence; no recovery POST or request resend was attempted.",
+          "evidence": [
+            ".dev/pr527-backup-notice-turn-state.json",
+            ".dev/pr527-failed-handoff-outcome.json",
+            "problem bd278149-33da-42dd-8434-a94d070a2633 revision4"
+          ],
+          "resolution": "open",
+          "next_actor": "this same systemic session",
+          "next_action": "Inspect the failed quiescing lifecycle and supported exact-session continuation recovery. Preserve failed receipt and unknown restart attribution; do not request another restart, manufacture completion, manipulate another session, or relax existing loaded own-turn/error-null gates. Publish current recovery overlay with prior control overlay in next repository evidence update."
+        },
+        {
+          "row_id": "concern:backups",
+          "observation": "Older backup-owner notice says own leased-workspace bounded regressions, no full I/O benchmark or production action, no source overlap and no stability hold. This notice is not the own527 restart continuation or independent backup acceptance. Previously consumed690 clearance remains historical; no newer checkpoint accepted automatically.",
+          "resolution": "open",
+          "next_actor": "this systemic session for activation, existing18fc owner for backup scope",
+          "next_action": "Coordinate a specific material overlap if discovered; preserve missing bytes/archive history/independent acceptance and do not duplicate backup work."
+        }
+      ]
+    },
+    {
+      "contract": "pa.performance-coverage-update/v1",
+      "base_matrix": "docs/performance-coverage.json@3f358a665836907f5948b7d995898dec76f6879f",
+      "base_rows": 570,
+      "rows_after_update": 571,
+      "concerns_before": 79,
+      "concerns": 80,
+      "fixture_coverage_counts_unchanged": true,
+      "previous_rows_owners_actions_unchanged": true,
+      "observation_source": "Coordination message from existing fork UI owner session8524edb1-0a2c-4716-9ca1-901d49dcc245; not independently reproduced by systemic owner.",
+      "prior_overlays": [
+        ".dev/systemic-coverage-update-after527-control.json",
+        ".dev/systemic-coverage-update-after527-recovery.json"
+      ],
+      "new_rows": [
+        {
+          "id": "concern:fork-fixture-repeated-navigation-fetch-stall",
+          "kind": "concern",
+          "family": "browser",
+          "finding": "Repeated full-page navigation stalls browser fetch in a temporary fork UI fixture",
+          "cause_classification": "linked_owner_fixture_observation_cause_unknown",
+          "cause": "Existing owner reports a repeated navigation sequence fork/open/reload/source/copy/empty with browser fetch stall. Independent HTTP snapshot succeeds and applySnapshot renders without exception. These observations do not establish the root cause, production applicability, or identity with prior CDP/readiness failures.",
+          "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+          "linked_existing_owner_card": "5003628e-7a3c-4d1e-9737-087979061122",
+          "linked_existing_owner_session": "8524edb1-0a2c-4716-9ca1-901d49dcc245",
+          "linked_existing_owner_dispatch": "463c4f75-a01e-4abf-9dd7-b80de2ef253c",
+          "fix_or_existing_owner": "Existing fork UI owner investigates the isolated fixture; systemic owner retains cross-cutting latency coverage. No competing source repair or recovery-framework expansion.",
+          "implemented": "No source fix for this stall reported.",
+          "merged": [],
+          "deployed": "Production applicability and active behavior unverified.",
+          "retested": "Owner reports an existing full reload test passing and normal thread-list switching for source-state assertions; neither establishes that repeated full-page fetch stall is repaired.",
+          "measurement_limits": "No latency distribution, exact source/host/time range, raw browser network trace or independent systemic reproduction supplied in this coordination message. Do not invent counts, percentiles, root-cause attribution or deployed acceptance.",
+          "report": "3dc8cdc1-815e-4c65-8efd-eccadeafa616 revision2",
+          "related_rows_not_assumed_same_cause": [
+            "concern:main505-browser-reload",
+            "concern:browser-initial-document-readiness",
+            "concern:main526-browser-navigation-poll"
+          ],
+          "resolution": "open",
+          "next_actor": "Existing fork UI owner for fixture diagnosis; same systemic session for coverage and shared-cause coordination.",
+          "next_action": "Retain the linked report and exact fixture failure evidence; obtain bounded network/navigation phase attribution before causal repair or production applicability claims. Preserve all prior browser failures and passing-test distinctions. Publish this overlay with the next repository evidence update."
+        }
+      ],
+      "activation_boundary": "Required operator choice systemic-pr527-recovery-choice-v1 remains pending. This coordination report is not an answer or authority for restart, gate exception, dependent measurements, source repair, acceptance or completion."
+    }
+  ],
+  "fleet_configuration_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-config-20261018.json",
+    "sha256": "39c764ca28692c82734148b35a1f16c674d381da18611512355204c55740f55b",
+    "summary": {
+      "full_config": {
+        "wall_ms": {
+          "samples": 20,
+          "max": 312.758,
+          "p50": 187.859,
+          "p95": 262.747,
+          "p99": 312.758
+        },
+        "cpu_ms": {
+          "samples": 20,
+          "max": 190.681,
+          "p50": 165.896,
+          "p95": 185.665,
+          "p99": 190.681
+        },
+        "config_json_bytes": {
+          "samples": 20,
+          "max": 10510504,
+          "p50": 10510504,
+          "p95": 10510504,
+          "p99": 10510504
+        }
+      },
+      "implemented": {
+        "wall_ms": {
+          "samples": 20,
+          "max": 233.621,
+          "p50": 72.048,
+          "p95": 137.332,
+          "p99": 233.621
+        },
+        "cpu_ms": {
+          "samples": 20,
+          "max": 83.165,
+          "p50": 66.47,
+          "p95": 75.783,
+          "p99": 83.165
+        },
+        "config_json_bytes": {
+          "samples": 20,
+          "max": 21704,
+          "p50": 21704,
+          "p95": 21704,
+          "p99": 21704
+        }
+      }
+    },
+    "tests": {
+      "fleet-config-focused.log": {
+        "sha256": "2eb23a3c0b4bbf4831de587950e861f6f05aa2aa2c7f6d683667b5f65068a590",
+        "bytes": 99,
+        "summary": [
+          "21 passed in 2.36s"
+        ]
+      },
+      "fleet-config-broad.log": {
+        "sha256": "b4d2c236ecec03b30675e97a4cccfac0ab03d3236d24dec472acddd951b85a0f",
+        "bytes": 278,
+        "summary": [
+          "148 passed, 2 subtests passed in 29.82s"
+        ]
+      },
+      "pr533-original-admission-diagnostic.log": {
+        "sha256": "45ad9d216a01074084792a93ab133857031a94566ecc81f165dd00186717a65a",
+        "bytes": 98,
+        "summary": [
+          "1 passed in 2.50s"
+        ]
+      }
+    },
+    "ci_history": {
+      "failed_source_head": "4c24be2cd0c032256b2d5f52c790185001908534",
+      "run": 39157390577,
+      "attempt": 1,
+      "conclusion": "failure",
+      "failed_job": 117763318819,
+      "assertion": "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait",
+      "measured_seconds": 0.44926924200001395,
+      "unchanged_budget_seconds": 0.2,
+      "shard_summary": "1failed/940passed/1skipped/188subtests in150.45s;other4jobs success",
+      "raw_log_sha256": "1878c4fa53f4d8b9af5e98fe97b31a85bed8a54dc46b9611b629ee403caacb59",
+      "raw_log_not_published": "May contain fixture secrets; only bounded sanitized failure metadata retained here.",
+      "initial_head": "327e241ecd419c9de95dff4b8e369b55a1ab21d6",
+      "initial_run": 39157175222,
+      "initial_attempt": 1,
+      "initial_conclusion": "success",
+      "diagnostic": "One frozen exact4c24 source export diagnostic passes1test2.50s; does not resolve original449ms cause or replace CI. No same-head retry; no assertion/deadline change.",
+      "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1"
+    },
+    "resolution": "open"
+  },
+  "fleet_configuration_mixed_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
+    "sha256": "bfd9085a72ce1ec12008db0fc037e88de0ff93f3dbd416cccf3c67f317de5a2c",
+    "summary": {
+      "duration_seconds": 65.862,
+      "timed_names": 44,
+      "runtime_operations": 50,
+      "canonical_route_groups": 24,
+      "http_status_counts": {
+        "200": 2900
+      },
+      "threshold_violations": {
+        "/api/agent/history/session-0?limit=64&message_boundaries=true": 1,
+        "sync.object_collect": 3,
+        "maintenance.run": 1
+      },
+      "worker_deltas": {
+        "submitted": 2879,
+        "completed": 2879,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "transcript_retained": 9600,
+      "retained_cold_objects_verified": 12511,
+      "loop": {
+        "samples": 600,
+        "latest_lag_ms": 0.525,
+        "p95_lag_ms": 15.11,
+        "max_lag_ms": 119.967,
+        "pre_window_lag_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        }
+      },
+      "logical_filesystem_totals": {
+        "file_lock_wait_ms": 37.94724424369633,
+        "file_lock_hold_ms": 1725.3459134371951,
+        "atomic_write_calls": 434,
+        "atomic_write_bytes": 103089,
+        "file_fsync_calls": 434,
+        "file_fsync_ms": 162.91274508694187,
+        "directory_fsync_calls": 434,
+        "directory_fsync_ms": 52.72642325144261,
+        "fsync_failures": 0,
+        "atomic_replace_ms": 360.5056245578453,
+        "object_get_calls": 7079,
+        "object_get_bytes": 3357114,
+        "object_get_ms": 5255.541667225771,
+        "object_put_files": 268,
+        "object_put_bytes": 141336
+      },
+      "process_cpu_ms": 71539.592,
+      "disk_output_blocks_reported": 0,
+      "native_disk_notice": "Logical completed-worker counters and rusage0diskblocks are not physical device write amplification or proof of no I/O. Nested wall/lock spans overlap.",
+      "fixture_runtime_capture": "11 executor runtime sections plus separate diagnostics_runtime retained. This fixture snapshot is not the live21-sectionAPI capture; omitted auxiliary service sections cannot be reconstructed here. Current2e live21 snapshot remains separately preserved."
+    },
+    "resolution": "open",
+    "deployed": "Not installed or restarted; sourcefixture only",
+    "next_actor": "this same systemic session",
+    "next_action": "Publishfinalhead/terminalgreen/stablesupervisor/independentcurrentrevalidation/normalmerge; continue five residual violations and all578findings/normalindependentacceptance, honoring noanotherrestart boundary."
+  },
+  "gc_positive_aggregate_probe_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json",
+    "sha256": "00e3def12f63b4275355481a6dd1a86edce8e831010323702ea01fe8178d3344",
+    "resolution": "open",
+    "decision": "Not implemented; reduced fetch-step amplification doesnotestablish broadtail/correctness/deployedacceptance",
+    "summary": {
+      "live": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 202.588,
+            "p50": 195.538,
+            "p95": 202.588,
+            "p99": 202.588
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 199.932,
+            "p50": 192.8,
+            "p95": 199.932,
+            "p99": 199.932
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 186.688,
+            "p50": 168.286,
+            "p95": 186.688,
+            "p99": 186.688
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 179.994,
+            "p50": 165.967,
+            "p95": 179.994,
+            "p99": 179.994
+          }
+        }
+      },
+      "mixed": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 58.581,
+            "p50": 54.069,
+            "p95": 58.581,
+            "p99": 58.581
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 56.443,
+            "p50": 53.37,
+            "p95": 56.443,
+            "p99": 56.443
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 78.327,
+            "p50": 52.554,
+            "p95": 78.327,
+            "p99": 78.327
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 58.339,
+            "p50": 52.221,
+            "p95": 58.339,
+            "p99": 58.339
+          }
+        }
+      },
+      "orphan": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 107.252,
+            "p50": 89.989,
+            "p95": 107.252,
+            "p99": 107.252
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 103.362,
+            "p50": 87.378,
+            "p95": 103.362,
+            "p99": 103.362
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 6,
+            "max": 85.104,
+            "p50": 81.713,
+            "p95": 85.104,
+            "p99": 85.104
+          },
+          "cpu_ms": {
+            "samples": 6,
+            "max": 84.232,
+            "p50": 80.893,
+            "p95": 84.232,
+            "p99": 84.232
+          }
+        }
+      },
+      "concurrent": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 3,
+            "max": 321.049,
+            "p50": 306.878,
+            "p95": 321.049,
+            "p99": 321.049
+          },
+          "cpu_ms": {
+            "samples": 3,
+            "max": 263.163,
+            "p50": 252.312,
+            "p95": 263.163,
+            "p99": 263.163
+          }
+        },
+        "aggregate": {
+          "wall_ms": {
+            "samples": 3,
+            "max": 253.409,
+            "p50": 240.428,
+            "p95": 253.409,
+            "p99": 253.409
+          },
+          "cpu_ms": {
+            "samples": 3,
+            "max": 219.064,
+            "p50": 211.0,
+            "p95": 219.064,
+            "p99": 219.064
+          }
+        }
+      }
+    },
+    "append_ms": {
+      "baseline": {
+        "samples": 3,
+        "max": 191.518,
+        "p50": 189.213,
+        "p95": 191.518,
+        "p99": 191.518
+      },
+      "aggregate": {
+        "samples": 3,
+        "max": 201.834,
+        "p50": 192.376,
+        "p95": 201.834,
+        "p99": 201.834
+      }
+    },
+    "validation_failure": [
+      {
+        "phase": "beforeseeding",
+        "type": "AssertionError",
+        "source": "initial-source-assert.py"
+      },
+      {
+        "phase": "after42timings",
+        "type": "AttributeError",
+        "method": "TranscriptStorage.read",
+        "actual_api": "list",
+        "cold_payload_validation": "notcompleted; fixturecontextdisposed"
+      }
+    ],
+    "next_actor": "this same systemic session",
+    "next_action": "Continue remainingnativeSQL/IO/GC/scheduling attribution and allcriteria; do notrerununchangedprobe orship aspassingfix. Preservebounded freshlocked deletionproof."
   }
 }
