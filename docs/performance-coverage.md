@@ -1,3 +1,21 @@
+# Confirmed portable-fixture store lifetime failure — 2026-10-18
+
+All **584 findings and 88 concerns remain open**. Every prior583row, owner, action and failure is preserved. [Complete before/after, CI, source and browser evidence](benchmarks/systemic-settings-fixture-isolation-20261018.json) separates this fixture repair from live PA performance and acceptance.
+
+PR538 merged as `5a3f85a9` after five successful head checks, stable supervisor nine observations, independent current-base/rules/review/attribution validation and an exact parent/tree match. Its new main CI39163921671 failed the same390px UX case; the other four jobs passed. New diagnostics show correct Agent focus/selection but a panel error. Both537and538CI traces identify an actual SQLite error in the Agent partial: Fleet local repositories call a workspace reader whose store cannot open its database. The focus precondition did not repair this underlying binding failure; both failed main runs remain unchanged.
+
+The settings/UX fixture creates a new app without resetting the process agent singleton. If an earlier test's TemporaryDirectory has expired, the new app reuses that manager and its old workspace/store binding. A deterministic private normal-lifetime reproduction confirms the prior manager survives, its database is absent, the new app's database exists, and its threaded admission read raises the same OperationalError. After test-only singleton/store reset before boot, a new manager and workspace reader bind to the current store and admission reads succeed. Both probes report zero network attempts; all roots are guarded temporary directories. This is a confirmed fixture cause, not proof of production database loss or every historical SQLite warning.
+
+The new regression fails against immutable5a3fixture source. On the corrected source, that regression plus all four settings/UX browser journeys pass:fivecases/338warnings40.31s. It runs the normal lifespan and verifies a real Agent partial returns200with the ux-worker execution after the earlier fixture directory expires. No production manager/Kernel/admission/durability/default/permission change, warning suppression, generic exception fallback, input retry or timeout increase was made.
+
+The original functional-before probe redirected stdout but not stderr; bounded fixture SQLite stacks and708.8/709.9msstartup/read warnings reached tool output. No separately hashed local stderr exists, so its stdout hash does not claim complete console coverage. Subsequent probe/test/CI consoles are local only with both streams retained. These functional samples are not performance acceptance.
+
+Corrected scalar-default work remains unimplemented. Its fifteen unique prototype contracts now pass after correcting two expected serialization strings to reflect chained int→str custom encoders; base/candidate equality had already passed, and both original failures remain. The480direct comparisons and complete482path schema parity remain separate functional evidence. The unsafe unconditional variant, its counterexample, final-pair regression and531msresidual are retained; corrected-source timing/full startup validation is still required.
+
+All previous three preboot slow calls, five background threshold observations, four live2eFleet violations, base-race limitation, provider/MCP/workspace/peer/log/receipt/browser/backup/unexercised concerns and normal PA independent acceptance remain required. No deployment/restart/live archive or store mutation/acceptance/default change occurred. Follow-up review/integration/newmain gates remain open before continuing startup source repairs.
+
+## Preserved earlier inventory and failure history
+
 # Concurrent integration, mobile CI and remaining schema CPU — 2026-10-18
 
 All **583 findings and 87 concerns remain open**. The prior580rows, owners, actions and evidence are preserved. [Full integration and CI evidence](benchmarks/systemic-pr537-integration-followup-20261018.json) and [every schema probe/counterexample](benchmarks/systemic-schema-scalar-default-probe-20261018.json) separate current verification from historical measurements.

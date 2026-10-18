@@ -6,9 +6,16 @@ from fastapi.responses import JSONResponse
 from pa.config import Settings
 from pa.core.kernel import Kernel
 from pa.core.preferences import get_preferences_store, SurfaceAgentPrefs
+from pa.domain.store import reset_store
+from pa.instance.agent_session import reset_instance_agent
 
 
 def build_settings_app(directory, *, personal=True):
+    # A prior test app may have closed and removed its TemporaryDirectory.
+    # Bind this app's disabled agent/workspace reader to its own store instead
+    # of reusing that process singleton and its expired database path.
+    reset_store()
+    reset_instance_agent()
     settings = Settings(data_dir=directory / 'data', workspace_root=directory / 'workspaces',
                         agent_enabled=False, peers=[], sync_token='isolated-settings-fixture',
                         agent_provider='codex', telemetry_enabled=False)
