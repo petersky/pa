@@ -1,3 +1,65 @@
+# Combined 5024 activation, deployed retest and bounded ancestry membership — 2026-10-18
+
+**All 530 evidence rows / 49 concerns remain open.** [Complete matrix](performance-coverage.json); [all new raw numeric samples, phases, counters and evidence hashes](benchmarks/systemic-ancestry-membership-20261018.json). This checkpoint supersedes historical current-status labels below. Every previous finding, owner, outlier and gap remains.
+
+PR505 merged as **62551f44** from watched 0c244 after protected stable-green revalidation. The existing backup owner integrated PR506 as **5024f789**, with 62551 as its first parent; all five backup files match their reviewed head. Combined main CI39097201323 has five terminal successful checks. The owner's 98 tests/16 subtests are separate source evidence. Exact immutable 5024 was installed with frozen, unchanged dependencies and configuration; 437 source files, 38 compiled templates and package b538 were verified. Managed handoff da59 resumed this exact session/workspace. Immutable owner proof confirms **loaded 5024/package b538/PID7531/startup a3a94866/config86968/unique lease290**. No reinstall, repeated restart, production backup or repairer acceptance occurred in this stage.
+
+The 95 ordinary authenticated sequential GETs at **04:43:28.963–04:44:00.820Z** returned 95 HTTP200, zero errors and zero 500 ms violations with a stable build. All six page families were sampled; the first request after activation is not guaranteed to be the first-ever cold render. Helper wall time includes authentication, transport, reading and decoding. Decoded payload bytes are not compressed wire bytes. Every request's status, wall/thread CPU Server-Timing, decoded bytes, correlation/error and SHA partial archive remains. Five-sample tails equal the maximum; this small window is not whole-path or mixed-load acceptance.
+
+| Request | Samples | p50 / p95 / p99 / max ms | >=500 ms |
+|---|---:|---|---:|
+|/|5|28.070/43.913/43.913/43.913|0|
+|/agent|5|146.950/158.270/158.270/158.270|0|
+|/api/fleet/overview|5|201.808/285.677/285.677/285.677|0|
+|/api/health|20|16.605/54.532/366.737/366.737|0|
+|/api/runtime|20|89.710/113.348/147.062/147.062|0|
+|/api/status|20|68.391/266.705/448.152/448.152|0|
+|/fleet|5|255.532/314.258/314.258/314.258|0|
+|/pull-requests|5|53.753/431.866/431.866/431.866|0|
+|/settings?section=agent|5|30.174/34.371/34.371/34.371|0|
+|/work|5|28.827/98.698/98.698/98.698|0|
+
+Previous 134044 Agent668.973/overview634.979 ms, a90 Fleet500.349/overview623.252 ms and b808 Fleet2468.743 ms remain separate windows. New Fleet HTML is 1,098,368 decoded bytes, overview937,778; no payload-size or whole-fleet acceptance follows. The 431.866 ms PR request retains shell345.7 ms wall/4.8 ms CPU, context40.5/19.6 and template1.5/1.5. Waiting/native scheduling remains unpartitioned.
+
+The fresh runtime snapshot retains **all 96 operations and 37 route groups**, every count, byte measurement, bounded percentile window and process maximum separately. It still contains maintenance30.133 s, workspace GC6.637 s, startup-state5.414 s, transcript append3.598 s and reconciliation3.379 s. A passing page sample does not erase those tails. No new exhaustive fleet, peer or log audit is claimed.
+
+Confirmed additional amplification: loaded reconciliation records materialize **60,249–88,563 ancestry hashes /4.04–5.93 MB**. The new source answers a ready tip's ancestry membership within a pinned WAL read view while retaining the existing bounded canonical novel-suffix walk. After 64 distinct probes, one exact bulk read prevents a large suffix from amplifying SQL calls. Older, incomplete or missing-tip indexes retain the original fallback. No source-byte cache, durability/order/CAS/admission/lease/receipt/acceptance/deadline change or backup/transcript_storage edit.
+
+Twenty alternating synthetic-index comparisons at 30,000 retained commits preserve the same false/true answers for two imported-fork queries. Wall p50/p95/p99/max improves **80.663/89.285/89.665/89.665 →3.945/6.826/6.894/6.894 ms**; transferred hashes60,000→0 and logical JSON4,020,002 bytes→0. Observed SQL execute/fetch calls increase15→25. This isolates amplification, not its share of live latency or physical disk IO. The initial baseline p95/max134.568/150.606 ms remains. At5,000 retained, final p9517.837→5.389 ms. The public reproducer seeds only a disposable derived index; canonical fork, missing-parent, realm, reset, WAL snapshot and fallback behavior are tested separately.
+
+**67 tests plus five subtests passed**, followed by six final contracts after the JOIN/probe refinement; these suites overlap. One initial test incorrectly counted SQL execute/fetch as a single observed call: the original136-versus75 assertion failure is retained. The corrected contract verifies no additional SQL after one bulk fallback and bounds the observed call count. No 500 ms or production warning budget changed.
+
+The actual combined candidate wheel verifies **437 source files, 28 loaded module hashes and 38 compatible template entries**. Its 100-iteration/29-request/71.819 s mixed run retains all9,600 ordered events, with zero operation failures/timeouts/rejections, **but one worker warning and four 500 ms violations** remain:
+
+| Path | Samples | p50 / p95 / p99 / max ms | Violations |
+|---|---:|---|---:|
+| Complete-message history HTTP |100|153.334/320.127/438.348/573.153|1|
+| Full object inventory |10|220.254/1205.261/1205.261/1205.261|3|
+
+Two premeasurement slow calls remain separate, including schema913.030 ms/720.880 ms CPU and sync-ref completion936.9 ms. Full SQL/lock/CPU/loop/GC/bytes/logical-write observations remain in the artifact. The new ancestry candidate is **unmerged and uninstalled**. The previous PR505 mixed3-warning/5-violation stage is preserved and is not falsely labeled as containing PR506.
+
+An isolated warm512-file/512-byte read probe demonstrates a possible GIL mechanism:27.933 ms wall/27.778 ms CPU alone versus2755.542 ms wall/26.578 ms CPU with a temporary pure-Python competitor in that disposable process. Open/read/close phases remain. The requested2 s stop timer is not a hard timing guarantee; timer, host scheduling, GIL and native IO remain unpartitioned. This does **not** establish the production cause. An initial six-pair contention probe was interrupted after an observed6m29s; only12 idle samples were durably saved. The missing contended progress is an explicit observability gap, not reconstructed evidence or a PA server timeout.
+
+Actual PR505 main CI39096904163 attempt1 failed the unchanged visualization-browser reload at DOM.resolveNode backend1831/line172. Original log SHA213510c1…/report7d7b524d revision2, unmodified isolated candidate36.89 s/baseline35.17 s passes, and **one** same-head failed-shard retry with all five checks green remain separate. Cause unresolved; passing retry/combined green does not close it. No assertion, deadline or product change was used.
+
+Backup owner0331/18fc retains the narrow506 repair and b527 independent acceptance. Its matched large capture reports hold16.758074→0.185218 s/write16.788190→0.219425 s/138 after samples; that matched-capture raw is still an owner hash reference here. Two HTTP fixture attachments were independently downloaded through the supported API and SHA-verified. Our numeric reanalysis retains2,710 foreground requests, zero HTTP errors and zero2 s violations, **but seven500 ms violations**: card writes4/max1171.978 ms, status2/max921.309 ms and settings1/max527.198 ms. Backup POST123.335 s and verification44.800 s remain separate long control responses; no invented budget or discarded control request. Per-request bytes were not recorded. Three pre-admission startup warnings remain. Backup's2 s scope and the systemic500 ms failure are preserved separately.
+
+Missing live cold object5cbb18fdcfb4/ref1/819 compressed bytes/Sep20 remains a **data and acceptance blocker**, with original capture presence/time/cause unknown. All eight archives are preserved;35575957 remains terminal failed,207 failures/zero verified/automatic backups paused. The existing intact-source information request remains pending. No production backup/restore/deletion/ref drop/unchanged retry/new verifier was authorized or performed.
+
+Every remaining family remains owned and open in the matrix:
+
+- All140 retained slow names,181 baseline operations,115 baseline route groups, six page families and11 startup records. Current observed names do not cover every branch.
+- Full Kernel/schema/MCP/provider startup; placement/workspace/active-watch/external calls; cold session start and transcript ordering/drain correctness.
+- Native SQL busy/lock/WAL/checkpoint, disk/fsync/write amplification, GIL/CPU/scheduling/GC, maintenance and object collection. Older indexed-head/compatible-history full ancestry consumers remain.
+- Peer identity/build/log coverage, historical peer failures,5.64 MB dropped logs,2,396 status failures, older retention/rotation unknowns and lost raw snapshots.
+- Receipt ambiguity/recovery, attachment observability, completion/admission/lease fences, general test-root isolation and original CI failures.
+- Existing backup0331/b527 acceptance and systemic17d034a6 independent-agent acceptance. The scheduler owns verification; DB89957's accepted original scope stays closed. Original ten attachments are preserved at quota.
+
+**No whole-card closure follows from integration, activation, small samples or isolated speedups.**
+
+
+---
+
 # Exact134044 retest and build-time template compilation — 2026-10-18
 
 **All527 evidence rows /47 concerns remain open.** [Complete matrix](performance-coverage.json); [every new numeric stage, raw sample and evidence hash](benchmarks/systemic-template-cache-20261018.json). This checkpoint supersedes historical current-status labels below while preserving every prior finding, owner, outlier and gap.

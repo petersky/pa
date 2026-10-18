@@ -11,7 +11,7 @@ import json
 import sqlite3
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Container, Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +24,7 @@ from pa.core.performance import current_observation
 
 SCHEMA_VERSION = 2
 _REBUILD_BATCH = 250
+_MEMBERSHIP_PROBE_LIMIT = 64
 
 
 def _hash_set_result(raw: str | None) -> set[str]:
@@ -190,6 +191,55 @@ class DagIndex:
                 ).fetchone()[0]
                 return _hash_set_result(raw)
             return self._ancestor_hashes(conn, str(row[0]), head)
+
+    @contextmanager
+    def ready_ancestor_membership(self, head: str) -> Iterator[Container[str] | None]:
+        """Query the ready tip's ancestry without materializing every hash.
+
+        A ready generation contains exactly its tip's ancestry. Pin that WAL
+        read view while a canonical walk visits a novel suffix; rebuilding or
+        older tips keep the existing authoritative fallback. No cache survives
+        this read view, and no writer/admission lock is held.
+        """
+        with self._db() as conn:
+            conn.execute("BEGIN")
+            row = conn.execute(
+                "SELECT m.realm_id FROM index_meta m JOIN commits c "
+                "ON c.realm_id=m.realm_id AND c.commit_hash=m.indexed_head "
+                "WHERE m.indexed_head=? AND m.state='ready' LIMIT 1", (head,),
+            ).fetchone()
+            if row is None:
+                yield None
+                return
+            realm_id = str(row[0])
+            probes: dict[str, bool] = {}
+            materialized: set[str] | None = None
+
+            class Membership:
+                def __contains__(self, commit_hash: object) -> bool:
+                    nonlocal materialized
+                    if materialized is not None:
+                        return commit_hash in materialized
+                    if commit_hash in probes:
+                        return probes[commit_hash]
+                    if len(probes) >= _MEMBERSHIP_PROBE_LIMIT:
+                        # A large novel suffix should not replace one bulk read
+                        # with a query per commit. Fall back once, within this
+                        # same verified view, and retain logical byte/item counts.
+                        raw = conn.execute(
+                            "SELECT json_group_array(commit_hash) FROM commits "
+                            "WHERE realm_id=?", (realm_id,),
+                        ).fetchone()[0]
+                        materialized = _hash_set_result(raw)
+                        return commit_hash in materialized
+                    found = conn.execute(
+                        "SELECT 1 FROM commits WHERE realm_id=? AND commit_hash=?",
+                        (realm_id, commit_hash),
+                    ).fetchone() is not None
+                    probes[commit_hash] = found
+                    return found
+
+            yield Membership()
 
     @staticmethod
     def _ancestor_hashes(
