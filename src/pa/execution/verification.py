@@ -13,6 +13,7 @@ import httpx
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import UTC, datetime
+from urllib.parse import quote, urlencode
 
 from pa.domain.completion import CompletionConflict
 from pa.domain.models import CardLane
@@ -358,11 +359,30 @@ class VerificationService:
             self.store.recovery(job['id'], dependency, 'confirmed')
         return True
 
+    async def absent_admission_head(self, job):
+        """Consume supported receipt recovery; never infer absence or resend."""
+        key = 'verification:' + job['id']
+        query = urlencode({'realm': job['realm'], 'owner': 'dispatch', 'operation': 'dispatch.create'})
+        try:
+            async with asyncio.timeout(2):
+                receipt = await self.health.local_api({'principal_id': job['packet']['principal']},
+                    'GET', '/api/operations/' + quote(key, safe='') + '?' + query)
+        except Exception:
+            return None  # Unavailable/pending evidence retains the old owner.
+        if (isinstance(receipt, dict) and receipt.get('idempotency_key') == key and receipt.get('owner') == 'dispatch'
+                and receipt.get('realm_id') == job['realm'] and receipt.get('status') == 'not_found'
+                and all(receipt.get(field) is False for field in ('durable', 'accepted', 'committed'))
+                and receipt.get('effect') == 'none' and receipt.get('recovery_state') == 'verified_absent_at_head'
+                and isinstance(receipt.get('lookup_head'), str) and receipt['lookup_head']):
+            return receipt['lookup_head']
+        return None
+
     async def ensure(self, card):
         packet = await self.call(self.packet, card)
         if not packet:
             return None
         current = await self.call(self.store.reserve, packet)
+        checked_absence = False
         for old in await self.call(self.store.list, card.id, card.realm_id):
             if old['id'] == current['id'] or old['state'] in {'accepted', 'superseded'}:
                 continue
@@ -375,6 +395,22 @@ class VerificationService:
             unadmitted = not old['dispatch_id'] and (old['state'] == 'pending' or old['diagnostic'] in {
                 'verification_principal_unconfigured', 'waiting_for_integration_or_origin', 'repair_workflow_pending',
                 'verification_realm_authority_required'})
+            if (not record and not old['dispatch_id'] and old['state'] == 'blocked'
+                    and old['diagnostic'] == 'HTTPStatusError' and not checked_absence):
+                # A superseded scope may have failed admission before a dispatch
+                # existed. Missing local rows alone cannot release that owner.
+                # Bound receipt reads to one per cycle and require reconciled
+                # non-commit proof at the current head from the public API.
+                checked_absence = True
+                head = await self.absent_admission_head(old)
+                if head:
+                    record = await self.call(ledger.by_authority_idempotency,
+                        self.ctx.settings.instance_id, 'verification:' + old['id'])
+                    if record:
+                        await self.call(self.store.update, old['id'], 'dispatched', dispatch_id=record.dispatch_id)
+                    else:
+                        await self.call(self.store.recovery, old['id'], 'admission-absent:' + head, 'confirmed')
+                        unadmitted = True
             settled = record and record.state in TERMINAL_DISPATCH_STATES and (
                     not record.session_id or (record.acknowledged_at and record.completion_delivery_class == 'acknowledged'
                                               and record.reconciliation_state in RECONCILIATION_TERMINAL_STATES))
