@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from pa.core.operation_budget import measured_lock, report_work_progress
-from pa.core.performance import PerformanceMetrics
+from pa.core.performance import PerformanceMetrics, retention_phase
 from pa.core.sqlite_metrics import ObservedConnection, derived_connection
 from pa.domain.models import TranscriptEvent
 
@@ -461,15 +461,17 @@ class TranscriptStorage:
     def prune(self, session_ids: list[str], *, keep_audit: bool = True) -> int:
         if not session_ids: return 0
         changed = 0
-        with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
+        with (retention_phase("retention_transaction"),
+              measured_lock(self._lock, name="transcript.write"), self._conn() as conn):
             # Publication is fenced for this entire transaction, so discover
             # nonempty sessions once rather than querying every expired ID on
             # each sweep. A single JSON parameter avoids the variable limit.
-            existing = {row[0] for row in conn.execute(
-                """SELECT DISTINCT session_id FROM transcript_events
-                   WHERE session_id IN (SELECT value FROM json_each(?))""",
-                (json.dumps(session_ids),),
-            )}
+            with retention_phase("retention_discovery"):
+                existing = {row[0] for row in conn.execute(
+                    """SELECT DISTINCT session_id FROM transcript_events
+                       WHERE session_id IN (SELECT value FROM json_each(?))""",
+                    (json.dumps(session_ids),),
+                )}
             for session_id in dict.fromkeys(session_ids):
                 if session_id not in existing:
                     continue
@@ -503,7 +505,8 @@ class TranscriptStorage:
                 )
                 changed += max(0, deleted.rowcount)
             conn.execute("DELETE FROM transcript_objects WHERE ref_count=0")
-        self.collect_unreferenced_objects()
+        with retention_phase("retention_object_collection"):
+            self.collect_unreferenced_objects()
         return changed
 
     @contextmanager

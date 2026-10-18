@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from pa.core.sqlite_metrics import ObservedConnection
+from pa.core.performance import capture_retention_phases
 from pa.execution.dispatch import DispatchStoreReadOnlyError
 
 logger = logging.getLogger(__name__)
@@ -195,7 +196,7 @@ def _run_maintenance_measured(
     mutation_cutoff = now - timedelta(
         days=int(settings.mutation_operation_retention_days)
     )
-    with _maintenance_phase(phases, "transcript_retention"):
+    with capture_retention_phases(phases), _maintenance_phase(phases, "transcript_retention"):
         transcript_deleted = store.prune_closed_session_transcripts(before=transcript_cutoff)
     with _maintenance_phase(phases, "mutation_retention"):
         mutation_deleted = store.prune_mutation_operations(before=mutation_cutoff)

@@ -18,6 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from pydantic import ValidationError
 
 from pa.core.operation_budget import current_operation, measured_lock, report_work_progress
+from pa.core.performance import retention_phase
 from pa.core.sqlite_metrics import ObservedConnection
 from pa.domain.models import (
     AgentSession,
@@ -6182,45 +6183,47 @@ class CardProjection:
         Session rows stay so history and lifecycle remain intact. Only the
         bulky per-turn payload is removed.
         """
-        with self._conn() as conn:
+        with retention_phase("retention_selection"), self._conn() as conn:
             session_ids = [row[0] for row in conn.execute(
                 "SELECT id FROM agent_sessions WHERE status='closed' AND updated_at < ?",
                 (before.isoformat(),),
             )]
-        deleted = self.transcripts.prune(session_ids, keep_audit=True)
+        with retention_phase("retention_canonical"):
+            deleted = self.transcripts.prune(session_ids, keep_audit=True)
         # Compatibility rows follow the same evidence-preserving policy.
         if not session_ids:
             return deleted
         # Discover after canonical pruning: publication during prune must still
         # participate in the fresh sequence read below. Empty mirrors need no
         # canonical hydration or per-session connection on repeated sweeps.
-        with self._conn() as conn:
-            mirror_ids = {row[0] for row in conn.execute(
-                """SELECT DISTINCT session_id FROM agent_transcript_events
-                   WHERE session_id IN (SELECT value FROM json_each(?))""",
-                (json.dumps(session_ids),),
-            )}
-        for session_id in session_ids:
-            if session_id not in mirror_ids:
-                continue
-            kept = {event.seq for event in self.transcripts.list_range(session_id)}
+        with retention_phase("retention_mirror"):
             with self._conn() as conn:
-                if conn.execute(
-                    "SELECT 1 FROM agent_transcript_events WHERE session_id=? LIMIT 1",
-                    (session_id,),
-                ).fetchone() is None:
-                    # A repeated sweep of an empty mirror stays read-only:
-                    # even an empty DELETE would request SQLite's writer lock.
+                mirror_ids = {row[0] for row in conn.execute(
+                    """SELECT DISTINCT session_id FROM agent_transcript_events
+                       WHERE session_id IN (SELECT value FROM json_each(?))""",
+                    (json.dumps(session_ids),),
+                )}
+            for session_id in session_ids:
+                if session_id not in mirror_ids:
                     continue
-                # Retain the exact post-prune canonical sequence set, including
-                # events published before this read. One bound JSON parameter
-                # avoids a statement/row handoff per expired mirror event and
-                # does not depend on SQLite's variable limit.
-                conn.execute(
-                    """DELETE FROM agent_transcript_events WHERE session_id=?
-                       AND seq NOT IN (SELECT value FROM json_each(?))""",
-                    (session_id, json.dumps(sorted(kept))),
-                )
+                kept = {event.seq for event in self.transcripts.list_range(session_id)}
+                with self._conn() as conn:
+                    if conn.execute(
+                        "SELECT 1 FROM agent_transcript_events WHERE session_id=? LIMIT 1",
+                        (session_id,),
+                    ).fetchone() is None:
+                        # A repeated sweep of an empty mirror stays read-only:
+                        # even an empty DELETE would request SQLite's writer lock.
+                        continue
+                    # Retain the exact post-prune canonical sequence set, including
+                    # events published before this read. One bound JSON parameter
+                    # avoids a statement/row handoff per expired mirror event and
+                    # does not depend on SQLite's variable limit.
+                    conn.execute(
+                        """DELETE FROM agent_transcript_events WHERE session_id=?
+                           AND seq NOT IN (SELECT value FROM json_each(?))""",
+                        (session_id, json.dumps(sorted(kept))),
+                    )
         return deleted
 
     def prune_mutation_operations(self, *, before: datetime) -> int:

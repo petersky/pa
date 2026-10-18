@@ -121,7 +121,15 @@ def test_sweep_keeps_distinct_health_freshness_and_finalized_timings(tmp_path):
             'total', 'transcript_retention', 'mutation_retention',
             'transcript_migration_and_health', 'projection_database',
             'transcript_database', 'transcript_health_final',
+            'retention_selection', 'retention_canonical',
         }
+        # This fixture has no expired sessions: selection and the empty
+        # canonical call are measured, but no transaction/GC/mirror is entered.
+        # Keep the exact bounded set above and both fresh-health assertions.
+        assert result['phases']['transcript_retention']['wall_ms'] >= sum(
+            result['phases'][name]['wall_ms']
+            for name in ('retention_selection', 'retention_canonical')
+        )
         assert all(p['calls'] == 1 and p['errors'] == 0 for p in result['phases'].values())
         assert result['sqlite']['phases']['close']['calls'] == 1
         assert result['transcript_sqlite']['phases']['close']['calls'] == 1
