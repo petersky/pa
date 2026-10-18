@@ -82,6 +82,14 @@ async def create_linked_session(manager, source_id: str, options: dict):
                 "A linked attempt must preserve the source realm",
             )
         prior = (source.config_json or {}).get("execution_context_boundary")
+        reserved_id = options.get("session_id")
+        if reserved_id == source.id or (
+            prior and reserved_id and reserved_id != prior["target_session_id"]
+        ):
+            raise SelectionError(
+                "context_boundary_target_conflict",
+                "The reserved session must identify this source's new linked target",
+            )
         if prior and prior["fingerprint"] != identity:
             raise SelectionError(
                 "context_boundary_conflict",
@@ -145,7 +153,7 @@ async def create_linked_session(manager, source_id: str, options: dict):
         boundary = prior or {
             "contract": "pa.execution-context-boundary/v1",
             "id": str(uuid4()),
-            "target_session_id": str(uuid4()),
+            "target_session_id": reserved_id or str(uuid4()),
             "source_session_id": source.id,
             "source_dispatch_id": source.dispatch_id,
             "fingerprint": identity,
@@ -183,6 +191,11 @@ async def create_linked_session(manager, source_id: str, options: dict):
             boundary["target_session_id"],
         )
         if target:
+            if not prior:
+                raise SelectionError(
+                    "context_boundary_target_conflict",
+                    "A new linked boundary cannot adopt an existing provider session",
+                )
             runtime = manager.get(target.id)
             if runtime and not runtime._closed:
                 return runtime
