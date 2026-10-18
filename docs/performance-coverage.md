@@ -1,3 +1,96 @@
+# Loaded PR512 retest and remaining mirror inventory calls — 2026-10-18
+
+**All 544 rows and 59 concerns remain open.** [Full matrix](performance-coverage.json); [every new sample, runtime family, maintenance phase, paired comparison and test result](benchmarks/systemic-mirror-inventory-20261018.json). Earlier checkpoints below remain historical evidence.
+
+PR512 is protected-integrated as `5fb32b7a` from exact `d439dca0` / watch `43ef5d07`; head and main CI each have five terminal successes and matching source/merge trees. Immutable installation verifies 437 source files, 38 compiled templates and 52 unchanged dependency versions/configuration. Server capture independently proves the exact source/package, new PID31674/startup411d, unchanged configuration/lease290 and handoff8a with no error. Its own continuation remains queued while running; no duplicate restart or repairer acceptance.
+
+All 95 ordinary sequential reads returned HTTP200, but status593.225ms and Fleet675.973ms exceed500ms. Fleet context is478.0ms wall/462.1ms CPU, template46.5/42.6 and server530.0/510.2; helper time includes more than server processing. Status has no Server-Timing. Every status/error/correlation/decoded-byte/raw timing remains. Decoded bytes are not wire bytes, five-page p95/p99 equal maximum, and the first request is not guaranteed cold. Small samples are not acceptance.
+
+| Ordinary request | n | p50 / p95 / p99 / max ms | >=500ms | max decoded bytes |
+|---|---:|---|---:|---:|
+|/|5|40.685/129.917/129.917/129.917|0|25464|
+|/agent|5|110.598/276.458/276.458/276.458|0|117450|
+|/api/fleet/overview|5|169.355/270.104/270.104/270.104|0|936113|
+|/api/health|20|20.083/58.523/74.182/74.182|0|15|
+|/api/runtime|20|80.923/137.664/409.093/409.093|0|324678|
+|/api/status|20|75.907/175.598/593.225/593.225|1|2824|
+|/fleet|5|367.734/675.973/675.973/675.973|1|1096577|
+|/pull-requests|5|154.897/410.634/410.634/410.634|0|25121|
+|/settings?section=agent|5|49.524/66.223/66.223/66.223|0|100559|
+|/work|5|40.639/55.097/55.097/55.097|0|31323|
+
+The separate runtime inventory retains every one of81operations,24routes and40slow records(capacity64). Twenty-nine process maxima exceed500ms; workspace provisioning failed1of7 times with cause unknown. Process counters/maxima differ from bounded rolling percentiles and the95request window; slow-call budgets vary. All previously observed names and failures remain, including names absent from this particular process window. No exhaustive peer/log/retention audit is claimed.
+
+| Operation | submitted | failed / timed out | window p50 / p95 / p99 ms | process max ms | budget slow calls |
+|---|---:|---|---|---:|---:|
+|agent.startup_state_read|1|0/0|7451.087/7451.087/7451.087|7451.087|1|
+|dispatch.completion_pending_read|41|0/0|2.024/70.699/1208.746|1208.746|1|
+|dispatch.record_read|586|0/0|19.581/37.117/130.199|574.838|3|
+|fleet.overview.reachability|13|0/0|17.643/1199.017/1199.017|1199.017|1|
+|fleet.overview.status|13|0/0|16.026/1212.77/1212.77|1212.77|1|
+|fleet.overview.sync|27|0/0|29.471/183.998/1267.919|1267.919|1|
+|fleet.overview_cache_read|564|0/0|1.639/34.042/59.461|2292.71|5|
+|fleet.overview_cache_write|170|0/0|14.225/78.01/108.977|2295.209|1|
+|goal.dispatch_lifecycle_index|8|0/0|0.421/1179.091/1179.091|1179.091|1|
+|health.canonical_obligation|35|0/0|34.402/346.968/1053.501|1053.501|1|
+|http.fleet_overview|117|0/0|202.663/3843.898/3902.186|3941.028|0|
+|http.github|1|0/0|772.497/772.497/772.497|772.497|0|
+|http.pr_supervisor_peer|568|0/0|49.197/145.489/369.222|708.175|0|
+|maintenance.run|1|0/0|34030.099/34030.099/34030.099|34030.099|1|
+|notifications.present_page|4|0/0|245.178/967.959/967.959|967.959|2|
+|progress.checkpoint_write|3|0/0|302.178/609.836/609.836|609.836|1|
+|progress.pending_read|68|0/0|10.18/45.313/644.132|644.132|1|
+|reconciliation.completion_evidence_read|117|0/0|4.312/87.416/110.411|2300.799|1|
+|reconciliation.dispatch_read|196|0/0|2.189/26.941/1173.742|3407.086|2|
+|sqlite.agent_session_save|38|0/0|16.314/133.308/4542.67|4542.67|1|
+|sqlite.card_read|871|0/0|1.814/22.527/68.798|505.978|1|
+|sqlite.pr_supervisor_watch_write|284|0/0|9.109/92.472/157.368|636.188|1|
+|startup.openapi|1|0/0|1129.183/1129.183/1129.183|1129.183|1|
+|sync.gc_resume|1|0/0|1188.701/1188.701/1188.701|1188.701|1|
+|sync.peer_http|15|0/0|58.53/2698.159/2698.159|2698.159|0|
+|sync.reconcile_head|15|0/0|759.668/2686.671/2686.671|2686.671|10|
+|workspace.collect_garbage|1|0/0|6534.679/6534.679/6534.679|6534.679|1|
+|workspace.project_provision|7|1/0|2102.32/2550.52/2550.52|2550.52|0|
+|workspace.reconcile_terminal_state|1|0/0|1419.415/1419.415/1419.415|1419.415|0|
+
+Cached startup maintenance remains34.027s wall/15.941s threadCPU: retention5.885s, migration/first health8.543s, projection10.347s, transcript database4.504s and final fresh health3.472s. Projection full checks2.447s/0.891s surround6.979s VACUUM; final checkpoint returns busy/deferred. Transcript full check4.498s runs without VACUUM. Parent intervals include children; wall minus CPU is not a disk/busy/GIL partition. These independent build snapshots do not prove a controlled retention speedup. Integrity, freshness, reclamation and error/stop/default semantics remain required.
+
+A passive whole-host iostat capture overlapped the already planned reads:26 raw rows, first cumulative and later interval estimates. Later rows show48–85%CPU idle and0.59–60.46MB/s disk activity. Only collection endpoints have timestamps; buffering prevents exact row pairing. These aggregates neither identify PA physicalI/O/fsync/busy/GIL costs nor prove a cause for either request outlier. No extra PA workload was injected.
+
+The next source change discovers nonempty compatibility mirrors once **after** canonical pruning. Repeated empty sessions avoid canonical hydration and per-session reads. Selected sessions retain the original fresh canonical sequence read, per-session empty check and exact deletion. Existing canonical transaction/audit/reference/GC/pin behavior, health, backup and retention policy are unchanged. Publication after an empty mirror snapshot survives; this does not invent cross-database atomicity. No new writer transaction or lock is added.
+
+Two new contracts fail on the original source while49tests pass. All51candidate retention/mirror/storage/maintenance contracts then pass, including prior rollback, audit, publication and empty-mirror passivity. All65isolated backup tests and16subtests pass209.98s; exact-wheel mixed evidence is retained in full below. Both PA roots are temporary and workspace construction is guarded. Initial probe setup and generator failures occurred before measurement and remain recorded. Direct-call and actual-worker connection-scope comparisons are separate; connection entries are logical and scoped workers reuse handles. Probe SQL traces start after connection acquisition and exclude setup PRAGMAs before that boundary. A one-second native sample of only the disposable direct-caller process retains six stack samples in SQLite preparation/schema/WAL open-close paths; it perturbs that comparison and neither quantifies their total share nor attributes live PA stalls. Host tests/probes overlap, so these are not controlled whole-system speed estimates or sole-cause attribution of live5.885s retention.
+
+| Direct caller: empty IDs | baseline p50/p95/p99/max ms | candidate p50/p95/p99/max ms |
+|---|---|---|
+|1|4.514/5.219/6.138/6.138|2.659/3.222/3.288/3.288|
+|1000|2362.367/2773.401/3261.173/3261.173|9.887/13.129/14.119/14.119|
+|6000|15333.555/22794.811/24234.189/24234.189|46.37/91.898/99.422/99.422|
+
+| Actual worker connection scope: empty IDs | baseline p50/p95/p99/max ms | candidate p50/p95/p99/max ms |
+|---|---|---|
+|1|4.375/7.019/7.645/7.645|4.112/6.239/9.945/9.945|
+|1000|140.497/168.55/173.525/173.525|12.624/17.214/18.588/18.588|
+|6000|788.757/993.387/1112.725/1112.725|52.45/66.516/132.429/132.429|
+
+The first exact-wheel mixed scenario overlapped our disposable tests/probes:130.398s,18worker warnings,27threshold violations. Every raw sample and log remains. After all our competing test/probe processes finished, one repeat of the unchanged exact wheel/workload was run; ordinary live PA/host activity remained uncontrolled. This is a separate scenario, not a causal speed comparison.
+
+The final exact-wheel mixed scenario keeps9600ordered active events and applies the unchanged policy to5000expired events with16audit proofs, with zero operation failures/timeouts/rejections. It has one expired session; the6000empty-ID benefit is measured separately. Warnings and all threshold violations remain acceptance failures: `{"warnings": {"Slow off-loop operation": 1}, "threshold_violations": {"maintenance.run": 1, "/api/agent/history/session-0?limit=64&message_boundaries=true": 2, "sync.object_collect": 3}}`. Full raw distributions/bytes/SQL/CPU/loop/GC/locks/logical filesystem counts, bootstrap delays and source hashes remain in the artifact; no outlier is dropped. This candidate is not integrated, installed or accepted.
+
+| Remaining mixed path | n | p50 / p95 / p99 / max ms | violations |
+|---|---:|---|---:|
+|maintenance.run|1|602.057/602.057/602.057/602.057|1|
+|/api/agent/history/session-0?limit=64&message_boundaries=true|100|175.499/384.88/514.154/593.76|2|
+|sync.object_collect|10|311.059/1202.495/1202.495/1202.495|3|
+
+First-stage premeasurement retains schema1379.516ms wall/1047.195ms threadCPU and one slow call; loopmax433.508ms is separate. Final-stage bootstrap/loop details are preserved independently in the artifact. All earlier failures/outliers remain.
+
+All140slow names/181baseline operations/115baseline routes/6shells/14startup records retain owners and next actions. Full Kernel/OpenAPI/MCP/provider startup, history/drain/sync/objectGC, native busy/WAL/fsync/disk/GIL/GC/full health/VACUUM, placement/workspace/active-watch/peer paths, dropped logs/status failures/older retention/receipts/lost raw/test-root gaps and original CI causes remain. No two-cause blanket closure.
+
+Backup0331/session18fc owns capture/verification, missingcold5cbb/pending source question, failed355/eight archives/207failures0verified/paused/b527 acceptance. No backup retry/recovery/restore/delete/refdrop/placeholder/new worker/admission. DB89957's accepted originalPR471scope stays closed. All10attachments remain. Systemic17d034a6/independent_agent_v1 is unchanged, Active/integrated-only/acceptedfalse; the normal PA scheduler owns independent acceptance. No closure follows from PR, merge, installation, activation or these samples.
+
+---
+
 # Loaded maintenance phases and retention inventory repair — 2026-10-18
 
 **All 544 evidence rows / 59 concerns remain open.** [Full matrix](performance-coverage.json); [all new samples, runtime/maintenance phases, source comparison, mixed fixture and test evidence](benchmarks/systemic-prune-inventory-20261018.json). Earlier checkpoints below remain retained history.
