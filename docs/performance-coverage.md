@@ -1,3 +1,15 @@
+# PR525 CI attribution remains open — 2026-10-18
+
+All **568 findings and77concerns remain open**. Every previous567row, owner and action is preserved. The [full CI follow-up](benchmarks/systemic-ci525-followup-20261018.json) retains original failed-shard log, diagnostics, source, command/isolation limitations and explicit binding helpers.
+
+First headcf9bbcd CI39133202193 attempt1 failed one snapshot responsiveness assertion at256.078ms against200ms; other4checks passed. That test and its product path were unchanged fromd6e4. The original timer includes testmocksetup/request/teardown; this fact does not attribute theCI outlier tosetup. Three isolated phase observations didnot reproduceCI(request8.692–14.661ms, setup0.670–1.525ms); one valueaudit found noMock objects inreturned data. Originalcause remainsUNKNOWN. No workflowretry, warning/deadline/budget change or inventedproductionrepair.
+
+The test now adds setup/request/teardown and loop-threadCPU values to its failure message. Its original timed region,200ms wait/elapsed assertions and transcript-read/buffer/metadata assertions remain unchanged. Guardednewtest passes1/4.67s; fullnewheadCI ispending. An earlierdirectone-testcommand passed but omittedexplicittempPAroots/guard; it isnotisolationproof and its console istranscribedfromproviderresult ratherthanclaimedlosslesslocalraw. The correctedrunner usesbothtemproots anddeniesworkspaceconstruction. No observedlivewrites; previousisolationgaps/eightemptylocks remainopen.
+
+Futureactivationhelper selectors nowusefrozen explicitsessionbindings;3puretests confirm PRnumber changesonlyGitHubselector andwronghistorical9524backupUUID isrejected. Generichelpers areprepared only, no liveactivationattempt. Originalhelperfailure remainsretained. Normal independentacceptance andallbroaderlatencyrequirements remainunsatisfied.
+
+## Preserved source repair, actual deployment and earlier evidence
+
 # Startup definition hashing repair — 2026-10-18
 
 All **567 findings and76concerns remain open**. Every prior566row, owner and action is unchanged. The [complete source artifact](benchmarks/systemic-schema-remapping-20261018.json) retains sources, original failed/unexercised probes, corrected mechanism counts, all commands/exit codes, test failures/corrections and final measurements. The complete actual PR524 inventory below remains distinct from this uninstalled source.

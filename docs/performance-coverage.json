@@ -207933,6 +207933,23 @@
       "retested": "37tests+9subtests pass28.66s; alternating previous/current/current/previous complete schema equality, wall1175.949/968.139/943.029/1187.534ms. Full normal startup1257.927ms ready but1OpenAPI1046.817ms warning remains. Not acceptance.",
       "resolution": "open",
       "next_action": "Ready PR/durable supervisor/exact-head independent gates/mainCI/safe exact activation/retest; continue all remaining startup/sharedCPU/nativeSQL/GC/health/history/sync/provider/peer/log/backup/receipt and normal independent acceptance."
+    },
+    {
+      "id": "concern:ci525-snapshot-latency-attribution",
+      "kind": "concern",
+      "finding": "OriginalCI200ms snapshot assertion fails at256ms with insufficient phase attribution",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "next_actor": "this same card/session",
+      "cause_classification": "ci_failure_confirmed_root_cause_unverified",
+      "cause": "UNKNOWN; failedtest/agent_chat/agent_session unchanged fromparentd6e4. Timer includesmocksetup/request/teardown. Local3observations not reproduceCI; no nativebusy/GIL/CPU/GC attribution. Valueauditmockpaths empty, no claim fabricated outputmetadata causedfailure.",
+      "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+      "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+      "resolution": "open",
+      "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
+      "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+      "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+      "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -209005,6 +209022,25 @@
       },
       "resolution": "open",
       "next_action": "Continue all566findings75concerns, measured startup/schema/sharedCPU, summarySQL/nativebusy/GC/physicalIO, every unexercised/provider/peer/backup/log/receipt concern and normal scheduler independent acceptance."
+    },
+    "concern:test-workspace-isolation": {
+      "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+      "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+      "resolution": "open",
+      "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
+      "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+      "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+      "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green.",
+      "notice": "Directinvocation didnotexplicitlysetbothtemporaryroots orconstructor guard; not isolationproof. No full localraw console archive claimed. Source body objectnewruntime/fakestore/MagicMockrequest, noKernel/Storeconstruction inbody and no observedlivewrites; no runtimewriteaudit asserted. Guardedreplacement fullrawoutcome retained separately. Existingtest-workspace-isolationconcern staysopen."
+    },
+    "concern:activation-helper-identifier-replacement": {
+      "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+      "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+      "resolution": "open",
+      "implemented": "Frozen explicit session bindings/selectors,3puretests pass, wronghistorical9524backupUUID rejected and PRnumber altersonlyGitHubselector. Newgenerichelpers prepared/parsed only, no install/restart executed. Futurelivegate validation remainsopen; previousUUIDfailure notretroactivelygreen.",
+      "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+      "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+      "next_action": "Useexplicitboundhelpers forfutureactivation, freshlivecontext/installedmetadata/nativepreview gates stillrequired. NevercloneoperationalUUIDs byPRdigitsubstitution."
     }
   },
   "f7e8_loaded_stage": {
@@ -210389,5 +210425,14 @@
     "retested": "37tests+9subtests pass28.66s; alternating previous/current/current/previous complete schema equality, wall1175.949/968.139/943.029/1187.534ms. Full normal startup1257.927ms ready but1OpenAPI1046.817ms warning remains. Not acceptance.",
     "resolution": "open",
     "next_action": "Ready PR/durable supervisor/exact-head independent gates/mainCI/safe exact activation/retest; continue all remaining startup/sharedCPU/nativeSQL/GC/health/history/sync/provider/peer/log/backup/receipt and normal independent acceptance."
+  },
+  "ci525_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-ci525-followup-20261018.json",
+    "sha256": "ae084f0a4901665d082db3f4776584a2b5a04a36157f190da20208d5eb308d35",
+    "resolution": "open",
+    "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
+    "deployed": "Notdeployed; no productcode change fromthisCIstage.",
+    "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
+    "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
   }
 }
