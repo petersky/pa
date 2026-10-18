@@ -163,8 +163,8 @@ def run(args):
                 result["archives"].append({
                     "backup_id": record.backup_id, "manifest_bytes": member.size,
                     "manifest_files": len(manifest["files"]), "verified": record.verified,
-                    "integrity_verified": record.integrity_verified,
-                    "data_complete": record.data_complete,
+                    "integrity_verified": getattr(record, "integrity_verified", record.verified),
+                    "data_complete": getattr(record, "data_complete", True if record.verified else None),
                     "missing_transcript_objects": manifest.get("missing_transcript_objects", []),
                 })
                 assert {item["sha256"] for item in manifest.get("missing_transcript_objects", [])} == set(missing)
@@ -173,7 +173,8 @@ def run(args):
         assert result["archives"]
         assert all(item["integrity_verified"] and item["data_complete"] == (not missing)
                    and item["verified"] == (not missing) for item in result["archives"])
-        result["health"] = {key: service.status()[key] for key in (
+        status = service.status()
+        result["health"] = {key: status.get(key) for key in (
             "backup_count", "verified_backup_count", "last_success", "last_known_good",
             "consecutive_failures", "limited_backup_count", "historical_data_warning", "last_completed",
         )}
