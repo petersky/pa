@@ -9,6 +9,8 @@ null/private-key filtering without rediscovering arbitrary Python encoders for
 every JSON scalar.
 Definition-name collision checks reuse each schema's hashable representation
 within one simplification pass, then discard it before in-place remapping.
+Exact scalar defaults use the same native JSON conversion without constructing
+an adapter when no custom JSON encoder is configured.
 
 Keep the framework's traversal and rendering, with private function bindings
 local to this call. Nothing in FastAPI's module globals, request validation,
@@ -23,6 +25,7 @@ from typing import Any
 
 import fastapi
 import pydantic
+import pydantic_core
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.models import OpenAPI
 from fastapi.openapi.utils import get_openapi as framework_get_openapi
@@ -62,13 +65,25 @@ def _bind(function: FunctionType, namespace: dict[str, Any]) -> FunctionType:
 
 
 def _schema_generator(base: type) -> type:
-    """Reuse a definition's hashable representation within one remapping pass."""
+    """Keep version-verified default encoding and definition remapping local."""
     if pydantic.__version__ != "2.13.4":
         return base
 
     from pydantic import json_schema
 
     class SchemaGenerator(base):
+        def encode_default(self, value: Any) -> Any:
+            config = self._config
+            # These exact builtins serialize identically without constructing
+            # a TypeAdapter per default. Custom encoders, subclasses and all
+            # other values still need the full upstream serialization path.
+            if type(value) in (type(None), bool, int, str) and config.json_encoders is None:
+                return pydantic_core.to_jsonable_python(
+                    value, timedelta_mode=config.ser_json_timedelta,
+                    bytes_mode=config.ser_json_bytes, by_alias=self.by_alias,
+                )
+            return super().encode_default(value)
+
         def _build_definitions_remapping(self) -> Any:
             # One schema appears under several candidate names. Keep strong
             # references so identity reuse cannot alias a different schema.

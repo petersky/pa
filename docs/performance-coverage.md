@@ -1,3 +1,30 @@
+# Corrected scalar-default source and complete residuals — 2026-10-18
+
+All **585 findings and 89 concerns remain open**. Every retained row, owner and action is preserved. [Complete source, test, paired timing, mixed workload and callback evidence](benchmarks/systemic-schema-scalar-source-20261018.json) includes every measured operation, route, phase, byte counter and residual, with source/merge/deployment states separate.
+
+The local source skips a TypeAdapter only for exact None/bool/int/str defaults without configured custom JSON encoders, within the existing framework-version fences. It uses the same native JSON conversion. Custom encoders, subclasses and all other values retain upstream behavior. The rejected unconditional prototype and custom-encoder counterexample remain in prior evidence. No request validation, readiness/admission, warning/deadline, durability or dependency policy changes. **52 tests and 9 subtests pass**, including 15 new scalar/fallback/full-schema contracts; a wheel builds without installation.
+
+Eight alternating complete-schema pairs preserve all 482 paths and identical hashes without warnings. Wall p50/p95/p99/max: baseline **583.221/665.964/665.964/665.964 ms**, candidate **488.966/648.862/648.862/648.862 ms**. Three individual pair regressions remain. Separate untimed adapter counts fall **1,912→200**. These are warm schema calls on an uncontrolled host, not full cold-start or whole-PA acceptance.
+
+The exact-source 100-iteration mixed run verifies 9,600 ordered active events and 12,511 cold content hashes, with zero failures/timeouts/rejections. It retains **5 worker warnings, 11 universal 500 ms observations and 2 premeasurement slow records**. The 80.033 s run includes observer work; 3.200 s validation is separate. All 44 timers, 24 registered route groups, 50 ordinary operation counters plus separate diagnostics, complete phases and bytes are in the artifact. Journal persistence adds 1.647 s total/max32.809 ms; it is flushed, not fsynced. No whole-path speedup claim versus the earlier 74.233 s fixture.
+
+| Remaining timer | Samples | p50 ms | p95 ms | p99 ms | Max ms | ≥500 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| Transcript drain | 300 | 83.478 | 181.824 | 331.565 | 918.646 | 3 |
+| Sync reconcile | 100 | 43.994 | 153.807 | 277.447 | 539.906 | 1 |
+| Message-boundary history | 100 | 132.106 | 328.476 | 449.210 | 615.494 | 1 |
+| Object collection | 10 | 314.758 | 1408.555 | 1408.555 | 1408.555 | 4 |
+| Fleet page | 100 | 82.003 | 162.502 | 319.889 | 673.713 | 1 |
+| Maintenance, inclusive | 1 | 14294.063 | 14294.063 | 14294.063 | 14294.063 | 1 |
+
+A captured transcript compatibility-mirror commit takes 580.172 ms while holding the projection lock for 580.563 ms. Subsequent appends wait 475.489/482.129 ms and reconciliation waits 487.154 ms on that same boundary: shared propagation is confirmed. The native commit cause remains unverified; zero busy failures and logical/rusage counters cannot rule out successful busy waits or establish physical I/O. Full timelines and GC overlap selection are retained. No durability/checkpoint policy changed.
+
+Premeasurement schema startup remains 505.456 ms, and a 1.767 ms sync-ref service has 560.828 ms completion-delivery delay. A separate direct callback diagnostic observes only four callbacks ≥10 ms (max42.694 ms) and a 649.098 ms schema-worker warning; it does not reproduce or explain the earlier delivery delay. No GIL/lock cause inferred. Schema CPU, native commit/WAL/I/O attribution, remaining leaf/route/provider/peer/log/backup coverage and deployed acceptance remain open.
+
+PR539 corrected exact head, strict merge proof and new main CI39165480869 are now all verified green (five jobs). Original537/538main failures and initial539head failure remain failed and preserved. These fixture/test corrections do not establish production acceptance. This scalar source is not yet committed/integrated/deployed; no install/restart/default/permission/live-data mutation occurred. Original527 failed handoff remains failed, distinct from the separately verified2e process; its scoped recovery response supplies no new restart authority.
+
+## Preserved prior coverage and failures
+
 # Snapshot test timing attribution — 2026-10-18
 
 All **585 findings and 89 concerns remain open**. Every prior584row/owner/action remains unchanged. [Exact failed-head phases and corrected test evidence](benchmarks/systemic-snapshot-request-timing-20261018.json) preserve the original CI result and distinguish fixture setup from the production request.
