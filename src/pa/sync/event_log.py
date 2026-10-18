@@ -373,9 +373,14 @@ class EventLog:
         prepared_parent = self.get_head(realm_id)
         if prepared_parent:
             self.ensure_indexed(realm_id, prepared_parent)
+        # Creates need prior state to reject duplicates. Other card events only
+        # consume it when deriving an omitted causal version; canonical writers
+        # already supply that version. Keep index readiness and the parent fence
+        # below even when no history materialization is needed.
         prior = (
             self._indexed_entity_snapshot(prepared_parent, "card", event.card_id)
             if prepared_parent and event.card_id
+            and (event.type == EventType.CARD_CREATED or not event.causal_card_version)
             else None
         )
         with measured_lock(self._lock, name="sync.refs", track_deadline=False):
