@@ -226,6 +226,110 @@ class BackupTestCase(unittest.TestCase):
         self.assertTrue(self.service.verify_backup(good.backup_id).verified)
         self.assertFalse(list((self.data_dir / "transcript_objects").glob(".pa-backup-pin-*")))
 
+    def test_sqlite_copy_releases_writer_locks_and_retains_captured_cold_objects(self) -> None:
+        self.store.create_card(CardCreate(title="captured before database copy"))
+        self.store.append_transcript_events([TranscriptEvent(
+            session_id="database-copy-gc", seq=1, event_type="turn_completed",
+            payload={"text": "captured cold payload " * 2000},
+        )])
+        copying, release = threading.Event(), threading.Event()
+        original = self.service._online_sqlite_backup
+        results, failures = [], []
+        def copy(target, **kwargs):
+            copying.set()
+            if not release.wait(5):
+                raise RuntimeError("isolated database copy not released")
+            return original(target, **kwargs)
+        def backup():
+            results.append(self.service.run_backup(idempotency_key="database-copy-gc"))
+        def mutate():
+            try:
+                self.store.create_card(CardCreate(title="written during database copy"))
+                self.store.transcripts.prune(["database-copy-gc"], keep_audit=False)
+            except Exception as exc:
+                failures.append(exc)
+        with patch.object(self.service, "_online_sqlite_backup", side_effect=copy):
+            worker = threading.Thread(target=backup)
+            writer = threading.Thread(target=mutate)
+            worker.start()
+            try:
+                self.assertTrue(copying.wait(5))
+                writer.start(); writer.join(2)
+                self.assertFalse(writer.is_alive(), "SQLite disk copy held writer locks")
+                self.assertTrue(list(self.store.transcripts.objects_dir.glob("*/*.zlib")))
+            finally:
+                release.set(); worker.join(15)
+                if writer.ident is not None:
+                    writer.join(5)
+        self.assertFalse(failures, failures)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(results[0].status, "success", results[0].failure_reason)
+        record = self.service.verify_backup(results[0].backup_id)
+        self.assertTrue(record.verified, record.verification_error)
+        self.assertNotEqual(record.manifest.durable_heads["default"], self.store.event_log.get_head("default"))
+        self.assertGreater(self.store.transcripts.collect_unreferenced_objects(), 0)
+
+    def test_missing_captured_cold_reference_fails_before_payload_copy_and_archive(self) -> None:
+        good = self._run("before-missing-cold")
+        self.store.append_transcript_events([TranscriptEvent(
+            session_id="missing-cold", seq=1, event_type="turn_completed",
+            payload={"text": "missing cold payload " * 2000},
+        )])
+        for path in self.store.transcripts.objects_dir.glob("*/*.zlib"):
+            path.unlink()  # Disposable fixture only; never alter live recovery data.
+        with patch.object(self.service, "_copy_file", wraps=self.service._copy_file) as copied, \
+             patch.object(self.service, "_archive", wraps=self.service._archive) as archived:
+            failed = self.service.run_backup(idempotency_key="missing-cold-preflight")
+        self.assertEqual(failed.status, "failed")
+        self.assertIn("transcript_object_missing", failed.failure_reason)
+        self.assertEqual(copied.call_count, 0)
+        self.assertEqual(archived.call_count, 0)
+        self.assertIn("snapshot", failed.phase_seconds)
+        self.assertEqual([row.backup_id for row in self.service.list_backups()], [good.backup_id])
+
+    def test_cold_pinning_releases_writer_locks_and_gc_resumes_after_pins(self) -> None:
+        self.store.append_transcript_events([TranscriptEvent(
+            session_id="pin-retention", seq=1, event_type="turn_completed",
+            payload={"text": "cold pin payload " * 2000},
+        )])
+        pinning, release = threading.Event(), threading.Event()
+        original = os.link
+        results = []
+        def link(*args, **kwargs):
+            pinning.set()
+            if not release.wait(5):
+                raise RuntimeError("isolated pin not released")
+            return original(*args, **kwargs)
+        def mutate():
+            self.store.create_card(CardCreate(title="written while pinning"))
+            self.store.transcripts.prune(["pin-retention"], keep_audit=False)
+        with patch("pa.backup.service.os.link", side_effect=link):
+            worker = threading.Thread(target=lambda: results.append(self.service.run_backup(idempotency_key="pin-retention")))
+            writer = threading.Thread(target=mutate)
+            worker.start()
+            try:
+                self.assertTrue(pinning.wait(5))
+                writer.start(); writer.join(2)
+                self.assertFalse(writer.is_alive(), "hard-link disk I/O held writer locks")
+                self.assertTrue(list(self.store.transcripts.objects_dir.glob("*/*.zlib")))
+            finally:
+                release.set(); worker.join(15)
+                if writer.ident is not None:
+                    writer.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(results[0].status, "success", results[0].failure_reason)
+        self.assertTrue(self.service.verify_backup(results[0].backup_id).verified)
+        self.assertEqual(self.store.transcripts.collect_unreferenced_objects(), 1)
+
+    def test_rollback_journal_snapshot_uses_safe_fallback_without_changing_mode(self) -> None:
+        self.store.close_thread_connection()
+        with _connect(self.settings.db_path) as conn:
+            self.assertEqual(conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0], "delete")
+        self._run("legacy-rollback-journal")
+        with _connect(self.settings.db_path) as conn:
+            self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0], "delete")
+        self.assertEqual(self.service._state.metrics["backup_snapshot_locked_sqlite_fallback_total"], 1)
+
     def test_reachable_event_graph_is_verified_and_missing_object_rejected(
         self,
     ) -> None:

@@ -17,6 +17,37 @@ from pa.domain.projection import CardProjection
 
 
 class TranscriptStorageTests(unittest.TestCase):
+    def test_nested_object_retention_releases_after_reader_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            store.append_transcript_events([TranscriptEvent(
+                session_id="retained", seq=1, event_type="output",
+                payload={"text": "cold bytes " * 2000},
+            )])
+            with self.assertRaisesRegex(RuntimeError, "reader failed"):
+                with store.transcripts.retain_objects():
+                    with store.transcripts.retain_objects():
+                        store.transcripts.prune(["retained"], keep_audit=False)
+                    self.assertEqual(store.transcripts.collect_unreferenced_objects(), 0)
+                    self.assertTrue(list(store.transcripts.objects_dir.glob("*/*.zlib")))
+                    raise RuntimeError("reader failed")
+            self.assertEqual(store.transcripts.collect_unreferenced_objects(), 1)
+            self.assertFalse(list(store.transcripts.objects_dir.glob("*/*.zlib")))
+
+    def test_object_retention_does_not_change_operation_deadline_tracking(self) -> None:
+        from pa.core.operation_budget import current_operation
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CardProjection(Path(tmp) / "pa.db")
+            def changed(_):
+                raise AssertionError("retention changed the existing operation deadline phase")
+            token = current_operation.set(SimpleNamespace(lock_wait=changed))
+            try:
+                with store.transcripts.retain_objects():
+                    self.assertEqual(store.transcripts.collect_unreferenced_objects(), 0)
+            finally:
+                current_operation.reset(token)
+            self.assertEqual(store.transcripts._object_readers, 0)
+
     def test_status_never_starts_diagnostics_and_reports_snapshot_age(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = CardProjection(Path(tmp) / "pa.db")

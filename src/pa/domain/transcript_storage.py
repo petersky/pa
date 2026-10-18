@@ -84,6 +84,7 @@ class TranscriptStorage:
         self.objects_dir = metadata_db_path.parent / "transcript_objects"
         self.objects_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._object_readers = 0
         self.performance = PerformanceMetrics()
         with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -474,15 +475,35 @@ class TranscriptStorage:
         self.collect_unreferenced_objects()
         return changed
 
+    @contextmanager
+    def retain_objects(self) -> Iterator[None]:
+        """Keep immutable bytes alive while a reader captures its own pins.
+
+        This does not hold the publication lock across reader disk I/O. Pruning
+        can still commit metadata; GC leaves the bytes for its next normal pass.
+        """
+        with measured_lock(self._lock, name="transcript.write", track_deadline=False):
+            self._object_readers += 1
+        try:
+            yield
+        finally:
+            with measured_lock(self._lock, name="transcript.write", track_deadline=False):
+                self._object_readers -= 1
+
     def collect_unreferenced_objects(self) -> int:
         # Shares the publication lock so GC cannot remove newly published
         # bytes before reference commit. Walk outside that lock, then recheck
         # only each bounded batch; never hydrate the entire live object index.
         removed = 0
+        with measured_lock(self._lock, name="transcript.write", track_deadline=False):
+            if self._object_readers:
+                return removed
         paths = self.objects_dir.glob("*/*.zlib")
         while batch := list(islice(paths, 128)):
             digests = [path.parent.name + path.stem for path in batch]
             with measured_lock(self._lock, name="transcript.write"), self._conn() as conn:
+                if self._object_readers:
+                    return removed
                 marks = ",".join("?" for _ in digests)
                 live = {row[0] for row in conn.execute(
                     f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
