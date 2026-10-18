@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T22:32:56.591960+00:00",
-  "completion": "OPEN;593findings/97concerns. Every prior592row preserved unchanged. Complete64name/17family slow-tail publication retained; original543CI decimal-comparison failure reproduced and corrected test-only, full newhead CI pending. Source target53b42/runtime0d6638 unchanged, pending interaction outstanding. Latest real mixed1warning/8universal500ms+3premeasurement and all native/peer/log/acceptance gaps remainopen.",
+  "as_of": "2026-10-18T22:35:05.191275+00:00",
+  "completion": "OPEN;593findings/97concerns, every priorrow retained. Complete64name/17family slow-tail inventory and originalCI failures preserved. Corrected543test-only arithmetic proof passes2existingtests; finalheadCI pending. Completed separate100iteration per-SQLite-call diagnostic retains9600ordered+12511cold events/0operation failures, but2workerwarnings/11universal500ms observations+3premeasurement; no causal or performance acceptance. Earlier uninstrumented542stage1/8 retained. Immutable53b42runtime decision remainsoutstanding/current0d unchanged; all peer/log/backup/native/independent acceptance gaps remainopen.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -132,7 +132,8 @@
     "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
     "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
     "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
-    "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json"
+    "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
+    "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -215688,6 +215689,11 @@
   "ci543_decimal_followup_stage": {
     "artifact": "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
     "sha256": "440ad079b37e6530b8743a004768410a4ad3418beefa262cbe00c5a822ade513",
+    "resolution": "open"
+  },
+  "sqlite_call_attribution_stage": {
+    "artifact": "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
+    "sha256": "25d17eae62249f6ddc2783c2434631d4a3dc55a59c4b1e1510bdeaa54db7b0ce",
     "resolution": "open"
   }
 }

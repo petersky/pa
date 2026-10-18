@@ -1,3 +1,23 @@
+# Completed native-call attribution; residuals retained — 2026-10-18
+
+All **593 findings and 97 concerns remain open**, with every row unchanged. The separate [complete100iteration per-SQLite-call numeric diagnostic](benchmarks/systemic-sqlite-call-attribution-20261018.json) finished:438sourcefiles/38templates/29runtime modulehashes match the existing source;9600orderedactive and12511cold content hashes are preserved;0operation failures/timeouts/rejections. The113.445s measurement has **2workerwarnings/11universal500ms observations+3premeasurement slow records**. Its numeric wrappers add overhead, so it is not a paired speedup, rollout or performance acceptance result. The earlier uninstrumented source542stage1warning/8observations and every prior stage remain separate and retained. Earlier artifact's running status is historical, not overwritten.
+
+The527.415ms transcript-message-page warning has525.489ms worker service/174.913ms threadCPU. Its5fetchall calls take433.740ms wall/96.219ms CPU;7execute calls take25.747ms wall/14.407ms CPU. The708.558ms reconcile warning has703.860ms service/61.012ms CPU: oneexecute takes511.184ms wall/4.014ms CPU inside an outermost projection.mutation hold525.182ms. Nested holds overlap and cannot be summed. No busyfailure is recorded; successful busy/native/scheduler/GIL/disk cause and exact statement role remainunverified. This is narrower attribution, not proof that each warning is a different slow query. None of the selected worstworker topcalls overlaps the26retainedGCevents>=10ms (all fit the64event window); shortcollections outside thelast256window remainunknown, so this is not blanketGC exclusion.
+
+Startup remains separately slow: OpenAPI685.061ms wall/663.547ms CPU; concurrent refread service0.534ms with754.146ms completiondelivery and followupread service0.093ms with753.136ms delivery. They are not slowSQL evidence. Full call buckets for24named operations, worstworker timelines, GC/lock observations, all raw latency samples and the7274-record verified incremental-journal hash/observer overhead are retained in JSON. No SQL, parameters or row bodies are captured.
+
+| Residual timer | n | p50 ms | p95 ms | p99 ms | max ms | observations>=500ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `sync.reconcile_head` | 100 | 55.762 | 184.196 | 321.726 | 711.898 | 1 |
+| `/api/agent/history/session-0?limit=64&message_boundaries=true` | 100 | 192.645 | 456.659 | 526.296 | 636.632 | 4 |
+| `sync.object_collect` | 10 | 412.402 | 1605.046 | 1605.046 | 1605.046 | 4 |
+| `/fleet` | 100 | 118.444 | 278.853 | 463.806 | 753.615 | 1 |
+| `maintenance.run` | 1 | 18731.252 | 18731.252 | 18731.252 | 18731.252 | 1 |
+
+The first four residuals are individual source fixture timers; maintenance.run is one inclusive background sweep, not an individual query or HTTP request. All remain disclosed. Exact53b42 activation approval is still outstanding; this PR changes documentation and one reproduced decimal-comparison test, leaving application source/dependencies and the proposed runtime target unchanged. No install/restart, backup mutation, duplicate worker, timeout increase or acceptance claim. Existing backup owner retains prospective work and explicit historical-gap disclosure; original archives/history and independent requirements remain intact.
+
+## Preserved earlier inventory and failures
+
 # Exact decimal timing comparison and continued attribution — 2026-10-18
 
 All **593 findings and 97 concerns remain open**; every prior592row is unchanged. The PR now includes one test-only numerical correction alongside the complete64-operation/17-family inventory below. **Application source, dependencies, warning/deadline thresholds and the immutable53b42 runtime proposal are unchanged.** [Full original failure, deterministic reproduction, existing tests and continuing attribution](benchmarks/systemic-ci543-decimal-followup-20261018.json).
