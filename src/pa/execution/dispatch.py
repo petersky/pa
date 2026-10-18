@@ -2338,7 +2338,7 @@ class DispatchStore:
     def latest_by_card(
         self, card_ids: set[str], *, realm_id: str | None = None
     ) -> dict[str, DispatchRecord]:
-        """Return one useful dispatch per requested card without copying history."""
+        """Return detached full snapshots of the indexed useful card dispatches."""
         self._require_readable()
         if not card_ids:
             return {}
@@ -2352,6 +2352,29 @@ class DispatchStore:
                     realm_id is None
                     or self._latest_card_records[card_id].realm_id == realm_id
                 )
+            }
+
+    def active_public_by_card(
+        self, card_ids: set[str], *, realm_id: str | None = None
+    ) -> dict[str, dict[str, Any]]:
+        """Project active card hints without copying discarded terminal history.
+
+        Use the same active-preferred index as ``latest_by_card`` and retain
+        every public field for selected active records. Detach the few direct
+        request-payload references added by ``public_dict`` before releasing
+        the index lock; presentation callers must not mutate ledger state.
+        """
+        self._require_readable()
+        if not card_ids:
+            return {}
+        self._yield_to_index_writer()
+        with measured_lock(self._index_lock):
+            return {
+                card_id: copy.deepcopy(record.public_dict())
+                for card_id in card_ids
+                if (record := self._latest_card_records.get(card_id)) is not None
+                and record.state not in TERMINAL_DISPATCH_STATES
+                and (realm_id is None or record.realm_id == realm_id)
             }
 
     def presentation_card_ids(self, *, realm_id: str) -> set[str]:

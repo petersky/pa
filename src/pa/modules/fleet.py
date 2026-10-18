@@ -3454,12 +3454,11 @@ def _fleet_context(request: Request) -> dict:
     dispatch_store = ctx.services.get("dispatch_store")
     active_card_dispatches = {}
     if dispatch_store:
-        latest_dispatches = dispatch_store.latest_by_card({card.id for card in cards})
-        for card_id, record in latest_dispatches.items():
-            if record.state not in TERMINAL_DISPATCH_STATES:
-                active_card_dispatches[card_id] = canonicalize_dispatch_public(
-                    ctx, record
-                )
+        public_dispatches = dispatch_store.active_public_by_card({card.id for card in cards})
+        active_card_dispatches = {
+            card_id: canonicalize_dispatch_public(ctx, public, public=public)
+            for card_id, public in public_dispatches.items()
+        }
     return {
         "fleet_instances": instances,
         "fleet_overview": build_overview(ctx, instances, routes),

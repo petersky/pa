@@ -48,10 +48,9 @@ def test_fleet_context_keeps_active_dispatch_hints_without_reading_card_bodies(t
     fleet = FleetRegistry(tmp_path, settings.fleet_id)
     fleet.register_self('local', 'local', 'http://fixture', zone=settings.zone)
     expected = fields(store.list_cards(realm_id='default'))
-    active = SimpleNamespace(state='running')
-    terminal = SimpleNamespace(state='completed')
+    active = {'state': 'running', 'dispatch_id': 'active', 'session_id': 's'}
     hints = Mock()
-    hints.latest_by_card.return_value = {expected[0][0]: active, expected[1][0]: terminal}
+    hints.active_public_by_card.return_value = {expected[0][0]: active}
     ctx = AppContext(settings=settings, store=store, hooks=HookBus(), services={
         'fleet_registry': fleet, 'membership': MembershipStore(tmp_path),
         'peer_table': PeerTable(tmp_path), 'dispatch_store': hints})
@@ -64,5 +63,6 @@ def test_fleet_context_keeps_active_dispatch_hints_without_reading_card_bodies(t
         context = _fleet_context(request)
     assert fields(context['cards']) == expected
     assert context['active_card_dispatches'] == {expected[0][0]: hint}
-    hints.latest_by_card.assert_called_once_with({card[0] for card in expected})
-    canonical.assert_called_once_with(ctx, active)
+    hints.active_public_by_card.assert_called_once_with({card[0] for card in expected})
+    hints.latest_by_card.assert_not_called()
+    canonical.assert_called_once_with(ctx, active, public=active)
