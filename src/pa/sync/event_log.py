@@ -1711,30 +1711,41 @@ class EventLog:
         # of each reached indexed boundary, never unrelated local descendants.
         tip = self.get_commit(head)
         ready = self.index.indexed_head(tip.realm_id) if tip else None
-        known = self.index.ancestors(ready) if ready else None
-        if known and head in known:
-            # Another builder may have published this head after our first
-            # lookup. It is not an empty novel suffix: return its exact ancestry.
-            exact = known if ready == head else self.index.ancestors(head)
-            if exact is not None:
-                return exact
-            known = None
-        if known:
-            found: set[str] = set()
-            boundaries: set[str] = set()
-            for commit_hash, commit in self._iter_commits_parent_first(head, stop=known, validated_head=tip):
-                found.add(commit_hash)
-                boundaries.update(parent for parent in commit.parent_hashes if parent in known)
-            for boundary in boundaries:
-                prior = self.index.ancestors(boundary)
-                if prior is None:
-                    # A concurrent derived-index reset is not ancestry evidence.
-                    break
-                found.update(prior)
-                if len(found) > MAX_HISTORY_COMMITS:
-                    raise EventHistoryLimitError(len(found), MAX_HISTORY_COMMITS)
-            else:
-                return found
+        if ready:
+            # Discovery only needs membership. Materialize the exact reached
+            # boundaries below, without also copying the ready tip's complete
+            # ancestry (which can contain unrelated local descendants).
+            with self.index.ready_ancestor_membership(ready) as known:
+                if known is not None:
+                    if head in known:
+                        # Another builder published this head after our first
+                        # lookup. Return its exact ancestry, not an empty suffix.
+                        exact = self.index.ancestors(head)
+                        if exact is not None:
+                            return exact
+                    else:
+                        found: set[str] = set()
+                        boundaries: set[str] = set()
+                        for commit_hash, commit in self._iter_commits_parent_first(
+                            head, stop=known, validated_head=tip
+                        ):
+                            found.add(commit_hash)
+                            boundaries.update(
+                                parent for parent in commit.parent_hashes
+                                if parent in known
+                            )
+                        for boundary in boundaries:
+                            prior = self.index.ancestors(boundary)
+                            if prior is None:
+                                # A concurrent reset is not ancestry evidence.
+                                break
+                            found.update(prior)
+                            if len(found) > MAX_HISTORY_COMMITS:
+                                raise EventHistoryLimitError(
+                                    len(found), MAX_HISTORY_COMMITS
+                                )
+                        else:
+                            return found
         return {
             commit_hash for commit_hash, _ in self._iter_commits_parent_first(head, validated_head=tip)
         }
