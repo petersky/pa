@@ -1,5 +1,7 @@
 """Cold-object traversal preserves pins, late publication and path matching."""
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,101 @@ def orphaned(storage, count=257):
     with storage.retain_objects():
         assert storage.prune(["expired"], keep_audit=False) == count
     return texts
+
+
+def after_first_live_query(storage, monkeypatch, action):
+    original = storage._conn
+    pending = [True]
+
+    @contextmanager
+    def observed():
+        selected = []
+        with original() as conn:
+            conn.set_trace_callback(lambda sql: selected.append(True) if sql.startswith(
+                "SELECT hash FROM transcript_objects WHERE ref_count>0") else None)
+            try:
+                yield conn
+            finally:
+                conn.set_trace_callback(None)
+        if selected and pending[0]:
+            pending[0] = False
+            action()
+
+    monkeypatch.setattr(storage, "_conn", observed)
+
+
+@pytest.mark.parametrize("pin", [False, True])
+def test_speculative_absence_cannot_authorize_unlink(tmp_path, monkeypatch, pin):
+    storage = storage_at(tmp_path / "late-protection")
+    text = orphaned(storage, 1)[0]
+    reader = storage.retain_objects()
+    action = reader.__enter__ if pin else lambda: storage.append([event("rescued", 1, text)])
+    after_first_live_query(storage, monkeypatch, action)
+    try:
+        assert storage.collect_unreferenced_objects() == 0
+        assert len(list(storage.objects_dir.glob("*/*.zlib"))) == 1
+        if not pin:
+            assert storage.list("rescued")[0].payload == {"text": text}
+    finally:
+        if pin:
+            reader.__exit__(None, None, None)
+    if pin:
+        assert storage.collect_unreferenced_objects() == 1
+
+
+def test_stale_positive_only_defers_collection_until_next_pass(tmp_path, monkeypatch):
+    storage = storage_at(tmp_path / "stale-positive")
+    storage.append([event("expired", 1, "cold fixture " * 300)])
+
+    def release():
+        with storage.retain_objects():
+            assert storage.prune(["expired"], keep_audit=False) == 1
+
+    after_first_live_query(storage, monkeypatch, release)
+    assert storage.collect_unreferenced_objects() == 0
+    assert len(list(storage.objects_dir.glob("*/*.zlib"))) == 1
+    assert storage.collect_unreferenced_objects() == 1
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+def test_speculation_during_uncommitted_publication_rechecks_after_lock(tmp_path, monkeypatch, rollback):
+    storage = storage_at(tmp_path / "uncommitted")
+    enumerating, published, release, speculated = (threading.Event() for _ in range(4))
+    original_glob, original_prepare = module.iglob, storage._prepare_object
+
+    def enumerated(*args, **kwargs):
+        # Let GC pass its initial reader-pin check before starting the writer.
+        enumerating.set()
+        assert published.wait(5)
+        yield from original_glob(*args, **kwargs)
+
+    def prepare(*args):
+        result = original_prepare(*args)
+        published.set()
+        assert release.wait(5)
+        if rollback:
+            raise ValueError("disposable publication failure")
+        return result
+
+    monkeypatch.setattr(module, "iglob", enumerated)
+    monkeypatch.setattr(storage, "_prepare_object", prepare)
+    after_first_live_query(storage, monkeypatch, speculated.set)
+    with ThreadPoolExecutor(2) as pool:
+        collector = pool.submit(storage.collect_unreferenced_objects)
+        try:
+            assert enumerating.wait(5)
+            writer = pool.submit(storage.append, [event("new", 1, "cold fixture " * 300)])
+            assert published.wait(5) and speculated.wait(5)
+            assert not collector.done()
+        finally:
+            release.set()
+        if rollback:
+            with pytest.raises(ValueError, match="disposable publication failure"):
+                writer.result(5)
+        else:
+            writer.result(5)
+        assert collector.result(5) == int(rollback)
+    assert len(storage.list("new")) == int(not rollback)
 
 
 @pytest.mark.parametrize("linked", [False, True])

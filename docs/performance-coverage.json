@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T10:05:00.430783+00:00",
-  "completion": "OPEN:554 rows/63 concerns, all553 earlier rows preserved. PR516 integrated/exactloaded;95GET all200 but3>=500ms, cached maintenance32.516s/GC5.720s/VACUUM7.848s.82primary/1diagnostic/26routes/43slowrecords;workspace1failure. Benchmark boundary correction tested, not yet integrated. No whole-PA acceptance; normal independent scheduler/17d034a6 unchanged, backup0331 separate, DB89957 originalscope only.",
+  "as_of": "2026-10-18T10:22:20.676947+00:00",
+  "completion": "OPEN:555rows64concerns; all554priorrows unchanged, current status overrides explicit. NewGCprefilter local only, all warnings/violations/failures/outliers retained in stage. PR517 benchmark correction integrated/mainCI5green; running productbcd5. WholePA/backup/peer/log/independentacceptance remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -206757,6 +206757,207 @@
       "resolution": "open",
       "next_actor": "this card/session",
       "next_action": "Ready PR, durable supervisor, independent exact-head green integration/main CI; continue shared GC lock/SQL tails and all remaining representative acceptance requirements. No unchanged performance rerun merely to seek green."
+    },
+    {
+      "id": "concern:transcript-gc-live-publication-lock",
+      "kind": "concern",
+      "finding": "Wholly live cold-object query batches unnecessarily hold the append publication lock",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_fixture_lock_contention_live_share_unverified",
+      "cause": "Every128path live-reference query originally ran under publication lock; complete numeric disposable timelines show GC and append waiting on each other. Speculativepositive-only filtering keeps bytes while removing all-live batch lock ownership.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-gc-prefilter-20261018.json",
+        "summary": {
+          "baseline": {
+            "duration_seconds": 96.259,
+            "capture": {
+              "finished_monotonic": 491074.669150375,
+              "duration_ms": 24.282584025058895,
+              "scope": "Sequential resource/executor/storage snapshots after workload completion, before validation; not an atomic read. GC and warning collectors close at capture end."
+            },
+            "validation": {
+              "started_monotonic": 491074.669150375,
+              "finished_monotonic": 491078.763907,
+              "duration_ms": 4094.756625010632,
+              "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+            },
+            "warnings": {
+              "Slow off-loop operation": 4
+            },
+            "threshold_violations": {
+              "sqlite.execution_binding_materialize": 1,
+              "transcript.drain": 1,
+              "/api/agent/history/session-0?limit=64&message_boundaries=true": 3,
+              "sync.object_collect": 6,
+              "maintenance.run": 1
+            },
+            "failure_totals": {
+              "operation_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              },
+              "diagnostics_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              }
+            },
+            "gc": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 10611.193584,
+              "thread_cpu_ms": 908.085041,
+              "sqlite_calls": 12707,
+              "sqlite_rows": 12511,
+              "sqlite_statement_ms": 3801.8784732557833,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 5808.851956971921,
+              "python_lock_hold_ms": 3926.3510448508896,
+              "outer_lock_hold_ms": 3926.3510448508896
+            },
+            "retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 10929.432375,
+              "thread_cpu_ms": 1047.444208
+            },
+            "maintenance": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 20627.6225,
+              "thread_cpu_ms": 3854.764208
+            },
+            "event_loop": {
+              "samples": 600,
+              "latest_lag_ms": 9.628,
+              "p95_lag_ms": 20.622,
+              "max_lag_ms": 260.454,
+              "pre_window_lag_ms": {
+                "samples": 0,
+                "max": null,
+                "p50": null,
+                "p95": null,
+                "p99": null
+              }
+            },
+            "process_cpu_ms": 102344.886,
+            "disk_output_blocks": 0,
+            "transcript_retained_rows": 9600,
+            "retained_cold_verification": {
+              "events": 12511,
+              "unique_objects": 12511,
+              "all_compressed_content_hashes_verified": true,
+              "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+            },
+            "journal_records": 7274,
+            "journal_utc_range": [
+              "2026-10-18T10:14:48.205661+00:00",
+              "2026-10-18T10:17:51.510124+00:00"
+            ]
+          },
+          "candidate": {
+            "duration_seconds": 96.993,
+            "capture": {
+              "finished_monotonic": 491310.463598125,
+              "duration_ms": 23.7151249893941,
+              "scope": "Sequential resource/executor/storage snapshots after workload completion, before validation; not an atomic read. GC and warning collectors close at capture end."
+            },
+            "validation": {
+              "started_monotonic": 491310.463598125,
+              "finished_monotonic": 491314.629798,
+              "duration_ms": 4166.1998750059865,
+              "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+            },
+            "warnings": {
+              "Slow off-loop operation": 3
+            },
+            "threshold_violations": {
+              "sync.push_transaction": 1,
+              "sync.reconcile_head": 2,
+              "/api/agent/history/session-0?limit=64&message_boundaries=true": 3,
+              "sync.object_collect": 3,
+              "maintenance.run": 1
+            },
+            "failure_totals": {
+              "operation_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              },
+              "diagnostics_counter_deltas": {
+                "failed": 0,
+                "timed_out": 0,
+                "rejected": 0
+              }
+            },
+            "gc": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 7283.442708,
+              "thread_cpu_ms": 1095.157542,
+              "sqlite_calls": 12707,
+              "sqlite_rows": 12511,
+              "sqlite_statement_ms": 5728.137255238835,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_busy_failures": 0,
+              "python_lock_wait_ms": 138.76312505453825,
+              "python_lock_hold_ms": 0.014833000022917986,
+              "outer_lock_hold_ms": 0.014833000022917986
+            },
+            "retention": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 7615.811459,
+              "thread_cpu_ms": 1228.512709
+            },
+            "maintenance": {
+              "calls": 1,
+              "errors": 0,
+              "wall_ms": 18024.811375,
+              "thread_cpu_ms": 4091.781458
+            },
+            "event_loop": {
+              "samples": 600,
+              "latest_lag_ms": 3.617,
+              "p95_lag_ms": 20.995,
+              "max_lag_ms": 204.129,
+              "pre_window_lag_ms": {
+                "samples": 0,
+                "max": null,
+                "p50": null,
+                "p95": null,
+                "p99": null
+              }
+            },
+            "process_cpu_ms": 103139.067,
+            "disk_output_blocks": 0,
+            "transcript_retained_rows": 9600,
+            "retained_cold_verification": {
+              "events": 12511,
+              "unique_objects": 12511,
+              "all_compressed_content_hashes_verified": true,
+              "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+            },
+            "journal_records": 7274,
+            "journal_utc_range": [
+              "2026-10-18T10:18:45.721544+00:00",
+              "2026-10-18T10:21:47.377895+00:00"
+            ]
+          }
+        },
+        "prototype_regressions_retained": true
+      },
+      "fix_or_existing_owner": "This systemic card/session. Every possible unlink retains fresh underlock reference/pin checks, original bounded128batch, native errors/refcounts/audit/transaction semantics.",
+      "implemented": "Local prefilter with no globalcache or SQLpredicate change. Potentially positive stale rows can only defer bytes to next pass; orphan-heavy extraquery costs documented.",
+      "merged": [],
+      "deployed": "Unverified local candidate; actualrunningbcd5 has original locking.",
+      "retested": "10focused,67broader,65backup+16subtests,4nativeSQLite contracts pass. Earlierfixture-only prototype36contracts pass. Initial build sandboxfailure retained; approvednative retry succeeded. No other own tests/probes overlapped either100iteration timed case. Every failed/outlier stage retained; no rerun to seek green.",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "ReadyPR/durablesupervisor/exactheadindependentgreen/mainCI; safe exactactivation and representative retest, then all remaining rows/normal independent acceptance. Do not infer wholePA acceptance from a lock improvement."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -207413,5 +207614,213 @@
     },
     "source_stage": "PR516 integrated and exactloaded; ordinary local GET/maintenance/runtime observations fail target. Benchmark boundary correction local, no PR yet.",
     "all_previous_rows_preserved": true
+  },
+  "gc_prefilter_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-prefilter-20261018.json",
+    "sha256": "c524d0171a6522201b07b99995da1a46a7d4a2744e2d84d4c250f1d9786c3fa1",
+    "summary": {
+      "baseline": {
+        "duration_seconds": 96.259,
+        "capture": {
+          "finished_monotonic": 491074.669150375,
+          "duration_ms": 24.282584025058895,
+          "scope": "Sequential resource/executor/storage snapshots after workload completion, before validation; not an atomic read. GC and warning collectors close at capture end."
+        },
+        "validation": {
+          "started_monotonic": 491074.669150375,
+          "finished_monotonic": 491078.763907,
+          "duration_ms": 4094.756625010632,
+          "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+        },
+        "warnings": {
+          "Slow off-loop operation": 4
+        },
+        "threshold_violations": {
+          "sqlite.execution_binding_materialize": 1,
+          "transcript.drain": 1,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 3,
+          "sync.object_collect": 6,
+          "maintenance.run": 1
+        },
+        "failure_totals": {
+          "operation_counter_deltas": {
+            "failed": 0,
+            "timed_out": 0,
+            "rejected": 0
+          },
+          "diagnostics_counter_deltas": {
+            "failed": 0,
+            "timed_out": 0,
+            "rejected": 0
+          }
+        },
+        "gc": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 10611.193584,
+          "thread_cpu_ms": 908.085041,
+          "sqlite_calls": 12707,
+          "sqlite_rows": 12511,
+          "sqlite_statement_ms": 3801.8784732557833,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 5808.851956971921,
+          "python_lock_hold_ms": 3926.3510448508896,
+          "outer_lock_hold_ms": 3926.3510448508896
+        },
+        "retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 10929.432375,
+          "thread_cpu_ms": 1047.444208
+        },
+        "maintenance": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 20627.6225,
+          "thread_cpu_ms": 3854.764208
+        },
+        "event_loop": {
+          "samples": 600,
+          "latest_lag_ms": 9.628,
+          "p95_lag_ms": 20.622,
+          "max_lag_ms": 260.454,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "process_cpu_ms": 102344.886,
+        "disk_output_blocks": 0,
+        "transcript_retained_rows": 9600,
+        "retained_cold_verification": {
+          "events": 12511,
+          "unique_objects": 12511,
+          "all_compressed_content_hashes_verified": true,
+          "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+        },
+        "journal_records": 7274,
+        "journal_utc_range": [
+          "2026-10-18T10:14:48.205661+00:00",
+          "2026-10-18T10:17:51.510124+00:00"
+        ]
+      },
+      "candidate": {
+        "duration_seconds": 96.993,
+        "capture": {
+          "finished_monotonic": 491310.463598125,
+          "duration_ms": 23.7151249893941,
+          "scope": "Sequential resource/executor/storage snapshots after workload completion, before validation; not an atomic read. GC and warning collectors close at capture end."
+        },
+        "validation": {
+          "started_monotonic": 491310.463598125,
+          "finished_monotonic": 491314.629798,
+          "duration_ms": 4166.1998750059865,
+          "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."
+        },
+        "warnings": {
+          "Slow off-loop operation": 3
+        },
+        "threshold_violations": {
+          "sync.push_transaction": 1,
+          "sync.reconcile_head": 2,
+          "/api/agent/history/session-0?limit=64&message_boundaries=true": 3,
+          "sync.object_collect": 3,
+          "maintenance.run": 1
+        },
+        "failure_totals": {
+          "operation_counter_deltas": {
+            "failed": 0,
+            "timed_out": 0,
+            "rejected": 0
+          },
+          "diagnostics_counter_deltas": {
+            "failed": 0,
+            "timed_out": 0,
+            "rejected": 0
+          }
+        },
+        "gc": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 7283.442708,
+          "thread_cpu_ms": 1095.157542,
+          "sqlite_calls": 12707,
+          "sqlite_rows": 12511,
+          "sqlite_statement_ms": 5728.137255238835,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 138.76312505453825,
+          "python_lock_hold_ms": 0.014833000022917986,
+          "outer_lock_hold_ms": 0.014833000022917986
+        },
+        "retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 7615.811459,
+          "thread_cpu_ms": 1228.512709
+        },
+        "maintenance": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 18024.811375,
+          "thread_cpu_ms": 4091.781458
+        },
+        "event_loop": {
+          "samples": 600,
+          "latest_lag_ms": 3.617,
+          "p95_lag_ms": 20.995,
+          "max_lag_ms": 204.129,
+          "pre_window_lag_ms": {
+            "samples": 0,
+            "max": null,
+            "p50": null,
+            "p95": null,
+            "p99": null
+          }
+        },
+        "process_cpu_ms": 103139.067,
+        "disk_output_blocks": 0,
+        "transcript_retained_rows": 9600,
+        "retained_cold_verification": {
+          "events": 12511,
+          "unique_objects": 12511,
+          "all_compressed_content_hashes_verified": true,
+          "scope": "Postmeasurement verification of every retained cold object; outside workload samples/counter snapshot, adds local read/decompression work."
+        },
+        "journal_records": 7274,
+        "journal_utc_range": [
+          "2026-10-18T10:18:45.721544+00:00",
+          "2026-10-18T10:21:47.377895+00:00"
+        ]
+      }
+    },
+    "source_status": "Local candidate, not yet PR/integrated/installed/loaded. PR517 benchmark-only source correction is separately integrated; installed/running product remains exactbcd5.",
+    "limits": "The all-live prefilter avoids publication-lock contention but retains SQLite reads and may defer bytes on a concurrent positive-to-absent reference transition until next pass. Fresh locked query and pin check authorize every possible unlink; initial pin check unchanged. Later wholly-live batches may continue scanning if a pin arrives, with no unlink. Orphan-heavy sets pay an extra bounded query; prototype orphan median and concurrent max wall regressions retained.12511cold object count does not reproduce417MB/318MB live databases, session distribution or host load. Only synthetic providers/peers, local fixture APIs. Parent spans include children, API calls include row fetches, nonCPU wall is not physicalIO/GIL/busy wait. Logical blocks/fsync/API counters are not physical device bytes. Runtime process/window values include boot/seeding; deltas and explicit samples are separated from sequential capture/validation. Existing runtime warning overrides and sampled500ms target remain distinct."
+  },
+  "current_row_status_overrides": {
+    "concern:benchmark-validation-boundary": {
+      "merged": [
+        "https://github.com/petersky/pa/pull/517"
+      ],
+      "head": "c1f5ba0b613a98ba694708ab7547892a00b51a69",
+      "merge": "9bffbedfd94fe1118eeebbfe98945af88a02fd9c",
+      "watch": "726a438a-2102-4872-a6a6-690bd92f656f",
+      "head_ci": 39117962293,
+      "main_ci": 39118192232,
+      "status": "5terminalSUCCESS each;437productfiles unchanged. Benchmark-only correction used in both newcases, all boundary assertions pass; not runtime activation or acceptance."
+    },
+    "concern:transcript-gc-path-materialization": {
+      "merged": [
+        "https://github.com/petersky/pa/pull/516"
+      ],
+      "head": "ed78f15afa8b334743bbb932e78e3e4b31c6fcfb",
+      "merge": "bcd5c690c334c1a98246a3550048c21094de1d84",
+      "watch": "64b86dd3-84ca-4829-8ce6-e7f6e5010889",
+      "status": "Exact bcd5/package2c2c/PID53309/startup7164 loaded.95GET all200 but3>=500ms; cached startupGC5.720s; wholeacceptance open. Current uncommitted prefilter is separate."
+    }
   }
 }
