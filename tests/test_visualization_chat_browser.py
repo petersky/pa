@@ -36,6 +36,12 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
                 await asyncio.sleep(.05)
             pytest.fail("Browser condition timed out: "+expression+"\n"+str(await page.evaluate("document.body.innerText.slice(-3000)")))
 
+        frames_ready = (
+            "document.querySelectorAll('.acw-visualization iframe').length===3 && "
+            "[...document.querySelectorAll('.acw-visualization iframe')].every("
+            "f=>f.parentElement.querySelector('[role=status]').textContent==='Interactive preview loaded')"
+        )
+
         async def frame(expression, index=0):
             # Debugger-only inspection; the application cannot traverse the opaque iframe.
             tree = await page.command("DOM.getDocument",{"depth":-1,"pierce":True})
@@ -84,7 +90,7 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
         assert await page.evaluate("[...document.querySelectorAll('.acw-visualization')].some(e=>e.textContent.includes('reference is invalid'))")
         await wait_for("[...document.querySelectorAll('.acw-visualization')].some(e=>e.textContent.includes('artifact is unavailable'))")
         await wait_for("[...document.querySelectorAll('.acw-visualization')].some(e=>e.textContent.includes('do not have access'))")
-        await wait_for("[...document.querySelectorAll('.acw-visualization iframe')].every(f=>f.parentElement.querySelector('[role=status]').textContent==='Interactive preview loaded')")
+        await wait_for(frames_ready)
         assert await page.evaluate("[...document.querySelectorAll('.acw-visualization iframe')].every(f=>f.getAttribute('sandbox')==='allow-scripts')")
         assert await frame("document.querySelector('[data-variant]:not([hidden])').dataset.variant") == "Action rows"
         await page.evaluate("document.querySelector('.acw-visualization').scrollIntoView({block:'start'})")
@@ -168,7 +174,8 @@ async def test_real_chat_visualization_controls_state_reload_and_isolation(opera
         assert await page.evaluate("document.activeElement.textContent") == "Open full size"
         # Reload with no originating file/process, then a second isolated viewer profile.
         await page.navigate_and_wait(base+"/agent?session=viz-session")
-        await wait_for("document.querySelectorAll('.acw-visualization iframe').length===3")
+        # Element presence precedes the srcdoc document/bridge becoming ready.
+        await wait_for(frames_ready)
         assert await frame("window.openai.widgetState.privateContent.density") == "Compact"
         assert await frame("[...document.querySelectorAll('.pa-machine')].every(e=>e.hidden)")
         assert await frame("window.openai.widgetState.privateContent.density",2)=="Compact"

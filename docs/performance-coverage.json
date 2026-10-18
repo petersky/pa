@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T19:25:25.435921+00:00",
-  "completion": "OPEN;578retainedfindings/82concerns. Exact547sourcefixture preserves9600ordered events/12511coldobjects with0workerwarnings/failures/timeouts but5thresholdviolations(messagehistory1,objectcollection3,maintenance1). All prior source/live/CI failures retained; no deployment/restart or wholeacceptance.",
+  "as_of": "2026-10-18T19:43:32.591794+00:00",
+  "completion": "OPEN;580findings/84concerns. All prior578rows/owners/actions unchanged. PR533 integrated but originalmainCI39159151624 failed browser readiness; narrowtestfix pendingnewintegration. Healthbatchprototype unimplemented/fourworkerwarnings. Existingfive mixed/four liveFleetviolations and everyother acceptance criterion remain open; no deployment/restart.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -118,7 +118,9 @@
     "docs/benchmarks/systemic-current-process-20261018.json",
     "docs/benchmarks/systemic-fleet-config-20261018.json",
     "docs/benchmarks/systemic-fleet-config-mixed-20261018.json",
-    "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json"
+    "docs/benchmarks/systemic-gc-positive-aggregate-probe-20261018.json",
+    "docs/benchmarks/systemic-ci533-visualization-readiness-20261018.json",
+    "docs/benchmarks/systemic-health-reference-probe-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -208837,6 +208839,206 @@
       "report": "a6e1c455-6478-4144-bd3c-1aa8f091cf23 revision1",
       "next_actor": "this same systemic session",
       "next_action": "Preserve failure; require newexactheadallgreen and investigate recurrence with bounded phase/host evidence, never infer fixed from isolatedpass."
+    },
+    {
+      "id": "concern:ci533-visualization-reload-readiness",
+      "kind": "concern",
+      "finding": "Main CI resolves a visualization child document after reload before its ready signal",
+      "family": "browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "Fixture readiness gap confirmed from source. Detached document observed in CI; exact browser scheduling and production applicability are unverified. No same-cause claim for fork fetch stalls or earlier PR526 browser failures.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ci533-visualization-readiness-20261018.json",
+        "sha256": "92b95b6842f65f25b914ca7ab9373adde624d2ded8f6f94b463b9eae8489a599",
+        "failed_main": {
+          "CI": 39159151624,
+          "head": "a89284fd57f219aa7b2bb8b64d5c919de7a474fd",
+          "job": 117768573439,
+          "conclusion": "failure",
+          "attempt": 1,
+          "failed_case": "tests/test_visualization_chat_browser.py::test_real_chat_visualization_controls_state_reload_and_isolation",
+          "error": "pa.browser.cdp.CdpError: Node with given id does not belong to the document",
+          "positions": [
+            "tests/test_visualization_chat_browser.py:172",
+            "frame helper:50",
+            "src/pa/browser/cdp.py:92"
+          ],
+          "summary": "1failed/945passed/1skipped/491subtests in117.18s;other4jobs succeeded",
+          "log_sha256": "18b955033e8c1fbb4b2fa56477072622569718be150e7c3ad8677694b837d83a",
+          "raw_not_published": "May contain fixture credentials; sanitized failure metadata only.",
+          "report": "6eaebfe6-5d27-408b-9131-279d418ae628 revision1"
+        },
+        "tests": {
+          "browser": {
+            "summary": [
+              "1 passed, 349 warnings in 38.14s"
+            ],
+            "log_sha256": "48b8f052682232caf1085026189e1aa2432bb97f7976b6db084f1e9a7e58ac43",
+            "raw_not_published": true,
+            "rendered_warning_classes": {
+              "DeprecationWarning": 6
+            },
+            "warning_notice": "349 pytest warnings retained; six rendered aggregated deprecation headers are not349 distinct categories."
+          },
+          "backend": {
+            "summary": [
+              "6 passed in 12.75s"
+            ],
+            "log_sha256": "3eb8aecd8f537aa9c61b8df6d78c197aa4f6616ce6cbfecbfaa6cd890a9de449",
+            "raw_not_published": true
+          }
+        }
+      },
+      "fix_or_existing_owner": "This systemic session owns narrow CI readiness correction; existing fork owner retains separately reported repeated-navigation fetch stall. No competing product/UI recovery change.",
+      "implemented": "Reuse initial-navigation iframe-count plus authenticated ready-signal condition after reload, within the same15second wait. No arbitrary sleep, exception swallowing, stale-node retry or production recovery framework. All saved-state, controls and sandbox/isolation assertions remain.",
+      "merged": [],
+      "deployed": "No production change or deployment; test-only candidate.",
+      "retested": "One real managed-browser journey passed38.14s with349deprecation warnings;6related backend contracts passed12.75s in guarded temporary roots. Current main39159151624 remains failed until a new verified repair integrates; no same-head retry.",
+      "resolution": "open",
+      "report": "6eaebfe6-5d27-408b-9131-279d418ae628 revision1",
+      "next_actor": "this same systemic session",
+      "next_action": "Ready supervised follow-up PR; require exact-head CI/stable supervisor/independent validation/merge/new main verification. Keep original failure and production-cause uncertainty."
+    },
+    {
+      "id": "concern:transcript-health-reference-fetch-amplification",
+      "kind": "concern",
+      "finding": "Fresh transcript health materializes complete cold references through one observed fetch per row",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_disposable_amplification_confirmed_long_tail_cause_unverified",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-health-reference-probe-20261018.json",
+        "sha256": "a92039711c1ab51ccc5666af41861fd6292b819313c7a6bd8131f38c7ac91cc8",
+        "summary": {
+          "references": {
+            "baseline": {
+              "wall_ms": {
+                "samples": 8,
+                "max": 57.918,
+                "p50": 53.444,
+                "p95": 57.918,
+                "p99": 57.918
+              },
+              "cpu_ms": {
+                "samples": 8,
+                "max": 54.703,
+                "p50": 50.344,
+                "p95": 54.703,
+                "p99": 54.703
+              }
+            },
+            "batched": {
+              "wall_ms": {
+                "samples": 8,
+                "max": 35.61,
+                "p50": 31.63,
+                "p95": 35.61,
+                "p99": 35.61
+              },
+              "cpu_ms": {
+                "samples": 8,
+                "max": 32.183,
+                "p50": 30.414,
+                "p95": 32.183,
+                "p99": 32.183
+              }
+            }
+          },
+          "health": {
+            "baseline": {
+              "wall_ms": {
+                "samples": 8,
+                "max": 446.639,
+                "p50": 406.497,
+                "p95": 446.639,
+                "p99": 446.639
+              },
+              "cpu_ms": {
+                "samples": 8,
+                "max": 416.529,
+                "p50": 375.396,
+                "p95": 416.529,
+                "p99": 416.529
+              }
+            },
+            "batched": {
+              "wall_ms": {
+                "samples": 8,
+                "max": 407.461,
+                "p50": 360.626,
+                "p95": 407.461,
+                "p99": 407.461
+              },
+              "cpu_ms": {
+                "samples": 8,
+                "max": 399.293,
+                "p50": 349.738,
+                "p95": 399.293,
+                "p99": 399.293
+              }
+            }
+          },
+          "concurrent": {
+            "baseline": {
+              "wall_ms": {
+                "samples": 3,
+                "max": 2836.348,
+                "p50": 712.24,
+                "p95": 2836.348,
+                "p99": 2836.348
+              },
+              "cpu_ms": {
+                "samples": 3,
+                "max": 499.351,
+                "p50": 344.587,
+                "p95": 499.351,
+                "p99": 499.351
+              }
+            },
+            "batched": {
+              "wall_ms": {
+                "samples": 3,
+                "max": 671.541,
+                "p50": 534.105,
+                "p95": 671.541,
+                "p99": 671.541
+              },
+              "cpu_ms": {
+                "samples": 3,
+                "max": 506.424,
+                "p50": 309.242,
+                "p95": 506.424,
+                "p99": 506.424
+              }
+            }
+          }
+        },
+        "append_ms": {
+          "baseline": {
+            "samples": 3,
+            "max": 406.094,
+            "p50": 306.474,
+            "p95": 406.094,
+            "p99": 406.094
+          },
+          "batched": {
+            "samples": 3,
+            "max": 287.528,
+            "p50": 220.438,
+            "p95": 287.528,
+            "p99": 287.528
+          }
+        },
+        "worker_warnings": 4
+      },
+      "fix_or_existing_owner": "This systemic session; shared health cost linked to bounded backup scope without changing backup data/recovery ownership or original accepted database-card scope.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Unimplemented prototype only.",
+      "retested": "Complete reference/serial health equality and all12511cold+6144hot payloads/order verified. Concurrent batched health still exceeds500ms; no global latency acceptance.",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Consider bounded fetchmany128 source repair with missing-object/duplicate/null/empty/failure/fresh-health/concurrency regressions and mixed acceptance; retain all residuals and do not rerun unchanged probe for green."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -212133,5 +212335,16 @@
     ],
     "next_actor": "this same systemic session",
     "next_action": "Continue remainingnativeSQL/IO/GC/scheduling attribution and allcriteria; do notrerununchangedprobe orship aspassingfix. Preservebounded freshlocked deletionproof."
+  },
+  "post533_browser_readiness_stage": {
+    "artifact": "docs/benchmarks/systemic-ci533-visualization-readiness-20261018.json",
+    "sha256": "92b95b6842f65f25b914ca7ab9373adde624d2ded8f6f94b463b9eae8489a599",
+    "resolution": "open"
+  },
+  "health_reference_batch_probe_stage": {
+    "artifact": "docs/benchmarks/systemic-health-reference-probe-20261018.json",
+    "sha256": "a92039711c1ab51ccc5666af41861fd6292b819313c7a6bd8131f38c7ac91cc8",
+    "resolution": "open",
+    "implemented": false
   }
 }
