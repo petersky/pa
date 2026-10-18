@@ -548,7 +548,7 @@ class TranscriptStorage:
                 marks = ",".join("?" for _ in digests)
                 prelive = {row[0] for row in conn.execute(
                     f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
-                )}
+                ).fetchall()}
             candidates = [(path, digest) for path, digest in zip(batch, digests) if digest not in prelive]
             if not candidates:
                 continue
@@ -559,7 +559,7 @@ class TranscriptStorage:
                 marks = ",".join("?" for _ in digests)
                 live = {row[0] for row in conn.execute(
                     f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
-                )}
+                ).fetchall()}
                 for path, digest in zip(batch, digests):
                     if digest not in live:
                         (self.objects_dir / path).unlink(missing_ok=True)
