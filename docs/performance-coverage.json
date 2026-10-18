@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T05:47:55.470061+00:00",
-  "completion": "OPEN;539rows55concerns. Retention+nativeSQLcandidateunmerged/uninstalled;original85beCIcontradictionretained,newheadrequiresfreshgates. Actual5024smallwindowonly;allpriorfailures/outliers/gaps/owners retained.",
+  "as_of": "2026-10-18T06:10:14.292386+00:00",
+  "completion": "OPEN;540rows56concerns. Actual806bactivated/readretestedbutFleet524ms/startup3.84s/maintenance24.8s/othersremain. Startupmetricscandidateunmerged/uninstalled;allprioroutliers/failures/gaps/ownersretained.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -105,7 +105,8 @@
     "docs/benchmarks/systemic-template-cache-20261018.json",
     "docs/benchmarks/systemic-ancestry-membership-20261018.json",
     "docs/benchmarks/systemic-retention-batching-20261018.json",
-    "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json"
+    "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json",
+    "docs/benchmarks/systemic-startup-inventory-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -650,6 +651,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.reconcile_head",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -1881,6 +1888,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.transcript_append",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -2874,6 +2887,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.collect_garbage",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -3590,6 +3609,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview.sync",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -4238,6 +4263,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.recovery_sessions",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -4691,6 +4722,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.heartbeat_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -5212,6 +5249,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_due_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -5893,6 +5936,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.dispatch_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -6436,6 +6485,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.commit_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -6979,6 +7034,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview_cache_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -7728,6 +7789,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -8271,6 +8338,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "acp.wire_append",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -8724,6 +8797,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.agent_session_save",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -9267,6 +9346,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.sequence_allocate",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -9720,6 +9805,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.project_provision",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -10173,6 +10264,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.completion_evidence_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -10626,6 +10723,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.project_recovery_availability",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -10968,6 +11071,12 @@
       "retention_stage_followup": {
         "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
         "scope": "Source evidence and disposable fixture only; native measurement coverage gap and startup recovery obligations remain open."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.startup_state_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -11649,6 +11758,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.lease_renew",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -12310,6 +12425,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.ref_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -12747,6 +12868,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -13290,6 +13417,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.dispatch_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -13811,6 +13944,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.completion_pending_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -14316,6 +14455,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -14837,6 +14982,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.pending_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -15380,6 +15531,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.checkpoint_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -15901,6 +16058,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.followup_pending_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -16800,6 +16963,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.card_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -17253,6 +17422,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.json_decode",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -17898,6 +18073,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoff_completion",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -18530,6 +18711,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.session_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -19073,6 +19260,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview_cache_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -19526,6 +19719,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.repository_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -19979,6 +20178,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview_response_json",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -20500,6 +20705,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview.status",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -21420,6 +21631,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "notifications.list_page",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -21857,6 +22074,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -22308,6 +22531,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoffs_pending",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -22742,6 +22971,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "preferences.agent_auto_approve_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -23445,6 +23680,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "health.canonical_obligation",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -23898,6 +24139,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -24410,6 +24657,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -24863,6 +25116,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoffs_watchdog",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -25365,6 +25624,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "filesystem.github_credentials_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -25802,6 +26067,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.project_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -26320,6 +26591,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "goal.dispatch_lifecycle_index",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -26773,6 +27050,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoff_session",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -27326,6 +27609,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "pr_supervisor.response_json",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -27763,6 +28052,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.record_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -28265,6 +28560,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.agent_session_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -28573,6 +28874,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "pr_supervisor.github_response_json",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -29499,6 +29806,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview.reachability",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -30615,6 +30928,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.final_report_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -30920,6 +31239,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "selection.prompt_outcome",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -31883,6 +32208,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.startup_reconcile",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -32188,6 +32519,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "selection.prompt_identity",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -33393,6 +33730,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.prompt_compose",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -33926,6 +34269,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "notifications.present_page",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -34870,6 +35219,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "selection.configuration_receipt",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -37548,6 +37903,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.reconcile_head",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -39497,6 +39858,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.peer_http",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -40465,6 +40832,12 @@
           }
         },
         "scope": "Allcounterwindows/processmaxima/explicitsteadywindow remain separate;nativecallcoverage changes callcounts without changingwork."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "maintenance.run",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -41167,6 +41540,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.heartbeat_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -41954,6 +42333,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.transcript_append",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -42741,6 +43126,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_due_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -43443,6 +43834,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.dispatch_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -44207,6 +44604,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "http.fleet_overview",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -44906,6 +45309,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "http.pr_supervisor_peer",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -45608,6 +46017,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.lease_renew",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -46310,6 +46725,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.agent_session_save",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -47113,6 +47534,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.sequence_allocate",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -47916,6 +48343,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "acp.wire_append",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -48632,6 +49065,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.collect_garbage",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -49623,6 +50062,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.dispatch_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -50410,6 +50855,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.completion_pending_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -51109,6 +51560,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "http.github",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -51829,6 +52286,12 @@
       "retention_stage_followup": {
         "artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
         "scope": "Source evidence and disposable fixture only; native measurement coverage gap and startup recovery obligations remain open."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.startup_state_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -52632,6 +53095,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.checkpoint_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -53419,6 +53888,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.pending_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -54121,6 +54596,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.recovery_sessions",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -54908,6 +55389,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.ref_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -55801,6 +56288,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.json_decode",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -56588,6 +57081,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview.sync",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -57478,6 +57977,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.project_provision",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -58879,6 +59384,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.session_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -59930,6 +60441,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview.status",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -60902,6 +61419,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoffs_pending",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -61601,6 +62124,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "preferences.agent_auto_approve_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -62500,6 +63029,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_event_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -63287,6 +63822,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.followup_pending_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -63989,6 +64530,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_watch_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -64691,6 +65238,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoffs_watchdog",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -65393,6 +65946,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_watch_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -66095,6 +66654,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoff_completion",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -66879,6 +67444,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "goal.dispatch_lifecycle_index",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -67682,6 +68253,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview_cache_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -68485,6 +69062,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview_cache_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -69187,6 +69770,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoff_session",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -70303,6 +70892,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.card_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -71005,6 +71600,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.completion_evidence_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -71707,6 +72308,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.project_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -72409,6 +73016,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.record_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -73111,6 +73724,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "pr_supervisor.github_response_json",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -74142,6 +74761,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview_response_json",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -74926,6 +75551,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "health.canonical_obligation",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -75628,6 +76259,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.project_recovery_availability",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -76431,6 +77068,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.commit_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -77203,6 +77846,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "notifications.list_page",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -77978,6 +78627,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.agent_session_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -78765,6 +79420,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_completion_due_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -79737,6 +80398,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "filesystem.github_credentials_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -80630,6 +81297,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.final_report_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -81417,6 +82090,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.overview.reachability",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -83573,6 +84252,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "selection.prompt_identity",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -84991,6 +85676,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.reconcile_terminal_state",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -85693,6 +86384,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.repository_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -86463,6 +87160,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.prompt_compose",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -87303,6 +88006,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "notifications.present_page",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -88019,6 +88728,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.startup_reconcile",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -88721,6 +89436,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "pr_supervisor.response_json",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -90376,6 +91097,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.agent_runtime_checkpoint",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -91331,6 +92058,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "selection.configuration_receipt",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -93047,6 +93780,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "selection.prompt_outcome",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -93834,6 +94573,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.pr_supervisor_capability_write",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -97146,6 +97891,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "progress.final_report_build",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -101034,6 +101785,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "reconciliation.completion_queue",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -101924,6 +102681,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "acp.wire_init",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -103342,6 +104105,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sync.gc_resume",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -106856,6 +107625,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "acp.pa_mcp_owner_probe",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -108773,6 +109548,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.session_mkdir",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -109851,6 +110632,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.transcript_sequence",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -111385,6 +112172,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "acp.provider_resolve",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -112944,6 +113737,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "dispatch.workspace_admission_read",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -113981,6 +114780,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "fleet.update_recovery",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -114824,6 +115629,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "startup.agent_manager",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -116478,6 +117289,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "agent.quiesce_snapshot_clear",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -117322,6 +118139,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/status",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -117678,6 +118501,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/fleet/overview/local",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -117963,6 +118792,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -118122,6 +118957,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/{page_path:path}",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -118288,6 +119129,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/notifications",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -118617,6 +119464,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/pr-supervisor/replicas",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -119229,6 +120082,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/pr-supervisor/capabilities",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -120301,6 +121160,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/agent/sessions/{session_id}/restart-handoffs",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -120529,6 +121394,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/sync/refs",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -120803,6 +121674,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/health-journal/reports",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -120996,6 +121873,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/instance",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -121297,6 +122180,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/pr-supervisor/instances/heartbeat",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -121389,6 +122278,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/configuration",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -121504,6 +122399,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/ui/assets",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -121681,6 +122582,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/agent/observability/v1/sessions/{session_id}",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -121847,6 +122754,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/workspaces",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -122024,6 +122937,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/fleet/dispatch-jobs/{dispatch_id}",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -122779,6 +123698,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -123839,6 +124764,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/runtime",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -123954,6 +124885,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/ready",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -124861,6 +125798,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/health",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -125139,6 +126082,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/owner-ready",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -131299,6 +132248,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/fleet",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -131391,6 +132346,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/pull-requests",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -131987,6 +132948,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_continuation_authorization",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -132776,6 +133743,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoff_queued",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -133426,6 +134399,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "sqlite.restart_handoff_resuming",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -134037,6 +135016,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "acp.pa_mcp_owner_probe",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -139709,6 +140694,12 @@
           }
         },
         "scope": "Allcounterwindows/processmaxima/explicitsteadywindow remain separate;nativecallcoverage changes callcounts without changingwork."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "maintenance.run",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -140013,6 +141004,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "workspace.reconcile_terminal_state",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -141501,6 +142498,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "startup.async_backend_prepare",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -143185,6 +144188,12 @@
           }
         },
         "scope": "All96returned operation counters/processmaxima/boundedwindows retained separately; not every branch/fullfleet audit."
+      },
+      "runtime806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "operation": "startup.openapi",
+        "scope": "Allreturnedmeasurement retained inartifact; processmaxima vsboundedwindows distinct, open"
       }
     },
     {
@@ -143347,6 +144356,12 @@
           }
         },
         "scope": "All37returned routegroups retained; SSEexcluded,notall115baselinegroups/branches."
+      },
+      "route806b_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "observed_at": "2026-10-18T06:04:51.959933+00:00",
+        "route": "/api/fleet/overview",
+        "scope": "Allreturnedcount/bytes/rollingpercentiles retained; notfullpathacceptance"
       }
     },
     {
@@ -143552,6 +144567,18 @@
         "main_ci": 39099338638,
         "trees_equal": "8c1ca4a6ad3882de752431382d6b88955fd156a0",
         "independent_green": "5terminalsuccess,0reviews/threads,completepagination,attributedcommits,currentprotection,CLEAN,normalheadCASmerge;no bypass"
+      },
+      "source806b_stage": {
+        "merged": "PR5071705/PR508806b",
+        "activated": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+          "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+          "pid": 19594,
+          "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
+        },
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
       }
     },
     {
@@ -143624,7 +144651,19 @@
       },
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Integrate/protect/exactactivate/retest; retain end-to-end regressions"
+      "next_action": "Integrate/protect/exactactivate/retest; retain end-to-end regressions",
+      "source806b_stage": {
+        "merged": "PR5071705/PR508806b",
+        "activated": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+          "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+          "pid": 19594,
+          "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
+        },
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
+      }
     },
     {
       "id": "concern:canonical-prune-amplification",
@@ -143642,7 +144681,19 @@
       },
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Integrate/protect/exactactivate/retest with backup retention semantics; no recovery authority"
+      "next_action": "Integrate/protect/exactactivate/retest with backup retention semantics; no recovery authority",
+      "source806b_stage": {
+        "merged": "PR5071705/PR508806b",
+        "activated": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+          "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+          "pid": 19594,
+          "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
+        },
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
+      }
     },
     {
       "id": "concern:maintenance-duplicate-health",
@@ -143682,6 +144733,18 @@
       "native_observation_followup": {
         "artifact": "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json",
         "scope": "SQLcallcoverage improved,not wholeperformance orphysicalI/O acceptance"
+      },
+      "source806b_stage": {
+        "merged": "PR5071705/PR508806b",
+        "activated": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+          "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+          "pid": 19594,
+          "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
+        },
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
       }
     },
     {
@@ -143855,7 +144918,46 @@
       "report": "7f38b6de-44ff-4cbf-a09c-557fbb083b06 revision1",
       "resolution": "open",
       "next_actor": "GitHub/durablePRsupervisor;thissameexecutor independentlyrevalidates",
-      "next_action": "Waitforconsistentterminalsignals;do notmerge/retry/cancel/bypassorclaimfailurefromambiguity"
+      "next_action": "Waitforconsistentterminalsignals;do notmerge/retry/cancel/bypassorclaimfailurefromambiguity",
+      "convergence_followup": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "facts": "Fresh05:54original85beworkflow/all5jobs/checkssuccess; originalcontradictoryreads preserved, causeunknown/no retries. Newc4f8head+806bmainindependent5success each."
+      }
+    },
+    {
+      "id": "concern:startup-diagnostic-metrics-hydration",
+      "kind": "concern",
+      "finding": "Startup inventory reads unused retained diagnostic metrics",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_amplification_partial_source_repair",
+      "cause": "Confirmed unnecessary diagnostic metrics hydration in startup inventory; not sole attribution of historical/live startup tails.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+        "full": {
+          "samples": 30,
+          "max": 320.007,
+          "p50": 259.177,
+          "p95": 312.259,
+          "p99": 320.007
+        },
+        "inventory": {
+          "samples": 30,
+          "max": 117.318,
+          "p50": 51.918,
+          "p95": 73.385,
+          "p99": 117.318
+        },
+        "diagnostic_json_bytes_avoided_per_read": 23533527
+      },
+      "fix_or_existing_owner": "This systemic session; omitmetrics only at startupinventory, preserveclosed/durablefields and freshcompletecanonicalrefetch before runtime",
+      "implemented": "candidate source;175tests2subtests then5finalcontracts/30alternatingfixture",
+      "merged": [],
+      "deployed": "notactivated;actual806b isbaseline beforethisrepair",
+      "retested": "isolatedleaf/recoverycontracts/actualwheelmixed only; no deployed/fullproviderstartup acceptance",
+      "resolution": "open",
+      "next_actor": "this card/session",
+      "next_action": "Protectedintegration/exactactivation/retest, continue allremainingstartup/native/provider/peer/health/latency work"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -143865,29 +144967,24 @@
   "transcript_backend_artifact": "docs/benchmarks/systemic-transcript-backend-20261017.json",
   "startup_schema_artifact": "docs/benchmarks/systemic-startup-schema-20261017.json",
   "latest_local_activation": {
-    "our_pr505": {
-      "watch": "c5490df0-1716-45a8-a34b-77e541eb66b3",
-      "head": "0c24486298539168f6b8e923428df074545a8e92",
-      "merge": "62551f44cdb66bf34262bb31b1a728d298150958"
-    },
-    "backup_pr506": {
-      "watch": "20b6f45c-db29-40d0-aadd-bd54804e5695",
-      "head": "6636d5eb805c4bd7a3c93b340a0e8d0ac884a66c",
-      "merge": "5024f7890314805617750bcc2e5d1e059b9a472d",
-      "combined_main_ci": 39097201323,
-      "checks": "5terminalsuccess; owner98tests+16subtests separate"
-    },
-    "loaded_build": {
+    "head": "c4f8a2ce63f2bf9e8e8b5bcc3134c69d3d3d2c1e",
+    "merge": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+    "watch": "977033e5-c757-4041-b293-dffb58d817e2",
+    "tree": "9679fef033e3eab7c2e8205f01d96d82c1309ad9",
+    "head_ci": 39101806812,
+    "main_ci": 39102028231,
+    "checks": "5terminalsuccess each, stable9headobservations, independentreviews0/threads0/currentrules/completepagination/authorship/CLEAN/headCAS; no bypass",
+    "installed": "437sourcefiles/VCS/38compatiblecompiledtemplates/packagef72;52versions/configunchanged",
+    "loaded": {
       "loaded_module_version": "1.5.9",
-      "source_revision": "5024f7890314805617750bcc2e5d1e059b9a472d",
-      "package_identity": "sha256:b5388ae535db85f7ebc9e629087b1899929856094bcdc9866ad093b4f7ae1aec",
-      "pid": 7531,
-      "startup_id": "a3a94866-ae31-48d5-94d4-9e9a4ea40fcc"
+      "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+      "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+      "pid": 19594,
+      "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
     },
-    "config_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
-    "handoff": "da59cf99-8534-525f-8d3e-4fbf2df4649e",
-    "dependency_version_changes": 0,
-    "scope": "No repeated install/restart or production backup in this source stage. First-afteractivation page sample not necessarily firstever cold render."
+    "handoff": "780c6de7-4eb2-50e0-8040-39377e82e3e6",
+    "key": "systemic-pr508-activate806b4b9d-20261018-v1",
+    "receipt_scope": "continuation_queued while its ownexactcontinuationruns; do notwaitforownterminal orrequestduplicate restart"
   },
   "snapshot_retention_gap": {
     "contract": "pa.diagnostic-snapshot-retention-correction/v1",
@@ -143933,15 +145030,13 @@
   },
   "fleet_watch_snapshot_artifact": "docs/benchmarks/systemic-fleet-watch-snapshot-20261018.json",
   "latest_deployed_retest": {
-    "artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json",
-    "ordinary_gets": 95,
-    "violations": 0,
-    "current_runtime_operations": 96,
-    "current_runtime_routes": 37,
-    "scope": "Smallsequentiallocalwindow;processmaxima/windowsseparate,notwholefleet/log/acceptance"
+    "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+    "raw_sha256": "6a28a20e4ea33c0b6b53ba4eb4b8ce748d9fb764b9a4cb97e92b442226c9ecd1",
+    "scope": "95ordinarysequentialGETs06:03:23.046482\u201306:03:54.283755Z:95HTTP200/0errors,1Fleet524.197ms>=500. Source806b/packagef72/PID19594/startup70723695 stable. Firstafteractivationnotnecessarilycold; five-sampletails=max; decodedbytesNOTwirebytes. All samples/errors/status/correlation/CPUwallphases retained. Notwholeperformanceacceptance."
   },
   "template_cache_artifact": "docs/benchmarks/systemic-template-cache-20261018.json",
   "ancestry_membership_artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json",
   "retention_batch_artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
-  "maintenance_sql_artifact": "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json"
+  "maintenance_sql_artifact": "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json",
+  "startup_inventory_artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json"
 }
