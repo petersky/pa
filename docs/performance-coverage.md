@@ -1,3 +1,80 @@
+# Activated806b retest, complete current runtime and startup diagnostic inventory — 2026-10-18
+
+**All540 evidence rows /56 concerns remain open.** [Full matrix](performance-coverage.json); [all raw numeric samples, phases, source identities and retained failures](benchmarks/systemic-startup-inventory-20261018.json). This checkpoint supersedes older current-status labels below; every earlier finding, owner and outlier remains.
+
+PR508 is protected-integrated as806b from exactc4f8/watch977033e5. Head/main CI each have five terminal successes and matching trees; the original85be workflow/job discrepancy later converged but its cause and both earlier browser failures remain unresolved. Normal immutable installation preserved52 dependency versions/configuration. The managed restart resumed this exact session/workspace; server-captured806b/packagef72/PID19594/startup70723695/config86968/lease290 prove activation. Installed metadata was checked separately. No duplicate merge/restart, backup action or repairer acceptance.
+
+The95 ordinary sequential authenticated requests from06:03:23.046482 to06:03:54.283755Z return95HTTP200/zero errors but retain **one Fleet524.197ms violation**. Fleet context436.4ms wall/156.6ms threadCPU, template35.5/30.1, shell3.1/3.1, total477.3/192.1; full helper time524.197 includes transport/read/decode. These phases do not partition all waiting/nativeI/O. Correlation32a44450-a5be-4434-adcb-9025ae5faa77. Every sample, including this outlier, is retained. Five-sample tails equalmax; firstafteractivation is not guaranteed cold; decoded bytes are notwirebytes. Earlier passing5024 and failing134044/a90/b808 windows remain separate.
+
+| Ordinary request | n | p50/p95/p99/max ms | >=500ms |
+|---|---:|---|---:|
+|/|5|28.114/34.358/34.358/34.358|0|
+|/agent|5|116.251/150.238/150.238/150.238|0|
+|/api/fleet/overview|5|156.963/191.452/191.452/191.452|0|
+|/api/health|20|20.835/58.83/340.56/340.56|0|
+|/api/runtime|20|72.068/134.786/165.027/165.027|0|
+|/api/status|20|66.751/99.486/421.806/421.806|0|
+|/fleet|5|370.704/524.197/524.197/524.197|1|
+|/pull-requests|5|41.413/263.437/263.437/263.437|0|
+|/settings?section=agent|5|37.369/64.341/64.341/64.341|0|
+|/work|5|68.92/304.854/304.854/304.854|0|
+
+The complete owner runtime snapshot retains82operations and25registeredroutegroups, all counts/response bytes, process maxima, bounded distributions and28retained slow worker records. It has25operations with processmax>=500ms and one failed workspace provision/7submissions (underlyingcauseunverified). Budget-specific warning counts are not universal500ms counts. Live/background activity and disposable work shared the host. No peer-log, older retention, exhaustive fleet or controlled acceptance claim. The table lists every current operation with a process tail; the artifact retains all82operations and all25routes. Window percentiles and lifetime process maxima differ.
+
+| Current runtime operation | submitted | failures/timeouts | window p50/p95/p99 ms | processmax ms | budget slow calls |
+|---|---:|---|---|---:|---:|
+|acp.wire_append|1762|0/0|0.994/51.277/100.836|1172.478|1|
+|agent.startup_state_read|1|0/0|3837.558/3837.558/3837.558|3837.558|1|
+|fleet.overview_cache_read|818|0/0|1.916/42.17/56.916|731.27|1|
+|health.canonical_obligation|35|0/0|20.347/498.796/659.404|659.404|1|
+|http.fleet_overview|171|0/0|121.365/1833.967/2221.585|2282.217|0|
+|http.github|1|0/0|607.373/607.373/607.373|607.373|0|
+|http.pr_supervisor_peer|854|0/0|45.512/129.933/617.735|1262.798|0|
+|maintenance.run|1|0/0|24800.683/24800.683/24800.683|24800.683|0|
+|progress.checkpoint_write|24|0/0|141.197/645.341/722.975|722.975|2|
+|progress.pending_read|106|0/0|9.901/49.939/250.502|517.364|1|
+|reconciliation.completion_evidence_read|168|0/0|3.998/44.434/151.175|732.628|1|
+|reconciliation.dispatch_read|284|0/0|1.865/18.36/82.471|2882.784|2|
+|reconciliation.session_read|168|0/0|2.141/39.222/442.674|1017.715|1|
+|sqlite.agent_session_save|74|0/0|19.882/137.059/6122.182|6122.182|2|
+|sqlite.pr_supervisor_completion_due_read|110|0/0|15.359/130.232/173.934|600.881|1|
+|sqlite.pr_supervisor_watch_read|427|0/0|4.319/64.739/123.492|590.487|1|
+|sqlite.pr_supervisor_watch_write|427|0/0|8.196/97.925/267.031|509.874|1|
+|sqlite.restart_handoff_completion|204|0/0|4.249/38.611/126.448|1274.119|1|
+|sqlite.transcript_append|219|0/0|14.903/213.322/378.107|1350.011|2|
+|startup.openapi|1|0/0|892.194/892.194/892.194|892.194|1|
+|sync.peer_http|15|0/0|58.237/1866.97/1866.97|1866.97|0|
+|sync.reconcile_head|15|0/0|497.211/2154.146/2154.146|2154.146|7|
+|workspace.collect_garbage|1|0/0|6284.095/6284.095/6284.095|6284.095|1|
+|workspace.project_provision|7|1/0|2357.137/2858.3/2858.3|2858.3|0|
+|workspace.reconcile_terminal_state|1|0/0|1693.906/1693.906/1693.906|1693.906|0|
+
+All current registered routes with bounded-window tails:
+
+| Route | count | p50/p95/p99/max ms | process response bytes |
+|---|---:|---|---:|
+|/api/fleet/overview/local|58|49.688/175.429/889.898/889.898|581300|
+|/api/pr-supervisor/replicas|869|32.939/136.391/356.275/508.657|4812130|
+|/api/status|85|60.881/277.385/751.544/751.544|238510|
+|/api/notifications|5|199.674/964.439/964.439/964.439|55545|
+|/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint|3|465.231/576.081/576.081/576.081|599|
+
+The startup read is3837.558ms/365returned rows, worker3822.641ms, threadCPU454.665ms, observedSQL3495.486ms and no measured Pythonlock wait/hold. Native fetch/wait/GIL/disk share is unresolved. Maintenance remains24800.683ms, worker24799.725/threadCPU11920.267/outerhold3858.931ms. Statement wall, lock windows and CPU are not additive or a physicalI/O partition. Some completion-delivery stalls are distinct from worker service; all phases remain in the artifact.
+
+Confirmed next amplification: startup loads unused diagnostic metrics for every persisted session. The candidate explicitly selects every existing nonmetrics session column, only for startup inventory; normal list/get remains complete. It keeps every retained identity/status/order/config/provenance—including closed sessions with durable queued prompts, in-flight work, permissions or lifecycle obligations. Existing recovery re-fetches the complete current session before constructing/saving its runtime, preserving metrics and concurrent external state. No data, durability, recovery policy, warning/deadline threshold or execution default changes.
+
+Thirty alternating actual reads of359synthetic sessions with64KiBmetrics each avoid23,533,527 diagnosticJSONbytes/read while preserving all359models and every other field/order. Wallp50/p95/p99/max full259.177/312.259/320.007/320.007ms versus inventory51.918/73.385/117.318/117.318ms; threadCPUp95259.583→59.134ms. Rawarrays retained. The earlier probe466.118→68.501ms and540.022ms fullread outlier remain. This isolates avoidable hydration, not its full share of deployed startup3.84s or historical7.65s.
+
+175tests plus2subtests pass42.46s across recovery/durability/admission/restart/receipt/CAS and newcontracts; final stalequiesce enhancement has5targetedpasses. Contracts deny metrics column reads, compare allotherfields/filters/order/snapshots/closedobligations, prevent resurrection from stale shutdown files, and prove a complete fresh session is fetched before runtime mutation. The initial five expected failures, a test expectation corrected from one to two deferred sessions, initial probe SyntaxError before work and native sandbox cache denial are preserved. All testprocesses use temporary data/workspace roots with a workspace guard.
+
+The actual437file/29hash/38template wheel mixed run keeps100iterations/29requests/5000policyexpired events/16auditproofs/9600orderedactiveevents. Agentdisabled means this scenario does not measure recoveryinventorybenefit; the separate leaf/recoverycontracts do. Final mixed result: {"warnings": {"Slow off-loop operation": 2}, "threshold_violations": {"transcript.drain": 1, "sync.push_transaction": 1, "sync.object_collect": 3}, "violating_distributions": {"transcript.drain": {"samples": 300, "max_ms": 552.076, "p50_ms": 82.799, "p95_ms": 170.012, "p99_ms": 287.428}, "sync.push_transaction": {"samples": 100, "max_ms": 640.392, "p50_ms": 60.449, "p95_ms": 141.517, "p99_ms": 249.142}, "sync.object_collect": {"samples": 10, "max_ms": 1469.407, "p50_ms": 198.244, "p95_ms": 1469.407, "p99_ms": 1469.407}}}. Zero operation failures/timeouts/rejections. Separate premeasurement retains two slow calls, including OpenAPI693.808ms wall/665.164ms threadCPU. All raw timings/bytes/CPU/GC/SQL/filesystemcounts and startup observations remain. This is not acceptance.
+
+Remaining work still includes full Kernel/OpenAPI/MCP/provider/workspace coldstart; history/transcriptdrain/objectcollection; duplicate health scans preserving freshness/integrity; native busy/WAL/fsync/disk/GIL/GC; livecontrol/active-watch/peerpaths; droppedlogs/statusfailures/olderretention/receiptambiguity/lostraw/testroot/CIcauses and every valid unexercised branch. The539old rows are preserved; the new startupmetricsconcern brings540. Existing140slownames/181baselineops/115baselineroutes/6shells/14startuprecords remain required.
+
+The card remains Active, independent_agent_v1/17d034a6 unchanged; normal PA scheduler owns independent acceptance. This new startup patch is source-only until protectedintegration/exactactivation/retest. Backup0331/18fc has one queued changed-build coordination, no backup action: missingcold5cbb/ref1/819bytes/unknowncapturecause/source, failed35575957/all8archives/207failures0verified/automaticpaused/b527independentacceptance unchanged. DB89957 accepted original scope stays closed. Original10attachments retained; no newworker/verifier/admission or defaults/config change.
+
+---
+
 # Native maintenance SQL coverage and retained CI ambiguity — 2026-10-18
 
 **All539 evidence rows /55 concerns remain open.** [Full matrix](performance-coverage.json); [new phase measurements, original contracts, mixed sample arrays and CI observations](benchmarks/systemic-maintenance-sql-observations-20261018.json). Every earlier stage below remains historical evidence, including all140 slow names,181 baseline operations,115 baseline routes, six shells,14 startup records and every previous owner/outlier/gap.

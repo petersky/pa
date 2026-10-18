@@ -5246,8 +5246,25 @@ class CardProjection:
         archived: bool | None = None,
         session_ids: set[str] | None = None,
         chat_group_id: str | None = None,
+        include_metrics: bool = True,
     ) -> list[AgentSession]:
-        query = "SELECT * FROM agent_sessions WHERE 1=1"
+        """Read sessions, optionally omitting diagnostics for recovery inventory.
+
+        Inventory callers must re-fetch a complete current session before saving
+        or constructing its runtime. All durable recovery and provenance fields
+        remain present; status alone does not determine recovery eligibility.
+        """
+        columns = "*" if include_metrics else """
+            id, agent_name, external_session_id, origin_instance_id,
+            origin_instance_name, authority_instance_id, dispatch_id, realm_id,
+            lifecycle_owner, purpose, initiating_workflow_json, control_mode,
+            archived_at, archive_reason, pinned_at, human_activity_at,
+            workflow_state, workflow_outcome_json, recovery_json,
+            item_id, card_id, project_id, principal_id, status, cwd, title, label,
+            model_id, mode_id, config_json, execution_binding_json,
+            created_at, updated_at
+        """
+        query = f"SELECT {columns} FROM agent_sessions WHERE 1=1"
         if not include_archived:
             query += " AND archived_at IS NULL"
         params: list[str] = []

@@ -4566,7 +4566,10 @@ class AgentSessionManager:
             "agent.startup_state_read",
             lambda: (
                 load_quiesce_snapshot(self.settings.data_dir),
-                self.store.list_sessions() if will_resume else [],
+                # Recovery uses durable obligations, never diagnostic metrics.
+                # _resume_from_snapshot re-fetches the complete current session
+                # before constructing or saving a runtime.
+                self.store.list_sessions(include_metrics=False) if will_resume else [],
             ),
             timeout=30.0,
         )
