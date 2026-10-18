@@ -74,6 +74,13 @@ async def run(root, *, history=1000, iterations=30, inventory_reads=False):
 
 
 async def run_app(app, root, *, history, iterations, inventory_reads=False):
+    from pa.server.template_cache import _compatible
+    template_cache = app.state.templates.env.bytecode_cache
+    template_artifact = {
+        "cache_class": type(template_cache).__name__,
+        "packaged_entries": len(getattr(template_cache, "entries", {})),
+        "environment_compatible": _compatible(app.state.templates.env),
+    }
     ctx = app.state.ctx
     settings = ctx.settings
     runtime = ctx.require_service("async_runtime")
@@ -303,7 +310,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                                   "pa.instance.agent_session", "pa.pr_supervisor.store",
                                   "pa.pr_supervisor.service", "pa.status.info", "pa.modules.instance",
                                   "pa.core.kernel", "pa.openapi", "pa.server.schema_generation",
-                                  "pa.server.readiness")}
+                                  "pa.server.readiness", "pa.server.template_cache", "pa.modules.ui_shell")}
     diagnostics = ctx.services.get("runtime_diagnostics")
     diagnostics_before = diagnostics.snapshot() if diagnostics else {}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
@@ -377,6 +384,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                           "long_pause_selection_ms": 10, "long_pause_count": long_gc_count,
                           "long_pause_window": "last_64_collections_at_least_10ms_during_measurement",
                           "long_observations": list(long_gc_pauses)},
+            "template_artifact": template_artifact,
             "transcript_input_rows": expected, "transcript_retained_rows": actual,
             "runtime": snapshot, "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
             "transcript_performance": store.transcripts.performance.snapshot(),

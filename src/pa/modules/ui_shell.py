@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from time import perf_counter
+from time import perf_counter, thread_time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -38,16 +38,22 @@ _SETTINGS_SECTIONS = {
 class _Timings:
     def __init__(self) -> None:
         self.started = perf_counter()
+        self.cpu_started = thread_time()
         self.values: list[tuple[str, float]] = []
+        self.cpu_values: list[tuple[str, float]] = []
 
     def measure(self, name: str, call):
         started = perf_counter()
+        cpu_started = thread_time()
         value = call()
         self.values.append((name, (perf_counter() - started) * 1000))
+        self.cpu_values.append((name, (thread_time() - cpu_started) * 1000))
         return value
 
     def header(self) -> str:
         values = [*self.values, ("total", (perf_counter() - self.started) * 1000)]
+        values.extend((name + "_cpu", duration) for name, duration in self.cpu_values)
+        values.append(("total_cpu", (thread_time() - self.cpu_started) * 1000))
         return ", ".join(f"{name};dur={duration:.1f}" for name, duration in values)
 
 
@@ -129,6 +135,7 @@ def render_page(request: Request, page: PageDefinition) -> HTMLResponse:
         "page": page.id,
         "correlation_id": correlation_id,
         "timings_ms": {name: round(value, 1) for name, value in timings.values},
+        "thread_cpu_ms": {name: round(value, 1) for name, value in timings.cpu_values},
         "total_ms": round((perf_counter() - timings.started) * 1000, 1),
         "response_bytes": response_bytes,
         "htmx": bool(request.headers.get("HX-Request")),
