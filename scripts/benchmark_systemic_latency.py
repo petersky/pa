@@ -343,7 +343,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                                   "pa.domain.projection", "pa.domain.transcript_storage", "pa.domain.card_summary_service", "pa.modules.items",
                                   "pa.execution.dispatch", "pa.modules.fleet", "pa.fleet.overview", "pa.sync.engine",
                                   "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page",
-                                  "pa.instance.agent_session", "pa.pr_supervisor.store",
+                                  "pa.instance.agent_session", "pa.instance.maintenance", "pa.pr_supervisor.store",
                                   "pa.pr_supervisor.service", "pa.status.info", "pa.modules.instance",
                                   "pa.core.kernel", "pa.openapi", "pa.server.schema_generation",
                                   "pa.server.readiness", "pa.server.template_cache", "pa.modules.ui_shell")}
