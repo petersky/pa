@@ -36,6 +36,7 @@ from pa.backup.models import (
     validate_backup_destination_path,
 )
 from pa.core.io import atomic_write_json
+from pa.core.operation_budget import measured_lock
 
 if TYPE_CHECKING:
     from pa.config import Settings
@@ -386,13 +387,15 @@ class BackupService:
             os.fsync(out.fileno())
         os.chmod(target, 0o600)
 
-    def _online_sqlite_backup(self, target: Path, *, source_path: Path | None = None) -> None:
+    def _online_sqlite_backup(
+        self, target: Path, *, source_path: Path | None = None,
+        source_connection: sqlite3.Connection | None = None,
+    ) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             with (
-                contextlib.closing(
-                    sqlite3.connect(source_path or self.settings.db_path, timeout=30)
-                ) as source,
+                (contextlib.nullcontext(source_connection) if source_connection is not None
+                 else contextlib.closing(sqlite3.connect(source_path or self.settings.db_path, timeout=30))) as source,
                 contextlib.closing(sqlite3.connect(target)) as destination,
             ):
                 source.execute("PRAGMA busy_timeout=30000")
@@ -407,6 +410,66 @@ class BackupService:
             ) from exc
         os.chmod(target, 0o600)
 
+    def _prepare_sqlite_snapshot(
+        self, target: Path, source_path: Path, readers: contextlib.ExitStack,
+        copies: list[tuple[Path, sqlite3.Connection]],
+    ) -> None:
+        """Fix the SQLite read view under writer locks; copy WAL pages later."""
+        started = time.monotonic()
+        try:
+            source = readers.enter_context(contextlib.closing(sqlite3.connect(
+                source_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=30,
+            )))
+            if source.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+                # A rollback-journal read would block writer commits during the
+                # deferred copy. Preserve the existing locked-copy behavior for
+                # standalone/legacy databases without changing their journal mode.
+                self._metric("backup_snapshot_locked_sqlite_fallback_total")
+                self._online_sqlite_backup(target, source_connection=source)
+                return
+            source.execute("BEGIN")
+            # BEGIN alone is deferred. Reading a real database page fixes the WAL
+            # end mark before PA's projection/ref/transcript locks are released.
+            source.execute("SELECT name FROM sqlite_schema LIMIT 1").fetchone()
+            copies.append((target, source))
+        except sqlite3.Error as exc:
+            raise BackupError("online_snapshot_failed", f"SQLite read snapshot failed: {exc}") from exc
+        finally:
+            self._metric(f"backup_snapshot_{target.stem}_anchor_seconds_total", time.monotonic() - started)
+
+    def _pin_cold_objects(self, staging: Path, pins: contextlib.ExitStack,
+                          cold_files: list[tuple[Path, Path]]) -> None:
+        started = time.monotonic()
+        before = len(cold_files)
+        try:
+            cold_source = self.settings.db_path.parent / "transcript_objects"
+            if self.store is not None and hasattr(self.store, "transcripts"):
+                cold_source = self.store.transcripts.objects_dir
+            if not cold_source.exists():
+                return
+            pin_root = Path(pins.enter_context(tempfile.TemporaryDirectory(
+                prefix=".pa-backup-pin-", dir=cold_source,
+            )))
+            for source in sorted(cold_source.glob("*/*.zlib")):
+                relative = source.relative_to(cold_source)
+                pinned = pin_root / relative
+                pinned.parent.mkdir(parents=True, exist_ok=True)
+                os.link(source, pinned)
+                cold_files.append((pinned, staging / "transcript_objects" / relative))
+        finally:
+            self._metric("backup_snapshot_cold_pin_seconds_total", time.monotonic() - started)
+            self._metric("backup_snapshot_cold_pin_files_total", len(cold_files) - before)
+
+    def _preflight_cold_references(self, database: Path, cold_files: list[tuple[Path, Path]]) -> None:
+        """Reject an incomplete captured source before copying or archiving it."""
+        captured = {target.parent.name + target.stem for _, target in cold_files}
+        with contextlib.closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+            for (digest,) in conn.execute("SELECT DISTINCT cold_hash FROM transcript_events WHERE cold_hash IS NOT NULL"):
+                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    raise BackupError("transcript_object_corrupt", "captured transcript index has an invalid cold object hash")
+                if digest not in captured:
+                    raise BackupError("transcript_object_missing", f"cold transcript object {digest[:12]} is missing from captured source inventory")
+
     def _snapshot(self, staging: Path) -> BackupManifest:
         lock = (
             self.store.mutation()
@@ -414,37 +477,47 @@ class BackupService:
             else contextlib.nullcontext()
         )
         transcript_lock = (
-            self.store.transcripts._lock
+            measured_lock(self.store.transcripts._lock, name="transcript.write", track_deadline=False)
             if self.store is not None and hasattr(self.store, "transcripts")
             else contextlib.nullcontext()
         )
-        # Capture mutable databases/refs together. Cold payloads can be garbage
-        # collected after this point, so pin their immutable inodes on the source
-        # filesystem. Never hash, copy or fsync the object inventory while holding
-        # PA's writer locks. The final archive contains independent durable copies.
+        # Anchor mutable databases and refs together. WAL read views preserve that
+        # point while writers continue; a short GC retention lease keeps cold
+        # payloads alive until independent source-filesystem pins exist.
         with contextlib.ExitStack() as pins:
             cold_files: list[tuple[Path, Path]] = []
             object_files: list[tuple[Path, Path, str]] = []
-            lock_started = time.monotonic()
-            with lock, transcript_lock:
-                self._metric(
-                    "backup_snapshot_lock_wait_seconds_total",
-                    time.monotonic() - lock_started,
-                )
-                capture_started = time.monotonic()
-                try:
-                    projection, transcript_target, refs = self._capture_snapshot(
-                        staging, pins, cold_files, object_files
-                    )
-                finally:
-                    self._metric(
-                        "backup_snapshot_lock_hold_seconds_total",
-                        time.monotonic() - capture_started,
-                    )
+            copies: list[tuple[Path, sqlite3.Connection]] = []
+            with contextlib.ExitStack() as retention:
+                with contextlib.ExitStack() as readers:
+                    lock_started = time.monotonic()
+                    with lock, transcript_lock:
+                        self._metric("backup_snapshot_lock_wait_seconds_total", time.monotonic() - lock_started)
+                        capture_started = time.monotonic()
+                        try:
+                            defer_pins = hasattr(getattr(self.store, "transcripts", None), "retain_objects")
+                            if defer_pins:
+                                retention.enter_context(self.store.transcripts.retain_objects())
+                            projection, transcript_target, refs = self._capture_snapshot(
+                                staging, pins, cold_files, object_files, readers, copies, defer_pins,
+                            )
+                        finally:
+                            self._metric("backup_snapshot_lock_hold_seconds_total", time.monotonic() - capture_started)
+                    for target, source in copies:
+                        started = time.monotonic()
+                        try:
+                            self._online_sqlite_backup(target, source_connection=source)
+                        finally:
+                            self._metric(f"backup_snapshot_{target.stem}_copy_seconds_total", time.monotonic() - started)
+                # Read transactions are closed before the cold inventory walk.
+                # GC is retained, but publication and ordinary writers can run.
+                if defer_pins and transcript_target is not None:
+                    self._pin_cold_objects(staging, pins, cold_files)
 
             _integrity(projection, self.config.verification_level)
             if transcript_target is not None:
                 _integrity(transcript_target, self.config.verification_level)
+                self._preflight_cold_references(transcript_target, cold_files)
             atomic_write_json(staging / "sync_refs.json", refs, mode=0o600)
             for source, target in cold_files:
                 self._copy_file(source, target)
@@ -462,32 +535,24 @@ class BackupService:
         self, staging: Path, pins: contextlib.ExitStack,
         cold_files: list[tuple[Path, Path]],
         object_files: list[tuple[Path, Path, str]],
+        readers: contextlib.ExitStack,
+        copies: list[tuple[Path, sqlite3.Connection]],
+        defer_pins: bool,
     ) -> tuple[Path, Path | None, dict[str, str]]:
         """Called only under the store and transcript writer locks."""
         projection = staging / "projection.sqlite3"
-        self._online_sqlite_backup(projection)
+        self._prepare_sqlite_snapshot(projection, self.settings.db_path, readers, copies)
         transcript_target = None
         transcript_source = self.settings.db_path.with_name(
             f"{self.settings.db_path.stem}.transcripts.db"
         )
         if transcript_source.exists():
             transcript_target = staging / "transcripts.sqlite3"
-            self._online_sqlite_backup(transcript_target, source_path=transcript_source)
+            self._prepare_sqlite_snapshot(transcript_target, transcript_source, readers, copies)
             cold_target = staging / "transcript_objects"
             cold_target.mkdir(mode=0o700)
-            cold_source = self.settings.data_dir / "transcript_objects"
-            if cold_source.exists():
-                # Staging/destination may be a different volume. A temporary
-                # directory beside the cold objects guarantees same-volume pins.
-                pin_root = Path(pins.enter_context(tempfile.TemporaryDirectory(
-                    prefix=".pa-backup-pin-", dir=cold_source
-                )))
-                for source in sorted(cold_source.glob("*/*.zlib")):
-                    relative = source.relative_to(cold_source)
-                    pinned = pin_root / relative
-                    pinned.parent.mkdir(parents=True, exist_ok=True)
-                    os.link(source, pinned)
-                    cold_files.append((pinned, cold_target / relative))
+            if not defer_pins:
+                self._pin_cold_objects(staging, pins, cold_files)
 
         refs: dict[str, str] = {}
         if self.store is not None and self.store.event_log is not None:
@@ -705,8 +770,10 @@ class BackupService:
             )
             os.chmod(staging_path, 0o700)
             phase_started = time.monotonic()
-            manifest = self._snapshot(staging_path)
-            run.phase_seconds["snapshot"] = round(time.monotonic() - phase_started, 6)
+            try:
+                manifest = self._snapshot(staging_path)
+            finally:
+                run.phase_seconds["snapshot"] = round(time.monotonic() - phase_started, 6)
             archive = self._archive(staging_path, manifest, run.phase_seconds)
             # _archive fully verifies the temporary artifact before backend.publish
             # atomically renames those exact immutable bytes into visibility.

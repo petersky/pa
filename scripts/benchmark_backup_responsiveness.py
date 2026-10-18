@@ -7,10 +7,12 @@ Use the same script with PYTHONPATH set to an extracted baseline src to compare.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import logging
 import math
+import sqlite3
 import tempfile
 import tarfile
 import time
@@ -55,16 +57,31 @@ def run(args):
         path = settings.objects_dir / digest[:2] / digest[2:]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
-    store.append_transcript_events([TranscriptEvent(
-        session_id="isolated-backup-transcripts", seq=index + 1,
-        event_type="turn_completed", payload={"text": f"payload {index} " * 2000},
-    ) for index in range(128)])
+    for offset in range(0, args.cold_transcripts, 128):
+        store.append_transcript_events([TranscriptEvent(
+            session_id="isolated-backup-transcripts", seq=index + 1,
+            event_type="turn_completed", payload={"text": f"payload {index} " * 2000},
+        ) for index in range(offset, min(offset + 128, args.cold_transcripts))])
+    database_bytes = {}
+    for database, minimum in (
+        (settings.db_path, args.projection_bytes),
+        (store.transcripts.db_path, args.transcript_bytes),
+    ):
+        with contextlib.closing(sqlite3.connect(database)) as conn:
+            size = conn.execute("PRAGMA page_count").fetchone()[0] * conn.execute("PRAGMA page_size").fetchone()[0]
+            if minimum > size:
+                conn.execute("CREATE TABLE backup_fixture_padding (value BLOB)")
+                for _ in range(math.ceil((minimum - size) / (1024 * 1024))):
+                    conn.execute("INSERT INTO backup_fixture_padding VALUES(zeroblob(1048576))")
+                conn.commit()
+            database_bytes[database.name] = conn.execute("PRAGMA page_count").fetchone()[0] * conn.execute("PRAGMA page_size").fetchone()[0]
     result = {
         "schema": "pa.backup-responsiveness/v1", "fixture_root": str(root),
         "source_revision": args.source_revision,
         "backup_module_sha256": hashlib.sha256(Path(backup_module.__file__).read_bytes()).hexdigest(),
         "backup_module": str(Path(backup_module.__file__).resolve()),
-        "objects": args.objects, "cold_transcripts": 128, "real_fsync": True,
+        "objects": args.objects, "cold_transcripts": args.cold_transcripts, "real_fsync": True,
+        "database_logical_bytes": database_bytes,
         "production_requests": 0, "archives_preserved": True, "samples": [], "operations": [],
         "manual_only": args.manual_only,
     }
@@ -166,6 +183,11 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--objects", type=int, default=12_000)
+    parser.add_argument("--cold-transcripts", type=int, default=128)
+    parser.add_argument("--projection-bytes", type=int, default=0,
+                        help="Minimum disposable projection size, including inert fixture padding")
+    parser.add_argument("--transcript-bytes", type=int, default=0,
+                        help="Minimum disposable transcript database size, including inert fixture padding")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source-revision", default="working-tree")
     parser.add_argument("--manual-only", action="store_true")
