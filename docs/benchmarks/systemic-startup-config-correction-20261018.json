@@ -1,0 +1,1028 @@
+{
+  "contract": "pa.startup-config-ci-correction/v1",
+  "observed_at": "2026-10-18T12:02:47.850843+00:00",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "original_stage": {
+    "path": "docs/benchmarks/systemic-startup-config-20261018.json",
+    "sha256": "045061bee7a4d33dee962231249651546879d4a3ef17460f270ce636468f3bcf",
+    "unchanged": true
+  },
+  "correction": {
+    "original_run": 39125018198,
+    "original_head": "3618ededf406934db6db0d4f9f9e745d01bbed56",
+    "original_attempt": 1,
+    "original_run_conclusion": "failure",
+    "failed_shards": 3,
+    "failed_tests": [
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_shutdown_aborts_remaining_durable_resumes - AssertionError: Lists differ: [] != ['session-a']",
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_startup_recovery_concurrency_is_bounded - AssertionError: 0 != 8",
+      "tests/test_repository_workspaces.py::test_startup_gc_protects_open_persisted_sessions - AssertionError: expected call not found.",
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot - AttributeError: 'NoneType' object has no attribute 'args'",
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_wake_reconciliation_defers_passive_connected_session - AssertionError: 0 != 1",
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_blocked_project_retries_after_project_and_links_arrive - AssertionError: Expected mock to have been awaited once. Awaited 0 times.",
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns - AssertionError: Items in the second set but not the first:",
+      "tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_unavailable_project_is_attempted_once_across_restarts - AssertionError: 0 != 1"
+    ],
+    "original_logs": [
+      {
+        "path": ".dev/pr521-failed-job117668193726.log",
+        "sha256": "7a1585c9fe90d8433d8175ac8b3dafdf7c61929f70a4ba3962f9628262cc5606"
+      },
+      {
+        "path": ".dev/pr521-failed-job117668193945.log",
+        "sha256": "4c0becf340aeb291944490388c0aa759c809913c238aeb7dafe58f4dfd8bf396"
+      },
+      {
+        "path": ".dev/pr521-failed-job117668193993.log",
+        "sha256": "e24746a9ec2d6acfda0810600dbbbda63bc884f1b850792e987404cd04c28023"
+      }
+    ],
+    "cause": "Optional method selected through getattr can fabricate an undeclared dynamic callable on legacy adapters; empty iterable loses recoveryinventory andGCprotectedIDs. Confirmednative3fail4.09s beforefix, same3pass3.64s afterfix unchangedassertions.",
+    "source_correction": "inspect.getattr_static gates declaration before normaldescriptorbinding; preserveslegacylist_sessions fallback andexplicitnewreaders. Added2adaptercontracts; fullsourcequery/projectionfileunchanged.",
+    "SQL_file_unchanged_from_measured_source": true,
+    "query_source_sha256": "f51c54ad3ef2d1bcd02f0d1263c39aa37926b5400b0f2a6363b90ceeb872ab42",
+    "current_manager_sha256": "fe31749e1499c570b06e148547ca8095e47a591f6ddadd89afd23dddf0db9c29",
+    "broad_expanded_status": "151 passed in72.80s; includes full live-events and previous broad suite plus two adapter contracts",
+    "workspace_case_status": "1 passed in8.04s",
+    "old_head_retry_count": 0,
+    "original_failed_head_not_merged_or_deployed": true,
+    "corrected_source_fixture": {
+      "baseline": {
+        "samples": 20,
+        "max_ms": 649.0216659731232,
+        "p50_ms": 552.8148750308901,
+        "p95_ms": 615.2722500264645,
+        "p99_ms": 649.0216659731232
+      },
+      "candidate": {
+        "samples": 20,
+        "max_ms": 258.9107910171151,
+        "p50_ms": 174.92495803162456,
+        "p95_ms": 231.03862500283867,
+        "p99_ms": 258.9107910171151
+      }
+    }
+  },
+  "original_failed_ci_logs": {
+    ".dev/pr521-failed-job117668193726.log": {
+      "original_sha256": "7a1585c9fe90d8433d8175ac8b3dafdf7c61929f70a4ba3962f9628262cc5606",
+      "redacted_sha256": "ca40344ebce3a3bfcadc83bc3b514cbf58e81627aaa254a22dc9c2acf66f3bed",
+      "redacted_text": "\ufeff2026-10-18T11:53:00.5819968Z Current runner version: '2.337.0'\n2026-10-18T11:53:00.5854122Z ##[group]Runner Image Provisioner\n2026-10-18T11:53:00.5855432Z Hosted Compute Agent\n2026-10-18T11:53:00.5856506Z Version: 20261012.601\n2026-10-18T11:53:00.5857563Z Commit: f3dc54e1fb89da6852db922499a0233137369e1d\n2026-10-18T11:53:00.5859284Z Build Date: 2026-10-12T17:48:21Z\n2026-10-18T11:53:00.5860447Z Worker ID: {7cacc40e-c593-459e-9aed-d3083509a6c2}\n2026-10-18T11:53:00.5861700Z Region: eastus\n2026-10-18T11:53:00.5862648Z Cloud: Azure\n2026-10-18T11:53:00.5863567Z ##[endgroup]\n2026-10-18T11:53:00.5866114Z ##[group]Operating System\n2026-10-18T11:53:00.5867233Z Ubuntu\n2026-10-18T11:53:00.5868176Z 24.04.5\n2026-10-18T11:53:00.5869264Z LTS\n2026-10-18T11:53:00.5870157Z ##[endgroup]\n2026-10-18T11:53:00.5871259Z ##[group]Runner Image\n2026-10-18T11:53:00.5872228Z Image: ubuntu-24.04\n2026-10-18T11:53:00.5873185Z Version: 20261012.334.1\n2026-10-18T11:53:00.5875331Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md\n2026-10-18T11:53:00.5878011Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334\n2026-10-18T11:53:00.5879971Z ##[endgroup]\n2026-10-18T11:53:00.5882045Z ##[group]GITHUB_TOKEN Permissions\n2026-10-18T11:53:00.5884732Z Contents: read\n2026-10-18T11:53:00.5885770Z Metadata: read\n2026-10-18T11:53:00.5886675Z Packages: read\n2026-10-18T11:53:00.5887791Z ##[endgroup]\n2026-10-18T11:53:00.5891507Z Secret source: Actions\n2026-10-18T11:53:00.5893129Z Cache mode: write\n2026-10-18T11:53:00.5894696Z Prepare workflow directory\n2026-10-18T11:53:00.6677333Z Prepare all required actions\n2026-10-18T11:53:00.6752664Z Getting action download info\n2026-10-18T11:53:00.8513268Z Download action repository 'actions/checkout@v5' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)\n2026-10-18T11:53:00.9772413Z Download action repository 'astral-sh/setup-uv@v10.0.1' (SHA:20cfd1bf945f4377ade1205e4dbc17946fc9a30d)\n2026-10-18T11:53:01.2898378Z Complete job name: test (1)\n2026-10-18T11:53:01.3600554Z ##[group]Run actions/checkout@v5\n2026-10-18T11:53:01.3601434Z with:\n2026-10-18T11:53:01.3601868Z   repository: petersky/pa\n2026-10-18T11:53:01.3605686Z   token: ***\n2026-10-18T11:53:01.3606107Z   ssh-strict: true\n2026-10-18T11:53:01.3606542Z   ssh-user: git\n2026-10-18T11:53:01.3606979Z   persist-credentials: true\n2026-10-18T11:53:01.3607468Z   clean: true\n2026-10-18T11:53:01.3607908Z   sparse-checkout-cone-mode: true\n2026-10-18T11:53:01.3608427Z   fetch-depth: 1\n2026-10-18T11:53:01.3609047Z   fetch-tags: false\n2026-10-18T11:53:01.3609550Z   show-progress: true\n2026-10-18T11:53:01.3609993Z   lfs: false\n2026-10-18T11:53:01.3610400Z   submodules: false\n2026-10-18T11:53:01.3610850Z   set-safe-directory: true\n2026-10-18T11:53:01.3611348Z   allow-unsafe-pr-checkout: false\n2026-10-18T11:53:01.3612105Z env:\n2026-10-18T11:53:01.3612514Z   PYTEST_SHARD: 1/4\n2026-10-18T11:53:01.3612947Z ##[endgroup]\n2026-10-18T11:53:01.4633935Z Syncing repository: petersky/pa\n2026-10-18T11:53:01.4636298Z ##[group]Getting Git version info\n2026-10-18T11:53:01.4637431Z Working directory is '/home/runner/work/pa/pa'\n2026-10-18T11:53:01.4639272Z [command]/usr/bin/git version\n2026-10-18T11:53:01.4710591Z git version 2.55.0\n2026-10-18T11:53:01.4739767Z ##[endgroup]\n2026-10-18T11:53:01.4755871Z Temporarily overriding HOME='/home/runner/work/_temp/87358347-1d49-486f-aea2-6c78d7182adf' before making global git config changes\n2026-10-18T11:53:01.4759048Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T11:53:01.4762326Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T11:53:01.4816827Z Deleting the contents of '/home/runner/work/pa/pa'\n2026-10-18T11:53:01.4820439Z ##[group]Initializing the repository\n2026-10-18T11:53:01.4826108Z [command]/usr/bin/git init /home/runner/work/pa/pa\n2026-10-18T11:53:01.4954903Z hint: Using 'master' as the name for the initial branch. This default branch name\n2026-10-18T11:53:01.4957033Z hint: will change to \"main\" in Git 3.0. To configure the initial branch name\n2026-10-18T11:53:01.4959400Z hint: to use in all of your new repositories, which will suppress this warning,\n2026-10-18T11:53:01.4961262Z hint: call:\n2026-10-18T11:53:01.4962349Z hint:\n2026-10-18T11:53:01.4963414Z hint: \tgit config --global init.defaultBranch <name>\n2026-10-18T11:53:01.4964716Z hint:\n2026-10-18T11:53:01.4965520Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\n2026-10-18T11:53:01.4966628Z hint: 'development'. The just-created branch can be renamed via this command:\n2026-10-18T11:53:01.4967521Z hint:\n2026-10-18T11:53:01.4968108Z hint: \tgit branch -m <name>\n2026-10-18T11:53:01.4968790Z hint:\n2026-10-18T11:53:01.4970228Z hint: Disable this message with \"git config set advice.defaultBranchName false\"\n2026-10-18T11:53:01.4971695Z Initialized empty Git repository in /home/runner/work/pa/pa/.git/\n2026-10-18T11:53:01.4974173Z [command]/usr/bin/git remote add origin https://github.com/petersky/pa\n2026-10-18T11:53:01.5021712Z ##[endgroup]\n2026-10-18T11:53:01.5022630Z ##[group]Disabling automatic garbage collection\n2026-10-18T11:53:01.5025953Z [command]/usr/bin/git config --local gc.auto 0\n2026-10-18T11:53:01.5057978Z ##[endgroup]\n2026-10-18T11:53:01.5059189Z ##[group]Setting up auth\n2026-10-18T11:53:01.5066314Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T11:53:01.5138678Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T11:53:01.5530841Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T11:53:01.5564062Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T11:53:01.5825864Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T11:53:01.5866759Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T11:53:01.6116554Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: <redacted> ***\n2026-10-18T11:53:01.6190091Z ##[endgroup]\n2026-10-18T11:53:01.6191868Z ##[group]Fetching the repository\n2026-10-18T11:53:01.6194677Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ec394a641aa24e72337d4a82247696cbc9ebd55e:refs/remotes/pull/521/merge\n2026-10-18T11:53:09.1695466Z From https://github.com/petersky/pa\n2026-10-18T11:53:09.1697599Z  * [new ref]         ec394a641aa24e72337d4a82247696cbc9ebd55e -> pull/521/merge\n2026-10-18T11:53:09.1703167Z ##[endgroup]\n2026-10-18T11:53:09.1705675Z ##[group]Determining the checkout info\n2026-10-18T11:53:09.1708124Z ##[endgroup]\n2026-10-18T11:53:09.1711653Z [command]/usr/bin/git sparse-checkout disable\n2026-10-18T11:53:09.1765843Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig\n2026-10-18T11:53:09.1809349Z ##[group]Checking out the ref\n2026-10-18T11:53:09.1813225Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/521/merge\n2026-10-18T11:53:09.4315447Z Note: switching to 'refs/remotes/pull/521/merge'.\n2026-10-18T11:53:09.4316830Z \n2026-10-18T11:53:09.4317880Z You are in 'detached HEAD' state. You can look around, make experimental\n2026-10-18T11:53:09.4320937Z changes and commit them, and you can discard any commits you make in this\n2026-10-18T11:53:09.4323317Z state without impacting any branches by switching back to a branch.\n2026-10-18T11:53:09.4324693Z \n2026-10-18T11:53:09.4325715Z If you want to create a new branch to retain commits you create, you may\n2026-10-18T11:53:09.4328099Z do so (now or later) by using -c with the switch command. Example:\n2026-10-18T11:53:09.4329708Z \n2026-10-18T11:53:09.4330488Z   git switch -c <new-branch-name>\n2026-10-18T11:53:09.4331851Z \n2026-10-18T11:53:09.4332482Z Or undo this operation with:\n2026-10-18T11:53:09.4333395Z \n2026-10-18T11:53:09.4333899Z   git switch -\n2026-10-18T11:53:09.4334603Z \n2026-10-18T11:53:09.4335819Z Turn off this advice by setting config variable advice.detachedHead to false\n2026-10-18T11:53:09.4337607Z \n2026-10-18T11:53:09.4339704Z HEAD is now at ec394a6 Merge 3618ededf406934db6db0d4f9f9e745d01bbed56 into c43f15ca138fe1a259b04a3ba19ab25b87ddc58c\n2026-10-18T11:53:09.4346645Z ##[endgroup]\n2026-10-18T11:53:09.4395177Z [command]/usr/bin/git log -1 --format=%H\n2026-10-18T11:53:09.4430203Z ec394a641aa24e72337d4a82247696cbc9ebd55e\n2026-10-18T11:53:09.4970879Z ##[group]Run astral-sh/setup-uv@v10.0.1\n2026-10-18T11:53:09.4972035Z with:\n2026-10-18T11:53:09.4972796Z   enable-cache: true\n2026-10-18T11:53:09.4973703Z   activate-environment: false\n2026-10-18T11:53:09.4974701Z   no-project: false\n2026-10-18T11:53:09.4975656Z   working-directory: /home/runner/work/pa/pa\n2026-10-18T11:53:09.4986448Z   github-token: ***\n2026-10-18T11:53:09.4989001Z   cache-dependency-glob: **/*requirements*.txt\n**/*requirements*.in\n**/*constraints*.txt\n**/*constraints*.in\n**/pyproject.toml\n**/uv.lock\n**/*.py.lock\n\n2026-10-18T11:53:09.4991550Z   restore-cache: true\n2026-10-18T11:53:09.4992433Z   save-cache: true\n2026-10-18T11:53:09.4993278Z   prune-cache: false\n2026-10-18T11:53:09.4994161Z   cache-python: false\n2026-10-18T11:53:09.4995095Z   ignore-nothing-to-cache: false\n2026-10-18T11:53:09.4996172Z   ignore-empty-workdir: false\n2026-10-18T11:53:09.4997225Z   download-from-astral-mirror: true\n2026-10-18T11:53:09.4998335Z   add-problem-matchers: true\n2026-10-18T11:53:09.4999459Z   quiet: false\n2026-10-18T11:53:09.5000294Z   resolution-strategy: highest\n2026-10-18T11:53:09.5001265Z env:\n2026-10-18T11:53:09.5001992Z   PYTEST_SHARD: 1/4\n2026-10-18T11:53:09.5002822Z ##[endgroup]\n2026-10-18T11:53:09.6836702Z Trying to find version for uv in: /home/runner/work/pa/pa/uv.toml\n2026-10-18T11:53:09.6839904Z Could not find file: /home/runner/work/pa/pa/uv.toml\n2026-10-18T11:53:09.6842816Z Trying to find version for uv in: /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T11:53:09.6846623Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.\n2026-10-18T11:53:09.6852696Z Fetching manifest data from https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson ...\n2026-10-18T11:53:09.7469085Z Downloading uv from \"https://releases.astral.sh/github/uv/releases/download/0.13.1/uv-x86_64-unknown-linux-gnu.tar.gz\" ...\n2026-10-18T11:53:09.8955076Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/54f72b52-b45c-4645-846e-bd74d78212a1 -f /home/runner/work/_temp/179c93f8-9ddb-47af-937a-d518ddf0f530\n2026-10-18T11:53:10.1951323Z Added /home/runner/.local/bin to the path\n2026-10-18T11:53:10.1955139Z Added /opt/hostedtoolcache/uv/0.13.1/x86_64 to the path\n2026-10-18T11:53:10.1957010Z Set UV_PYTHON_INSTALL_DIR to /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:10.1958048Z Added /home/runner/work/_temp/uv-python-dir to the path\n2026-10-18T11:53:10.1980833Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:10.1981356Z Successfully installed uv version 0.13.1\n2026-10-18T11:53:10.2946971Z Searching files using cache dependency glob: /home/runner/work/pa/pa/**/*requirements*.txt,/home/runner/work/pa/pa/**/*requirements*.in,/home/runner/work/pa/pa/**/*constraints*.txt,/home/runner/work/pa/pa/**/*constraints*.in,/home/runner/work/pa/pa/**/pyproject.toml,/home/runner/work/pa/pa/**/uv.lock,/home/runner/work/pa/pa/**/*.py.lock\n2026-10-18T11:53:10.3380948Z /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T11:53:10.4613788Z /home/runner/work/pa/pa/uv.lock\n2026-10-18T11:53:10.4623870Z Found 2 files to hash.\n2026-10-18T11:53:10.4696324Z Trying to restore cache from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:10.5133485Z Cache hit for: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:10.8729953Z Received 43339440 of 43339440 (100.0%), 139.2 MBs/sec\n2026-10-18T11:53:10.8730880Z Cache Size: ~41 MB (43339440 B)\n2026-10-18T11:53:10.8799807Z [command]/usr/bin/tar -xf /home/runner/work/_temp/d9aeb0a1-814d-409a-b8ec-28d9efced494/cache.tzst -P -C /home/runner/work/pa/pa --use-compress-program unzstd\n2026-10-18T11:53:11.3277305Z Cache restored successfully\n2026-10-18T11:53:11.3302152Z cache restored from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:11.4462525Z ##[group]Run uv python install 3.14\n2026-10-18T11:53:11.4462922Z \u001b[36;1muv python install 3.14\u001b[0m\n2026-10-18T11:53:11.4730573Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:11.4730913Z env:\n2026-10-18T11:53:11.4731164Z   PYTEST_SHARD: 1/4\n2026-10-18T11:53:11.4731546Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:11.4732077Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:11.4732455Z ##[endgroup]\n2026-10-18T11:53:11.5815925Z Downloading cpython-3.14.8-linux-x86_64-gnu (download) (34.6MiB)\n2026-10-18T11:53:12.1963937Z  Downloaded cpython-3.14.8-linux-x86_64-gnu (download)\n2026-10-18T11:53:12.1985191Z Installed Python 3.14.8 in 708ms\n2026-10-18T11:53:12.1985968Z  + cpython-3.14.8-linux-x86_64-gnu (python3.14)\n2026-10-18T11:53:12.2050118Z ##[group]Run uv sync\n2026-10-18T11:53:12.2050440Z \u001b[36;1muv sync\u001b[0m\n2026-10-18T11:53:12.2116169Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:12.2116445Z env:\n2026-10-18T11:53:12.2116657Z   PYTEST_SHARD: 1/4\n2026-10-18T11:53:12.2116975Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:12.2117389Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:12.2117707Z ##[endgroup]\n2026-10-18T11:53:12.3956640Z Using CPython 3.14.8\n2026-10-18T11:53:12.3957411Z Creating virtual environment at: .venv\n2026-10-18T11:53:12.3984731Z Resolved 61 packages in 0.85ms\n2026-10-18T11:53:12.4022091Z    Building pa @ file:///home/runner/work/pa/pa\n2026-10-18T11:53:13.6504938Z       Built pa @ file:///home/runner/work/pa/pa\n2026-10-18T11:53:13.6545359Z Prepared 1 package in 1.25s\n2026-10-18T11:53:13.6836007Z Installed 59 packages in 28ms\n2026-10-18T11:53:13.6836644Z  + agent-client-protocol==0.10.1\n2026-10-18T11:53:13.6837123Z  + annotated-doc==0.0.4\n2026-10-18T11:53:13.6838327Z  + annotated-types==0.7.0\n2026-10-18T11:53:13.6838769Z  + anyio==4.13.0\n2026-10-18T11:53:13.6839324Z  + asyncssh==2.24.0\n2026-10-18T11:53:13.6839696Z  + attrs==26.1.0\n2026-10-18T11:53:13.6840049Z  + certifi==2026.5.20\n2026-10-18T11:53:13.6840429Z  + cffi==2.0.0\n2026-10-18T11:53:13.6840767Z  + click==8.4.1\n2026-10-18T11:53:13.6841119Z  + cryptography==49.0.0\n2026-10-18T11:53:13.6841500Z  + execnet==2.1.2\n2026-10-18T11:53:13.6841851Z  + fastapi==0.136.3\n2026-10-18T11:53:13.6842197Z  + h11==0.16.0\n2026-10-18T11:53:13.6842590Z  + httpcore==1.0.9\n2026-10-18T11:53:13.6842983Z  + httpcore2==2.9.1\n2026-10-18T11:53:13.6843473Z  + httptools==0.7.1\n2026-10-18T11:53:13.6843908Z  + httpx==0.28.1\n2026-10-18T11:53:13.6844330Z  + httpx2==2.9.1\n2026-10-18T11:53:13.6844707Z  + idna==3.18\n2026-10-18T11:53:13.6845106Z  + iniconfig==2.3.0\n2026-10-18T11:53:13.6845630Z  + jinja2==3.1.6\n2026-10-18T11:53:13.6846105Z  + jsonschema==4.26.0\n2026-10-18T11:53:13.6846788Z  + jsonschema-specifications==2025.9.1\n2026-10-18T11:53:13.6847299Z  + markdown-it-py==4.2.0\n2026-10-18T11:53:13.6847713Z  + markupsafe==3.0.3\n2026-10-18T11:53:13.6848134Z  + mcp==2.0.0\n2026-10-18T11:53:13.6848627Z  + mcp-types==2.0.0\n2026-10-18T11:53:13.6849261Z  + mdurl==0.1.2\n2026-10-18T11:53:13.6849727Z  + opentelemetry-api==1.44.0\n2026-10-18T11:53:13.6850534Z  + pa==1.5.9 (from file:///home/runner/work/pa/pa)\n2026-10-18T11:53:13.6851068Z  + packaging==26.3\n2026-10-18T11:53:13.6851433Z  + pluggy==1.6.0\n2026-10-18T11:53:13.6851851Z  + psutil==7.2.2\n2026-10-18T11:53:13.6852452Z  + pycparser==3.0\n2026-10-18T11:53:13.6852809Z  + pydantic==2.13.4\n2026-10-18T11:53:13.6853182Z  + pydantic-core==2.46.4\n2026-10-18T11:53:13.6853669Z  + pydantic-settings==2.14.1\n2026-10-18T11:53:13.6854123Z  + pygments==2.20.0\n2026-10-18T11:53:13.6854571Z  + pyjwt==2.13.0\n2026-10-18T11:53:13.6855043Z  + pytest==9.1.1\n2026-10-18T11:53:13.6855510Z  + pytest-asyncio==1.4.0\n2026-10-18T11:53:13.6855947Z  + pytest-xdist==3.8.0\n2026-10-18T11:53:13.6856428Z  + python-dotenv==1.2.2\n2026-10-18T11:53:13.6856909Z  + python-multipart==0.0.29\n2026-10-18T11:53:13.6857354Z  + pyyaml==6.0.3\n2026-10-18T11:53:13.6857814Z  + referencing==0.37.0\n2026-10-18T11:53:13.6858271Z  + rich==15.0.0\n2026-10-18T11:53:13.6858758Z  + rpds-py==0.30.0\n2026-10-18T11:53:13.6869813Z  + shellingham==1.5.4\n2026-10-18T11:53:13.6870402Z  + sse-starlette==3.4.4\n2026-10-18T11:53:13.6870977Z  + starlette==1.1.0\n2026-10-18T11:53:13.6871598Z  + truststore==0.10.4\n2026-10-18T11:53:13.6872104Z  + typer==0.25.1\n2026-10-18T11:53:13.6872497Z  + typing-extensions==4.15.0\n2026-10-18T11:53:13.6872972Z  + typing-inspection==0.4.2\n2026-10-18T11:53:13.6877664Z  + uvicorn==0.48.0\n2026-10-18T11:53:13.6878313Z  + uvloop==0.22.1\n2026-10-18T11:53:13.6878763Z  + watchfiles==1.2.0\n2026-10-18T11:53:13.6879405Z  + websockets==16.0\n2026-10-18T11:53:13.7003997Z ##[group]Run timeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\n2026-10-18T11:53:13.7005043Z \u001b[36;1mtimeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\u001b[0m\n2026-10-18T11:53:13.7069584Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:13.7069866Z env:\n2026-10-18T11:53:13.7070109Z   PYTEST_SHARD: 1/4\n2026-10-18T11:53:13.7070419Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:13.7070827Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:13.7071133Z ##[endgroup]\n2026-10-18T11:53:21.5361343Z ##[group]Run uv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\n2026-10-18T11:53:21.5362920Z \u001b[36;1muv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\u001b[0m\n2026-10-18T11:53:21.5428162Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:21.5428426Z env:\n2026-10-18T11:53:21.5428633Z   PYTEST_SHARD: 1/4\n2026-10-18T11:53:21.5429276Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:21.5429691Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:21.5430000Z ##[endgroup]\n2026-10-18T11:53:31.9551120Z bringing up nodes...\n2026-10-18T11:53:31.9551623Z bringing up nodes...\n2026-10-18T11:53:31.9551888Z \n2026-10-18T11:53:36.2521945Z ............................uuu......................................... [  7%]\n2026-10-18T11:53:53.1484356Z ....................FF..............................uuuuuuuuuuu......... [ 14%]\n2026-10-18T11:54:05.3309584Z ..............................................................uuuu...... [ 21%]\n2026-10-18T11:54:11.6682840Z ........................................................................ [ 29%]\n2026-10-18T11:54:25.0560111Z ..................................................................uu.... [ 36%]\n2026-10-18T11:54:30.2894830Z ........uuu..uuu.........................uu............................. [ 43%]\n2026-10-18T11:54:46.3297883Z .....................................................................uu. [ 51%]\n2026-10-18T11:54:51.3131739Z ....................................uu.................................. [ 58%]\n2026-10-18T11:55:04.5020935Z ................uu...............................s...................... [ 66%]\n2026-10-18T11:55:11.9797900Z ........................................................................ [ 73%]\n2026-10-18T11:55:18.5879645Z ....................uuuuuuuuuuuuuuuuuuuuuuuu............................ [ 79%]\n2026-10-18T11:55:28.6623676Z ...........................................................uu..........F [ 86%]\n2026-10-18T11:55:30.2387725Z .........................................uuuuuuuuuuuuuuuu............... [ 92%]\n2026-10-18T11:55:30.5187964Z ..uuuuuuuuuuuuuuuuuuuuuuuuuuu....uu..................................... [ 97%]\n2026-10-18T11:55:52.0696311Z .........................                                                [100%]\n2026-10-18T11:55:52.0697444Z =================================== FAILURES ===================================\n2026-10-18T11:55:52.0698704Z __ AgentSessionLiveEventTests.test_shutdown_aborts_remaining_durable_resumes ___\n2026-10-18T11:55:52.0700308Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:52.0701036Z \n2026-10-18T11:55:52.0702002Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_shutdown_aborts_remaining_durable_resumes>\n2026-10-18T11:55:52.0703136Z \n2026-10-18T11:55:52.0703589Z     def test_shutdown_aborts_remaining_durable_resumes(self) -> None:\n2026-10-18T11:55:52.0704523Z         from pa.server.shutdown import reset_shutdown_event, signal_shutdown\n2026-10-18T11:55:52.0705030Z     \n2026-10-18T11:55:52.0705337Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:52.0705759Z             sessions = [\n2026-10-18T11:55:52.0706062Z                 AgentSession(\n2026-10-18T11:55:52.0706386Z                     id=\"session-a\",\n2026-10-18T11:55:52.0706739Z                     agent_name=\"cursor\",\n2026-10-18T11:55:52.0707132Z                     external_session_id=\"ext-a\",\n2026-10-18T11:55:52.0707523Z                     status=\"prompting\",\n2026-10-18T11:55:52.0707934Z                 ),\n2026-10-18T11:55:52.0708215Z                 AgentSession(\n2026-10-18T11:55:52.0708544Z                     id=\"session-b\",\n2026-10-18T11:55:52.0709138Z                     agent_name=\"cursor\",\n2026-10-18T11:55:52.0709536Z                     external_session_id=\"ext-b\",\n2026-10-18T11:55:52.0710281Z                     status=\"prompting\",\n2026-10-18T11:55:52.0710631Z                 ),\n2026-10-18T11:55:52.0710890Z             ]\n2026-10-18T11:55:52.0711163Z             store = MagicMock()\n2026-10-18T11:55:52.0711544Z             store.list_sessions.return_value = sessions\n2026-10-18T11:55:52.0711980Z             manager = AgentSessionManager(\n2026-10-18T11:55:52.0712485Z                 Settings(data_dir=Path(tmp), agent_recovery_concurrency=1), store\n2026-10-18T11:55:52.0712982Z             )\n2026-10-18T11:55:52.0713299Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:52.0713685Z                 return_value={}\n2026-10-18T11:55:52.0713922Z             )\n2026-10-18T11:55:52.0714262Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:52.0714669Z             resumed: list[str] = []\n2026-10-18T11:55:52.0714919Z     \n2026-10-18T11:55:52.0715129Z             async def resume_one(snap, _full):\n2026-10-18T11:55:52.0715455Z                 resumed.append(snap.session_id)\n2026-10-18T11:55:52.0715753Z                 signal_shutdown()\n2026-10-18T11:55:52.0716015Z                 manager._accepting = False\n2026-10-18T11:55:52.0716301Z                 manager._quiescing = True\n2026-10-18T11:55:52.0716566Z     \n2026-10-18T11:55:52.0716854Z             manager._resume_from_snapshot = AsyncMock(side_effect=resume_one)\n2026-10-18T11:55:52.0717267Z             manager.attach_default = AsyncMock()\n2026-10-18T11:55:52.0717611Z             manager._mark_recovery_interrupted = AsyncMock()\n2026-10-18T11:55:52.0717919Z     \n2026-10-18T11:55:52.0718115Z             async def run() -> None:\n2026-10-18T11:55:52.0718389Z                 reset_shutdown_event()\n2026-10-18T11:55:52.0718649Z                 try:\n2026-10-18T11:55:52.0719133Z                     await manager.start(resume=True)\n2026-10-18T11:55:52.0719441Z                 finally:\n2026-10-18T11:55:52.0719683Z                     reset_shutdown_event()\n2026-10-18T11:55:52.0719945Z     \n2026-10-18T11:55:52.0720306Z             asyncio.run(run())\n2026-10-18T11:55:52.0720548Z     \n2026-10-18T11:55:52.0720772Z >           self.assertEqual(resumed, [\"session-a\"])\n2026-10-18T11:55:52.0721122Z E           AssertionError: Lists differ: [] != ['session-a']\n2026-10-18T11:55:52.0721444Z E           \n2026-10-18T11:55:52.0721697Z E           Second list contains 1 additional elements.\n2026-10-18T11:55:52.0722005Z E           First extra element 0:\n2026-10-18T11:55:52.0722261Z E           'session-a'\n2026-10-18T11:55:52.0722472Z E           \n2026-10-18T11:55:52.0722675Z E           - []\n2026-10-18T11:55:52.0722888Z E           + ['session-a']\n2026-10-18T11:55:52.0723038Z \n2026-10-18T11:55:52.0723209Z tests/test_agent_session_live_events.py:1267: AssertionError\n2026-10-18T11:55:52.0723696Z ___ AgentSessionLiveEventTests.test_startup_recovery_concurrency_is_bounded ____\n2026-10-18T11:55:52.0724217Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:52.0724490Z \n2026-10-18T11:55:52.0724911Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_startup_recovery_concurrency_is_bounded>\n2026-10-18T11:55:52.0725413Z \n2026-10-18T11:55:52.0725585Z     def test_startup_recovery_concurrency_is_bounded(self) -> None:\n2026-10-18T11:55:52.0725986Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:52.0726286Z             sessions = [\n2026-10-18T11:55:52.0726521Z                 AgentSession(\n2026-10-18T11:55:52.0726774Z                     id=f\"queued-{index}\",\n2026-10-18T11:55:52.0727066Z                     agent_name=\"codex\",\n2026-10-18T11:55:52.0727333Z                     status=\"idle\",\n2026-10-18T11:55:52.0727586Z                     config_json={\n2026-10-18T11:55:52.0727847Z                         \"durable_runtime\": {\n2026-10-18T11:55:52.0728137Z                             \"lifecycle\": \"queued\",\n2026-10-18T11:55:52.0728438Z                             \"queued_prompts\": [\n2026-10-18T11:55:52.0729380Z                                 QueuedPrompt(message=\"continue\").model_dump(mode=\"json\")\n2026-10-18T11:55:52.0729870Z                             ],\n2026-10-18T11:55:52.0730124Z                         }\n2026-10-18T11:55:52.0730358Z                     },\n2026-10-18T11:55:52.0730565Z                 )\n2026-10-18T11:55:52.0730780Z                 for index in range(8)\n2026-10-18T11:55:52.0731032Z             ]\n2026-10-18T11:55:52.0731253Z             store = MagicMock()\n2026-10-18T11:55:52.0731539Z             store.list_sessions.return_value = sessions\n2026-10-18T11:55:52.0731865Z             manager = AgentSessionManager(\n2026-10-18T11:55:52.0732246Z                 Settings(data_dir=Path(tmp), agent_recovery_concurrency=2), store\n2026-10-18T11:55:52.0732611Z             )\n2026-10-18T11:55:52.0732912Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:52.0733287Z                 return_value={}\n2026-10-18T11:55:52.0733521Z             )\n2026-10-18T11:55:52.0733848Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:52.0734240Z             active = 0\n2026-10-18T11:55:52.0734457Z             maximum = 0\n2026-10-18T11:55:52.0734663Z     \n2026-10-18T11:55:52.0734881Z             async def recover(_snapshot, _full):\n2026-10-18T11:55:52.0735181Z                 nonlocal active, maximum\n2026-10-18T11:55:52.0735448Z                 active += 1\n2026-10-18T11:55:52.0735696Z                 maximum = max(maximum, active)\n2026-10-18T11:55:52.0735996Z                 await asyncio.sleep(0.01)\n2026-10-18T11:55:52.0736267Z                 active -= 1\n2026-10-18T11:55:52.0736486Z     \n2026-10-18T11:55:52.0736760Z             manager._resume_from_snapshot = AsyncMock(side_effect=recover)\n2026-10-18T11:55:52.0737108Z     \n2026-10-18T11:55:52.0737332Z             asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:52.0737617Z     \n2026-10-18T11:55:52.0737900Z >           self.assertEqual(manager._resume_from_snapshot.await_count, 8)\n2026-10-18T11:55:52.0738279Z E           AssertionError: 0 != 8\n2026-10-18T11:55:52.0738580Z \n2026-10-18T11:55:52.0738750Z tests/test_agent_session_live_events.py:1019: AssertionError\n2026-10-18T11:55:52.0739464Z _______________ test_startup_gc_protects_open_persisted_sessions _______________\n2026-10-18T11:55:52.0739941Z [gw1] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:52.0740215Z \n2026-10-18T11:55:52.0740507Z tmp_path = PosixPath('/tmp/pytest-of-runner/pytest-0/popen-gw1/test_startup_gc_protects_open_0')\n2026-10-18T11:55:52.0740886Z \n2026-10-18T11:55:52.0741109Z     def test_startup_gc_protects_open_persisted_sessions(tmp_path: Path) -> None:\n2026-10-18T11:55:52.0741551Z         workspace_manager, _, _ = manager_for(tmp_path)\n2026-10-18T11:55:52.0741873Z         store = workspace_manager.store\n2026-10-18T11:55:52.0742180Z         store.list_sessions.return_value = [\n2026-10-18T11:55:52.0742564Z             AgentSession(id=\"open\", agent_name=\"codex\", status=\"disconnected\"),\n2026-10-18T11:55:52.0743041Z             AgentSession(id=\"closed\", agent_name=\"codex\", status=\"closed\"),\n2026-10-18T11:55:52.0743397Z         ]\n2026-10-18T11:55:52.0743694Z         manager = AgentSessionManager(workspace_manager.settings, store)\n2026-10-18T11:55:52.0744178Z         manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:52.0744585Z         manager.attach_default = AsyncMock()\n2026-10-18T11:55:52.0744848Z     \n2026-10-18T11:55:52.0745183Z         with patch(\"pa.instance.agent_session.load_quiesce_snapshot\", return_value=None):\n2026-10-18T11:55:52.0745617Z             asyncio.run(manager.start())\n2026-10-18T11:55:52.0745874Z     \n2026-10-18T11:55:52.0746166Z >       manager.workspace_manager.collect_garbage.assert_called_once_with(\n2026-10-18T11:55:52.0746556Z             active_session_ids={\"open\"}\n2026-10-18T11:55:52.0746831Z         )\n2026-10-18T11:55:52.0746954Z \n2026-10-18T11:55:52.0747072Z tests/test_repository_workspaces.py:1293: \n2026-10-18T11:55:52.0747535Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n2026-10-18T11:55:52.0748158Z ../../_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/unittest/mock.py:998: in assert_called_once_with\n2026-10-18T11:55:52.0748748Z     return self.assert_called_with(*args, **kwargs)\n2026-10-18T11:55:52.0749294Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n2026-10-18T11:55:52.0749623Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n2026-10-18T11:55:52.0749867Z \n2026-10-18T11:55:52.0749983Z self = <MagicMock id='140463096929248'>, args = ()\n2026-10-18T11:55:52.0750303Z kwargs = {'active_session_ids': {'open'}}\n2026-10-18T11:55:52.0750492Z \n2026-10-18T11:55:52.0750628Z     def assert_called_with(self, /, *args, **kwargs):\n2026-10-18T11:55:52.0751132Z         \"\"\"assert that the last call was made with the specified arguments.\n2026-10-18T11:55:52.0751494Z     \n2026-10-18T11:55:52.0751795Z         Raises an AssertionError if the args and keyword args passed in are\n2026-10-18T11:55:52.0752197Z         different to the last call to the mock.\"\"\"\n2026-10-18T11:55:52.0752499Z         if self.call_args is None:\n2026-10-18T11:55:52.0752835Z             expected = self._format_mock_call_signature(args, kwargs)\n2026-10-18T11:55:52.0753189Z             actual = 'not called.'\n2026-10-18T11:55:52.0753549Z             error_message = ('expected call not found.\\nExpected: %s\\n  Actual: %s'\n2026-10-18T11:55:52.0753944Z                     % (expected, actual))\n2026-10-18T11:55:52.0754239Z             raise AssertionError(error_message)\n2026-10-18T11:55:52.0754517Z     \n2026-10-18T11:55:52.0754708Z         def _error_message():\n2026-10-18T11:55:52.0755006Z             msg = self._format_mock_failure_message(args, kwargs)\n2026-10-18T11:55:52.0755330Z             return msg\n2026-10-18T11:55:52.0755636Z         expected = self._call_matcher(_Call((args, kwargs), two=True))\n2026-10-18T11:55:52.0756024Z         actual = self._call_matcher(self.call_args)\n2026-10-18T11:55:52.0756331Z         if actual != expected:\n2026-10-18T11:55:52.0756793Z             cause = expected if isinstance(expected, Exception) else None\n2026-10-18T11:55:52.0757203Z >           raise AssertionError(_error_message()) from cause\n2026-10-18T11:55:52.0757556Z E           AssertionError: expected call not found.\n2026-10-18T11:55:52.0757889Z E           Expected: mock(active_session_ids={'open'})\n2026-10-18T11:55:52.0758217Z E             Actual: mock(active_session_ids=set())\n2026-10-18T11:55:52.0758422Z \n2026-10-18T11:55:52.0758751Z ../../_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/unittest/mock.py:986: AssertionError\n2026-10-18T11:55:52.0759586Z ----------------------------- Captured stderr call -----------------------------\n2026-10-18T11:55:52.0760235Z Cloning into bare repository '/tmp/pytest-of-runner/pytest-0/popen-gw1/test_startup_gc_protects_open_0/remote.git'...\n2026-10-18T11:55:52.0760773Z done.\n2026-10-18T11:55:52.0761025Z =============================== warnings summary ===============================\n2026-10-18T11:55:52.0761635Z tests/test_agent_effort_browser.py::test_new_chat_defaults_native_receipt_and_scope_switches\n2026-10-18T11:55:52.0762205Z tests/test_health_journal.py::test_ordinary_bound_connection_mcp_report[True]\n2026-10-18T11:55:52.0763316Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions\n2026-10-18T11:55:52.0764454Z     warnings.warn(  # deprecated in 14.0 - 2024-11-09\n2026-10-18T11:55:52.0764678Z \n2026-10-18T11:55:52.0764938Z tests/test_agent_effort_browser.py::test_new_chat_defaults_native_receipt_and_scope_switches\n2026-10-18T11:55:52.0765510Z tests/test_health_journal.py::test_ordinary_bound_connection_mcp_report[True]\n2026-10-18T11:55:52.0766566Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated\n2026-10-18T11:55:52.0767437Z     from websockets.server import WebSocketServerProtocol\n2026-10-18T11:55:52.0767693Z \n2026-10-18T11:55:52.0767821Z tests/test_agent_effort_browser.py: 10 warnings\n2026-10-18T11:55:52.0768153Z tests/test_agent_queue_browser.py: 14 warnings\n2026-10-18T11:55:52.0768529Z tests/test_conversation_card_navigation_browser.py: 40 warnings\n2026-10-18T11:55:52.0769209Z tests/test_status_actions_browser.py: 43 warnings\n2026-10-18T11:55:52.0769573Z tests/test_visualization_chat_browser.py: 218 warnings\n2026-10-18T11:55:52.0770450Z   /home/runner/work/pa/pa/src/pa/core/async_runtime.py:345: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:52.0771326Z     future = loop.run_in_executor(self._executor, bound)\n2026-10-18T11:55:52.0771559Z \n2026-10-18T11:55:52.0771741Z tests/test_conversation_card_navigation_browser.py: 23 warnings\n2026-10-18T11:55:52.0772129Z tests/test_status_actions_browser.py: 23 warnings\n2026-10-18T11:55:52.0772484Z tests/test_visualization_chat_browser.py: 37 warnings\n2026-10-18T11:55:52.0773527Z   /home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/threads.py:26: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:52.0774573Z     return await loop.run_in_executor(None, func_call)\n2026-10-18T11:55:52.0774794Z \n2026-10-18T11:55:52.0774969Z tests/test_conversation_card_navigation_browser.py: 3 warnings\n2026-10-18T11:55:52.0775349Z tests/test_status_actions_browser.py: 3 warnings\n2026-10-18T11:55:52.0775703Z tests/test_visualization_chat_browser.py: 6 warnings\n2026-10-18T11:55:52.0776572Z   /home/runner/work/pa/pa/src/pa/telemetry/service.py:72: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:52.0777652Z     return await loop.run_in_executor(self._executor, lambda: call(*args, **kwargs))\n2026-10-18T11:55:52.0777982Z \n2026-10-18T11:55:52.0778417Z tests/test_conversation_card_navigation_browser.py::test_restored_open_card_link_reaches_work_dialog[default]\n2026-10-18T11:55:52.0779351Z tests/test_status_actions_browser.py::test_status_actions_desktop_narrow_and_zoom[390-844]\n2026-10-18T11:55:52.0780113Z tests/test_visualization_chat_browser.py::test_real_chat_visualization_controls_state_reload_and_isolation\n2026-10-18T11:55:52.0781180Z   /home/runner/work/pa/pa/src/pa/health_journal/service.py:52: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:52.0782148Z     future = loop.run_in_executor(self.pool, functools.partial(fn, *args, **kwargs))\n2026-10-18T11:55:52.0782468Z \n2026-10-18T11:55:52.0782875Z tests/test_dispatch_consistency.py::RetryAndConflictTests::test_unreachable_peer_blocks_dispatch_instead_of_hiding_divergence\n2026-10-18T11:55:52.0783870Z   /home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/linecache.py:85: RuntimeWarning: coroutine 'request_peer' was never awaited\n2026-10-18T11:55:52.0784585Z   Coroutine created at (most recent call last)\n2026-10-18T11:55:52.0790456Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/unittest/case.py\", line 669, in run\n2026-10-18T11:55:52.0791135Z       self._callTestMethod(testMethod)\n2026-10-18T11:55:52.0791860Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/unittest/async_case.py\", line 102, in _callTestMethod\n2026-10-18T11:55:52.0792510Z       result = self._callMaybeAsync(method)\n2026-10-18T11:55:52.0793189Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/unittest/async_case.py\", line 128, in _callMaybeAsync\n2026-10-18T11:55:52.0794010Z       return self._asyncioRunner.run(\n2026-10-18T11:55:52.0794638Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/runners.py\", line 128, in run\n2026-10-18T11:55:52.0795262Z       return self._loop.run_until_complete(task)\n2026-10-18T11:55:52.0795957Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/base_events.py\", line 707, in run_until_complete\n2026-10-18T11:55:52.0796593Z       self.run_forever()\n2026-10-18T11:55:52.0797189Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/base_events.py\", line 678, in run_forever\n2026-10-18T11:55:52.0797792Z       self._run_once()\n2026-10-18T11:55:52.0798379Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/base_events.py\", line 2054, in _run_once\n2026-10-18T11:55:52.0799268Z       handle._run()\n2026-10-18T11:55:52.0799858Z     File \"/home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/events.py\", line 94, in _run\n2026-10-18T11:55:52.0800487Z       self._context.run(self._callback, *self._args)\n2026-10-18T11:55:52.0801159Z     File \"/home/runner/work/pa/pa/tests/test_dispatch_consistency.py\", line 2875, in test_remote_target_evidence_timeout_is_normalized\n2026-10-18T11:55:52.0801761Z       await _peer_terminal_repair_evidence(\n2026-10-18T11:55:52.0802312Z     File \"/home/runner/work/pa/pa/src/pa/modules/fleet.py\", line 6005, in _peer_terminal_repair_evidence\n2026-10-18T11:55:52.0802781Z       request_peer(\n2026-10-18T11:55:52.0803009Z     entry = cache.get(filename, None)\n2026-10-18T11:55:52.0803371Z   Enable tracemalloc to get traceback where the object was allocated.\n2026-10-18T11:55:52.0803968Z   See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.\n2026-10-18T11:55:52.0804365Z \n2026-10-18T11:55:52.0804571Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n2026-10-18T11:55:52.0805177Z =========================== short test summary info ============================\n2026-10-18T11:55:52.0806028Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_shutdown_aborts_remaining_durable_resumes - AssertionError: Lists differ: [] != ['session-a']\n2026-10-18T11:55:52.0806691Z \n2026-10-18T11:55:52.0806810Z Second list contains 1 additional elements.\n2026-10-18T11:55:52.0807100Z First extra element 0:\n2026-10-18T11:55:52.0807319Z 'session-a'\n2026-10-18T11:55:52.0807434Z \n2026-10-18T11:55:52.0807513Z - []\n2026-10-18T11:55:52.0807694Z + ['session-a']\n2026-10-18T11:55:52.0808292Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_startup_recovery_concurrency_is_bounded - AssertionError: 0 != 8\n2026-10-18T11:55:52.0809449Z FAILED tests/test_repository_workspaces.py::test_startup_gc_protects_open_persisted_sessions - AssertionError: expected call not found.\n2026-10-18T11:55:52.0810088Z Expected: mock(active_session_ids={'open'})\n2026-10-18T11:55:52.0810391Z   Actual: mock(active_session_ids=set())\n2026-10-18T11:55:52.0810805Z 3 failed, 924 passed, 1 skipped, 428 warnings, 105 subtests passed in 149.51s (0:02:29)\n2026-10-18T11:55:52.1262417Z ##[error]Process completed with exit code 1.\n2026-10-18T11:55:52.1404837Z Post job cleanup.\n2026-10-18T11:55:52.2272604Z [command]/usr/bin/git version\n2026-10-18T11:55:52.2316921Z git version 2.55.0\n2026-10-18T11:55:52.2356942Z Temporarily overriding HOME='/home/runner/work/_temp/18d4abe8-6510-4fdc-8d3a-6e21abc115b7' before making global git config changes\n2026-10-18T11:55:52.2358398Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T11:55:52.2363621Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T11:55:52.2401085Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T11:55:52.2437455Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T11:55:52.2697120Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T11:55:52.2725475Z http.https://github.com/.extraheader\n2026-10-18T11:55:52.2746755Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader\n2026-10-18T11:55:52.2783419Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T11:55:52.3052273Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T11:55:52.3099313Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T11:55:52.3523762Z Cleaning up orphan processes\n"
+    },
+    ".dev/pr521-failed-job117668193945.log": {
+      "original_sha256": "4c0becf340aeb291944490388c0aa759c809913c238aeb7dafe58f4dfd8bf396",
+      "redacted_sha256": "a774626522e0e19c6292de5400ddc313573acbe32f943409a2f79aa171433f0e",
+      "redacted_text": "\ufeff2026-10-18T11:53:01.6529364Z Current runner version: '2.337.0'\n2026-10-18T11:53:01.6554820Z ##[group]Runner Image Provisioner\n2026-10-18T11:53:01.6555883Z Hosted Compute Agent\n2026-10-18T11:53:01.6556537Z Version: 20261012.601\n2026-10-18T11:53:01.6557217Z Commit: f3dc54e1fb89da6852db922499a0233137369e1d\n2026-10-18T11:53:01.6557957Z Build Date: 2026-10-12T17:48:21Z\n2026-10-18T11:53:01.6558700Z Worker ID: {bbf199b0-8c66-439c-b6bb-68419bcc20ff}\n2026-10-18T11:53:01.6559482Z Region: westus\n2026-10-18T11:53:01.6560026Z Cloud: Azure\n2026-10-18T11:53:01.6560601Z ##[endgroup]\n2026-10-18T11:53:01.6562165Z ##[group]Operating System\n2026-10-18T11:53:01.6563157Z Ubuntu\n2026-10-18T11:53:01.6563874Z 24.04.5\n2026-10-18T11:53:01.6564400Z LTS\n2026-10-18T11:53:01.6564918Z ##[endgroup]\n2026-10-18T11:53:01.6565543Z ##[group]Runner Image\n2026-10-18T11:53:01.6566143Z Image: ubuntu-24.04\n2026-10-18T11:53:01.6566767Z Version: 20261012.334.1\n2026-10-18T11:53:01.6568022Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md\n2026-10-18T11:53:01.6569662Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334\n2026-10-18T11:53:01.6570664Z ##[endgroup]\n2026-10-18T11:53:01.6571908Z ##[group]GITHUB_TOKEN Permissions\n2026-10-18T11:53:01.6574021Z Contents: read\n2026-10-18T11:53:01.6574773Z Metadata: read\n2026-10-18T11:53:01.6575367Z Packages: read\n2026-10-18T11:53:01.6575956Z ##[endgroup]\n2026-10-18T11:53:01.6578146Z Secret source: Actions\n2026-10-18T11:53:01.6579078Z Cache mode: write\n2026-10-18T11:53:01.6579861Z Prepare workflow directory\n2026-10-18T11:53:01.7158685Z Prepare all required actions\n2026-10-18T11:53:01.7209854Z Getting action download info\n2026-10-18T11:53:02.0644551Z Download action repository 'actions/checkout@v5' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)\n2026-10-18T11:53:02.1796301Z Download action repository 'astral-sh/setup-uv@v10.0.1' (SHA:20cfd1bf945f4377ade1205e4dbc17946fc9a30d)\n2026-10-18T11:53:02.7576152Z Complete job name: test (2)\n2026-10-18T11:53:02.8296767Z ##[group]Run actions/checkout@v5\n2026-10-18T11:53:02.8297662Z with:\n2026-10-18T11:53:02.8298109Z   repository: petersky/pa\n2026-10-18T11:53:02.8301798Z   token: ***\n2026-10-18T11:53:02.8302231Z   ssh-strict: true\n2026-10-18T11:53:02.8302662Z   ssh-user: git\n2026-10-18T11:53:02.8303346Z   persist-credentials: true\n2026-10-18T11:53:02.8303861Z   clean: true\n2026-10-18T11:53:02.8304308Z   sparse-checkout-cone-mode: true\n2026-10-18T11:53:02.8304821Z   fetch-depth: 1\n2026-10-18T11:53:02.8305305Z   fetch-tags: false\n2026-10-18T11:53:02.8305756Z   show-progress: true\n2026-10-18T11:53:02.8306209Z   lfs: false\n2026-10-18T11:53:02.8306616Z   submodules: false\n2026-10-18T11:53:02.8307065Z   set-safe-directory: true\n2026-10-18T11:53:02.8307650Z   allow-unsafe-pr-checkout: false\n2026-10-18T11:53:02.8308429Z env:\n2026-10-18T11:53:02.8308846Z   PYTEST_SHARD: 2/4\n2026-10-18T11:53:02.8309291Z ##[endgroup]\n2026-10-18T11:53:02.9318639Z Syncing repository: petersky/pa\n2026-10-18T11:53:02.9321187Z ##[group]Getting Git version info\n2026-10-18T11:53:02.9321901Z Working directory is '/home/runner/work/pa/pa'\n2026-10-18T11:53:02.9323379Z [command]/usr/bin/git version\n2026-10-18T11:53:02.9447688Z git version 2.55.0\n2026-10-18T11:53:02.9469555Z ##[endgroup]\n2026-10-18T11:53:02.9487362Z Temporarily overriding HOME='/home/runner/work/_temp/3ad2acb8-b9fa-415f-9119-f6e62ff2e96b' before making global git config changes\n2026-10-18T11:53:02.9489776Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T11:53:02.9493346Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T11:53:02.9551087Z Deleting the contents of '/home/runner/work/pa/pa'\n2026-10-18T11:53:02.9556030Z ##[group]Initializing the repository\n2026-10-18T11:53:02.9559771Z [command]/usr/bin/git init /home/runner/work/pa/pa\n2026-10-18T11:53:02.9694476Z hint: Using 'master' as the name for the initial branch. This default branch name\n2026-10-18T11:53:02.9696535Z hint: will change to \"main\" in Git 3.0. To configure the initial branch name\n2026-10-18T11:53:02.9698359Z hint: to use in all of your new repositories, which will suppress this warning,\n2026-10-18T11:53:02.9699548Z hint: call:\n2026-10-18T11:53:02.9700236Z hint:\n2026-10-18T11:53:02.9701108Z hint: \tgit config --global init.defaultBranch <name>\n2026-10-18T11:53:02.9702103Z hint:\n2026-10-18T11:53:02.9703270Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\n2026-10-18T11:53:02.9704802Z hint: 'development'. The just-created branch can be renamed via this command:\n2026-10-18T11:53:02.9706079Z hint:\n2026-10-18T11:53:02.9706848Z hint: \tgit branch -m <name>\n2026-10-18T11:53:02.9707919Z hint:\n2026-10-18T11:53:02.9709041Z hint: Disable this message with \"git config set advice.defaultBranchName false\"\n2026-10-18T11:53:02.9716024Z Initialized empty Git repository in /home/runner/work/pa/pa/.git/\n2026-10-18T11:53:02.9726146Z [command]/usr/bin/git remote add origin https://github.com/petersky/pa\n2026-10-18T11:53:02.9780590Z ##[endgroup]\n2026-10-18T11:53:02.9782137Z ##[group]Disabling automatic garbage collection\n2026-10-18T11:53:02.9783627Z [command]/usr/bin/git config --local gc.auto 0\n2026-10-18T11:53:02.9819086Z ##[endgroup]\n2026-10-18T11:53:02.9820647Z ##[group]Setting up auth\n2026-10-18T11:53:02.9827991Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T11:53:02.9879742Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T11:53:03.0279155Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T11:53:03.0323574Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T11:53:03.0551118Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T11:53:03.0589035Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T11:53:03.0819067Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: <redacted> ***\n2026-10-18T11:53:03.0860911Z ##[endgroup]\n2026-10-18T11:53:03.0862126Z ##[group]Fetching the repository\n2026-10-18T11:53:03.0871737Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ec394a641aa24e72337d4a82247696cbc9ebd55e:refs/remotes/pull/521/merge\n2026-10-18T11:53:10.9001024Z From https://github.com/petersky/pa\n2026-10-18T11:53:10.9001962Z  * [new ref]         ec394a641aa24e72337d4a82247696cbc9ebd55e -> pull/521/merge\n2026-10-18T11:53:10.9018290Z ##[endgroup]\n2026-10-18T11:53:10.9019404Z ##[group]Determining the checkout info\n2026-10-18T11:53:10.9020706Z ##[endgroup]\n2026-10-18T11:53:10.9021448Z [command]/usr/bin/git sparse-checkout disable\n2026-10-18T11:53:10.9080574Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig\n2026-10-18T11:53:10.9112696Z ##[group]Checking out the ref\n2026-10-18T11:53:10.9116807Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/521/merge\n2026-10-18T11:53:11.1649959Z Note: switching to 'refs/remotes/pull/521/merge'.\n2026-10-18T11:53:11.1650735Z \n2026-10-18T11:53:11.1651299Z You are in 'detached HEAD' state. You can look around, make experimental\n2026-10-18T11:53:11.1652480Z changes and commit them, and you can discard any commits you make in this\n2026-10-18T11:53:11.1653983Z state without impacting any branches by switching back to a branch.\n2026-10-18T11:53:11.1654644Z \n2026-10-18T11:53:11.1655111Z If you want to create a new branch to retain commits you create, you may\n2026-10-18T11:53:11.1656252Z do so (now or later) by using -c with the switch command. Example:\n2026-10-18T11:53:11.1656783Z \n2026-10-18T11:53:11.1657057Z   git switch -c <new-branch-name>\n2026-10-18T11:53:11.1657589Z \n2026-10-18T11:53:11.1657825Z Or undo this operation with:\n2026-10-18T11:53:11.1658168Z \n2026-10-18T11:53:11.1658329Z   git switch -\n2026-10-18T11:53:11.1658583Z \n2026-10-18T11:53:11.1658883Z Turn off this advice by setting config variable advice.detachedHead to false\n2026-10-18T11:53:11.1659355Z \n2026-10-18T11:53:11.1664649Z HEAD is now at ec394a6 Merge 3618ededf406934db6db0d4f9f9e745d01bbed56 into c43f15ca138fe1a259b04a3ba19ab25b87ddc58c\n2026-10-18T11:53:11.1723294Z ##[endgroup]\n2026-10-18T11:53:11.1726823Z [command]/usr/bin/git log -1 --format=%H\n2026-10-18T11:53:11.1753449Z ec394a641aa24e72337d4a82247696cbc9ebd55e\n2026-10-18T11:53:11.2141379Z ##[group]Run astral-sh/setup-uv@v10.0.1\n2026-10-18T11:53:11.2141766Z with:\n2026-10-18T11:53:11.2142016Z   enable-cache: true\n2026-10-18T11:53:11.2142288Z   activate-environment: false\n2026-10-18T11:53:11.2142582Z   no-project: false\n2026-10-18T11:53:11.2143204Z   working-directory: /home/runner/work/pa/pa\n2026-10-18T11:53:11.2146010Z   github-token: ***\n2026-10-18T11:53:11.2146674Z   cache-dependency-glob: **/*requirements*.txt\n**/*requirements*.in\n**/*constraints*.txt\n**/*constraints*.in\n**/pyproject.toml\n**/uv.lock\n**/*.py.lock\n\n2026-10-18T11:53:11.2147348Z   restore-cache: true\n2026-10-18T11:53:11.2147603Z   save-cache: true\n2026-10-18T11:53:11.2147854Z   prune-cache: false\n2026-10-18T11:53:11.2148123Z   cache-python: false\n2026-10-18T11:53:11.2148406Z   ignore-nothing-to-cache: false\n2026-10-18T11:53:11.2148715Z   ignore-empty-workdir: false\n2026-10-18T11:53:11.2149020Z   download-from-astral-mirror: true\n2026-10-18T11:53:11.2149338Z   add-problem-matchers: true\n2026-10-18T11:53:11.2149652Z   quiet: false\n2026-10-18T11:53:11.2149904Z   resolution-strategy: highest\n2026-10-18T11:53:11.2150178Z env:\n2026-10-18T11:53:11.2150405Z   PYTEST_SHARD: 2/4\n2026-10-18T11:53:11.2150647Z ##[endgroup]\n2026-10-18T11:53:11.3960214Z Trying to find version for uv in: /home/runner/work/pa/pa/uv.toml\n2026-10-18T11:53:11.3961931Z Could not find file: /home/runner/work/pa/pa/uv.toml\n2026-10-18T11:53:11.3963621Z Trying to find version for uv in: /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T11:53:11.3967491Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.\n2026-10-18T11:53:11.3974237Z Fetching manifest data from https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson ...\n2026-10-18T11:53:11.4453795Z Downloading uv from \"https://releases.astral.sh/github/uv/releases/download/0.13.1/uv-x86_64-unknown-linux-gnu.tar.gz\" ...\n2026-10-18T11:53:11.6068565Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/dd995c16-2b28-45ec-859e-55387b486843 -f /home/runner/work/_temp/3b783852-b1b3-417d-a9ac-a3d2ffb2abff\n2026-10-18T11:53:11.9269743Z Added /home/runner/.local/bin to the path\n2026-10-18T11:53:11.9274458Z Added /opt/hostedtoolcache/uv/0.13.1/x86_64 to the path\n2026-10-18T11:53:11.9276711Z Set UV_PYTHON_INSTALL_DIR to /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:11.9277727Z Added /home/runner/work/_temp/uv-python-dir to the path\n2026-10-18T11:53:11.9299242Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:11.9300148Z Successfully installed uv version 0.13.1\n2026-10-18T11:53:12.0273349Z Searching files using cache dependency glob: /home/runner/work/pa/pa/**/*requirements*.txt,/home/runner/work/pa/pa/**/*requirements*.in,/home/runner/work/pa/pa/**/*constraints*.txt,/home/runner/work/pa/pa/**/*constraints*.in,/home/runner/work/pa/pa/**/pyproject.toml,/home/runner/work/pa/pa/**/uv.lock,/home/runner/work/pa/pa/**/*.py.lock\n2026-10-18T11:53:12.0725026Z /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T11:53:12.1893335Z /home/runner/work/pa/pa/uv.lock\n2026-10-18T11:53:12.1907258Z Found 2 files to hash.\n2026-10-18T11:53:12.1985032Z Trying to restore cache from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:12.4337110Z Cache hit for: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:13.6971224Z Received 4194304 of 43339440 (9.7%), 4.0 MBs/sec\n2026-10-18T11:53:13.9983313Z Received 43339440 of 43339440 (100.0%), 31.8 MBs/sec\n2026-10-18T11:53:13.9984390Z Cache Size: ~41 MB (43339440 B)\n2026-10-18T11:53:14.0162257Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2649be8b-502b-496f-9a06-263b1318d5fc/cache.tzst -P -C /home/runner/work/pa/pa --use-compress-program unzstd\n2026-10-18T11:53:14.4667649Z Cache restored successfully\n2026-10-18T11:53:14.4694541Z cache restored from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:14.5856018Z ##[group]Run uv python install 3.14\n2026-10-18T11:53:14.5856423Z \u001b[36;1muv python install 3.14\u001b[0m\n2026-10-18T11:53:14.6137532Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:14.6137906Z env:\n2026-10-18T11:53:14.6138182Z   PYTEST_SHARD: 2/4\n2026-10-18T11:53:14.6138572Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:14.6139065Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:14.6139451Z ##[endgroup]\n2026-10-18T11:53:14.7247346Z Downloading cpython-3.14.8-linux-x86_64-gnu (download) (34.6MiB)\n2026-10-18T11:53:15.3187671Z  Downloaded cpython-3.14.8-linux-x86_64-gnu (download)\n2026-10-18T11:53:15.3209533Z Installed Python 3.14.8 in 690ms\n2026-10-18T11:53:15.3210950Z  + cpython-3.14.8-linux-x86_64-gnu (python3.14)\n2026-10-18T11:53:15.3269998Z ##[group]Run uv sync\n2026-10-18T11:53:15.3270300Z \u001b[36;1muv sync\u001b[0m\n2026-10-18T11:53:15.3335711Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:15.3335972Z env:\n2026-10-18T11:53:15.3336170Z   PYTEST_SHARD: 2/4\n2026-10-18T11:53:15.3336474Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:15.3336876Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:15.3337175Z ##[endgroup]\n2026-10-18T11:53:15.5231706Z Using CPython 3.14.8\n2026-10-18T11:53:15.5232749Z Creating virtual environment at: .venv\n2026-10-18T11:53:15.5263758Z Resolved 61 packages in 0.91ms\n2026-10-18T11:53:15.5304319Z    Building pa @ file:///home/runner/work/pa/pa\n2026-10-18T11:53:16.8299028Z       Built pa @ file:///home/runner/work/pa/pa\n2026-10-18T11:53:16.8340523Z Prepared 1 package in 1.30s\n2026-10-18T11:53:16.8563683Z Installed 59 packages in 22ms\n2026-10-18T11:53:16.8564273Z  + agent-client-protocol==0.10.1\n2026-10-18T11:53:16.8564861Z  + annotated-doc==0.0.4\n2026-10-18T11:53:16.8565387Z  + annotated-types==0.7.0\n2026-10-18T11:53:16.8565799Z  + anyio==4.13.0\n2026-10-18T11:53:16.8566177Z  + asyncssh==2.24.0\n2026-10-18T11:53:16.8566538Z  + attrs==26.1.0\n2026-10-18T11:53:16.8566892Z  + certifi==2026.5.20\n2026-10-18T11:53:16.8567264Z  + cffi==2.0.0\n2026-10-18T11:53:16.8567604Z  + click==8.4.1\n2026-10-18T11:53:16.8567982Z  + cryptography==49.0.0\n2026-10-18T11:53:16.8568370Z  + execnet==2.1.2\n2026-10-18T11:53:16.8568782Z  + fastapi==0.136.3\n2026-10-18T11:53:16.8569140Z  + h11==0.16.0\n2026-10-18T11:53:16.8569473Z  + httpcore==1.0.9\n2026-10-18T11:53:16.8569830Z  + httpcore2==2.9.1\n2026-10-18T11:53:16.8570189Z  + httptools==0.7.1\n2026-10-18T11:53:16.8570545Z  + httpx==0.28.1\n2026-10-18T11:53:16.8570895Z  + httpx2==2.9.1\n2026-10-18T11:53:16.8571234Z  + idna==3.18\n2026-10-18T11:53:16.8571582Z  + iniconfig==2.3.0\n2026-10-18T11:53:16.8571933Z  + jinja2==3.1.6\n2026-10-18T11:53:16.8572289Z  + jsonschema==4.26.0\n2026-10-18T11:53:16.8572716Z  + jsonschema-specifications==2025.9.1\n2026-10-18T11:53:16.8573477Z  + markdown-it-py==4.2.0\n2026-10-18T11:53:16.8573902Z  + markupsafe==3.0.3\n2026-10-18T11:53:16.8574273Z  + mcp==2.0.0\n2026-10-18T11:53:16.8574622Z  + mcp-types==2.0.0\n2026-10-18T11:53:16.8574979Z  + mdurl==0.1.2\n2026-10-18T11:53:16.8575352Z  + opentelemetry-api==1.44.0\n2026-10-18T11:53:16.8576293Z  + pa==1.5.9 (from file:///home/runner/work/pa/pa)\n2026-10-18T11:53:16.8577011Z  + packaging==26.3\n2026-10-18T11:53:16.8577467Z  + pluggy==1.6.0\n2026-10-18T11:53:16.8578255Z  + psutil==7.2.2\n2026-10-18T11:53:16.8578711Z  + pycparser==3.0\n2026-10-18T11:53:16.8579118Z  + pydantic==2.13.4\n2026-10-18T11:53:16.8579588Z  + pydantic-core==2.46.4\n2026-10-18T11:53:16.8580108Z  + pydantic-settings==2.14.1\n2026-10-18T11:53:16.8580655Z  + pygments==2.20.0\n2026-10-18T11:53:16.8581076Z  + pyjwt==2.13.0\n2026-10-18T11:53:16.8581532Z  + pytest==9.1.1\n2026-10-18T11:53:16.8581992Z  + pytest-asyncio==1.4.0\n2026-10-18T11:53:16.8582503Z  + pytest-xdist==3.8.0\n2026-10-18T11:53:16.8583322Z  + python-dotenv==1.2.2\n2026-10-18T11:53:16.8583825Z  + python-multipart==0.0.29\n2026-10-18T11:53:16.8584375Z  + pyyaml==6.0.3\n2026-10-18T11:53:16.8584827Z  + referencing==0.37.0\n2026-10-18T11:53:16.8585256Z  + rich==15.0.0\n2026-10-18T11:53:16.8585678Z  + rpds-py==0.30.0\n2026-10-18T11:53:16.8586081Z  + shellingham==1.5.4\n2026-10-18T11:53:16.8586567Z  + sse-starlette==3.4.4\n2026-10-18T11:53:16.8587020Z  + starlette==1.1.0\n2026-10-18T11:53:16.8587383Z  + truststore==0.10.4\n2026-10-18T11:53:16.8587609Z  + typer==0.25.1\n2026-10-18T11:53:16.8587832Z  + typing-extensions==4.15.0\n2026-10-18T11:53:16.8588093Z  + typing-inspection==0.4.2\n2026-10-18T11:53:16.8588325Z  + uvicorn==0.48.0\n2026-10-18T11:53:16.8588522Z  + uvloop==0.22.1\n2026-10-18T11:53:16.8588722Z  + watchfiles==1.2.0\n2026-10-18T11:53:16.8588933Z  + websockets==16.0\n2026-10-18T11:53:16.8719743Z ##[group]Run timeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\n2026-10-18T11:53:16.8720813Z \u001b[36;1mtimeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\u001b[0m\n2026-10-18T11:53:16.8785598Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:16.8785886Z env:\n2026-10-18T11:53:16.8786152Z   PYTEST_SHARD: 2/4\n2026-10-18T11:53:16.8786474Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:16.8786897Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:16.8787229Z ##[endgroup]\n2026-10-18T11:53:18.2891301Z ##[group]Run uv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\n2026-10-18T11:53:18.2892524Z \u001b[36;1muv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\u001b[0m\n2026-10-18T11:53:18.2956914Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:18.2957178Z env:\n2026-10-18T11:53:18.2957387Z   PYTEST_SHARD: 2/4\n2026-10-18T11:53:18.2957703Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:18.2958119Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:18.2958423Z ##[endgroup]\n2026-10-18T11:53:30.3612006Z bringing up nodes...\n2026-10-18T11:53:30.3612507Z bringing up nodes...\n2026-10-18T11:53:30.3612766Z \n2026-10-18T11:53:36.1975175Z ....................uu.................................................. [  7%]\n2026-10-18T11:53:52.7528973Z .........................F..........F......................uuuuuuu...... [ 14%]\n2026-10-18T11:53:58.5838055Z ..........................................................uuu.....uuuuuu [ 21%]\n2026-10-18T11:54:08.2511674Z ........................................................................ [ 29%]\n2026-10-18T11:54:14.0542602Z .........uuuu................................uuuuuuuuuuu................ [ 35%]\n2026-10-18T11:54:18.1647534Z ........................................................................ [ 42%]\n2026-10-18T11:54:29.9688232Z ......................uuuu....uuuuuuuuuu................................ [ 49%]\n2026-10-18T11:54:37.6574730Z .................................................uuuuuuuuuuuuuuuuuuuuuuu [ 54%]\n2026-10-18T11:54:37.6771979Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 54%]\n2026-10-18T11:54:41.5454545Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.......................................... [ 59%]\n2026-10-18T11:54:42.8813870Z ........................................................................ [ 66%]\n2026-10-18T11:54:47.5536818Z ........................................................................ [ 74%]\n2026-10-18T11:54:52.0017311Z .........................................uu............................. [ 82%]\n2026-10-18T11:54:53.2305842Z ........................................................................ [ 89%]\n2026-10-18T11:54:57.9220256Z ..........uuu...uuu........uuuuuuuu..................................... [ 96%]\n2026-10-18T11:55:07.8737336Z ....................................                                     [100%]\n2026-10-18T11:55:07.8738337Z =================================== FAILURES ===================================\n2026-10-18T11:55:07.8740274Z _ AgentSessionLiveEventTests.test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot _\n2026-10-18T11:55:07.8742081Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:07.8742683Z \n2026-10-18T11:55:07.8744079Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot>\n2026-10-18T11:55:07.8745431Z \n2026-10-18T11:55:07.8745913Z     def test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot(\n2026-10-18T11:55:07.8746484Z         self,\n2026-10-18T11:55:07.8746763Z     ) -> None:\n2026-10-18T11:55:07.8747090Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:07.8747508Z             queued = QueuedPrompt(\n2026-10-18T11:55:07.8747864Z                 id=\"queued-1\",\n2026-10-18T11:55:07.8748200Z                 message=\"survive restart\",\n2026-10-18T11:55:07.8748585Z                 session_id=\"session-restart\",\n2026-10-18T11:55:07.8748965Z                 card_id=\"card-1\",\n2026-10-18T11:55:07.8749318Z                 project_id=\"project-1\",\n2026-10-18T11:55:07.8749662Z             )\n2026-10-18T11:55:07.8749931Z             session = AgentSession(\n2026-10-18T11:55:07.8750281Z                 id=\"session-restart\",\n2026-10-18T11:55:07.8751066Z                 agent_name=\"codex\",\n2026-10-18T11:55:07.8751489Z                 external_session_id=\"provider-session-1\",\n2026-10-18T11:55:07.8751918Z                 status=\"prompting\",\n2026-10-18T11:55:07.8752181Z                 label=\"card:card-1\",\n2026-10-18T11:55:07.8752448Z                 card_id=\"card-1\",\n2026-10-18T11:55:07.8752719Z                 project_id=\"project-1\",\n2026-10-18T11:55:07.8753325Z                 config_json={\n2026-10-18T11:55:07.8753584Z                     \"durable_runtime\": {\n2026-10-18T11:55:07.8753858Z                         \"version\": 1,\n2026-10-18T11:55:07.8754155Z                         \"lifecycle\": \"prompting\",\n2026-10-18T11:55:07.8754467Z                         \"queue_paused\": False,\n2026-10-18T11:55:07.8754753Z                         \"queued_prompts\": [],\n2026-10-18T11:55:07.8755076Z                         \"in_flight\": queued.model_dump(mode=\"json\"),\n2026-10-18T11:55:07.8755425Z                         \"last_event_cursor\": 41,\n2026-10-18T11:55:07.8755719Z                     }\n2026-10-18T11:55:07.8755934Z                 },\n2026-10-18T11:55:07.8756128Z             )\n2026-10-18T11:55:07.8756338Z             store = MagicMock()\n2026-10-18T11:55:07.8756626Z             store.list_sessions.return_value = [session]\n2026-10-18T11:55:07.8757048Z             manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n2026-10-18T11:55:07.8757527Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:07.8757901Z                 return_value={}\n2026-10-18T11:55:07.8758131Z             )\n2026-10-18T11:55:07.8758451Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:07.8758876Z             manager._resume_from_snapshot = AsyncMock()\n2026-10-18T11:55:07.8759198Z             manager.attach_default = AsyncMock()\n2026-10-18T11:55:07.8759465Z     \n2026-10-18T11:55:07.8759684Z             asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:07.8760143Z     \n2026-10-18T11:55:07.8760425Z >           recovered = manager._resume_from_snapshot.await_args.args[0]\n2026-10-18T11:55:07.8760810Z                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n2026-10-18T11:55:07.8761175Z E           AttributeError: 'NoneType' object has no attribute 'args'\n2026-10-18T11:55:07.8761431Z \n2026-10-18T11:55:07.8761591Z tests/test_agent_session_live_events.py:901: AttributeError\n2026-10-18T11:55:07.8762126Z _ AgentSessionLiveEventTests.test_wake_reconciliation_defers_passive_connected_session _\n2026-10-18T11:55:07.8762678Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:07.8763133Z \n2026-10-18T11:55:07.8763584Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_wake_reconciliation_defers_passive_connected_session>\n2026-10-18T11:55:07.8764129Z \n2026-10-18T11:55:07.8764351Z     def test_wake_reconciliation_defers_passive_connected_session(self) -> None:\n2026-10-18T11:55:07.8764799Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:07.8765117Z             session = AgentSession(\n2026-10-18T11:55:07.8765378Z                 id=\"session-sleep\",\n2026-10-18T11:55:07.8765633Z                 agent_name=\"codex\",\n2026-10-18T11:55:07.8765934Z                 external_session_id=\"provider-session-sleep\",\n2026-10-18T11:55:07.8766251Z                 status=\"connected\",\n2026-10-18T11:55:07.8766509Z                 label=\"card:card-sleep\",\n2026-10-18T11:55:07.8766782Z                 config_json={\n2026-10-18T11:55:07.8767021Z                     \"durable_runtime\": {\n2026-10-18T11:55:07.8767286Z                         \"version\": 1,\n2026-10-18T11:55:07.8767548Z                         \"lifecycle\": \"ready\",\n2026-10-18T11:55:07.8767842Z                         \"queued_prompts\": [],\n2026-10-18T11:55:07.8768133Z                         \"last_event_cursor\": 12,\n2026-10-18T11:55:07.8768404Z                     }\n2026-10-18T11:55:07.8768611Z                 },\n2026-10-18T11:55:07.8768818Z             )\n2026-10-18T11:55:07.8769180Z             store = MagicMock()\n2026-10-18T11:55:07.8769473Z             store.list_sessions.return_value = [session]\n2026-10-18T11:55:07.8769811Z             store.get_session.return_value = session\n2026-10-18T11:55:07.8770212Z             manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n2026-10-18T11:55:07.8770697Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:07.8771066Z                 return_value={}\n2026-10-18T11:55:07.8771289Z             )\n2026-10-18T11:55:07.8771605Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:07.8772038Z             manager._resume_from_snapshot = AsyncMock()\n2026-10-18T11:55:07.8772319Z     \n2026-10-18T11:55:07.8772545Z             asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:07.8772941Z     \n2026-10-18T11:55:07.8773181Z             self.assertEqual(session.status, \"connected\")\n2026-10-18T11:55:07.8773544Z             manager._resume_from_snapshot.assert_not_awaited()\n2026-10-18T11:55:07.8773936Z >           self.assertEqual(manager.startup_state()[\"deferred\"], 1)\n2026-10-18T11:55:07.8774277Z E           AssertionError: 0 != 1\n2026-10-18T11:55:07.8774451Z \n2026-10-18T11:55:07.8774613Z tests/test_agent_session_live_events.py:1302: AssertionError\n2026-10-18T11:55:07.8775000Z =============================== warnings summary ===============================\n2026-10-18T11:55:07.8775621Z tests/test_agent_chat_reentry_browser.py::test_recent_reentry_failed_history_live_preview_anchors_and_thread_isolation\n2026-10-18T11:55:07.8776334Z tests/test_settings_scope_browser.py::test_settings_scope_sources_resets_isolated_saves_and_errors\n2026-10-18T11:55:07.8777502Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions\n2026-10-18T11:55:07.8778578Z     warnings.warn(  # deprecated in 14.0 - 2024-11-09\n2026-10-18T11:55:07.8778944Z \n2026-10-18T11:55:07.8779291Z tests/test_agent_chat_reentry_browser.py::test_recent_reentry_failed_history_live_preview_anchors_and_thread_isolation\n2026-10-18T11:55:07.8780006Z tests/test_settings_scope_browser.py::test_settings_scope_sources_resets_isolated_saves_and_errors\n2026-10-18T11:55:07.8781012Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated\n2026-10-18T11:55:07.8781872Z     from websockets.server import WebSocketServerProtocol\n2026-10-18T11:55:07.8782119Z \n2026-10-18T11:55:07.8782262Z tests/test_agent_chat_reentry_browser.py: 142 warnings\n2026-10-18T11:55:07.8782652Z tests/test_conversation_card_navigation_browser.py: 43 warnings\n2026-10-18T11:55:07.8783337Z tests/test_settings_scope_browser.py: 55 warnings\n2026-10-18T11:55:07.8784262Z   /home/runner/work/pa/pa/src/pa/core/async_runtime.py:345: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:07.8785199Z     future = loop.run_in_executor(self._executor, bound)\n2026-10-18T11:55:07.8785424Z \n2026-10-18T11:55:07.8785596Z tests/test_conversation_card_navigation_browser.py: 23 warnings\n2026-10-18T11:55:07.8785970Z tests/test_settings_scope_browser.py: 12 warnings\n2026-10-18T11:55:07.8786993Z   /home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/threads.py:26: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:07.8788026Z     return await loop.run_in_executor(None, func_call)\n2026-10-18T11:55:07.8788245Z \n2026-10-18T11:55:07.8788576Z tests/test_conversation_card_navigation_browser.py::test_restored_open_card_link_reaches_work_dialog[research]\n2026-10-18T11:55:07.8789464Z tests/test_conversation_card_navigation_browser.py::test_restored_open_card_link_reaches_work_dialog[research]\n2026-10-18T11:55:07.8790201Z tests/test_conversation_card_navigation_browser.py::test_restored_open_card_link_reaches_work_dialog[research]\n2026-10-18T11:55:07.8791259Z   /home/runner/work/pa/pa/src/pa/telemetry/service.py:72: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:07.8792205Z     return await loop.run_in_executor(self._executor, lambda: call(*args, **kwargs))\n2026-10-18T11:55:07.8792519Z \n2026-10-18T11:55:07.8793119Z tests/test_conversation_card_navigation_browser.py::test_restored_open_card_link_reaches_work_dialog[research]\n2026-10-18T11:55:07.8793848Z tests/test_settings_scope_browser.py::test_settings_scope_sources_resets_isolated_saves_and_errors\n2026-10-18T11:55:07.8794885Z   /home/runner/work/pa/pa/src/pa/health_journal/service.py:52: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:07.8795854Z     future = loop.run_in_executor(self.pool, functools.partial(fn, *args, **kwargs))\n2026-10-18T11:55:07.8796168Z \n2026-10-18T11:55:07.8796377Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n2026-10-18T11:55:07.8796829Z =========================== short test summary info ============================\n2026-10-18T11:55:07.8797759Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot - AttributeError: 'NoneType' object has no attribute 'args'\n2026-10-18T11:55:07.8799012Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_wake_reconciliation_defers_passive_connected_session - AssertionError: 0 != 1\n2026-10-18T11:55:07.8799796Z 2 failed, 926 passed, 284 warnings, 188 subtests passed in 108.36s (0:01:48)\n2026-10-18T11:55:07.9544134Z ##[error]Process completed with exit code 1.\n2026-10-18T11:55:07.9689421Z Post job cleanup.\n2026-10-18T11:55:08.0637979Z [command]/usr/bin/git version\n2026-10-18T11:55:08.0676847Z git version 2.55.0\n2026-10-18T11:55:08.0721740Z Temporarily overriding HOME='/home/runner/work/_temp/4687f99b-4e47-470e-af11-ee502aa28018' before making global git config changes\n2026-10-18T11:55:08.0724091Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T11:55:08.0728596Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T11:55:08.0775599Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T11:55:08.0820150Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T11:55:08.1098756Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T11:55:08.1129650Z http.https://github.com/.extraheader\n2026-10-18T11:55:08.1144950Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader\n2026-10-18T11:55:08.1192958Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T11:55:08.1484952Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T11:55:08.1528482Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T11:55:08.1934085Z Cleaning up orphan processes\n"
+    },
+    ".dev/pr521-failed-job117668193993.log": {
+      "original_sha256": "e24746a9ec2d6acfda0810600dbbbda63bc884f1b850792e987404cd04c28023",
+      "redacted_sha256": "517bcf973c45643212bbf0e98ee2185061317190f1e3c02b4fdffa9bd1671ab2",
+      "redacted_text": "\ufeff2026-10-18T11:53:00.6494998Z Current runner version: '2.337.0'\n2026-10-18T11:53:00.6529373Z ##[group]Runner Image Provisioner\n2026-10-18T11:53:00.6530684Z Hosted Compute Agent\n2026-10-18T11:53:00.6531708Z Version: 20261012.601\n2026-10-18T11:53:00.6532895Z Commit: f3dc54e1fb89da6852db922499a0233137369e1d\n2026-10-18T11:53:00.6534080Z Build Date: 2026-10-12T17:48:21Z\n2026-10-18T11:53:00.6536891Z Worker ID: {3f98faec-a3c2-4710-a32c-505a2d3c860e}\n2026-10-18T11:53:00.6538153Z Region: eastus\n2026-10-18T11:53:00.6539049Z Cloud: Azure\n2026-10-18T11:53:00.6540011Z ##[endgroup]\n2026-10-18T11:53:00.6542232Z ##[group]Operating System\n2026-10-18T11:53:00.6543363Z Ubuntu\n2026-10-18T11:53:00.6544256Z 24.04.5\n2026-10-18T11:53:00.6545346Z LTS\n2026-10-18T11:53:00.6546334Z ##[endgroup]\n2026-10-18T11:53:00.6547350Z ##[group]Runner Image\n2026-10-18T11:53:00.6548374Z Image: ubuntu-24.04\n2026-10-18T11:53:00.6549436Z Version: 20261012.334.1\n2026-10-18T11:53:00.6551636Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md\n2026-10-18T11:53:00.6554341Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334\n2026-10-18T11:53:00.6556415Z ##[endgroup]\n2026-10-18T11:53:00.6558527Z ##[group]GITHUB_TOKEN Permissions\n2026-10-18T11:53:00.6561205Z Contents: read\n2026-10-18T11:53:00.6562191Z Metadata: read\n2026-10-18T11:53:00.6563215Z Packages: read\n2026-10-18T11:53:00.6564212Z ##[endgroup]\n2026-10-18T11:53:00.6568221Z Secret source: Actions\n2026-10-18T11:53:00.6569687Z Cache mode: write\n2026-10-18T11:53:00.6571234Z Prepare workflow directory\n2026-10-18T11:53:00.7481278Z Prepare all required actions\n2026-10-18T11:53:00.7559762Z Getting action download info\n2026-10-18T11:53:00.9286377Z Download action repository 'actions/checkout@v5' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)\n2026-10-18T11:53:01.0277411Z Download action repository 'astral-sh/setup-uv@v10.0.1' (SHA:20cfd1bf945f4377ade1205e4dbc17946fc9a30d)\n2026-10-18T11:53:01.3482949Z Complete job name: test (0)\n2026-10-18T11:53:01.4241979Z ##[group]Run actions/checkout@v5\n2026-10-18T11:53:01.4242873Z with:\n2026-10-18T11:53:01.4243329Z   repository: petersky/pa\n2026-10-18T11:53:01.4247579Z   token: ***\n2026-10-18T11:53:01.4248054Z   ssh-strict: true\n2026-10-18T11:53:01.4248511Z   ssh-user: git\n2026-10-18T11:53:01.4248971Z   persist-credentials: true\n2026-10-18T11:53:01.4249471Z   clean: true\n2026-10-18T11:53:01.4249921Z   sparse-checkout-cone-mode: true\n2026-10-18T11:53:01.4250446Z   fetch-depth: 1\n2026-10-18T11:53:01.4250891Z   fetch-tags: false\n2026-10-18T11:53:01.4251345Z   show-progress: true\n2026-10-18T11:53:01.4251824Z   lfs: false\n2026-10-18T11:53:01.4252249Z   submodules: false\n2026-10-18T11:53:01.4252711Z   set-safe-directory: true\n2026-10-18T11:53:01.4253242Z   allow-unsafe-pr-checkout: false\n2026-10-18T11:53:01.4254054Z env:\n2026-10-18T11:53:01.4254761Z   PYTEST_SHARD: 0/4\n2026-10-18T11:53:01.4255227Z ##[endgroup]\n2026-10-18T11:53:01.5278890Z Syncing repository: petersky/pa\n2026-10-18T11:53:01.5281358Z ##[group]Getting Git version info\n2026-10-18T11:53:01.5282392Z Working directory is '/home/runner/work/pa/pa'\n2026-10-18T11:53:01.5283929Z [command]/usr/bin/git version\n2026-10-18T11:53:01.5391342Z git version 2.55.0\n2026-10-18T11:53:01.5416173Z ##[endgroup]\n2026-10-18T11:53:01.5433614Z Temporarily overriding HOME='/home/runner/work/_temp/11e81435-a548-481b-89a7-31e956241a19' before making global git config changes\n2026-10-18T11:53:01.5436469Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T11:53:01.5439738Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T11:53:01.5500035Z Deleting the contents of '/home/runner/work/pa/pa'\n2026-10-18T11:53:01.5503485Z ##[group]Initializing the repository\n2026-10-18T11:53:01.5507881Z [command]/usr/bin/git init /home/runner/work/pa/pa\n2026-10-18T11:53:01.5650657Z hint: Using 'master' as the name for the initial branch. This default branch name\n2026-10-18T11:53:01.5652602Z hint: will change to \"main\" in Git 3.0. To configure the initial branch name\n2026-10-18T11:53:01.5654792Z hint: to use in all of your new repositories, which will suppress this warning,\n2026-10-18T11:53:01.5656001Z hint: call:\n2026-10-18T11:53:01.5656623Z hint:\n2026-10-18T11:53:01.5657415Z hint: \tgit config --global init.defaultBranch <name>\n2026-10-18T11:53:01.5658447Z hint:\n2026-10-18T11:53:01.5659463Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\n2026-10-18T11:53:01.5660973Z hint: 'development'. The just-created branch can be renamed via this command:\n2026-10-18T11:53:01.5662344Z hint:\n2026-10-18T11:53:01.5663030Z hint: \tgit branch -m <name>\n2026-10-18T11:53:01.5663848Z hint:\n2026-10-18T11:53:01.5665206Z hint: Disable this message with \"git config set advice.defaultBranchName false\"\n2026-10-18T11:53:01.5666756Z Initialized empty Git repository in /home/runner/work/pa/pa/.git/\n2026-10-18T11:53:01.5671414Z [command]/usr/bin/git remote add origin https://github.com/petersky/pa\n2026-10-18T11:53:01.5726517Z ##[endgroup]\n2026-10-18T11:53:01.5728061Z ##[group]Disabling automatic garbage collection\n2026-10-18T11:53:01.5729439Z [command]/usr/bin/git config --local gc.auto 0\n2026-10-18T11:53:01.5766423Z ##[endgroup]\n2026-10-18T11:53:01.5768031Z ##[group]Setting up auth\n2026-10-18T11:53:01.5773936Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T11:53:01.5813707Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T11:53:01.6245879Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T11:53:01.6286211Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T11:53:01.6535131Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T11:53:01.6583088Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T11:53:01.6843710Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: <redacted> ***\n2026-10-18T11:53:01.6886203Z ##[endgroup]\n2026-10-18T11:53:01.6887375Z ##[group]Fetching the repository\n2026-10-18T11:53:01.6898219Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ec394a641aa24e72337d4a82247696cbc9ebd55e:refs/remotes/pull/521/merge\n2026-10-18T11:53:09.5651130Z From https://github.com/petersky/pa\n2026-10-18T11:53:09.5652954Z  * [new ref]         ec394a641aa24e72337d4a82247696cbc9ebd55e -> pull/521/merge\n2026-10-18T11:53:09.5667447Z ##[endgroup]\n2026-10-18T11:53:09.5669174Z ##[group]Determining the checkout info\n2026-10-18T11:53:09.5670502Z ##[endgroup]\n2026-10-18T11:53:09.5671245Z [command]/usr/bin/git sparse-checkout disable\n2026-10-18T11:53:09.5731299Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig\n2026-10-18T11:53:09.5767641Z ##[group]Checking out the ref\n2026-10-18T11:53:09.5771843Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/521/merge\n2026-10-18T11:53:09.8279279Z Note: switching to 'refs/remotes/pull/521/merge'.\n2026-10-18T11:53:09.8280360Z \n2026-10-18T11:53:09.8281142Z You are in 'detached HEAD' state. You can look around, make experimental\n2026-10-18T11:53:09.8282684Z changes and commit them, and you can discard any commits you make in this\n2026-10-18T11:53:09.8284297Z state without impacting any branches by switching back to a branch.\n2026-10-18T11:53:09.8286022Z \n2026-10-18T11:53:09.8287079Z If you want to create a new branch to retain commits you create, you may\n2026-10-18T11:53:09.8288968Z do so (now or later) by using -c with the switch command. Example:\n2026-10-18T11:53:09.8289943Z \n2026-10-18T11:53:09.8290435Z   git switch -c <new-branch-name>\n2026-10-18T11:53:09.8291312Z \n2026-10-18T11:53:09.8291731Z Or undo this operation with:\n2026-10-18T11:53:09.8292330Z \n2026-10-18T11:53:09.8292743Z   git switch -\n2026-10-18T11:53:09.8293239Z \n2026-10-18T11:53:09.8293938Z Turn off this advice by setting config variable advice.detachedHead to false\n2026-10-18T11:53:09.8295394Z \n2026-10-18T11:53:09.8296841Z HEAD is now at ec394a6 Merge 3618ededf406934db6db0d4f9f9e745d01bbed56 into c43f15ca138fe1a259b04a3ba19ab25b87ddc58c\n2026-10-18T11:53:09.8300893Z ##[endgroup]\n2026-10-18T11:53:09.8336665Z [command]/usr/bin/git log -1 --format=%H\n2026-10-18T11:53:09.8363572Z ec394a641aa24e72337d4a82247696cbc9ebd55e\n2026-10-18T11:53:09.8911116Z ##[group]Run astral-sh/setup-uv@v10.0.1\n2026-10-18T11:53:09.8912307Z with:\n2026-10-18T11:53:09.8913065Z   enable-cache: true\n2026-10-18T11:53:09.8913995Z   activate-environment: false\n2026-10-18T11:53:09.8915374Z   no-project: false\n2026-10-18T11:53:09.8916373Z   working-directory: /home/runner/work/pa/pa\n2026-10-18T11:53:09.8927311Z   github-token: ***\n2026-10-18T11:53:09.8929756Z   cache-dependency-glob: **/*requirements*.txt\n**/*requirements*.in\n**/*constraints*.txt\n**/*constraints*.in\n**/pyproject.toml\n**/uv.lock\n**/*.py.lock\n\n2026-10-18T11:53:09.8932385Z   restore-cache: true\n2026-10-18T11:53:09.8933296Z   save-cache: true\n2026-10-18T11:53:09.8934154Z   prune-cache: false\n2026-10-18T11:53:09.8935283Z   cache-python: false\n2026-10-18T11:53:09.8936263Z   ignore-nothing-to-cache: false\n2026-10-18T11:53:09.8937355Z   ignore-empty-workdir: false\n2026-10-18T11:53:09.8938425Z   download-from-astral-mirror: true\n2026-10-18T11:53:09.8939565Z   add-problem-matchers: true\n2026-10-18T11:53:09.8940603Z   quiet: false\n2026-10-18T11:53:09.8941451Z   resolution-strategy: highest\n2026-10-18T11:53:09.8942439Z env:\n2026-10-18T11:53:09.8943177Z   PYTEST_SHARD: 0/4\n2026-10-18T11:53:09.8944020Z ##[endgroup]\n2026-10-18T11:53:10.0760610Z Trying to find version for uv in: /home/runner/work/pa/pa/uv.toml\n2026-10-18T11:53:10.0762205Z Could not find file: /home/runner/work/pa/pa/uv.toml\n2026-10-18T11:53:10.0763401Z Trying to find version for uv in: /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T11:53:10.0775796Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.\n2026-10-18T11:53:10.0778595Z Fetching manifest data from https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson ...\n2026-10-18T11:53:10.1296905Z Downloading uv from \"https://releases.astral.sh/github/uv/releases/download/0.13.1/uv-x86_64-unknown-linux-gnu.tar.gz\" ...\n2026-10-18T11:53:10.2717882Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/bee0b5cd-7767-440b-8371-0f2c169187ae -f /home/runner/work/_temp/021a9a12-4a26-4758-b287-a2dc371b8907\n2026-10-18T11:53:10.5627699Z Added /home/runner/.local/bin to the path\n2026-10-18T11:53:10.5632686Z Added /opt/hostedtoolcache/uv/0.13.1/x86_64 to the path\n2026-10-18T11:53:10.5635074Z Set UV_PYTHON_INSTALL_DIR to /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:10.5636478Z Added /home/runner/work/_temp/uv-python-dir to the path\n2026-10-18T11:53:10.5659014Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:10.5659622Z Successfully installed uv version 0.13.1\n2026-10-18T11:53:10.6601536Z Searching files using cache dependency glob: /home/runner/work/pa/pa/**/*requirements*.txt,/home/runner/work/pa/pa/**/*requirements*.in,/home/runner/work/pa/pa/**/*constraints*.txt,/home/runner/work/pa/pa/**/*constraints*.in,/home/runner/work/pa/pa/**/pyproject.toml,/home/runner/work/pa/pa/**/uv.lock,/home/runner/work/pa/pa/**/*.py.lock\n2026-10-18T11:53:10.7036042Z /home/runner/work/pa/pa/pyproject.toml\n2026-10-18T11:53:10.8049412Z /home/runner/work/pa/pa/uv.lock\n2026-10-18T11:53:10.8060680Z Found 2 files to hash.\n2026-10-18T11:53:10.8133062Z Trying to restore cache from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:10.8634305Z Cache hit for: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:11.2363847Z Received 43339440 of 43339440 (100.0%), 130.8 MBs/sec\n2026-10-18T11:53:11.2364866Z Cache Size: ~41 MB (43339440 B)\n2026-10-18T11:53:11.2395229Z [command]/usr/bin/tar -xf /home/runner/work/_temp/58ebed4b-5845-4c9d-8551-9a34e20aab7b/cache.tzst -P -C /home/runner/work/pa/pa --use-compress-program unzstd\n2026-10-18T11:53:11.6860698Z Cache restored successfully\n2026-10-18T11:53:11.6885567Z cache restored from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-unknown-a83727ffb22b883621aae856b2276d7f18dab6a6d9b44656cc73e09113035b34\n2026-10-18T11:53:11.8063061Z ##[group]Run uv python install 3.14\n2026-10-18T11:53:11.8063449Z \u001b[36;1muv python install 3.14\u001b[0m\n2026-10-18T11:53:11.8834833Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:11.8835191Z env:\n2026-10-18T11:53:11.8835449Z   PYTEST_SHARD: 0/4\n2026-10-18T11:53:11.8835846Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:11.8836394Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:11.8836805Z ##[endgroup]\n2026-10-18T11:53:11.9943962Z Downloading cpython-3.14.8-linux-x86_64-gnu (download) (34.6MiB)\n2026-10-18T11:53:12.5918594Z  Downloaded cpython-3.14.8-linux-x86_64-gnu (download)\n2026-10-18T11:53:12.5938263Z Installed Python 3.14.8 in 694ms\n2026-10-18T11:53:12.5938895Z  + cpython-3.14.8-linux-x86_64-gnu (python3.14)\n2026-10-18T11:53:12.5999009Z ##[group]Run uv sync\n2026-10-18T11:53:12.5999315Z \u001b[36;1muv sync\u001b[0m\n2026-10-18T11:53:12.6065922Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:12.6066209Z env:\n2026-10-18T11:53:12.6066428Z   PYTEST_SHARD: 0/4\n2026-10-18T11:53:12.6066765Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:12.6067211Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:12.6067563Z ##[endgroup]\n2026-10-18T11:53:12.7888389Z Using CPython 3.14.8\n2026-10-18T11:53:12.7888962Z Creating virtual environment at: .venv\n2026-10-18T11:53:12.7916526Z Resolved 61 packages in 0.84ms\n2026-10-18T11:53:12.7952714Z    Building pa @ file:///home/runner/work/pa/pa\n2026-10-18T11:53:14.0771117Z       Built pa @ file:///home/runner/work/pa/pa\n2026-10-18T11:53:14.0815848Z Prepared 1 package in 1.28s\n2026-10-18T11:53:14.1132015Z Installed 59 packages in 31ms\n2026-10-18T11:53:14.1132859Z  + agent-client-protocol==0.10.1\n2026-10-18T11:53:14.1133323Z  + annotated-doc==0.0.4\n2026-10-18T11:53:14.1133862Z  + annotated-types==0.7.0\n2026-10-18T11:53:14.1135212Z  + anyio==4.13.0\n2026-10-18T11:53:14.1135640Z  + asyncssh==2.24.0\n2026-10-18T11:53:14.1136058Z  + attrs==26.1.0\n2026-10-18T11:53:14.1136563Z  + certifi==2026.5.20\n2026-10-18T11:53:14.1137094Z  + cffi==2.0.0\n2026-10-18T11:53:14.1137579Z  + click==8.4.1\n2026-10-18T11:53:14.1138226Z  + cryptography==49.0.0\n2026-10-18T11:53:14.1138732Z  + execnet==2.1.2\n2026-10-18T11:53:14.1139253Z  + fastapi==0.136.3\n2026-10-18T11:53:14.1139723Z  + h11==0.16.0\n2026-10-18T11:53:14.1140255Z  + httpcore==1.0.9\n2026-10-18T11:53:14.1140740Z  + httpcore2==2.9.1\n2026-10-18T11:53:14.1141251Z  + httptools==0.7.1\n2026-10-18T11:53:14.1141743Z  + httpx==0.28.1\n2026-10-18T11:53:14.1142215Z  + httpx2==2.9.1\n2026-10-18T11:53:14.1142667Z  + idna==3.18\n2026-10-18T11:53:14.1143120Z  + iniconfig==2.3.0\n2026-10-18T11:53:14.1143599Z  + jinja2==3.1.6\n2026-10-18T11:53:14.1144090Z  + jsonschema==4.26.0\n2026-10-18T11:53:14.1144876Z  + jsonschema-specifications==2025.9.1\n2026-10-18T11:53:14.1145255Z  + markdown-it-py==4.2.0\n2026-10-18T11:53:14.1145506Z  + markupsafe==3.0.3\n2026-10-18T11:53:14.1145936Z  + mcp==2.0.0\n2026-10-18T11:53:14.1146251Z  + mcp-types==2.0.0\n2026-10-18T11:53:14.1146463Z  + mdurl==0.1.2\n2026-10-18T11:53:14.1146692Z  + opentelemetry-api==1.44.0\n2026-10-18T11:53:14.1147006Z  + pa==1.5.9 (from file:///home/runner/work/pa/pa)\n2026-10-18T11:53:14.1147535Z  + packaging==26.3\n2026-10-18T11:53:14.1148229Z  + pluggy==1.6.0\n2026-10-18T11:53:14.1148526Z  + psutil==7.2.2\n2026-10-18T11:53:14.1148969Z  + pycparser==3.0\n2026-10-18T11:53:14.1149183Z  + pydantic==2.13.4\n2026-10-18T11:53:14.1149407Z  + pydantic-core==2.46.4\n2026-10-18T11:53:14.1149660Z  + pydantic-settings==2.14.1\n2026-10-18T11:53:14.1150120Z  + pygments==2.20.0\n2026-10-18T11:53:14.1150610Z  + pyjwt==2.13.0\n2026-10-18T11:53:14.1151083Z  + pytest==9.1.1\n2026-10-18T11:53:14.1151570Z  + pytest-asyncio==1.4.0\n2026-10-18T11:53:14.1152070Z  + pytest-xdist==3.8.0\n2026-10-18T11:53:14.1152596Z  + python-dotenv==1.2.2\n2026-10-18T11:53:14.1153137Z  + python-multipart==0.0.29\n2026-10-18T11:53:14.1153683Z  + pyyaml==6.0.3\n2026-10-18T11:53:14.1154215Z  + referencing==0.37.0\n2026-10-18T11:53:14.1154957Z  + rich==15.0.0\n2026-10-18T11:53:14.1155532Z  + rpds-py==0.30.0\n2026-10-18T11:53:14.1155943Z  + shellingham==1.5.4\n2026-10-18T11:53:14.1156358Z  + sse-starlette==3.4.4\n2026-10-18T11:53:14.1156736Z  + starlette==1.1.0\n2026-10-18T11:53:14.1157088Z  + truststore==0.10.4\n2026-10-18T11:53:14.1157453Z  + typer==0.25.1\n2026-10-18T11:53:14.1157815Z  + typing-extensions==4.15.0\n2026-10-18T11:53:14.1158254Z  + typing-inspection==0.4.2\n2026-10-18T11:53:14.1158651Z  + uvicorn==0.48.0\n2026-10-18T11:53:14.1158999Z  + uvloop==0.22.1\n2026-10-18T11:53:14.1159347Z  + watchfiles==1.2.0\n2026-10-18T11:53:14.1159623Z  + websockets==16.0\n2026-10-18T11:53:14.1335466Z ##[group]Run timeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\n2026-10-18T11:53:14.1336608Z \u001b[36;1mtimeout 60 google-chrome --headless=new --no-first-run --user-data-dir=\"$(mktemp -d)\" --dump-dom about:blank >/dev/null 2>&1 || true\u001b[0m\n2026-10-18T11:53:14.1400274Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:14.1400531Z env:\n2026-10-18T11:53:14.1400732Z   PYTEST_SHARD: 0/4\n2026-10-18T11:53:14.1401037Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:14.1401435Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:14.1401741Z ##[endgroup]\n2026-10-18T11:53:15.7611846Z ##[group]Run uv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\n2026-10-18T11:53:15.7613085Z \u001b[36;1muv run pytest -n auto --dist worksteal --ignore=tests/test_header_layout.py --ignore=tests/test_fleet_topology_layout.py --ignore=tests/test_browser_e2e.py\u001b[0m\n2026-10-18T11:53:15.7678444Z shell: /usr/bin/bash -e {0}\n2026-10-18T11:53:15.7678768Z env:\n2026-10-18T11:53:15.7678979Z   PYTEST_SHARD: 0/4\n2026-10-18T11:53:15.7679302Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir\n2026-10-18T11:53:15.7679722Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache\n2026-10-18T11:53:15.7680031Z ##[endgroup]\n2026-10-18T11:53:27.3288177Z bringing up nodes...\n2026-10-18T11:53:27.3290305Z bringing up nodes...\n2026-10-18T11:53:27.3291629Z \n2026-10-18T11:53:43.9019511Z ........................................................................ [  7%]\n2026-10-18T11:53:56.0245849Z .....uuu...................F.......FF.......................uuuu.......u [ 14%]\n2026-10-18T11:53:57.4479071Z uuuuuuuuuuu................uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 16%]\n2026-10-18T11:53:57.4683900Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 16%]\n2026-10-18T11:53:57.4916680Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 16%]\n2026-10-18T11:53:57.5103734Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 16%]\n2026-10-18T11:54:04.0074861Z uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu................................. [ 19%]\n2026-10-18T11:54:12.1772823Z ..................................................uu.................... [ 27%]\n2026-10-18T11:54:30.7875255Z .........uuuuuu......................................................... [ 34%]\n2026-10-18T11:54:35.7943157Z ..............uuu.........uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 37%]\n2026-10-18T11:54:51.9203474Z u...................................................................s... [ 44%]\n2026-10-18T11:54:57.6307890Z .........................................................uu......uuuuuu. [ 51%]\n2026-10-18T11:55:07.3606524Z uuuu.....................uu............................................. [ 58%]\n2026-10-18T11:55:16.5958292Z ........................................................................ [ 66%]\n2026-10-18T11:55:23.2731590Z ........................................................................ [ 74%]\n2026-10-18T11:55:33.0874013Z ........................................................................ [ 82%]\n2026-10-18T11:55:41.4975010Z ........................................................................ [ 89%]\n2026-10-18T11:55:55.4615344Z ........................................................................ [ 97%]\n2026-10-18T11:55:59.4151086Z .......................                                                  [100%]\n2026-10-18T11:55:59.4151703Z =================================== FAILURES ===================================\n2026-10-18T11:55:59.4152618Z _ AgentSessionLiveEventTests.test_blocked_project_retries_after_project_and_links_arrive _\n2026-10-18T11:55:59.4153657Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:59.4154120Z \n2026-10-18T11:55:59.4155255Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_blocked_project_retries_after_project_and_links_arrive>\n2026-10-18T11:55:59.4156339Z \n2026-10-18T11:55:59.4156738Z     def test_blocked_project_retries_after_project_and_links_arrive(self) -> None:\n2026-10-18T11:55:59.4157473Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:59.4158048Z             session = AgentSession(\n2026-10-18T11:55:59.4158527Z                 id=\"session-project-arrived\",\n2026-10-18T11:55:59.4159080Z                 agent_name=\"codex\",\n2026-10-18T11:55:59.4159876Z                 status=\"recovery_blocked\",\n2026-10-18T11:55:59.4160326Z                 project_id=\"project-arrived\",\n2026-10-18T11:55:59.4161070Z                 config_json={\n2026-10-18T11:55:59.4161477Z                     \"provisioning\": {\n2026-10-18T11:55:59.4161806Z                         \"state\": \"blocked\",\n2026-10-18T11:55:59.4162184Z                         \"action\": \"Sync the project, then retry\",\n2026-10-18T11:55:59.4162556Z                     }\n2026-10-18T11:55:59.4162810Z                 },\n2026-10-18T11:55:59.4163044Z             )\n2026-10-18T11:55:59.4163287Z             store = MagicMock()\n2026-10-18T11:55:59.4163644Z             store.list_sessions.return_value = [session]\n2026-10-18T11:55:59.4164062Z             store.get_session.return_value = session\n2026-10-18T11:55:59.4164860Z             store.get_project.return_value = SimpleNamespace(realm_id=\"default\")\n2026-10-18T11:55:59.4165406Z             store.list_project_repositories.return_value = [\n2026-10-18T11:55:59.4165940Z                 (SimpleNamespace(id=\"repo-1\"), SimpleNamespace(branch=\"main\"))\n2026-10-18T11:55:59.4166388Z             ]\n2026-10-18T11:55:59.4166761Z             manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n2026-10-18T11:55:59.4167358Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:59.4167820Z                 return_value={}\n2026-10-18T11:55:59.4168102Z             )\n2026-10-18T11:55:59.4168455Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:59.4168906Z             manager._resume_from_snapshot = AsyncMock()\n2026-10-18T11:55:59.4169232Z             manager.attach_default = AsyncMock()\n2026-10-18T11:55:59.4169513Z     \n2026-10-18T11:55:59.4169728Z             asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:59.4170005Z     \n2026-10-18T11:55:59.4170247Z >           manager._resume_from_snapshot.assert_awaited_once()\n2026-10-18T11:55:59.4170491Z \n2026-10-18T11:55:59.4170621Z tests/test_agent_session_live_events.py:1111: \n2026-10-18T11:55:59.4170968Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n2026-10-18T11:55:59.4171218Z \n2026-10-18T11:55:59.4171316Z self = <AsyncMock id='140707845711456'>\n2026-10-18T11:55:59.4171702Z \n2026-10-18T11:55:59.4171803Z     def assert_awaited_once(self):\n2026-10-18T11:55:59.4172054Z         \"\"\"\n2026-10-18T11:55:59.4172288Z         Assert that the mock was awaited exactly once.\n2026-10-18T11:55:59.4172575Z         \"\"\"\n2026-10-18T11:55:59.4172775Z         if not self.await_count == 1:\n2026-10-18T11:55:59.4173158Z             msg = (f\"Expected {self._mock_name or 'mock'} to have been awaited once.\"\n2026-10-18T11:55:59.4173589Z                    f\" Awaited {self.await_count} times.\")\n2026-10-18T11:55:59.4173895Z >           raise AssertionError(msg)\n2026-10-18T11:55:59.4174284Z E           AssertionError: Expected mock to have been awaited once. Awaited 0 times.\n2026-10-18T11:55:59.4174954Z \n2026-10-18T11:55:59.4175303Z ../../_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/unittest/mock.py:2376: AssertionError\n2026-10-18T11:55:59.4176047Z _ AgentSessionLiveEventTests.test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns _\n2026-10-18T11:55:59.4176664Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:59.4176950Z \n2026-10-18T11:55:59.4177458Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns>\n2026-10-18T11:55:59.4178052Z \n2026-10-18T11:55:59.4178268Z     def test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns(\n2026-10-18T11:55:59.4178654Z         self,\n2026-10-18T11:55:59.4178853Z     ) -> None:\n2026-10-18T11:55:59.4179100Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:59.4179407Z             sessions = [\n2026-10-18T11:55:59.4179637Z                 AgentSession(\n2026-10-18T11:55:59.4179885Z                     id=f\"idle-{index}\",\n2026-10-18T11:55:59.4180164Z                     agent_name=\"codex\",\n2026-10-18T11:55:59.4180424Z                     status=\"idle\",\n2026-10-18T11:55:59.4180835Z                     config_json={\n2026-10-18T11:55:59.4181110Z                         \"durable_runtime\": {\n2026-10-18T11:55:59.4181393Z                             \"version\": 1,\n2026-10-18T11:55:59.4181703Z                             \"lifecycle\": \"ready\",\n2026-10-18T11:55:59.4182101Z                             \"queued_prompts\": [],\n2026-10-18T11:55:59.4182410Z                             \"in_flight\": None,\n2026-10-18T11:55:59.4182676Z                         }\n2026-10-18T11:55:59.4182889Z                     },\n2026-10-18T11:55:59.4183089Z                 )\n2026-10-18T11:55:59.4183296Z                 for index in range(50)\n2026-10-18T11:55:59.4183547Z             ]\n2026-10-18T11:55:59.4183744Z             sessions.extend(\n2026-10-18T11:55:59.4183980Z                 AgentSession(\n2026-10-18T11:55:59.4184224Z                     id=f\"active-{index}\",\n2026-10-18T11:55:59.4184793Z                     agent_name=\"codex\",\n2026-10-18T11:55:59.4185066Z                     status=\"prompting\",\n2026-10-18T11:55:59.4185365Z                     config_json={\n2026-10-18T11:55:59.4185630Z                         \"durable_runtime\": {\n2026-10-18T11:55:59.4186274Z                             \"version\": 1,\n2026-10-18T11:55:59.4186746Z                             \"lifecycle\": \"prompting\",\n2026-10-18T11:55:59.4187261Z                             \"queued_prompts\": [],\n2026-10-18T11:55:59.4187778Z                             \"in_flight\": QueuedPrompt(\n2026-10-18T11:55:59.4188311Z                                 message=f\"turn {index}\"\n2026-10-18T11:55:59.4188834Z                             ).model_dump(mode=\"json\"),\n2026-10-18T11:55:59.4189259Z                         }\n2026-10-18T11:55:59.4189485Z                     },\n2026-10-18T11:55:59.4189694Z                 )\n2026-10-18T11:55:59.4189907Z                 for index in range(3)\n2026-10-18T11:55:59.4190163Z             )\n2026-10-18T11:55:59.4190366Z             store = MagicMock()\n2026-10-18T11:55:59.4190659Z             store.list_sessions.return_value = sessions\n2026-10-18T11:55:59.4191082Z             manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n2026-10-18T11:55:59.4191776Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:59.4192162Z                 return_value={}\n2026-10-18T11:55:59.4192408Z             )\n2026-10-18T11:55:59.4192738Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:59.4193182Z             manager._resume_from_snapshot = AsyncMock()\n2026-10-18T11:55:59.4193476Z     \n2026-10-18T11:55:59.4193703Z             asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:59.4193983Z     \n2026-10-18T11:55:59.4194171Z             recovered = {\n2026-10-18T11:55:59.4194677Z                 call.args[0].session_id\n2026-10-18T11:55:59.4195036Z                 for call in manager._resume_from_snapshot.await_args_list\n2026-10-18T11:55:59.4195377Z             }\n2026-10-18T11:55:59.4195682Z >           self.assertEqual(recovered, {\"active-0\", \"active-1\", \"active-2\"})\n2026-10-18T11:55:59.4196136Z E           AssertionError: Items in the second set but not the first:\n2026-10-18T11:55:59.4196484Z E           'active-2'\n2026-10-18T11:55:59.4196698Z E           'active-0'\n2026-10-18T11:55:59.4196902Z E           'active-1'\n2026-10-18T11:55:59.4197030Z \n2026-10-18T11:55:59.4197193Z tests/test_agent_session_live_events.py:961: AssertionError\n2026-10-18T11:55:59.4197717Z _ AgentSessionLiveEventTests.test_unavailable_project_is_attempted_once_across_restarts _\n2026-10-18T11:55:59.4198278Z [gw0] linux -- Python 3.14.8 /home/runner/work/pa/pa/.venv/bin/python\n2026-10-18T11:55:59.4198548Z \n2026-10-18T11:55:59.4199009Z self = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_unavailable_project_is_attempted_once_across_restarts>\n2026-10-18T11:55:59.4199567Z \n2026-10-18T11:55:59.4199786Z     def test_unavailable_project_is_attempted_once_across_restarts(self) -> None:\n2026-10-18T11:55:59.4200372Z         with tempfile.TemporaryDirectory() as tmp:\n2026-10-18T11:55:59.4200691Z             session = AgentSession(\n2026-10-18T11:55:59.4200977Z                 id=\"session-project-blocked\",\n2026-10-18T11:55:59.4201265Z                 agent_name=\"codex\",\n2026-10-18T11:55:59.4201521Z                 status=\"prompting\",\n2026-10-18T11:55:59.4201797Z                 project_id=\"project-missing\",\n2026-10-18T11:55:59.4202062Z             )\n2026-10-18T11:55:59.4202256Z             store = MagicMock()\n2026-10-18T11:55:59.4202550Z             store.list_sessions.return_value = [session]\n2026-10-18T11:55:59.4202883Z             store.get_session.return_value = session\n2026-10-18T11:55:59.4203205Z             store.get_project.return_value = None\n2026-10-18T11:55:59.4203601Z             manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n2026-10-18T11:55:59.4204093Z             manager.workspace_manager.reconcile_terminal_state = MagicMock(\n2026-10-18T11:55:59.4204738Z                 return_value={}\n2026-10-18T11:55:59.4204980Z             )\n2026-10-18T11:55:59.4205303Z             manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n2026-10-18T11:55:59.4205699Z     \n2026-10-18T11:55:59.4205940Z             async def fail_for_missing_project(snap, _full):\n2026-10-18T11:55:59.4206282Z                 await manager._prepare_workspace(\n2026-10-18T11:55:59.4206565Z                     session,\n2026-10-18T11:55:59.4206816Z                     requested_cwd=snap.cwd,\n2026-10-18T11:55:59.4207114Z                     provider_id=session.agent_name,\n2026-10-18T11:55:59.4207392Z                 )\n2026-10-18T11:55:59.4207579Z     \n2026-10-18T11:55:59.4207800Z             manager._resume_from_snapshot = AsyncMock(\n2026-10-18T11:55:59.4208124Z                 side_effect=fail_for_missing_project\n2026-10-18T11:55:59.4208397Z             )\n2026-10-18T11:55:59.4208615Z             manager.attach_default = AsyncMock()\n2026-10-18T11:55:59.4208890Z     \n2026-10-18T11:55:59.4209065Z             with (\n2026-10-18T11:55:59.4209370Z                 patch(\"pa.instance.agent_session.logger.warning\") as warning,\n2026-10-18T11:55:59.4210028Z                 patch(\"pa.instance.agent_session.logger.exception\") as exception,\n2026-10-18T11:55:59.4210494Z                 patch(\"pa.instance.agent_session.logger.info\") as info,\n2026-10-18T11:55:59.4210830Z             ):\n2026-10-18T11:55:59.4211066Z                 asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:59.4211399Z                 asyncio.run(manager.start(resume=True))\n2026-10-18T11:55:59.4211680Z     \n2026-10-18T11:55:59.4211959Z >           self.assertEqual(manager._resume_from_snapshot.await_count, 1)\n2026-10-18T11:55:59.4212336Z E           AssertionError: 0 != 1\n2026-10-18T11:55:59.4212511Z \n2026-10-18T11:55:59.4212673Z tests/test_agent_session_live_events.py:1060: AssertionError\n2026-10-18T11:55:59.4213072Z =============================== warnings summary ===============================\n2026-10-18T11:55:59.4213658Z tests/test_health_journal.py::test_ordinary_bound_connection_mcp_report[False]\n2026-10-18T11:55:59.4214250Z tests/test_agent_effort_browser.py::test_model_effort_drafts_acknowledgment_and_deferred_apply\n2026-10-18T11:55:59.4215785Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions\n2026-10-18T11:55:59.4216829Z     warnings.warn(  # deprecated in 14.0 - 2024-11-09\n2026-10-18T11:55:59.4217049Z \n2026-10-18T11:55:59.4217280Z tests/test_health_journal.py::test_ordinary_bound_connection_mcp_report[False]\n2026-10-18T11:55:59.4217866Z tests/test_agent_effort_browser.py::test_model_effort_drafts_acknowledgment_and_deferred_apply\n2026-10-18T11:55:59.4218868Z   /home/runner/work/pa/pa/.venv/lib/python3.14/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated\n2026-10-18T11:55:59.4219877Z     from websockets.server import WebSocketServerProtocol\n2026-10-18T11:55:59.4220137Z \n2026-10-18T11:55:59.4220264Z tests/test_agent_effort_browser.py: 45 warnings\n2026-10-18T11:55:59.4220601Z tests/test_card_status_browser.py: 47 warnings\n2026-10-18T11:55:59.4220922Z tests/test_chat_threads_browser.py: 92 warnings\n2026-10-18T11:55:59.4221249Z tests/test_status_actions_browser.py: 43 warnings\n2026-10-18T11:55:59.4221576Z tests/test_work_discovery_browser.py: 45 warnings\n2026-10-18T11:55:59.4222445Z   /home/runner/work/pa/pa/src/pa/core/async_runtime.py:345: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:59.4223327Z     future = loop.run_in_executor(self._executor, bound)\n2026-10-18T11:55:59.4223561Z \n2026-10-18T11:55:59.4223678Z tests/test_card_status_browser.py: 43 warnings\n2026-10-18T11:55:59.4223998Z tests/test_chat_threads_browser.py: 11 warnings\n2026-10-18T11:55:59.4224325Z tests/test_status_actions_browser.py: 23 warnings\n2026-10-18T11:55:59.4224804Z tests/test_work_discovery_browser.py: 12 warnings\n2026-10-18T11:55:59.4225848Z   /home/runner/work/_temp/uv-python-dir/cpython-3.14.8-linux-x86_64-gnu/lib/python3.14/asyncio/threads.py:26: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:59.4226903Z     return await loop.run_in_executor(None, func_call)\n2026-10-18T11:55:59.4227124Z \n2026-10-18T11:55:59.4227244Z tests/test_card_status_browser.py: 3 warnings\n2026-10-18T11:55:59.4227562Z tests/test_chat_threads_browser.py: 3 warnings\n2026-10-18T11:55:59.4227883Z tests/test_status_actions_browser.py: 3 warnings\n2026-10-18T11:55:59.4228213Z tests/test_work_discovery_browser.py: 3 warnings\n2026-10-18T11:55:59.4229064Z   /home/runner/work/pa/pa/src/pa/telemetry/service.py:72: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:59.4230022Z     return await loop.run_in_executor(self._executor, lambda: call(*args, **kwargs))\n2026-10-18T11:55:59.4230477Z \n2026-10-18T11:55:59.4230783Z tests/test_card_status_browser.py::test_real_status_form_errors_restore_and_authenticated_done_reloads\n2026-10-18T11:55:59.4231524Z tests/test_chat_threads_browser.py::test_switch_and_reload_parallel_threads_keep_drafts_history_queues_and_permissions\n2026-10-18T11:55:59.4232226Z tests/test_status_actions_browser.py::test_status_actions_desktop_narrow_and_zoom[1440-1000]\n2026-10-18T11:55:59.4232852Z tests/test_work_discovery_browser.py::test_work_disclosure_chips_results_and_responsive_layout\n2026-10-18T11:55:59.4233886Z   /home/runner/work/pa/pa/src/pa/health_journal/service.py:52: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead\n2026-10-18T11:55:59.4235001Z     future = loop.run_in_executor(self.pool, functools.partial(fn, *args, **kwargs))\n2026-10-18T11:55:59.4235336Z \n2026-10-18T11:55:59.4235542Z -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n2026-10-18T11:55:59.4236020Z =========================== short test summary info ============================\n2026-10-18T11:55:59.4236961Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_blocked_project_retries_after_project_and_links_arrive - AssertionError: Expected mock to have been awaited once. Awaited 0 times.\n2026-10-18T11:55:59.4238422Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns - AssertionError: Items in the second set but not the first:\n2026-10-18T11:55:59.4239261Z 'active-2'\n2026-10-18T11:55:59.4239443Z 'active-0'\n2026-10-18T11:55:59.4239626Z 'active-1'\n2026-10-18T11:55:59.4240239Z FAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_unavailable_project_is_attempted_once_across_restarts - AssertionError: 0 != 1\n2026-10-18T11:55:59.4241186Z 3 failed, 924 passed, 1 skipped, 381 warnings, 391 subtests passed in 162.62s (0:02:42)\n2026-10-18T11:55:59.4853737Z ##[error]Process completed with exit code 1.\n2026-10-18T11:55:59.4997370Z Post job cleanup.\n2026-10-18T11:55:59.5855899Z [command]/usr/bin/git version\n2026-10-18T11:55:59.5902583Z git version 2.55.0\n2026-10-18T11:55:59.5951157Z Temporarily overriding HOME='/home/runner/work/_temp/c408147c-7ade-4ee9-87e8-9c5164f1b854' before making global git config changes\n2026-10-18T11:55:59.5952494Z Adding repository directory to the temporary git global config as a safe directory\n2026-10-18T11:55:59.5958331Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/pa/pa\n2026-10-18T11:55:59.5998041Z [command]/usr/bin/git config --local --name-only --get-regexp core\\.sshCommand\n2026-10-18T11:55:59.6051087Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"\n2026-10-18T11:55:59.6330086Z [command]/usr/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader\n2026-10-18T11:55:59.6357858Z http.https://github.com/.extraheader\n2026-10-18T11:55:59.6370772Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader\n2026-10-18T11:55:59.6420279Z [command]/usr/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"\n2026-10-18T11:55:59.6667892Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:\n2026-10-18T11:55:59.6706503Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url\n2026-10-18T11:55:59.7132985Z Cleaning up orphan processes\n"
+    }
+  },
+  "raw": {
+    ".dev/pr521-original-ci-run.json": {
+      "sha256": "a97c946de7fc895a06a532acf6ebe5131b8aaf34f69b9f2c8cfa7efe758a28ee",
+      "bytes": 11970,
+      "value": {
+        "id": 39125018198,
+        "name": "CI",
+        "node_id": "WFR_kwLOSnxSCs8AAAAJHAhmVg",
+        "head_branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+        "head_sha": "3618ededf406934db6db0d4f9f9e745d01bbed56",
+        "path": ".github/workflows/ci.yml",
+        "display_title": "Trim unused configuration from startup recovery inventory",
+        "run_number": 1403,
+        "event": "pull_request",
+        "status": "completed",
+        "conclusion": "failure",
+        "workflow_id": 307631205,
+        "check_suite_id": 106025001904,
+        "check_suite_node_id": "CS_kwDOSnxSCs8AAAAYr5UjsA",
+        "url": "https://api.github.com/repos/petersky/pa/actions/runs/39125018198",
+        "html_url": "https://github.com/petersky/pa/actions/runs/39125018198",
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/petersky/pa/pulls/521",
+            "id": 4908856552,
+            "number": 521,
+            "head": {
+              "ref": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+              "sha": "3618ededf406934db6db0d4f9f9e745d01bbed56",
+              "repo": {
+                "id": 1249661450,
+                "url": "https://api.github.com/repos/petersky/pa",
+                "name": "pa"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "c43f15ca138fe1a259b04a3ba19ab25b87ddc58c",
+              "repo": {
+                "id": 1249661450,
+                "url": "https://api.github.com/repos/petersky/pa",
+                "name": "pa"
+              }
+            }
+          }
+        ],
+        "created_at": "2026-10-18T11:52:57Z",
+        "updated_at": "2026-10-18T11:56:02Z",
+        "actor": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "run_attempt": 1,
+        "referenced_workflows": [],
+        "run_started_at": "2026-10-18T11:52:57Z",
+        "triggering_actor": {
+          "login": "petersky",
+          "id": 1606386,
+          "node_id": "MDQ6VXNlcjE2MDYzODY=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/petersky",
+          "html_url": "https://github.com/petersky",
+          "followers_url": "https://api.github.com/users/petersky/followers",
+          "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+          "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+          "organizations_url": "https://api.github.com/users/petersky/orgs",
+          "repos_url": "https://api.github.com/users/petersky/repos",
+          "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/petersky/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "jobs_url": "https://api.github.com/repos/petersky/pa/actions/runs/39125018198/jobs",
+        "logs_url": "https://api.github.com/repos/petersky/pa/actions/runs/39125018198/logs",
+        "check_suite_url": "https://api.github.com/repos/petersky/pa/check-suites/106025001904",
+        "artifacts_url": "https://api.github.com/repos/petersky/pa/actions/runs/39125018198/artifacts",
+        "cancel_url": "https://api.github.com/repos/petersky/pa/actions/runs/39125018198/cancel",
+        "rerun_url": "https://api.github.com/repos/petersky/pa/actions/runs/39125018198/rerun",
+        "previous_attempt_url": null,
+        "workflow_url": "https://api.github.com/repos/petersky/pa/actions/workflows/307631205",
+        "head_commit": {
+          "id": "3618ededf406934db6db0d4f9f9e745d01bbed56",
+          "tree_id": "2f3f3c92164c4c827dfc9029f28c4553ea42331b",
+          "message": "Trim unused configuration from startup recovery inventory",
+          "timestamp": "2026-10-18T11:52:40Z",
+          "author": {
+            "name": "Kyle Petersen",
+            "email": "petersky@gmail.com"
+          },
+          "committer": {
+            "name": "Kyle Petersen",
+            "email": "petersky@gmail.com"
+          }
+        },
+        "repository": {
+          "id": 1249661450,
+          "node_id": "R_kgDOSnxSCg",
+          "name": "pa",
+          "full_name": "petersky/pa",
+          "private": false,
+          "owner": {
+            "login": "petersky",
+            "id": 1606386,
+            "node_id": "MDQ6VXNlcjE2MDYzODY=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/petersky",
+            "html_url": "https://github.com/petersky",
+            "followers_url": "https://api.github.com/users/petersky/followers",
+            "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+            "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+            "organizations_url": "https://api.github.com/users/petersky/orgs",
+            "repos_url": "https://api.github.com/users/petersky/repos",
+            "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/petersky/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "html_url": "https://github.com/petersky/pa",
+          "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+          "fork": false,
+          "url": "https://api.github.com/repos/petersky/pa",
+          "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+          "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+          "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+          "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+          "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+          "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+          "events_url": "https://api.github.com/repos/petersky/pa/events",
+          "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+          "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+          "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+          "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+          "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+          "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+          "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+          "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+          "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+          "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+          "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+          "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+          "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+          "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+          "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+          "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+          "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+          "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+          "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+          "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+          "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+          "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+          "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+          "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+          "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+          "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+          "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+          "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+        },
+        "head_repository": {
+          "id": 1249661450,
+          "node_id": "R_kgDOSnxSCg",
+          "name": "pa",
+          "full_name": "petersky/pa",
+          "private": false,
+          "owner": {
+            "login": "petersky",
+            "id": 1606386,
+            "node_id": "MDQ6VXNlcjE2MDYzODY=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/1606386?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/petersky",
+            "html_url": "https://github.com/petersky",
+            "followers_url": "https://api.github.com/users/petersky/followers",
+            "following_url": "https://api.github.com/users/petersky/following{/other_user}",
+            "gists_url": "https://api.github.com/users/petersky/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/petersky/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/petersky/subscriptions",
+            "organizations_url": "https://api.github.com/users/petersky/orgs",
+            "repos_url": "https://api.github.com/users/petersky/repos",
+            "events_url": "https://api.github.com/users/petersky/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/petersky/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "html_url": "https://github.com/petersky/pa",
+          "description": "Human\u2013agent orchestration: goals, tasks, knowledge, and distributed coordination",
+          "fork": false,
+          "url": "https://api.github.com/repos/petersky/pa",
+          "forks_url": "https://api.github.com/repos/petersky/pa/forks",
+          "keys_url": "https://api.github.com/repos/petersky/pa/keys{/key_id}",
+          "collaborators_url": "https://api.github.com/repos/petersky/pa/collaborators{/collaborator}",
+          "teams_url": "https://api.github.com/repos/petersky/pa/teams",
+          "hooks_url": "https://api.github.com/repos/petersky/pa/hooks",
+          "issue_events_url": "https://api.github.com/repos/petersky/pa/issues/events{/number}",
+          "events_url": "https://api.github.com/repos/petersky/pa/events",
+          "assignees_url": "https://api.github.com/repos/petersky/pa/assignees{/user}",
+          "branches_url": "https://api.github.com/repos/petersky/pa/branches{/branch}",
+          "tags_url": "https://api.github.com/repos/petersky/pa/tags",
+          "blobs_url": "https://api.github.com/repos/petersky/pa/git/blobs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/petersky/pa/git/tags{/sha}",
+          "git_refs_url": "https://api.github.com/repos/petersky/pa/git/refs{/sha}",
+          "trees_url": "https://api.github.com/repos/petersky/pa/git/trees{/sha}",
+          "statuses_url": "https://api.github.com/repos/petersky/pa/statuses/{sha}",
+          "languages_url": "https://api.github.com/repos/petersky/pa/languages",
+          "stargazers_url": "https://api.github.com/repos/petersky/pa/stargazers",
+          "contributors_url": "https://api.github.com/repos/petersky/pa/contributors",
+          "subscribers_url": "https://api.github.com/repos/petersky/pa/subscribers",
+          "subscription_url": "https://api.github.com/repos/petersky/pa/subscription",
+          "commits_url": "https://api.github.com/repos/petersky/pa/commits{/sha}",
+          "git_commits_url": "https://api.github.com/repos/petersky/pa/git/commits{/sha}",
+          "comments_url": "https://api.github.com/repos/petersky/pa/comments{/number}",
+          "issue_comment_url": "https://api.github.com/repos/petersky/pa/issues/comments{/number}",
+          "contents_url": "https://api.github.com/repos/petersky/pa/contents/{+path}",
+          "compare_url": "https://api.github.com/repos/petersky/pa/compare/{base}...{head}",
+          "merges_url": "https://api.github.com/repos/petersky/pa/merges",
+          "archive_url": "https://api.github.com/repos/petersky/pa/{archive_format}{/ref}",
+          "downloads_url": "https://api.github.com/repos/petersky/pa/downloads",
+          "issues_url": "https://api.github.com/repos/petersky/pa/issues{/number}",
+          "pulls_url": "https://api.github.com/repos/petersky/pa/pulls{/number}",
+          "milestones_url": "https://api.github.com/repos/petersky/pa/milestones{/number}",
+          "notifications_url": "https://api.github.com/repos/petersky/pa/notifications{?since,all,participating}",
+          "labels_url": "https://api.github.com/repos/petersky/pa/labels{/name}",
+          "releases_url": "https://api.github.com/repos/petersky/pa/releases{/id}",
+          "deployments_url": "https://api.github.com/repos/petersky/pa/deployments"
+        }
+      }
+    },
+    ".dev/startup-config-regression-before.log": {
+      "sha256": "6de029d2084c8533fb94be44eecd2ab2ae62e3d26efbe22c747da0fc2b100f55",
+      "bytes": 7255,
+      "value": "FFF                                                                      [100%]\n=================================== FAILURES ===================================\n_ AgentSessionLiveEventTests.test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot _\n\nself = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot>\n\n    def test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot(\n        self,\n    ) -> None:\n        with tempfile.TemporaryDirectory() as tmp:\n            queued = QueuedPrompt(\n                id=\"queued-1\",\n                message=\"survive restart\",\n                session_id=\"session-restart\",\n                card_id=\"card-1\",\n                project_id=\"project-1\",\n            )\n            session = AgentSession(\n                id=\"session-restart\",\n                agent_name=\"codex\",\n                external_session_id=\"provider-session-1\",\n                status=\"prompting\",\n                label=\"card:card-1\",\n                card_id=\"card-1\",\n                project_id=\"project-1\",\n                config_json={\n                    \"durable_runtime\": {\n                        \"version\": 1,\n                        \"lifecycle\": \"prompting\",\n                        \"queue_paused\": False,\n                        \"queued_prompts\": [],\n                        \"in_flight\": queued.model_dump(mode=\"json\"),\n                        \"last_event_cursor\": 41,\n                    }\n                },\n            )\n            store = MagicMock()\n            store.list_sessions.return_value = [session]\n            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n            manager.workspace_manager.reconcile_terminal_state = MagicMock(\n                return_value={}\n            )\n            manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n            manager._resume_from_snapshot = AsyncMock()\n            manager.attach_default = AsyncMock()\n    \n            asyncio.run(manager.start(resume=True))\n    \n>           recovered = manager._resume_from_snapshot.await_args.args[0]\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE           AttributeError: 'NoneType' object has no attribute 'args'\n\ntests/test_agent_session_live_events.py:901: AttributeError\n_ AgentSessionLiveEventTests.test_wake_reconciliation_defers_passive_connected_session _\n\nself = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_wake_reconciliation_defers_passive_connected_session>\n\n    def test_wake_reconciliation_defers_passive_connected_session(self) -> None:\n        with tempfile.TemporaryDirectory() as tmp:\n            session = AgentSession(\n                id=\"session-sleep\",\n                agent_name=\"codex\",\n                external_session_id=\"provider-session-sleep\",\n                status=\"connected\",\n                label=\"card:card-sleep\",\n                config_json={\n                    \"durable_runtime\": {\n                        \"version\": 1,\n                        \"lifecycle\": \"ready\",\n                        \"queued_prompts\": [],\n                        \"last_event_cursor\": 12,\n                    }\n                },\n            )\n            store = MagicMock()\n            store.list_sessions.return_value = [session]\n            store.get_session.return_value = session\n            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n            manager.workspace_manager.reconcile_terminal_state = MagicMock(\n                return_value={}\n            )\n            manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n            manager._resume_from_snapshot = AsyncMock()\n    \n            asyncio.run(manager.start(resume=True))\n    \n            self.assertEqual(session.status, \"connected\")\n            manager._resume_from_snapshot.assert_not_awaited()\n>           self.assertEqual(manager.startup_state()[\"deferred\"], 1)\nE           AssertionError: 0 != 1\n\ntests/test_agent_session_live_events.py:1302: AssertionError\n_ AgentSessionLiveEventTests.test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns _\n\nself = <tests.test_agent_session_live_events.AgentSessionLiveEventTests testMethod=test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns>\n\n    def test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns(\n        self,\n    ) -> None:\n        with tempfile.TemporaryDirectory() as tmp:\n            sessions = [\n                AgentSession(\n                    id=f\"idle-{index}\",\n                    agent_name=\"codex\",\n                    status=\"idle\",\n                    config_json={\n                        \"durable_runtime\": {\n                            \"version\": 1,\n                            \"lifecycle\": \"ready\",\n                            \"queued_prompts\": [],\n                            \"in_flight\": None,\n                        }\n                    },\n                )\n                for index in range(50)\n            ]\n            sessions.extend(\n                AgentSession(\n                    id=f\"active-{index}\",\n                    agent_name=\"codex\",\n                    status=\"prompting\",\n                    config_json={\n                        \"durable_runtime\": {\n                            \"version\": 1,\n                            \"lifecycle\": \"prompting\",\n                            \"queued_prompts\": [],\n                            \"in_flight\": QueuedPrompt(\n                                message=f\"turn {index}\"\n                            ).model_dump(mode=\"json\"),\n                        }\n                    },\n                )\n                for index in range(3)\n            )\n            store = MagicMock()\n            store.list_sessions.return_value = sessions\n            manager = AgentSessionManager(Settings(data_dir=Path(tmp)), store)\n            manager.workspace_manager.reconcile_terminal_state = MagicMock(\n                return_value={}\n            )\n            manager.workspace_manager.collect_garbage = MagicMock(return_value={})\n            manager._resume_from_snapshot = AsyncMock()\n    \n            asyncio.run(manager.start(resume=True))\n    \n            recovered = {\n                call.args[0].session_id\n                for call in manager._resume_from_snapshot.await_args_list\n            }\n>           self.assertEqual(recovered, {\"active-0\", \"active-1\", \"active-2\"})\nE           AssertionError: Items in the second set but not the first:\nE           'active-1'\nE           'active-0'\nE           'active-2'\n\ntests/test_agent_session_live_events.py:961: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot\nFAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_wake_reconciliation_defers_passive_connected_session\nFAILED tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns\n3 failed in 4.09s\n"
+    },
+    ".dev/startup-config-regression-before-roots.json": {
+      "sha256": "060703b0eadfc96ae6d01babb7873850a9551fa33aaf76b3767d2493ee91766b",
+      "bytes": 932,
+      "value": {
+        "root_audit": [
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmptsy6s5x1",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-vgu3cbu3/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpoap7o9bo",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-vgu3cbu3/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpimr59anb",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-vgu3cbu3/workspaces"
+          }
+        ],
+        "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-vgu3cbu3/data",
+        "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-vgu3cbu3/workspaces",
+        "exit_code": 1
+      }
+    },
+    ".dev/startup-config-regression-after.log": {
+      "sha256": "7fa6b699547bb53faa6e4f276124e145b36349420fb00a66c2d5c359bda6d864",
+      "bytes": 98,
+      "value": "...                                                                      [100%]\n3 passed in 3.64s\n"
+    },
+    ".dev/startup-config-regression-after-roots.json": {
+      "sha256": "4ebb8869988043a49319f6068beda4b759e19b8f98b36d132f63c34dc4753dbf",
+      "bytes": 932,
+      "value": {
+        "root_audit": [
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpk5yv9zfg",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-68q_o04b/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpimftt_z6",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-68q_o04b/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmptsl5vzy8",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-68q_o04b/workspaces"
+          }
+        ],
+        "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-68q_o04b/data",
+        "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-68q_o04b/workspaces",
+        "exit_code": 0
+      }
+    },
+    ".dev/startup-config-v2-broad.log": {
+      "sha256": "6f10a473614f1a858888d56d412beeb421f40383550fde4ef2b8d468d9e4c1fc",
+      "bytes": 271,
+      "value": "........................................................................ [ 47%]\n........................................................................ [ 95%]\n.......                                                                  [100%]\n151 passed in 72.80s (0:01:12)\n"
+    },
+    ".dev/startup-config-v2-broad-roots.json": {
+      "sha256": "2c864fee6c8e90e00479333a024ff0d4683773c1e56401fb1a84fef838dcb76c",
+      "bytes": 10339,
+      "value": {
+        "root_audit": [
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_recovery_decisions_snapsh0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_recovery_decisions_snapsh0/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_start_requests_inventory_0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_start_requests_inventory_0/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_resume_refetches_complete0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_resume_refetches_complete0/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_inventory_keeps_archived_0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_inventory_keeps_archived_0/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpdzxavy6f",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp1y5k1gpl",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmphb56l48n",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpvpah7cjf",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpmch918g5",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpr0uvb_hj",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpgutmi1rh",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp26zaeuxd",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp9ss68394",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp3tzi1hk_",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpkc1ip0hw",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmph2i2ekuw",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmprj2u6ncv",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpsz8s9w9h",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpwp_pijdg",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpofm_9oo5",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpjaotzvia",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpxqo0d5fi",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpraqt1dh6",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp8yuq0m5o",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpnht57xb9",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpw105vl6j",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpsxjd33nu",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpwpj96t7y",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp6wvjooxc",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp3_1_qwy8",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpe6qv7yed",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmppybc37ym",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmpatynfjnj",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmphvtz3dic",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_summary_retry_preserves_p0",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_fleet_dispatch_consumes_p0",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_failed_start_uses_real_re0",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_admission_rechecks_previe0",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_admission_rechecks_previe1",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_real_lifespan_recovers_on0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/pytest/test_real_lifespan_recovers_on0/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp0vekg18g/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp0vekg18g/workspaces"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp6tnllgwf/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/tmp6tnllgwf/workspaces"
+          }
+        ],
+        "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/data",
+        "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-z0i7mjb5/workspaces",
+        "exit_code": 0
+      }
+    },
+    ".dev/startup-config-workspace-after.log": {
+      "sha256": "2b887969563b8d5efd0e9e825c93a8d41ce13b359807d97ade5790c10afa2369",
+      "bytes": 98,
+      "value": ".                                                                        [100%]\n1 passed in 8.04s\n"
+    },
+    ".dev/startup-config-workspace-after-roots.json": {
+      "sha256": "5252a8798fc885516c10dcf265d29f2c601dd1b1e439e50b24e1d073390c1692",
+      "bytes": 917,
+      "value": {
+        "root_audit": [
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-q0ll37fx/pytest/test_startup_gc_protects_open_0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-q0ll37fx/pytest/test_startup_gc_protects_open_0/workspace"
+          },
+          {
+            "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-q0ll37fx/pytest/test_startup_gc_protects_open_0/data",
+            "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-q0ll37fx/pytest/test_startup_gc_protects_open_0/workspace"
+          }
+        ],
+        "PA_DATA_DIR": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-q0ll37fx/data",
+        "PA_WORKSPACE_ROOT": "/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-tests-q0ll37fx/workspaces",
+        "exit_code": 0
+      }
+    },
+    ".dev/startup-config-projection-final-source-v2.json": {
+      "sha256": "fa0376e1f619e9f35448f84702dbd8e5a9cc0d4ef626060435ea119ccd9f4103",
+      "bytes": 9293,
+      "value": {
+        "scope": "One160session fixture/20alternatingpairedreads. Preserve every row/provenance/recovery input/ordering; project only configuration,durable_runtime,provisioning config keys for startup inventory. Runtime creation/saves must stillrefetchfullsession. No code change/livePA/provider/configdefaultchange; notactualstartupacceptance. Corrected declared-adapter selection plus implemented inventory read and exact source hashes; not deployed acceptance.",
+        "pairs": [
+          {
+            "baseline": {
+              "wall_ms": 594.5860409992747,
+              "thread_cpu_ms": 538.4960420000002,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 172.93249996146187,
+              "thread_cpu_ms": 171.00870800000047,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 171.60645802505314,
+              "thread_cpu_ms": 169.72091699999936,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 554.321208037436,
+              "thread_cpu_ms": 508.3216670000006,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 567.4935000133701,
+              "thread_cpu_ms": 509.41570800000056,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 231.03862500283867,
+              "thread_cpu_ms": 177.16195799999923,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 195.38158300565556,
+              "thread_cpu_ms": 183.1331669999994,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 649.0216659731232,
+              "thread_cpu_ms": 557.7745420000007,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 579.923040990252,
+              "thread_cpu_ms": 519.3309160000013,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 181.25687498832121,
+              "thread_cpu_ms": 174.47808400000042,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 179.1754169971682,
+              "thread_cpu_ms": 173.34383300000056,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 560.6130000087433,
+              "thread_cpu_ms": 519.9207089999991,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 527.9756659874693,
+              "thread_cpu_ms": 492.95412500000066,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 166.2792499992065,
+              "thread_cpu_ms": 151.42629200000002,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 183.0945829860866,
+              "thread_cpu_ms": 173.13320799999943,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 505.8766250149347,
+              "thread_cpu_ms": 495.7917090000006,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 533.2829169929028,
+              "thread_cpu_ms": 508.9507910000002,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 174.28966698935255,
+              "thread_cpu_ms": 169.24183300000095,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 177.80316702555865,
+              "thread_cpu_ms": 173.2364999999998,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 556.1909169773571,
+              "thread_cpu_ms": 510.1102080000004,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 550.3636249923147,
+              "thread_cpu_ms": 521.6040829999997,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 176.47291696630418,
+              "thread_cpu_ms": 173.4368749999984,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 174.28999999538064,
+              "thread_cpu_ms": 169.95245899999924,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 512.3662920086645,
+              "thread_cpu_ms": 501.88999999999953,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 615.2722500264645,
+              "thread_cpu_ms": 518.1100829999998,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 258.9107910171151,
+              "thread_cpu_ms": 241.947166000001,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 206.09074999811128,
+              "thread_cpu_ms": 181.37495800000102,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 549.1646670270711,
+              "thread_cpu_ms": 520.9315829999994,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 552.8148750308901,
+              "thread_cpu_ms": 519.2997500000018,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 168.32483402686194,
+              "thread_cpu_ms": 167.11229200000233,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 174.20449998462573,
+              "thread_cpu_ms": 168.47649999999703,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 518.6497080139816,
+              "thread_cpu_ms": 502.7634170000006,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 517.0429999707267,
+              "thread_cpu_ms": 502.81241700000123,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 166.99225001502782,
+              "thread_cpu_ms": 162.3140840000019,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 169.37720798887312,
+              "thread_cpu_ms": 167.03079199999848,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 572.8990830248222,
+              "thread_cpu_ms": 526.6443750000001,
+              "rows": 160
+            }
+          },
+          {
+            "baseline": {
+              "wall_ms": 555.9254580293782,
+              "thread_cpu_ms": 506.57870799999927,
+              "rows": 160
+            },
+            "candidate": {
+              "wall_ms": 179.82012499123812,
+              "thread_cpu_ms": 173.7771670000008,
+              "rows": 160
+            }
+          },
+          {
+            "candidate": {
+              "wall_ms": 174.92495803162456,
+              "thread_cpu_ms": 172.2697920000016,
+              "rows": 160
+            },
+            "baseline": {
+              "wall_ms": 548.3127919724211,
+              "thread_cpu_ms": 502.8183750000004,
+              "rows": 160
+            }
+          }
+        ],
+        "raw_config_checks": [
+          {
+            "case": 0,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 1,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 2,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 3,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 4,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 5,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 6,
+            "invalid_JSON_failure_preserved": true
+          },
+          {
+            "case": 7,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 8,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 9,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 10,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 11,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 12,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 13,
+            "selected_config_value_types_preserved": true
+          },
+          {
+            "case": 14,
+            "selected_config_value_types_preserved": true
+          }
+        ],
+        "guard_note": "Duplicate target keys fall back to original JSON so Python last-key semantics are preserved; unsupported scalar/root/malformed JSON also passes unchanged to existing validation.",
+        "rows": 160,
+        "SQL_expression": "\n    CASE WHEN json_valid(config_json) THEN\n      CASE WHEN json_type(config_json) = 'object' THEN\n        CASE WHEN EXISTS (\n          SELECT 1 FROM json_each(config_json) AS entry\n          WHERE entry.key IN ('configuration', 'durable_runtime', 'provisioning')\n          GROUP BY entry.key HAVING COUNT(*) > 1\n        ) OR COALESCE(json_type(config_json, '$.configuration'), 'null')\n               NOT IN ('object', 'array', 'null')\n          OR COALESCE(json_type(config_json, '$.durable_runtime'), 'null')\n               NOT IN ('object', 'array', 'null')\n          OR COALESCE(json_type(config_json, '$.provisioning'), 'null')\n               NOT IN ('object', 'array', 'null')\n        THEN config_json ELSE json_object(\n          'configuration', json_extract(config_json, '$.configuration'),\n          'durable_runtime', json_extract(config_json, '$.durable_runtime'),\n          'provisioning', json_extract(config_json, '$.provisioning')\n        ) END\n      ELSE config_json END\n    ELSE config_json END\n",
+        "full_config_characters": 41988864,
+        "projected_config_characters": 35744,
+        "all_nonconfig_fields_equal": true,
+        "snapshots_equal": true,
+        "recovery_decisions_equal": true,
+        "blocked_actions_equal": true,
+        "roots": {
+          "data": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-projection-om1wjal4/data",
+          "workspace": "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-startup-config-projection-om1wjal4/workspaces",
+          "guard": "denied"
+        },
+        "product_source_sha256": {
+          "src/pa/domain/projection.py": "f51c54ad3ef2d1bcd02f0d1263c39aa37926b5400b0f2a6363b90ceeb872ab42",
+          "src/pa/instance/agent_session.py": "fe31749e1499c570b06e148547ca8095e47a591f6ddadd89afd23dddf0db9c29"
+        },
+        "complete": true
+      }
+    },
+    ".dev/startup-config-correction-source-context.json": {
+      "sha256": "fa6bf31b293f712cc121d62f142de1238e60adf336f9dc0214b2b05face3cf81",
+      "bytes": 1653,
+      "value": {
+        "observed_at": "2026-10-18T12:02:20.554893+00:00",
+        "native_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+        "lease": {
+          "id": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+          "fencing_token": 290,
+          "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+          "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+          "state": "ready",
+          "worktree_path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+          "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+          "base_sha": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+          "expires_at": "2026-10-19T11:30:18.678299Z"
+        },
+        "scoped_dirty_paths": [
+          "src/pa/instance/agent_session.py",
+          "tests/test_startup_session_inventory.py"
+        ],
+        "source": {
+          "src/pa/domain/projection.py": "f51c54ad3ef2d1bcd02f0d1263c39aa37926b5400b0f2a6363b90ceeb872ab42",
+          "src/pa/instance/agent_session.py": "fe31749e1499c570b06e148547ca8095e47a591f6ddadd89afd23dddf0db9c29"
+        },
+        "origin_main": "c43f15ca138fe1a259b04a3ba19ab25b87ddc58c",
+        "head": "3618ededf406934db6db0d4f9f9e745d01bbed56",
+        "card": {
+          "id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+          "lane": "active",
+          "updated_at": "2026-10-18T11:25:20.500340Z",
+          "completion_status": {
+            "reason_code": "verification_pending",
+            "missing": [
+              "active",
+              "verified",
+              "acceptance"
+            ],
+            "satisfied": [
+              "integrated"
+            ],
+            "accepted": false
+          }
+        }
+      }
+    }
+  },
+  "fixture_sources": {
+    ".dev/run_startup_config_regressions.py": {
+      "sha256": "17321fcfd83fdb649858e945993e00dfeda36bc54c9a894727d187897537cca8",
+      "bytes": 2508,
+      "value": "\"\"\"Scoped regression tests with both temporary roots and workspace guard.\"\"\"\nimport json,os,subprocess,sys,tempfile\nfrom pathlib import Path\nmode=sys.argv[1];assert mode in ('before','after')\npaths=['tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_abrupt_restart_recovers_durable_nonterminal_session_without_snapshot','tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_wake_reconciliation_defers_passive_connected_session','tests/test_agent_session_live_events.py::AgentSessionLiveEventTests::test_startup_defers_fifty_idle_sessions_and_recovers_only_active_turns']\nif False:paths+=['tests/test_acp_prompt_recovery.py','tests/test_rejected_start_recovery.py','tests/test_operation_status_startup.py','tests/test_startup_catalog_reconciliation.py','tests/test_acp_startup_trace.py','tests/test_card_agent_sessions.py','tests/test_session_recovery_ui.py','tests/test_async_responsiveness.py']\nif '--child' in sys.argv:\n import pytest\n from pa.repository.workspace import WorkspaceManager\n original=WorkspaceManager.__init__;audit=[];checkout=Path.cwd().resolve();temporary=Path(tempfile.gettempdir()).resolve()\n def guarded(self,settings,store):\n  data=Path(settings.data_dir).resolve();workspace=Path(settings.workspace_root).expanduser().resolve()\n  assert data.is_relative_to(temporary) and workspace.is_relative_to(temporary)\n  assert not workspace.is_relative_to(checkout) and not checkout.is_relative_to(workspace)\n  audit.append({'data':str(data),'workspace':str(workspace)});return original(self,settings,store)\n WorkspaceManager.__init__=guarded\n result=pytest.main(['-q','-o','addopts=','--basetemp',str(Path(os.environ['PA_DATA_DIR']).parent/'pytest'),*paths])\n Path('.dev/startup-config-regression-'+mode+'-roots.json').write_text(json.dumps({'root_audit':audit,'PA_DATA_DIR':os.environ['PA_DATA_DIR'],'PA_WORKSPACE_ROOT':os.environ['PA_WORKSPACE_ROOT'],'exit_code':int(result)},indent=2)+'\\n');raise SystemExit(result)\nwith tempfile.TemporaryDirectory(prefix='pa-startup-config-tests-') as temporary:\n env=os.environ.copy();env['PA_DATA_DIR']=str(Path(temporary)/'data');env['PA_WORKSPACE_ROOT']=str(Path(temporary)/'workspaces')\n p=Path('.dev/startup-config-regression-'+mode+'.log');assert not p.exists()\n with p.open('w') as stream:result=subprocess.run([sys.executable,__file__,mode,'--child'],env=env,stdout=stream,stderr=subprocess.STDOUT)\n print(json.dumps({'exit_code':result.returncode,'log':str(p)}));raise SystemExit(result.returncode)\n"
+    },
+    ".dev/run_startup_config_tests_v2.py": {
+      "sha256": "0c3ae04f639218e7d0f333a0138fb92071959bff7674ccc8605dadeac0142bad",
+      "bytes": 2169,
+      "value": "\"\"\"Scoped regression tests with both temporary roots and workspace guard.\"\"\"\nimport json,os,subprocess,sys,tempfile\nfrom pathlib import Path\nmode=sys.argv[1];assert mode in ('focused','broad')\npaths=['tests/test_startup_session_inventory.py']\nif mode=='broad':paths+=['tests/test_agent_session_live_events.py','tests/test_acp_prompt_recovery.py','tests/test_rejected_start_recovery.py','tests/test_operation_status_startup.py','tests/test_startup_catalog_reconciliation.py','tests/test_acp_startup_trace.py','tests/test_card_agent_sessions.py','tests/test_session_recovery_ui.py','tests/test_async_responsiveness.py']\nif '--child' in sys.argv:\n import pytest\n from pa.repository.workspace import WorkspaceManager\n original=WorkspaceManager.__init__;audit=[];checkout=Path.cwd().resolve();temporary=Path(tempfile.gettempdir()).resolve()\n def guarded(self,settings,store):\n  data=Path(settings.data_dir).resolve();workspace=Path(settings.workspace_root).expanduser().resolve()\n  assert data.is_relative_to(temporary) and workspace.is_relative_to(temporary)\n  assert not workspace.is_relative_to(checkout) and not checkout.is_relative_to(workspace)\n  audit.append({'data':str(data),'workspace':str(workspace)});return original(self,settings,store)\n WorkspaceManager.__init__=guarded\n result=pytest.main(['-q','-o','addopts=','--basetemp',str(Path(os.environ['PA_DATA_DIR']).parent/'pytest'),*paths])\n Path('.dev/startup-config-v2-'+mode+'-roots.json').write_text(json.dumps({'root_audit':audit,'PA_DATA_DIR':os.environ['PA_DATA_DIR'],'PA_WORKSPACE_ROOT':os.environ['PA_WORKSPACE_ROOT'],'exit_code':int(result)},indent=2)+'\\n');raise SystemExit(result)\nwith tempfile.TemporaryDirectory(prefix='pa-startup-config-tests-') as temporary:\n env=os.environ.copy();env['PA_DATA_DIR']=str(Path(temporary)/'data');env['PA_WORKSPACE_ROOT']=str(Path(temporary)/'workspaces')\n p=Path('.dev/startup-config-v2-'+mode+'.log');assert not p.exists()\n with p.open('w') as stream:result=subprocess.run([sys.executable,__file__,mode,'--child'],env=env,stdout=stream,stderr=subprocess.STDOUT)\n print(json.dumps({'exit_code':result.returncode,'log':str(p)}));raise SystemExit(result.returncode)\n"
+    },
+    ".dev/run_startup_config_workspace_case.py": {
+      "sha256": "2d97425f8d43e8ce6de85526f04ae1ccbc08265c854b83f1e395b9937cdaa3d9",
+      "bytes": 2178,
+      "value": "\"\"\"Scoped regression tests with both temporary roots and workspace guard.\"\"\"\nimport json,os,subprocess,sys,tempfile\nfrom pathlib import Path\nmode=sys.argv[1];assert mode in ('before','after')\npaths=['tests/test_repository_workspaces.py::test_startup_gc_protects_open_persisted_sessions']\nif False:paths+=['tests/test_acp_prompt_recovery.py','tests/test_rejected_start_recovery.py','tests/test_operation_status_startup.py','tests/test_startup_catalog_reconciliation.py','tests/test_acp_startup_trace.py','tests/test_card_agent_sessions.py','tests/test_session_recovery_ui.py','tests/test_async_responsiveness.py']\nif '--child' in sys.argv:\n import pytest\n from pa.repository.workspace import WorkspaceManager\n original=WorkspaceManager.__init__;audit=[];checkout=Path.cwd().resolve();temporary=Path(tempfile.gettempdir()).resolve()\n def guarded(self,settings,store):\n  data=Path(settings.data_dir).resolve();workspace=Path(settings.workspace_root).expanduser().resolve()\n  assert data.is_relative_to(temporary) and workspace.is_relative_to(temporary)\n  assert not workspace.is_relative_to(checkout) and not checkout.is_relative_to(workspace)\n  audit.append({'data':str(data),'workspace':str(workspace)});return original(self,settings,store)\n WorkspaceManager.__init__=guarded\n result=pytest.main(['-q','-o','addopts=','--basetemp',str(Path(os.environ['PA_DATA_DIR']).parent/'pytest'),*paths])\n Path('.dev/startup-config-workspace-'+mode+'-roots.json').write_text(json.dumps({'root_audit':audit,'PA_DATA_DIR':os.environ['PA_DATA_DIR'],'PA_WORKSPACE_ROOT':os.environ['PA_WORKSPACE_ROOT'],'exit_code':int(result)},indent=2)+'\\n');raise SystemExit(result)\nwith tempfile.TemporaryDirectory(prefix='pa-startup-config-tests-') as temporary:\n env=os.environ.copy();env['PA_DATA_DIR']=str(Path(temporary)/'data');env['PA_WORKSPACE_ROOT']=str(Path(temporary)/'workspaces')\n p=Path('.dev/startup-config-workspace-'+mode+'.log');assert not p.exists()\n with p.open('w') as stream:result=subprocess.run([sys.executable,__file__,mode,'--child'],env=env,stdout=stream,stderr=subprocess.STDOUT)\n print(json.dumps({'exit_code':result.returncode,'log':str(p)}));raise SystemExit(result.returncode)\n"
+    },
+    ".dev/benchmark_startup_config_final_source_v2.py": {
+      "sha256": "7c2fbb8efbf76d90b5182b2673da07153e58abd6b19aa41da5d6aa4444ef4c15",
+      "bytes": 6338,
+      "value": "\"\"\"Disposable startup read projection prototype; no provider or live PA state.\"\"\"\nimport asyncio,hashlib,json,os,tempfile,time\nfrom datetime import UTC,datetime,timedelta\nfrom pathlib import Path\nfrom unittest.mock import AsyncMock\nOUT=Path('.dev/startup-config-projection-final-source-v2.json');assert not OUT.exists()\nout={'scope':'One160session fixture/20alternatingpairedreads. Preserve every row/provenance/recovery input/ordering; project only configuration,durable_runtime,provisioning config keys for startup inventory. Runtime creation/saves must stillrefetchfullsession. No code change/livePA/provider/configdefaultchange; notactualstartupacceptance.','pairs':[]}\ndef save():OUT.write_text(json.dumps(out,indent=2)+'\\n')\nwith tempfile.TemporaryDirectory(prefix='pa-startup-config-projection-') as temporary:\n root=Path(temporary).resolve();os.environ['PA_DATA_DIR']=str(root/'data');os.environ['PA_WORKSPACE_ROOT']=str(root/'workspaces')\n from pa.repository.workspace import WorkspaceManager\n def deny(*a,**k):raise AssertionError('No workspace construction in readprojectionfixture')\n WorkspaceManager.__init__=deny\n from pa.domain.projection import CardProjection,_SESSION_COLUMNS_WITHOUT_METRICS\n from pa.domain.models import AgentSession\n from pa.instance.agent_session import AgentSessionManager\n from pa.instance.quiesce import QueuedPrompt\n store=CardProjection(root/'fixture.db');prompt=QueuedPrompt(id='fixture',message='synthetic').model_dump(mode='json');now=datetime.now(UTC)\n variants=[('closed',{}),('closed',{'queued_prompts':[prompt]}),('closed',{'in_flight':prompt}),('closed',{'pending_permissions':[{'id':'fixture'}]}),('closed',{'lifecycle':'completion_pending'}),('idle',{}),('prompting',{}),('recovery_blocked',{}),('prompting',{'queue_paused':True}),('active',{})]\n for i in range(160):\n  status,durable=variants[i%len(variants)]\n  store.save_session(AgentSession(id=f's-{i}',agent_name='fixture',status=status,purpose='chat',project_id='fixture-project',execution_binding={'fixture':'provenance'},config_json={'configuration':{'effective':{'model_id':'fixture'}},'durable_runtime':durable,'provisioning':{'action':'fixture action'},'execution_selection':{'proof':'x'*131072},'unknown_extension':'y'*131072},metrics_json={'fixture':'z'*65536},created_at=now,updated_at=now+timedelta(seconds=i)))\n from pa.domain.projection import _STARTUP_CONFIG_JSON\n expression=_STARTUP_CONFIG_JSON\n columns=_SESSION_COLUMNS_WITHOUT_METRICS.replace('config_json,',expression+' AS config_json,');assert columns!=_SESSION_COLUMNS_WITHOUT_METRICS\n def candidate():return manager._startup_session_inventory()\n raw_cases=[\n  '{}','null','[]','3','false','\"fixture\"','[invalid',\n  '{\"configuration\":{\"model\":\"first\"},\"configuration\":{\"model\":\"last\"}}',\n  '{\"config\\\\u0075ration\":{\"model\":\"first\"},\"configuration\":{\"model\":\"last\"}}',\n  '{\"durable_runtime\":{\"queue_paused\":true},\"durable_runtime\":{\"queue_paused\":false}}',\n  '{\"configuration\":true}','{\"configuration\":999999999999999999999999999999999}',\n  '{\"provisioning\":0}','{\"durable_runtime\":[[\"queue_paused\",false]]}',\n  '{\"configuration\":{\"model\":\"first\",\"model\":\"last\"},\"unknown\":\"discarded\"}'\n ]\n raw_checks=[]\n for raw in raw_cases:\n  with store._conn() as conn:projected=conn.execute(f'SELECT {expression} FROM (SELECT ? AS config_json)',(raw,)).fetchone()[0]\n  try:expected=json.loads(raw)\n  except ValueError:\n   try:json.loads(projected)\n   except ValueError:raw_checks.append({'case':len(raw_checks),'invalid_JSON_failure_preserved':True});continue\n   raise AssertionError('Malformed config silently accepted')\n  actual=json.loads(projected)\n  if isinstance(expected,dict):\n   for key in ('configuration','durable_runtime','provisioning'):\n    assert actual.get(key)==expected.get(key) and type(actual.get(key)) is type(expected.get(key))\n  else:assert actual==expected and type(actual) is type(expected)\n  raw_checks.append({'case':len(raw_checks),'selected_config_value_types_preserved':True})\n out['raw_config_checks']=raw_checks;out['guard_note']='Duplicate target keys fall back to original JSON so Python last-key semantics are preserved; unsupported scalar/root/malformed JSON also passes unchanged to existing validation.'\n manager=object.__new__(AgentSessionManager);manager.store=store;manager._project_recovery_available=AsyncMock(return_value=False)\n full=store.list_sessions(include_metrics=False);lean=candidate();assert [s.model_dump(exclude={'config_json'}) for s in full]==[s.model_dump(exclude={'config_json'}) for s in lean]\n assert [manager._snapshot_from_persisted(s).model_dump() for s in full]==[manager._snapshot_from_persisted(s).model_dump() for s in lean]\n async def decisions(items):return {s.id:await manager._automatic_recovery_eligibility(s) for s in items}\n assert asyncio.run(decisions(full))==asyncio.run(decisions(lean))\n assert [manager._recovery_action(s) for s in full]==[manager._recovery_action(s) for s in lean]\n out.update(rows=160,SQL_expression=expression,full_config_characters=sum(len(json.dumps(s.config_json)) for s in full),projected_config_characters=sum(len(json.dumps(s.config_json)) for s in lean),all_nonconfig_fields_equal=True,snapshots_equal=True,recovery_decisions_equal=True,blocked_actions_equal=True,roots={'data':os.environ['PA_DATA_DIR'],'workspace':os.environ['PA_WORKSPACE_ROOT'],'guard':'denied'})\n for pair in range(20):\n  times={}\n  for mode in (('baseline','candidate') if pair%2==0 else ('candidate','baseline')):\n   started=time.perf_counter();cpu=time.thread_time();values=store.list_sessions(include_metrics=False) if mode=='baseline' else candidate();times[mode]={'wall_ms':(time.perf_counter()-started)*1000,'thread_cpu_ms':(time.thread_time()-cpu)*1000,'rows':len(values)}\n  out['pairs'].append(times);save()\n out['product_source_sha256']={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in ['src/pa/domain/projection.py','src/pa/instance/agent_session.py']};out['scope']+=' Corrected declared-adapter selection plus implemented inventory read and exact source hashes; not deployed acceptance.';out['complete']=True;save();store.close_thread_connection()\nprint(json.dumps({'complete':True,'rows':160,'full_config_characters':out['full_config_characters'],'projected_config_characters':out['projected_config_characters'],'sha256':hashlib.sha256(OUT.read_bytes()).hexdigest()}))\n"
+    }
+  },
+  "corrected_product_source_sha256": {
+    "src/pa/domain/projection.py": "f51c54ad3ef2d1bcd02f0d1263c39aa37926b5400b0f2a6363b90ceeb872ab42",
+    "src/pa/instance/agent_session.py": "fe31749e1499c570b06e148547ca8095e47a591f6ddadd89afd23dddf0db9c29"
+  },
+  "corrected_source_fixture": {
+    "baseline": {
+      "samples": 20,
+      "max_ms": 649.0216659731232,
+      "p50_ms": 552.8148750308901,
+      "p95_ms": 615.2722500264645,
+      "p99_ms": 649.0216659731232
+    },
+    "candidate": {
+      "samples": 20,
+      "max_ms": 258.9107910171151,
+      "p50_ms": 174.92495803162456,
+      "p95_ms": 231.03862500283867,
+      "p99_ms": 258.9107910171151
+    }
+  },
+  "tests": "Same three recovery cases failed before and passed after; 151 expanded regressions plus one workspace GC case pass. Test assertions and deadlines unchanged. Suites overlap; not 155 distinct cases. Original eight CI failures retained; no old-head retry.",
+  "limitations": "Original failed head3618 never merged/deployed. Corrected manager declaration guard and SQL inventory are measured together in a new20pair fixture, not a repetition to repair missing old evidence. General full-session API/refetch, every recovery obligation and JSON parity are preserved. Actual loaded c43f and all prior live/fixture residuals remain; this is not full startup/provider/deployed/whole-PA acceptance. All previous559 rows remain unchanged; new adapter concern open.",
+  "reports": {
+    "ci_adapter": "73ab3f07-5788-4623-a764-5bf8a71476d6",
+    "startup_configuration": "ee271531-522a-4c05-aea3-df1db4453d58"
+  }
+}

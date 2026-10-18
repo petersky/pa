@@ -207715,6 +207715,85 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Retain exactoriginalCI/provenance andunknowns; improveboundeddiagnostics/reproducecauses withoutassertion/200msbudgetrelaxation. ContinueallwholePAacceptance andnormalindependentverification."
+    },
+    {
+      "id": "concern:startup-configuration-hydration",
+      "kind": "concern",
+      "family": "startup",
+      "finding": "Startup inventory materializes unrelated retained configuration proofs",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_confirmed_fixture_measured_actual_latency_share_unverified",
+      "cause": "Startup already omitsmetrics butcopiesanddecodesfullconfig_json. Onlyconfiguration/durable_runtime/provisioning areusedbeforefullcurrent-sessionrefetch. Actualstartup5.969s/SQL5.116s mayhaveothercauses; liveconfigvolumenotread.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-startup-config-20261018.json",
+        "sha256": "045061bee7a4d33dee962231249651546879d4a3ef17460f270ce636468f3bcf",
+        "source_fixture": {
+          "baseline": {
+            "samples": 20,
+            "max_ms": 697.0179160125554,
+            "p50_ms": 594.5069169974886,
+            "p95_ms": 687.6403749920428,
+            "p99_ms": 697.0179160125554
+          },
+          "candidate": {
+            "samples": 20,
+            "max_ms": 314.0159999602474,
+            "p50_ms": 193.8986250315793,
+            "p95_ms": 287.73866599658504,
+            "p99_ms": 314.0159999602474
+          }
+        },
+        "rows_models_each": 160,
+        "configuration_characters_before": 41988864,
+        "configuration_characters_after": 35744
+      },
+      "fix_or_existing_owner": "Same systemiccard/session; dedicated guardedreadonlyprojection, not a changedgeneralAPI or recovery/admission policy.",
+      "implemented": "Localsource+22focused/107broader tests(include22);15legacyJSONedgecases/decision/snapshot/provenance/order/refetch/adapterparity. No default/deadline/dependency change.",
+      "merged": [],
+      "deployed": "Not deployed; actualserverc43f lacksnewstartuprepair.",
+      "retested": "Finalsource20alternatingpairedreads: p95687.640->287.739/max697.018->314.016ms; distinct fixture/normalhostlimits, notfullboot/provider/deployedacceptance.",
+      "resolution": "open",
+      "report": "ee271531-522a-4c05-aea3-df1db4453d58 revision1",
+      "next_actor": "this samecard/session",
+      "next_action": "ReadyPR/durablesupervisor/exactheadindependentgreen/mainCI/safeexactactivation/retest; verifyrealstartup/resumption/fullconfig andallremainingcriteria/normalindependentacceptance."
+    },
+    {
+      "id": "concern:startup-inventory-adapter-discovery",
+      "kind": "concern",
+      "family": "startup",
+      "finding": "Optional inventory reader discovery fabricates a callable on dynamic legacy adapters",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_CI_and_native_before_after",
+      "cause": "Original3618 getattr lookup treated fabricated MagicMock/dynamic adapter members as an implemented startup reader; empty inventory lost recovery and workspace GC protection. Eight CI failures, three native before/after regressions confirm. Bad head never deployed.",
+      "fix_or_existing_owner": "Same systemic card/session; inspect.getattr_static requires declaration before normal descriptor binding; legacy list_sessions fallback preserved.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
+        "sha256": "248bbcb0f6f26e5f7579df3f31dc130456f3b1cf9747ba358004149ed2ec7389",
+        "corrected_source_fixture": {
+          "baseline": {
+            "samples": 20,
+            "max_ms": 649.0216659731232,
+            "p50_ms": 552.8148750308901,
+            "p95_ms": 615.2722500264645,
+            "p99_ms": 649.0216659731232
+          },
+          "candidate": {
+            "samples": 20,
+            "max_ms": 258.9107910171151,
+            "p50_ms": 174.92495803162456,
+            "p95_ms": 231.03862500283867,
+            "p99_ms": 258.9107910171151
+          }
+        }
+      },
+      "implemented": "Corrected manager guard plus two adapter contracts; 151 expanded tests and one workspace protection case passed, unchanged assertions/deadlines.",
+      "merged": [],
+      "deployed": "Not deployed; actual c43f remains loaded.",
+      "retested": "Three unchanged cases fail before/pass after; full live-event module and workspace GC protection pass. New20pair fixture measures corrected guard plus inventory.",
+      "resolution": "open",
+      "report": "73ab3f07-5788-4623-a764-5bf8a71476d6",
+      "next_actor": "this same card/session",
+      "next_action": "Push corrected head; obtain new exact-head CI and stable supervisor evidence, independently validate all gates, integrate/main CI and safe activation/retest; preserve all recovery/GC obligations."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -208560,15 +208639,13 @@
   },
   "current_row_status_overrides": {
     "concern:benchmark-validation-boundary": {
-      "merged": [
-        "https://github.com/petersky/pa/pull/517"
-      ],
-      "head": "c1f5ba0b613a98ba694708ab7547892a00b51a69",
-      "merge": "9bffbedfd94fe1118eeebbfe98945af88a02fd9c",
-      "watch": "726a438a-2102-4872-a6a6-690bd92f656f",
-      "head_ci": 39117962293,
-      "main_ci": 39118192232,
-      "status": "5terminalSUCCESS each;437productfiles unchanged. Benchmark-only correction used in both newcases, all boundary assertions pass; not runtime activation or acceptance."
+      "artifact": "docs/benchmarks/systemic-startup-config-20261018.json",
+      "source_fix": "ExistingPR517 freezesworkload/capture/validation separately; retainedallholder100.056s/capture/validationseparate.",
+      "new_residual": "OriginalparentverifierTypeError retained; childexitstatusuncaptured. Savedresultsindependentlyverifiedwithoutworkloadrerun. Futureguard/earlyexitreceiptpreparedbutnotexecuted.",
+      "report": "42b513af revision3",
+      "resolution": "open",
+      "next_actor": "this samecard/session",
+      "next_action": "Keeporiginalunknown; validatefuturechangedscenario withtypedjournalguard anddurablechildstatusbeforeverification. Neverrepeatoldmeasurementtoinventloststatus."
     },
     "concern:transcript-gc-path-materialization": {
       "merged": [
@@ -208594,19 +208671,66 @@
       "artifact": "docs/benchmarks/systemic-f7e8-loaded-20261018.json"
     },
     "concern:fleet-workshop-metrics-hydration": {
-      "merged": [
-        "https://github.com/petersky/pa/pull/519"
-      ],
-      "head": "856609c3dfe19e4eed51a22d0f2a389bb87b0502",
-      "merge": "00e01133404b870fe0eea9df38fe1de59924f3ed",
-      "watch": "1a7dde51-2cd2-434b-92cb-15acef0fd63b",
-      "head_ci": 39121148254,
-      "main_ci": 39121383664,
-      "main_ci_attempt": 2,
-      "main_ci_original_failures_retained": true,
-      "integration_proof_sha256": "72f16745775a71369c198ee97e77abacf12ec93effa5b4a938613a9d431038e3",
-      "deployed": "Notactivated; plannedcombinedexacttargetafterthisbrowserPRverification. Neverinstall/restart519fromstalenotice.",
-      "resolution": "open"
+      "pr": 520,
+      "watch": "acb65d12-ab2e-4f99-b21d-7a2fe7f32cce",
+      "head": "80cf4644fa17fbd099d2fb5cb8f4c8608c125de7",
+      "merge": "c43f15ca138fe1a259b04a3ba19ab25b87ddc58c",
+      "head_ci": 39122631739,
+      "main_ci": 39122908151,
+      "proof_sha256": "70783342c35a1ac5467fef0485886507e1f262c1260284d69ed3115ac6793336",
+      "status": "Stable9 and independent5SUCCESS/reviews0/threads0/pagination/currentrules/CLEAN/headCAS; head+main5SUCCESS each/no retry.",
+      "artifact": "docs/benchmarks/systemic-c43f-loaded-20261018.json",
+      "deployed": "Exact server-captured source/package/newPID65909/startup75dd5b9d/config86968/lease290 verified",
+      "retested": "Single95GETs all200/stable but3targetviolations; separate cached35.414s maintenance/full21sectionruntime, not acceptance",
+      "resolution": "open",
+      "next_action": "Boundeddisposable all-holder projection/sharedmutation timeline and SQL/CPU/GC attribution, every remaining finding and normal independent acceptance."
+    },
+    "concern:browser-initial-document-readiness": {
+      "pr": 520,
+      "watch": "acb65d12-ab2e-4f99-b21d-7a2fe7f32cce",
+      "head": "80cf4644fa17fbd099d2fb5cb8f4c8608c125de7",
+      "merge": "c43f15ca138fe1a259b04a3ba19ab25b87ddc58c",
+      "head_ci": 39122631739,
+      "main_ci": 39122908151,
+      "proof_sha256": "70783342c35a1ac5467fef0485886507e1f262c1260284d69ed3115ac6793336",
+      "status": "Stable9 and independent5SUCCESS/reviews0/threads0/pagination/currentrules/CLEAN/headCAS; head+main5SUCCESS each/no retry.",
+      "artifact": "docs/benchmarks/systemic-c43f-loaded-20261018.json",
+      "deployed": "Exact server-captured source/package/newPID65909/startup75dd5b9d/config86968/lease290 verified",
+      "retested": "Single95GETs all200/stable but3targetviolations; separate cached35.414s maintenance/full21sectionruntime, not acceptance",
+      "resolution": "open",
+      "next_action": "Boundeddisposable all-holder projection/sharedmutation timeline and SQL/CPU/GC attribution, every remaining finding and normal independent acceptance."
+    },
+    "concern:global-lock": {
+      "artifact": "docs/benchmarks/systemic-startup-config-20261018.json",
+      "finding": "Measured session-save SQLstall propagation and fixture all-holder graph; original8summary/3append/2push attribution kept numeric; rawlock/nativebusy/disk/GIL causesnotclosed.",
+      "rejected": "Projectiontransactiongroupinglatencytailsworse/sameWALbytes, notimplemented.",
+      "resolution": "open",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "next_actor": "this samecard/session",
+      "next_action": "Continue specificholderSQL/nativeCPU/hostattribution anddurablewriteamplification repairs; preservealllocks/receipt/CAS/admission/sync semantics."
+    },
+    "concern:startup-configuration-hydration": {
+      "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
+      "corrected_source_fixture": {
+        "baseline": {
+          "samples": 20,
+          "max_ms": 649.0216659731232,
+          "p50_ms": 552.8148750308901,
+          "p95_ms": 615.2722500264645,
+          "p99_ms": 649.0216659731232
+        },
+        "candidate": {
+          "samples": 20,
+          "max_ms": 258.9107910171151,
+          "p50_ms": 174.92495803162456,
+          "p95_ms": 231.03862500283867,
+          "p99_ms": 258.9107910171151
+        }
+      },
+      "status": "Original source-stage tests excluded live-events; CI exposed adapter compatibility bug now corrected and expanded151+1 tests passed. Query unchanged; corrected manager separately measured.",
+      "resolution": "open",
+      "next_actor": "this same card/session",
+      "next_action": "New exact-head CI/stable supervisor, independent merge gates/main CI, safe activation/full startup retest; retain previous measurements and every acceptance gap."
     }
   },
   "f7e8_loaded_stage": {
@@ -209300,5 +209424,46 @@
     "rows": 558,
     "concerns": 67,
     "status": "Localcandidate; all558findingsremainopen. PR519merged/mainretrygreen butnotactivated; originalCIcausesretained."
+  },
+  "c43f_loaded_stage": {
+    "artifact": "docs/benchmarks/systemic-c43f-loaded-20261018.json",
+    "sha256": "cbc5b09877a8677cfb76ced81289707f4d3d29dab984c9f15b19126be4bc5307",
+    "source": "c43f15ca138fe1a259b04a3ba19ab25b87ddc58c",
+    "summary": {
+      "ordinary_gets": 95,
+      "get_errors": 0,
+      "get_500ms_violations": 3,
+      "primary_operations": 82,
+      "diagnostic_operations": 1,
+      "route_groups": 25,
+      "primary_prefix_families": 19,
+      "slow_records_retained": 34,
+      "slow_counters": 34,
+      "primary_process_tails_at_least500ms": 25,
+      "baseline_operations_positive": 77,
+      "baseline_route_groups_positive": 21
+    },
+    "deployed": "Exact server-captured source/package/newPID65909/startup75dd5b9d/config86968/lease290 verified",
+    "retested": "Single95GETs all200/stable but3targetviolations; separate cached35.414s maintenance/full21sectionruntime, not acceptance",
+    "resolution": "open",
+    "next_action": "Boundeddisposable all-holder projection/sharedmutation timeline and SQL/CPU/GC attribution, every remaining finding and normal independent acceptance."
+  },
+  "startup_configuration_stage": {
+    "artifact": "docs/benchmarks/systemic-startup-config-20261018.json",
+    "sha256": "045061bee7a4d33dee962231249651546879d4a3ef17460f270ce636468f3bcf",
+    "rows": 559,
+    "concerns": 68,
+    "status": "Sourcefixtureverified; deployment andwholePAacceptancepending. Originalparentfixturefailure/unknownchildexit andallnegativestages retained.",
+    "journal_artifact": {
+      "path": "docs/benchmarks/systemic-all-holder-journals-20261018.json",
+      "sha256": "a42d8ac39a8e44821935dba7e68d73b75638b004c3bcf7afe2c5531a9e632e93"
+    }
+  },
+  "startup_configuration_correction_stage": {
+    "artifact": "docs/benchmarks/systemic-startup-config-correction-20261018.json",
+    "sha256": "248bbcb0f6f26e5f7579df3f31dc130456f3b1cf9747ba358004149ed2ec7389",
+    "rows": 560,
+    "concerns": 69,
+    "status": "Original failed head and all eight CI cases retained; corrected source verified locally, new-head CI/integration/deployment/whole acceptance pending."
   }
 }

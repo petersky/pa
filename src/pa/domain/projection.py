@@ -88,6 +88,35 @@ _SESSION_COLUMNS_WITHOUT_METRICS = """
     created_at, updated_at
 """
 
+# Startup decisions and SessionSnapshot use these three configuration keys.
+# A resumed runtime re-fetches its complete current session before mutation.
+# Keep unusual legacy values unchanged so the existing Python decoder retains
+# last-key-wins behavior and handles malformed/unsupported values as before.
+_STARTUP_CONFIG_JSON = """
+    CASE WHEN json_valid(config_json) THEN
+      CASE WHEN json_type(config_json) = 'object' THEN
+        CASE WHEN EXISTS (
+          SELECT 1 FROM json_each(config_json) AS entry
+          WHERE entry.key IN ('configuration', 'durable_runtime', 'provisioning')
+          GROUP BY entry.key HAVING COUNT(*) > 1
+        ) OR COALESCE(json_type(config_json, '$.configuration'), 'null')
+               NOT IN ('object', 'array', 'null')
+          OR COALESCE(json_type(config_json, '$.durable_runtime'), 'null')
+               NOT IN ('object', 'array', 'null')
+          OR COALESCE(json_type(config_json, '$.provisioning'), 'null')
+               NOT IN ('object', 'array', 'null')
+        THEN config_json ELSE json_object(
+          'configuration', json_extract(config_json, '$.configuration'),
+          'durable_runtime', json_extract(config_json, '$.durable_runtime'),
+          'provisioning', json_extract(config_json, '$.provisioning')
+        ) END
+      ELSE config_json END
+    ELSE config_json END
+"""
+_STARTUP_SESSION_COLUMNS = _SESSION_COLUMNS_WITHOUT_METRICS.replace(
+    "config_json,", f"{_STARTUP_CONFIG_JSON} AS config_json,"
+)
+
 
 class CardVersionConflict(RuntimeError):
     def __init__(self, card_id: str, expected: datetime, actual: datetime) -> None:
@@ -5246,6 +5275,21 @@ class CardProjection:
                 (session_id, session_id),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def list_sessions_for_startup_inventory(self) -> list[AgentSession]:
+        """Read every recovery ID and snapshot input without unrelated config.
+
+        This is a read-only inventory, not a session for runtime construction or
+        saving. Keep closed/archived IDs, ordering and all provenance fields;
+        closed sessions can still carry durable recovery obligations. General
+        session reads retain their complete configuration and diagnostics.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_STARTUP_SESSION_COLUMNS} FROM agent_sessions "
+                "ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._row_to_session(row) for row in rows]
 
     def list_sessions(
         self,
