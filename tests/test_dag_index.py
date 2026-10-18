@@ -15,6 +15,79 @@ from pa.sync.dag_index import DagIndex
 from pa.core.performance import OperationObservation, current_observation
 
 
+@pytest.mark.parametrize("supplied_version", ["authority-v1", None, ""])
+def test_append_materializes_prior_only_when_version_is_missing(tmp_path, supplied_version):
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "authority")
+    _, parent = log.append_event(CardEvent(
+        type=EventType.CARD_CREATED, card_id="card", realm_id="default",
+        author_principal="user:test", author_instance="authority",
+        payload={"id": "card", "title": "retained", "updated_at": "prior-v1"},
+    ))
+    with patch.object(log, "_indexed_entity_snapshot", wraps=log._indexed_entity_snapshot) as prior:
+        written, commit = log.append_event(CardEvent(
+            type=EventType.CARD_UPDATED, card_id="card", realm_id="default",
+            author_principal="user:test", author_instance="authority",
+            causal_card_version=supplied_version,
+            payload={"summary": "new", "updated_at": "v2"},
+        ))
+    assert prior.call_count == (0 if supplied_version else 1)
+    assert written.causal_card_version == (supplied_version or "prior-v1")
+    assert written.causal_parent == parent.hash
+    assert written.field_intent == ["summary"]
+    assert commit.parent_hashes == [parent.hash]
+    assert log.get_event(commit.event_hashes[0]) == written
+    assert log.entity_snapshot(commit.hash, "card", "card")["summary"] == "new"
+
+
+def test_create_with_supplied_version_still_checks_duplicate_before_append(tmp_path):
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "authority")
+    created, parent = log.append_event(CardEvent(
+        type=EventType.CARD_CREATED, card_id="card", realm_id="default",
+        author_principal="user:test", author_instance="authority",
+        payload={"id": "card", "title": "retained"},
+    ))
+    with patch.object(log, "_indexed_entity_snapshot", wraps=log._indexed_entity_snapshot) as prior:
+        with pytest.raises(DuplicateCardCreateError):
+            log.append_event(created.model_copy(update={
+                "id": "duplicate", "causal_card_version": "supplied",
+            }))
+    assert prior.call_count == 1
+    assert log.get_head("default") == parent.hash
+    assert log.index.indexed_head("default") == parent.hash
+
+
+def test_supplied_version_append_keeps_parent_fence_after_preflight(tmp_path):
+    from pa.sync.event_log import DagIndexStaleError
+
+    log = EventLog(ObjectStore(tmp_path / "objects"), tmp_path, "authority")
+    def event(identity):
+        return CardEvent(
+            type=EventType.CARD_CREATED, card_id=identity, realm_id="default",
+            author_principal="user:test", author_instance="authority",
+            payload={"id": identity, "title": identity},
+        )
+    log.append_event(event("first"))
+    original = log.ensure_indexed
+    advanced = []
+    def advance_after_preflight(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if not advanced:
+            advanced.append(None)
+            _, commit = log.append_event(event("concurrent"))
+            advanced[0] = commit.hash
+        return result
+    with patch.object(log, "ensure_indexed", side_effect=advance_after_preflight):
+        with pytest.raises(DagIndexStaleError):
+            log.append_event(CardEvent(
+                type=EventType.CARD_UPDATED, card_id="first", realm_id="default",
+                author_principal="user:test", author_instance="authority",
+                causal_card_version="supplied", payload={"title": "must not append"},
+            ))
+    assert log.get_head("default") == advanced[0]
+    assert log.index.indexed_head("default") == advanced[0]
+    assert log.entity_snapshot(advanced[0], "card", "first")["title"] == "first"
+
+
 def _commit(objects: ObjectStore, parent: str | None, event: CardEvent) -> str:
     event_hash = objects.put_json(event.model_dump(mode="json"))
     commit = SyncCommit(
