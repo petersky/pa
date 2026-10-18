@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -51,5 +52,9 @@ def test_first_useful_event_timing_is_session_scoped_and_emitted_once():
     timings = [c.args[1] for c in runtime._append_transcript.call_args_list if c.args[0] == "prompt_timing"]
     assert len(timings) == 1
     assert timings[0]["provider_generation_ms"] >= 50
-    assert timings[0]["accept_to_useful_ms"] == timings[0]["provider_generation_ms"] + 10
+    # The durable timing values are rounded decimal milliseconds. Compare
+    # those values exactly without adding a binary floating-point artifact.
+    assert Decimal(str(timings[0]["accept_to_useful_ms"])) == Decimal(
+        str(timings[0]["provider_generation_ms"])
+    ) + 10
     assert runtime.session.metrics_json["turn_timing"]["prompt_id"] == "prompt"

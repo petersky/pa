@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T22:26:47.165730+00:00",
-  "completion": "OPEN;592findings/96concerns, every prior588row preserved unchanged. Full64-operation/17-family fresh slow-tail numeric inventory published; no whole-fleet/causal/all-call inference. PR542 exactsource/merge and5green head+main verified, actual0d6638 unactivated. Original failures, latestmixed1warning/8observations+3preboot, all peer/log/native gaps and independent acceptance remainopen.",
+  "as_of": "2026-10-18T22:32:56.591960+00:00",
+  "completion": "OPEN;593findings/97concerns. Every prior592row preserved unchanged. Complete64name/17family slow-tail publication retained; original543CI decimal-comparison failure reproduced and corrected test-only, full newhead CI pending. Source target53b42/runtime0d6638 unchanged, pending interaction outstanding. Latest real mixed1warning/8universal500ms+3premeasurement and all native/peer/log/acceptance gaps remainopen.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -131,7 +131,8 @@
     "docs/benchmarks/systemic-native-wal-diagnostic-20261018.json",
     "docs/benchmarks/systemic-owned-schema-filter-20261018.json",
     "docs/benchmarks/systemic-live-log-window-20261018T2153-2215.json",
-    "docs/benchmarks/systemic-live-inventory-followup-20261018.json"
+    "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
+    "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209326,6 +209327,29 @@
       "resolution": "open",
       "next_actor": "this same systemic session",
       "next_action": "Evaluate full cursor/limit/cold/missing/ordering/concurrency contracts and representative paired evidence before shipping a scoped repair; retain all native tail attribution gaps."
+    },
+    {
+      "id": "concern:ci543-rounded-decimal-comparison",
+      "kind": "concern",
+      "family": "ci",
+      "finding": "CI compares rounded decimal timing fields with exact binary float addition",
+      "cause_classification": "confirmed_test_numerical_comparison_bug",
+      "cause": "Stored64.99 is correct rounded54.99+10; binary addition produces64.99000000000001. Deterministic originaltest/runtime-method reproduction fails baseline and passes Decimal comparison.",
+      "implemented": "Test uses exact Decimal(str(stored_ms)) equality. No production timing,>=50ms assertion, tolerance, warning/deadline or session/once-only changes. Existing2cases pass.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
+        "sha256": "440ad079b37e6530b8743a004768410a4ad3418beefa262cbe00c5a822ade513",
+        "resolution": "open"
+      },
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "fix_or_existing_owner": "This systemic session owns CI evidence integrity; original542scheduling failure remains separate.",
+      "merged": [],
+      "deployed": "Test-only change; no runtime activation",
+      "retested": "Deterministic baselinefail/candidatepass plus2existingtests pass; full corrected-head CI/integration pending",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Preserve original failedrun; require corrected-head supervisor/independent/fullCI integration. Continue real latency/coverage and independent acceptance without numerical-comparison false failure.",
+      "report": "213a226d-7566-4eba-944f-7f783859fecc revision1"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -215659,6 +215683,11 @@
   "live_window_integration_stage": {
     "artifact": "docs/benchmarks/systemic-live-inventory-followup-20261018.json",
     "sha256": "28f562d80405fe837f5ad3a3b919a42bf6c5b5deb16afc19ab76bbba7d42c454",
+    "resolution": "open"
+  },
+  "ci543_decimal_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-ci543-decimal-followup-20261018.json",
+    "sha256": "440ad079b37e6530b8743a004768410a4ad3418beefa262cbe00c5a822ade513",
     "resolution": "open"
   }
 }
