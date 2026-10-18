@@ -298,7 +298,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False):
                      for name in ("pa.core.async_runtime", "pa.core.performance", "pa.core.sqlite_metrics",
                                   "pa.core.io", "pa.core.operation_budget", "pa.sync.object_store",
                                   "pa.domain.projection", "pa.domain.transcript_storage", "pa.domain.card_summary_service", "pa.modules.items",
-                                  "pa.execution.dispatch", "pa.fleet.overview", "pa.sync.engine",
+                                  "pa.execution.dispatch", "pa.modules.fleet", "pa.fleet.overview", "pa.sync.engine",
                                   "pa.sync.event_log", "pa.sync.dag_index", "pa.acp.transcript_page",
                                   "pa.instance.agent_session", "pa.pr_supervisor.store",
                                   "pa.pr_supervisor.service", "pa.status.info", "pa.modules.instance",
