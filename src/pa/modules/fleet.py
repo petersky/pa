@@ -82,6 +82,7 @@ from pa.execution.dispatch import (
     DispatchIdempotencyConflict,
     DispatchQueueFull,
     DispatchRecord,
+    DispatchSessionRetry,
     DispatchStore,
     DispatchWorker,
     GoalDispatchProvenance,
@@ -664,6 +665,7 @@ class FollowupActionExecutionBody(BaseModel):
 
 
 class DispatchMaterializeBody(BaseModel):
+    session_retry: DispatchSessionRetry | None = None
     context_source_session_id: str | None = None
     execution_selection: dict[str, Any] | None = None
     model_provider: str | None = None
@@ -1713,6 +1715,27 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
             if expected_card != body.card:
                 raise HTTPException(status_code=409, detail={"code": "dispatch_snapshot_mismatch"})
         target_provenance = _target_goal_execution_identity_transition(recorded, body)
+        if body.session_retry:
+            prior = recorded.session_retry
+            if (
+                body.session_retry.session_id != recorded.session_id
+                or (prior and (
+                    body.session_retry.generation < prior.generation
+                    or (body.session_retry.generation == prior.generation
+                        and body.session_retry != prior)
+                ))
+                or (body.session_retry != prior and (
+                    recorded.acknowledged_at is not None
+                    or recorded.completion_payload is not None
+                    or recorded.completion_envelope is not None
+                    or recorded.completion_received_at is not None
+                    or recorded.completion_delivery_class == "acknowledged"
+                    or recorded.terminal_repair_reservation
+                ))
+            ):
+                raise HTTPException(409, detail={"code": "dispatch_session_retry_fence_mismatch", "recoverable": False})
+    elif body.session_retry:
+        raise HTTPException(409, detail={"code": "dispatch_session_retry_binding_missing", "recoverable": False})
     attachment_store = AttachmentStore(request.app.state.ctx.settings.data_dir)
     attachment_store.authorize_transfer(
         body.dispatch_id,
@@ -1756,12 +1779,18 @@ def materialize_dispatch(request: Request, body: DispatchMaterializeBody) -> dic
         # Negotiate on the authenticated materialization offer, even on replay.
         # Never replace an established version with an absent/incompatible offer.
         def preserve_materialization(current: DispatchRecord) -> bool:
-            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence)
+            before = (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry)
             if current.progress_protocol_version is None and progress_protocol_version is not None:
                 current.progress_protocol_version = progress_protocol_version
             current.goal_provenance = target_provenance
             current.attachment_evidence = attachment_evidence
-            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence)
+            if body.session_retry and body.session_retry != current.session_retry:
+                current.session_retry = body.session_retry
+                # A peer retains its old terminal projection until the exact
+                # authority admits a new retry. Local authority already queued it.
+                if current.authority_instance_id != settings.instance_id:
+                    current.state = "materializing"
+            return before != (current.progress_protocol_version, current.goal_provenance, current.attachment_evidence, current.session_retry)
 
         try:
             recorded = ledger.compare_and_mutate(recorded, preserve_materialization)
@@ -6955,6 +6984,10 @@ async def _process_remote_dispatch(app, record: DispatchRecord) -> None:
         record.goal_provenance
     )
     materialize_payload = {
+        "session_retry": (
+            record.session_retry.model_dump(mode="json")
+            if record.session_retry else None
+        ),
         "dispatch_id": record.dispatch_id,
         "mutation_id": record.mutation_id,
         "card": materialized_card,
@@ -13958,10 +13991,11 @@ async def _retry_dispatch_api(
     record = ledger.get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
+    _require_dispatch_access(request, record)
     idempotency_key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "retry", idempotency_key):
         return _dispatch_public(request, record)
-    if record.state not in {"failed", "cancelled"} or not record.recoverable:
+    if not record.retryable:
         raise HTTPException(
             status_code=409,
             detail={
@@ -14125,10 +14159,11 @@ def retry_dispatch(
     record = ledger.get(dispatch_id)
     if not record:
         raise HTTPException(status_code=404, detail="Dispatch not found")
+    _require_dispatch_access(request, record)
     idempotency_key = _dispatch_control_key(request, body)
     if _repeat_dispatch_control(record, "retry", idempotency_key):
         return _dispatch_public(request, record)
-    if record.state not in {"failed", "cancelled"} or not record.recoverable:
+    if not record.retryable:
         raise HTTPException(
             status_code=409,
             detail={
@@ -14179,6 +14214,11 @@ def retry_dispatch(
         record.cancel_requested = False
         record.last_error = None
         record.error_code = None
+        if record.session_id:
+            record.session_retry = DispatchSessionRetry(
+                key=idempotency_key, session_id=record.session_id,
+                generation=record.session_retry.generation + 1 if record.session_retry else 1,
+            )
         record.control_operations[idempotency_key] = "retry"
         record = ledger.transition(
             record, "queued", "Operator queued a safe retry."
