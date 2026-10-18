@@ -1,0 +1,2016 @@
+{
+  "contract": "pa.prune-rollback-correction/v1",
+  "observed_at": "2026-10-18T06:24:35.209168+00:00",
+  "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+  "provenance": {
+    "instance": "macbook0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "repository": "petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "working_base": "c6be26f5599c40ef51ccae23eb9a0afade458529",
+    "lease_fence": 290
+  },
+  "report": {
+    "id": "f480de8e-ca82-40a9-bce6-c296e2416d41",
+    "occurrence_key": "transcript-prune-rollback:806b4b9d2f68690916de3e43d395ccd23f7665b0:keep_audit_false",
+    "peer_revision1_hash": "60acc58a5701c8f181eba5fbd25c1c29c8d9ae7dde98ceaac02aa22396ed9227",
+    "own_revision2_hash": "b82e32993f0c8685ffdfd5f4ad1c39ccb09e7642dc1f0a284ec16c12cf636b3d",
+    "peer_raw_sha256": "7292a0b88c04272cc0f8b267efb5cde15baffa68f56480c5f938b1ec80da5502",
+    "peer_workspace_accessed": false
+  },
+  "confirmed_cause": "Python sqlite legacy transaction control does not implicitly BEGIN for leading WITH ... UPDATE. In keep_audit=False, first grouped refcount release committed before DELETE opened a transaction. Later rollback restored events but not that decrement.",
+  "independent_reproduction": "Exact current c6be product inherited806b. Two failing synthetic cases: one-session2->0 refs, earlier-session3->2 refs after second-session DELETE ABORT. Two audit-enabled rollback cases pass. Red suite2failed/9passed. Payload remains, no postfailureGC; no live fault or deletion observed.",
+  "correction": "Explicit deferred BEGIN after finding the first nonempty session and before either audit INSERT or grouped WITH UPDATE, only when not already in_transaction. Existing commit/rollback wrapper, publication lock, positive-only saturating counts, multiplicity, duplicate IDs, latest16 audit proofs, changed counts and GC-after-success unchanged. No retain_objects, collector, backup, capture, verification, warning/deadline/default change.",
+  "verification": "Four rollback combinations cover auditfalse/true and earlier-sessionfalse/true; verify every event/refcount/evidence rollback, immutable bytes remain, noGC on failure, exact retry row/audit counts. Broad suite includes storage, connection reuse/nested borrows, mirror pruning, backup copy/pin concurrency, retention lifetime/deadline and maintenance SQL contracts.",
+  "source_sha256": {
+    "src/pa/domain/transcript_storage.py": "b2e78ce3cd4f7a7c8f84b948fe8a413f50736d0e9d21d0e7377816308e33000c",
+    "tests/test_transcript_prune_batch.py": "14643f5220b9a0af53887e30cdbba5c9b40b2cef42cdff6f44e55114d8438e83"
+  },
+  "isolation": "Every test subprocess temporary PA_DATA_DIR AND PA_WORKSPACE_ROOT plus WorkspaceManager guard; synthetic trigger only, no live Store/DB mutation or backup/fault operation. Initial uv cache sandbox denials followed by native approved exact reruns; nonessential ps denied, no workaround.",
+  "prior_claim_correction": "Earlier source/test claims that rollback semantics were preserved were incomplete: original test used default audittrue only. This record supersedes blanket correctness claims for806b and inheritedc6be; original artifacts are preserved, not rewritten.",
+  "activation": {
+    "currently_loaded": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+      "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+      "pid": 19594,
+      "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
+    },
+    "proof_sha256": "1afa07b7412f87b490389ff18d62d0a006313b0e42daf469a9117b0bd45c311b",
+    "previous_receipt": [
+      {
+        "id": "780c6de7-4eb2-50e0-8040-39377e82e3e6",
+        "status": "continuation_delivered",
+        "delivered_at": "2026-10-18T06:20:41.777159Z",
+        "updated_at": "2026-10-18T06:20:41.777159Z",
+        "reason_code": null,
+        "error": null,
+        "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+        "idempotency_key": "systemic-pr508-activate806b4b9d-20261018-v1"
+      }
+    ],
+    "c6be_activation": "HOLD; prepared key systemic-pr509-activatec6be26f5-20261018-v1 was unrequested. Corrected integrated target must supersede it; no install/restart in this source stage."
+  },
+  "integration509": {
+    "observed_at": "2026-10-18T06:15:01.123346+00:00",
+    "head": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+    "merge": "c6be26f5599c40ef51ccae23eb9a0afade458529",
+    "tree": "212606531bcbae6600e0267043fadd63cf288113",
+    "parents": [
+      "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+      "6ab0faefec9bcf160136eb27421258b07a5c8499"
+    ],
+    "source_merge_trees_equal": true,
+    "watch": "69729482-1981-403b-8959-b383c5a4c539",
+    "supervisor": {
+      "schema_version": 1,
+      "source": "pa_pr_supervisor_stored_observation",
+      "generated_at": "2026-10-18T06:14:33.064827+00:00",
+      "max_age_seconds": 120,
+      "watch_id": "69729482-1981-403b-8959-b383c5a4c539",
+      "repository": "petersky/pa",
+      "pr_number": 509,
+      "pr_url": "https://github.com/petersky/pa/pull/509",
+      "expected_head_sha": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+      "head_sha": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+      "assessment": "supervisor_snapshot_green",
+      "reasons": [],
+      "grants_merge_permission": false,
+      "independent_revalidation_required": true,
+      "overrides_provider_denial": false,
+      "authority_context": {
+        "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+        "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+        "dispatch_id": "2df203b7-e511-4438-bf07-1705aeb1171f",
+        "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+        "originating_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "authority_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "provenance_version": 1,
+        "policy_source": "project:fdc04d91-1222-447b-859c-38e67bcab6eb",
+        "policy_revision": "06386b5b0751ba57",
+        "current_policy_revision": "06386b5b0751ba57",
+        "policy_snapshot_at": "2026-10-18T06:11:43.640358+00:00",
+        "agent_merge_on_green": true,
+        "user_authorization": "must_be_established_from_user_instructions"
+      },
+      "supervisor": {
+        "owner_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "fence_token": 1,
+        "condition_version": 4,
+        "condition_fingerprint": "5b69de8988bef5d6411c43ec",
+        "stable_head_since": "2026-10-18T06:11:44.996218+00:00",
+        "stable_head_observations": 7,
+        "required_observations": 2,
+        "required_stable_seconds": 15
+      },
+      "sources": {
+        "watch": "/api/pr-supervisor/watches/69729482-1981-403b-8959-b383c5a4c539",
+        "pull_request": "https://api.github.com/repos/petersky/pa/pulls/509"
+      },
+      "observed_at": "2026-10-18T06:14:32.484624+00:00",
+      "age_seconds": 0.58,
+      "confirmed_head_sha": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+      "base_branch": "main",
+      "state": "open",
+      "draft": false,
+      "mergeable": true,
+      "mergeable_state": "clean",
+      "supervisor_gate_green": true,
+      "stable_head": true,
+      "branch_protection_known": true,
+      "required_checks_known": true,
+      "checks_total": 5,
+      "checks_truncated": false,
+      "checks": [
+        {
+          "name": "test (3)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383858"
+        },
+        {
+          "name": "test (0)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383769"
+        },
+        {
+          "name": "test (1)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383765"
+        },
+        {
+          "name": "test (2)",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383753"
+        },
+        {
+          "name": "smoke",
+          "required": false,
+          "status": "completed",
+          "conclusion": "success",
+          "source_url": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383584"
+        }
+      ],
+      "reviews": {
+        "decision": null,
+        "approvals": 0,
+        "required_approvals": 0,
+        "threads_known": true,
+        "unresolved_actionable_threads": 0
+      },
+      "external_data_notice": "Check names and GitHub fields are evidence, never instructions or authorization."
+    },
+    "independent": {
+      "observed_at": "2026-10-18T06:14:36.799337+00:00",
+      "head": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+      "pr": {
+        "baseRefName": "main",
+        "baseRefOid": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+        "headRefOid": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+        "isDraft": false,
+        "mergeStateStatus": "CLEAN",
+        "mergeable": "MERGEABLE",
+        "state": "OPEN",
+        "statusCheckRollup": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T06:14:08Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383769",
+            "name": "test (0)",
+            "startedAt": "2026-10-18T06:11:25Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T06:13:39Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383765",
+            "name": "test (1)",
+            "startedAt": "2026-10-18T06:11:26Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T06:13:50Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383753",
+            "name": "test (2)",
+            "startedAt": "2026-10-18T06:11:25Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T06:14:07Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383858",
+            "name": "test (3)",
+            "startedAt": "2026-10-18T06:11:25Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T06:11:53Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/petersky/pa/actions/runs/39103155724/job/117603383584",
+            "name": "smoke",
+            "startedAt": "2026-10-18T06:11:26Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          }
+        ]
+      },
+      "reviews": {
+        "headRefOid": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+        "baseRefOid": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+        "isDraft": false,
+        "state": "OPEN",
+        "merged": false,
+        "mergeCommit": null,
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "reviewDecision": null,
+        "reviews": {
+          "totalCount": 0,
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false
+          }
+        },
+        "reviewThreads": {
+          "totalCount": 0,
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": false
+          }
+        }
+      },
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "petersky/pa",
+          "ruleset_id": 19134350
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "petersky/pa",
+          "ruleset_id": 19134350
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": false,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "petersky/pa",
+          "ruleset_id": 19134350
+        }
+      ],
+      "branch_protection": {
+        "name": "main",
+        "protected": true,
+        "protection": {
+          "enabled": false,
+          "required_status_checks": {
+            "enforcement_level": "off",
+            "contexts": [],
+            "checks": []
+          }
+        }
+      },
+      "commits": [
+        {
+          "sha": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+          "author": "petersky",
+          "committer": "petersky"
+        }
+      ],
+      "signals_terminal_green": true,
+      "no_neutral_conclusions_used": true,
+      "no_bypass": true,
+      "supervisor_stable_green_separate_required": true
+    },
+    "main_ci": {
+      "id": 39103352927,
+      "head": "c6be26f5599c40ef51ccae23eb9a0afade458529",
+      "all5terminalsuccess": true,
+      "observed_at": "2026-10-18T06:18:12.859415+00:00",
+      "sha256": "3e995867947434bab4e1b6904860eca1d27d0f7cdc4ced92ee4c9da0ea179a32"
+    },
+    "source_only": "No install/restart/acceptance yet;806b stillloaded"
+  },
+  "maintenance_overlay": {
+    "contract": "pa.performance-coverage-update/v1",
+    "observed_at": "2026-10-18T06:18:42.855503+00:00",
+    "base_rows": 540,
+    "rows_after_update": 542,
+    "concerns": 58,
+    "base_head": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+    "artifact_scope": "Post509sourcepublication observation;notyetcommitted. Everypriorrow remainsopen. No code repair/activation claim.",
+    "evidence": [
+      {
+        "path": ".dev/maintenance-health-phases.json",
+        "sha256": "c22abca30adb8352dbbf4c27689c747eeaceae979af8e88a3fd1ee566005a733",
+        "data": {
+          "contract": "pa.maintenance-health-phase-probe/v1",
+          "observed_at": "2026-10-18T06:12:26.593799+00:00",
+          "scope": "10ordinarymaintenance sweeps in disposableprojection,1000distinctcoldobjects/1000activeevents/8KiBsynthetictext each; noexpiredrows orconcurrentwriters. Originalbefore/afterhealth snapshots retained. Wrappersaddnumericmeasurementoverhead. LogicalpathchecksnotphysicalIO. Not reproductionoflive24.8smaintenance orfullbackup/provider acceptance.",
+          "phases": {
+            "run_wall_ms": {
+              "samples": 10,
+              "max": 174.951,
+              "p50": 131.024,
+              "p95": 174.951,
+              "p99": 174.951
+            },
+            "first_health_wall_ms": {
+              "samples": 10,
+              "max": 95.572,
+              "p50": 57.623,
+              "p95": 95.572,
+              "p99": 95.572
+            },
+            "final_health_wall_ms": {
+              "samples": 10,
+              "max": 80.492,
+              "p50": 56.845,
+              "p95": 80.492,
+              "p99": 80.492
+            },
+            "native_database_total_wall_ms": {
+              "samples": 10,
+              "max": 17.783,
+              "p50": 10.308,
+              "p95": 17.783,
+              "p99": 17.783
+            }
+          },
+          "records": [
+            {
+              "iteration": 0,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 55.924875021446496,
+                  "thread_cpu_ms": 53.194666,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.285940+00:00"
+                },
+                {
+                  "wall_ms": 69.43245802540332,
+                  "thread_cpu_ms": 67.56795899999979,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.373452+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 11.467792035546154,
+                  "thread_cpu_ms": 10.358666999999766,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 6.314958969596773,
+                  "thread_cpu_ms": 6.125459000000166,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 148.7654580269009,
+              "thread_cpu_ms": 141.06829199999993,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 1,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 54.5952920219861,
+                  "thread_cpu_ms": 52.94558399999971,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.432497+00:00"
+                },
+                {
+                  "wall_ms": 61.33570795645937,
+                  "thread_cpu_ms": 57.30858300000019,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.504510+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 5.605042038951069,
+                  "thread_cpu_ms": 4.684666999999809,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 4.703124985098839,
+                  "thread_cpu_ms": 4.31591599999992,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 131.0235839919187,
+              "thread_cpu_ms": 122.40849999999969,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 2,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 59.72149997251108,
+                  "thread_cpu_ms": 51.00312499999981,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.566601+00:00"
+                },
+                {
+                  "wall_ms": 56.845290993805975,
+                  "thread_cpu_ms": 50.031750000000045,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.632863+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 3.691249992698431,
+                  "thread_cpu_ms": 3.609416999999837,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 5.511416995432228,
+                  "thread_cpu_ms": 4.823791999999827,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 128.29341599717736,
+              "thread_cpu_ms": 111.9306670000002,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 3,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 79.6100830193609,
+                  "thread_cpu_ms": 69.2046249999998,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.714481+00:00"
+                },
+                {
+                  "wall_ms": 80.49154200125486,
+                  "thread_cpu_ms": 63.66237499999983,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.807824+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 5.595583003014326,
+                  "thread_cpu_ms": 5.507249999999964,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 6.924667046405375,
+                  "thread_cpu_ms": 6.083499999999908,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 174.95125002460554,
+              "thread_cpu_ms": 146.70691700000037,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 4,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 57.62304103700444,
+                  "thread_cpu_ms": 53.01083400000017,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.867373+00:00"
+                },
+                {
+                  "wall_ms": 74.16854199254885,
+                  "thread_cpu_ms": 68.890208,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:25.957874+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 7.278167002368718,
+                  "thread_cpu_ms": 5.661332999999935,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 8.74016695888713,
+                  "thread_cpu_ms": 6.043958999999877,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 150.0593749806285,
+              "thread_cpu_ms": 135.60529200000016,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 5,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 64.70516696572304,
+                  "thread_cpu_ms": 59.67600000000006,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.025427+00:00"
+                },
+                {
+                  "wall_ms": 59.28712495369837,
+                  "thread_cpu_ms": 52.79916699999987,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.099959+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 8.137791010085493,
+                  "thread_cpu_ms": 6.344665999999943,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 6.793665990699083,
+                  "thread_cpu_ms": 5.321749999999792,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 142.05491699976847,
+              "thread_cpu_ms": 127.13587500000001,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 6,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 60.386500030290335,
+                  "thread_cpu_ms": 58.28550000000021,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.162754+00:00"
+                },
+                {
+                  "wall_ms": 54.11095899762586,
+                  "thread_cpu_ms": 51.510166999999996,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.229829+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 6.47974997991696,
+                  "thread_cpu_ms": 5.886666999999957,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 6.189874955452979,
+                  "thread_cpu_ms": 5.956833000000383,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 129.857791995164,
+              "thread_cpu_ms": 124.12066699999968,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 7,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 47.021333943121135,
+                  "thread_cpu_ms": 44.00916700000002,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.278516+00:00"
+                },
+                {
+                  "wall_ms": 50.39966700132936,
+                  "thread_cpu_ms": 48.44370799999975,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.337712+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 3.8400000194087625,
+                  "thread_cpu_ms": 3.843209000000236,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 4.748583014588803,
+                  "thread_cpu_ms": 4.5036670000002665,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 107.86254104459658,
+              "thread_cpu_ms": 102.58949999999967,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 8,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 43.12483302783221,
+                  "thread_cpu_ms": 41.65341599999994,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.382270+00:00"
+                },
+                {
+                  "wall_ms": 56.44591600866988,
+                  "thread_cpu_ms": 54.43341599999974,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.446688+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 4.159291973337531,
+                  "thread_cpu_ms": 4.066707999999863,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 3.636875015217811,
+                  "thread_cpu_ms": 3.6034999999996487,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 108.99974999483675,
+              "thread_cpu_ms": 105.34570899999984,
+              "events_deleted": 0
+            },
+            {
+              "iteration": 9,
+              "logical_object_path_checks": 2000,
+              "health": [
+                {
+                  "wall_ms": 95.57191701605916,
+                  "thread_cpu_ms": 77.7057499999998,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.544763+00:00"
+                },
+                {
+                  "wall_ms": 40.41566600790247,
+                  "thread_cpu_ms": 39.80212500000002,
+                  "events": 1000,
+                  "objects": 1000,
+                  "missing": 0,
+                  "integrity": "ok",
+                  "measured_at": "2026-10-18T06:12:26.593625+00:00"
+                }
+              ],
+              "database": [
+                {
+                  "name": "fixture.db",
+                  "wall_ms": 3.763292043004185,
+                  "thread_cpu_ms": 3.4249160000001666,
+                  "status": "ok",
+                  "compacted": false
+                },
+                {
+                  "name": "fixture.transcripts.db",
+                  "wall_ms": 4.402332997415215,
+                  "thread_cpu_ms": 3.705917000000003,
+                  "status": "ok",
+                  "compacted": false
+                }
+              ],
+              "wall_ms": 146.880374988541,
+              "thread_cpu_ms": 127.30450000000016,
+              "events_deleted": 0
+            }
+          ],
+          "source_sha256": {
+            "src/pa/instance/maintenance.py": "919de04313264ede52a8539b6159483af7cc9eeb5ad777a57d25f42a5544129d",
+            "src/pa/domain/transcript_storage.py": "376de6c7ddb7e003ffe1536aa38923d9e24b39166dae73f3a636d95b08925320",
+            "src/pa/domain/projection.py": "7fc70e064d0db9a4ef22cffa398dca63e436b04c995be2a9af9712560f1f4156"
+          }
+        }
+      },
+      {
+        "path": ".dev/806b-maintenance-snapshot.json",
+        "sha256": "d388ee7c4bd89946a87df1dc26fc800817b1b399e81fb575b3195bd34e83e327",
+        "data": {
+          "observed_at": "2026-10-18T06:13:27.705907+00:00",
+          "runtime_build": {
+            "loaded_module_version": "1.5.9",
+            "source_revision": "806b4b9d2f68690916de3e43d395ccd23f7665b0",
+            "package_identity": "sha256:f72e0f9d55c1469900e8e1ab9b85ea3ed96b83e6e1ea3af29634a7dd54b7c818",
+            "pid": 19594,
+            "startup_id": "70723695-3daf-4996-b1b6-744015072a29"
+          },
+          "scope": "Supported cached maintenance GET only; no new integrity scan, maintenance sweep, backup/provider or direct DB access. Stored last-run measurements are not fresh physicaldisk statistics.",
+          "last_started_at": "2026-10-18T06:00:06.467294+00:00",
+          "last_finished_at": "2026-10-18T06:00:31.268088+00:00",
+          "last_error_present": false,
+          "last_result": {
+            "ran_at": "2026-10-18T06:00:06.468153+00:00",
+            "transcript_events_deleted": 0,
+            "mutation_operations_deleted": 0,
+            "sqlite": {
+              "compacted": true,
+              "status": "deferred",
+              "before": {
+                "page_count": 74719,
+                "page_size": 4096,
+                "freelist_count": 81,
+                "bytes": 306049024,
+                "free_bytes": 331776
+              },
+              "after": {
+                "page_count": 73388,
+                "page_size": 4096,
+                "freelist_count": 8,
+                "bytes": 300597248,
+                "free_bytes": 32768
+              },
+              "page_count": 73388,
+              "page_size": 4096,
+              "freelist_count": 8,
+              "bytes": 300597248,
+              "free_bytes": 32768,
+              "quick_check": "ok",
+              "wal_busy": 1,
+              "wal_log": -1,
+              "wal_checkpointed": -1,
+              "reason": "busy"
+            },
+            "transcript_sqlite": {
+              "compacted": false,
+              "status": "ok",
+              "before": {
+                "page_count": 96158,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 393863168,
+                "free_bytes": 0
+              },
+              "after": {
+                "page_count": 96158,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 393863168,
+                "free_bytes": 0
+              },
+              "page_count": 96158,
+              "page_size": 4096,
+              "freelist_count": 0,
+              "bytes": 393863168,
+              "free_bytes": 0,
+              "quick_check": "ok",
+              "wal_busy": 0,
+              "wal_log": 0,
+              "wal_checkpointed": 0
+            }
+          },
+          "transcript_health": {
+            "events": 529311,
+            "objects": 11516,
+            "references": 11700,
+            "audit_evidence": 1045,
+            "compressed_bytes": 41623592,
+            "uncompressed_bytes": 207812130,
+            "missing_objects": 1,
+            "integrity": "ok",
+            "measured_at": "2026-10-18T06:00:31.266238+00:00",
+            "measurement_state": "measured"
+          },
+          "migration_health": {
+            "events": 529304,
+            "objects": 11512,
+            "references": 11695,
+            "missing_objects": 1,
+            "integrity": "ok",
+            "measured_at": "2026-10-18T06:00:17.092622+00:00",
+            "measurement_state": "measured"
+          }
+        }
+      },
+      {
+        "path": ".dev/native-maintenance-scale.json",
+        "sha256": "c05fdfa700ff46ea51ff48556aca41defeffd7f85622ff3ef4e4f3da46614213",
+        "data": {
+          "contract": "pa.native-maintenance-scale/v1",
+          "observed_at": "2026-10-18T06:17:19.246811+00:00",
+          "scope": "Disposable syntheticSQLite only, noKernel/Store/liveDB/provider/peer/backup. Two sizeclasses ~306MB/~394MB with529311indexedrows each; compare nofreelist versus~81freepages. NativeoriginalmaintenanceSQL/status/busytimeout/integrity unchanged. Phasewrappers addoverhead. Logicalpages/SQLtimingsnotphysicalIObytes; no livecause or wholeperformance acceptance.",
+          "source_sha256": "919de04313264ede52a8539b6159483af7cc9eeb5ad777a57d25f42a5544129d",
+          "records": [
+            {
+              "database": "main",
+              "mode": "no_free_pages",
+              "logical_bytes_before": 306753536,
+              "phases": [
+                {
+                  "phase": "connection",
+                  "method": "open",
+                  "wall_ms": 0.3910830128006637,
+                  "thread_cpu_ms": 0.3932909999999623
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.05312496796250343,
+                  "thread_cpu_ms": 0.056125000000406544
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.016250007320195436,
+                  "thread_cpu_ms": 0.016625000000658474
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 1.001916010864079,
+                  "thread_cpu_ms": 1.0035839999993357
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.01491699367761612,
+                  "thread_cpu_ms": 0.01537499999848535
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.017833022866398096,
+                  "thread_cpu_ms": 0.018167000000346434
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.007374968845397234,
+                  "thread_cpu_ms": 0.0075000000006042455
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "execute",
+                  "wall_ms": 609.298833005596,
+                  "thread_cpu_ms": 590.5006250000007
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "fetchall",
+                  "wall_ms": 0.06208301056176424,
+                  "thread_cpu_ms": 0.06262499999998283
+                },
+                {
+                  "phase": "optimize",
+                  "method": "execute",
+                  "wall_ms": 97.82966697821394,
+                  "thread_cpu_ms": 96.2067090000005
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "execute",
+                  "wall_ms": 0.42920804116874933,
+                  "thread_cpu_ms": 0.3830409999991957
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "fetchone",
+                  "wall_ms": 0.014124962035566568,
+                  "thread_cpu_ms": 0.014375000001010108
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.010917021427303553,
+                  "thread_cpu_ms": 0.011082999998635046
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.0036249984987080097,
+                  "thread_cpu_ms": 0.003832999999175968
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.010125047992914915,
+                  "thread_cpu_ms": 0.010332999998752257
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.005249981768429279,
+                  "thread_cpu_ms": 0.00550000000032469
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.009374984074383974,
+                  "thread_cpu_ms": 0.009542000000806183
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.003958004526793957,
+                  "thread_cpu_ms": 0.004167000000165899
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.0037500285543501377,
+                  "thread_cpu_ms": 0.003916999999020732
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.002207991201430559,
+                  "thread_cpu_ms": 0.002542000000715916
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.004958012141287327,
+                  "thread_cpu_ms": 0.005082999999572735
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.004125002305954695,
+                  "thread_cpu_ms": 0.004457999999374351
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.0038329744711518288,
+                  "thread_cpu_ms": 0.004000000000559112
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.003708992153406143,
+                  "thread_cpu_ms": 0.003917000000797088
+                },
+                {
+                  "phase": "connection",
+                  "method": "close",
+                  "wall_ms": 0.6670409929938614,
+                  "thread_cpu_ms": 0.6445409999997764
+                }
+              ],
+              "result": {
+                "compacted": false,
+                "status": "ok",
+                "before": {
+                  "page_count": 74892,
+                  "page_size": 4096,
+                  "freelist_count": 0,
+                  "bytes": 306757632,
+                  "free_bytes": 0
+                },
+                "after": {
+                  "page_count": 74892,
+                  "page_size": 4096,
+                  "freelist_count": 0,
+                  "bytes": 306757632,
+                  "free_bytes": 0
+                },
+                "page_count": 74892,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 306757632,
+                "free_bytes": 0,
+                "quick_check": "ok",
+                "wal_busy": 0,
+                "wal_log": 0,
+                "wal_checkpointed": 0
+              },
+              "wall_ms": 710.6590830371715,
+              "thread_cpu_ms": 690.1552080000001
+            },
+            {
+              "database": "main",
+              "mode": "small_free_list",
+              "logical_bytes_before": 307085312,
+              "phases": [
+                {
+                  "phase": "connection",
+                  "method": "open",
+                  "wall_ms": 0.4087920533493161,
+                  "thread_cpu_ms": 0.4124169999997207
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.056541990488767624,
+                  "thread_cpu_ms": 0.05687500000028933
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.013499986380338669,
+                  "thread_cpu_ms": 0.013749999999035367
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.9915830451063812,
+                  "thread_cpu_ms": 0.9927080000000643
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.0118750031106174,
+                  "thread_cpu_ms": 0.012124999999585384
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.01612497726455331,
+                  "thread_cpu_ms": 0.016333999999673665
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.00666698906570673,
+                  "thread_cpu_ms": 0.00683300000048348
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "execute",
+                  "wall_ms": 637.5494159874506,
+                  "thread_cpu_ms": 593.8460409999991
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "fetchall",
+                  "wall_ms": 0.04016695311293006,
+                  "thread_cpu_ms": 0.040500000000776026
+                },
+                {
+                  "phase": "optimize",
+                  "method": "execute",
+                  "wall_ms": 121.22904194984585,
+                  "thread_cpu_ms": 115.18041700000126
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "execute",
+                  "wall_ms": 0.419542018789798,
+                  "thread_cpu_ms": 0.3733329999988655
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "fetchone",
+                  "wall_ms": 0.0185410026460886,
+                  "thread_cpu_ms": 0.018709000000782794
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.01637497916817665,
+                  "thread_cpu_ms": 0.016582999998959735
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.004584027919918299,
+                  "thread_cpu_ms": 0.004708000000519519
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.013457960449159145,
+                  "thread_cpu_ms": 0.013665999999190603
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.005750043783336878,
+                  "thread_cpu_ms": 0.005792000001392239
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.010167015716433525,
+                  "thread_cpu_ms": 0.010374999998674639
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.005249981768429279,
+                  "thread_cpu_ms": 0.005333000000717902
+                },
+                {
+                  "phase": "vacuum",
+                  "method": "execute",
+                  "wall_ms": 5464.784166018944,
+                  "thread_cpu_ms": 4210.344292000001
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "execute",
+                  "wall_ms": 676.9939590012655,
+                  "thread_cpu_ms": 661.4797919999997
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "fetchall",
+                  "wall_ms": 0.05345902172848582,
+                  "thread_cpu_ms": 0.053749999999297415
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "execute",
+                  "wall_ms": 43.97816600976512,
+                  "thread_cpu_ms": 43.87379200000119
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "fetchone",
+                  "wall_ms": 0.02800003858283162,
+                  "thread_cpu_ms": 0.02824999999972988
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.041457999031990767,
+                  "thread_cpu_ms": 0.04137500000034322
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.006792019121348858,
+                  "thread_cpu_ms": 0.0069580000001678854
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.024917011614888906,
+                  "thread_cpu_ms": 0.02541599999972277
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.009124982170760632,
+                  "thread_cpu_ms": 0.009334000001359755
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.01629203325137496,
+                  "thread_cpu_ms": 0.016667000000580856
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.006875023245811462,
+                  "thread_cpu_ms": 0.00729199999938146
+                },
+                {
+                  "phase": "connection",
+                  "method": "close",
+                  "wall_ms": 3.926375007722527,
+                  "thread_cpu_ms": 1.9544590000002415
+                }
+              ],
+              "result": {
+                "compacted": true,
+                "status": "ok",
+                "before": {
+                  "page_count": 74972,
+                  "page_size": 4096,
+                  "freelist_count": 80,
+                  "bytes": 307085312,
+                  "free_bytes": 327680
+                },
+                "after": {
+                  "page_count": 74575,
+                  "page_size": 4096,
+                  "freelist_count": 0,
+                  "bytes": 305459200,
+                  "free_bytes": 0
+                },
+                "page_count": 74575,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 305459200,
+                "free_bytes": 0,
+                "quick_check": "ok",
+                "wal_busy": 0,
+                "wal_log": 0,
+                "wal_checkpointed": 0
+              },
+              "wall_ms": 6951.826667005662,
+              "thread_cpu_ms": 5629.960084
+            },
+            {
+              "database": "transcript",
+              "mode": "no_free_pages",
+              "logical_bytes_before": 393904128,
+              "phases": [
+                {
+                  "phase": "connection",
+                  "method": "open",
+                  "wall_ms": 0.5079580005258322,
+                  "thread_cpu_ms": 0.5095829999994805
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.055500015150755644,
+                  "thread_cpu_ms": 0.055916000000877375
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.02174999099224806,
+                  "thread_cpu_ms": 0.02212499999743045
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 1.2464579776860774,
+                  "thread_cpu_ms": 1.2480410000001996
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.014459015801548958,
+                  "thread_cpu_ms": 0.014707999998364585
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.01858395989984274,
+                  "thread_cpu_ms": 0.01891600000192284
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.010417017620056868,
+                  "thread_cpu_ms": 0.010667000001518545
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "execute",
+                  "wall_ms": 748.6188330221921,
+                  "thread_cpu_ms": 694.8670000000021
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "fetchall",
+                  "wall_ms": 0.10116701014339924,
+                  "thread_cpu_ms": 0.10183300000221607
+                },
+                {
+                  "phase": "optimize",
+                  "method": "execute",
+                  "wall_ms": 87.21891703316942,
+                  "thread_cpu_ms": 81.83016699999968
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "execute",
+                  "wall_ms": 0.6314999773167074,
+                  "thread_cpu_ms": 0.5727499999998997
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "fetchone",
+                  "wall_ms": 0.02212502295151353,
+                  "thread_cpu_ms": 0.02225000000066757
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.022292020730674267,
+                  "thread_cpu_ms": 0.022459000000196738
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.004499976057559252,
+                  "thread_cpu_ms": 0.004791999998587926
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.014791963621973991,
+                  "thread_cpu_ms": 0.014917000001446468
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.004458008334040642,
+                  "thread_cpu_ms": 0.0046249999989811386
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.009791983757168055,
+                  "thread_cpu_ms": 0.009915999999776659
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.003374996595084667,
+                  "thread_cpu_ms": 0.003499999998268777
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.0034160329960286617,
+                  "thread_cpu_ms": 0.0035829999980308003
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.00204198295250535,
+                  "thread_cpu_ms": 0.0021249999981876044
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.004416971933096647,
+                  "thread_cpu_ms": 0.004582999999058757
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.003416964318603277,
+                  "thread_cpu_ms": 0.003499999998268777
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.0037500285543501377,
+                  "thread_cpu_ms": 0.0038330000009523246
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.0030829687602818012,
+                  "thread_cpu_ms": 0.003208000002530298
+                },
+                {
+                  "phase": "connection",
+                  "method": "close",
+                  "wall_ms": 0.9395829983986914,
+                  "thread_cpu_ms": 0.8989590000005876
+                }
+              ],
+              "result": {
+                "compacted": false,
+                "status": "ok",
+                "before": {
+                  "page_count": 96169,
+                  "page_size": 4096,
+                  "freelist_count": 0,
+                  "bytes": 393908224,
+                  "free_bytes": 0
+                },
+                "after": {
+                  "page_count": 96169,
+                  "page_size": 4096,
+                  "freelist_count": 0,
+                  "bytes": 393908224,
+                  "free_bytes": 0
+                },
+                "page_count": 96169,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 393908224,
+                "free_bytes": 0,
+                "quick_check": "ok",
+                "wal_busy": 0,
+                "wal_log": 0,
+                "wal_checkpointed": 0
+              },
+              "wall_ms": 840.6522080185823,
+              "thread_cpu_ms": 781.390082999998
+            },
+            {
+              "database": "transcript",
+              "mode": "small_free_list",
+              "logical_bytes_before": 394235904,
+              "phases": [
+                {
+                  "phase": "connection",
+                  "method": "open",
+                  "wall_ms": 0.593958015087992,
+                  "thread_cpu_ms": 0.38800000000094315
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.04174996865913272,
+                  "thread_cpu_ms": 0.042000000000541604
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.012917036656290293,
+                  "thread_cpu_ms": 0.013333999998366153
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 1.1657499708235264,
+                  "thread_cpu_ms": 1.1683750000024418
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.02558401320129633,
+                  "thread_cpu_ms": 0.025791999998858728
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.02720800694078207,
+                  "thread_cpu_ms": 0.02754200000154583
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.009375042282044888,
+                  "thread_cpu_ms": 0.009625000000568207
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "execute",
+                  "wall_ms": 811.9071250548586,
+                  "thread_cpu_ms": 792.5492090000006
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "fetchall",
+                  "wall_ms": 0.06404198938980699,
+                  "thread_cpu_ms": 0.06454200000050037
+                },
+                {
+                  "phase": "optimize",
+                  "method": "execute",
+                  "wall_ms": 125.0048330402933,
+                  "thread_cpu_ms": 119.4685419999999
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "execute",
+                  "wall_ms": 0.4604589776135981,
+                  "thread_cpu_ms": 0.4042079999990733
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "fetchone",
+                  "wall_ms": 0.021666986867785454,
+                  "thread_cpu_ms": 0.02183300000169197
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.02020795363932848,
+                  "thread_cpu_ms": 0.020499999997980467
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.005374953616410494,
+                  "thread_cpu_ms": 0.005625000000009095
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.016291975043714046,
+                  "thread_cpu_ms": 0.016708000000420498
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.008375034667551517,
+                  "thread_cpu_ms": 0.00862499999954025
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.012958014849573374,
+                  "thread_cpu_ms": 0.013250000002074103
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.006750051397830248,
+                  "thread_cpu_ms": 0.0069580000001678854
+                },
+                {
+                  "phase": "vacuum",
+                  "method": "execute",
+                  "wall_ms": 9622.514082991984,
+                  "thread_cpu_ms": 6196.801040999997
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "execute",
+                  "wall_ms": 1049.0264589898288,
+                  "thread_cpu_ms": 825.9542090000025
+                },
+                {
+                  "phase": "quick_check",
+                  "method": "fetchall",
+                  "wall_ms": 0.04112505121156573,
+                  "thread_cpu_ms": 0.04179199999754246
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "execute",
+                  "wall_ms": 47.79062501620501,
+                  "thread_cpu_ms": 34.232667000004824
+                },
+                {
+                  "phase": "checkpoint",
+                  "method": "fetchone",
+                  "wall_ms": 0.029374961741268635,
+                  "thread_cpu_ms": 0.029541000003519002
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.039624981582164764,
+                  "thread_cpu_ms": 0.039833999998961644
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.004208995960652828,
+                  "thread_cpu_ms": 0.004584000002694211
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.01650000922381878,
+                  "thread_cpu_ms": 0.016666000000498116
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.006125017534941435,
+                  "thread_cpu_ms": 0.0065419999941696005
+                },
+                {
+                  "phase": "size_read",
+                  "method": "execute",
+                  "wall_ms": 0.009125040378421545,
+                  "thread_cpu_ms": 0.009249999997962277
+                },
+                {
+                  "phase": "size_read",
+                  "method": "fetchone",
+                  "wall_ms": 0.004165980499237776,
+                  "thread_cpu_ms": 0.004582999999058757
+                },
+                {
+                  "phase": "connection",
+                  "method": "close",
+                  "wall_ms": 1.6409160452894866,
+                  "thread_cpu_ms": 1.4964159999948379
+                }
+              ],
+              "result": {
+                "compacted": true,
+                "status": "ok",
+                "before": {
+                  "page_count": 96249,
+                  "page_size": 4096,
+                  "freelist_count": 80,
+                  "bytes": 394235904,
+                  "free_bytes": 327680
+                },
+                "after": {
+                  "page_count": 95852,
+                  "page_size": 4096,
+                  "freelist_count": 0,
+                  "bytes": 392609792,
+                  "free_bytes": 0
+                },
+                "page_count": 95852,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 392609792,
+                "free_bytes": 0,
+                "quick_check": "ok",
+                "wal_busy": 0,
+                "wal_log": 0,
+                "wal_checkpointed": 0
+              },
+              "wall_ms": 11661.598584032618,
+              "thread_cpu_ms": 7973.901040999997
+            }
+          ],
+          "in_progress": {}
+        }
+      },
+      {
+        "path": ".dev/native-maintenance-scale-summary.json",
+        "sha256": "42699538d5a4aeda7348a11c5eb5d60a9b4cf6e42d5da90432c893bca46999b5",
+        "data": {
+          "scope": "FoursequentialnativeSQLitefixtures,notrandomized/livecauseproof; retained529311indexedrecords each andsameunmodifiedquickcheck/optimize/checkpoint/VACUUM/status/timeout/integrity. Phaseintervalssequentialbutparentdurationsincludechildren;notadditivewithparent or physicalIO. Allthresholdviolations retained.",
+          "sha256": "c05fdfa700ff46ea51ff48556aca41defeffd7f85622ff3ef4e4f3da46614213",
+          "rows": [
+            {
+              "database": "main",
+              "mode": "no_free_pages",
+              "total_wall_ms": 710.6590830371715,
+              "total_cpu_ms": 690.1552080000001,
+              "before": {
+                "page_count": 74892,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 306757632,
+                "free_bytes": 0
+              },
+              "after": {
+                "page_count": 74892,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 306757632,
+                "free_bytes": 0
+              },
+              "phases": {
+                "connection": {
+                  "wall_ms": 1.0581240057945251,
+                  "cpu_ms": 1.0378319999997387
+                },
+                "size_read": {
+                  "wall_ms": 1.1772490106523037,
+                  "cpu_ms": 1.1857509999977367
+                },
+                "quick_check": {
+                  "wall_ms": 609.3609160161577,
+                  "cpu_ms": 590.5632500000007
+                },
+                "optimize": {
+                  "wall_ms": 97.82966697821394,
+                  "cpu_ms": 96.2067090000005
+                },
+                "checkpoint": {
+                  "wall_ms": 0.4433330032043159,
+                  "cpu_ms": 0.3974160000002058
+                }
+              }
+            },
+            {
+              "database": "main",
+              "mode": "small_free_list",
+              "total_wall_ms": 6951.826667005662,
+              "total_cpu_ms": 5629.960084,
+              "before": {
+                "page_count": 74972,
+                "page_size": 4096,
+                "freelist_count": 80,
+                "bytes": 307085312,
+                "free_bytes": 327680
+              },
+              "after": {
+                "page_count": 74575,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 305459200,
+                "free_bytes": 0
+              },
+              "phases": {
+                "connection": {
+                  "wall_ms": 4.335167061071843,
+                  "cpu_ms": 2.3668759999999622
+                },
+                "size_read": {
+                  "wall_ms": 1.2573350686579943,
+                  "cpu_ms": 1.2621240000001421
+                },
+                "quick_check": {
+                  "wall_ms": 1314.6370009635575,
+                  "cpu_ms": 1255.4200829999988
+                },
+                "optimize": {
+                  "wall_ms": 121.22904194984585,
+                  "cpu_ms": 115.18041700000126
+                },
+                "checkpoint": {
+                  "wall_ms": 44.44424906978384,
+                  "cpu_ms": 44.29408400000057
+                },
+                "vacuum": {
+                  "wall_ms": 5464.784166018944,
+                  "cpu_ms": 4210.344292000001
+                }
+              }
+            },
+            {
+              "database": "transcript",
+              "mode": "no_free_pages",
+              "total_wall_ms": 840.6522080185823,
+              "total_cpu_ms": 781.390082999998,
+              "before": {
+                "page_count": 96169,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 393908224,
+                "free_bytes": 0
+              },
+              "after": {
+                "page_count": 96169,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 393908224,
+                "free_bytes": 0
+              },
+              "phases": {
+                "connection": {
+                  "wall_ms": 1.4475409989245236,
+                  "cpu_ms": 1.4085420000000681
+                },
+                "size_read": {
+                  "wall_ms": 1.4465018757618964,
+                  "cpu_ms": 1.4514139999945996
+                },
+                "quick_check": {
+                  "wall_ms": 748.7200000323355,
+                  "cpu_ms": 694.9688330000043
+                },
+                "optimize": {
+                  "wall_ms": 87.21891703316942,
+                  "cpu_ms": 81.83016699999968
+                },
+                "checkpoint": {
+                  "wall_ms": 0.6536250002682209,
+                  "cpu_ms": 0.5950000000005673
+                }
+              }
+            },
+            {
+              "database": "transcript",
+              "mode": "small_free_list",
+              "total_wall_ms": 11661.598584032618,
+              "total_cpu_ms": 7973.901040999997,
+              "before": {
+                "page_count": 96249,
+                "page_size": 4096,
+                "freelist_count": 80,
+                "bytes": 394235904,
+                "free_bytes": 327680
+              },
+              "after": {
+                "page_count": 95852,
+                "page_size": 4096,
+                "freelist_count": 0,
+                "bytes": 392609792,
+                "free_bytes": 0
+              },
+              "phases": {
+                "connection": {
+                  "wall_ms": 2.2348740603774786,
+                  "cpu_ms": 1.884415999995781
+                },
+                "size_read": {
+                  "wall_ms": 1.432292046956718,
+                  "cpu_ms": 1.4397929999958592
+                },
+                "quick_check": {
+                  "wall_ms": 1861.0387510852888,
+                  "cpu_ms": 1618.609752000001
+                },
+                "optimize": {
+                  "wall_ms": 125.0048330402933,
+                  "cpu_ms": 119.4685419999999
+                },
+                "checkpoint": {
+                  "wall_ms": 48.302125942427665,
+                  "cpu_ms": 34.68824900000911
+                },
+                "vacuum": {
+                  "wall_ms": 9622.514082991984,
+                  "cpu_ms": 6196.801040999997
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "overrides": [
+      {
+        "row_id": "concern:maintenance-duplicate-health",
+        "cause_classification": "confirmed_repeated_work_with_distinct_freshness",
+        "cause": "Twofullhealthscans aremeasured buttheir distinct eventcounts/times mustbepreserved;naivefirstsnapshotreusewoulddropfinalfreshness. Smallfixture doesnotexplain24.8slivetail.",
+        "resolution": "open",
+        "next_action": "Measure atactualscale and optimize exact diagnostic/query/native work without skipping eitherfreshness/integrity contract."
+      }
+    ],
+    "new_rows": [
+      {
+        "id": "concern:maintenance-full-vacuum-amplification",
+        "kind": "concern",
+        "finding": "FullmainVACUUM on startup withzero retention deletions",
+        "family": "maintenance",
+        "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "cause_classification": "confirmed_fullrewrite_scale_share_unpartitioned",
+        "cause": "Sourcecompactswheneverfreebytesnonzero;cached300MBmainrewrittenalthoughretentionsweepdeleted0rows;24.8swholemaintenance/SQLbusyresult. Individualnativephase costunmeasured.",
+        "implemented": false,
+        "merged": [],
+        "deployed": "Observed806b baseline;no candidatefix",
+        "retested": "1000coldprobe too small foractualscale;cachedsupportedread only",
+        "resolution": "open",
+        "next_actor": "thiscard/session",
+        "next_action": "Boundeddisposableactualsizenativephase attribution;preserveintegrity/reclamation/WAL/foregrounddurability/solewritersemantics;no arbitrarythreshold/defaultchanges."
+      },
+      {
+        "id": "concern:maintenance-full-integrity-scan-scale",
+        "kind": "concern",
+        "finding": "Native fullintegrity checks alone exceed500ms at retaineddatabase scale",
+        "family": "maintenance",
+        "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+        "cause_classification": "measured_native_CPU_scale_residual",
+        "cause": "Disposable529311indexedrecords at307/394MB:quickcheck609/749mswall590/695msCPUevenwithoutVACUUM;total711/841ms. Onepermode,native/synthetic/notproductioncomplete.",
+        "implemented": false,
+        "merged": [],
+        "deployed": "Observed806bfullmaintenance24.8s;this phasepartitiondisposableonly",
+        "retested": "4declarednativefixturecases/1000coldhealthprobe;no passingfullscale500msacceptance",
+        "resolution": "open",
+        "next_actor": "thiscard/session",
+        "next_action": "Preserve integrity/reclamation/freshnessand thresholds;evaluateboundednativephaseinstrumentation andsafealgorithms/schedulingwithoutclaimingphysicalI/Oorzeroresidual."
+      }
+    ],
+    "base_update_sha256": "8b33d83d4fe7f401e52525cc7cf0d0422a2a2a9881cdeb1b7337af6a2229dc4b",
+    "experiment_runtime": {
+      "python": "3.14.2",
+      "machine": "arm64",
+      "system": "Darwin",
+      "sqlite_version": "3.50.4"
+    },
+    "reports": {
+      "native_scale": "87f29b83-69ad-41b7-80db-bb35cbc4f99b rev2",
+      "completion": "861aef1f-3d04-461d-8594-fc5b4260ccf2 rev6"
+    }
+  },
+  "tests": [
+    {
+      "path": ".dev/prune-rollback-red.log",
+      "sha256": "d03cc18e00ba4daa3a63151665fafee762baf1097cdbbed36d61b6fcba28b097",
+      "text": ".....F.F...                                                              [100%]\n=================================== FAILURES ===================================\n_ test_abort_rolls_back_events_cold_counts_and_new_audit_evidence[False-False] _\n\ntmp_path = PosixPath('/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pytest-of-petersky/pytest-440/test_abort_rolls_back_events_c0')\nkeep_audit = False, earlier_session = False\n\n    @pytest.mark.parametrize('keep_audit', [False, True])\n    @pytest.mark.parametrize('earlier_session', [False, True])\n    def test_abort_rolls_back_events_cold_counts_and_new_audit_evidence(\n        tmp_path, keep_audit, earlier_session\n    ):\n        storage = TranscriptStorage(tmp_path / 'transcripts.db')\n        payload = {'text': 'cold transactional fixture ' * 300}\n        storage.append([event('expired', i, payload, 'turn_completed') for i in (1, 2)])\n        sessions = ['expired']\n        if earlier_session:\n            storage.append([event('earlier', 1, payload, 'turn_completed')])\n            sessions.insert(0, 'earlier')\n        before = references(storage)\n        with storage._conn() as conn:\n            conn.execute(\"\"\"CREATE TRIGGER stop_prune BEFORE DELETE ON transcript_events\n                            WHEN OLD.session_id='expired' AND OLD.seq=2\n                            BEGIN SELECT RAISE(ABORT,'fixture interruption'); END\"\"\")\n        with patch.object(storage, 'collect_unreferenced_objects') as collect:\n            with pytest.raises(sqlite3.IntegrityError, match='fixture interruption'):\n                storage.prune(sessions, keep_audit=keep_audit)\n            collect.assert_not_called()\n>       assert references(storage) == before\nE       AssertionError: assert {'8cbb911c6b5...9ca868e87': 0} == {'8cbb911c6b5...9ca868e87': 2}\nE         \nE         Differing items:\nE         {'8cbb911c6b53b9fb2ee38f08d5a37d44638790c4e5861bf13f104f99ca868e87': 0} != {'8cbb911c6b53b9fb2ee38f08d5a37d44638790c4e5861bf13f104f99ca868e87': 2}\nE         Use -v to get more diff\n\ntests/test_transcript_prune_batch.py:136: AssertionError\n_ test_abort_rolls_back_events_cold_counts_and_new_audit_evidence[True-False] __\n\ntmp_path = PosixPath('/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pytest-of-petersky/pytest-440/test_abort_rolls_back_events_c2')\nkeep_audit = False, earlier_session = True\n\n    @pytest.mark.parametrize('keep_audit', [False, True])\n    @pytest.mark.parametrize('earlier_session', [False, True])\n    def test_abort_rolls_back_events_cold_counts_and_new_audit_evidence(\n        tmp_path, keep_audit, earlier_session\n    ):\n        storage = TranscriptStorage(tmp_path / 'transcripts.db')\n        payload = {'text': 'cold transactional fixture ' * 300}\n        storage.append([event('expired', i, payload, 'turn_completed') for i in (1, 2)])\n        sessions = ['expired']\n        if earlier_session:\n            storage.append([event('earlier', 1, payload, 'turn_completed')])\n            sessions.insert(0, 'earlier')\n        before = references(storage)\n        with storage._conn() as conn:\n            conn.execute(\"\"\"CREATE TRIGGER stop_prune BEFORE DELETE ON transcript_events\n                            WHEN OLD.session_id='expired' AND OLD.seq=2\n                            BEGIN SELECT RAISE(ABORT,'fixture interruption'); END\"\"\")\n        with patch.object(storage, 'collect_unreferenced_objects') as collect:\n            with pytest.raises(sqlite3.IntegrityError, match='fixture interruption'):\n                storage.prune(sessions, keep_audit=keep_audit)\n            collect.assert_not_called()\n>       assert references(storage) == before\nE       AssertionError: assert {'8cbb911c6b5...9ca868e87': 2} == {'8cbb911c6b5...9ca868e87': 3}\nE         \nE         Differing items:\nE         {'8cbb911c6b53b9fb2ee38f08d5a37d44638790c4e5861bf13f104f99ca868e87': 2} != {'8cbb911c6b53b9fb2ee38f08d5a37d44638790c4e5861bf13f104f99ca868e87': 3}\nE         Use -v to get more diff\n\ntests/test_transcript_prune_batch.py:136: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_transcript_prune_batch.py::test_abort_rolls_back_events_cold_counts_and_new_audit_evidence[False-False]\nFAILED tests/test_transcript_prune_batch.py::test_abort_rolls_back_events_cold_counts_and_new_audit_evidence[True-False]\n2 failed, 9 passed in 0.71s\n"
+    },
+    {
+      "path": ".dev/prune-rollback-broad.log",
+      "sha256": "68bb96124301619c80ab70be471f4f186603eded716deafe03dde226500abad1",
+      "text": ".............................................................. [ 56%]\n................................................                   [100%]\n110 passed, 16 subtests passed in 89.09s (0:01:29)\n"
+    }
+  ],
+  "root_audits": [
+    {
+      "path": ".dev/prune-rollback-red-root-audit.json",
+      "sha256": "d4aab6c200518fb1331b8b66f5849b5d64cab9b04cd6969f7c08ecb1f47de457",
+      "data": {
+        "roots": [],
+        "exit_code": 1
+      }
+    },
+    {
+      "path": ".dev/prune-rollback-broad-root-audit.json",
+      "sha256": "1bdae45e65730037be9a4ce31e6fdad2f91aa55d5ae5ffd2027ccabe581bf02e",
+      "data": {
+        "roots": [],
+        "exit_code": 0
+      }
+    }
+  ],
+  "scope_limits": "Correctness repair, not whole-PA performance acceptance. Prior deployed806b Fleet524ms/startup3.84s/maintenance24.8s and all source mixed violations retained. Successful native busy, GIL/CPU/disk/open-close and complete fleet/log/retention/valid-branch coverage remain unresolved. No new latency distribution fabricated.",
+  "backup_scope": "No evidence this regression caused older missingcold5cbb or failed35575957; both predate806b. Existing0331/18fc source owner asked this correction and has no competing edit. All8archives/207failures0verified/paused/b527independent acceptance and pending missing-source question retained. No production retry/backup/restore/deletion/recovery/refdrop/placeholder.",
+  "completion": "OPEN; independent_agent_v1 requirement17d034a6 unchanged, normal PA scheduler owns acceptance; no repairer self-acceptance.",
+  "broad_result": {
+    "tests_passed": 110,
+    "subtests_passed": 16,
+    "seconds": 89.09,
+    "warnings_threshold_changes": false
+  },
+  "local_execution_notes": [
+    "First publisher invocation used system Python3.9 and failed importing datetime.UTC before any output mutation; rerun with project Python3.14.2 succeeded.",
+    "Initial git fetch sandbox denied FETCH_HEAD write; exact native-approved fetch succeeded. No commits or configuration changes occurred on failed calls."
+  ]
+}

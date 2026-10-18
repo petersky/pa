@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T06:10:14.292386+00:00",
-  "completion": "OPEN;540rows56concerns. Actual806bactivated/readretestedbutFleet524ms/startup3.84s/maintenance24.8s/othersremain. Startupmetricscandidateunmerged/uninstalled;allprioroutliers/failures/gaps/ownersretained.",
+  "as_of": "2026-10-18T06:24:35.209168+00:00",
+  "completion": "OPEN;543rows59concerns. Non-audit rollback regression independently reproduced; scoped source correction pending integration/activation. All prior performance tails/owners/gaps retained; no acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -106,7 +106,8 @@
     "docs/benchmarks/systemic-ancestry-membership-20261018.json",
     "docs/benchmarks/systemic-retention-batching-20261018.json",
     "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json",
-    "docs/benchmarks/systemic-startup-inventory-20261018.json"
+    "docs/benchmarks/systemic-startup-inventory-20261018.json",
+    "docs/benchmarks/systemic-prune-rollback-20261018.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -144693,6 +144694,10 @@
         },
         "artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
         "acceptance": "open; deployedmaintenance24.8s/startup3.84s/other tails retained; sourceinclusionnotwholepathpass"
+      },
+      "rollback_verification_correction": {
+        "artifact": "docs/benchmarks/systemic-prune-rollback-20261018.json",
+        "status": "Original audittrue-only test missed nonaudit atomicity regression; source correction pending protected integration/activation. Earlier blanket rollback claims superseded."
       }
     },
     {
@@ -144700,7 +144705,7 @@
       "kind": "concern",
       "finding": "Maintenance returns full transcript health twice",
       "family": "maintenance",
-      "cause_classification": "source_confirmed_time_share_unmeasured",
+      "cause_classification": "confirmed_repeated_work_with_distinct_freshness",
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "implemented": false,
       "merged": [],
@@ -144711,7 +144716,8 @@
       },
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Measure actual duplicated work;preserve independent integrity/final freshness in any repair"
+      "next_action": "Measure atactualscale and optimize exact diagnostic/query/native work without skipping eitherfreshness/integrity contract.",
+      "cause": "Twofullhealthscans aremeasured buttheir distinct eventcounts/times mustbepreserved;naivefirstsnapshotreusewoulddropfinalfreshness. Smallfixture doesnotexplain24.8slivetail."
     },
     {
       "id": "concern:maintenance-native-sql-observability",
@@ -144957,7 +144963,69 @@
       "retested": "isolatedleaf/recoverycontracts/actualwheelmixed only; no deployed/fullproviderstartup acceptance",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Protectedintegration/exactactivation/retest, continue allremainingstartup/native/provider/peer/health/latency work"
+      "next_action": "Protectedintegration/exactactivation/retest, continue allremainingstartup/native/provider/peer/health/latency work",
+      "integration509": {
+        "head": "6ab0faefec9bcf160136eb27421258b07a5c8499",
+        "merge": "c6be26f5599c40ef51ccae23eb9a0afade458529",
+        "watch": "69729482-1981-403b-8959-b383c5a4c539",
+        "head_ci": 39103155724,
+        "main_ci": 39103352927,
+        "all5_success_each": true,
+        "deployed": "Not activated; combined correctedtarget supersedes c6be plan"
+      }
+    },
+    {
+      "id": "concern:maintenance-full-vacuum-amplification",
+      "kind": "concern",
+      "finding": "FullmainVACUUM on startup withzero retention deletions",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_fullrewrite_scale_share_unpartitioned",
+      "cause": "Sourcecompactswheneverfreebytesnonzero;cached300MBmainrewrittenalthoughretentionsweepdeleted0rows;24.8swholemaintenance/SQLbusyresult. Individualnativephase costunmeasured.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Observed806b baseline;no candidatefix",
+      "retested": "1000coldprobe too small foractualscale;cachedsupportedread only",
+      "resolution": "open",
+      "next_actor": "thiscard/session",
+      "next_action": "Boundeddisposableactualsizenativephase attribution;preserveintegrity/reclamation/WAL/foregrounddurability/solewritersemantics;no arbitrarythreshold/defaultchanges."
+    },
+    {
+      "id": "concern:maintenance-full-integrity-scan-scale",
+      "kind": "concern",
+      "finding": "Native fullintegrity checks alone exceed500ms at retaineddatabase scale",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "measured_native_CPU_scale_residual",
+      "cause": "Disposable529311indexedrecords at307/394MB:quickcheck609/749mswall590/695msCPUevenwithoutVACUUM;total711/841ms. Onepermode,native/synthetic/notproductioncomplete.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Observed806bfullmaintenance24.8s;this phasepartitiondisposableonly",
+      "retested": "4declarednativefixturecases/1000coldhealthprobe;no passingfullscale500msacceptance",
+      "resolution": "open",
+      "next_actor": "thiscard/session",
+      "next_action": "Preserve integrity/reclamation/freshnessand thresholds;evaluateboundednativephaseinstrumentation andsafealgorithms/schedulingwithoutclaimingphysicalI/Oorzeroresidual."
+    },
+    {
+      "id": "concern:prune-nonaudit-transaction-rollback",
+      "kind": "concern",
+      "finding": "Non-audit grouped cold release committed before failed event deletion",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_independent_disposable_failure",
+      "cause": "Python sqlite legacy transaction control does not implicitly BEGIN for leading WITH ... UPDATE. In keep_audit=False, first grouped refcount release committed before DELETE opened a transaction. Later rollback restored events but not that decrement.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-prune-rollback-20261018.json",
+        "red": "2failed/9passed; refs2->0 and3->2 after rollback"
+      },
+      "implemented": "Explicit deferred BEGIN before first mutation; isolated broad verification recorded in artifact",
+      "merged": [],
+      "deployed": "NOT corrected; actual806b remains loaded; inheritedc6be activation held",
+      "retested": "Disposable rollback/correct retry/storage/backup concurrency only; no live fault or production loss claim",
+      "resolution": "open",
+      "next_actor": "this same systemic session",
+      "next_action": "Protected review/supervisor exacthead+mainCI integration; immutable corrected activation and loaded proof; preserve all broader acceptance gates",
+      "report": "f480de8e-ca82-40a9-bce6-c296e2416d41"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -145038,5 +145106,6 @@
   "ancestry_membership_artifact": "docs/benchmarks/systemic-ancestry-membership-20261018.json",
   "retention_batch_artifact": "docs/benchmarks/systemic-retention-batching-20261018.json",
   "maintenance_sql_artifact": "docs/benchmarks/systemic-maintenance-sql-observations-20261018.json",
-  "startup_inventory_artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json"
+  "startup_inventory_artifact": "docs/benchmarks/systemic-startup-inventory-20261018.json",
+  "prune_rollback_artifact": "docs/benchmarks/systemic-prune-rollback-20261018.json"
 }

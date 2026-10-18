@@ -112,23 +112,41 @@ def test_cold_references_are_released_by_one_grouped_update(tmp_path):
     assert references(storage) == {}
 
 
-def test_abort_rolls_back_events_cold_counts_and_new_audit_evidence(tmp_path):
+@pytest.mark.parametrize('keep_audit', [False, True])
+@pytest.mark.parametrize('earlier_session', [False, True])
+def test_abort_rolls_back_events_cold_counts_and_new_audit_evidence(
+    tmp_path, keep_audit, earlier_session
+):
     storage = TranscriptStorage(tmp_path / 'transcripts.db')
     payload = {'text': 'cold transactional fixture ' * 300}
     storage.append([event('expired', i, payload, 'turn_completed') for i in (1, 2)])
+    sessions = ['expired']
+    if earlier_session:
+        storage.append([event('earlier', 1, payload, 'turn_completed')])
+        sessions.insert(0, 'earlier')
     before = references(storage)
     with storage._conn() as conn:
         conn.execute("""CREATE TRIGGER stop_prune BEFORE DELETE ON transcript_events
-                        WHEN OLD.seq=2 BEGIN SELECT RAISE(ABORT,'fixture interruption'); END""")
-    with pytest.raises(sqlite3.IntegrityError, match='fixture interruption'):
-        storage.prune(['expired'])
+                        WHEN OLD.session_id='expired' AND OLD.seq=2
+                        BEGIN SELECT RAISE(ABORT,'fixture interruption'); END""")
+    with patch.object(storage, 'collect_unreferenced_objects') as collect:
+        with pytest.raises(sqlite3.IntegrityError, match='fixture interruption'):
+            storage.prune(sessions, keep_audit=keep_audit)
+        collect.assert_not_called()
     assert references(storage) == before
     assert [e.seq for e in storage.list('expired')] == [1, 2]
+    if earlier_session:
+        assert [e.seq for e in storage.list('earlier')] == [1]
+    assert all(storage._object_path(digest).is_file() for digest in before)
     with storage._conn() as conn:
         assert conn.execute('SELECT COUNT(*) FROM transcript_evidence').fetchone()[0] == 0
         conn.execute('DROP TRIGGER stop_prune')
-    assert storage.prune(['expired']) == 2
+    assert storage.prune(sessions, keep_audit=keep_audit) == 2 + int(earlier_session)
     assert references(storage) == {}
+    with storage._conn() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM transcript_evidence').fetchone()[0] == (
+            (2 + int(earlier_session)) if keep_audit else 0
+        )
 
 
 def test_empty_followup_still_collects_bytes_deferred_by_reader(tmp_path):

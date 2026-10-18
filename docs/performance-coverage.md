@@ -1,3 +1,17 @@
+# Non-audit transcript rollback correction — 2026-10-18
+
+**All543 evidence rows /59 concerns remain open.** [Full matrix](performance-coverage.json); [correction, original failures, tests and maintenance overlay](benchmarks/systemic-prune-rollback-20261018.json). This checkpoint supersedes older current-stage and blanket rollback claims below; all original artifacts remain intact.
+
+The backup owner reported a real regression in PR508/806b. We independently reproduced it against the inherited c6be source: with `keep_audit=False`, a failing event deletion leaves all events but changes the shared cold reference count2→0 (or3→2 after an earlier session). The original rollback test covered only the default audit-enabled branch. Python sqlite legacy transaction control does not implicitly begin a transaction for the leading `WITH … UPDATE`; rollback therefore could not undo the first decrement. Two non-audit tests fail before correction; nine tests pass. No live fault or subsequent garbage collection was performed. Possible later collection of still-referenced bytes is an inference, not an observed deletion, and this regression does not establish the cause of the older missing cold object or failed backup.
+
+The source correction explicitly begins a deferred transaction before the first mutation, preserving the existing commit/rollback wrapper and all retention/reader/GC semantics. Four rollback combinations cover both audit modes and failure after an earlier session, then verify retry counts, audit evidence and immutable bytes. The broader isolated storage/connection/mirror/backup copy/pin/retention/deadline/maintenance suite passes110 tests and16 subtests in89.09s, including all four rollback cases. This is a correctness repair; no latency pass follows from it.
+
+PR509 is already integrated as c6be with exact head/main CI5/5 success and matching trees, but remains unactivated. The prior806b handoff780c is delivered. Live source806b/packagef72/PID19594/config86968/lease290 remain verified. The unrequested c6be activation is held; a protected corrected integration must become the next target. No production rollback, backup, restore, deletion, recovery, default or permission change.
+
+The previously durable maintenance overlay is now included: distinct first/final health freshness must remain; synthetic native529311-row307/394MB cases retain full VACUUM5.46/9.62s and no-compaction quick-check609/749ms. These are declared disposable scale observations, not exact live attribution or physical I/O. Deployed Fleet524ms, startup3.84s, maintenance24.8s, source mixed drain552/push640/object1469 and all older failures/coverage gaps remain open. Backup0331/b527 and independent systemic requirement17d034a6 retain their owners and acceptance gates.
+
+---
+
 # Activated806b retest, complete current runtime and startup diagnostic inventory — 2026-10-18
 
 **All540 evidence rows /56 concerns remain open.** [Full matrix](performance-coverage.json); [all raw numeric samples, phases, source identities and retained failures](benchmarks/systemic-startup-inventory-20261018.json). This checkpoint supersedes older current-status labels below; every earlier finding, owner and outlier remains.

@@ -465,6 +465,11 @@ class TranscriptStorage:
                     "SELECT 1 FROM transcript_events WHERE session_id=? LIMIT 1", (session_id,)
                 ).fetchone():
                     continue
+                # A leading WITH ... UPDATE does not start Python sqlite's
+                # legacy implicit transaction. Begin before either mutation so
+                # non-audit pruning also rolls references back with deletion.
+                if not conn.in_transaction:
+                    conn.execute("BEGIN")
                 if keep_audit:
                     marks = ",".join("?" for _ in _AUDIT_TYPES)
                     conn.execute(f"""INSERT OR IGNORE INTO transcript_evidence(session_id,seq,event_type,payload_hash,created_at)
