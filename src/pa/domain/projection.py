@@ -77,6 +77,17 @@ from pa.workloads import WorkloadProfile, canonical_default_scope_key
 
 T = TypeVar("T")
 
+_SESSION_COLUMNS_WITHOUT_METRICS = """
+    id, agent_name, external_session_id, origin_instance_id,
+    origin_instance_name, authority_instance_id, dispatch_id, realm_id,
+    lifecycle_owner, purpose, initiating_workflow_json, control_mode,
+    archived_at, archive_reason, pinned_at, human_activity_at,
+    workflow_state, workflow_outcome_json, recovery_json,
+    item_id, card_id, project_id, principal_id, status, cwd, title, label,
+    model_id, mode_id, config_json, execution_binding_json,
+    created_at, updated_at
+"""
+
 
 class CardVersionConflict(RuntimeError):
     def __init__(self, card_id: str, expected: datetime, actual: datetime) -> None:
@@ -5255,16 +5266,7 @@ class CardProjection:
         or constructing its runtime. All durable recovery and provenance fields
         remain present; status alone does not determine recovery eligibility.
         """
-        columns = "*" if include_metrics else """
-            id, agent_name, external_session_id, origin_instance_id,
-            origin_instance_name, authority_instance_id, dispatch_id, realm_id,
-            lifecycle_owner, purpose, initiating_workflow_json, control_mode,
-            archived_at, archive_reason, pinned_at, human_activity_at,
-            workflow_state, workflow_outcome_json, recovery_json,
-            item_id, card_id, project_id, principal_id, status, cwd, title, label,
-            model_id, mode_id, config_json, execution_binding_json,
-            created_at, updated_at
-        """
+        columns = "*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS
         query = f"SELECT {columns} FROM agent_sessions WHERE 1=1"
         if not include_archived:
             query += " AND archived_at IS NULL"
@@ -5563,8 +5565,20 @@ class CardProjection:
             rows = conn.execute("SELECT id, status FROM agent_sessions").fetchall()
         return {row["id"]: row["status"] for row in rows}
 
-    def list_sessions_for_workshop(
+    def list_sessions_for_workshop_summary(
         self, *, realm_id: str, limit: int
+    ) -> tuple[list[AgentSession], int]:
+        """Read-only Fleet presentation; re-fetch a full session before saving.
+
+        Preserve lifecycle, recovery, binding and config fields used by the
+        presentation, without fetching or decoding unrelated diagnostic metrics.
+        """
+        return self.list_sessions_for_workshop(
+            realm_id=realm_id, limit=limit, include_metrics=False,
+        )
+
+    def list_sessions_for_workshop(
+        self, *, realm_id: str, limit: int, include_metrics: bool = True
     ) -> tuple[list[AgentSession], int]:
         """Return a bounded active-first session projection and its full count.
 
@@ -5584,6 +5598,7 @@ class CardProjection:
         )
         placeholders = ",".join("?" for _ in active_statuses)
         params = (realm_id, *active_statuses)
+        columns = "*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS
         with self._conn() as conn:
             total = int(
                 conn.execute(
@@ -5593,7 +5608,7 @@ class CardProjection:
                 ).fetchone()[0]
             )
             rows = conn.execute(
-                f"""SELECT * FROM agent_sessions
+                f"""SELECT {columns} FROM agent_sessions
                     WHERE realm_id = ? AND status IN ({placeholders})
                     ORDER BY
                       CASE status

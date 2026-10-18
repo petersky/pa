@@ -1,0 +1,7 @@
+{
+  "stage": "Publication display correction; no workload rerun",
+  "failure": "Publisher wrote the complete raw artifact and appended the single556th ledger row, then Markdown table rendering failed with KeyError:p50. Benchmark distributions use p50_ms/p95_ms/p99_ms/max_ms, unlike runtime distributions.",
+  "recovery": "A separate helper read the already completed artifact and generated only the Markdown introduction/table with correct field names. No artifact samples, matrix rows, timers, assertions or thresholds were changed; no duplicate finding appended.",
+  "scope": "Publication formatting failure, separate from retained GC probe setup/fixture/capped-page failures and every product/runtime residual. Original publisher source and corrected table helper retained locally.",
+  "primary_artifact": "systemic-workshop-summary-20261018.json"
+}

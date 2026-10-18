@@ -542,14 +542,18 @@ def _local_activity(ctx: Any) -> dict[str, Any]:
     sessions = []
     deferred_sessions = 0
     bounded_sessions = None
-    projection = getattr(ctx.store, "list_sessions_for_workshop", None)
-    if callable(projection):
-        candidate = projection(
-            realm_id=ctx.settings.primary_realm,
-            limit=WORKSHOP_SESSION_LIMIT,
-        )
-        if isinstance(candidate, tuple) and len(candidate) == 2:
-            bounded_sessions = candidate
+    for projection_name in (
+        "list_sessions_for_workshop_summary", "list_sessions_for_workshop",
+    ):
+        projection = getattr(ctx.store, projection_name, None)
+        if callable(projection):
+            candidate = projection(
+                realm_id=ctx.settings.primary_realm,
+                limit=WORKSHOP_SESSION_LIMIT,
+            )
+            if isinstance(candidate, tuple) and len(candidate) == 2:
+                bounded_sessions = candidate
+                break
     if bounded_sessions is not None:
         durable_sessions, durable_session_total = bounded_sessions
     else:
