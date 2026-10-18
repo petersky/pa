@@ -1,5 +1,6 @@
 """Canonical retention keeps proof, cold-reference and rollback semantics."""
 import sqlite3
+import threading
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -167,3 +168,93 @@ def test_empty_session_list_keeps_original_no_gc_behavior(tmp_path):
     with patch.object(storage, 'collect_unreferenced_objects',
                       side_effect=AssertionError('empty input collected objects')):
         assert storage.prune([]) == 0
+
+
+def test_large_empty_inventory_uses_one_indexed_discovery_and_still_collects(tmp_path):
+    storage = TranscriptStorage(tmp_path / 'transcripts.db')
+    storage.append([event('live', 1)])
+    original = storage._conn
+    selects = []
+
+    @contextmanager
+    def observed():
+        with original() as conn:
+            conn.set_trace_callback(lambda sql: selects.append(sql) if
+                                    sql.lstrip().upper().startswith('SELECT') else None)
+            try:
+                yield conn
+            finally:
+                conn.set_trace_callback(None)
+
+    with patch.object(storage, '_conn', observed), patch.object(
+        storage, 'collect_unreferenced_objects', return_value=0,
+    ) as collect:
+        assert storage.prune([f'expired-{i}' for i in range(6000)]) == 0
+        collect.assert_called_once_with()
+    assert len(selects) == 1
+    assert [e.seq for e in storage.list('live')] == [1]
+    with storage._conn() as conn:
+        # The discovery must search the existing session/sequence index rather
+        # than scan every retained event for an empty expired inventory.
+        plan = ' '.join(str(tuple(row)) for row in conn.execute(
+            'EXPLAIN QUERY PLAN SELECT DISTINCT session_id FROM transcript_events '
+            'WHERE session_id IN (SELECT value FROM json_each(?))', ('["expired"]',),
+        ))
+    assert 'SEARCH transcript_events USING COVERING INDEX' in plan
+
+
+@pytest.mark.parametrize('keep_audit', [False, True])
+def test_publication_waits_for_discovery_and_survives_prune(tmp_path, keep_audit):
+    storage = TranscriptStorage(tmp_path / 'transcripts.db')
+    payload = {'text': 'shared publication fixture ' * 300}
+    storage.append([event('expired', 1, payload, 'turn_completed'),
+                    event('live', 1, payload)])
+    original = storage._conn
+    entered, finished = threading.Event(), threading.Event()
+    errors = []
+    discovery_locked = []
+    publisher = None
+
+    def publish():
+        acquired = storage._lock.acquire(blocking=False)
+        discovery_locked.append(not acquired)
+        if acquired:
+            storage._lock.release()
+        entered.set()
+        try:
+            storage.append([event('expired', 2, payload, 'turn_completed')])
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    @contextmanager
+    def observed():
+        nonlocal publisher
+        with original() as conn:
+            def trace(sql):
+                nonlocal publisher
+                if publisher is None and 'json_each' in sql:
+                    publisher = threading.Thread(target=publish)
+                    publisher.start()
+                    assert entered.wait(5)
+                    assert not finished.is_set()
+            conn.set_trace_callback(trace)
+            try:
+                yield conn
+            finally:
+                conn.set_trace_callback(None)
+
+    with patch.object(storage, '_conn', observed):
+        assert storage.prune(['empty', 'expired', 'expired'], keep_audit=keep_audit) == 1
+    assert publisher is not None
+    publisher.join(5)
+    assert finished.is_set() and not errors
+    assert discovery_locked == [True]
+    assert [e.seq for e in storage.list('expired')] == [2]
+    assert storage.list('live')[0].payload == payload
+    assert list(references(storage).values()) == [2]
+    with storage._conn() as conn:
+        assert [row[0] for row in conn.execute(
+            'SELECT seq FROM transcript_evidence ORDER BY seq'
+        )] == ([1] if keep_audit else [])
