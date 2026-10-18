@@ -2052,7 +2052,7 @@
       this.setPlaceholder("Locating session owner…");
       return;
     }
-    if (this.recentBootstrap || (this.els.recovery && !this.els.recovery.hidden)) {
+    if (this.recentBootstrap || (this.els && this.els.recovery && !this.els.recovery.hidden)) {
       this.clearPlaceholder();
       return;
     }

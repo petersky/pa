@@ -500,6 +500,8 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
             let retry = false;
             Object.assign(widget, {{
               destroyed: false,
+              els: {{ recovery: {{}}, recoveryAction: {{}}, recoveryRetry: {{}},
+                recover: {{ setAttribute: noop }}, placeholder: {{ hidden: false }} }},
               subscriptionGeneration: 7,
               sessionId: "session-1",
               transcriptEvents: [{{ seq: 41, type: "agent_message_chunk" }}],
@@ -508,13 +510,15 @@ class AgentChatSseLifecycleTests(unittest.TestCase):
               setStatus: noop,
               setComposerEnabled: noop,
               setPlaceholder: (value) => {{ message = value; }},
-              _setRecoveryControl: noop,
               _scheduleLiveStateRetry: () => {{ retry = true; }},
               applySnapshot: () => {{ throw new Error("slow snapshot should not replace history"); }},
             }});
             widget._loadLiveSnapshot("session-1", 7).then(() => {{
-              if (!message.includes("Durable history is shown")) {{
-                throw new Error("missing actionable degraded-state message");
+              if (widget.els.recovery.hidden || !widget.els.recoveryAction.textContent.includes("Live controls")) {{
+                throw new Error("missing visible degraded-state message");
+              }}
+              if (!widget.els.placeholder.hidden || widget.els.recover.hidden) {{
+                throw new Error("recovery must have one visible banner and correlated action");
               }}
               if (!retry) throw new Error("live-state retry was not scheduled");
               if (widget.transcriptEvents.length !== 1 || widget.transcriptEvents[0].seq !== 41) {{
