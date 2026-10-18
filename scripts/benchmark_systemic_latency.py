@@ -413,9 +413,23 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
             await asyncio.gather(sync_work(), startup_work(), progress_work(), cache_and_wire(), foreground(),
                                  retention_work(),
                                  *(transcript_work(worker) for worker in transcript_runtimes))
-        elapsed = time.perf_counter() - started
+        finished = time.perf_counter()
+        elapsed = finished - started
         after_io = resource.getrusage(resource.RUSAGE_SELF)
         snapshot = runtime.snapshot()
+        diagnostic_snapshot = diagnostics.snapshot() if diagnostics else None
+        transcript_snapshot = store.transcripts.performance.snapshot()
+        dispatch_snapshot = dispatches.performance.snapshot()
+        with counts.lock:
+            statement_counts = dict(counts.statements)
+            object_counts = dict(counts.objects)
+        # Close all measurement collectors before verifying durable contents.
+        # Snapshot calls are sequential, not an atomic cross-executor read.
+        gc.callbacks.remove(observe_gc)
+        logging.getLogger().removeHandler(handler)
+        collected_warnings = dict(warnings)
+        captured = time.perf_counter()
+        validation_started = captured
         expected = iterations * 32 * len(transcript_runtimes)
         actual = 0
         for session in sessions[:3]:
@@ -448,10 +462,18 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                     await pending
         assert store.get_projection_head("default") == log.get_head("default")
         assert store.get_card(card_id).title == f"Fixture {history + 2 * iterations - 1}"
+        validation_finished = time.perf_counter()
         return {"hardware": {"machine": platform.machine(), "python": platform.python_version(), "cpus": os.cpu_count()},
             "source_module_sha256": source_hashes,
             "benchmark_script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "measurement_start_monotonic": started, "measurement_finish_monotonic": time.perf_counter(),
+            "measurement_start_monotonic": started, "measurement_finish_monotonic": finished,
+            "measurement_capture": {"finished_monotonic": captured,
+                "duration_ms": (captured - finished) * 1000,
+                "scope": "Sequential resource/executor/storage snapshots after workload completion, before validation; not an atomic read. GC and warning collectors close at capture end."},
+            "validation": {"started_monotonic": validation_started,
+                "finished_monotonic": validation_finished,
+                "duration_ms": (validation_finished - validation_started) * 1000,
+                "scope": "Durable order, retained cold content hashes, projection head and card checks; includes awaited validation observer persistence. Excluded from workload duration and captured counters."},
             "premeasurement": {"scope": "Kernel boot and synthetic fixture seeding; not part of steady mixed window",
                                "slow_calls": sum(value.get("slow_calls", 0) for value in runtime_before["operations"].values()),
                                "async_backend_initialization": runtime_before.get("async_backend_initialization"),
@@ -479,7 +501,7 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                 for key, values in samples.items() if any(value >= 500 for value in values)
             },
             "response_bytes": {key: {"min": min(values), "max": max(values)} for key, values in sizes.items()},
-            "warnings": dict(warnings), "sql_statements": dict(counts.statements),
+            "warnings": collected_warnings, "sql_statements": statement_counts,
             "sync_outcomes": dict(sync_outcomes),
             "threshold_violations": {key: sum(value >= (2000 if key == "dispatch.runnable_read" else 500)
                                               for value in values)
@@ -490,16 +512,16 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                                                     if key in value else None)
                 for key in ("submitted", "completed", "failed", "timed_out", "rejected", "slow_calls")}
                 for name, value in snapshot["operations"].items()},
-            "diagnostics_runtime": diagnostics.snapshot() if diagnostics else None,
+            "diagnostics_runtime": diagnostic_snapshot,
             "diagnostics_counter_deltas": {name: {key: value[key] - diagnostics_before.get("operations", {}).get(name, {}).get(key, 0)
                 for key in ("submitted", "completed", "failed", "timed_out", "rejected", "slow_calls")}
-                for name, value in (diagnostics.snapshot()["operations"] if diagnostics else {}).items()},
+                for name, value in (diagnostic_snapshot["operations"] if diagnostic_snapshot else {}).items()},
             "filesystem_phase_totals_delta": {
                 name: {phase: value["filesystem_totals"][phase] - runtime_before["operations"].get(name, {}).get("filesystem_totals", {}).get(phase, 0)
                        for phase in FILESYSTEM_PHASES}
                 for name, value in snapshot["operations"].items()},
             "filesystem_phase_scope": "Exact completed-worker logical counters during measurement, separate from last256 distributions and premeasurement boot/seeding. Wall intervals overlap and are not physical disk bytes or native busy proof.",
-            "canonical_object_reads": dict(counts.objects),
+            "canonical_object_reads": object_counts,
             "process_cpu_ms": round((after_io.ru_utime + after_io.ru_stime - before_io.ru_utime - before_io.ru_stime) * 1000, 3),
             "disk_output_blocks": after_io.ru_oublock - before_io.ru_oublock,
             "gc_pauses": {"latency": distribution([item["elapsed_ms"] for item in gc_pauses]),
@@ -511,10 +533,11 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
             "template_artifact": template_artifact,
             "transcript_input_rows": expected, "transcript_retained_rows": actual,
             "runtime": snapshot, "runtime_window_note": "Counters/windows include boot and fixture seeding; counter deltas and explicit latency samples cover only the declared measurement scenario.",
-            "transcript_performance": store.transcripts.performance.snapshot(),
-            "dispatch_performance": dispatches.performance.snapshot()}
+            "transcript_performance": transcript_snapshot,
+            "dispatch_performance": dispatch_snapshot}
     finally:
-        gc.callbacks.remove(observe_gc)
+        if observe_gc in gc.callbacks:
+            gc.callbacks.remove(observe_gc)
         logging.getLogger().removeHandler(handler)
         store.close_thread_connection()
 
