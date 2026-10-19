@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T23:08:40.375907+00:00",
-  "completion": "OPEN;610rows/106concerns. All609prior rows unchanged. Health leaf diagnostics are source instrumentation with18bounded contracts and measured overhead, not deployed attribution/performance acceptance. Existing139operation/86route inventory, GCfreshness riskf320, every retained failure, startup/drain/peer/logloss/retention/backup/rollout and independent17d requirements remain open. No install/restart/newworker or acceptance.",
+  "as_of": "2026-10-19T23:14:06.562962+00:00",
+  "completion": "OPEN;611rows/107concerns. All610priorrows unchanged; original initial18tests/overhead and failedCI retained.19corrected guarded tests pass, newexactheadCIpending. No productthreshold/runtimebehavior change, no install/restart/acceptance. Every prior startup/drain/GCfreshness/peer/logloss/backup/rollout/independent gate remains open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -144,7 +144,8 @@
     "docs/benchmarks/systemic-live-runtime-20261019T2227-summary.json",
     "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
     "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json",
-    "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json"
+    "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json",
+    "docs/benchmarks/systemic-health-canonical-ci-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -210851,6 +210852,27 @@
       "resolution": "open",
       "next_actor": "Same systemic session, existing release authority and ordinary independent scheduler",
       "next_action": "Review/integrate source, retain backup stable-build window and existing rollout authority. After separately authorized exact activation, collect supported leaf windows with representative valid branches and diagnose actual cost; preserve aggregate and all historical failures."
+    },
+    {
+      "id": "concern:health-canonical-ci-completion-observer",
+      "kind": "concern",
+      "finding": "New diagnostics test assumed instantaneous aggregate callback delivery; CI also repeated unchanged snapshot deadline failure",
+      "family": "ci",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "new_test_callback_race_confirmed_snapshot_cpu_cause_unknown",
+      "cause": "A ready failingfuture can propagate its result before the separate runtime finish callback updates aggregate metrics. Snapshot timeout has independent unchanged200ms contract and238ms taskcallback; cause not established.",
+      "fix_or_existing_owner": "Existing systemic session corrects newtest completion barrier; retains unchanged snapshot failure and ordinary independent acceptance.",
+      "implemented": "Test-only completion barrier; no source/deadline/warning/capacity change.",
+      "merged": [],
+      "deployed": "Not applicable to test-only correction; diagnostic source not installed/loaded.",
+      "retested": "19guarded disposable cases pass including18earlier cases and unchanged snapshot case; newexactheadCIpending.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-health-canonical-ci-20261019.json",
+        "sha256": "8e1d1e1e46202a5a743b245fdc3ecf59bacb212617aa72e103f89f635c6d03df"
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and ordinary independent scheduler",
+      "next_action": "Require corrected exactheadCI terminalgreen and independent fresh review/supervisor gates; preserve initial failures and unknown snapshot CPU/scheduling attribution."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -254315,6 +254337,11 @@
   "health_canonical_diagnostics_stage": {
     "artifact": "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json",
     "sha256": "7d79c25f18ccb0a79df294d6b0a4f2725e24ac6640119c2f6d744fb81b70fd6b",
+    "resolution": "open"
+  },
+  "health_canonical_ci_followup": {
+    "artifact": "docs/benchmarks/systemic-health-canonical-ci-20261019.json",
+    "sha256": "8e1d1e1e46202a5a743b245fdc3ecf59bacb212617aa72e103f89f635c6d03df",
     "resolution": "open"
   }
 }

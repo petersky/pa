@@ -65,6 +65,12 @@ async def test_worker_error_propagates_exactly_and_is_counted():
         with pytest.raises(ValueError) as caught:
             await service(runtime).canonical_call(fail, diagnostic_phase='card_get')
         assert caught.value is failure
+        # An already-completed failing future can propagate before its runtime
+        # completion callback is delivered. Inspect aggregate counters after
+        # that callback, not at an assumed scheduling boundary.
+        async with asyncio.timeout(2):
+            while runtime.snapshot()['operations']['health.canonical_obligation']['active']:
+                await asyncio.sleep(0)
         metrics = runtime.work_metrics.snapshot()['metrics']
         assert metrics['health.canonical.card_get.worker_failed']['total'] == 1
         assert runtime.snapshot()['operations']['health.canonical_obligation']['failed'] == 1

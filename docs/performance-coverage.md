@@ -1,3 +1,11 @@
+# Corrected health diagnostic test observation — 2026-10-19
+
+All **611 findings and107 concerns remain open**; all610 prior rows and the initial numeric artifact remain unchanged. [CI follow-up evidence](benchmarks/systemic-health-canonical-ci-20261019.json) retains failed run39339742396 at initial1538cea9: two failed shards, two successful shards and successful smoke. One new test propagated the correct exception and recorded leaf error1, then incorrectly assumed the aggregate completion callback had already run. The **test now waits for actual completion** before inspecting aggregate counters; product instrumentation/runtime behavior is unchanged.
+
+The other failure repeats the unchanged200ms snapshot responsiveness deadline, with a238ms task callback recorded on LinuxPython3.14.8. CPU/scheduling attribution remains unknown; earlier PR550 evidence stays separate. No deadline or warning threshold changed. **19 guarded disposable tests pass** after the correction, including the18 earlier cases and the unchanged snapshot case; these overlap, not37 unique tests. Local isolated success does not erase the CI failure or prove CI stability. New exact-head CI and fresh stable supervisor/independent integration gates remain required. No install/restart/backup action or acceptance is claimed.
+
+## Preserved prior inventory and evidence
+
 # Health canonical attribution — 2026-10-19
 
 All **610 findings and106 concerns remain open**; all609 prior rows are preserved unchanged. [Numeric source evidence](benchmarks/systemic-health-canonical-diagnostics-20261019.json) records a bounded instrumentation change for `health.canonical_obligation`. The prior22:27 runtime snapshot retained2493 submissions,41 slow calls and2 caller timeouts, with process maximum2692.116ms; its256-sample window p50/p95/p99/max was8.737/165.221/1381.544/2243.066ms. These are overlapping process counters and a bounded window, not leaf-specific causes or fresh logs.
