@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T04:23:24.310510+00:00",
-  "completion": "OPEN;597findings/101concerns. All596priorrows unchanged. Exact53b installed/loaded/retested and savedhandoffterminalconfirmed;95GETs0errors but5violations, runtime23slowcalls/11families/1failure. New summary guard source118tests+4subtests, baseline5fail/1pass, source100iterations 3warnings/12thresholdobservations; every priorfailure retained. No candidate installation, threshold/default/receipt/acceptance change. Full peer/log/startup/drain/backup/independent gates remain.",
+  "as_of": "2026-10-19T22:24:08.313460+00:00",
+  "completion": "OPEN;598rows/102concerns. Previous597rows unchanged. Lock release attribution is source-only with unchanged inclusive hold/warnings,27tests and11overlapping final contracts. Pure observation overhead retained. PR547 integrated/mainCIgreen, installed228/load53b distinction preserved; prior3warnings/12thresholds and every deployment/peer/log/startup/drain/backup independent gate remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -138,7 +138,8 @@
     "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
     "docs/benchmarks/systemic-gc-fresh-main-20261018.json",
     "docs/benchmarks/systemic-dispatch-summary-20261019.json",
-    "docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json"
+    "docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json",
+    "docs/benchmarks/systemic-lock-release-attribution-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209453,6 +209454,30 @@
       "resolution": "open",
       "next_actor": "Existing systemic session and normalPA supervisor/independent verifier",
       "next_action": "Complete current exact-source PR/CI/stable-supervisor/integration gates; coordinate any separately authorized rollout with backupowner stable window; retain all latency and acceptance residuals."
+    },
+    {
+      "id": "concern:lock-release-rescheduling-attribution",
+      "kind": "concern",
+      "finding": "Inclusive lock timing can include unlocked scheduling time",
+      "family": "performance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_disposable_boundary_confirmed_historical_causality_unverified",
+      "cause": "Existing finished timestamp is captured after lock.release(); unlock and caller rescheduling can therefore inflate inclusive hold relative to critical-section body. This is attribution, not proof of any historical stall cause.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-lock-release-attribution-20261019.json",
+        "sha256": "46089e969a7e93b609113ad55554fa09c245f91c1c2adfeadf2da7fddd6517a3",
+        "scope": "additive lock release attribution; source only",
+        "resolution": "open"
+      },
+      "fix_or_existing_owner": "Existing systemic session: retain inclusive hold/warnings and add release interval diagnostics.",
+      "implemented": "Scoped source diagnostics; integration/deployment pending",
+      "merged": [],
+      "deployed": "Not deployed; actual loaded53b/installed228 remain separate",
+      "retested": "27runtime/filesystem/deadline/nesting contracts;11overlapping final targeted; controlled available-lock interval and40pureoverheadpairs",
+      "resolution": "open",
+      "next_actor": "Existing systemic owner, release owner and normal independent acceptance scheduler",
+      "next_action": "Integrate through readyPR/CI/stable supervisor; coordinate exact deployment; attribute fresh mixed residuals without treating instrumentation as performance acceptance.",
+      "report": "572f7d68-489b-442c-b656-4022cbb8793d"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -213794,6 +213819,20 @@
       "resolution": "open",
       "current_observation": "Full installed438sourcefiles/52versions/38templatecache and loaded source/package match0d6638/PID45958; owner784 confirms healthy terminal handoff. Earlier divergence retained, no false retroactive closure. Later53b42 is unactivated.",
       "next_action": "Fresh context checks after correlated runtime decision; no competing restart, old527 retry or acceptance fabrication."
+    },
+    "concern:dispatch-summary-discarded-turn-snapshot": {
+      "merged_pr": 547,
+      "merge": "52f042ad71c24763757509013c7e564ffbe4c203",
+      "watch": "0cc93ffc-dd97-4713-845a-13bfdfd96435",
+      "head_main_ci": "5success each",
+      "deployed": "Not activated; installed228 excludes547",
+      "resolution": "open",
+      "followup": {
+        "artifact": "docs/benchmarks/systemic-lock-release-attribution-20261019.json",
+        "sha256": "46089e969a7e93b609113ad55554fa09c245f91c1c2adfeadf2da7fddd6517a3",
+        "scope": "additive lock release attribution; source only",
+        "resolution": "open"
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -215853,5 +215892,11 @@
     },
     "resolution": "open",
     "scope": "Verified53b source/package/PID/startup/config/lease/438files/52versions/38templates/twoJS assets;95GETs0errors5violations;87operations29routes23processslowcalls11families1failure. All unresolvedrows remainopen."
+  },
+  "lock_release_attribution_stage": {
+    "artifact": "docs/benchmarks/systemic-lock-release-attribution-20261019.json",
+    "sha256": "46089e969a7e93b609113ad55554fa09c245f91c1c2adfeadf2da7fddd6517a3",
+    "scope": "additive lock release attribution; source only",
+    "resolution": "open"
   }
 }

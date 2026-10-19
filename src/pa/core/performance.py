@@ -13,6 +13,7 @@ SAMPLE_LIMIT = 256
 FILESYSTEM_PHASES = (
     'file_lock_wait_ms',
     'file_lock_hold_ms',
+    'file_lock_release_ms',
     'atomic_write_calls',
     'atomic_write_bytes',
     'file_fsync_calls',
@@ -34,7 +35,9 @@ class OperationObservation:
     queue_wait_ms: float = 0.0
     python_lock_wait_ms: float = 0.0
     python_lock_hold_ms: float = 0.0
+    python_lock_release_ms: float = 0.0
     outer_lock_hold_ms: float = 0.0
+    outer_lock_release_ms: float = 0.0
     lock_depth: int = 0
     lock_events_total: int = 0
     lock_events: list[dict] = field(default_factory=list)
@@ -50,6 +53,7 @@ class OperationObservation:
     sqlite_busy_failures: int = 0
     file_lock_wait_ms: float = 0.0
     file_lock_hold_ms: float = 0.0
+    file_lock_release_ms: float = 0.0
     atomic_write_calls: int = 0
     atomic_write_bytes: int = 0
     file_fsync_calls: int = 0
