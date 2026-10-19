@@ -1,3 +1,22 @@
+# Bound unselected session JSON transfer — 2026-10-19
+
+All **612 findings and108 concerns remain open**; all611 prior rows are preserved unchanged. [Complete numeric evidence](benchmarks/systemic-session-selected-transfer-20261019.json) confirms a remaining layer beneath prior selected-model hydration: the existing list snapshot still fetched and retained every matching row’s opaque configuration/metrics JSON. A native metadata selector now fetches complete rows only for selected persisted sessions, under the **same SQLite read snapshot** as their selection metadata. The original all-row helper, activity/custom-adapter paths and complete selected payloads remain available.
+
+Sixty guarded disposable contracts pass, including23 new contracts for filter/decoder parity, tied/pinned order, selected-ID replacement, live overrides, exact native/custom snapshot/read/decoder/list behavior, concurrent writer consistency, outer transaction rollback and error cleanup. Earlier46/48/57-test stages overlap these60 cases. No production Store/EventLog/workspace or service workload was used.
+
+Twenty alternating exact-baseline/source pairs per scenario use64 retained sessions with8KiB configuration and8KiB metrics each. All metadata and complete selected models match. Returned-text accounting occurs outside query timing and is **not HTTP bytes or physical I/O**:
+
+| Persisted rows selected | Returned text bytes, baseline → source | Query p95 ms, baseline → source |
+|---:|---:|---:|
+|0|1,059,520 → 3,264|2.874 → 0.689|
+|2|1,059,520 → 36,374|3.750 → 1.309|
+|32|1,059,520 → 533,024|4.347 → 3.870|
+|64|1,059,520 → 1,062,784|4.133 → 4.637|
+
+The **all-selected regression is retained**, not hidden: nonempty native selection adds a second SELECT plus SAVEPOINT/RELEASE. Retained complete rows change from64 to the selected count, while metadata still covers all64. Warm host timings are uncontrolled; realistic WAL/checkpoint contention while holding the metadata read snapshot, larger counts, selected-heavy payloads and full endpoint/mixed workloads remain unverified. Selected HTTP response bytes are unchanged. No historical sole-cause, threshold adjustment, install/restart or deployed acceptance is claimed. Existing backup stable-build/release/receipt gates and ordinary independent17d acceptance remain in force; DB89957’s accepted original scope stays closed.
+
+## Preserved prior inventory and evidence
+
 # Corrected health diagnostic test observation — 2026-10-19
 
 All **611 findings and107 concerns remain open**; all610 prior rows and the initial numeric artifact remain unchanged. [CI follow-up evidence](benchmarks/systemic-health-canonical-ci-20261019.json) retains failed run39339742396 at initial1538cea9: two failed shards, two successful shards and successful smoke. One new test propagated the correct exception and recorded leaf error1, then incorrectly assumed the aggregate completion callback had already run. The **test now waits for actual completion** before inspecting aggregate counters; product instrumentation/runtime behavior is unchanged.

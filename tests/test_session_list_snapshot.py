@@ -1,5 +1,7 @@
 """Bound selected JSON hydration while preserving complete sidebar responses."""
 from datetime import UTC, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -164,3 +166,142 @@ def test_custom_row_decoder_keeps_its_original_selection_and_payload_semantics(l
     finally:
         if custom is not store:
             custom.close_thread_connection()
+
+
+@pytest.mark.parametrize('filters', [
+    {}, {'label': 'even'}, {'statuses': ('closed',)},
+    {'exclude_statuses': ('closed',)}, {'include_archived': False},
+    {'archived': True, 'purposes': ('chat',)},
+    {'session_ids': {'s-01', 's-07'}}, {'session_ids': set()},
+    {'chat_group_id': 'group'}, {'include_metrics': False},
+])
+def test_selective_snapshot_preserves_all_filter_and_decoder_contracts(listing, filters):
+    store, _, _ = listing
+    expected = store.list_sessions(**filters)
+    chosen = [row.id for row in expected[::2]]
+    snapshot = store.session_list_snapshot(select_ids=lambda _: chosen, **filters)
+    assert [row.id for row in snapshot.candidates] == [row.id for row in expected]
+    assert set(snapshot._rows) == set(chosen)
+    assert [snapshot.hydrate(key).model_dump() for key in chosen] == [
+        row.model_dump() for row in expected[::2]
+    ]
+
+
+def test_route_transfers_full_rows_only_after_metadata_selection(listing):
+    store, _, request = listing
+    original = CardProjection._list_session_rows
+    returned = []
+    def read(self, **filters):
+        rows = original(self, **filters)
+        returned.append((len(rows), set(rows[0].keys()) if rows else set()))
+        return rows
+    with patch.object(CardProjection, '_list_session_rows', new=read):
+        result = agent_chat.list_agent_sessions(request, view='all', limit=2, selected_session_id='s-11')
+    assert [row['id'] for row in result] == ['s-00', 's-11']
+    assert returned[0] == (12, {'id', 'status', 'purpose', 'archived_at', 'pinned_at',
+                               'human_activity_at', 'updated_at'})
+    assert returned[1][0] == 2 and {'config_json', 'metrics_json', 'execution_binding_json'} <= returned[1][1]
+
+
+def test_concurrent_writer_cannot_mix_selection_and_selected_details(listing):
+    store, _, _ = listing
+    old = store.get_session('s-01').model_dump()
+    def write():
+        with sqlite3.connect(store.db_path) as connection:
+            connection.execute('UPDATE agent_sessions SET status=?,updated_at=?,config_json=?,metrics_json=? WHERE id=?',
+                               ('closed', (NOW + timedelta(days=1)).isoformat(),
+                                '{"later":true}', '{"later":true}', 's-01'))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        def choose(candidates):
+            assert next(row for row in candidates if row.id == 's-01').updated_at == old['updated_at']
+            executor.submit(write).result(timeout=2)
+            return ['s-01']
+        snapshot = store.session_list_snapshot(select_ids=choose)
+    assert snapshot.hydrate('s-01').model_dump() == old
+    assert store.get_session('s-01').metrics_json == {'later': True}
+    assert store.get_session('s-01').status == 'closed'
+
+
+def test_selector_failure_and_invalid_ids_release_read_transaction(listing):
+    store, _, _ = listing
+    failure = ValueError('fixture selection failed')
+    def fail(_):
+        raise failure
+    with pytest.raises(ValueError) as caught:
+        store.session_list_snapshot(select_ids=fail)
+    assert caught.value is failure
+    with pytest.raises(ValueError, match='outside its snapshot'):
+        store.session_list_snapshot(label='even', select_ids=lambda _: ['s-01'])
+    with store._conn() as connection:
+        assert not connection.in_transaction
+    assert store.get_session('s-01') is not None
+
+
+def test_selective_read_does_not_commit_or_discard_outer_transaction(listing):
+    store, _, _ = listing
+    old_label = store.get_session('s-01').label
+    with pytest.raises(RuntimeError, match='outer rollback'):
+        with store._conn() as connection:
+            connection.execute('UPDATE agent_sessions SET label=? WHERE id=?', ('uncommitted', 's-01'))
+            snapshot = store.session_list_snapshot(select_ids=lambda _: ['s-01'])
+            assert snapshot.hydrate('s-01').label == 'uncommitted'
+            assert connection.in_transaction
+            raise RuntimeError('outer rollback')
+    assert store.get_session('s-01').label == old_label
+
+
+@pytest.mark.parametrize('raw', ['{"last":1,"last":2}', '{malformed', 'null', '[]'])
+def test_selective_details_preserve_malformed_and_duplicate_json_semantics(listing, raw):
+    store, _, _ = listing
+    with store._conn() as connection:
+        connection.execute('UPDATE agent_sessions SET metrics_json=? WHERE id=?', (raw, 's-01'))
+    snapshot = store.session_list_snapshot(select_ids=lambda _: ['s-01'])
+    try:
+        expected = store.get_session('s-01')
+    except ValidationError:
+        with pytest.raises(ValidationError):
+            snapshot.hydrate('s-01')
+    else:
+        assert snapshot.hydrate('s-01').model_dump() == expected.model_dump()
+
+
+@pytest.mark.parametrize('extension', ['snapshot', 'rows'])
+def test_custom_snapshot_and_row_readers_keep_preselector_call_contract(listing, extension):
+    store, manager, request = listing
+    calls = []
+    class CustomProjection(CardProjection):
+        pass
+    if extension == 'snapshot':
+        def snapshot(self, **filters):
+            assert 'select_ids' not in filters
+            calls.append('snapshot')
+            return super(CustomProjection, self).session_list_snapshot(**filters)
+        CustomProjection.session_list_snapshot = snapshot
+    else:
+        def rows(self, **filters):
+            assert '_columns' not in filters
+            calls.append('rows')
+            return super(CustomProjection, self)._list_session_rows(**filters)
+        CustomProjection._list_session_rows = rows
+    custom = CustomProjection(store.db_path)
+    manager.store = request.app.state.ctx.store = custom
+    try:
+        with patch.object(agent_chat, '_session_list_item', side_effect=lambda request, session, **_: session.id):
+            assert agent_chat.list_agent_sessions(request, view='all', limit=2) == ['s-00', 's-01']
+        assert calls == [extension]
+    finally:
+        custom.close_thread_connection()
+
+
+@pytest.mark.parametrize('view', ['active', 'chats', 'all'])
+def test_tied_selection_order_and_pins_match_complete_legacy_path(listing, view):
+    store, _, request = listing
+    with store._conn() as connection:
+        connection.execute('UPDATE agent_sessions SET updated_at=?,human_activity_at=?',
+                           (NOW.isoformat(), NOW.isoformat()))
+        connection.execute('UPDATE agent_sessions SET pinned_at=? WHERE id IN (?,?)',
+                           (NOW.isoformat(), 's-02', 's-07'))
+    kwargs = dict(view=view, limit=3, selected_session_id='s-11')
+    with patch.object(store, 'list_sessions', wraps=store.list_sessions):
+        expected = agent_chat.list_agent_sessions(request, **kwargs)
+    assert agent_chat.list_agent_sessions(request, **kwargs) == expected

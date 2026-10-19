@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T23:14:06.562962+00:00",
-  "completion": "OPEN;611rows/107concerns. All610priorrows unchanged; original initial18tests/overhead and failedCI retained.19corrected guarded tests pass, newexactheadCIpending. No productthreshold/runtimebehavior change, no install/restart/acceptance. Every prior startup/drain/GCfreshness/peer/logloss/backup/rollout/independent gate remains open.",
+  "as_of": "2026-10-19T23:33:48.974514+00:00",
+  "completion": "OPEN;612rows/108concerns. All611priorrows unchanged. Selected raw-row transfer repair has60guarded contracts andpaired64row source evidence, includingall-selected regression; no deployed/wholeacceptance. Prior139operation/86route andoriginalbaseline inventories, everyfailure/startup/drain/order/GCfreshness/peer/logloss/retention/backup/rollout/independent17d gate remain open. No install/restart or newworker.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -145,7 +145,8 @@
     "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
     "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json",
     "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json",
-    "docs/benchmarks/systemic-health-canonical-ci-20261019.json"
+    "docs/benchmarks/systemic-health-canonical-ci-20261019.json",
+    "docs/benchmarks/systemic-session-selected-transfer-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -210873,6 +210874,28 @@
       "resolution": "open",
       "next_actor": "Existing systemic session and ordinary independent scheduler",
       "next_action": "Require corrected exactheadCI terminalgreen and independent fresh review/supervisor gates; preserve initial failures and unknown snapshot CPU/scheduling attribution."
+    },
+    {
+      "id": "concern:session-list-unselected-raw-transfer",
+      "kind": "concern",
+      "finding": "Metadata-first session selection still fetched every matching row\u2019s full opaque JSON before bounding hydration",
+      "family": "agent",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_exact_paired_fixture_confirmed_live_share_unverified",
+      "cause": "Existing metadata selection decoded only chosen sessions but fetched every matching completeSQLite row/opaqueJSON first. Exact64row fixture transfers1059520textbytes and retains64complete rows before selecting2; patch36374bytes/2complete rows with equal metadata and selectedmodels.",
+      "fix_or_existing_owner": "Same systemic session1eb; bounded native raw transfer repair, no competing DB/backup worker.",
+      "implemented": "Optional pure metadata selector under oneSQLite savepoint/read snapshot; complete selectedrows fetched before release and decoded using unchanged decoder. Original filters/order, pinned/human ties, selected-ID replacement, live runtimeoverride, customsnapshot/rowdecoder/reader/list adapters, full responsefields, malformed/duplicateJSON, outertransaction and exception semantics preserved by contracts. Default helper withoutselector stays all-hydratable; activity/custom paths keep old behavior.",
+      "merged": [],
+      "deployed": "Not installed/loaded; source evidence only.",
+      "retested": "60guarded disposable contracts and20alternatingpairs each for0/2/32/64selected rows outof64. Initialprototype andalloverlapping teststages retained.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-session-selected-transfer-20261019.json",
+        "sha256": "51b75a9577898d2e0ff95af64523d7a7a25328c02fc3cf8c458da7ba115c032e"
+      },
+      "residual": "TwoSELECTs plusSAVEPOINT/RELEASE instead ofoneSELECT for nonempty native selection; selected0 skips detailSELECT. All64 selected p95 rises4.133\u21924.637ms andreturnedtextbytes1059520\u21921062784 in thissample. Warm uncontrolled host; SQL helpertime, no endpoint or physicaldiskmeasurement. Read snapshot is retained through purePython selection; realisticWAL/checkpoint contention and larger/selected-heavy workloads remainunverified. Selectedpayload/HTTPresponse volume is unchanged and remainsa separateconcern.",
+      "resolution": "open",
+      "next_actor": "Same systemic session, existing releaseauthority and ordinary independent scheduler",
+      "next_action": "ReadyPR/exactheadsupervisor+independentgates/mainCI; preserve backupstablebuild and pendingactivationreceipt/interaction identities; then separatelyauthorized deployedroute/mixed/large-selection/WAL/CPU/disk acceptance. Retain allselected regression and original thresholds."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -254342,6 +254365,11 @@
   "health_canonical_ci_followup": {
     "artifact": "docs/benchmarks/systemic-health-canonical-ci-20261019.json",
     "sha256": "8e1d1e1e46202a5a743b245fdc3ecf59bacb212617aa72e103f89f635c6d03df",
+    "resolution": "open"
+  },
+  "session_selected_transfer_stage": {
+    "artifact": "docs/benchmarks/systemic-session-selected-transfer-20261019.json",
+    "sha256": "51b75a9577898d2e0ff95af64523d7a7a25328c02fc3cf8c458da7ba115c032e",
     "resolution": "open"
   }
 }

@@ -1623,42 +1623,10 @@ def request_session_diagnostics(
     }
 
 
-def list_agent_sessions(
-    request: Request,
-    view: Literal["active", "chats", "activity", "all"] = "active",
-    archived: bool = False,
-    activity_filter: Literal["all", "needs_you", "running", "completed"] = "all",
-    limit: int = 250,
-    selected_session_id: str | None = None,
-    detail: Literal["summary", "full"] = "summary",
-) -> list[dict]:
-    from pa.domain.projection import CardProjection
-
-    mgr = _require_session_traffic_ready(request)
-    runtimes = {
-        runtime.session.id: runtime
-        for runtime in mgr.list_runtimes()
-        if not runtime._closed
-    }
-    filters = (
-        {"purposes": ("chat",), "archived": archived} if view == "chats"
-        else {"purposes": ("automated_run", "one_shot_job")} if view == "activity"
-        else {"exclude_statuses": ("closed",)} if view == "active" else {}
-    )
-    snapshot = None
-    if (
-        view != "activity"
-        and isinstance(mgr.store, CardProjection)
-        and inspect.isfunction(CardProjection.list_sessions)
-        and inspect.getattr_static(mgr.store, "list_sessions") is CardProjection.list_sessions
-        and inspect.getattr_static(mgr.store, "_row_to_session")
-        is inspect.getattr_static(CardProjection, "_row_to_session")
-    ):
-        snapshot = mgr.store.session_list_snapshot(**filters)
-        persisted = snapshot.candidates
-    else:
-        # Preserve custom/legacy Store contracts and workflow-aware filtering.
-        persisted = mgr.store.list_sessions(**filters)
+def _select_agent_session_rows(
+    request, persisted, runtimes, view, archived, activity_filter, limit, selected_session_id,
+):
+    """Preserve sidebar filtering/order and selected-row replacement on metadata."""
     sessions = {session.id: session for session in persisted}
     sessions.update({session_id: runtime.session for session_id, runtime in runtimes.items()})
     # Filter durable metadata before reading transcripts, cards and dispatches.
@@ -1751,6 +1719,69 @@ def list_agent_sessions(
         )
         if selected is not None:
             bounded[-1] = selected
+    return sessions, bounded
+
+
+def list_agent_sessions(
+    request: Request,
+    view: Literal["active", "chats", "activity", "all"] = "active",
+    archived: bool = False,
+    activity_filter: Literal["all", "needs_you", "running", "completed"] = "all",
+    limit: int = 250,
+    selected_session_id: str | None = None,
+    detail: Literal["summary", "full"] = "summary",
+) -> list[dict]:
+    from pa.domain.projection import CardProjection
+
+    mgr = _require_session_traffic_ready(request)
+    runtimes = {
+        runtime.session.id: runtime
+        for runtime in mgr.list_runtimes()
+        if not runtime._closed
+    }
+    filters = (
+        {"purposes": ("chat",), "archived": archived} if view == "chats"
+        else {"purposes": ("automated_run", "one_shot_job")} if view == "activity"
+        else {"exclude_statuses": ("closed",)} if view == "active" else {}
+    )
+    snapshot = None
+    if (
+        view != "activity"
+        and isinstance(mgr.store, CardProjection)
+        and inspect.isfunction(CardProjection.list_sessions)
+        and inspect.getattr_static(mgr.store, "list_sessions") is CardProjection.list_sessions
+        and inspect.getattr_static(mgr.store, "_row_to_session")
+        is inspect.getattr_static(CardProjection, "_row_to_session")
+    ):
+        selection = None
+
+        def select_ids(candidates):
+            nonlocal selection
+            selection = _select_agent_session_rows(
+                request, candidates, runtimes, view, archived, activity_filter, limit, selected_session_id,
+            )
+            # Live sessions win even if their durable row is absent or older.
+            return [item["id"] for item in selection[1] if item["id"] not in runtimes]
+
+        if (
+            inspect.getattr_static(mgr.store, "session_list_snapshot") is CardProjection.session_list_snapshot
+            and inspect.getattr_static(mgr.store, "_list_session_rows") is CardProjection._list_session_rows
+        ):
+            snapshot = mgr.store.session_list_snapshot(select_ids=select_ids, **filters)
+            sessions, bounded = selection
+        else:
+            # Existing custom snapshot/read helpers keep their original call
+            # contract; only the exact native reader accepts the new selector.
+            snapshot = mgr.store.session_list_snapshot(**filters)
+            sessions, bounded = _select_agent_session_rows(
+                request, snapshot.candidates, runtimes, view, archived, activity_filter, limit, selected_session_id,
+            )
+    else:
+        # Preserve custom/legacy Store contracts and workflow-aware filtering.
+        persisted = mgr.store.list_sessions(**filters)
+        sessions, bounded = _select_agent_session_rows(
+            request, persisted, runtimes, view, archived, activity_filter, limit, selected_session_id,
+        )
     if snapshot is not None:
         sessions.update({
             item["id"]: snapshot.hydrate(item["id"])
