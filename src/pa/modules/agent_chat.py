@@ -8,6 +8,7 @@ import inspect
 import json
 import logging
 import re
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -4155,15 +4156,71 @@ async def session_close_all(request: Request) -> dict:
     return result
 
 
+async def _close_recovery_preserving_workspace(request: Request, mgr, session_id: str) -> dict:
+    """Retire an idle failed dispatch source without collecting any workspaces."""
+    principal = get_principal_id(request)
+    async with mgr.label_lock("execution-boundary:" + session_id), AsyncExitStack() as stack:
+        if session_id in mgr._admitting_sessions:
+            raise HTTPException(409, detail={"code": "session_admission_in_progress"})
+        # Fence reconnect/provider publication while the source is retired. The
+        # prompt lock also serializes this check with new prompt/queue admission.
+        mgr._admitting_sessions.add(session_id)
+        try:
+            live = mgr.get(session_id)
+            if live and not live._closed:
+                await stack.enter_async_context(live._prompt_admission_lock)
+            source = await _offload(mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id)
+            if not source:
+                raise HTTPException(404, detail="Session not found")
+            if source.principal_id not in {None, principal}:
+                raise HTTPException(403, detail="Session is owned by another principal")
+            durable = (source.config_json or {}).get("durable_runtime") or {}
+            pending_settings = (source.config_json or {}).get("execution_pending_settings") or {}
+            if (
+                (live and (live.prompting or live._queue or live._in_flight or live._prompt_lock.locked()))
+                or durable.get("queued_prompts") or durable.get("in_flight")
+            ):
+                raise HTTPException(409, detail={"code": "context_boundary_busy"})
+            if pending_settings.get("state") in {"pending", "failed"}:
+                raise HTTPException(409, detail={"code": "context_boundary_pending_settings"})
+            if source.status not in {RECOVERY_BLOCKED_STATUS, "closed"} or not source.dispatch_id:
+                raise HTTPException(409, detail={"code": "recovery_source_not_terminal"})
+            ledger = DispatchStore(mgr.settings.data_dir, read_only=True)
+            origin = await _offload(mgr, "dispatch.recovery_source_read", ledger.get, source.dispatch_id)
+            if (
+                not origin or origin.state not in {"completed", "failed", "cancelled", "acknowledged"}
+                or origin.session_id != source.id or origin.card_id != source.card_id
+                or origin.project_id != source.project_id
+                or origin.realm_id != source.realm_id or origin.principal_id != source.principal_id
+            ):
+                raise HTTPException(409, detail={"code": "dispatch_context_boundary_required"})
+            if live and not live._closed:
+                await live.close(reason="workspace_preserving_recovery_close", reconcile_workspace=False)
+                mgr._runtimes.pop(session_id, None)
+            else:
+                await _close_orphan_session(mgr, source, reason="workspace_preserving_recovery_close")
+            # Lease ownership ends with the closed session. Retain its worktree,
+            # branch, history and completion state; never invoke collection here.
+            expired = await _offload(mgr, "workspace.expire_session", mgr.workspace_manager.expire_session, session_id)
+            return {"ok": True, "live": False, "workspace_preserved": True, "leases_expired": expired}
+        finally:
+            mgr._admitting_sessions.discard(session_id)
+
+
 @router.post("/sessions/{session_id}/close")
-async def session_close(request: Request, session_id: str) -> dict:
+async def session_close(request: Request, session_id: str, preserve_workspace: bool = False) -> dict:
     """Compatibility endpoint: archive chats; close bounded activities.
 
     After abrupt restarts, sessions can remain `prompting`/`connected` in the
     durable store with no live ACP runtime. Operators still need `/close` to
     clear those so card labels can be reused.
+
+    preserve_workspace retires only an idle recovery-blocked source of a terminal
+    dispatch, releasing its lease without running workspace garbage collection.
     """
     mgr = _require_session_traffic_ready(request)
+    if preserve_workspace:
+        return await _close_recovery_preserving_workspace(request, mgr, session_id)
     durable_session = await _offload(
         mgr, "sqlite.agent_session_read", mgr.store.get_session, session_id
     )
