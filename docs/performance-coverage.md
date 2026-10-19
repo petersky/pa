@@ -1,3 +1,13 @@
+# Existing saved GC plan freshness risk — 2026-10-19
+
+All **609 findings and105 concerns remain open**; all608 prior rows are preserved unchanged. A [separate safe observation](benchmarks/systemic-gc-saved-plan-observation-20261019.json) records an existing execution risk discovered while assessing metadata batching. Saved-plan execution invokes delete callbacks from its persisted candidate list without rereading current catalog age/realm, reachability or pins. The route passes the approved plan directly to that existing executor.
+
+In a disposable1-row catalog/journal fixture with a fixed acknowledged epoch, a30-day-old candidate was planned, then its metadata was refreshed into the14-day safety window. Execution still admitted the callback. The callback was **only a list append: zero object bytes deleted**, no object files/live Store/EventLog/refs/backup were touched. This confirms stale-plan callback admission in the fixture, not production data loss or actual active GC usage. Reportf320ad17rev1/deliverypending preserves exact source hash and observation. The existing systemic session owns a separate audit/repair of execute/resume freshness and canonical publication fences before any metadata optimization; no new worker or production GC is authorized by the report.
+
+The bounded catalog reader change below leaves GC selection/execution untouched. Its18tests and small paired timings remain source evidence only. The metadata N+1 prototype remains **unimplemented**; a faster selection loop alone does not establish deletion safety. Existing backup owner review/stable-build window, release ownership and independent acceptance stay unchanged.
+
+## Preserved prior inventory and evidence
+
 # Bounded catalog hash reads and remaining GC metadata work — 2026-10-19
 
 All **608 findings and104 concerns remain open**. Every606 prior row is preserved unchanged. The [complete source/prototype/test/failure evidence](benchmarks/systemic-catalog-hash-reads-20261019.json) separates a small implemented reader repair from an unimplemented GC metadata prototype.
