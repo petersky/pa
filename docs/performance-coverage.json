@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T22:30:34.733543+00:00",
-  "completion": "OPEN;606rows/102concerns. Every598previousrow unchanged; fresh139operation86route processsnapshot adds4operation/4route findings.70slow-or-failed names/1012slowcalls/1012failed/958timedout counters overlap, not unique incidents. Eventloop processmax1071133ms unverifiedcause; complete p50/p95/p99/max/count/bytes retained, no pooledquantiles. PR549sourceintegrated only; loaded53b versus installed228 remains; alloriginalbaseline/peer/log/backup/startup/drain/ordinaryindependentgates open.",
+  "as_of": "2026-10-19T22:51:26.581625+00:00",
+  "completion": "OPEN;608rows/104concerns. All606 priorrows unchanged, complete139operation86route current-process inventory and original baseline/log/peer gaps retained. Bounded catalog reader source measured/tested only; GC metadata prototype remains unimplemented. Latest PR549/550 CIgreen with original PR550mainfailure and release0f33quiescefailure retained. No installation/restart/deployed/whole-PA acceptance; backup review stable-build window and normal independent gates unchanged.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -141,7 +141,8 @@
     "docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json",
     "docs/benchmarks/systemic-lock-release-attribution-20261019.json",
     "docs/benchmarks/systemic-live-runtime-20261019T2227.json",
-    "docs/benchmarks/systemic-live-runtime-20261019T2227-summary.json"
+    "docs/benchmarks/systemic-live-runtime-20261019T2227-summary.json",
+    "docs/benchmarks/systemic-catalog-hash-reads-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -210764,6 +210765,48 @@
       "resolution": "open",
       "next_actor": "Existing systemic owner and ordinary independent scheduler",
       "next_action": "Retain this family in representative branch inventory, attribute queue/service/lock/CPU/I/O effects and verify actual scoped fixes before closure."
+    },
+    {
+      "id": "concern:catalog-hash-cursor-amplification",
+      "kind": "concern",
+      "finding": "Catalog hash inventory observes a cursor step per row",
+      "family": "sync",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_amplification_fixture_only",
+      "cause": "Confirmed one ordered SELECT is fetched by Python iterator per row; finite128-row fetches preserve complete ordered output.1000rows:1004->12 observed execute/fetch calls, not1004->12 distinct SQL statements.",
+      "fix_or_existing_owner": "Existing systemic session1eb/card7894; no competing backup/release owner or new worker.",
+      "implemented": "ObjectCatalog.iter_hashes bounded128-row fetch iteration; source candidate only.",
+      "merged": [],
+      "deployed": "Candidate not installed/loaded; last actual runtime53b separately from installed228.",
+      "retested": "18 source contracts and exact paired helper fixture; no API/deployed/mixed acceptance.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+        "sha256": "8908197c28d724801724114270fcf39bb91cdd7029ecb6de3c4f73ec2e8865db"
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and ordinary independent scheduler",
+      "next_action": "Require exact-head CI/supervisor/independent review, then separately authorized deployment and representative GC-plan route/remaining inventory acceptance; do not attribute sync.object_collect or transcript GC tails to this helper."
+    },
+    {
+      "id": "concern:gc-plan-per-object-metadata",
+      "kind": "concern",
+      "finding": "Dry-run GC planner reads metadata once per unpinned catalog hash",
+      "family": "sync",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_amplification_fixture_only",
+      "cause": "Source-confirmed eligible-hash metadata N+1. Three1000-row fixed-epoch prototype pairs preserve full468candidate/168pin plan;2456->1016 observed execute/fetch calls,1726rows unchanged. Journal persistence bypassed in both methods.",
+      "fix_or_existing_owner": "Existing systemic session1eb/card7894; no competing backup/release owner or new worker.",
+      "implemented": "NOT implemented. Bounded metadata batching remains a prototype; current metadata query loop unchanged.",
+      "merged": [],
+      "deployed": "Candidate not installed/loaded; last actual runtime53b separately from installed228.",
+      "retested": "18 source contracts and exact paired helper fixture; no API/deployed/mixed acceptance.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+        "sha256": "8908197c28d724801724114270fcf39bb91cdd7029ecb6de3c4f73ec2e8865db"
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and ordinary independent scheduler",
+      "next_action": "Validate missing-row/realm/mtime/concurrent-write/error/journal/ack/pin semantics and realistic route attribution before choosing a repair; no production GC/deletion or historical sole-cause claim."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -252119,9 +252162,15 @@
       "watch": "afe76671-cdc9-4e8a-b06a-106a89f82c4b",
       "head_ci": 39334757507,
       "main_ci": 39335222796,
-      "main_ci_state": "Pending independent terminal read",
+      "main_ci_state": "39335222796 terminalSUCCESS; source only, no installation/activation inferred",
       "installed": false,
       "loaded": false,
+      "resolution": "open"
+    },
+    "concern:ci525-snapshot-latency-attribution": {
+      "followup_artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+      "ci39336082802": "Original200ms snapshot failure/callback223ms retained; one same-head retry latestgreen, causeunverified.",
+      "problem": "d2781497 revision2",
       "resolution": "open"
     }
   },
@@ -254201,6 +254250,11 @@
     "routes": 86,
     "slow_or_failed_names": 70,
     "rows": 606,
+    "resolution": "open"
+  },
+  "catalog_hash_read_stage": {
+    "artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+    "sha256": "8908197c28d724801724114270fcf39bb91cdd7029ecb6de3c4f73ec2e8865db",
     "resolution": "open"
   }
 }

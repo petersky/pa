@@ -32,6 +32,7 @@ CLASS_UNKNOWN = "unknown"
 COVERAGE_RATIO = 0.95
 BACKFILL_BATCH = 500
 BACKFILL_CHECKPOINT_EVERY = 250
+CATALOG_READ_BATCH = 128
 
 RETENTION_REASONS = {
     CLASS_COMMIT: "reachable_realm_ancestry",
@@ -393,11 +394,16 @@ class ObjectCatalog:
         }
 
     def iter_hashes(self, *, limit: int | None = None) -> list[str]:
+        """Read the complete ordered inventory with finite Python fetch batches."""
         sql = "SELECT object_hash FROM objects ORDER BY object_hash"
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
         with self._db() as conn:
-            return [str(row[0]) for row in conn.execute(sql)]
+            cursor = conn.execute(sql)
+            hashes = []
+            while rows := cursor.fetchmany(CATALOG_READ_BATCH):
+                hashes.extend(str(row[0]) for row in rows)
+            return hashes
 
     def hashes_missing_from(self, known: Iterable[str], *, limit: int = 512) -> list[str]:
         """Return up to `limit` catalog hashes not present in `known`."""
