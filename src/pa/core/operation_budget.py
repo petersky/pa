@@ -110,17 +110,25 @@ def measured_lock(lock, *, name: str = "unnamed", filesystem: bool = False, trac
     try:
         yield
     finally:
+        release_started = time.monotonic() if observation else 0
         lock.release()
         if observation:
             finished = time.monotonic()
+            # Preserve the existing inclusive hold totals. This new interval
+            # separates unlock work and scheduling around it; it is not proof
+            # that the lock remained held until the caller resumed.
+            release_ms = (finished - release_started) * 1000
             hold_ms = (finished - acquired) * 1000
             if filesystem:
                 observation.file_lock_hold_ms += hold_ms
+                observation.file_lock_release_ms += release_ms
             else:
                 observation.python_lock_hold_ms += hold_ms
+                observation.python_lock_release_ms += release_ms
             observation.lock_depth -= 1
             if depth == 0:
                 observation.outer_lock_hold_ms += hold_ms
+                observation.outer_lock_release_ms += release_ms
             observation.lock_events_total += 1
             observation.lock_events.append({
                 # Only fixed subsystem labels may enter diagnostics, never
@@ -128,8 +136,11 @@ def measured_lock(lock, *, name: str = "unnamed", filesystem: bool = False, trac
                 "name": name if name in {"projection.mutation", "transcript.write", "sync.refs", "sync.refs_file"} else "unnamed",
                 "started_at_monotonic": round(started, 6),
                 "acquired_at_monotonic": round(acquired, 6),
+                "release_started_at_monotonic": round(release_started, 6),
                 "finished_at_monotonic": round(finished, 6),
                 "wait_ms": round((acquired - started) * 1000, 3),
+                "held_before_release_ms": round((release_started - acquired) * 1000, 3),
+                "release_and_reschedule_ms": round(release_ms, 3),
                 "hold_ms": round(hold_ms, 3), "nesting_depth": depth,
             })
             del observation.lock_events[:-64]

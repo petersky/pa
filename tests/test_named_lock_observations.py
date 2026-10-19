@@ -1,5 +1,6 @@
 """Bounded lock timelines distinguish inclusive nesting from outer wall hold."""
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,8 +10,9 @@ from pa.core.performance import OperationObservation, current_observation
 
 
 def test_nested_reentrant_holds_are_not_added_to_outer_wall_time(monkeypatch):
-    times = iter(range(6))
-    monkeypatch.setattr("pa.core.operation_budget.time.monotonic", lambda: next(times))
+    # Duplicate pre/post-release timestamps retain the existing nesting clock.
+    times = iter([0, 1, 2, 3, 4, 4, 5, 5])
+    monkeypatch.setattr("pa.core.operation_budget.time", SimpleNamespace(monotonic=lambda: next(times)))
     observation = OperationObservation()
     token = current_observation.set(observation)
     lock = threading.RLock()
@@ -23,6 +25,7 @@ def test_nested_reentrant_holds_are_not_added_to_outer_wall_time(monkeypatch):
     assert observation.python_lock_wait_ms == 2000
     assert observation.python_lock_hold_ms == 5000
     assert observation.outer_lock_hold_ms == 4000
+    assert observation.python_lock_release_ms == observation.outer_lock_release_ms == 0
     assert [event["nesting_depth"] for event in observation.lock_events] == [1, 0]
     assert observation.lock_depth == 0
 
@@ -58,9 +61,13 @@ async def test_runtime_retains_named_timeline_without_exposing_mutable_history()
         await __import__("asyncio").sleep(0)
         snapshot = runtime.snapshot()
         phases = snapshot["slow_lock_timelines"]["observations"][-1]
+        assert snapshot["operations"]["fixture.named_lock"]["slow_calls"] == 1
         assert phases["events"][0]["name"] == "projection.mutation"
         assert phases["lock_events_total"] == 1
         assert snapshot["operations"]["fixture.named_lock"]["outer_lock_hold_ms"]["samples"] == 1
+        for name in ("python_lock_release_ms", "outer_lock_release_ms", "file_lock_release_ms"):
+            assert snapshot["operations"]["fixture.named_lock"][name]["samples"] == 1
+            assert name in snapshot["slow_operations"]["observations"][-1]
         phases["events"][0]["name"] = "caller mutation"
         assert runtime.snapshot()["slow_lock_timelines"]["observations"][-1]["events"][0]["name"] == "projection.mutation"
     finally:
