@@ -7,7 +7,7 @@ import json
 import sqlite3
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -105,6 +105,11 @@ class SessionListSnapshot:
 
     def hydrate(self, session_id: str) -> AgentSession:
         return CardProjection._row_to_session(self._rows[session_id])
+
+
+_SESSION_LIST_METADATA_COLUMNS = """
+    id, status, purpose, archived_at, pinned_at, human_activity_at, updated_at
+"""
 
 
 _SESSION_COLUMNS_WITHOUT_METRICS = """
@@ -5347,7 +5352,11 @@ class CardProjection:
             include_metrics=include_metrics,
         )]
 
-    def session_list_snapshot(self, **filters) -> SessionListSnapshot:
+    def session_list_snapshot(
+        self, *,
+        select_ids: Callable[[tuple[SessionListMetadata, ...]], Iterable[str]] | None = None,
+        **filters,
+    ) -> SessionListSnapshot:
         """Read all selection fields and retain opaque details until selected.
 
         Only metadata-based sidebar views use this projection. Activity views
@@ -5355,16 +5364,40 @@ class CardProjection:
         Selected rows receive the existing complete decoder, including its error
         behavior. Unselected configuration/diagnostics are intentionally opaque.
         No durable data or response fields are omitted.
+
+        The optional pure metadata selector bounds transferred complete rows.
+        Its selected rows and metadata share one SQLite read snapshot, including
+        when a concurrent writer changes configuration or ordering. It must not
+        perform database writes. Without a selector, all rows remain hydratable.
         """
-        rows = self._list_session_rows(**filters)
-        candidates = tuple(SessionListMetadata(
+        if select_ids is None:
+            rows = self._list_session_rows(**filters)
+            return SessionListSnapshot(self._session_list_metadata(rows), {row["id"]: row for row in rows})
+        with self._conn() as conn:
+            # A savepoint also works inside an existing projection transaction;
+            # releasing it does not commit the caller's surrounding work.
+            conn.execute("SAVEPOINT pa_session_list_read")
+            try:
+                metadata = self._session_list_metadata(self._list_session_rows(
+                    _columns=_SESSION_LIST_METADATA_COLUMNS, **filters,
+                ))
+                selected = set(select_ids(metadata))
+                if not selected <= {row.id for row in metadata}:
+                    raise ValueError("session selector returned an ID outside its snapshot")
+                rows = self._list_session_rows(**(filters | {"session_ids": selected})) if selected else []
+                return SessionListSnapshot(metadata, {row["id"]: row for row in rows})
+            finally:
+                conn.execute("RELEASE pa_session_list_read")
+
+    @staticmethod
+    def _session_list_metadata(rows) -> tuple[SessionListMetadata, ...]:
+        return tuple(SessionListMetadata(
             id=row["id"], status=row["status"], purpose=row["purpose"],
             archived_at=datetime.fromisoformat(row["archived_at"]) if row["archived_at"] else None,
             pinned_at=datetime.fromisoformat(row["pinned_at"]) if row["pinned_at"] else None,
             human_activity_at=datetime.fromisoformat(row["human_activity_at"]) if row["human_activity_at"] else None,
             updated_at=datetime.fromisoformat(row["updated_at"]),
         ) for row in rows)
-        return SessionListSnapshot(candidates, {row["id"]: row for row in rows})
 
     def _list_session_rows(
         self,
@@ -5378,8 +5411,9 @@ class CardProjection:
         session_ids: set[str] | None = None,
         chat_group_id: str | None = None,
         include_metrics: bool = True,
+        _columns: str | None = None,
     ) -> list[sqlite3.Row]:
-        columns = "*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS
+        columns = _columns or ("*" if include_metrics else _SESSION_COLUMNS_WITHOUT_METRICS)
         query = f"SELECT {columns} FROM agent_sessions WHERE 1=1"
         if not include_archived:
             query += " AND archived_at IS NULL"
