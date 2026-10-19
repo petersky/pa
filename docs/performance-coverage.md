@@ -1,3 +1,23 @@
+# Corrected health diagnostic test observation — 2026-10-19
+
+All **611 findings and107 concerns remain open**; all610 prior rows and the initial numeric artifact remain unchanged. [CI follow-up evidence](benchmarks/systemic-health-canonical-ci-20261019.json) retains failed run39339742396 at initial1538cea9: two failed shards, two successful shards and successful smoke. One new test propagated the correct exception and recorded leaf error1, then incorrectly assumed the aggregate completion callback had already run. The **test now waits for actual completion** before inspecting aggregate counters; product instrumentation/runtime behavior is unchanged.
+
+The other failure repeats the unchanged200ms snapshot responsiveness deadline, with a238ms task callback recorded on LinuxPython3.14.8. CPU/scheduling attribution remains unknown; earlier PR550 evidence stays separate. No deadline or warning threshold changed. **19 guarded disposable tests pass** after the correction, including the18 earlier cases and the unchanged snapshot case; these overlap, not37 unique tests. Local isolated success does not erase the CI failure or prove CI stability. New exact-head CI and fresh stable supervisor/independent integration gates remain required. No install/restart/backup action or acceptance is claimed.
+
+## Preserved prior inventory and evidence
+
+# Health canonical attribution — 2026-10-19
+
+All **610 findings and106 concerns remain open**; all609 prior rows are preserved unchanged. [Numeric source evidence](benchmarks/systemic-health-canonical-diagnostics-20261019.json) records a bounded instrumentation change for `health.canonical_obligation`. The prior22:27 runtime snapshot retained2493 submissions,41 slow calls and2 caller timeouts, with process maximum2692.116ms; its256-sample window p50/p95/p99/max was8.737/165.221/1381.544/2243.066ms. These are overlapping process counters and a bounded window, not leaf-specific causes or fresh logs.
+
+The aggregate operation, warning policy, five-second caller deadline and worker occupancy remain intact. Nine fixed source categories add callable wall/thread CPU, callable failure and SQLite call/row/aggregate-byte measurements under existing `work.metrics`: at most54 names with256 numeric samples each. No callable names, SQL, IDs, exception text, arguments or results become metric labels. Worker completion is recorded even after a caller cancels or times out. Callable spans exclude queue/completion delivery, cleanup after return and diagnostic recording; the existing aggregate retains broader timing. Observed SQL bytes are not physical disk I/O. Verification-adapter calls remain explicitly unclassified; runtime-free fallback has no leaf metrics.
+
+**18 guarded disposable contracts pass**, including7 new contracts for result/error/SQL parity, finite labels/sample bounds, fallback, cancellation and late deadline completion, plus existing health lifecycle/acceptance/verification ownership paths. The deadline test shortens only its test runtime to10ms while asserting the source still requests5s; production thresholds are unchanged. No production Store/EventLog/workspace or backup action occurred.
+
+Thirty alternating exact-baseline/source pairs of20 no-op calls measure **diagnostic overhead**, not a repair: batch p50/p95/max4.391/5.421/7.787ms baseline versus3.854/6.448/6.604ms source on an uncontrolled host. All1240 aggregate calls completed with zero slow/failure/timeout observations in this small no-store fixture. This does not establish live health responsiveness, cold start, transcript drain or mixed-load acceptance. After separate exact-build activation authorization and backup stability gates, collect leaf windows and investigate actual expensive branches. No install/restart or acceptance is claimed; the existing backup/release owners and independent17d requirement remain unchanged.
+
+## Preserved prior inventory and evidence
+
 # Existing saved GC plan freshness risk — 2026-10-19
 
 All **609 findings and105 concerns remain open**; all608 prior rows are preserved unchanged. A [separate safe observation](benchmarks/systemic-gc-saved-plan-observation-20261019.json) records an existing execution risk discovered while assessing metadata batching. Saved-plan execution invokes delete callbacks from its persisted candidate list without rereading current catalog age/realm, reachability or pins. The route passes the approved plan directly to that existing executor.

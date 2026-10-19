@@ -1,0 +1,75 @@
+{
+  "contract": "pa.health-canonical-ci-followup/v1",
+  "published_at": "2026-10-19T23:14:06.562962+00:00",
+  "initial_head": "1538cea9ba76549974be8fb155ee346a30b19062",
+  "initial_ci": 39339742396,
+  "attempt": 1,
+  "jobs": {
+    "smoke": "success",
+    "test (0)": "failure",
+    "test (1)": "failure",
+    "test (2)": "success",
+    "test (3)": "success"
+  },
+  "failed_log_sha256": "62ff7c27fb8ab31a94abe0606f61610e393629b2f5a195cdab28ba0d6c713bff",
+  "failures": [
+    {
+      "case": "tests/test_health_canonical_metrics.py::test_worker_error_propagates_exactly_and_is_counted",
+      "observed": "Exact exception and leafworker_failed1 were correct; aggregatefailed0 was read before its completion callback.",
+      "cause_certainty": "Source-confirmed invalid immediate aggregate snapshot assumption in new test; existing runtime schedules finish callback independently.",
+      "change": "Test waits boundedly for actualactive0 before checking aggregatefailed1. Product runtime and diagnostics implementation unchanged.",
+      "shard": {
+        "failed": 1,
+        "passed": 979,
+        "skipped": 1,
+        "subtests_passed": 222,
+        "wall_seconds": 138.91
+      }
+    },
+    {
+      "case": "tests/test_agent_snapshot_responsiveness.py::AgentSnapshotResponsivenessTests::test_live_metadata_does_not_flush_or_read_large_transcript",
+      "observed": "Unchanged200ms wait timed out; captured task callback238ms underLinuxPython3.14.8.",
+      "cause_certainty": "CPU/scheduling source unknown; no attribution to health diagnostics or sole-cause claim. Earlier separatePR550 failure remains retained.",
+      "change": "No deadline/source change. Included unchanged case in guarded disposable corrected run; it passed there, not proof of CI stability.",
+      "shard": {
+        "failed": 1,
+        "passed": 980,
+        "subtests_passed": 176,
+        "wall_seconds": 131.22
+      }
+    }
+  ],
+  "corrected_tests": {
+    "started_at": "2026-10-19T23:13:27.337284+00:00",
+    "finished_at": "2026-10-19T23:13:36.013943+00:00",
+    "wall_ms": 8675.777,
+    "exit_code": 0,
+    "cases": [
+      "tests/test_health_canonical_metrics.py",
+      "tests/test_agent_snapshot_responsiveness.py",
+      "tests/test_health_journal.py::test_normal_lifecycle_obligations_keep_single_health_slot",
+      "tests/test_health_journal.py::test_journal_uses_current_canonical_acceptance_in_bound_realm",
+      "tests/test_health_journal.py::test_actual_scope_producer_shared_journal_dependency_recovery",
+      "tests/test_health_journal.py::test_journal_reserved_capacity_ignores_canonical_worker_saturation",
+      "tests/test_autonomous_verification.py::test_existing_health_loop_runs_verification_when_collection_disabled",
+      "tests/test_autonomous_verification.py::test_health_scope_full_coverage_stale_build_and_durable_collector_handoff",
+      "tests/test_autonomous_verification.py::test_handoff_does_not_release_active_or_changed_obligation",
+      "tests/test_autonomous_verification.py::test_active_durably_assigned_verifier_allows_obsolete_collector_release",
+      "tests/test_autonomous_verification.py::test_unknown_repair_retry_keeps_collector_and_verification_fenced"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded to disposable root",
+    "log_sha256": "0caf379acbcb845c31b98bf4efeffb865a66d527d27d5bb4f34018bea0099078"
+  },
+  "corrected_test_count": 19,
+  "overlap": "19final guarded tests include18earlier cases plus unchanged snapshot test; not37unique. No-op overhead artifact and original18test evidence remain immutable.",
+  "source_sha256": "46e1d02e9a5696cb57825653589370de9c7c7d8284b24927410a027787bab5fb",
+  "test_sha256": "cccc3238bdc55b43d5ac3659216b9df8553a8dc81f378cff699e1e3fe8bbd2d4",
+  "report": {
+    "id": "ca41cac0-f94e-423f-abfc-41d95b89b77e",
+    "revision": 1,
+    "delivery": "pending at observation"
+  },
+  "integration": "New corrected exact-head CI and fresh stable supervisor+independent gates still required. No same-head retry of initialfailedrun.",
+  "whole_acceptance": false
+}

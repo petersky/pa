@@ -298,7 +298,7 @@ async def assess(request: Request, group_id: UUID, body: Assessment):
         if not card_id:
             raise JournalError('acceptance_card_required')
         card = await service(request).canonical_call(request.app.state.ctx.store.get_card,
-                                                     card_id, realm_id=group['realm'])
+                                                     card_id, realm_id=group['realm'], diagnostic_phase='card_get')
         if not card:
             raise JournalError('acceptance_card_not_found', 404)
         origins = await service(request).call(service(request).journal.repair_dispatches, str(group_id))
@@ -307,7 +307,7 @@ async def assess(request: Request, group_id: UUID, body: Assessment):
             ledger = request.app.state.ctx.services.get('dispatch_store')
             if not ledger:
                 raise JournalError('acceptance_origin_unknown')
-            records = await service(request).canonical_call(lambda: [ledger.get(key) for key in origins])
+            records = await service(request).canonical_call(lambda: [ledger.get(key) for key in origins], diagnostic_phase='repair_dispatches_get')
             if any(record is None for record in records):
                 raise JournalError('acceptance_origin_unknown')
             sessions = [record.session_id for record in records if record.session_id]

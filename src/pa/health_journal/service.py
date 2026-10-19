@@ -21,6 +21,15 @@ from pa.health_journal.models import MAX_BYTES, MAX_PAGE, encode
 from pa.health_journal.store import Journal, JournalError
 
 
+# Fixed source labels only. Never derive metric names from callable names, IDs,
+# exceptions, SQL, or request values. The verification adapter remains explicitly
+# unclassified until its separate read/write families are measured.
+CANONICAL_PHASES = frozenset({
+    'unclassified', 'dispatch_get', 'dispatch_list', 'watch_list', 'session_get',
+    'workspace_list', 'card_get', 'repair_dispatches_get', 'watch_get',
+})
+
+
 class HealthService:
     def __init__(self, ctx, journal: Journal, *, transport=None):
         self.ctx, self.journal = ctx, journal
@@ -175,10 +184,37 @@ class HealthService:
             response.raise_for_status()
             return response.json()
 
-    async def canonical_call(self, fn, *args, **kwargs):
+    async def canonical_call(self, fn, *args, diagnostic_phase='unclassified', **kwargs):
+        if diagnostic_phase not in CANONICAL_PHASES:
+            raise ValueError('unknown canonical diagnostic phase')
         runtime = self.ctx.services.get('async_runtime')
         if runtime:
-            return await runtime.run_blocking('health.canonical_obligation', fn, *args, timeout=5, **kwargs)
+            from pa.core.performance import current_observation
+            metrics = runtime.work_metrics
+
+            def measured():
+                observation = current_observation.get()
+                counters = ('sqlite_calls', 'sqlite_rows', 'sqlite_aggregate_bytes')
+                before = {name: getattr(observation, name) for name in counters} if observation else {}
+                wall, cpu = time.perf_counter(), time.thread_time()
+                failed = 1
+                try:
+                    result = fn(*args, **kwargs)
+                    failed = 0
+                    return result
+                finally:
+                    # This worker owns completion, including after cancellation
+                    # or a caller deadline. Do not report that deadline as a
+                    # storage failure or release the existing runtime slot early.
+                    values = {'worker_ms': (time.perf_counter() - wall) * 1000,
+                              'thread_cpu_ms': (time.thread_time() - cpu) * 1000,
+                              'worker_failed': failed}
+                    values.update({name: getattr(observation, name) - value
+                                   for name, value in before.items()})
+                    for name, value in values.items():
+                        metrics.record(f'health.canonical.{diagnostic_phase}.{name}', value)
+
+            return await runtime.run_blocking('health.canonical_obligation', measured, timeout=5)
         async with asyncio.timeout(5):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
@@ -190,7 +226,7 @@ class HealthService:
         supervisor = self.ctx.services.get('pr_supervisor_store')
         if not ledger or not lifecycle or not supervisor:
             return 'lifecycle_outcome_unknown'
-        record = await self.canonical_call(ledger.get, result['dispatch_id'])
+        record = await self.canonical_call(ledger.get, result['dispatch_id'], diagnostic_phase='dispatch_get')
         if not record:
             return 'dispatch_outcome_unknown'
         # Keep the existing lifecycle guards even for a closed legacy session.
@@ -204,11 +240,12 @@ class HealthService:
                     and (record.control_operations or {}).get(f'health-start_retry:{action["id"]}') != 'retry'):
                 return 'repair_retry_outcome_unknown'
             others = await self.canonical_call(ledger.list, card_id=record.card_id,
-                realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=101)
+                realm_id=record.realm_id, exclude_states=TERMINAL_DISPATCH_STATES | {'acknowledged'}, limit=101,
+                diagnostic_phase='dispatch_list')
             if len(others) > 100 or any(r.dispatch_id not in verification_dispatches for r in others):
                 return 'canonical_repair_active'
             watches = await self.canonical_call(supervisor.list_watches_for_cards, {result['card_id']},
-                realm_id=payload['realm'], per_card_limit=5)
+                realm_id=payload['realm'], per_card_limit=5, diagnostic_phase='watch_list')
             if watches:
                 return 'actionable_pr_watch'
             # There is no turn/card disposition to reconcile when selection
@@ -221,18 +258,18 @@ class HealthService:
         if record.state in {'failed', 'cancelled'} and record.recoverable:
             return 'dispatch_recoverable'
         watches = await self.canonical_call(supervisor.list_watches_for_cards, {result['card_id']},
-            realm_id=payload['realm'], per_card_limit=5)
+            realm_id=payload['realm'], per_card_limit=5, diagnostic_phase='watch_list')
         if watches:
             return 'actionable_pr_watch'
         if not record.session_id:
             return None  # Definitively terminal before a provider was admitted.
-        session = await self.canonical_call(self.ctx.store.get_session, record.session_id)
+        session = await self.canonical_call(self.ctx.store.get_session, record.session_id, diagnostic_phase='session_get')
         if not session:
             return 'session_outcome_unknown'
         manager = self.ctx.services.get('instance_agent')
         if not manager or not getattr(manager, 'workspace_manager', None):
             return 'workspace_obligation_unknown'
-        leases = await self.canonical_call(manager.workspace_manager.list, card_id=result['card_id'])
+        leases = await self.canonical_call(manager.workspace_manager.list, card_id=result['card_id'], diagnostic_phase='workspace_list')
         async with asyncio.timeout(5):
             decision, reason = await lifecycle._decision(session, sessions=[session], dispatches=[record],
                                                         watches=watches, leases=leases, now=datetime.now(UTC))
@@ -285,7 +322,7 @@ class HealthService:
             # that assessment and its verification gate; do not start a rival.
             if group['disposition'] in {'deployed_verified', 'no_fix', 'duplicate'}:
                 card = await self.canonical_call(self.ctx.store.get_card, action['result']['card_id'],
-                                                 realm_id=action['payload']['realm'])
+                                                 realm_id=action['payload']['realm'], diagnostic_phase='card_get')
                 if card is None or card.lane != 'done':
                     return
                 if group['disposition'] == 'deployed_verified':
@@ -298,7 +335,7 @@ class HealthService:
                     ledger = self.ctx.services.get('dispatch_store')
                     if ledger is None:
                         raise JournalError('acceptance_origin_unknown')
-                    records = await self.canonical_call(lambda:[ledger.get(key) for key in origins])
+                    records = await self.canonical_call(lambda:[ledger.get(key) for key in origins], diagnostic_phase='repair_dispatches_get')
                     if any(record is None for record in records):
                         raise JournalError('acceptance_origin_unknown')
                     verify_acceptance(card, group, assessment, repair_dispatches=origins,
@@ -458,7 +495,7 @@ class HealthService:
                 if not result.get('card_id'):
                     raise JournalError('verification_health_card_missing')
                 verification = self.ctx.services.get('verification')
-                card = await self.canonical_call(self.ctx.store.get_card, result['card_id'], realm_id=payload['realm'])
+                card = await self.canonical_call(self.ctx.store.get_card, result['card_id'], realm_id=payload['realm'], diagnostic_phase='card_get')
                 if verification and card:
                     jobs = await verification.call(verification.store.list, card.id, card.realm_id)
                     verifier_ids = {job['dispatch_id'] for job in jobs if job['dispatch_id']}
@@ -644,7 +681,7 @@ class HealthService:
             authority = report.get('authority_instance_id') or 'configured_authority'
             repository = str(event.get('repository') or '')[:300]
             supervisor = self.ctx.services.get('pr_supervisor_store')
-            watch = await self.canonical_call(supervisor.get_watch, event['watch_id']) if supervisor else None
+            watch = await self.canonical_call(supervisor.get_watch, event['watch_id'], diagnostic_phase='watch_get') if supervisor else None
             if not watch:
                 return
             realm = watch.realm_id
