@@ -7,6 +7,22 @@ so a fleet does not start storage I/O at the same instant. A process-local
 single-flight lock and durable idempotency keys prevent overlapping or duplicate
 jobs after restarts.
 
+Manual HTTP callers can request `POST /api/backups` with `wait=false`. PA
+returns HTTP 202 only after the run and its idempotency key are persisted,
+without holding the connection through capture and verification. Read
+`GET /api/backups/runs?idempotency_key=...` until `finished_at` is present.
+These reads do not open archives or start another operation. The same key
+always identifies the original retained run, including a failed run after
+restart; it is not permission to retry with a new key. A disconnected caller
+does not cancel the service-owned worker or release its single-flight guard.
+Legacy HTTP callers retain the existing `wait=true` behavior.
+
+MCP `backup_run` returns this run receipt; use `backup_run_status` with the
+same key to follow its real outcome. `pa backup run` uses the same admission
+and polls until completion by default; `--no-wait` returns the receipt, and
+`pa backup run-status --idempotency-key ...` reads it later. No backup schedule,
+verification, retention, restore, or historical-data policy is changed.
+
 ## Recovery set
 
 The `pa.metadata-backup/v1` archive is the minimal coherent PA metadata recovery

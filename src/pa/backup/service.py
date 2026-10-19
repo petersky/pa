@@ -16,6 +16,7 @@ import threading
 import time
 import zlib
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -326,6 +327,8 @@ class BackupService:
             max_workers=1, thread_name_prefix="pa-backup-io"
         )
         self._maintenance_pending = False
+        self._manual_starts: dict[str, asyncio.Future[BackupRun]] = {}
+        self._manual_tasks: set[asyncio.Task] = set()
         self._state = self._load_state()
 
     def _load_state(self) -> BackupState:
@@ -792,6 +795,7 @@ class BackupService:
         protected_backup_ids: set[str] | None = None,
         preserve_existing: bool = False,
         queue_wait_seconds: float = 0,
+        _on_started: Callable[[BackupRun], None] | None = None,
     ) -> BackupRun:
         if idempotency_key:
             with self._state_lock:
@@ -830,6 +834,8 @@ class BackupService:
             self._save_state()
         self._audit("backup_started", run_id=run.id, trigger=trigger)
         self._metric("backup_started_total")
+        if _on_started is not None:
+            _on_started(run)
         staging_path: Path | None = None
         destination_lock_fd: int | None = None
         try:
@@ -1376,6 +1382,75 @@ class BackupService:
             self._audit("backup_maintenance_coalesced", operation=operation)
             return None
         return await self.run_io(operation, call, **kwargs)
+
+    def find_run(self, idempotency_key: str) -> BackupRun | None:
+        """Read this local operation's durable identity without scanning archives."""
+        with self._state_lock:
+            run_id = self._state.idempotency.get(idempotency_key)
+            run = next((item for item in self._state.runs if item.id == run_id), None)
+            return run.model_copy(deep=True) if run else None
+
+    async def start_backup(self, idempotency_key: str, *, preserve_existing: bool = False) -> BackupRun:
+        """Return a persisted run receipt before its long I/O finishes.
+
+        The service owns the task after the HTTP caller disconnects. The same
+        dedicated worker and its existing cancellation/single-flight guard still
+        own all capture, verification, publication and retention work.
+        """
+        pending = self._manual_starts.get(idempotency_key)
+        if pending is not None:
+            return await asyncio.shield(pending)
+        existing = self.find_run(idempotency_key)
+        if existing is not None:
+            return existing
+        loop = asyncio.get_running_loop()
+        ready: asyncio.Future[BackupRun] = loop.create_future()
+        self._manual_starts[idempotency_key] = ready
+
+        def resolve(run: BackupRun) -> None:
+            if not ready.done():
+                ready.set_result(run)
+
+        def started(run: BackupRun) -> None:
+            receipt = run.model_copy(deep=True)
+            try:
+                loop.call_soon_threadsafe(resolve, receipt)
+            except RuntimeError:
+                pass  # The persisted run survives a closing caller event loop.
+
+        async def execute() -> None:
+            try:
+                result = await self.run_io(
+                    "backup.manual", self.run_backup, trigger="manual",
+                    idempotency_key=idempotency_key, preserve_existing=preserve_existing,
+                    _on_started=started, timeout=max(300.0, self.config.interval_seconds),
+                )
+                resolve(result.model_copy(deep=True))
+            except BaseException as exc:
+                if not ready.done():
+                    if isinstance(exc, asyncio.CancelledError):
+                        ready.cancel()
+                    else:
+                        ready.set_exception(exc)
+                raise
+            finally:
+                self._manual_starts.pop(idempotency_key, None)
+
+        def consume_ready(future: asyncio.Future) -> None:
+            if not future.cancelled():
+                future.exception()
+
+        def finished(task: asyncio.Task) -> None:
+            self._manual_tasks.discard(task)
+            if (not task.cancelled() and (exc := task.exception()) is not None
+                    and ready.done() and not ready.cancelled() and ready.exception() is None):
+                logger.error("backup.request_observer_failed error_type=%s", type(exc).__name__)
+
+        ready.add_done_callback(consume_ready)
+        task = asyncio.create_task(execute(), name="pa-backup-manual-request")
+        self._manual_tasks.add(task)
+        task.add_done_callback(finished)
+        return await asyncio.shield(ready)
 
     async def run_io(
         self, operation: str, call: Any, *args: Any,
@@ -2100,4 +2175,9 @@ class BackupService:
             self._scheduler_task = None
         self._loop = None
         self._config_event = None
+        tasks = list(self._manual_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self._maintenance_executor.shutdown(wait=False, cancel_futures=True)

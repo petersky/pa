@@ -22,6 +22,20 @@ from pa.backup.service import BackupError
 
 
 class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mcp_admits_once_and_reads_the_same_operation_without_waiting(self) -> None:
+        mcp = MCPServer("backup-admission-contract")
+        settings = SimpleNamespace()
+        receipt = {"id": "original", "status": "running", "finished_at": None}
+        with patch("pa.mcp.local_api.request_local_pa", return_value=receipt) as api:
+            BackupsModule().register_mcp(mcp, SimpleNamespace(settings=settings))
+            await mcp.call_tool("backup_run", {"idempotency_key": "stable", "preserve_existing": True})
+            api.assert_called_once_with(settings, "POST", "/api/backups", json={
+                "idempotency_key": "stable", "preserve_existing": True, "wait": False,
+            })
+            api.reset_mock()
+            await mcp.call_tool("backup_run_status", {"idempotency_key": "stable"})
+            api.assert_called_once_with(settings, "GET", "/api/backups/runs", params={"idempotency_key": "stable"})
+
     async def test_mcp_exposes_complete_backup_and_restore_operations(self) -> None:
         mcp = MCPServer("backup-contract")
         BackupsModule().register_mcp(mcp, SimpleNamespace(settings=SimpleNamespace()))
@@ -31,6 +45,7 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "backup_status",
                 "backup_list",
                 "backup_run",
+                "backup_run_status",
                 "backup_inspect",
                 "backup_verify",
                 "backup_delete",
@@ -44,6 +59,7 @@ class BackupSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run_schema["required"], ["idempotency_key"])
         self.assertEqual(run_schema["properties"]["preserve_existing"]["type"], "boolean")
         self.assertFalse(run_schema["properties"]["preserve_existing"]["default"])
+        self.assertEqual(tools["backup_run_status"].input_schema["required"], ["idempotency_key"])
         listing = tools["backup_list"].input_schema
         self.assertEqual(listing["properties"]["offset"]["default"], 0)
         self.assertEqual(listing["properties"]["limit"]["default"], 50)
@@ -234,6 +250,7 @@ class BackupHttpAndUiContractTests(unittest.TestCase):
             ("GET", "/api/backups/config"),
             ("PATCH", "/api/backups/config"),
             ("POST", "/api/backups"),
+            ("GET", "/api/backups/runs"),
             ("GET", "/api/backups/{backup_id}"),
             ("POST", "/api/backups/{backup_id}/verify"),
             ("DELETE", "/api/backups/{backup_id}"),
