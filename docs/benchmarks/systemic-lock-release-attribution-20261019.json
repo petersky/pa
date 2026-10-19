@@ -1,0 +1,327 @@
+{
+  "contract": "pa.performance-lock-release-attribution/v1",
+  "observed_at": "2026-10-19T22:24:08.313460+00:00",
+  "baseline_commit": "52f042ad71c24763757509013c7e564ffbe4c203",
+  "confirmed_cause": "Existing finished timestamp is captured after lock.release(); unlock and caller rescheduling can therefore inflate inclusive hold relative to critical-section body. This is attribution, not proof of any historical stall cause.",
+  "controlled_disposable_boundary": {
+    "native_lock": "threading.Lock; confirmed available for another acquire before simulated releasing-caller continuation",
+    "wait_ms": 1000,
+    "body_ms": 2000,
+    "post_unlock_interval_ms": 3000,
+    "before_inclusive_hold_ms": 5000,
+    "after_inclusive_hold_ms": 5000,
+    "new_release_and_reschedule_ms": 3000,
+    "new_held_before_release_ms": 2000,
+    "clock": "in-process deterministic test clock only; no real3s delay, no production injection",
+    "python_and_filesystem_cases": 2,
+    "history_retention_check": {
+      "sections": 71,
+      "retained_events": 64,
+      "release_ms_including_evicted": 213000
+    }
+  },
+  "source_change": "Keep all existing inclusive hold totals, warning/deadline thresholds and lock ordering. Add Python/filesystem/outer release intervals, per-event release-start/pre-release-body/release-and-rescheduling fields, and bounded numeric runtime distributions. Release interval includes unlock and scheduling around it; it is not pure unlock CPU or proven held time. Nested intervals may overlap.",
+  "tests": {
+    "baseline": {
+      "failed": 2,
+      "passed": 1,
+      "failure": "AttributeError: missing python/file_lock_release_ms; archived unchanged old totals explicitly5s; no application mutation"
+    },
+    "candidate_broad": {
+      "started_at": "2026-10-19T22:22:22.955679+00:00",
+      "finished_at": "2026-10-19T22:22:27.180804+00:00",
+      "wall_ms": 4224.688,
+      "exit_code": 0,
+      "files": [
+        "tests/test_lock_release_attribution.py",
+        "tests/test_named_lock_observations.py",
+        "tests/test_ref_lock_deadline_passivity.py",
+        "tests/test_filesystem_observations.py",
+        "tests/test_async_runtime.py"
+      ],
+      "data_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/lock-release-qu26ozvq/data",
+      "workspace_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/lock-release-qu26ozvq/workspaces",
+      "workspace_construction": "denied",
+      "log_sha256": "a82a0b51cd86fa0131904e08c34ef556963104f0e3677f688117e093ebf2d3fe"
+    },
+    "candidate_broad_log": "...........................                                              [100%]\n",
+    "final_targeted": {
+      "passed": 11,
+      "scope": "New bounded-history and unchanged-slow-call-count assertions plus prior named-lock/deadline cases; overlaps broad27, do not sum as unique tests"
+    }
+  },
+  "pure_observation_overhead": {
+    "observed_at": "2026-10-19T22:22:59.364176+00:00",
+    "scope": "40 alternating pure in-process pairs,100 uncontended observed native lock sections per call; unrelated host traffic uncontrolled, not mixed-load/deployed acceptance or sole-cause proof",
+    "baseline_commit": "52f042ad71c24763757509013c7e564ffbe4c203",
+    "baseline_module_sha256": "7c81527eb6992bbf875641c46bed329c18d65677c49f2f7de78fc2eea0199b88",
+    "candidate_module_sha256": "799a2b3337b57cc04a59cac006773f726baa953f0708c0df91c0da0bdbfb2fc5",
+    "raw": {
+      "before_ms": [
+        1.192542,
+        1.047834,
+        1.029334,
+        1.038791,
+        1.028792,
+        1.038167,
+        0.685167,
+        1.051083,
+        1.039458,
+        1.03525,
+        1.055459,
+        1.046916,
+        1.04575,
+        1.045708,
+        1.038167,
+        1.039,
+        1.040917,
+        1.040833,
+        1.037,
+        1.055208,
+        1.059917,
+        1.448333,
+        1.063083,
+        1.070458,
+        1.041625,
+        1.0565,
+        1.035375,
+        1.034125,
+        1.039583,
+        1.037,
+        1.040542,
+        1.05175,
+        1.048917,
+        1.036125,
+        1.026834,
+        1.036,
+        1.318,
+        1.059042,
+        1.423667,
+        1.065208
+      ],
+      "after_ms": [
+        1.029625,
+        0.875292,
+        1.369791,
+        1.624208,
+        1.366125,
+        1.34175,
+        1.201666,
+        1.801,
+        1.350709,
+        1.356458,
+        1.354791,
+        1.3655,
+        1.372084,
+        1.358875,
+        1.356709,
+        1.35675,
+        1.855666,
+        1.400625,
+        1.606333,
+        1.369625,
+        1.372,
+        1.426084,
+        1.381166,
+        1.38425,
+        1.400542,
+        1.368375,
+        1.368792,
+        1.372583,
+        1.362,
+        1.355042,
+        1.348875,
+        1.351875,
+        1.635792,
+        1.346167,
+        1.350083,
+        1.3445,
+        2.2515,
+        1.348459,
+        1.4515,
+        1.35425
+      ]
+    },
+    "summary": {
+      "before_ms": {
+        "samples": 40,
+        "max": 1.448,
+        "p50": 1.041,
+        "p95": 1.318,
+        "p99": 1.448
+      },
+      "after_ms": {
+        "samples": 40,
+        "max": 2.252,
+        "p50": 1.365,
+        "p95": 1.801,
+        "p99": 2.252
+      }
+    },
+    "section_count_per_call": 100,
+    "retained_timeline_sections_per_call": 64,
+    "production_mutation": false
+  },
+  "preserved_harness_failures": [
+    {
+      "stage": "initial sandbox test launch",
+      "result": "uv cache filesystem denied; same bounded command rerun through provider escalation, not a PA runtime failure"
+    },
+    {
+      "stage": "first pure baseline loader",
+      "result": "Local harness failed before measurements: dynamic dataclass module absent from sys.modules. Registered the isolated module; one corrected measurement stage. No application change to resolve harness error."
+    }
+  ],
+  "source_hashes": {
+    "src/pa/core/operation_budget.py": "799a2b3337b57cc04a59cac006773f726baa953f0708c0df91c0da0bdbfb2fc5",
+    "src/pa/core/performance.py": "f0a788e6d48969bb1b1fcef43f2fae507532722e10b63251a34e98f4bae5b926",
+    "src/pa/core/async_runtime.py": "5976e803ad1f8689ddfcfce2aca47b378a74a8c6c7dfae671cfc3d8dbbd86d98",
+    "tests/test_lock_release_attribution.py": "0d1d46f0f08f8a201330ef9505e5e4f4cc93cf1382038d148d86c2ce698c2814",
+    "tests/test_named_lock_observations.py": "3682cce10c3467c038fb5a6fca05b93365b2a19fdf2cd37e52b0e2db0029f431"
+  },
+  "integration": {
+    "previous_pr": 547,
+    "head": "76e7caa31753be1bac4168d99fa11e91459d4fcd",
+    "merge": "52f042ad71c24763757509013c7e564ffbe4c203",
+    "tree": "11e1a0bbef116bc24098be5a18c40419fc54405e",
+    "watch": "0cc93ffc-dd97-4713-845a-13bfdfd96435",
+    "head_ci": 39199594453,
+    "main_ci": 39200010382,
+    "checks": "5/5success each; merge independently reconciled; not remerged"
+  },
+  "deployment": {
+    "supported_status": {
+      "observed_at": "2026-10-19T22:19:46.081641+00:00",
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "process_id": 69337,
+      "asset_version": "1ace512ceb42",
+      "install_revision": "2283d9075b1a9cce2eb1566c22c4120cea1818c4",
+      "runtime_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+        "package_identity": "sha256:6ccadfa13713d5ac6baec1c58d9a93a57a476e6b7dbe46ff354c5754a9eab8cf",
+        "pid": 69337,
+        "startup_id": "69233661-c671-4998-b0c9-a5fda8684a89"
+      }
+    },
+    "installed_only_proof": {
+      "source": "2283d9075b1a9cce2eb1566c22c4120cea1818c4",
+      "package": "sha256:41eed1cadc94871815b2ec91640d9200e5e3e0c6b9af275c1540331a34d9abe5",
+      "source_files": 438,
+      "source_mismatches": [],
+      "python": "3.14.2",
+      "unchanged_distribution_versions": 52,
+      "template_entries": 38,
+      "template_cache_sha256": "82caa00ddc752dea56e772266100a8091c78d272ceece0c7b9d9d55219e2b8f3",
+      "runtime_compile": false,
+      "observed_at": "2026-10-19T20:55:18Z"
+    },
+    "interpretation": "install_revision reads current disk distribution direct_url.json; runtime_build is PID-fenced startup capture. No root installation/restart or candidate rollout; source544-546 are installed228, not yet proved loaded. PR547 and this change are outside that exact activation scope. Existing release owner e900/a4c3 retains scope/coordination; question4ef8b3e5 not answered by root."
+  },
+  "backup_followup": {
+    "contract": "pa.backup-stability-reconciliation/v1",
+    "observed_at": "2026-10-19T22:04:43Z",
+    "source": "Supported native backup_status on macbook0c7d8ecb; no archive/source Store access or mutation",
+    "capture": {
+      "id": "5659b985-2f31-48ab-b51f-6b5f34eb30aa",
+      "trigger": "manual",
+      "status": "success",
+      "backup_id": "b0fc1436-fe1e-4096-b6d0-e9c9f1fe272b",
+      "started_at": "2026-10-19T04:21:17.670852Z",
+      "finished_at": "2026-10-19T04:30:53.836565Z",
+      "duration_seconds": 576.18662,
+      "size_bytes": 277453958,
+      "failure_reason": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+      "idempotency_key": "backup-available-capture-0331d21a-53b42d50-20261019-v1",
+      "verification": "failed",
+      "integrity_verified": true,
+      "data_complete": false,
+      "missing_transcript_object_count": 1,
+      "missing_transcript_bytes": 2842,
+      "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+      "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+      "pruned_backup_ids": [],
+      "queue_wait_seconds": 0.000552,
+      "phase_seconds": {
+        "snapshot": 207.854527,
+        "archive": 188.194931,
+        "verify": 157.366399,
+        "publish": 0.347343,
+        "prune": 0.001171
+      }
+    },
+    "latest_run": {
+      "id": "bb10f4ce-dde5-4b38-8c64-ccd5b6c85b61",
+      "trigger": "scheduled",
+      "status": "success",
+      "backup_id": "a281c123-2a9a-4bc0-96ec-cfd417ac864e",
+      "started_at": "2026-10-19T20:19:35.500142Z",
+      "finished_at": "2026-10-19T21:54:47.674869Z",
+      "duration_seconds": 491.732925,
+      "size_bytes": 281191394,
+      "failure_reason": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+      "idempotency_key": "scheduled:1792440418",
+      "verification": "failed",
+      "integrity_verified": true,
+      "data_complete": false,
+      "missing_transcript_object_count": 1,
+      "missing_transcript_bytes": 2842,
+      "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+      "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+      "pruned_backup_ids": [
+        "a4debfd2-fe4d-4e15-86d6-0995d96cec81"
+      ],
+      "queue_wait_seconds": 0.001026,
+      "phase_seconds": {
+        "snapshot": 154.080457,
+        "archive": 181.382186,
+        "verify": 135.755609,
+        "publish": 0.008441,
+        "prune": 0.125405
+      }
+    },
+    "active_runs": [],
+    "active_restores": [],
+    "state": "limited",
+    "backup_count": 9,
+    "verified_backup_counter": 8,
+    "limited_backup_counter": 1,
+    "automatic_backups_paused": false,
+    "owner_reported_foreground": {
+      "api_reads": 6,
+      "max_api_ms": 430.1,
+      "errors": 0,
+      "page_navigation_ms": 1589.127,
+      "provenance": "User-delivered backup-owner checkpoint; not independently replayed here",
+      "acceptance": false
+    },
+    "interpretation": "The explicit hold until run5659 is terminal is satisfied by exact-run terminal proof. Not permission for restart or another capture; pending exact228 activation decision and fresh release/backup gates remain. Strict verification field failed/data_completefalse retained, limited point not intact recovery acceptance. Wall timestamps and measured monotonic duration are separate as returned; clock/scheduling attribution unverified.",
+    "whole_card_acceptance": false
+  },
+  "backup_inventory_followup": {
+    "observed_at": "2026-10-19T22:19Z",
+    "source": "native backup_list verify=false and backup_status; metadata only",
+    "retained_points": 9,
+    "metadata_verified_historical_points": 8,
+    "latest_point": "a281c123-2a9a-4bc0-96ec-cfd417ac864e",
+    "latest_status": "verified_with_missing_data",
+    "latest_data_complete": false,
+    "missing_objects": 1,
+    "missing_decoded_bytes": 2842,
+    "in_progress_inventory_rows": 0,
+    "last_scrub": "2026-10-19T06:04:23.385542Z",
+    "next_scrub": "2026-10-26T06:04:23.385542Z",
+    "notice": "Not manual archive verification, restore acceptance, blanket future hold release or permission for another capture. Backup owner18fc retains narrow receipt/API repair and independentb527 acceptance."
+  },
+  "prior_mixed_source_residuals": {
+    "artifact": "docs/benchmarks/systemic-dispatch-summary-20261019.json",
+    "sha256": "5986dc9b016d56aefbdab023b9623f5b07ea0ed7978f032e1ddd381b5ea9f871",
+    "worker_warnings": 3,
+    "threshold_observations": 12,
+    "notice": "Unchanged previous source evidence, not a rerun or attestation of this candidate.9600ordered/12511cold verified preserved; manual backup04:21-04:30 partially overlapped prior fixture04:20-04:23; no sole-cause inference or paired mixed-load speedup."
+  },
+  "report": "572f7d68-489b-442c-b656-4022cbb8793d",
+  "whole_acceptance": false,
+  "remaining": "All previous597rows/101concerns and original slow/runtime/route/peer/log/CPU/disk/startup/drain/backup/ordinary independent acceptance gaps remain. No threshold increase, data loss, new worker/verifier/default change or false deployment acceptance."
+}
