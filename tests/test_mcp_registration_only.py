@@ -214,6 +214,8 @@ async def test_all_ordinary_tool_schemas_match_pre_repair_contract(tmp_path, mon
     # Per-run archive preservation is optional and defaults to false; the
     # idempotency key remains the only required backup_run argument.
     baseline["backup_run"] = "f449ca0cf5c7cf89958c3a962b7a606e8e3b582f0d5589a8143a5f1669e1079e"
+    # New read-only lookup follows the original run without another admission.
+    baseline["backup_run_status"] = "e2d8e9ed9af494fe3e2ef8bbf922c8f15ae02fa772a86f6159461e7eb90e509a"
     # Attachment uploads add an optional stable retry key; existing arguments
     # and response shape are preserved. Canonical events now carry its receipt.
     baseline["create_card_attachment"] = "d1c942d1cb5cd840e8c4b2c9649de9972d2e3c9adbbde5ee93f7f1b6e52071f0"
