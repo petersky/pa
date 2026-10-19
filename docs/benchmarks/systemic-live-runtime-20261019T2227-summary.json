@@ -1,0 +1,311 @@
+{
+  "contract": "pa.performance-live-inventory/v1",
+  "published_at": "2026-10-19T22:30:34.733543+00:00",
+  "source": {
+    "host": "macbook",
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "paths": [
+      "GET /api/status",
+      "GET /api/runtime",
+      "GET /api/status"
+    ],
+    "observed_range_utc": [
+      "2026-10-19T22:27:04.426554+00:00",
+      "2026-10-19T22:27:05.158541+00:00"
+    ],
+    "raw_artifact": "docs/benchmarks/systemic-live-runtime-20261019T2227.json",
+    "raw_sha256": "e087100595aa9b544a32ab4c6907c45db3b74eaaac6accba7e1457392a13270e",
+    "fresh_log_files_scanned": false,
+    "peer_logs_scanned": false
+  },
+  "runtime_build": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+    "package_identity": "sha256:6ccadfa13713d5ac6baec1c58d9a93a57a476e6b7dbe46ff354c5754a9eab8cf",
+    "pid": 69337,
+    "startup_id": "69233661-c671-4998-b0c9-a5fda8684a89"
+  },
+  "install_revision": "2283d9075b1a9cce2eb1566c22c4120cea1818c4",
+  "same_process_fence": true,
+  "read_timings": [
+    {
+      "path": "/api/status",
+      "wall_ms": 440.149
+    },
+    {
+      "path": "/api/runtime",
+      "wall_ms": 145.506
+    },
+    {
+      "path": "/api/status",
+      "wall_ms": 145.708
+    }
+  ],
+  "operations": 139,
+  "slow_or_failed_names": 70,
+  "operation_families": {
+    "acp": {
+      "operation_names": 4,
+      "submitted": 13729,
+      "slow_calls": 25,
+      "failed": 0,
+      "timed_out": 1,
+      "process_max_ms": 1679.759
+    },
+    "agent": {
+      "operation_names": 11,
+      "submitted": 14429,
+      "slow_calls": 119,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1976.395
+    },
+    "browser": {
+      "operation_names": 3,
+      "submitted": 9,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 37.683
+    },
+    "cards": {
+      "operation_names": 2,
+      "submitted": 4,
+      "slow_calls": 0,
+      "failed": 2,
+      "timed_out": 0,
+      "process_max_ms": 105.992
+    },
+    "conversation": {
+      "operation_names": 2,
+      "submitted": 13900,
+      "slow_calls": 20,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1027.632
+    },
+    "dispatch": {
+      "operation_names": 9,
+      "submitted": 74842,
+      "slow_calls": 68,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1338.984
+    },
+    "filesystem": {
+      "operation_names": 2,
+      "submitted": 6894,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1389.027
+    },
+    "fleet": {
+      "operation_names": 8,
+      "submitted": 83622,
+      "slow_calls": 116,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1848.711
+    },
+    "github": {
+      "operation_names": 1,
+      "submitted": 3,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 53.936
+    },
+    "goal": {
+      "operation_names": 2,
+      "submitted": 702,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 524.278
+    },
+    "health": {
+      "operation_names": 1,
+      "submitted": 2493,
+      "slow_calls": 41,
+      "failed": 0,
+      "timed_out": 2,
+      "process_max_ms": 2692.116
+    },
+    "http": {
+      "operation_names": 7,
+      "submitted": 76610,
+      "slow_calls": 8,
+      "failed": 1005,
+      "timed_out": 952,
+      "process_max_ms": 11166.853
+    },
+    "intake": {
+      "operation_names": 1,
+      "submitted": 23,
+      "slow_calls": 2,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 644.066
+    },
+    "maintenance": {
+      "operation_names": 1,
+      "submitted": 1,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 25586.839
+    },
+    "notifications": {
+      "operation_names": 2,
+      "submitted": 1934,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 515.291
+    },
+    "pr_supervisor": {
+      "operation_names": 5,
+      "submitted": 63848,
+      "slow_calls": 4,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 844.577
+    },
+    "preferences": {
+      "operation_names": 1,
+      "submitted": 88,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 302.176
+    },
+    "progress": {
+      "operation_names": 7,
+      "submitted": 14751,
+      "slow_calls": 156,
+      "failed": 0,
+      "timed_out": 3,
+      "process_max_ms": 1453.939
+    },
+    "reconciliation": {
+      "operation_names": 4,
+      "submitted": 39000,
+      "slow_calls": 26,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1319.939
+    },
+    "selection": {
+      "operation_names": 4,
+      "submitted": 46,
+      "slow_calls": 2,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 613.374
+    },
+    "sqlite": {
+      "operation_names": 43,
+      "submitted": 365597,
+      "slow_calls": 272,
+      "failed": 1,
+      "timed_out": 0,
+      "process_max_ms": 5268.794
+    },
+    "startup": {
+      "operation_names": 3,
+      "submitted": 3,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 797.669
+    },
+    "sync": {
+      "operation_names": 10,
+      "submitted": 99157,
+      "slow_calls": 142,
+      "failed": 3,
+      "timed_out": 0,
+      "process_max_ms": 6316.062
+    },
+    "workspace": {
+      "operation_names": 6,
+      "submitted": 36,
+      "slow_calls": 8,
+      "failed": 1,
+      "timed_out": 0,
+      "process_max_ms": 8675.767
+    }
+  },
+  "request_route_groups": 86,
+  "request_process_count": 95441,
+  "request_process_bytes": 694690854,
+  "request_process_max_ms": 576320.232,
+  "retained_slow_request_observations": 50,
+  "request_window": "last_256_non_sse_requests_per_route",
+  "excluded_sse_requests": 31,
+  "event_loop": {
+    "samples": 600,
+    "latest_lag_ms": 13.0,
+    "p95_lag_ms": 45.0,
+    "max_lag_ms": 1071133.0,
+    "pre_window_lag_ms": {
+      "samples": 0,
+      "max": null,
+      "p50": null,
+      "p95": null,
+      "p99": null
+    }
+  },
+  "new_coverage_row_ids": [
+    "live-20261019T2227:runtime:sqlite.restart_handoff_create",
+    "live-20261019T2227:runtime:sqlite.restart_handoff_quiescing",
+    "live-20261019T2227:runtime:sqlite.restart_handoff_read",
+    "live-20261019T2227:runtime:sqlite.restart_handoff_waiting",
+    "live-20261019T2227:route:/api/agent/observability/v1/sessions/{session_id}/turns",
+    "live-20261019T2227:route:/api/agent/sessions/{session_id}/conversation-origin",
+    "live-20261019T2227:route:/api/health-journal/verification-readiness/{dispatch_id}",
+    "live-20261019T2227:route:/projects"
+  ],
+  "rows_after": 606,
+  "concerns": 102,
+  "interpretation": [
+    "Runtime operation counts are cumulative process counters; slow, failed and timed_out can overlap and are not distinct incidents.",
+    "Operation runtime_ms distributions and per-route latency/size distributions are bounded windows; max_runtime_ms and request max_ms are process maxima.",
+    "No pooled family latency percentiles are constructed from quantiles; every individual operation and route has its exact returned distribution in raw JSON and CSV.",
+    "Event-loop p95 is the current600sample window;1071133ms max is the cumulative process maximum. Source timer cannot distinguish process/host suspension or scheduling from a synchronous callback; cause unverified.",
+    "HTTP max576320.232ms is not a page percentile; it overlaps the known long-running backup contract. No new backup/request replay was performed.",
+    "Unrelated provider/service traffic, prior host fixtures and normal backups overlap the process lifetime. This is not a controlled baseline/fix comparison, log-tail incident count, exhaustive fleet audit or acceptance.",
+    "Earlier139window70slow/failed names do not prove every branch/external dependency exercised; original181operation/115route inventory and all gaps remain."
+  ],
+  "integration": {
+    "contract": "pa.exact-integration-proof/v1",
+    "number": 549,
+    "watch": "afe76671-cdc9-4e8a-b06a-106a89f82c4b",
+    "head": "97312dbb7e71f7890b1061f00e991a279e67c0d6",
+    "merge": "5b60ca8bc0b52540d7eb2e2e6183d01b9d4043c2",
+    "base": "52f042ad71c24763757509013c7e564ffbe4c203",
+    "parents": [
+      "52f042ad71c24763757509013c7e564ffbe4c203",
+      "97312dbb7e71f7890b1061f00e991a279e67c0d6"
+    ],
+    "head_merge_tree": "20fdb276152d0fdb30d63093d87c143a535f8ca4",
+    "tree_equal": true,
+    "head_ci": 39334757507,
+    "head_checks": "5terminalSUCCESS;0requiredapprovals;0reviews;0threads;completepagination;attributedcommit;protectionknown;CLEAN independently revalidated",
+    "stable_observations": 9,
+    "independent_observed_at": "2026-10-19T22:28:23.683743+00:00",
+    "supervisor_observed_at": "2026-10-19T22:28:09.875814+00:00",
+    "watch_retired_at": "2026-10-19T22:29:00.535148Z",
+    "watch_error": null,
+    "main_ci": 39335222796,
+    "main_ci_status": "in_progress at observation; revalidate terminal separately",
+    "worktree_retained": true,
+    "installed": false,
+    "loaded": false,
+    "last_actual_runtime": "22:27:04-05UTC supportedstatus/runtime/status allsame53b/package6cc/PID69337/startup69233661; installed228 underexistingreleaseowner",
+    "whole_acceptance": false,
+    "scope": "598rows/102concerns remainopen; later fresh139operation86route snapshot needs complete publication as separate evidence stage; no fresh log/fleet audit or runtimeacceptance claimed."
+  },
+  "whole_acceptance": false
+}
