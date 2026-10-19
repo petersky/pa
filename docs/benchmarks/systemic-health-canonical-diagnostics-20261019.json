@@ -1,0 +1,735 @@
+{
+  "contract": "pa.health-canonical-attribution-stage/v1",
+  "published_at": "2026-10-19T23:08:40.375907+00:00",
+  "baseline_source": "0597ceb144e3c700d6c462be9b07671874500351",
+  "probe": {
+    "contract": "pa.health-canonical-diagnostic-overhead/v1",
+    "started_at": "2026-10-19T23:07:43.334330+00:00",
+    "finished_at": "2026-10-19T23:07:43.603067+00:00",
+    "baseline_revision": "0597ceb144e3c700d6c462be9b07671874500351",
+    "baseline_module_sha256": "5eb10ac8f65db1cbb863d9130119a06dca37b7fdc1e5ecaa120d94328702c6f0",
+    "source_module_sha256": "46e1d02e9a5696cb57825653589370de9c7c7d8284b24927410a027787bab5fb",
+    "pairs": [
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 7.786667,
+        "source": 3.671208
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.11425,
+        "baseline": 3.707
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 5.303417,
+        "source": 4.95275
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.098083,
+        "baseline": 2.999167
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.185583,
+        "source": 4.322875
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.100417,
+        "baseline": 2.577083
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.264,
+        "source": 4.712542
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.630375,
+        "baseline": 3.505458
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 2.772958,
+        "source": 3.82075
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 5.074167,
+        "baseline": 3.122959
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 2.493167,
+        "source": 3.342583
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 4.2525,
+        "baseline": 3.955833
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 2.585875,
+        "source": 2.884041
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.960583,
+        "baseline": 4.980292
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 3.724875,
+        "source": 3.297458
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.636459,
+        "baseline": 4.912916
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.391125,
+        "source": 3.853791
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.81525,
+        "baseline": 4.5915
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 5.321833,
+        "source": 3.512125
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 4.726875,
+        "baseline": 5.172667
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.875625,
+        "source": 3.541416
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 5.142833,
+        "baseline": 5.420583
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.22,
+        "source": 5.584792
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 6.603583,
+        "baseline": 4.514083
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.703334,
+        "source": 6.246
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 5.119708,
+        "baseline": 4.048708
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 4.718834,
+        "source": 6.448333
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 3.910583,
+        "baseline": 4.681
+      },
+      {
+        "order": [
+          "baseline",
+          "source"
+        ],
+        "baseline": 5.349458,
+        "source": 3.742042
+      },
+      {
+        "order": [
+          "source",
+          "baseline"
+        ],
+        "source": 5.42675,
+        "baseline": 4.686375
+      }
+    ],
+    "calls_per_batch": 20,
+    "warmup_calls_per_variant": 20,
+    "batch_wall_ms": {
+      "baseline": {
+        "samples": 30,
+        "max": 7.787,
+        "p50": 4.391,
+        "p95": 5.421,
+        "p99": 7.787
+      },
+      "source": {
+        "samples": 30,
+        "max": 6.604,
+        "p50": 3.854,
+        "p95": 6.448,
+        "p99": 6.604
+      }
+    },
+    "runtime": {
+      "async_backend_initialization": {
+        "state": "not_started"
+      },
+      "slow_operations": {
+        "capacity": 64,
+        "scope": "last completed slow worker invocations; queue time separate from elapsed",
+        "lock_note": "measured lock sections are inclusive; nested hold intervals may overlap",
+        "lock_events_note": "last64 measured sections per slow invocation; total includes evicted sections; outer hold is the union of outermost measured sections, not CPU time; hold includes unlock and scheduling around it; release_ms separates that interval and is not pure unlock CPU or proven held time",
+        "observations": []
+      },
+      "slow_lock_timelines": {
+        "capacity": 64,
+        "events_per_invocation": 64,
+        "observations": []
+      },
+      "executor": {
+        "max_workers": 1,
+        "max_queue": 64,
+        "active": 0,
+        "queued": 0,
+        "closing": false
+      },
+      "event_loop": {
+        "samples": 0,
+        "latest_lag_ms": 0.0,
+        "p95_lag_ms": 0.0,
+        "max_lag_ms": 0.0,
+        "pre_window_lag_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        }
+      },
+      "requests": {
+        "window": "last_256_non_sse_requests_per_route",
+        "count": 0,
+        "average_ms": 0.0,
+        "max_ms": 0.0,
+        "slow": [],
+        "latency_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "response_bytes": 0,
+        "excluded_sse_requests": 0,
+        "routes": {}
+      },
+      "owned_mutations": {
+        "pending": 0
+      },
+      "work": {
+        "window": "last_256_observations_per_metric",
+        "metrics": {
+          "health.canonical.card_get.worker_ms": {
+            "samples": 256,
+            "max": 0.007,
+            "p50": 0.001,
+            "p95": 0.002,
+            "p99": 0.002,
+            "count": 620,
+            "total": 0.623
+          },
+          "health.canonical.card_get.thread_cpu_ms": {
+            "samples": 256,
+            "max": 0.007,
+            "p50": 0.001,
+            "p95": 0.002,
+            "p99": 0.002,
+            "count": 620,
+            "total": 0.694
+          },
+          "health.canonical.card_get.worker_failed": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "count": 620,
+            "total": 0
+          },
+          "health.canonical.card_get.sqlite_calls": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "count": 620,
+            "total": 0
+          },
+          "health.canonical.card_get.sqlite_rows": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "count": 620,
+            "total": 0
+          },
+          "health.canonical.card_get.sqlite_aggregate_bytes": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "count": 620,
+            "total": 0
+          }
+        }
+      },
+      "active_operations": [],
+      "operations": {
+        "health.canonical_obligation": {
+          "submitted": 1240,
+          "completed": 1240,
+          "failed": 0,
+          "timed_out": 0,
+          "cancelled": 0,
+          "rejected": 0,
+          "active": 0,
+          "queued": 0,
+          "max_active": 1,
+          "max_queued": 1,
+          "total_queue_ms": 14.848,
+          "total_wait_ms": 258.3157407352701,
+          "max_wait_ms": 1.2565839570015669,
+          "total_lock_wait_ms": 0.0,
+          "total_runtime_ms": 201.414,
+          "max_runtime_ms": 1.072,
+          "slow_calls": 0,
+          "sqlite_busy_failures": 0,
+          "filesystem_totals": {
+            "file_lock_wait_ms": 0.0,
+            "file_lock_hold_ms": 0.0,
+            "file_lock_release_ms": 0.0,
+            "atomic_write_calls": 0,
+            "atomic_write_bytes": 0,
+            "file_fsync_calls": 0,
+            "file_fsync_ms": 0.0,
+            "directory_fsync_calls": 0,
+            "directory_fsync_ms": 0.0,
+            "fsync_failures": 0,
+            "atomic_replace_ms": 0.0,
+            "object_get_calls": 0,
+            "object_get_bytes": 0,
+            "object_get_ms": 0.0,
+            "object_put_files": 0,
+            "object_put_bytes": 0
+          },
+          "runtime_ms": {
+            "samples": 256,
+            "max": 0.379,
+            "p50": 0.199,
+            "p95": 0.274,
+            "p99": 0.311
+          },
+          "queue_ms": {
+            "samples": 256,
+            "max": 0.042,
+            "p50": 0.015,
+            "p95": 0.02,
+            "p99": 0.024
+          },
+          "python_lock_wait_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "python_lock_hold_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "worker_service_ms": {
+            "samples": 256,
+            "max": 0.188,
+            "p50": 0.018,
+            "p95": 0.051,
+            "p99": 0.063
+          },
+          "executor_dispatch_ms": {
+            "samples": 256,
+            "max": 0.128,
+            "p50": 0.064,
+            "p95": 0.084,
+            "p99": 0.105
+          },
+          "completion_delivery_ms": {
+            "samples": 256,
+            "max": 0.188,
+            "p50": 0.108,
+            "p95": 0.148,
+            "p99": 0.183
+          },
+          "thread_cpu_ms": {
+            "samples": 256,
+            "max": 0.065,
+            "p50": 0.016,
+            "p95": 0.046,
+            "p99": 0.056
+          },
+          "outer_lock_hold_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "python_lock_release_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "outer_lock_release_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_statement_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_commit_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "sqlite_calls": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_rows": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_items": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "sqlite_aggregate_bytes": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "file_lock_wait_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "file_lock_hold_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "file_lock_release_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "atomic_write_calls": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "atomic_write_bytes": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "file_fsync_calls": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "file_fsync_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "directory_fsync_calls": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "directory_fsync_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "fsync_failures": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "atomic_replace_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "object_get_calls": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "object_get_bytes": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "object_get_ms": {
+            "samples": 256,
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+          },
+          "object_put_files": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          },
+          "object_put_bytes": {
+            "samples": 256,
+            "max": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0
+          }
+        }
+      }
+    },
+    "scope": "Warm no-op diagnostic overhead on an uncontrolled host. Aggregate worker metrics unchanged; leaf worker spans exclude queue/completion delivery, sqlite-scope cleanup after return and diagnostic recording. Not a speedup, live cause attribution, physical I/O measurement or performance acceptance."
+  },
+  "tests": {
+    "started_at": "2026-10-19T23:07:13.784043+00:00",
+    "finished_at": "2026-10-19T23:07:22.206626+00:00",
+    "wall_ms": 8421.545,
+    "exit_code": 0,
+    "cases": [
+      "tests/test_health_canonical_metrics.py",
+      "tests/test_health_journal.py::test_normal_lifecycle_obligations_keep_single_health_slot",
+      "tests/test_health_journal.py::test_journal_uses_current_canonical_acceptance_in_bound_realm",
+      "tests/test_health_journal.py::test_actual_scope_producer_shared_journal_dependency_recovery",
+      "tests/test_health_journal.py::test_journal_reserved_capacity_ignores_canonical_worker_saturation",
+      "tests/test_autonomous_verification.py::test_existing_health_loop_runs_verification_when_collection_disabled",
+      "tests/test_autonomous_verification.py::test_health_scope_full_coverage_stale_build_and_durable_collector_handoff",
+      "tests/test_autonomous_verification.py::test_handoff_does_not_release_active_or_changed_obligation",
+      "tests/test_autonomous_verification.py::test_active_durably_assigned_verifier_allows_obsolete_collector_release",
+      "tests/test_autonomous_verification.py::test_unknown_repair_retry_keeps_collector_and_verification_fenced"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded to disposable root",
+    "log_sha256": "341d5dca33250b815baddbafb6001e174c20bf1716bb74f3d612e77777db8938"
+  },
+  "test_count": 18,
+  "new_contracts": 7,
+  "initial_overlap": "Earlier six new contracts passed before adding the deadline contract; final18 include them, not24 unique tests.",
+  "prior_live_source": {
+    "artifact": "docs/benchmarks/systemic-live-runtime-20261019T2227.json",
+    "range": "2026-10-19T22:27:04.426554Z\u201322:27:05.158541Z",
+    "operation": "health.canonical_obligation",
+    "submitted": 2493,
+    "slow_calls": 41,
+    "failed": 0,
+    "timed_out": 2,
+    "process_max_ms": 2692.116,
+    "runtime_window_ms": {
+      "samples": 256,
+      "p50": 8.737,
+      "p95": 165.221,
+      "p99": 1381.544,
+      "max": 2243.066
+    },
+    "notice": "Existing recorded process totals/window, not fresh logs or leaf measurements. Slow/timeout sets can overlap."
+  },
+  "instrumentation": {
+    "fixed_categories": [
+      "unclassified",
+      "dispatch_get",
+      "dispatch_list",
+      "watch_list",
+      "session_get",
+      "workspace_list",
+      "card_get",
+      "repair_dispatches_get",
+      "watch_get"
+    ],
+    "metrics": [
+      "worker_ms",
+      "thread_cpu_ms",
+      "worker_failed",
+      "sqlite_calls",
+      "sqlite_rows",
+      "sqlite_aggregate_bytes"
+    ],
+    "maximum_names": 54,
+    "samples_per_name": 256,
+    "maximum_numeric_samples": 13824,
+    "location": "/api/runtime work.metrics, inherited from existing bounded PerformanceMetrics snapshot",
+    "semantics": "worker spans measure the target callable, exclude queue/completion delivery, sqlite-scope cleanup after return and diagnostics recording. Exact aggregate operation/runtime phases and5s deadline retained. Worker failures count callable exceptions, not a caller timeout/cancellation. Counters are observed SQLite rows/calls/aggregate bytes, not physical disk I/O or full payload sizes.",
+    "gaps": "Verification adapter calls remain unclassified; runtime-free fallback has no leaf telemetry. No per-leaf queue distribution or exact correlation to old slow observations. Read/write branches not exercised by no-op overhead probe remain open."
+  },
+  "result": "Instrumentation only, no latency-repair or rollout acceptance.30paired20-call batches p955.421ms baseline\u21926.448ms source; p504.391\u21923.854ms; noisy uncontrolled host, not speedup.1240aggregate completed calls/0slow/fail/timeout in this no-store fixture only.",
+  "unchanged": "No warnings/deadlines/capacity/durable state/dispatch/lease/receipt/acceptance/default/backup/GC behavior changed. No install/restart, live Store/EventLog/ref mutation or newworker/verifier.",
+  "next_action": "Review/integrate source, retain backup stable-build window and existing rollout authority. After separately authorized exact activation, collect supported leaf windows with representative valid branches and diagnose actual cost; preserve aggregate and all historical failures.",
+  "whole_acceptance": false
+}

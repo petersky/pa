@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T22:54:01.381156+00:00",
-  "completion": "OPEN;609rows/105concerns. All608 priorrows unchanged. Bounded ordered catalog reader source is measured/tested only; metadata batching remains unimplemented and existing saved-plan freshness risk has safe-spy evidence, no production data-loss claim. Complete original and139operation/86route inventories, every failure/deployment/peer/log/backup/startup/drain/independent gate remain open. No install/restart/production GC or acceptance.",
+  "as_of": "2026-10-19T23:08:40.375907+00:00",
+  "completion": "OPEN;610rows/106concerns. All609prior rows unchanged. Health leaf diagnostics are source instrumentation with18bounded contracts and measured overhead, not deployed attribution/performance acceptance. Existing139operation/86route inventory, GCfreshness riskf320, every retained failure, startup/drain/peer/logloss/retention/backup/rollout and independent17d requirements remain open. No install/restart/newworker or acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -143,7 +143,8 @@
     "docs/benchmarks/systemic-live-runtime-20261019T2227.json",
     "docs/benchmarks/systemic-live-runtime-20261019T2227-summary.json",
     "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
-    "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json"
+    "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json",
+    "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -210829,6 +210830,27 @@
       "resolution": "open",
       "next_actor": "Existing systemic session and ordinary independent scheduler",
       "next_action": "Audit saved-plan execute/resume freshness, current head/epoch/realm/reachability/pins and publication/maintenance fences in disposable fixtures; implement and validate a separate scoped safety repair before metadata optimization. No production GC/deletion or timeout/permission/default change."
+    },
+    {
+      "id": "concern:health-canonical-leaf-attribution",
+      "kind": "concern",
+      "finding": "Generic health canonical operation obscures retained dispatch/card/session/watch/workspace leaf costs",
+      "family": "health",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_confirmed_attribution_gap_live_leaf_causes_unknown",
+      "cause": "Shared canonical_call emits one runtime operation for different storage helpers plus verification adapter work. Prior process2493submissions/41slow/2timeouts cannot identify which leaf caused each tail.",
+      "fix_or_existing_owner": "Same systemic session1eb adds fixed bounded leaf metrics while retaining aggregate warning/deadline/worker ownership; no newworker.",
+      "implemented": "Source instrumentation with18guarded contracts and small paired overhead evidence; no latency repair claimed.",
+      "merged": [],
+      "deployed": "Not installed or loaded; stable53b runtime/installed228 remains separate.",
+      "retested": "No-store overhead fixture and guarded disposable health lifecycle/acceptance contracts only.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json",
+        "sha256": "7d79c25f18ccb0a79df294d6b0a4f2725e24ac6640119c2f6d744fb81b70fd6b"
+      },
+      "resolution": "open",
+      "next_actor": "Same systemic session, existing release authority and ordinary independent scheduler",
+      "next_action": "Review/integrate source, retain backup stable-build window and existing rollout authority. After separately authorized exact activation, collect supported leaf windows with representative valid branches and diagnose actual cost; preserve aggregate and all historical failures."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -254288,6 +254310,11 @@
       "hash": "163bdcb06bc265ac01d62cd9d1c8799f5e1e9bd7d02c8da2583642b40ad78ae7",
       "delivery": "pending at observation"
     },
+    "resolution": "open"
+  },
+  "health_canonical_diagnostics_stage": {
+    "artifact": "docs/benchmarks/systemic-health-canonical-diagnostics-20261019.json",
+    "sha256": "7d79c25f18ccb0a79df294d6b0a4f2725e24ac6640119c2f6d744fb81b70fd6b",
     "resolution": "open"
   }
 }
