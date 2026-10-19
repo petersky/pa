@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ router = APIRouter()
 class TriggerRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
     preserve_existing: bool = False
+    wait: bool = True
 
 
 class RestoreStartRequest(BaseModel):
@@ -129,7 +130,7 @@ def update_backup_config(request: Request, body: dict[str, Any]) -> dict[str, An
 
 
 @router.post("/backups", status_code=201)
-async def trigger_backup(request: Request, body: TriggerRequest) -> dict[str, Any]:
+async def trigger_backup(request: Request, body: TriggerRequest, response: Response) -> dict[str, Any]:
     _admin(request)
     key = request.headers.get("Idempotency-Key") or body.idempotency_key
     if not key or len(key) > 200:
@@ -142,6 +143,10 @@ async def trigger_backup(request: Request, body: TriggerRequest) -> dict[str, An
         )
     service = _service(request)
     try:
+        if not body.wait:
+            run = await service.start_backup(key, preserve_existing=body.preserve_existing)
+            response.status_code = 202
+            return run.model_dump(mode="json")
         run = await service.run_io(
             "backup.manual", service.run_backup,
             trigger="manual", idempotency_key=key,
@@ -155,6 +160,14 @@ async def trigger_backup(request: Request, body: TriggerRequest) -> dict[str, An
             status_code=503,
             detail={"code": "backup_failed", "message": run.failure_reason},
         )
+    return run.model_dump(mode="json")
+
+
+@router.get("/backups/runs")
+def backup_run_status(request: Request, idempotency_key: str = Query(min_length=1, max_length=200)) -> dict[str, Any]:
+    run = _service(request).find_run(idempotency_key)
+    if run is None:
+        raise HTTPException(status_code=404, detail={"code": "backup_run_not_found", "message": "No retained backup run has this idempotency key."})
     return run.model_dump(mode="json")
 
 

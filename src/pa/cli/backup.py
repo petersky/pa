@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import uuid4
@@ -63,15 +64,29 @@ def run(
     preserve_existing: Annotated[
         bool, typer.Option(help="Protect all current archives from this run's retention")
     ] = False,
+    wait: Annotated[bool, typer.Option("--wait/--no-wait", help="Wait by polling the original run; --no-wait returns its receipt")] = True,
 ) -> None:
     """Trigger an immediate idempotent online backup."""
+    key = idempotency_key or f"cli:{uuid4()}"
     result = _api(
         "POST",
         "/api/backups",
-        json_body={"idempotency_key": idempotency_key or f"cli:{uuid4()}",
-                   "preserve_existing": preserve_existing},
+        json_body={"idempotency_key": key, "preserve_existing": preserve_existing, "wait": False},
     )
+    if wait and not result.get("finished_at"):
+        typer.echo(f"Backup {result['id']} admitted; inspect with pa backup run-status --idempotency-key {key}", err=True)
+        while not result.get("finished_at"):
+            time.sleep(1)
+            result = _api("GET", "/api/backups/runs", params={"idempotency_key": key})
     _json(result)
+    if wait and result.get("status") == "failed":
+        raise typer.Exit(1)
+
+
+@backup_app.command("run-status")
+def run_status(idempotency_key: Annotated[str, typer.Option(help="The original backup request key")]) -> None:
+    """Read a backup's persisted run receipt without starting another backup."""
+    _json(_api("GET", "/api/backups/runs", params={"idempotency_key": idempotency_key}))
 
 
 @backup_app.command("list")
