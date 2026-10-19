@@ -540,11 +540,15 @@ class DispatchRecord(BaseModel):
         latest_evaluation = (
             self.post_turn_evaluations[-1] if self.post_turn_evaluations else None
         )
-        data["turn_end"] = (
-            self.turn_end_snapshots[-1].model_dump(mode="json")
-            if self.turn_end_snapshots
-            else None
-        )
+        # Summary views exclude turn_end. Retained snapshots can contain large
+        # validation/provenance trees; do not serialize one just to discard it.
+        # Full detail and durable snapshots keep their existing representation.
+        if not summary:
+            data["turn_end"] = (
+                self.turn_end_snapshots[-1].model_dump(mode="json")
+                if self.turn_end_snapshots
+                else None
+            )
         data["post_turn_evaluation"] = (
             latest_evaluation.model_dump(mode="json") if latest_evaluation else None
         )

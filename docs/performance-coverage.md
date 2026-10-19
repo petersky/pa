@@ -1,3 +1,48 @@
+# Exact deployed inventory and dispatch summary repair — 2026-10-19
+
+All **597 findings and 101 concerns remain open**. The [unchanged full deployed retest artifact](benchmarks/systemic-exact53b42-loaded-retest-20261019.json) publishes the evidence that could not be added to the full ten-attachment card. Its SHA256 remains `5ec8c78ec0da88b0c2b487d54a2442ae2c055f6121d9813da9b917c714e4f191`. All ten existing attachments remain preserved. Both JSON and gzip submissions returned definite413; a fresh read confirmed ten attachments and the source enforces a ten-file cap. The early byte-size hypothesis was withdrawn; no attachment was claimed uploaded or replaced.
+
+macbook `0c7d8ecb` runs exact authorized PR542 merge `53b42d5077971b192e824c62acae71a59db95e80`, package `6ccadfa13713…`, PID69337/startup `69233661-c671-4998-b0c9-a5fda8684a89`. All438 source files, all52 distribution versions under Python3.14.2,38 compiled templates and two servedJS assets were checked. Configuration `86968d12…` and lease fence290 stayed unchanged. At04:14:37Z the saved handoff `e877ac9c-1ea6-524d-bc60-190a7840dcad` was independently terminal `continuation_delivered`/effectcomplete since00:35:55.909550Z, noerror. Originalfailed527 remains failed/undelivered and was not retried. Current checkout includes544/545; this authorization installed53b only, so later source is not claimed deployed.
+
+The completed00:32–00:33 local window had95 ordinary GETs, allHTTP200 on one stable build, **five >=500ms observations**. This is not whole-PA acceptance. Separate runtime totals retain all87 operations and29 route groups,23slow calls across11 names and one workspace-provisioning failure; percentiles are bounded returned windows and maxima are process maxima. Exact per-call phase records, bytes/write totals, every family and opaque-observation omissions are retained. No new log download or exhaustive fleet audit was performed; prior log-backed inventory remains below.
+
+| GET path | n | p50 ms | p95 ms | p99 ms | max ms | >=500ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `/` | 5 | 26.41 | 38.556 | 38.556 | 38.556 | 0 |
+| `/agent` | 5 | 79.882 | 158.949 | 158.949 | 158.949 | 0 |
+| `/api/fleet/overview` | 5 | 222.78 | 527.677 | 527.677 | 527.677 | 1 |
+| `/api/health` | 20 | 14.701 | 31.443 | 35.209 | 35.209 | 0 |
+| `/api/runtime` | 20 | 50.383 | 134.573 | 514.157 | 514.157 | 1 |
+| `/api/status` | 20 | 81.869 | 138.908 | 510.678 | 510.678 | 1 |
+| `/fleet` | 5 | 357.123 | 564.742 | 564.742 | 564.742 | 1 |
+| `/pull-requests` | 5 | 49.294 | 504.39 | 504.39 | 504.39 | 1 |
+| `/settings?section=agent` | 5 | 24.658 | 48.259 | 48.259 | 48.259 | 0 |
+| `/work` | 5 | 34.215 | 39.772 | 39.772 | 39.772 | 0 |
+
+| Runtime slow/failed name | submitted | slow | failed | p50 ms | p95 ms | p99 ms | process max ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `agent.recovery_sessions` | 18 | 1 | 0 | 81.437 | 529.547 | 529.547 | 529.547 |
+| `agent.startup_state_read` | 1 | 1 | 0 | 1237.478 | 1237.478 | 1237.478 | 1237.478 |
+| `conversation.session` | 45 | 2 | 0 | 15.01 | 139.097 | 825.361 | 825.361 |
+| `fleet.overview_response_json` | 81 | 1 | 0 | 2.988 | 42.752 | 683.07 | 683.07 |
+| `health.canonical_obligation` | 57 | 1 | 0 | 27.743 | 252.692 | 1048.504 | 1048.504 |
+| `sqlite.agent_session_save` | 45 | 2 | 0 | 15.501 | 206.826 | 5268.794 | 5268.794 |
+| `sqlite.restart_handoff_completion` | 76 | 1 | 0 | 6.734 | 100.559 | 925.615 | 925.615 |
+| `startup.openapi` | 1 | 1 | 0 | 797.669 | 797.669 | 797.669 | 797.669 |
+| `sync.reconcile_head` | 12 | 9 | 0 | 591.631 | 6316.062 | 6316.062 | 6316.062 |
+| `workspace.collect_garbage` | 2 | 2 | 0 | 5804.455 | 8675.767 | 8675.767 | 8675.767 |
+| `workspace.project_provision` | 8 | 2 | 1 | 1725.789 | 6330.114 | 6330.114 | 6330.114 |
+
+The [complete new source artifact](benchmarks/systemic-dispatch-summary-20261019.json) retains a confirmed small repair: summary/status reads were materializing the latest durable turn snapshot and discarding it. Only that unused serialization is skipped. Full detail, durable snapshots, queue/admission/receipt semantics and complete numeric protocol gaps/compaction remain unchanged. Thirty alternating pairs retain identical summary and full detail, with30→0 snapshot serializations; actual-source p50/p95/p99/max are6.552/18.748/51.983/51.983ms before and0.225/0.531/1.713/1.713ms after in this2.576MB synthetic retained-proof fixture. This is measured discarded work, not proof of the sole cause of historic Fleet/health tails.
+
+Five regressions fail against archived main as expected; candidate118tests+4subtests pass. A separate exact-wheel100iteration mixed source scenario adds normal durable retained snapshots to101 dispatches, retains9600 ordered events and12511 verified cold objects, and records **3 worker warnings and 12 threshold observations**. All failure/timeouts/rejections and startup/phase/byte/journal measurements remain in the artifact. This source is not deployed and is not a performance acceptance pass. A separate SQLite JSON rewrite experiment was slower in both variants and was rejected; its complete results remain recorded.
+
+The one-shot Fleet shape audit retained field sizes only: fournodes781307bytes and eightedges206472bytes, including187479/other node sizes and a198516-byte dispatch edge. No response values, prompts or credentials were stored. It does not establish a single payload cause or authorize omission of public detail.
+
+Backup owner18fc/c5a owns held available-data capture, all eightarchives and independentb527 acceptance. The terminal restart gate has been communicated with no new restart or capture authorization. Missing historical bytes remain disclosed without blocking feasible work. The systemic independent17d034a6 requirement, peer failures/log-loss/retention gaps, nativeCPU/disk/busy attribution, representative startup/drain and every older finding remain required. Source integration alone cannot complete this card.
+
+## Preserved prior inventory and evidence
+
 # Fresh integration-base verification — 2026-10-18
 
 All **596 findings and 100 concerns remain open**. [Complete fresh-base workload, prior CI result, source attestation and residuals](benchmarks/systemic-gc-fresh-main-20261018.json). Original PR545 head `2c9c6ac3` passed all five CI checks, but main changed when the existing fork owner integrated PR544 as `ee21b429`. Root merged that main normally into its own branch as `08c95ccd`, without conflicts, resets or force pushes. Since session/chat integration inputs changed, a separate 100-iteration replay tests the resulting source. Earlier measurements and CI results remain immutable and do not substitute for final-head gates.

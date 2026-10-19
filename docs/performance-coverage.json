@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-18T23:11:24.345905+00:00",
-  "completion": "OPEN;596findings/100concerns, every existing row unchanged with explicit new stage overrides. PR545 original2c9CI5success retained; mainchanged via PR544ee21 and normally merged08c. Fresh exact-source100iteration workload retains9600orderedactive/12511cold with1workerwarnings/6threshold observations; prior2/8 and startup slow observations retained. No performance/deployment/independent acceptance. Final updatedhead CI/supervisor pending. Immutable53b42 operator interaction remains separate; all existing peer/log/backup/native/inventory requirements remain.",
+  "as_of": "2026-10-19T04:23:24.310510+00:00",
+  "completion": "OPEN;597findings/101concerns. All596priorrows unchanged. Exact53b installed/loaded/retested and savedhandoffterminalconfirmed;95GETs0errors but5violations, runtime23slowcalls/11families/1failure. New summary guard source118tests+4subtests, baseline5fail/1pass, source100iterations 3warnings/12thresholdobservations; every priorfailure retained. No candidate installation, threshold/default/receipt/acceptance change. Full peer/log/startup/drain/backup/independent gates remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -136,7 +136,9 @@
     "docs/benchmarks/systemic-sqlite-call-attribution-20261018.json",
     "docs/benchmarks/systemic-ci543-lock-fixture-followup-20261018.json",
     "docs/benchmarks/systemic-gc-bounded-fetch-20261018.json",
-    "docs/benchmarks/systemic-gc-fresh-main-20261018.json"
+    "docs/benchmarks/systemic-gc-fresh-main-20261018.json",
+    "docs/benchmarks/systemic-dispatch-summary-20261019.json",
+    "docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -209419,6 +209421,38 @@
       "fix_or_existing_owner": "This same systemic session; backup owner retains only its bounded backup scope.",
       "next_actor": "This systemic session for supervised integration and later authorized runtime verification; independent PA scheduler retains final acceptance.",
       "next_action": "Integrate only exact current head after CI/supervisor/independent gates; preserve existing53b42 activation decision identity; continue all residual CPU/SQL/maintenance/page/peer/log and full inventory obligations."
+    },
+    {
+      "id": "concern:dispatch-summary-discarded-turn-snapshot",
+      "kind": "concern",
+      "finding": "Dispatch summary/status serialization expands a retained turn snapshot that its existing field contract discards",
+      "family": "dispatch",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_discarded_serialization_fixture_live_causality_unverified",
+      "cause": "public_dict(summary=True) serializes latest turn_end before summarize_dispatch removes that field. The public-status reader invokes it under the ledger index lock; full durable proof hydration is unnecessary for this summary field contract.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-dispatch-summary-20261019.json",
+        "sha256": "5986dc9b016d56aefbdab023b9623f5b07ea0ed7978f032e1ddd381b5ea9f871",
+        "resolution": "open"
+      },
+      "fix_or_existing_owner": "This existing systemic session: guard only discarded turn-end serialization; full detail and storage unchanged.",
+      "implemented": "Current scoped source; readyPR/integration gates pending",
+      "merged": [],
+      "deployed": "Not installed; independently verified current53b excludes candidate and source544/545.",
+      "retested": {
+        "targeted_and_existing_tests": 118,
+        "subtests": 4,
+        "baseline_regression": "5expected failures/1pass; full raw hashes retained",
+        "mixed_warnings": 3,
+        "mixed_threshold_observations": 12,
+        "summary_snapshot_materializations": {
+          "baseline": 30,
+          "candidate": 0
+        }
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and normalPA supervisor/independent verifier",
+      "next_action": "Complete current exact-source PR/CI/stable-supervisor/integration gates; coordinate any separately authorized rollout with backupowner stable window; retain all latency and acceptance residuals."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -215803,5 +215837,21 @@
       "resolution": "open",
       "next_action": "Push final updated head, require fresh full CI/stable supervisor/independent signals, then retain separate authorized activation and whole-inventory acceptance gates."
     }
-  ]
+  ],
+  "dispatch_summary_snapshot_stage": {
+    "artifact": "docs/benchmarks/systemic-dispatch-summary-20261019.json",
+    "sha256": "5986dc9b016d56aefbdab023b9623f5b07ea0ed7978f032e1ddd381b5ea9f871",
+    "resolution": "open"
+  },
+  "latest_exact53b_loaded_retest": {
+    "artifact": "docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json",
+    "sha256": "5ec8c78ec0da88b0c2b487d54a2442ae2c055f6121d9813da9b917c714e4f191",
+    "terminal_receipt_followup": {
+      "artifact": "docs/benchmarks/systemic-dispatch-summary-20261019.json",
+      "sha256": "5986dc9b016d56aefbdab023b9623f5b07ea0ed7978f032e1ddd381b5ea9f871",
+      "resolution": "open"
+    },
+    "resolution": "open",
+    "scope": "Verified53b source/package/PID/startup/config/lease/438files/52versions/38templates/twoJS assets;95GETs0errors5violations;87operations29routes23processslowcalls11families1failure. All unresolvedrows remainopen."
+  }
 }
