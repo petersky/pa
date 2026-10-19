@@ -1,0 +1,1098 @@
+{
+  "contract": "pa.performance-catalog-hash-reads/v1",
+  "published_at": "2026-10-19T22:51:26.581625+00:00",
+  "instance": "macbook0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+  "baseline_revision": "1a4d01c4cb900d69d661f69ea4a00e2e5c88aebc",
+  "source_stage": "Uncommitted source candidate; PR/CI/integration not yet established at publication.",
+  "final_exact_source_comparison": {
+    "baseline_revision": "1a4d01c4cb900d69d661f69ea4a00e2e5c88aebc",
+    "baseline_module_sha256": "7d16a1694e146411836799527bfafa5eac106f896b89cbbccd8639a6ace85d8c",
+    "source_module_sha256": "bf7ad7c63a0f96fa228fc985cb546f4fd596294e04dcdd249e796a8068d8eb1d",
+    "source_method_sha256": "d46027b4df638c7d01c02e8a1c3c8add37e43db9caa43e17c4714bcab2ef70e3",
+    "rows": 1000,
+    "iterations_per_method": 20,
+    "trials": [
+      {
+        "pair": 0,
+        "method": "baseline",
+        "wall_ms": 3.499,
+        "thread_cpu_ms": 3.224,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 0,
+        "method": "source",
+        "wall_ms": 2.919,
+        "thread_cpu_ms": 2.527,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 1,
+        "method": "source",
+        "wall_ms": 2.644,
+        "thread_cpu_ms": 2.457,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 1,
+        "method": "baseline",
+        "wall_ms": 4.473,
+        "thread_cpu_ms": 3.873,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 2,
+        "method": "baseline",
+        "wall_ms": 5.369,
+        "thread_cpu_ms": 4.829,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 2,
+        "method": "source",
+        "wall_ms": 3.798,
+        "thread_cpu_ms": 3.053,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 3,
+        "method": "source",
+        "wall_ms": 3.172,
+        "thread_cpu_ms": 3.109,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 3,
+        "method": "baseline",
+        "wall_ms": 4.852,
+        "thread_cpu_ms": 3.974,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 4,
+        "method": "baseline",
+        "wall_ms": 4.875,
+        "thread_cpu_ms": 4.405,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 4,
+        "method": "source",
+        "wall_ms": 2.395,
+        "thread_cpu_ms": 2.246,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 5,
+        "method": "source",
+        "wall_ms": 3.833,
+        "thread_cpu_ms": 2.8,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 5,
+        "method": "baseline",
+        "wall_ms": 3.418,
+        "thread_cpu_ms": 3.246,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 6,
+        "method": "baseline",
+        "wall_ms": 5.363,
+        "thread_cpu_ms": 4.526,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 6,
+        "method": "source",
+        "wall_ms": 2.64,
+        "thread_cpu_ms": 2.478,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 7,
+        "method": "source",
+        "wall_ms": 5.074,
+        "thread_cpu_ms": 3.878,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 7,
+        "method": "baseline",
+        "wall_ms": 4.21,
+        "thread_cpu_ms": 3.988,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 8,
+        "method": "baseline",
+        "wall_ms": 5.574,
+        "thread_cpu_ms": 4.72,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 8,
+        "method": "source",
+        "wall_ms": 3.957,
+        "thread_cpu_ms": 3.721,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 9,
+        "method": "source",
+        "wall_ms": 3.097,
+        "thread_cpu_ms": 2.994,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 9,
+        "method": "baseline",
+        "wall_ms": 5.031,
+        "thread_cpu_ms": 4.463,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 10,
+        "method": "baseline",
+        "wall_ms": 3.945,
+        "thread_cpu_ms": 3.646,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 10,
+        "method": "source",
+        "wall_ms": 4.756,
+        "thread_cpu_ms": 3.398,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 11,
+        "method": "source",
+        "wall_ms": 2.858,
+        "thread_cpu_ms": 2.42,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 11,
+        "method": "baseline",
+        "wall_ms": 5.853,
+        "thread_cpu_ms": 5.802,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 12,
+        "method": "baseline",
+        "wall_ms": 5.67,
+        "thread_cpu_ms": 4.907,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 12,
+        "method": "source",
+        "wall_ms": 3.587,
+        "thread_cpu_ms": 3.437,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 13,
+        "method": "source",
+        "wall_ms": 3.464,
+        "thread_cpu_ms": 2.832,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 13,
+        "method": "baseline",
+        "wall_ms": 5.788,
+        "thread_cpu_ms": 5.326,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 14,
+        "method": "baseline",
+        "wall_ms": 5.537,
+        "thread_cpu_ms": 5.468,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 14,
+        "method": "source",
+        "wall_ms": 3.546,
+        "thread_cpu_ms": 3.051,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 15,
+        "method": "source",
+        "wall_ms": 4.599,
+        "thread_cpu_ms": 3.703,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 15,
+        "method": "baseline",
+        "wall_ms": 4.594,
+        "thread_cpu_ms": 4.348,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 16,
+        "method": "baseline",
+        "wall_ms": 5.583,
+        "thread_cpu_ms": 4.374,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 16,
+        "method": "source",
+        "wall_ms": 4.258,
+        "thread_cpu_ms": 3.882,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 17,
+        "method": "source",
+        "wall_ms": 3.873,
+        "thread_cpu_ms": 3.085,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 17,
+        "method": "baseline",
+        "wall_ms": 5.712,
+        "thread_cpu_ms": 4.899,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 18,
+        "method": "baseline",
+        "wall_ms": 6.199,
+        "thread_cpu_ms": 5.197,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 18,
+        "method": "source",
+        "wall_ms": 4.486,
+        "thread_cpu_ms": 2.805,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 19,
+        "method": "source",
+        "wall_ms": 4.324,
+        "thread_cpu_ms": 4.047,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 19,
+        "method": "baseline",
+        "wall_ms": 4.482,
+        "thread_cpu_ms": 3.84,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      }
+    ],
+    "ordered_output_sha256": "aba89a944dbca035904562597f924086dc9ab3f7e2c2d751cbc628fadc28af48",
+    "results": {
+      "baseline": {
+        "wall_ms": {
+          "samples": 20,
+          "max": 6.199,
+          "p50": 5.031,
+          "p95": 5.853,
+          "p99": 6.199
+        },
+        "thread_cpu_ms": {
+          "samples": 20,
+          "max": 5.802,
+          "p50": 4.405,
+          "p95": 5.468,
+          "p99": 5.802
+        },
+        "observed_sqlite_calls_per_trial": [
+          1004
+        ],
+        "observed_rows_per_trial": [
+          1000
+        ]
+      },
+      "source": {
+        "wall_ms": {
+          "samples": 20,
+          "max": 5.074,
+          "p50": 3.587,
+          "p95": 4.756,
+          "p99": 5.074
+        },
+        "thread_cpu_ms": {
+          "samples": 20,
+          "max": 4.047,
+          "p50": 3.051,
+          "p95": 3.882,
+          "p99": 4.047
+        },
+        "observed_sqlite_calls_per_trial": [
+          12
+        ],
+        "observed_rows_per_trial": [
+          1000
+        ]
+      }
+    },
+    "scope": "Only the tracked baseline reader differs. Identical ordered SELECT and full output; supporting source shared. Warm filesystem/uncontrolled host; observed execute/fetch calls are not distinct SQL queries or physical disk IO. No GC plan execution, object deletion, live Store/EventLog, backup work, network or deployment acceptance.",
+    "started_at": "2026-10-19T22:50:12.235109+00:00",
+    "finished_at": "2026-10-19T22:50:12.572641+00:00"
+  },
+  "earlier_reader_prototype": {
+    "started_at": "2026-10-19T22:48:17.636258+00:00",
+    "source_sha256": "64157c54d11bf6e51b6e153ca6e1190aaad8842d0935a915319d4f3455aa49de",
+    "candidate_sha256": "ea74f2941851104ee9971859a0250c908b7f50731797be3a4da511a1d35a6347",
+    "candidate_source": "def iter_hashes(self, *, limit: int | None = None) -> list[str]:\n    sql = \"SELECT object_hash FROM objects ORDER BY object_hash\"\n    if limit is not None:\n        sql += f\" LIMIT {int(limit)}\"\n    with self._db() as conn:\n        cursor = conn.execute(sql)\n        hashes = []\n        while rows := cursor.fetchmany(128):\n            hashes.extend(str(row[0]) for row in rows)\n        return hashes\n",
+    "fixture_rows": 1000,
+    "trials": [
+      {
+        "pair": 0,
+        "method": "baseline",
+        "wall_ms": 5.549,
+        "thread_cpu_ms": 4.42,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 0,
+        "method": "candidate",
+        "wall_ms": 2.68,
+        "thread_cpu_ms": 2.484,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 1,
+        "method": "candidate",
+        "wall_ms": 4.713,
+        "thread_cpu_ms": 4.025,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 1,
+        "method": "baseline",
+        "wall_ms": 5.394,
+        "thread_cpu_ms": 4.66,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 2,
+        "method": "baseline",
+        "wall_ms": 5.002,
+        "thread_cpu_ms": 4.107,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 2,
+        "method": "candidate",
+        "wall_ms": 3.702,
+        "thread_cpu_ms": 3.394,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 3,
+        "method": "candidate",
+        "wall_ms": 2.406,
+        "thread_cpu_ms": 2.256,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 3,
+        "method": "baseline",
+        "wall_ms": 6.267,
+        "thread_cpu_ms": 5.618,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 4,
+        "method": "baseline",
+        "wall_ms": 4.34,
+        "thread_cpu_ms": 4.082,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 4,
+        "method": "candidate",
+        "wall_ms": 3.679,
+        "thread_cpu_ms": 3.029,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 5,
+        "method": "candidate",
+        "wall_ms": 3.31,
+        "thread_cpu_ms": 2.115,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 5,
+        "method": "baseline",
+        "wall_ms": 4.614,
+        "thread_cpu_ms": 4.461,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 6,
+        "method": "baseline",
+        "wall_ms": 5.792,
+        "thread_cpu_ms": 5.734,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 6,
+        "method": "candidate",
+        "wall_ms": 2.357,
+        "thread_cpu_ms": 2.162,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 7,
+        "method": "candidate",
+        "wall_ms": 5.133,
+        "thread_cpu_ms": 3.889,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 7,
+        "method": "baseline",
+        "wall_ms": 6.697,
+        "thread_cpu_ms": 3.539,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 8,
+        "method": "baseline",
+        "wall_ms": 6.177,
+        "thread_cpu_ms": 4.307,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 8,
+        "method": "candidate",
+        "wall_ms": 4.817,
+        "thread_cpu_ms": 4.008,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 9,
+        "method": "candidate",
+        "wall_ms": 3.966,
+        "thread_cpu_ms": 2.99,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 9,
+        "method": "baseline",
+        "wall_ms": 5.32,
+        "thread_cpu_ms": 4.063,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 10,
+        "method": "baseline",
+        "wall_ms": 3.951,
+        "thread_cpu_ms": 3.874,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 10,
+        "method": "candidate",
+        "wall_ms": 3.257,
+        "thread_cpu_ms": 2.522,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 11,
+        "method": "candidate",
+        "wall_ms": 3.674,
+        "thread_cpu_ms": 3.625,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 11,
+        "method": "baseline",
+        "wall_ms": 4.479,
+        "thread_cpu_ms": 3.887,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 12,
+        "method": "baseline",
+        "wall_ms": 5.629,
+        "thread_cpu_ms": 5.002,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 12,
+        "method": "candidate",
+        "wall_ms": 3.623,
+        "thread_cpu_ms": 2.596,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 13,
+        "method": "candidate",
+        "wall_ms": 4.846,
+        "thread_cpu_ms": 3.618,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 13,
+        "method": "baseline",
+        "wall_ms": 4.235,
+        "thread_cpu_ms": 3.899,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 14,
+        "method": "baseline",
+        "wall_ms": 5.26,
+        "thread_cpu_ms": 4.996,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 14,
+        "method": "candidate",
+        "wall_ms": 3.711,
+        "thread_cpu_ms": 3.37,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 15,
+        "method": "candidate",
+        "wall_ms": 2.535,
+        "thread_cpu_ms": 2.272,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 15,
+        "method": "baseline",
+        "wall_ms": 4.731,
+        "thread_cpu_ms": 4.08,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 16,
+        "method": "baseline",
+        "wall_ms": 6.022,
+        "thread_cpu_ms": 3.554,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 16,
+        "method": "candidate",
+        "wall_ms": 4.784,
+        "thread_cpu_ms": 3.469,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 17,
+        "method": "candidate",
+        "wall_ms": 4.677,
+        "thread_cpu_ms": 3.94,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 17,
+        "method": "baseline",
+        "wall_ms": 4.213,
+        "thread_cpu_ms": 3.373,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 18,
+        "method": "baseline",
+        "wall_ms": 5.263,
+        "thread_cpu_ms": 4.737,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 18,
+        "method": "candidate",
+        "wall_ms": 3.668,
+        "thread_cpu_ms": 2.462,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 19,
+        "method": "candidate",
+        "wall_ms": 3.12,
+        "thread_cpu_ms": 3.079,
+        "sqlite_calls": 12,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      },
+      {
+        "pair": 19,
+        "method": "baseline",
+        "wall_ms": 5.008,
+        "thread_cpu_ms": 3.949,
+        "sqlite_calls": 1004,
+        "sqlite_rows": 1000,
+        "sqlite_busy_failures": 0
+      }
+    ],
+    "scope": "Exact reader, identical ordered SELECT and output. Disposable derived index only. Warm filesystem, uncontrolled host; observed execute/fetch calls are not distinct SQL statements or physical disk IO. No production GC, deletion, backup, mixed load or deployment.",
+    "ordered_output_sha256": "aba89a944dbca035904562597f924086dc9ab3f7e2c2d751cbc628fadc28af48",
+    "data_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/catalog-reader-b7ca2_2i",
+    "finished_at": "2026-10-19T22:48:17.921866+00:00"
+  },
+  "gc_metadata_prototype": {
+    "started_at": "2026-10-19T22:47:34.053142+00:00",
+    "source_sha256": "447028bc28f5013da6ed4eb3e3901c85700b84ace045213c2682b5afea843c2e",
+    "prototype_sha256": "0e317dfab5f857abca947d4f16ddcabd1805912ceb89ebb338794bfbd07613cb",
+    "prototype_source": "def plan(\n    self,\n    realm_id: str,\n    *,\n    reachable_hashes: set[str],\n    pins: list[GcPin],\n    required_ack_instances: list[str],\n    dry_run: bool = True,\n    safety_window: timedelta = DEFAULT_SAFETY_WINDOW,\n    now: datetime | None = None,\n) -> GcPlan:\n    \"\"\"Compute reclaim candidates without deleting anything.\"\"\"\n    now = now or datetime.now(UTC)\n    epoch = self.epochs.current(realm_id)\n    plan = GcPlan(\n        plan_id=str(uuid4()),\n        realm_id=realm_id,\n        created_at=now.isoformat(),\n        dry_run=dry_run,\n        safety_window_seconds=int(safety_window.total_seconds()),\n    )\n    if not epoch:\n        plan.notes.append(\n            \"No snapshot epoch exists; refuse reclaim until an epoch is \"\n            \"created, replicated, and acknowledged.\"\n        )\n        plan.rebootstrap_required = True\n        return self._persist_plan(plan)\n\n    plan.epoch_hash = epoch.get(\"epoch_hash\")\n    quorum = self.epochs.mark_reclaimable_if_quorum(\n        realm_id, required_instance_ids=required_ack_instances\n    )\n    plan.missing_acks = list(quorum.get(\"missing_acknowledgements\") or [])\n    plan.reclaimable = bool(quorum.get(\"reclaimable\"))\n    plan.rebootstrap_required = True\n    if not plan.reclaimable:\n        plan.notes.append(\n            \"Epoch is not fleet-acknowledged; offline or unsubscribed peers \"\n            \"must acknowledge or be explicitly declared for rebootstrap \"\n            \"before history can be reclaimed.\"\n        )\n\n    pin_hashes = {pin.object_hash for pin in pins}\n    pin_hashes.add(str(epoch.get(\"epoch_hash\")))\n    if epoch.get(\"head_hash\"):\n        pin_hashes.add(str(epoch[\"head_hash\"]))\n    if epoch.get(\"parent_epoch_hash\"):\n        pin_hashes.add(str(epoch[\"parent_epoch_hash\"]))\n    plan.pinned = [\n        {\n            \"kind\": pin.kind,\n            \"object_hash\": pin.object_hash,\n            \"reason\": pin.reason,\n            \"source\": pin.source,\n        }\n        for pin in pins\n    ]\n\n    cutoff_ns = int((now - safety_window).timestamp() * 1_000_000_000)\n    for object_hash, row in _candidate_rows(self.catalog, reachable_hashes | pin_hashes):\n        if row is None:\n            continue\n        if row[\"realm_id\"] not in {None, realm_id}:\n            continue\n        if int(row[\"mtime_ns\"]) > cutoff_ns:\n            plan.pinned.append(\n                {\n                    \"kind\": \"safety_window\",\n                    \"object_hash\": object_hash,\n                    \"reason\": \"inside_safety_window\",\n                    \"source\": \"gc_planner\",\n                }\n            )\n            continue\n        plan.candidates.append(object_hash)\n\n    if not plan.reclaimable:\n        plan.notes.append(\n            f\"Dry-run identified {len(plan.candidates)} candidates; none are \"\n            \"deletable until epoch acknowledgements complete.\"\n        )\n    return self._persist_plan(plan)\n",
+    "fixture_rows": 1000,
+    "trials": [
+      {
+        "pair": 0,
+        "method": "baseline",
+        "wall_ms": 20.432,
+        "thread_cpu_ms": 17.92,
+        "sqlite_calls": 2456,
+        "sqlite_rows": 1726,
+        "sqlite_statement_ms": 9.364,
+        "sqlite_busy_failures": 0,
+        "candidates": 468,
+        "pins": 168
+      },
+      {
+        "pair": 0,
+        "method": "prototype",
+        "wall_ms": 9.91,
+        "thread_cpu_ms": 8.762,
+        "sqlite_calls": 1016,
+        "sqlite_rows": 1726,
+        "sqlite_statement_ms": 4.581,
+        "sqlite_busy_failures": 0,
+        "candidates": 468,
+        "pins": 168
+      },
+      {
+        "pair": 1,
+        "method": "prototype",
+        "wall_ms": 11.603,
+        "thread_cpu_ms": 9.386,
+        "sqlite_calls": 1016,
+        "sqlite_rows": 1726,
+        "sqlite_statement_ms": 5.708,
+        "sqlite_busy_failures": 0,
+        "candidates": 468,
+        "pins": 168
+      },
+      {
+        "pair": 1,
+        "method": "baseline",
+        "wall_ms": 18.908,
+        "thread_cpu_ms": 17.755,
+        "sqlite_calls": 2456,
+        "sqlite_rows": 1726,
+        "sqlite_statement_ms": 8.869,
+        "sqlite_busy_failures": 0,
+        "candidates": 468,
+        "pins": 168
+      },
+      {
+        "pair": 2,
+        "method": "baseline",
+        "wall_ms": 20.419,
+        "thread_cpu_ms": 17.203,
+        "sqlite_calls": 2456,
+        "sqlite_rows": 1726,
+        "sqlite_statement_ms": 8.357,
+        "sqlite_busy_failures": 0,
+        "candidates": 468,
+        "pins": 168
+      },
+      {
+        "pair": 2,
+        "method": "prototype",
+        "wall_ms": 9.645,
+        "thread_cpu_ms": 9.219,
+        "sqlite_calls": 1016,
+        "sqlite_rows": 1726,
+        "sqlite_statement_ms": 4.463,
+        "sqlite_busy_failures": 0,
+        "candidates": 468,
+        "pins": 168
+      }
+    ],
+    "scope": "Exact plan body, fixed epoch/quorum and read-only catalog fixture; _persist_plan bypassed in both methods. No production data, object deletion, backup work, mixed load or deployment acceptance. Warm filesystem/uncontrolled host; query counts are observed execute/fetch calls, not native syscalls.",
+    "full_plan_sha256": "bfa0653100d46c0e11f5d94dcf310035ea13a2622e5e7086c9ad51e822c67221",
+    "data_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/gc-plan-probe-20x4eklb",
+    "finished_at": "2026-10-19T22:47:34.178353+00:00"
+  },
+  "gc_metadata_prototype_status": "NOT implemented. Existing per-object metadata query loop remains. Complete plan parity only in a fixed-epoch fixture with journal persistence bypassed; not concurrency, route, deletion, fleet or deployed acceptance.",
+  "tests": {
+    "passed": 18,
+    "new_contracts": 13,
+    "existing_gc_catalog_contracts": 5,
+    "started_at": "2026-10-19T22:49:32.318368+00:00",
+    "finished_at": "2026-10-19T22:49:34.013480+00:00",
+    "wall_ms": 1692.848,
+    "exit_code": 0,
+    "cases": [
+      "tests/test_catalog_hash_batches.py",
+      "tests/test_sync_history_scale.py::test_object_catalog_status_avoids_filesystem_scan",
+      "tests/test_sync_history_scale.py::test_snapshot_epoch_requires_ack_before_gc",
+      "tests/test_sync_history_scale.py::test_gc_resume_interrupted_after_crash",
+      "tests/test_sync_history_scale.py::test_offline_peer_pin_blocks_reclaim_with_explicit_rebootstrap",
+      "tests/test_sync_history_scale.py::test_corrupt_object_is_classified_without_failing_rebuild"
+    ],
+    "data_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/catalog-contracts-fbmpv4u7",
+    "workspace_construction": "denied",
+    "catalog_and_object_store_construction": "guarded to disposable root",
+    "log_sha256": "341d5dca33250b815baddbafb6001e174c20bf1716bb74f3d612e77777db8938"
+  },
+  "source_scope": "Only ObjectCatalog.iter_hashes fetch iteration changes; same ordered SELECT/LIMIT, complete output, fresh SQL snapshot/error behavior. Sole current source caller is GcPlanner.plan, not sync.object_collect or transcript GC. No GC plan selection/deletion/journal/ack/pin/safety-window/backup algorithm change.",
+  "observation_limits": [
+    "Observed SQLite calls count execute/fetch/cursor steps, not distinct SQL statements or native disk IO. Both readers use one identical SELECT and return every row.",
+    "Twenty alternating1000-row warm-index pairs are a small local source fixture, not representative API/background/fleet/whole-PA acceptance. No runtime threshold warning count is measured by this direct helper benchmark.",
+    "No heavy mixed workload, production GC/capture/verification, install or restart. Existing backup-owner stable build review window retained."
+  ],
+  "integration_followup": {
+    "pr549": {
+      "contract": "pa.exact-integration-proof/v1",
+      "number": 549,
+      "watch": "afe76671-cdc9-4e8a-b06a-106a89f82c4b",
+      "head": "97312dbb7e71f7890b1061f00e991a279e67c0d6",
+      "merge": "5b60ca8bc0b52540d7eb2e2e6183d01b9d4043c2",
+      "base": "52f042ad71c24763757509013c7e564ffbe4c203",
+      "parents": [
+        "52f042ad71c24763757509013c7e564ffbe4c203",
+        "97312dbb7e71f7890b1061f00e991a279e67c0d6"
+      ],
+      "head_merge_tree": "20fdb276152d0fdb30d63093d87c143a535f8ca4",
+      "tree_equal": true,
+      "head_ci": 39334757507,
+      "head_checks": "5terminalSUCCESS;0requiredapprovals;0reviews;0threads;completepagination;attributedcommit;protectionknown;CLEAN independently revalidated",
+      "stable_observations": 9,
+      "independent_observed_at": "2026-10-19T22:28:23.683743+00:00",
+      "supervisor_observed_at": "2026-10-19T22:28:09.875814+00:00",
+      "watch_retired_at": "2026-10-19T22:29:00.535148Z",
+      "watch_error": null,
+      "main_ci": 39335222796,
+      "main_ci_status": "in_progress at observation; revalidate terminal separately",
+      "worktree_retained": true,
+      "installed": false,
+      "loaded": false,
+      "last_actual_runtime": "22:27:04-05UTC supportedstatus/runtime/status allsame53b/package6cc/PID69337/startup69233661; installed228 underexistingreleaseowner",
+      "whole_acceptance": false,
+      "scope": "598rows/102concerns remainopen; later fresh139operation86route snapshot needs complete publication as separate evidence stage; no fresh log/fleet audit or runtimeacceptance claimed."
+    },
+    "pr550": {
+      "contract": "pa.exact-integration-proof/v1",
+      "number": 550,
+      "watch": "ab8d3489-959f-4ab0-9cf5-9dc14f268b5e",
+      "head": "3413910e2bc2f4d23a116eac8f87888f76e48463",
+      "merge": "1a4d01c4cb900d69d661f69ea4a00e2e5c88aebc",
+      "base": "5b60ca8bc0b52540d7eb2e2e6183d01b9d4043c2",
+      "parents": [
+        "5b60ca8bc0b52540d7eb2e2e6183d01b9d4043c2",
+        "3413910e2bc2f4d23a116eac8f87888f76e48463"
+      ],
+      "head_merge_tree": "89d13a8abc1f5d27ddcaccc5714591f77d0daeaf",
+      "tree_equal": true,
+      "head_ci": 39335579468,
+      "head_checks": "5 terminal SUCCESS; independent exact-head/base/CLEAN/protection/0requiredapprovals/0reviews/0threads/completepagination/attributedcommit; no bypass or neutral conclusion",
+      "supervisor_observed_at": "2026-10-19T22:35:29.620131+00:00",
+      "stable_observations_at_merge": 6,
+      "watch_retired_at": "2026-10-19T22:36:13.972184Z",
+      "watch_error": null,
+      "main_ci": 39336082802,
+      "main_ci_attempts": [
+        {
+          "attempt": 1,
+          "conclusion": "failure",
+          "failed_job": 118345797793,
+          "test": "tests/test_agent_snapshot_responsiveness.py::AgentSnapshotResponsivenessTests::test_live_metadata_does_not_flush_or_read_large_transcript",
+          "deadline_seconds": 0.2,
+          "asyncio_parent_callback_ms": 223,
+          "cause": "unverified",
+          "other_jobs": "4 success"
+        },
+        {
+          "attempt": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "checks": "5 terminal SUCCESS independently re-fetched22:43UTC; original attempt1 remains failed",
+          "scope": "one same-head failed-shard rerun; original failure retained; no deadline/source changes"
+        }
+      ],
+      "isolated_contract": {
+        "source": "1a4d01c4",
+        "passed": 1,
+        "fixture": "disposable roots, WorkspaceManager construction denied",
+        "wrapper_wall_ms": 4915.392,
+        "wrapper_is_request_latency": false
+      },
+      "worktree_retained": true,
+      "branch_pushed": true,
+      "upstream_divergence": "0/0",
+      "installed": false,
+      "loaded": false,
+      "retested_on_deployment": false,
+      "last_actual_runtime": {
+        "at": "2026-10-19T22:37:04Z",
+        "source_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+        "package_identity": "sha256:6ccadfa13713d5ac6baec1c58d9a93a57a476e6b7dbe46ff354c5754a9eab8cf",
+        "pid": 69337,
+        "startup_id": "69233661-c671-4998-b0c9-a5fda8684a89",
+        "installed_revision": "2283d9075b1a9cce2eb1566c22c4120cea1818c4"
+      },
+      "card": {
+        "lane": "active",
+        "updated_at": "2026-10-19T22:36:27.569476Z",
+        "requirement": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+        "accepted": false
+      },
+      "coverage": {
+        "rows": 606,
+        "concerns": 102,
+        "raw_sha256": "e087100595aa9b544a32ab4c6907c45db3b74eaaac6accba7e1457392a13270e",
+        "scope": "139 process operation names/86 routes, full original inventory and gaps retained; not controlled baseline, exhaustive fleet audit or acceptance"
+      },
+      "whole_acceptance": false
+    },
+    "pr549_main_ci_terminal": "39335222796 SUCCESS independently verified",
+    "pr550_original_main_failure": "39336082802 attempt1 test0 unchanged200ms snapshot TimeoutError/parentcallback223ms; other4jobsSUCCESS",
+    "pr550_latest_main_ci": "39336082802 attempt2 all5SUCCESS afterONE requested failed-shard retry; cause remains unverified, not resolved by later pass",
+    "ci_problem": {
+      "id": "d2781497-2a14-4eb6-88e8-4bcd360de2e6",
+      "revision": 2,
+      "hash": "9528f4736ad125ca2fe6aba1ae2324cd19fcdd02dcd5396894afb735684516c1",
+      "delivery": "pending at22:43:45"
+    },
+    "isolated_ci_failure_reproduction": {
+      "started_at": "2026-10-19T22:39:52.402527+00:00",
+      "finished_at": "2026-10-19T22:39:57.318593+00:00",
+      "wall_ms": 4915.392,
+      "exit_code": 0,
+      "source_revision": "1a4d01c4cb900d69d661f69ea4a00e2e5c88aebc",
+      "file": "tests/test_agent_snapshot_responsiveness.py",
+      "data_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/pr550-isolated-uayq1b0f/data",
+      "workspace_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/pr550-isolated-uayq1b0f/workspaces",
+      "workspace_construction": "denied",
+      "deadline_seconds": 0.2,
+      "deadline_changed": false,
+      "log_sha256": "423b1d0e014eb1eab96f4420f7b344c2615be505dd574b756ac884826ca74f2d"
+    },
+    "release_receipt_failure": {
+      "observed_at": "2026-10-19T22:37:23.689942+00:00",
+      "receipt": {
+        "id": "0f33aa65-ec38-58e4-b3b4-1a205c4edc83",
+        "session_id": "e9002d4a-4617-43f7-80cb-acd30d611138",
+        "status": "failed",
+        "idempotency_key": "status-actions-pr546-activate-preserving-handoff-v1",
+        "created_at": "2026-10-19T22:25:27.398443Z",
+        "updated_at": "2026-10-19T22:30:32.958063Z",
+        "delivered_at": null,
+        "error": "Quiesce deadline: session=1eb4393e-26a0-471b-9b01-0b96763d2c01 queued=3 prompt=d0d33ecd-af39-5583-b672-faa1aae163e5 tool=exec-daec165e-530e-424c-8f1b-f742ca5d2066 tool_status=completed transcript_batches=0; session=18fc3aac-661c-4c9f-ae1e-4b050c304973 queued=4 prompt=d5ae76bc-401a-5051-901f-9c7c7f94aa65 tool=exec-2ddd277d-a1ea-4f19-a2b0-c38ffee3bf20 tool_status=completed transcript_batches=0",
+        "failure_stage": "quiescing",
+        "reason_code": "restart_operation_failed",
+        "phase_version": 3
+      },
+      "receipt_keys": [
+        "id",
+        "session_id",
+        "idempotency_key",
+        "continuation_prompt",
+        "status",
+        "phase_version",
+        "reason_code",
+        "transition_history",
+        "card_id",
+        "project_id",
+        "instance_id",
+        "execution_binding",
+        "continuation_prompt_id",
+        "error",
+        "failure_stage",
+        "attempts",
+        "created_at",
+        "updated_at",
+        "delivered_at",
+        "observation"
+      ],
+      "scope": "Existing receipt only; no retry or new restart. Unknown effects remain unknown."
+    },
+    "source_inspection": "Quiesce waits all prompting runtimes and restores admission/recovery on failure. Its relevant source is unchanged53b->228; actual recovery not inferred. Existing release owner retains scope; no root retry/edit/restart.",
+    "continuation": "Same-session fdc05a68 durably accepted/queued after passive exact-key reconciliation of initialunknown correlationb8e19a72; no resend, not assumed consumed.",
+    "card_lane_followup": "LateWaiting22:36:28 after firstActiveCAS22:36:27 was observed; lane-onlyv2CAS+independentGETActive22:44:12.734596, requirement17d unchanged/unaccepted. No actualDone transition claimed."
+  },
+  "deployment": {
+    "last_actual_owner_read": "2026-10-19T22:37:04Z",
+    "loaded_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+    "loaded_package": "sha256:6ccadfa13713d5ac6baec1c58d9a93a57a476e6b7dbe46ff354c5754a9eab8cf",
+    "pid": 69337,
+    "startup_id": "69233661-c671-4998-b0c9-a5fda8684a89",
+    "installed_revision": "2283d9075b1a9cce2eb1566c22c4120cea1818c4",
+    "new_candidate_installed": false,
+    "new_candidate_loaded": false,
+    "deployed_retest": false
+  },
+  "rows_after": 608,
+  "concerns": 104,
+  "whole_acceptance": false
+}

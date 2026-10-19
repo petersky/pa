@@ -1,3 +1,31 @@
+# Existing saved GC plan freshness risk — 2026-10-19
+
+All **609 findings and105 concerns remain open**; all608 prior rows are preserved unchanged. A [separate safe observation](benchmarks/systemic-gc-saved-plan-observation-20261019.json) records an existing execution risk discovered while assessing metadata batching. Saved-plan execution invokes delete callbacks from its persisted candidate list without rereading current catalog age/realm, reachability or pins. The route passes the approved plan directly to that existing executor.
+
+In a disposable1-row catalog/journal fixture with a fixed acknowledged epoch, a30-day-old candidate was planned, then its metadata was refreshed into the14-day safety window. Execution still admitted the callback. The callback was **only a list append: zero object bytes deleted**, no object files/live Store/EventLog/refs/backup were touched. This confirms stale-plan callback admission in the fixture, not production data loss or actual active GC usage. Reportf320ad17rev1/deliverypending preserves exact source hash and observation. The existing systemic session owns a separate audit/repair of execute/resume freshness and canonical publication fences before any metadata optimization; no new worker or production GC is authorized by the report.
+
+The bounded catalog reader change below leaves GC selection/execution untouched. Its18tests and small paired timings remain source evidence only. The metadata N+1 prototype remains **unimplemented**; a faster selection loop alone does not establish deletion safety. Existing backup owner review/stable-build window, release ownership and independent acceptance stay unchanged.
+
+## Preserved prior inventory and evidence
+
+# Bounded catalog hash reads and remaining GC metadata work — 2026-10-19
+
+All **608 findings and104 concerns remain open**. Every606 prior row is preserved unchanged. The [complete source/prototype/test/failure evidence](benchmarks/systemic-catalog-hash-reads-20261019.json) separates a small implemented reader repair from an unimplemented GC metadata prototype.
+
+`ObjectCatalog.iter_hashes` now fetches128rows at a time using the **same ordered SELECT, LIMIT semantics and complete returned hash list**. Its sole current source caller is `GcPlanner.plan`; this is not a repair to `sync.object_collect`, transcript GC or backup algorithms. No selection, deletion, journal, acknowledgment, pin, safety-window or durability behavior changes.
+
+Twenty alternating exact-baseline/current-source pairs over a disposable1000-row derived index preserve all1000 ordered hashes. Observed SQLite execute/fetch calls fall1004→12, with the same one SELECT; these are not distinct SQL statements or physical disk operations. Wall p50/p95/p99/max **5.031/5.853/6.199/6.199→3.587/4.756/5.074/5.074ms**; threadCPU p95 **5.468→3.882ms**. The earlier prototype p956.267→4.846ms remains retained. Small warm-index/uncontrolled-host samples are not representative endpoint/background or deployed acceptance. The [public reproducer](../scripts/benchmark_catalog_hash_reads.py) records all raw pairs and exact source hashes.
+
+18isolated contracts pass:13new ordered-limit/empty/bounded-fetch/read-snapshot/fresh-read/error cases and5existing catalog/GC acknowledgment, peer pin, crash-resume and corrupt-object cases. Catalog/object-store constructors were guarded to disposable roots; workspace construction denied. No production GC, deletion, backup capture/verify, heavy mixed fixture, install or restart was invoked.
+
+The separate dry-run GC metadata loop still performs a lookup per eligible hash. Three fixed-epoch1000-row prototype pairs preserve the entire468candidate/168pin plan and1726returned rows, with2456→1016 observed execute/fetch calls; wall baseline18.908–20.432ms versus prototype9.645–11.603ms. **This prototype is not implemented.** Journal persistence was bypassed in both methods; concurrency/mtime/realm/error and actual route safety/latency remain unverified. No historic warning is attributed to this loop by assumption.
+
+PR549 and550 are integrated at5b60ca8b/1a4d01c4 with equal tested/merge trees and latest head/main CIgreen. PR550 mainCI39336082802 originally failed an unchanged200ms metadata responsiveness contract with a223ms parent callback. An isolated unchanged case passed, then ONE requested failed-shard retry passed. Both attempts and unresolved attribution remain in reportd2781497rev2; no deadline was raised. The existing release-owner handoff0f33 failed quiescing while root and backup turns were active, remains undelivered, and was not retried/replaced by root. Last actual22:37status stillloaded53b/package6cc/PID69337/startup69233661 versus installed228; current source is not deployed. A late Waiting update after the first ActiveCAS was corrected by supported lane-onlyCAS and independently readActive22:44:12; no actualDone transition or acceptance is claimed.
+
+The backup owner’s current stable-build review window is preserved. Existing partial2842-byte historical gap, all8original archives, narrow receipt/API ownership and ordinary b527 acceptance remain separate. All139 live runtime names/86routes, original181baseline operations/115routes, every slow/failure stage, nativeCPU/disk/busy/scheduling, provider/peer/logloss/retention and representative startup/drain/concurrency obligations remain open under unchanged17d independent acceptance. DB89957 originalaccepted scope staysclosed.
+
+## Preserved prior inventory and evidence
+
 # Fresh current-process inventory — 2026-10-19 22:27 UTC
 
 All **606 findings and102concerns remain open**. All598 previous rows remain unchanged; four newly observed runtime names and four route groups are added. The [unchanged numeric API snapshot](benchmarks/systemic-live-runtime-20261019T2227.json), [interpretation/count summary](benchmarks/systemic-live-runtime-20261019T2227-summary.json), [all139 operations CSV](benchmarks/systemic-live-runtime-20261019T2227-operations.csv) and [all86 route groups CSV](benchmarks/systemic-live-runtime-20261019T2227-routes.csv) retain every returned distribution and count.

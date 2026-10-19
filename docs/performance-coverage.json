@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T22:30:34.733543+00:00",
-  "completion": "OPEN;606rows/102concerns. Every598previousrow unchanged; fresh139operation86route processsnapshot adds4operation/4route findings.70slow-or-failed names/1012slowcalls/1012failed/958timedout counters overlap, not unique incidents. Eventloop processmax1071133ms unverifiedcause; complete p50/p95/p99/max/count/bytes retained, no pooledquantiles. PR549sourceintegrated only; loaded53b versus installed228 remains; alloriginalbaseline/peer/log/backup/startup/drain/ordinaryindependentgates open.",
+  "as_of": "2026-10-19T22:54:01.381156+00:00",
+  "completion": "OPEN;609rows/105concerns. All608 priorrows unchanged. Bounded ordered catalog reader source is measured/tested only; metadata batching remains unimplemented and existing saved-plan freshness risk has safe-spy evidence, no production data-loss claim. Complete original and139operation/86route inventories, every failure/deployment/peer/log/backup/startup/drain/independent gate remain open. No install/restart/production GC or acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -141,7 +141,9 @@
     "docs/benchmarks/systemic-exact53b42-loaded-retest-20261019.json",
     "docs/benchmarks/systemic-lock-release-attribution-20261019.json",
     "docs/benchmarks/systemic-live-runtime-20261019T2227.json",
-    "docs/benchmarks/systemic-live-runtime-20261019T2227-summary.json"
+    "docs/benchmarks/systemic-live-runtime-20261019T2227-summary.json",
+    "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+    "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -210764,6 +210766,69 @@
       "resolution": "open",
       "next_actor": "Existing systemic owner and ordinary independent scheduler",
       "next_action": "Retain this family in representative branch inventory, attribute queue/service/lock/CPU/I/O effects and verify actual scoped fixes before closure."
+    },
+    {
+      "id": "concern:catalog-hash-cursor-amplification",
+      "kind": "concern",
+      "finding": "Catalog hash inventory observes a cursor step per row",
+      "family": "sync",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_amplification_fixture_only",
+      "cause": "Confirmed one ordered SELECT is fetched by Python iterator per row; finite128-row fetches preserve complete ordered output.1000rows:1004->12 observed execute/fetch calls, not1004->12 distinct SQL statements.",
+      "fix_or_existing_owner": "Existing systemic session1eb/card7894; no competing backup/release owner or new worker.",
+      "implemented": "ObjectCatalog.iter_hashes bounded128-row fetch iteration; source candidate only.",
+      "merged": [],
+      "deployed": "Candidate not installed/loaded; last actual runtime53b separately from installed228.",
+      "retested": "18 source contracts and exact paired helper fixture; no API/deployed/mixed acceptance.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+        "sha256": "8908197c28d724801724114270fcf39bb91cdd7029ecb6de3c4f73ec2e8865db"
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and ordinary independent scheduler",
+      "next_action": "Require exact-head CI/supervisor/independent review, then separately authorized deployment and representative GC-plan route/remaining inventory acceptance; do not attribute sync.object_collect or transcript GC tails to this helper."
+    },
+    {
+      "id": "concern:gc-plan-per-object-metadata",
+      "kind": "concern",
+      "finding": "Dry-run GC planner reads metadata once per unpinned catalog hash",
+      "family": "sync",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_amplification_fixture_only",
+      "cause": "Source-confirmed eligible-hash metadata N+1. Three1000-row fixed-epoch prototype pairs preserve full468candidate/168pin plan;2456->1016 observed execute/fetch calls,1726rows unchanged. Journal persistence bypassed in both methods.",
+      "fix_or_existing_owner": "Existing systemic session1eb/card7894; no competing backup/release owner or new worker.",
+      "implemented": "NOT implemented. Bounded metadata batching remains a prototype; current metadata query loop unchanged.",
+      "merged": [],
+      "deployed": "Candidate not installed/loaded; last actual runtime53b separately from installed228.",
+      "retested": "18 source contracts and exact paired helper fixture; no API/deployed/mixed acceptance.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+        "sha256": "8908197c28d724801724114270fcf39bb91cdd7029ecb6de3c4f73ec2e8865db"
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and ordinary independent scheduler",
+      "next_action": "Validate missing-row/realm/mtime/concurrent-write/error/journal/ack/pin semantics and realistic route attribution before choosing a repair; no production GC/deletion or historical sole-cause claim."
+    },
+    {
+      "id": "concern:gc-saved-plan-freshness",
+      "kind": "concern",
+      "finding": "Saved GC plan executes a candidate after its catalog metadata is refreshed into the safety window",
+      "family": "sync",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_disposable_spy_confirmed_live_impact_unknown",
+      "cause": "Existing execute admits persisted candidates without rereading metadata/current reachability/pins. A safe1-row fixture refreshesmtime after planning and records1deletecallback request; actualobjectbytesdeleted0.",
+      "fix_or_existing_owner": "Existing systemic session1eb owns a separate safety audit/repair; no competing backup changes/worker.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "No new repair or production GC action",
+      "retested": "Disposable derived catalog/journal and list-append delete spy only; no object files or live Store/EventLog/refs/backup touched.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json",
+        "sha256": "661e0d0c13fcb5ac46ab2b5701a9856e1b5279bdb89d955ffe674c32be226747"
+      },
+      "resolution": "open",
+      "next_actor": "Existing systemic session and ordinary independent scheduler",
+      "next_action": "Audit saved-plan execute/resume freshness, current head/epoch/realm/reachability/pins and publication/maintenance fences in disposable fixtures; implement and validate a separate scoped safety repair before metadata optimization. No production GC/deletion or timeout/permission/default change."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -252119,9 +252184,15 @@
       "watch": "afe76671-cdc9-4e8a-b06a-106a89f82c4b",
       "head_ci": 39334757507,
       "main_ci": 39335222796,
-      "main_ci_state": "Pending independent terminal read",
+      "main_ci_state": "39335222796 terminalSUCCESS; source only, no installation/activation inferred",
       "installed": false,
       "loaded": false,
+      "resolution": "open"
+    },
+    "concern:ci525-snapshot-latency-attribution": {
+      "followup_artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+      "ci39336082802": "Original200ms snapshot failure/callback223ms retained; one same-head retry latestgreen, causeunverified.",
+      "problem": "d2781497 revision2",
       "resolution": "open"
     }
   },
@@ -254201,6 +254272,22 @@
     "routes": 86,
     "slow_or_failed_names": 70,
     "rows": 606,
+    "resolution": "open"
+  },
+  "catalog_hash_read_stage": {
+    "artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
+    "sha256": "8908197c28d724801724114270fcf39bb91cdd7029ecb6de3c4f73ec2e8865db",
+    "resolution": "open"
+  },
+  "gc_saved_plan_freshness_stage": {
+    "artifact": "docs/benchmarks/systemic-gc-saved-plan-observation-20261019.json",
+    "sha256": "661e0d0c13fcb5ac46ab2b5701a9856e1b5279bdb89d955ffe674c32be226747",
+    "report": {
+      "id": "f320ad17-3cdd-41a7-af9c-76e5af6e7c67",
+      "revision": 1,
+      "hash": "163bdcb06bc265ac01d62cd9d1c8799f5e1e9bd7d02c8da2583642b40ad78ae7",
+      "delivery": "pending at observation"
+    },
     "resolution": "open"
   }
 }

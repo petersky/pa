@@ -1,0 +1,30 @@
+{
+  "contract": "pa.gc-saved-plan-observation/v1",
+  "published_at": "2026-10-19T22:54:01.381156+00:00",
+  "observation": {
+    "observed_at": "2026-10-19T22:53:06.985682+00:00",
+    "source_revision": "7940219ba38fe8f4e1b23f21e36b7ff294541e39",
+    "gc_module_sha256": "b200ef541520fee9e87882a9e837ba87c1951884c4a7781a86131dc65a6390b4",
+    "fixture_root": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/.dev/gc-freshness-spy-z_5bky2w",
+    "plan_candidates": 1,
+    "metadata_refresh_after_plan": true,
+    "inside_original_safety_window_at_execution": true,
+    "delete_callback_requests": 1,
+    "actual_object_bytes_deleted": 0,
+    "catalog_record_remaining": false,
+    "execute_reported_deleted_count": 1,
+    "classification": "Existing source does not revalidate refreshed metadata before executing an approved saved plan. Disposable spy confirms callback admission, not production data loss.",
+    "scope": "Only owned derived catalog and fixture GC journal. Fake epoch/quorum isolates saved-plan decision; delete callback is a list append. No object files, live Store/EventLog, refs, backup, production GC, restart or config changes."
+  },
+  "report": {
+    "id": "f320ad17-3cdd-41a7-af9c-76e5af6e7c67",
+    "revision": 1,
+    "hash": "163bdcb06bc265ac01d62cd9d1c8799f5e1e9bd7d02c8da2583642b40ad78ae7",
+    "delivery": "pending at observation"
+  },
+  "cause_certainty": "Source and disposable delete-spy reproduce callback admission after metadata refresh. Production usage/data loss and complete concurrent safety policy remain unverified.",
+  "repair_status": "Not repaired. Separate GC metadata batching remains unimplemented. PR551 reader iteration does not change GC execution.",
+  "existing_owner": "Systemic card7894e44b/session1eb; existing backup/release scopes preserved; no newworker/card/verifier requested.",
+  "next_action": "Audit saved-plan execute/resume freshness, current head/epoch/realm/reachability/pins and publication/maintenance fences in disposable fixtures; implement and validate a separate scoped safety repair before metadata optimization. No production GC/deletion or timeout/permission/default change.",
+  "whole_acceptance": false
+}
