@@ -23,13 +23,18 @@ def register_mcp(mcp, ctx: AppContext) -> None:
 
     @mcp.tool()
     def backup_run(idempotency_key: str, preserve_existing: bool = False) -> dict[str, Any]:
-        """Trigger one idempotent backup; optionally protect all current archives from this run's retention."""
+        """Start one backup and return its persisted run receipt. Poll backup_run_status to completion; optionally protect all current archives."""
         return request_local_pa(
             ctx.settings,
             "POST",
             "/api/backups",
-            json={"idempotency_key": idempotency_key, "preserve_existing": preserve_existing},
+            json={"idempotency_key": idempotency_key, "preserve_existing": preserve_existing, "wait": False},
         )
+
+    @mcp.tool()
+    def backup_run_status(idempotency_key: str) -> dict[str, Any]:
+        """Read the original backup run by key without starting work or scanning archives. finished_at marks completion."""
+        return request_local_pa(ctx.settings, "GET", "/api/backups/runs", params={"idempotency_key": idempotency_key})
 
     @mcp.tool()
     def backup_inspect(backup_id: str) -> dict[str, Any]:

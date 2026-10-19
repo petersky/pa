@@ -1,0 +1,601 @@
+{
+  "schema": "pa.backup-production-observation/v1",
+  "card_id": "0331d21a-f014-44c8-9176-bc1e955a9ad2",
+  "session_id": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "repository": "https://github.com/petersky/pa",
+  "implementation": "https://github.com/petersky/pa/pull/536",
+  "deployed_source": "53b42d5077971b192e824c62acae71a59db95e80",
+  "runtime_at_capture": {
+    "source_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+    "package_identity": "sha256:6ccadfa13713d5ac6baec1c58d9a93a57a476e6b7dbe46ff354c5754a9eab8cf",
+    "pid": 69337,
+    "startup_id": "69233661-c671-4998-b0c9-a5fda8684a89"
+  },
+  "latest_supported_runtime_observation": {
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "process_id": 69337,
+    "runtime_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "53b42d5077971b192e824c62acae71a59db95e80",
+      "package_identity": "sha256:6ccadfa13713d5ac6baec1c58d9a93a57a476e6b7dbe46ff354c5754a9eab8cf",
+      "pid": 69337,
+      "startup_id": "69233661-c671-4998-b0c9-a5fda8684a89"
+    },
+    "install_revision": "2283d9075b1a9cce2eb1566c22c4120cea1818c4",
+    "sync": {
+      "realm_id": "default",
+      "head": "7b9fc596ad1804ec70f0cc645bc662bba143b5b6ec5f54eeded2045adb267e2e",
+      "projection_head": "7b9fc596ad1804ec70f0cc645bc662bba143b5b6ec5f54eeded2045adb267e2e",
+      "consistent": true,
+      "error": null
+    }
+  },
+  "runtime_caveat": "install_revision is distribution metadata read at request time. It differs from the startup runtime identity; this observation alone does not prove a code replacement or authorize activation. Report aced9621-b0b3-44c7-a1e5-3e1a51b07bbc retains the discrepancy.",
+  "preserving_manual_capture": {
+    "schema": "pa.backup-available-capture-outcome/v1",
+    "source": "53b42d5077971b192e824c62acae71a59db95e80",
+    "run": {
+      "id": "5659b985-2f31-48ab-b51f-6b5f34eb30aa",
+      "trigger": "manual",
+      "status": "success",
+      "backup_id": "b0fc1436-fe1e-4096-b6d0-e9c9f1fe272b",
+      "started_at": "2026-10-19T04:21:17.670852Z",
+      "finished_at": "2026-10-19T04:30:53.836565Z",
+      "duration_seconds": 576.18662,
+      "size_bytes": 277453958,
+      "failure_reason": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+      "idempotency_key": "backup-available-capture-0331d21a-53b42d50-20261019-v1",
+      "verification": "failed",
+      "integrity_verified": true,
+      "data_complete": false,
+      "missing_transcript_object_count": 1,
+      "missing_transcript_bytes": 2842,
+      "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+      "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+      "pruned_backup_ids": [],
+      "queue_wait_seconds": 0.000552,
+      "phase_seconds": {
+        "snapshot": 207.854527,
+        "archive": 188.194931,
+        "verify": 157.366399,
+        "publish": 0.347343,
+        "prune": 0.001171
+      }
+    },
+    "archive_ids": [
+      "b0fc1436-fe1e-4096-b6d0-e9c9f1fe272b",
+      "9520da4b-ced7-442a-86cd-4843d250fcd1",
+      "a9d1d255-d08b-440b-8eae-d9e5ee461dfb",
+      "a5e6968b-d4fa-4ed6-83b4-767fc46b7b37",
+      "9dd4868f-529f-479c-8881-efb38ea80c47",
+      "c03a5779-a245-44c1-9c85-3156553c2936",
+      "9c665d44-78fa-4578-bfb7-81245d535ec9",
+      "3a872991-ca19-4d47-9cde-54a2835436a4",
+      "aa3085c9-ac80-4433-a50c-8c67774c2b8f"
+    ],
+    "old_archive_ids_preserved": true,
+    "no_archive_pruning": true,
+    "expected_known_gap_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+    "exact_known_metadata_match": true,
+    "historical_content_recovered": false,
+    "fully_intact_recovery_claim": false,
+    "last_success": "2026-08-16T23:33:29.927827Z",
+    "last_completed": "2026-10-19T04:30:31.551488Z",
+    "next_scheduled_run": "2026-10-19T10:35:48.843091Z",
+    "consecutive_failures": 0,
+    "automatic_paused": false,
+    "policy_changed": false,
+    "inventory_observation": {
+      "new_archive": {
+        "backup_id": "b0fc1436-fe1e-4096-b6d0-e9c9f1fe272b",
+        "created_at": "2026-10-19T04:24:45.081145Z",
+        "size_bytes": 277453958,
+        "verified": false,
+        "integrity_verified": false,
+        "data_complete": false,
+        "missing_transcript_object_count": 1,
+        "missing_transcript_bytes": 2842,
+        "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+        "verification_error": "Verification is running. PA will record the result.",
+        "verification_status": "in_progress"
+      },
+      "state": "in_progress",
+      "scrub_queue_wait": 0.011154042058478808,
+      "scrub_total": 7,
+      "last_scrub": "2026-10-11T15:55:40.785905Z",
+      "next_scrub": "2026-10-18T15:55:40.785905Z",
+      "interpretation": "Active verification after successful publication; overdue automatic scrub admission counter increased under unchanged schedule. No manual verification sweep started."
+    },
+    "transport": {
+      "correlation_id": "ac4da015-0797-44e5-aed1-e9a9f572d5fe",
+      "timeout_seconds": 120,
+      "submitted_once": true,
+      "retried": false,
+      "application_outcome_confirmed_by_run": true
+    },
+    "acceptance": false
+  },
+  "later_normal_scheduler_observation": {
+    "observed_at": "2026-10-19T22:21:13Z",
+    "source": "supported backup_status and backup_list(verify=false,offset=0,limit=50)",
+    "backup_count": 9,
+    "verified_backup_count": 8,
+    "limited_backup_count": 1,
+    "consecutive_failures": 0,
+    "automatic_backups_paused": false,
+    "last_success": "2026-08-16T23:33:29.927827Z",
+    "last_completed": "2026-10-19T21:39:03.692621Z",
+    "last_scrub": "2026-10-19T06:04:23.385542Z",
+    "original_archive_ids": [
+      "9520da4b-ced7-442a-86cd-4843d250fcd1",
+      "a9d1d255-d08b-440b-8eae-d9e5ee461dfb",
+      "a5e6968b-d4fa-4ed6-83b4-767fc46b7b37",
+      "9dd4868f-529f-479c-8881-efb38ea80c47",
+      "c03a5779-a245-44c1-9c85-3156553c2936",
+      "9c665d44-78fa-4578-bfb7-81245d535ec9",
+      "3a872991-ca19-4d47-9cde-54a2835436a4",
+      "aa3085c9-ac80-4433-a50c-8c67774c2b8f"
+    ],
+    "all_original_archives_retained": true,
+    "inventory": [
+      {
+        "backup_id": "a281c123-2a9a-4bc0-96ec-cfd417ac864e",
+        "verification_status": "verified_with_missing_data",
+        "verified": false,
+        "integrity_verified": true,
+        "data_complete": false,
+        "missing_transcript_object_count": 1,
+        "missing_transcript_bytes": 2842,
+        "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e"
+      },
+      {
+        "backup_id": "9520da4b-ced7-442a-86cd-4843d250fcd1",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "a9d1d255-d08b-440b-8eae-d9e5ee461dfb",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "a5e6968b-d4fa-4ed6-83b4-767fc46b7b37",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "9dd4868f-529f-479c-8881-efb38ea80c47",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "c03a5779-a245-44c1-9c85-3156553c2936",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "9c665d44-78fa-4578-bfb7-81245d535ec9",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "3a872991-ca19-4d47-9cde-54a2835436a4",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      },
+      {
+        "backup_id": "aa3085c9-ac80-4433-a50c-8c67774c2b8f",
+        "verification_status": "verified",
+        "verified": true,
+        "integrity_verified": true,
+        "data_complete": true,
+        "missing_transcript_object_count": 0,
+        "missing_transcript_bytes": 0,
+        "missing_data_fingerprint": null
+      }
+    ],
+    "runs": [
+      {
+        "id": "5659b985-2f31-48ab-b51f-6b5f34eb30aa",
+        "trigger": "manual",
+        "status": "success",
+        "backup_id": "b0fc1436-fe1e-4096-b6d0-e9c9f1fe272b",
+        "started_at": "2026-10-19T04:21:17.670852Z",
+        "finished_at": "2026-10-19T04:30:53.836565Z",
+        "duration_seconds": 576.18662,
+        "size_bytes": 277453958,
+        "failure_reason": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "idempotency_key": "backup-available-capture-0331d21a-53b42d50-20261019-v1",
+        "verification": "failed",
+        "integrity_verified": true,
+        "data_complete": false,
+        "missing_transcript_object_count": 1,
+        "missing_transcript_bytes": 2842,
+        "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+        "pruned_backup_ids": [],
+        "queue_wait_seconds": 0.000552,
+        "phase_seconds": {
+          "snapshot": 207.854527,
+          "archive": 188.194931,
+          "verify": 157.366399,
+          "publish": 0.347343,
+          "prune": 0.001171
+        }
+      },
+      {
+        "id": "4ccfa1d8-a900-40e7-adeb-486254b55a2f",
+        "trigger": "scheduled",
+        "status": "success",
+        "backup_id": "a4debfd2-fe4d-4e15-86d6-0995d96cec81",
+        "started_at": "2026-10-19T10:46:50.667539Z",
+        "finished_at": "2026-10-19T14:02:03.387951Z",
+        "duration_seconds": 521.803332,
+        "size_bytes": 279643500,
+        "failure_reason": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "idempotency_key": "scheduled:1792406148",
+        "verification": "failed",
+        "integrity_verified": true,
+        "data_complete": false,
+        "missing_transcript_object_count": 1,
+        "missing_transcript_bytes": 2842,
+        "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+        "pruned_backup_ids": [
+          "b0fc1436-fe1e-4096-b6d0-e9c9f1fe272b"
+        ],
+        "queue_wait_seconds": 0.003378,
+        "phase_seconds": {
+          "snapshot": 163.372733,
+          "archive": 188.088128,
+          "verify": 151.821969,
+          "publish": 0.007872,
+          "prune": 0.142343
+        }
+      },
+      {
+        "id": "bb10f4ce-dde5-4b38-8c64-ccd5b6c85b61",
+        "trigger": "scheduled",
+        "status": "success",
+        "backup_id": "a281c123-2a9a-4bc0-96ec-cfd417ac864e",
+        "started_at": "2026-10-19T20:19:35.500142Z",
+        "finished_at": "2026-10-19T21:54:47.674869Z",
+        "duration_seconds": 491.732925,
+        "size_bytes": 281191394,
+        "failure_reason": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "idempotency_key": "scheduled:1792440418",
+        "verification": "failed",
+        "integrity_verified": true,
+        "data_complete": false,
+        "missing_transcript_object_count": 1,
+        "missing_transcript_bytes": 2842,
+        "coverage_warning": "1 historical transcript payload(s), 2842 decoded bytes, were absent from the source. Available data and all references are preserved. This is not a fully intact recovery point.",
+        "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+        "pruned_backup_ids": [
+          "a4debfd2-fe4d-4e15-86d6-0995d96cec81"
+        ],
+        "queue_wait_seconds": 0.001026,
+        "phase_seconds": {
+          "snapshot": 154.080457,
+          "archive": 181.382186,
+          "verify": 135.755609,
+          "publish": 0.008441,
+          "prune": 0.125405
+        }
+      }
+    ],
+    "active_restores": []
+  },
+  "historical_limitation": {
+    "sha256": "5cbb18fdcfb43264b5b1098a7ff12392c949875b43b13113c5c9ef75f1362e0e",
+    "uncompressed_bytes": 2842,
+    "compressed_bytes": 819,
+    "reference_count": 1,
+    "reason": "absent_from_source_snapshot",
+    "fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e",
+    "bytes_recovered": false,
+    "live_reference_deleted": false,
+    "fully_intact_current_recovery_claim": false,
+    "limited_restore_disabled": true
+  },
+  "bounded_supported_api_reads": [
+    {
+      "artifact_sha256": "50033cb9ea8950e33905d5a511ff472bc41e6f0dbc7015dd7cf1709324820df4",
+      "schema": "pa.backup-api-read-observation/v1",
+      "observed_at": "2026-10-19T04:23:00.003529+00:00",
+      "source": "53b42d5077971b192e824c62acae71a59db95e80",
+      "phase": "during-capture-5659b985-late",
+      "rows": [
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 1247.6040000328794,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 878.5466249100864,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 210.49712505191565,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 158.34804205223918,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 308.7285419460386,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 197.25733390077949,
+          "success": true,
+          "count": 8
+        }
+      ],
+      "at_or_above_500ms": 2,
+      "at_or_above_2000ms": 0,
+      "mutations": 0,
+      "acceptance": false
+    },
+    {
+      "artifact_sha256": "7f100a6f308e0326cb09a2ca53a39df19b7eccbf8f3becde02be899ffe9276ac",
+      "schema": "pa.backup-api-read-observation/v1",
+      "observed_at": "2026-10-19T04:16:48.593008+00:00",
+      "source": "53b42d5077971b192e824c62acae71a59db95e80",
+      "rows": [
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 201.56833296641707,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 30.7081249775365,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 18.115791957825422,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 18.092249985784292,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 15.692958026193082,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 13.605374959297478,
+          "success": true,
+          "count": 8
+        }
+      ],
+      "at_or_above_500ms": 0,
+      "at_or_above_2000ms": 0,
+      "mutations": 0,
+      "acceptance": false
+    },
+    {
+      "artifact_sha256": "aa198123491b5a1bc80d9602716501073f42bfd5b6c403d01145a044f9f800d6",
+      "schema": "pa.backup-api-read-observation/v1",
+      "observed_at": "2026-10-19T04:29:19.751277+00:00",
+      "source": "53b42d5077971b192e824c62acae71a59db95e80",
+      "phase": "during-verification-5659b985",
+      "rows": [
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 166.83079197537154,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 21.53341704979539,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 23.95004197023809,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 20.248666987754405,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 23.21799995843321,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 20.452833035960793,
+          "success": true,
+          "count": 8
+        }
+      ],
+      "at_or_above_500ms": 0,
+      "at_or_above_2000ms": 0,
+      "mutations": 0,
+      "acceptance": false
+    },
+    {
+      "artifact_sha256": "e6f365194992402568646bcded30e1a85f2d823e01ec04fc61662edaf0f320e2",
+      "schema": "pa.backup-api-read-observation/v1",
+      "observed_at": "2026-10-19T04:21:40.797590+00:00",
+      "source": "53b42d5077971b192e824c62acae71a59db95e80",
+      "phase": "during-capture-5659b985",
+      "rows": [
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 430.13816606253386,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 23.033375036902726,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 22.460542037151754,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 25.098957936279476,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups/status",
+          "elapsed_ms": 24.138750042766333,
+          "success": true,
+          "count": 8
+        },
+        {
+          "endpoint": "/api/backups",
+          "elapsed_ms": 20.240624900907278,
+          "success": true,
+          "count": 8
+        }
+      ],
+      "at_or_above_500ms": 0,
+      "at_or_above_2000ms": 0,
+      "mutations": 0,
+      "acceptance": false
+    }
+  ],
+  "browser_capture_observation": {
+    "schema": "pa.backup-browser-observation/v1",
+    "source": "53b42d5077971b192e824c62acae71a59db95e80",
+    "run_id": "5659b985-2f31-48ab-b51f-6b5f34eb30aa",
+    "phase": "capture_running",
+    "page": {
+      "target_id": "B6D93F3DCB7B0C8F9228F2B8D1DCCA6D",
+      "title": "Settings \u2014 macbook",
+      "url": "http://localhost:8080/settings?section=backups"
+    },
+    "navigation": {
+      "operation_id": "41e6b970-2c86-4fc4-b476-1d950fb1f4d7",
+      "target_id": "B6D93F3DCB7B0C8F9228F2B8D1DCCA6D",
+      "queue_wait_ms": 0.078,
+      "browser_operation_ms": 1589.127
+    },
+    "snapshot": {
+      "operation_id": "a2d0bf45-130a-4641-86c5-7c97f847f1e6",
+      "target_id": "B6D93F3DCB7B0C8F9228F2B8D1DCCA6D",
+      "queue_wait_ms": 0.055,
+      "browser_operation_ms": 186.713
+    },
+    "observations": {
+      "correct_instance": true,
+      "in_progress": true,
+      "next_actor_wait": true,
+      "eight_archives": true,
+      "zero_intact": true,
+      "prior_missing_reason_visible": true
+    },
+    "navigation_at_or_above_500ms": true,
+    "interpretation": "Browser operation includes navigation/frontend readiness; not pure server response latency. Anonymous read-only browser; no buttons clicked or mutation.",
+    "acceptance": false
+  },
+  "browser_later_observation": {
+    "navigation_operation_id": "8cfc502e-2d1d-4354-9dbd-a0bf37821f11",
+    "navigation_ms": 648.01,
+    "snapshot_operation_id": "0975a707-5a54-4165-8e52-e1c8b111aa12",
+    "snapshot_ms": 42.066,
+    "intact_count": 8,
+    "limited_count": 1,
+    "limited_restore_disabled": true,
+    "historical_gap_visible": true,
+    "read_only": true,
+    "navigation_is_not_pure_http_latency": true
+  },
+  "interpretation": [
+    "The manual request was submitted once with preserve_existing=true. Its 120.023386s transport timeout did not mean the application capture failed; run5659b985 is terminal success with explicit missing historical data. No replay or replacement key was used.",
+    "Manual capture pruned nothing. Later unchanged scheduled retention replaced only preceding limited archives. All eight original archives were still retained and verified intact at the latest bounded observation. Historical intact points do not make the current limited capture complete.",
+    "Twenty-four normal API reads include two responses at or above500ms (maximum1247.604ms) and none at or above2s. All values and browser navigation tails are retained; this is bounded evidence, not an uncontended comparison or causal attribution.",
+    "No production restore, manual archive deletion, full manual verification sweep, fault injection, policy change or additional restart was performed for these observations. Automatic scrub and scheduled successors were normal existing service behavior.",
+    "Monotonic run duration and wall-clock timestamps are recorded as reported. The later scheduled wall-clock interval is longer than reported execution duration; no host-sleep or timing cause is asserted.",
+    "The API admission repair is validated in disposable tests separately and is not part of this deployed source. Source tests and successful limited publication do not establish independent acceptance."
+  ],
+  "acceptance": {
+    "independent_agent_v1": true,
+    "requirement_revision": "b5271340-5c1a-4d66-b2c0-5cd3b8e49715",
+    "author_acceptance_claim": false,
+    "explicit_acceptance_recorded": false
+  },
+  "problem_reports": [
+    "5000d93f-b781-4a4e-9a61-dc91568042bf",
+    "fbe9b65f-1742-4446-ac9e-830359ce24f6",
+    "aced9621-b0b3-44c7-a1e5-3e1a51b07bbc"
+  ]
+}
