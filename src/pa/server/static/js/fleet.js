@@ -1737,8 +1737,17 @@
   }
 
   function worstFreshness(node) {
-    var readiness = requiredReadiness(node);
-    if (readiness !== "fresh") return readiness;
+    // Freshness describes observation attempts, independently of an observed
+    // machine fault (for example a fresh "down" or a fresh sync mismatch).
+    var order = { error: 5, timeout: 4, unavailable: 3, stale: 2, fresh: 1 };
+    var freshness = "fresh";
+    ["reachability", "status", "sync"].forEach(function (name) {
+      var field = fieldValue(node, name);
+      var attempt = field.value == null && field.state === "fresh"
+        ? "unavailable" : observationAttempt(field);
+      if ((order[attempt] || 5) > (order[freshness] || 1)) freshness = attempt;
+    });
+    if (freshness !== "fresh") return freshness;
     var optionalIssue = ["providers", "update", "activity", "repositories", "supervisor"]
       .some(function (name) {
         var item = fieldValue(node, name);

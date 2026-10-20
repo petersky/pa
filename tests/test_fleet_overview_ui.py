@@ -106,6 +106,8 @@ machine.dimensions.reachability = { state: "unavailable", value: null };
 assert.strictEqual(model.currentReachability(machine).health, "unknown");
 machine.dimensions.reachability = { state: "fresh", value: { health: "down" } };
 assert.deepStrictEqual(model.currentReachability(machine), { health: "down", lastKnown: false });
+machine.dimensions.repositories = field("repositories", "fresh");
+assert.strictEqual(model.worstFreshness(machine), "fresh", "a fresh fault is not a stale observation");
 """
         )
 
@@ -306,6 +308,7 @@ current.nodes[0].dimensions.sync = {
 current.nodes[0].dimensions.status = field("status", "fresh");
 const live = model.createSnapshot(current, null, { kind: "node", id: "local" });
 assert.strictEqual(live.nodesById.local.topologyStatus, "error");
+assert.strictEqual(live.nodesById.local.freshness, "fresh", "sync mismatch is a current fault with fresh evidence");
 assert.strictEqual(model.syncStatusLabel(current.nodes[0].dimensions.sync), "head mismatch");
 """
         )
