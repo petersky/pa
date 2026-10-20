@@ -92,6 +92,35 @@ class FleetOverviewUiStateTests(unittest.TestCase):
             text=True,
         )
 
+    def test_current_faults_unknown_and_stale_values_remain_distinct(self) -> None:
+        self.run_node(
+            r"""
+const machine = node("local");
+machine.dimensions.reachability = { state: "stale", last_attempt_state: "timeout", value: { health: "up" } };
+machine.dimensions.providers = { state: "fresh", value: [{ id: "codex", auth_state: "signed_out", available: false }] };
+machine.dimensions.repositories = { state: "unavailable", value: null };
+assert.deepStrictEqual(model.currentReachability(machine), { health: "up", lastKnown: true });
+assert.deepStrictEqual(model.observationCounts(machine), { failed: 1, unknown: 1, stale: 0, pending: 0 });
+assert.ok(model.currentFaults(machine).includes("1 providers need attention"));
+machine.dimensions.reachability = { state: "unavailable", value: null };
+assert.strictEqual(model.currentReachability(machine).health, "unknown");
+machine.dimensions.reachability = { state: "fresh", value: { health: "down" } };
+assert.deepStrictEqual(model.currentReachability(machine), { health: "down", lastKnown: false });
+"""
+        )
+
+    def test_refresh_banner_counts_fields_without_repeating_inventory(self) -> None:
+        self.run_node(
+            r"""
+const source = overview(Array.from({ length: 20 }, (_, i) => "machine-" + i));
+source.nodes.forEach(machine => dimensions.forEach(name => { machine.dimensions[name].refreshing = true; }));
+const label = model.refreshLabel({ completed: 0, total: 160, terminal: {}, outcomes: {} }, source);
+assert.ok(label.includes("160 pending"));
+assert.ok(!label.includes("machine-"));
+assert.ok(label.length < 100);
+"""
+        )
+
     def test_timeout_followed_by_late_success_is_fresh_once(self) -> None:
         self.run_node(
             r"""

@@ -1597,8 +1597,8 @@
   }
 
   function healthHtml(state) {
-    var terminal = ["up", "down", "partial", "error", "timeout", "unavailable", "stale"];
-    state = terminal.indexOf(state) >= 0 ? state : "error";
+    var terminal = ["up", "down", "partial", "error", "timeout", "unavailable", "stale", "unknown"];
+    state = terminal.indexOf(state) >= 0 ? state : "unknown";
     return '<span class="status ' + (state === "up" ? "status-active" : "status-blocked") +
       '">' + escapeHtml(state) + "</span>";
   }
@@ -1675,6 +1675,45 @@
     return field && (field.last_attempt_state || field.state) || "unavailable";
   }
 
+  function observationCounts(node) {
+    var counts = { failed: 0, unknown: 0, stale: 0, pending: 0 };
+    Object.keys(node.dimensions || {}).forEach(function (name) {
+      var field = fieldValue(node, name);
+      var attempt = observationAttempt(field);
+      if (field.refreshing) counts.pending += 1;
+      if (attempt === "error" || attempt === "timeout") counts.failed += 1;
+      else if (field.state === "unavailable" || field.value == null) counts.unknown += 1;
+      else if (field.state === "stale") counts.stale += 1;
+    });
+    return counts;
+  }
+
+  function currentReachability(node) {
+    var reach = fieldValue(node, "reachability");
+    return {
+      health: reach.value && reach.value.health || "unknown",
+      lastKnown: !!reach.value && reach.value.health !== "unknown" &&
+        (reach.state !== "fresh" || observationAttempt(reach) !== "fresh")
+    };
+  }
+
+  function currentFaults(node) {
+    var faults = [];
+    var providers = fieldValue(node, "providers");
+    var values = Array.isArray(providers.value) ? providers.value : [];
+    var attention = values.filter(function (provider) {
+      return ["signed_out", "timed_out", "probe_failed", "unknown", "unavailable"].indexOf(providerAuthState(provider)) >= 0;
+    }).length;
+    if (attention) faults.push(attention + " providers need attention" +
+      (providers.state === "fresh" ? "" : " (last known)"));
+    var supervisor = fieldValue(node, "supervisor");
+    var value = supervisor.value || {};
+    if (value.state && value.state !== "ready") faults.push("Supervisor " + value.state.replace(/_/g, " ") +
+      (supervisor.state === "fresh" ? "" : " (last known)"));
+    if ((value.stopped_renewers || []).length) faults.push(value.stopped_renewers.length + " stopped renewers");
+    return faults;
+  }
+
   function syncStatusLabel(sync) {
     if (!sync || !sync.value) return (sync && sync.state) || "unavailable";
     if (sync.value.consistent) return "heads aligned";
@@ -1704,7 +1743,7 @@
       .some(function (name) {
         var item = fieldValue(node, name);
         var attempt = item.last_attempt_state || item.state;
-        return ["error", "timeout", "stale"].indexOf(attempt) >= 0;
+        return ["error", "timeout", "stale", "unavailable"].indexOf(attempt) >= 0;
       });
     return optionalIssue ? "partial" : "fresh";
   }
@@ -1950,18 +1989,24 @@
     var providers = fieldValue(node, "providers");
     var activity = fieldValue(node, "activity");
     var sync = fieldValue(node, "sync");
-    var reachValue = reach.value || {};
-    var health = reachValue.health || reach.state;
+    var currentHealth = currentReachability(node);
+    var health = currentHealth.health;
     var healthEl = $("[data-fleet-health]", tr);
     if (healthEl) {
-      healthEl.innerHTML = healthHtml(health);
+      healthEl.innerHTML = (currentHealth.lastKnown ? "Last known " : "") + healthHtml(health);
       setFieldState(healthEl, reach.state);
       healthEl.dataset.fleetTerminal = "1";
+    }
+    var faultsEl = $("[data-fleet-faults]", tr);
+    if (faultsEl) {
+      var faults = currentFaults(node);
+      faultsEl.hidden = !faults.length;
+      faultsEl.textContent = faults.join(" · ");
     }
     var syncEl = $("[data-fleet-sync]", tr);
     if (syncEl) {
       syncEl.textContent = sync.value
-        ? (sync.value.consistent ? "in sync" : (observationAttempt(sync) === "fresh" ? "head mismatch" : "last known"))
+        ? (sync.value.consistent ? (sync.state === "fresh" ? "in sync" : "last known in sync") : (observationAttempt(sync) === "fresh" ? "head mismatch" : "last known mismatch"))
         : sync.state;
       setFieldState(syncEl, sync.state);
     }
@@ -2046,10 +2091,15 @@
       var freshnessLabel = nodeState.refreshing
         ? nodeState.freshness + " · refreshing"
         : nodeState.freshness;
+      var counts = observationCounts(node);
       freshnessEl.innerHTML = '<span class="fleet-freshness fleet-field-' +
         escapeHtml(nodeState.freshness) + '" aria-label="Freshness ' +
         escapeHtml(freshnessLabel) + '">' + escapeHtml(freshnessLabel) +
-        "</span>" + (observed ? '<time class="muted small" datetime="' +
+        '</span><button type="button" class="link-button" data-fleet-node="' +
+        escapeHtml(node.id) + '" data-fleet-observation-counts>' + counts.failed + " failed · " +
+        counts.unknown + " unknown · " + counts.stale + " stale fields" +
+        (counts.pending ? " · " + counts.pending + " refreshing" : "") +
+        "</button>" + (observed ? '<time class="muted small" title="Reachability observed" datetime="' +
           escapeHtml(observed) + '">' + escapeHtml(new Date(observed).toLocaleString()) + "</time>" : "");
     }
     tr.setAttribute("aria-label", nodeState.accessibleLabel);
@@ -2115,6 +2165,10 @@
   function renderFleetDetail(kind, id, edgeId, snapshot) {
     var panel = $("#pa-fleet-detail");
     if (!panel || !fleetOverview) return;
+    panel.hidden = false;
+    var shell = $("#pa-fleet-detail-shell");
+    if (shell) shell.hidden = false;
+    if (!snapshot && panel.focus) panel.focus();
     selectedFleetItem = { kind: kind, id: id };
     if (kind === "edge-item") selectedFleetItem.edgeId = edgeId;
     var current = snapshot;
@@ -2189,6 +2243,17 @@
     var node = nodeState && nodeState.node;
     if (!node) return;
     selectedFleetItem = { kind: kind, id: id };
+    var routes = (current.overview.edges || []).filter(function (edge) {
+      return edge.source === node.id || edge.target === node.id;
+    });
+    var routeList = routes.map(function (edge) {
+      return '<li><button type="button" class="link-button" data-fleet-edge="' +
+        escapeHtml(edge.id) + '">' + escapeHtml(edge.kind + " · " + edge.label +
+        " · " + (edge.count || 1) + " activities") + '</button></li>';
+    }).join("");
+    var openFields = $all("details[data-fleet-field][open]", panel).map(function (el) {
+      return el.getAttribute("data-fleet-field");
+    });
     var sections = Object.keys(node.dimensions || {}).map(function (name) {
       var item = node.dimensions[name] || {};
       var timingValue = item.last_attempt_duration_ms == null
@@ -2203,8 +2268,10 @@
         ? "Last attempted " + new Date(item.last_attempted_at).toLocaleString()
         : "Never attempted";
       var successful = item.last_successful_at || item.observed_at;
-      return '<details><summary><strong>' + escapeHtml(name) + "</strong> · " +
-        escapeHtml(item.state || "unavailable") + escapeHtml(timing) +
+      return '<details data-fleet-field="' + escapeHtml(name) + '"' +
+        (openFields.indexOf(name) >= 0 ? " open" : "") + '><summary><strong>' + escapeHtml(name) + "</strong> · " +
+        escapeHtml(item.state || "unavailable") +
+        (item.last_attempt_state && item.last_attempt_state !== item.state ? " · refresh " + escapeHtml(item.last_attempt_state) : "") + escapeHtml(timing) +
         '</summary><p class="muted small">' + escapeHtml(attempted) + " · " +
         escapeHtml(successful ? "Last successful " + new Date(successful).toLocaleString() : "Never successful") +
         "</p>" + error + "<pre>" + escapeHtml(JSON.stringify(item.value, null, 2)) +
@@ -2218,12 +2285,21 @@
       "</dd><dt>Zone</dt><dd>" + escapeHtml(node.zone || "default") +
       "</dd><dt>Capacity</dt><dd>" +
       escapeHtml((function () {
-        var activityValue = fieldValue(node, "activity").value || {};
+        var observedActivity = fieldValue(node, "activity").value;
+        if (!observedActivity || !observedActivity.capacity) return "Utilization unknown";
+        var activityValue = observedActivity;
         var presentation = fleetCapacityPresentation(
           activityValue, node.dispatch_capacity
         );
         return presentation.summary + " · " + presentation.source;
-      })()) + "</dd></dl>" + sections;
+      })()) + "</dd></dl>" +
+      '<p><button type="button" class="ghost small" data-fleet-retry-instance="' +
+      escapeHtml(node.id) + '">Refresh observations</button></p>' +
+      '<h4>Software and authentication</h4><p>' + escapeHtml((fieldValue(node, "status").value || {}).version || "Version unknown") +
+      '</p><div>' + (fieldValue(node, "providers").value ? providersHtml(fieldValue(node, "providers").value, node.id) : 'Provider state unknown') + '</div>' +
+      '<details><summary>Routes and pull requests (' + routes.length + ')</summary><ul>' +
+      (routeList || '<li>No routes reported.</li>') + '</ul></details>' +
+      '<h4>Observations and diagnostics</h4>' + sections;
   }
 
   function fleetTopologyLayout(nodes, containerWidth) {
@@ -2849,15 +2925,15 @@
     };
   }
 
-  function fleetRefreshLabel(refresh) {
+  function fleetRefreshLabel(refresh, overview) {
     if (!refresh) return "";
     if (refresh.message) return refresh.message;
     var pending = [];
     var failed = [];
     var terminal = refresh.terminal || {};
     var outcomes = refresh.outcomes || {};
-    (fleetOverview && fleetOverview.nodes || []).forEach(function (node) {
-      (fleetOverview.dimensions || []).forEach(function (dimension) {
+    (overview && overview.nodes || []).forEach(function (node) {
+      (overview.dimensions || []).forEach(function (dimension) {
         var key = node.id + "\n" + dimension;
         var label = (node.name || node.id) + " / " + dimension.replace(/_/g, " ");
         if ((fieldValue(node, dimension) || {}).refreshing && !terminal[key]) pending.push(label);
@@ -2869,8 +2945,8 @@
     var prefix = refresh.completed === 0 ? "Refreshing " : "Refreshed ";
     var label = prefix + refresh.completed + " of " + refresh.total + " fields" +
       (refresh.completed === 0 ? "…" : " · " + Math.round(refresh.elapsedMs || 0) + " ms");
-    if (pending.length) label += " · Pending: " + pending.join(", ");
-    if (failed.length) label += " · Failed: " + failed.join(", ");
+    if (pending.length) label += " · " + pending.length + " pending";
+    if (failed.length) label += " · " + failed.length + " failed";
     return refresh.warning ? label + " · " + refresh.warning : label;
   }
 
@@ -2896,7 +2972,22 @@
         current
       );
     }
-    if (current.refresh) setLiveBanner(fleetRefreshLabel(current.refresh));
+    if (current.refresh) setLiveBanner(fleetRefreshLabel(current.refresh, current.overview));
+    var fields = $("#pa-fleet-refresh-fields");
+    if (fields) {
+      fields.innerHTML = current.nodes.map(function (state) {
+        var issues = Object.keys(state.node.dimensions || {}).filter(function (name) {
+          var field = fieldValue(state.node, name);
+          return field.refreshing || field.state !== "fresh" || observationAttempt(field) !== "fresh";
+        }).map(function (name) {
+          var field = fieldValue(state.node, name);
+          return name.replace(/_/g, " ") + ": " + (field.refreshing ? "refreshing" : observationAttempt(field));
+        });
+        return issues.length ? '<p><button type="button" class="link-button" data-fleet-node="' +
+          escapeHtml(state.node.id) + '">' + escapeHtml(state.node.name) + '</button> · ' +
+          escapeHtml(issues.join(" · ")) + '</p>' : "";
+      }).join("") || '<p>All fields refreshed successfully.</p>';
+    }
   }
 
   var fleetUpdateName = "";
@@ -3404,6 +3495,12 @@
     closeFleetUpdateWatcher();
   });
 
+  document.addEventListener("toggle", function (event) {
+    if (event.target && event.target.id === "pa-fleet-topology-view" && event.target.open) {
+      renderFleetTopology(fleetRenderedSnapshot);
+    }
+  }, true);
+
   document.addEventListener("close", function (event) {
     if (event.target && event.target.id === "pa-fleet-update-dialog") {
       closeFleetUpdateWatcher();
@@ -3609,6 +3706,13 @@
         .then(refreshFleetPage)
         .catch(function (err) { alert(err.message); })
         .finally(function () { archiveGroup.disabled = false; });
+      return;
+    }
+    var closeDetail = e.target.closest("[data-fleet-close-detail]");
+    if (closeDetail) {
+      selectedFleetItem = null;
+      var detailShell = $("#pa-fleet-detail-shell");
+      if (detailShell) detailShell.hidden = true;
       return;
     }
     var topologyNode = e.target.closest("[data-fleet-node]");
@@ -4425,6 +4529,10 @@
     mergeFieldAttemptFailure: mergeFieldAttemptFailure,
     providerAuthState: providerAuthState,
     providerBadgeClass: providerBadgeClass,
+    observationCounts: observationCounts,
+    currentReachability: currentReachability,
+    currentFaults: currentFaults,
+    refreshLabel: fleetRefreshLabel,
     capacityPresentation: fleetCapacityPresentation
   };
 })();

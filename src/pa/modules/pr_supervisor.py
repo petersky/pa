@@ -211,6 +211,29 @@ def _page_context(request: Request) -> dict[str, Any]:
         degradation = f"{len(health['stopped_renewers'])} watch renewer(s) are stopped."
     if health.get("state") == "worker_stale":
         degradation = "The PR supervisor worker is dead or has stopped making progress."
+    now = utcnow()
+    current_errors = service.store.current_error_count(realm_id=realm)
+    worker = health.get("worker") or {}
+    capability_age = (
+        max(0, (now - capability.checked_at).total_seconds())
+        if capability else None
+    )
+    stale = bool(worker.get("stale")) or (
+        capability_age is not None and capability_age > service.CAPABILITY_TTL_SECONDS
+    )
+    severity = "unknown"
+    if degradation or current_errors or health.get("state") == "authority_unreachable":
+        severity = "degraded"
+    elif stale:
+        severity = "stale"
+    elif (health.get("state") == "ready" and worker.get("alive")
+          and capability and capability_age is not None and worker.get("last_progress_at")):
+        severity = "healthy"
+    freshness = "unknown"
+    if stale:
+        freshness = "stale"
+    elif worker.get("last_progress_at") and capability_age is not None:
+        freshness = "fresh"
     return {
         "watches": watches,
         "watch": selected,
@@ -231,8 +254,14 @@ def _page_context(request: Request) -> dict[str, Any]:
             "errors": errors,
             "polls": polls,
             "denominator": operations,
-            "error_rate": (100 * errors / operations) if operations else 0,
-            "severity": "degraded" if degradation else "healthy",
+            "error_rate": (100 * errors / operations) if operations else None,
+            "severity": severity,
+            "freshness": freshness,
+            "observed_at": now,
+            "current_errors": current_errors,
+            "worker": worker,
+            "capability_age_seconds": round(capability_age) if capability_age is not None else None,
+            "capability_ttl_seconds": service.CAPABILITY_TTL_SECONDS,
         },
         "degradation": degradation,
         "supervisor_health": health,

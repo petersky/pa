@@ -468,7 +468,7 @@ pa-instance-identity {
 /* Fleet overview — one state model rendered as topology and accessible list. */
 .fleet-overview-grid {
   display: grid;
-  grid-template-columns: minmax(32rem, 1.7fr) minmax(18rem, 0.8fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: stretch;
   margin: 0.75rem 0 1rem;
@@ -743,7 +743,7 @@ pa-instance-identity {
   overflow-x: auto;
 }
 
-.fleet-instance-table { min-width: 62rem; }
+.fleet-instance-table { min-width: 44rem; }
 .fleet-instance-table td { vertical-align: top; }
 .fleet-instance-table [data-fleet-active-work] > *,
 .fleet-instance-table [data-fleet-freshness] > * {
@@ -820,7 +820,12 @@ pa-instance-identity {
     border: 0;
     padding: 0.4rem;
   }
+  .fleet-instance-table td > * {
+    grid-column: 2;
+    min-width: 0;
+  }
   .fleet-instance-table td::before {
+    grid-column: 1;
     content: attr(data-label);
     color: var(--pa-text-muted);
     font-size: 0.8rem;
