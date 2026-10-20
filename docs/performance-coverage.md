@@ -1,3 +1,20 @@
+# Reduce progress sequence allocation copying — 2026-10-20
+
+All **613 findings and 109 concerns remain open**; all 612 prior rows remain unchanged. [Numeric evidence](benchmarks/systemic-progress-sequence-copy-20261020.json) identifies a source cost in `progress.sequence_allocate`: changing the next sequence and update timestamp copied the entire dispatch, followed by another deep copy when publishing the committed record. The provisional record now uses a shallow copy for those two scalar assignments. The existing transaction, acknowledgement, failure handling and detached post-commit publication remain intact.
+
+**17 guarded disposable contracts pass**: five new commit-boundary/reload, nested isolation, index, concurrent uniqueness and missing-record cases, plus 12 existing progress and rollback contracts. The initial broad run was interrupted after about 60 seconds to bound work. It included two new tests with inconsistent synthetic compacted coverage; the fixture was corrected to provide its accepted ranges. That failed/incomplete stage is retained and is not a passing suite. The final 17 cases overlap it.
+
+Twenty alternating warm pairs per case exercised real disposable SQLite commits. Percentiles use nearest rank; raw timings are retained. Core encoded payload sizes and retained events match. No physical write or HTTP byte reduction was measured.
+
+| Retained progress events | Wall p50 ms, baseline → source | Wall p95 ms | Wall p99/max ms | Thread CPU p50 ms |
+|---:|---:|---:|---:|---:|
+| 0 | 2.769 → 1.539 | 5.355 → 3.975 | 5.602 → 6.447 | 1.366 → 1.132 |
+| 1,000 | 260.344 → 128.845 | 617.785 → 275.200 | 659.707 → 333.318 | 122.582 → 62.436 |
+
+The empty-history maximum regressed in this small uncontrolled sample. Payload serialization, the commit, the remaining full-history publication copy and index refresh still scale with retained state. This repair does not establish the cause of historical live stalls or whole-path acceptance. The current loaded build is 228; this source change is neither installed nor loaded. The existing release owner retains activation coordination and its separate immutable-target authority. Backup integrity and ordinary independent acceptance remain separate gates. No service workload, install/restart, backup action, warning change or timeout change occurred.
+
+## Preserved prior inventory and evidence
+
 # Bound unselected session JSON transfer — 2026-10-19
 
 All **612 findings and108 concerns remain open**; all611 prior rows are preserved unchanged. [Complete numeric evidence](benchmarks/systemic-session-selected-transfer-20261019.json) confirms a remaining layer beneath prior selected-model hydration: the existing list snapshot still fetched and retained every matching row’s opaque configuration/metrics JSON. A native metadata selector now fetches complete rows only for selected persisted sessions, under the **same SQLite read snapshot** as their selection metadata. The original all-row helper, activity/custom-adapter paths and complete selected payloads remain available.
