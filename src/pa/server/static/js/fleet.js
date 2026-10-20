@@ -2162,13 +2162,21 @@
     }).join("") : '<li class="muted">No registered routes.</li>';
   }
 
+  function focusFleetDetail(control) {
+    // Graph navigation keeps its keyboard focus and viewport. List controls
+    // bring the disclosed inspector into view.
+    if (control && !control.closest("svg")) {
+      var panel = $("#pa-fleet-detail");
+      if (panel && panel.focus) panel.focus();
+    }
+  }
+
   function renderFleetDetail(kind, id, edgeId, snapshot) {
     var panel = $("#pa-fleet-detail");
     if (!panel || !fleetOverview) return;
     panel.hidden = false;
     var shell = $("#pa-fleet-detail-shell");
     if (shell) shell.hidden = false;
-    if (!snapshot && panel.focus) panel.focus();
     selectedFleetItem = { kind: kind, id: id };
     if (kind === "edge-item") selectedFleetItem.edgeId = edgeId;
     var current = snapshot;
@@ -3514,7 +3522,10 @@
     var edge = event.target.closest && event.target.closest("[data-fleet-edge]");
     if (!node && !item && !edge) return;
     event.preventDefault();
-    if (node) renderFleetDetail("node", node.getAttribute("data-fleet-node"));
+    if (node) {
+      renderFleetDetail("node", node.getAttribute("data-fleet-node"));
+      focusFleetDetail(node);
+    }
     if (item) {
       renderFleetDetail(
         "edge-item",
@@ -3718,6 +3729,7 @@
     var topologyNode = e.target.closest("[data-fleet-node]");
     if (topologyNode) {
       renderFleetDetail("node", topologyNode.getAttribute("data-fleet-node"));
+      focusFleetDetail(topologyNode);
       renderFleetTopology(createFleetSnapshot(fleetOverview, fleetRefresh, selectedFleetItem));
       return;
     }
