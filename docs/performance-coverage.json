@@ -2,7 +2,7 @@
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
   "as_of": "2026-10-21T00:04:46.242697+00:00",
-  "completion": "OPEN;631 rows/109 concerns. All613 prior rows unchanged. Loaded228 supported process snapshot retains all170 operations/all75 route groups,87 slow-or-failed names;12 operations and6 routes newly represented.2597 slow/932 failed/883 timeout counters overlap, not distinct incidents. PR555 exact integration is separate from pending main CI and activation. No whole-PA acceptance, new worker or service workload.",
+  "completion": "OPEN;631 rows/109 concerns. All613 prior rows unchanged. Loaded228 supported process snapshot retains all170 operations/all75 route groups,87 slow-or-failed names;12 operations and6 routes newly represented.2597 slow/932 failed/883 timeout counters overlap, not distinct incidents. PR555 exact integration is separate from 5/5 green head and main CI, and separate unverified activation. No whole-PA acceptance, new worker or service workload.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -262334,7 +262334,16 @@
         "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
       },
       "deployed": "Source only; loaded228 excludes555.",
-      "resolution": "open"
+      "resolution": "open",
+      "main_ci_followup": {
+        "observed_at": "2026-10-21T00:06:39.203450+00:00",
+        "id": 39518909020,
+        "head": "cb81b1666881cd9e227481668fe624a1e0304ac3",
+        "attempt": 1,
+        "total_count": 5,
+        "jobs": "All test0/1/2/3 and smoke completed SUCCESS",
+        "activation": "Unverified; no install or restart"
+      }
     },
     "concern:gc-saved-plan-freshness": {
       "audit_artifact": "docs/benchmarks/systemic-gc-publication-audit-20261020.json",
