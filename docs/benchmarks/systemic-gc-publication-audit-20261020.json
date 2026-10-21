@@ -1,0 +1,23 @@
+{
+  "contract": "pa.gc-publication-source-audit/v1",
+  "source_revision": "3d8b2b813d55707de3bce0bd4c3caf24b9189f20",
+  "scope": "Static source audit only; no live GC plan/execute/resume, object mutation, deletion, repair, ref change or new fixture.",
+  "existing_report": "f320ad17-3cdd-41a7-af9c-76e5af6e7c67",
+  "paths": [
+    {"path": "ObjectStore.put/repair", "source": "src/pa/sync/object_store.py", "observation": "Object path/content and catalog metadata are updated without an ObjectStore-wide mutation lock; caller synchronization varies. Existing put preserves old file mtime; repair replaces content and refreshes metadata."},
+    {"path": "EventLog.append_event", "source": "src/pa/sync/event_log.py", "observation": "Ordinary append writes objects and publishes ref under sync.refs Python plus refs-file locks, after a parent fence."},
+    {"path": "EventLog.merge_heads/resolve_heads and advance_ref", "source": "src/pa/sync/event_log.py", "observation": "Merge/resolution object construction occurs before advance_ref takes the ref locks. advance_ref fences the head publication, not the entire prepublication object lifetime."},
+    {"path": "SyncEngine.ingest_objects", "source": "src/pa/sync/engine.py", "observation": "Object imports call has/put individually, before subsequent head reconciliation/publication. There is no encompassing ref lock in ingest_objects itself."},
+    {"path": "RecoveryCoordinator._fetch_object install closure", "source": "src/pa/sync/recovery.py", "observation": "Recovery DOES take the log Python/file ref fence and recheck head before ObjectStore.repair. Do not describe every repair caller as unfenced."},
+    {"path": "EpochRegistry record/ack/quorum and create_snapshot_epoch", "source": "src/pa/sync/epochs.py", "observation": "Registry changes use their own RLock. Epoch object put occurs before registry.record_epoch. GC execute does not reread this current registry or the required-ack policy."},
+    {"path": "sync_gc_plan/execute", "source": "src/pa/modules/sync.py", "observation": "Plan collects local reachability and convergence peer tips outside the future execute. Execute authorizes a request realm, then passes only plan_id/confirm to GcPlanner.execute; it does not pass the authorized realm or recompute current pins/head inputs."},
+    {"path": "GcPlanner.execute/resume_interrupted", "source": "src/pa/sync/gc.py", "observation": "Execution trusts saved reclaimable/ack flags and candidate list, releases the journal lock before callbacks, and never consults current epoch/head/pins/realm metadata. Resume repeats that executor."}
+  ],
+  "limits": [
+    "This is not an exhaustive inventory of all publication, backup pins, import or administrative callers.",
+    "No production GC usage, deletion, cross-realm exploit, loss or causal latency is established.",
+    "Prior disposable refreshed-metadata delete-spy admission remains the only behavioral observation; zero object bytes were deleted.",
+    "A timestamp-only reread or a ref-only lock does not by itself establish safety for all writers/epoch/pin changes. Lock order and bounded hold cost remain unvalidated."
+  ],
+  "next": "Keep metadata batching unimplemented. Establish one publication/mutation generation contract, current authorized plan realm, epoch/ack policy, reachability and pin freshness across execute/resume, then test interleavings with disposable delete spies before any optimization or deployed GC. Preserve canonical durability and avoid long history walks under the ref fence."
+}

@@ -1,0 +1,291 @@
+{
+  "contract": "pa.loaded-runtime-inventory/v1",
+  "source": {
+    "host": "macbook",
+    "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "api_paths": [
+      "/api/status",
+      "/api/runtime",
+      "/api/status"
+    ],
+    "range_utc": [
+      "2026-10-21T00:01:28.671265+00:00",
+      "2026-10-21T00:01:29.357245+00:00"
+    ],
+    "source_path": ".dev/runtime-inventory-20261021T0002.json",
+    "sha256": "a4ce9b22efab8d19affe91f58890784783538455ceaaa1fccff39a28286284e0",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "2283d9075b1a9cce2eb1566c22c4120cea1818c4",
+      "package_identity": "sha256:41eed1cadc94871815b2ec91640d9200e5e3e0c6b9af275c1540331a34d9abe5",
+      "pid": 26578,
+      "startup_id": "6c743433-45cf-48c2-86d9-dc5e815be7be"
+    },
+    "read_timings": [
+      {
+        "path": "/api/status",
+        "wall_ms": 377.98
+      },
+      {
+        "path": "/api/runtime",
+        "wall_ms": 168.984
+      },
+      {
+        "path": "/api/status",
+        "wall_ms": 137.954
+      }
+    ],
+    "log_files_scanned": false,
+    "peer_files_scanned": false,
+    "full_module_attestation": false,
+    "published_artifact": "docs/benchmarks/systemic-live-runtime-20261021T0001.json",
+    "published_sha256": "a4ce9b22efab8d19affe91f58890784783538455ceaaa1fccff39a28286284e0"
+  },
+  "operations": 170,
+  "routes": 75,
+  "slow_or_failed_names": 87,
+  "families": {
+    "acp": {
+      "names": 4,
+      "submitted": 15838,
+      "slow_calls": 171,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 3045.391
+    },
+    "agent": {
+      "names": 11,
+      "submitted": 43916,
+      "slow_calls": 178,
+      "failed": 1,
+      "timed_out": 1,
+      "process_max_ms": 9686.965
+    },
+    "browser": {
+      "names": 3,
+      "submitted": 3,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 8.45
+    },
+    "conversation": {
+      "names": 2,
+      "submitted": 39147,
+      "slow_calls": 132,
+      "failed": 0,
+      "timed_out": 1,
+      "process_max_ms": 8599.475
+    },
+    "dispatch": {
+      "names": 17,
+      "submitted": 277093,
+      "slow_calls": 109,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 4011.257
+    },
+    "filesystem": {
+      "names": 2,
+      "submitted": 21710,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1271.886
+    },
+    "fleet": {
+      "names": 14,
+      "submitted": 255462,
+      "slow_calls": 232,
+      "failed": 0,
+      "timed_out": 7,
+      "process_max_ms": 10554.292
+    },
+    "goal": {
+      "names": 7,
+      "submitted": 1950,
+      "slow_calls": 3,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1731.437
+    },
+    "health": {
+      "names": 1,
+      "submitted": 6637,
+      "slow_calls": 105,
+      "failed": 0,
+      "timed_out": 2,
+      "process_max_ms": 3178.927
+    },
+    "http": {
+      "names": 9,
+      "submitted": 283791,
+      "slow_calls": 3,
+      "failed": 919,
+      "timed_out": 871,
+      "process_max_ms": 21960.568
+    },
+    "intake": {
+      "names": 1,
+      "submitted": 10,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 505.667
+    },
+    "maintenance": {
+      "names": 1,
+      "submitted": 2,
+      "slow_calls": 2,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 49648.995
+    },
+    "notifications": {
+      "names": 2,
+      "submitted": 1986,
+      "slow_calls": 10,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 21804.632
+    },
+    "pr_supervisor": {
+      "names": 5,
+      "submitted": 250279,
+      "slow_calls": 12,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1256.474
+    },
+    "preferences": {
+      "names": 2,
+      "submitted": 78,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 902.26
+    },
+    "progress": {
+      "names": 7,
+      "submitted": 21854,
+      "slow_calls": 323,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 7000.846
+    },
+    "provider": {
+      "names": 3,
+      "submitted": 12,
+      "slow_calls": 10,
+      "failed": 0,
+      "timed_out": 1,
+      "process_max_ms": 4346.483
+    },
+    "reconciliation": {
+      "names": 4,
+      "submitted": 122205,
+      "slow_calls": 90,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 3226.464
+    },
+    "selection": {
+      "names": 16,
+      "submitted": 66,
+      "slow_calls": 11,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1963.241
+    },
+    "sqlite": {
+      "names": 42,
+      "submitted": 1377111,
+      "slow_calls": 793,
+      "failed": 1,
+      "timed_out": 0,
+      "process_max_ms": 10604.014
+    },
+    "startup": {
+      "names": 3,
+      "submitted": 3,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1035.269
+    },
+    "sync": {
+      "names": 7,
+      "submitted": 24482,
+      "slow_calls": 395,
+      "failed": 10,
+      "timed_out": 0,
+      "process_max_ms": 26670.562
+    },
+    "workspace": {
+      "names": 7,
+      "submitted": 44,
+      "slow_calls": 15,
+      "failed": 1,
+      "timed_out": 0,
+      "process_max_ms": 38075.661
+    }
+  },
+  "new_names_vs_all_613_rows": {
+    "operations": [
+      "dispatch.recovery_source_read",
+      "fleet.overview.supervisor",
+      "fleet.overview.update",
+      "selection.boundary_closed",
+      "selection.boundary_dispatch",
+      "selection.boundary_fence",
+      "selection.boundary_linked",
+      "selection.boundary_source",
+      "selection.boundary_target",
+      "selection.boundary_transcript",
+      "sqlite.agent_boundary_target_read",
+      "sqlite.agent_session_close"
+    ],
+    "routes": [
+      "/api/agent/observability/v1/sessions",
+      "/api/agent/sessions/{session_id}/queue/resume",
+      "/api/fleet/instances/{instance_id}/agent/start",
+      "/api/fleet/overview/dimension",
+      "/api/sync/audit",
+      "/api/sync/convergence"
+    ]
+  },
+  "request_totals": {
+    "count": 313695,
+    "response_bytes": 2093001293,
+    "max_ms": 152558.416,
+    "excluded_sse_requests": 4,
+    "latency_ms": {
+      "samples": 256,
+      "max": 1302.762,
+      "p50": 52.656,
+      "p95": 210.89,
+      "p99": 583.345
+    }
+  },
+  "event_loop": {
+    "samples": 600,
+    "latest_lag_ms": 5.0,
+    "p95_lag_ms": 123.0,
+    "max_lag_ms": 1066452.0,
+    "pre_window_lag_ms": {
+      "samples": 0,
+      "max": null,
+      "p50": null,
+      "p95": null,
+      "p99": null
+    }
+  },
+  "interpretation": [
+    "Counters slow/failed/timed_out overlap and cannot be added as distinct incidents.",
+    "Per-operation runtime/queue/service/CPU/lock/SQL/file distributions and route percentiles are bounded rolling windows; process maxima are separate. Family quantiles are not pooled.",
+    "Loaded228 metadata fences this process; it is not new module/package composition attestation. Later547\u2013555 source is not activated by this evidence.",
+    "Ordinary live/background/disposable test traffic may overlap. No causal or pre/post benchmark claim; no acceptance. Event-loop max cannot distinguish suspension/scheduling/CPU/synchronous work.",
+    "No fresh logs, peer logs, retention coverage, hardware/disk instrumentation or exhaustive fleet inventory. Every source/peer/backup/receipt/unexercised branch remains open."
+  ],
+  "next": "Retain all returned numeric families in the631-row ledger. Attribute shared long tails and valid branch coverage; continue original log/peer/retention/backup/rollout/ordinary independent acceptance. This snapshot is not a performance acceptance replay."
+}
