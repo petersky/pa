@@ -329,6 +329,8 @@ class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
                 await kernel.shutdown(app)
 
     async def test_provider_startup_is_backgrounded_after_manager_admission(self) -> None:
+        import gc
+
         release = asyncio.Event()
 
         async def slow_start(**_kwargs) -> None:
@@ -354,10 +356,40 @@ class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
                 "pa.instance.agent_session.get_instance_agent",
                 return_value=fake_agent,
             ):
-                started = time.perf_counter()
-                await kernel.startup(app)
-                startup_ms = (time.perf_counter() - started) * 1000
-                self.assertLess(startup_ms, 100)
+                gc_starts = {}
+                gc_pauses = []
+                gc_count = 0
+                longest_gc = None
+
+                def observe_startup_gc(phase, info):
+                    nonlocal gc_count, longest_gc
+                    key = (threading.get_ident(), info["generation"])
+                    if phase == "start":
+                        gc_starts[key] = time.perf_counter()
+                    elif key in gc_starts:
+                        end = time.perf_counter()
+                        start = gc_starts.pop(key)
+                        pause = {"start": start, "end": end, "thread": key[0],
+                                 "generation": key[1], "ms": (end - start) * 1000}
+                        gc_count += 1
+                        if len(gc_pauses) < 8:
+                            gc_pauses.append(pause)
+                        if longest_gc is None or pause["ms"] > longest_gc["ms"]:
+                            longest_gc = pause
+
+                gc.callbacks.append(observe_startup_gc)
+                try:
+                    cpu_started = time.thread_time()
+                    started = time.perf_counter()
+                    await kernel.startup(app)
+                    startup_ms = (time.perf_counter() - started) * 1000
+                    startup_cpu_ms = (time.thread_time() - cpu_started) * 1000
+                finally:
+                    gc.callbacks.remove(observe_startup_gc)
+                self.assertLess(startup_ms, 100, msg={
+                    "thread_cpu_ms": startup_cpu_ms, "calling_thread": threading.get_ident(),
+                    "gc_count": gc_count, "first_gc_pauses": gc_pauses, "longest_gc_pause": longest_gc,
+                })
                 self.assertEqual(
                     kernel.ctx.require_service("agent_lifecycle")["phase"],
                     "starting",

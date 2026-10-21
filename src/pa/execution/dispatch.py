@@ -3949,14 +3949,8 @@ class DispatchStore:
                             [candidate.sequence, candidate.sequence],
                         ]
                     )
-            retained_bytes = sum(
-                len(item.model_dump_json().encode())
-                for item in record.progress_events
-            )
-            while (
-                len(record.progress_events) > MAX_PROGRESS_EVENTS
-                or retained_bytes > self.MAX_PROGRESS_BYTES_PER_DISPATCH
-            ):
+            retained_bytes: int | None = None
+            while True:
                 candidate = next(
                     (
                         item
@@ -3967,6 +3961,17 @@ class DispatchStore:
                 )
                 if candidate is None:
                     break
+                # Count overflow removes the same first eligible checkpoint
+                # regardless of bytes. Once the count fits, at most 64 payloads
+                # need byte accounting. Protected-only history cannot be pruned.
+                if len(record.progress_events) <= MAX_PROGRESS_EVENTS:
+                    if retained_bytes is None:
+                        retained_bytes = sum(
+                            len(item.model_dump_json().encode())
+                            for item in record.progress_events
+                        )
+                    if retained_bytes <= self.MAX_PROGRESS_BYTES_PER_DISPATCH:
+                        break
                 record.progress_events.remove(candidate)
                 removed.append(candidate)
                 record.progress_compacted_ranges = _normalized_sequence_ranges(
@@ -3975,7 +3980,8 @@ class DispatchStore:
                         [candidate.sequence, candidate.sequence],
                     ]
                 )
-                retained_bytes -= len(candidate.model_dump_json().encode())
+                if retained_bytes is not None:
+                    retained_bytes -= len(candidate.model_dump_json().encode())
             record.progress_seen_keys.append(sanitized.idempotency_key)
             record.progress_seen_keys = record.progress_seen_keys[
                 -MAX_PROGRESS_SEEN_KEYS:

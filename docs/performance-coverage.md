@@ -1,3 +1,38 @@
+# Bounded progress byte accounting and startup CI evidence — 2026-10-21
+
+All **639 findings and 117 concerns remain open**, with every prior row unchanged. [Complete source/fixture/CI evidence](benchmarks/systemic-progress-retention-json-20261021.json) records the implemented byte-accounting repair and a separate unresolved main-CI startup finding.
+
+Retention now enforces count overflow using the same first removable checkpoint before byte accounting. It calculates byte totals only when a removable checkpoint remains and the count fits; at most 64 payloads then require accounting. Protected-only history stays complete even above the count/byte bounds. This removes the measured reserialization of history that cannot be pruned, without SQL caching, schema assumptions, changed encoding, limits, receipt semantics, ordering or durability. Full committed publication remains.
+
+**89 distinct selected guarded cases pass: 14 new and 75 existing.** The 86-case run plus two additional exact-byte cases and one existing startup case cover four ingestion branches, before/after-commit faults, protected/ordinary history across count and byte limits, equality and one-byte overflow, exact compacted ranges/receipts, stale publication/input isolation, concurrency and reload. Earlier fixture/guard failures remain documented. At 1,000 retained events accepted/late event JSON calls fall **1,002–1,011→1 per operation**, preserving the one durable incoming payload serialization and identical complete state, logical writes and reload.
+
+The same benchmark has ten alternating pairs over 12 shapes, all **240 calls** retained. Part of it overlaps the 86-case contract process; exact UTC ranges/overlap are recorded. This is shared-host source evidence, not a controlled hardware/statistical or deployed acceptance result. All prior and new regressions remain.
+
+| Retained events / branch | Baseline wall p50 / p95 / max ms | Source wall p50 / p95 / max ms |
+|---|---|---|
+|1:accepted|1.667 / 2.274 / 2.274|1.469 / 2.443 / 2.443|
+|1:late|1.461 / 2.442 / 2.442|1.597 / 1.822 / 1.822|
+|1:conflict|0.963 / 1.857 / 1.857|1.157 / 3.192 / 3.192|
+|1:coalesced|1.527 / 3.003 / 3.003|1.462 / 1.818 / 1.818|
+|128:accepted|7.470 / 10.022 / 10.022|5.759 / 10.237 / 10.237|
+|128:late|7.381 / 12.571 / 12.571|5.389 / 10.268 / 10.268|
+|128:conflict|7.943 / 11.014 / 11.014|6.218 / 9.397 / 9.397|
+|128:coalesced|7.955 / 10.930 / 10.930|8.031 / 10.696 / 10.696|
+|1000:accepted|63.849 / 163.783 / 163.783|46.476 / 53.867 / 53.867|
+|1000:late|60.154 / 133.790 / 133.790|46.317 / 58.372 / 58.372|
+|1000:conflict|38.543 / 48.993 / 48.993|40.275 / 52.174 / 52.174|
+|1000:coalesced|39.602 / 48.084 / 48.084|42.444 / 123.489 / 123.489|
+
+**The 1,000-event coalesced p95/max regresses 48.084→123.489 ms and CPUmax 45.596→115.183 ms**, on a branch that returns before the changed retention loop. Other small/unchanged-branch regressions remain in the table and raw samples. No causal share is inferred from this correlation; no rerun selected a better tail. At ten samples p95/p99 equal max; shapes are not pooled. One complete publication copy, core JSON/index work and successful native busy/CPU/disk/fsync/GC scheduling attribution remain open.
+
+PR562 is integrated b5a304e3 from d8fcb324/equal trees and five first-attempt head checks passed, but **main CI39530596044 failed the existing provider-startup test at257.703 ms against unchanged100 ms**, with a248 ms callback; the other four checks succeeded. The failed shard had1002 passes/one skip/527subtests. Raw log SHA43a87c7b is retained locally, not published because it may contain fixture secrets. No same-head retry occurred. The target passes locally with progress ingestion and Workspace construction denied; the broader six-case diagnostic had five passes and one expected Workspace guard denial. This does not explain or resolve the original CI stall.
+
+The existing startup test now records calling-thread CPU and bounded first-eight/longest GC intervals only in its failure message, removing the callback in finally. AST checks preserve every original assertion, await, cold workload,100ms deadline and debug/GC policy; no warmup or timer move occurred. Targeted execution passes and observer cleanup is verified. Future actual failing-path attribution remains required; diagnostic collection is not resolution.
+
+No activation/restart, installed-path retest or full module attestation occurred. All original mixed-load/API/background/valid-branch/provider/MCP/placement/workspace, startup/drain, lock/SQL/CPU/disk/write-amplification, sync/peer/log/retention, backup/GC/saved-plan/publication, receipt/queue and exact rollout/independent acceptance obligations remain. DB89957 accepted original scope stays closed; backup0331/b527 and ordinary independent17d retain ownership. No service-state, data, warning/threshold/default/model/permission/queue change, unsafe workload fault, root backup/GC action, ambiguous resend or competing worker/verifier occurred.
+
+## Preserved prior inventory and evidence
+
 # Progress ingestion copy and serialization — 2026-10-21
 
 All **638 findings and 116 concerns remain open**. All 636 prior source rows and historical failures are unchanged. The [complete numeric evidence](benchmarks/systemic-progress-ingest-copy-20261021.json) adds separate findings for redundant provisional copying and retained event JSON accounting; the latter is **not repaired** in this patch.

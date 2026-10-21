@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T01:56:09.981737+00:00",
-  "completion": "OPEN;638rows/116concerns, all636prior source rows unchanged. Scoped ingestion provisional-copy repair source-tested; retained event JSON accounting remains unimplemented. Alltailregressions, historicalCI/runtime failures and original performance/startup/drain/durability/order/admission/lease/receipt/sync/peer/log/backup/GC/rollout/independent acceptance obligations remain. No deployment/restart or whole-card acceptance.",
+  "as_of": "2026-10-21T02:06:48.895971+00:00",
+  "completion": "OPEN;639rows/117concerns, all638prior source rows unchanged. Count-first bounded byte accounting source-tested89distinctcases/240pairedcalls, tail regressions retained. PR562 integrated/head5green but main startup257.703ms/100msfailure remains unverified; new bounded diagnostics preserve deadline/debug/coldworkload. No deployment/restart/wholeacceptance; all original criteria and linked ownership remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -163,7 +163,8 @@
     "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
     "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
     "docs/benchmarks/systemic-pr561-ci-admission-20261021.json",
-    "docs/benchmarks/systemic-progress-ingest-copy-20261021.json"
+    "docs/benchmarks/systemic-progress-ingest-copy-20261021.json",
+    "docs/benchmarks/systemic-progress-retention-json-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -212280,6 +212281,24 @@
       "implemented": false,
       "next_action": "Measure safe normalized byte accounting or selected-row aggregate under delivery updates/removals/reload, preserve exact existing encoding/count/age/byte/protected history/receipt semantics and rollback. No cache/SQL aggregate repair implemented in this patch.",
       "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df"
+    },
+    {
+      "id": "concern:ci562-provider-startup-latency",
+      "kind": "concern",
+      "finding": "Existing background provider startup100ms assertion failed257.703ms on merged main with248mscallback",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "actual_ci_failure_cause_unverified_local_case_passes_ingest_denied",
+      "artifact": "docs/benchmarks/systemic-progress-retention-json-20261021.json",
+      "sha256": "0c435cdbacd25c686d8ccc27c3972c91408f7cfde2eafaaafbed9da929c7e30b",
+      "implemented": "Bounded test-only callingCPU/GCfailure diagnostics; no source fix or threshold/debug/assertion/workload change for this CIcause",
+      "merged": [],
+      "deployed": "None",
+      "retested": "Originaltargetpassed withinbroaderguardeddiagnostic5pass/1Workspaceguarddenial; targeteddiagnostic+observercleanup pass. Doesnotresolve mainCI failure.",
+      "resolution": "open",
+      "next_actor": "same systemic session; existing normal scheduler owns final acceptance",
+      "next_action": "Use actual failure CPU/GC timelines and startup phases to attribute event-loop stall and repair confirmed cause; preserve100msbudget, cold startup/admission/readiness/provider semantics.",
+      "report": "0d7eb836-7825-4665-a555-20f909bf8ac0"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -299552,6 +299571,152 @@
           "whole_acceptance": false
         }
       }
+    },
+    "concern:progress-retention-event-json-amplification": {
+      "implemented": "Enforce count overflow first using the same first unprotected candidate; only calculate byte totals when count fits and a removable checkpoint exists. At most64payloads require retention byte accounting. Protected-only history remains complete. Same removal/compactedrange/receipt/order/durability/publication semantics. No SQLaggregate/cache/rawbyte reuse or schema assumption.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-progress-retention-json-20261021.json",
+        "sha256": "0c435cdbacd25c686d8ccc27c3972c91408f7cfde2eafaaafbed9da929c7e30b",
+        "contracts": "89distinct14new/75existing",
+        "comparison": "240pairedcalls, partial testprocessoverlap recorded; alltailregressions retained",
+        "integration": "Ready PR pending exact stablegreen/independentgates",
+        "deployed": false,
+        "resolution": "open"
+      },
+      "next_action": "Integrate and separately verify exactpackage/currentownership/quiescence/backup/activation gates and representative deployed mixed startup/drain/API/background/provider/peer acceptance. Fullpublication/coreJSON/index/SQL/CPU/disk/GC tails remain.",
+      "resolution": "open"
+    },
+    "concern:progress-ingest-provisional-copy": {
+      "pr562_integration": {
+        "integration": {
+          "contract": "pa.exact-integration-proof/v1",
+          "observed_at": "2026-10-21T02:00:56.306609+00:00",
+          "PR": 562,
+          "watch": "158f070e-1486-4d5c-8de2-3630389c15f5",
+          "head": "d8fcb3240599a1310661fb32c0a39b05f709ac2c",
+          "merge": "b5a304e366c9a1fd83ade4341b0f841037ae2529",
+          "merged_at": "2026-10-21T02:00:44Z",
+          "source_tree": "939ba48eb4178eca313109a88af5e78eb1acdaec",
+          "merge_tree": "939ba48eb4178eca313109a88af5e78eb1acdaec",
+          "parents": [
+            "de7ab4dc589f262d70e75ec35126d7d64bd13075",
+            "d8fcb3240599a1310661fb32c0a39b05f709ac2c"
+          ],
+          "tree_equal": true,
+          "independent_review_sha256": "e26f83d1e72f6ec0a75cc8a3bd0284e531b5b439ed4f56359097e4e018233dbb",
+          "stable_supervisor_sha256": "05a1d709ed2c09d4224b8ca44844fbba0b2097e4ddda376a45f7c01e1bc3e060",
+          "main_ci_runs": [
+            {
+              "id": 39530596044,
+              "status": "queued",
+              "conclusion": null,
+              "attempt": 1
+            }
+          ],
+          "deployed": false,
+          "restarted": false,
+          "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+        },
+        "head_ci": {
+          "observed_at": "2026-10-21T02:00:33.908970+00:00",
+          "run": 39530235571,
+          "head": "d8fcb3240599a1310661fb32c0a39b05f709ac2c",
+          "status": "completed",
+          "conclusion": "success",
+          "attempt": 1,
+          "jobs": [
+            {
+              "id": 118994198014,
+              "name": "smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39530235571/job/118994198014"
+            },
+            {
+              "id": 118994198133,
+              "name": "test (1)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39530235571/job/118994198133"
+            },
+            {
+              "id": 118994198157,
+              "name": "test (3)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39530235571/job/118994198157"
+            },
+            {
+              "id": 118994198239,
+              "name": "test (2)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39530235571/job/118994198239"
+            },
+            {
+              "id": 118994198395,
+              "name": "test (0)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39530235571/job/118994198395"
+            }
+          ],
+          "complete_job_inventory": true,
+          "five_terminal_success": true,
+          "historical_failures_preserved": true,
+          "deployed": false,
+          "whole_acceptance": false
+        },
+        "main_ci": {
+          "run": 39530596044,
+          "head": "b5a304e366c9a1fd83ade4341b0f841037ae2529",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "failure",
+          "jobs": [
+            {
+              "id": 118995333683,
+              "name": "test (0)",
+              "status": "completed",
+              "conclusion": "failure"
+            },
+            {
+              "id": 118995334003,
+              "name": "test (3)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "id": 118995334005,
+              "name": "smoke",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "id": 118995334146,
+              "name": "test (2)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "id": 118995334164,
+              "name": "test (1)",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ],
+          "failed_test": "tests/test_async_responsiveness.py::StartupResponsivenessTests::test_provider_startup_is_backgrounded_after_manager_admission",
+          "wall_ms": 257.7032929999916,
+          "budget_ms": 100,
+          "callback_warning_ms": 248,
+          "shard_summary": "1failed/1002passed/1skipped/527subtests in153.28s",
+          "raw_log_sha256": "43a87c7b3b7b158d8edd5f4b55994c1334a57ba8b01ec7371aba055378aee07c",
+          "raw_log_bytes": 33090,
+          "raw_log_not_published": "Potential fixture secrets; only sanitized numeric metadata retained.",
+          "same_head_retry": false,
+          "cause": "Unverified. Unchanged target passed locally with progress ingestion and Workspace construction denied. Broader diagnostic selected6cases:5pass/1expectedWorkspace guard failure; narrowed target+observercleanup pass. No failingCI invocation CPU/GC attribution available."
+        }
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -301792,5 +301957,15 @@
     "serialization_repair": "UNIMPLEMENTED; separate row638 records next action",
     "resolution": "open",
     "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df"
+  },
+  "progress_retention_json_stage": {
+    "artifact": "docs/benchmarks/systemic-progress-retention-json-20261021.json",
+    "sha256": "0c435cdbacd25c686d8ccc27c3972c91408f7cfde2eafaaafbed9da929c7e30b",
+    "contracts": "89distinct14new/75existing",
+    "comparison": "240pairedcalls, partial testprocessoverlap recorded; alltailregressions retained",
+    "integration": "Ready PR pending exact stablegreen/independentgates",
+    "deployed": false,
+    "resolution": "open",
+    "ci_report": "0d7eb836-7825-4665-a555-20f909bf8ac0"
   }
 }
