@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T00:56:24.914634+00:00",
-  "completion": "OPEN;634rows/112concerns, all633prior rows unchanged. Heartbeat provisional copy repair has50guarded contracts and exact-equivalent measured candidate;1000casep95regression retained, source integration/deployment/acceptance pending. PR558 head+main5SUCCESS, source integrated only. Every original performance/startup/drain/durability/peer/log/backup/receipt/activation/independent acceptance requirement remains.",
+  "as_of": "2026-10-21T01:12:07.878363+00:00",
+  "completion": "OPEN;635rows/113concerns, all634prior rows unchanged. Dispatch native SQL numeric observation source35contracts pass, median instrumentation overhead retained. PR559 exact source integration/head+mainCI5SUCCESS is separate from deployment/retest. All original latency/startup/drain/durability/peer/log/backup/receipt/activation/independent acceptance requirements remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -159,7 +159,8 @@
     "docs/benchmarks/systemic-live-runtime-20261021T0040-summary.json",
     "docs/benchmarks/systemic-live-runtime-20261021T0040-operations.csv",
     "docs/benchmarks/systemic-live-runtime-20261021T0040-routes.csv",
-    "docs/benchmarks/systemic-heartbeat-copy-20261021.json"
+    "docs/benchmarks/systemic-heartbeat-copy-20261021.json",
+    "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -211981,6 +211982,23 @@
       "resolution": "open",
       "next_actor": "Same systemic session; ordinary independent acceptance scheduler unchanged",
       "next_action": "Integrate via ready PR and exact stable-green/independently validated gates. Preserve regression and remaining publication/serialization/nativeSQL/CPU/commit costs, then separately scope activation and representative acceptance; retain all original ledger actions."
+    },
+    {
+      "id": "concern:dispatch-native-sql-observation",
+      "kind": "concern",
+      "finding": "Raw DispatchStore SQLite connections omitted statement/fetch/commit/busy-error phases from worker observations",
+      "family": "dispatch",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_instrumentation_gap_live_cause_share_unverified",
+      "artifact": "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
+      "sha256": "84a2e755dc890c9362652316ea8ec0ec76d9997a088e7effc455f797dfebb02d",
+      "implemented": "Use existing numeric ObservedConnection at writer/readonly opens; all other application AST unchanged.",
+      "merged": [],
+      "deployed": "Source only; no activation or specific-path deployed retest",
+      "retested": "35guarded contracts pass (6new/29existing); two fixture failures retained;10pairs per0/128shape preserve state/corebytes/logicalwrites, median overhead retained.",
+      "resolution": "open",
+      "next_actor": "Same systemic session; ordinary independent acceptance scheduler unchanged",
+      "next_action": "Integrate exact stable-green ready PR, separately scope activation/current gates, then attribute actual worker SQL/commit versus remaining publication/serialization/nativewait/CPU costs; preserve all original inventory and acceptance actions."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -298972,6 +298990,19 @@
         "resolution": "open"
       },
       "resolution": "open"
+    },
+    "concern:heartbeat-provisional-retained-copy": {
+      "pr559_integration": {
+        "head": "e4d57da29cf9679478a2ab5e91493dbfde7ea55f",
+        "merge": "597724c8c6a804eb0a7a8e7f5f50d8b95789a8fa",
+        "tree": "4ece7ecb5169422a4999be9f3f7d8ed69a52f30d",
+        "watch": "9c2714d4-4bd8-4645-9ac2-dde6cb107efd",
+        "head_ci": 39524383836,
+        "main_ci": 39524808841,
+        "checks": "5SUCCESS each attempt1",
+        "deployment": "Source integrated only; no installed-path retest;1000history tail regression retained"
+      },
+      "resolution": "open"
     }
   },
   "f7e8_loaded_stage": {
@@ -301169,6 +301200,20 @@
     "measurement": "AST-equivalent measured candidate; native timing not rerun;1000casep95 regression retained",
     "integration": "Ready review pending",
     "deployment": "No root activation or deployed acceptance",
+    "resolution": "open"
+  },
+  "dispatch_native_sql_observation_stage": {
+    "artifact": "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
+    "sha256": "84a2e755dc890c9362652316ea8ec0ec76d9997a088e7effc455f797dfebb02d",
+    "problem": {
+      "id": "9ce5a25c-3c9d-4425-9450-b2cb326c7321",
+      "revision": 1,
+      "hash": "7fc1696491bae2105af801807797f6f477099b775393120f5219cacc5456ba62",
+      "delivery": "pending at response"
+    },
+    "source_tests": 35,
+    "integration": "Pending ready review/exact gates",
+    "deployment": "No activation or live-path retest",
     "resolution": "open"
   }
 }

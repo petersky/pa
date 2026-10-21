@@ -35,6 +35,7 @@ from pa.core.background import BackgroundTaskSupervisor
 from pa.core.io import atomic_write_json, atomic_write_text
 from pa.core.performance import PerformanceMetrics
 from pa.core.operation_budget import measured_lock
+from pa.core.sqlite_metrics import ObservedConnection
 from pa.execution.post_turn import (
     ActionReceiptStatus,
     ActionReceiptV1,
@@ -1050,7 +1051,8 @@ class DispatchStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         previous_read_only = self._read_only
         self._conn = sqlite3.connect(
-            self.db_path, timeout=30.0, check_same_thread=False
+            self.db_path, timeout=30.0, check_same_thread=False,
+            factory=ObservedConnection,
         )
         self._read_only = False
         try:
@@ -1078,6 +1080,7 @@ class DispatchStore:
             uri=True,
             timeout=5.0,
             check_same_thread=False,
+            factory=ObservedConnection,
         )
         self._conn.row_factory = sqlite3.Row
 
