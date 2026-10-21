@@ -4009,7 +4009,13 @@ class DispatchStore:
             if replayed:
                 return replayed
             self._validate_progress_provenance(stored, sanitized)
-            record = self._snapshot(stored)
+            # Only seen keys mutate in place. Range helpers replace their lists
+            # and the incoming heartbeat is detached by sanitization. Preserve
+            # the full deep publication after commit without copying retained
+            # history a second time for this provisional update.
+            record = stored.model_copy(
+                update={"progress_seen_keys": list(stored.progress_seen_keys)}
+            )
             current = record.progress_heartbeat
             if current and sanitized.sequence < current.sequence:
                 _cover_progress_sequence(record, sanitized.sequence, compacted=True)
