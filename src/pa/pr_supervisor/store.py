@@ -501,6 +501,7 @@ class PRSupervisorStore:
         elif view == "all":
             pass
         elif view == "errors":
+            clauses.append("retired_at IS NULL AND status IN ('active', 'blocked')")
             clauses.append("NULLIF(last_error, '') IS NOT NULL")
         else:
             clauses.append("retired_at IS NULL AND status IN ('active', 'blocked')")
@@ -1532,6 +1533,18 @@ class PRSupervisorStore:
         for name in ("active_watches", "historical_watches", "archived_watches", "terminal_retirement_backlog"):
             values[name] = inventory[name]
         return values
+
+    def current_error_count(self, *, realm_id: str) -> int:
+        """Count unresolved errors on active watches without scanning audit history."""
+        active = tuple(sorted(ACTIONABLE_PR_WATCH_STATUSES))
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM pr_watches WHERE realm_id = ? "
+                "AND retired_at IS NULL AND status IN ("
+                + ",".join("?" for _ in active)
+                + ") AND NULLIF(last_error, '') IS NOT NULL",
+                (realm_id, *active),
+            ).fetchone()[0]
 
     @staticmethod
     def _row_to_watch(row: sqlite3.Row) -> PRWatch:
