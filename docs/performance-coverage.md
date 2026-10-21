@@ -1,3 +1,36 @@
+# Progress ingestion copy and serialization — 2026-10-21
+
+All **638 findings and 116 concerns remain open**. All 636 prior source rows and historical failures are unchanged. The [complete numeric evidence](benchmarks/systemic-progress-ingest-copy-20261021.json) adds separate findings for redundant provisional copying and retained event JSON accounting; the latter is **not repaired** in this patch.
+
+Progress ingestion only mutates the event and seen-key containers in place. It now copies those two lists for the provisional record; retained payloads stay read-only and range helpers replace their lists. The full deep copy after commit remains. Every other application AST node equals pinned baseline de7ab4dc. SQL durability, exact receipts, provenance, rejection/coalescing/late behavior, sorting and age/count/byte/protected retention are unchanged.
+
+**74 guarded disposable contracts pass: 20 new and 54 existing.** New cases cover all four branches at before/after-commit boundaries, exact exceptions, unchanged prior publication, replay and changed-payload rejection after reload, detached nested state/plan/ranges, three retention boundaries, provenance/duplicate no-op and 20 concurrent ordered checkpoints. The initial run had 69 passes and three fixture failures: lifecycle `put` correctly preserved existing normalized history. Those fixtures now seed retained history through legacy migration; no production behavior or limits changed.
+
+Ten alternating pairs for each 1/128/1,000 retained-event and plan-step shape across accepted/late/conflict/coalesced ingestion preserve complete models/results with identical timestamps, logical writes, SQLite changes, core bytes and reload. All **240 calls** and overlapping copy/event-JSON/native-SQL measurements are retained. Full snapshots fall **2→1** per operation. This shared-host comparison does not establish statistical bounds or deployed performance acceptance.
+
+| Retained events / branch | Baseline wall p50 / p95 / max ms | Source wall p50 / p95 / max ms |
+|---|---|---|
+|1:accepted|1.803 / 2.762 / 2.762|1.336 / 3.011 / 3.011|
+|1:late|1.421 / 3.437 / 3.437|1.588 / 2.022 / 2.022|
+|1:conflict|1.421 / 2.267 / 2.267|0.877 / 1.609 / 1.609|
+|1:coalesced|1.360 / 2.904 / 2.904|0.803 / 1.696 / 1.696|
+|128:accepted|14.397 / 16.729 / 16.729|7.928 / 11.750 / 11.750|
+|128:late|12.351 / 18.387 / 18.387|7.079 / 11.807 / 11.807|
+|128:conflict|8.402 / 12.041 / 12.041|5.470 / 7.753 / 7.753|
+|128:coalesced|8.639 / 13.977 / 13.977|4.936 / 6.367 / 6.367|
+|1000:accepted|89.866 / 170.241 / 170.241|53.120 / 115.180 / 115.180|
+|1000:late|92.461 / 148.051 / 148.051|54.244 / 65.317 / 65.317|
+|1000:conflict|84.135 / 165.856 / 165.856|36.544 / 49.622 / 49.622|
+|1000:coalesced|75.059 / 94.206 / 94.206|38.312 / 118.067 / 118.067|
+
+**The 1,000-event coalesced p95/max regresses 94.206→118.067 ms and CPUmax 89.980→116.981 ms.** The one-event accepted max regresses 2.762→3.011 ms and one-event late median 1.421→1.588 ms. These outliers, previous acknowledgment/heartbeat tail regressions and historical CI failures remain; no rerun selected a better tail. At ten samples p95/p99 equal max; shapes are not pooled.
+
+The source accepted and late 1,000-event scenarios still call event `model_dump_json` **1,002→1,011 times per ingestion** as protected history grows. Ten accepted calls materialize **6,371,570 JSON bytes**; ten late calls materialize **6,371,440 bytes**, identical to baseline. This partial serialization observer overlaps operation time and excludes other core/receipt serialization; zero event JSON calls on conflict/coalescing does not mean no serialization. Byte accounting remains unmodified, with a separate open repair requiring exact delivery/removal/reload/encoding/retention parity. One deep publication and core serialization/index costs remain.
+
+PR561 is integrated as de7ab4dc from exact 8795de28 with equal trees and five first-attempt successful head and main checks. Its original admission 372.370 ms / 200 ms failure and 381 ms callback remain unclassified despite corrected CI green. Latest separately observed c02e/package5917/PID78321 runtime predates this source; no activation or deployed retest occurred. All original representative mixed-load, cold-start/drain, API/background/branch/provider/MCP/placement/workspace, native busy/CPU/disk/write amplification, sync/peer/log/retention, backup, GC/saved-plan/publication, ambiguous receipts and independent acceptance requirements remain. DB89957 accepted original scope stays closed; backup0331/b527 and ordinary independent17d retain their ownership. No competing worker or verifier, threshold/debug/default/model/permission/queue change, unsafe service fault, root backup/GC action, restart or ambiguous resend occurred.
+
+## Preserved prior inventory and evidence
+
 # Progress acknowledgment copy repair — 2026-10-21
 
 All **636 findings and 114 concerns remain open**; all635prior source rows are unchanged. The acknowledgment finding previously preserved in the durable card report is now folded into the [complete source evidence](benchmarks/systemic-progress-ack-copy-20261021.json), including its original three-call probe and full prior coverage delta. Ten original card attachments remain; the earlier extra attachment was rejected at the ten-attachment boundary and was not resent or claimed attached.

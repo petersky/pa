@@ -3861,7 +3861,15 @@ class DispatchStore:
             self._validate_progress_provenance(stored, sanitized)
             if delivered and sanitized.delivered_at is None:
                 sanitized.delivered_at = datetime.now(UTC)
-            record = self._snapshot(stored)
+            # Only these containers mutate in place; retained payloads are read
+            # and range helpers replace their lists. Keep the complete detached
+            # publication after commit without copying all history twice.
+            record = stored.model_copy(
+                update={
+                    "progress_events": list(stored.progress_events),
+                    "progress_seen_keys": list(stored.progress_seen_keys),
+                }
+            )
             same_sequence = next(
                 (
                     existing

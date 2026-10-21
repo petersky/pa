@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T01:38:58.832999+00:00",
-  "completion": "OPEN;636rows/114concernsallunchanged. Ackcopysource52contractsplus1existingadmissioncontract=53distinctselectedpass; source1000deliveredtailregressionretained. PR561 initialCIadmission372.370ms/200msand381mscallbackretainedunderexistingci533row; newfailure-onlyCPU/GCdiagnostics preserveoriginalassertions,workload,debugmodeandtimingwindow. CorrectedheadCI/integration/deployment/alloriginalacceptancecriteriapending.",
+  "as_of": "2026-10-21T01:56:09.981737+00:00",
+  "completion": "OPEN;638rows/116concerns, all636prior source rows unchanged. Scoped ingestion provisional-copy repair source-tested; retained event JSON accounting remains unimplemented. Alltailregressions, historicalCI/runtime failures and original performance/startup/drain/durability/order/admission/lease/receipt/sync/peer/log/backup/GC/rollout/independent acceptance obligations remain. No deployment/restart or whole-card acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -162,7 +162,8 @@
     "docs/benchmarks/systemic-heartbeat-copy-20261021.json",
     "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
     "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
-    "docs/benchmarks/systemic-pr561-ci-admission-20261021.json"
+    "docs/benchmarks/systemic-pr561-ci-admission-20261021.json",
+    "docs/benchmarks/systemic-progress-ingest-copy-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -212243,6 +212244,42 @@
       "next_action": "Integrate through exact stable-green/independent readyPR gates; separately scope concrete current package/dependency/ownership/quiescence/backup/activation gates and representative acceptance. Retain one deeppublication/coreJSON/nativeCPU/disk/SQL/sync/startup/provider/peer/log/backup/GC/receipt/CI residual actions.",
       "artifact": "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
       "sha256": "bcb89445f1aa204ff0472b40be5fd57465b0281f88d67626d5f0a2b99c76f91b"
+    },
+    {
+      "kind": "concern",
+      "family": "progress",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_paired_fixture_live_causal_share_unverified",
+      "artifact": "docs/benchmarks/systemic-progress-ingest-copy-20261021.json",
+      "sha256": "77f9ac34d123c61f390bd5f88a5c5fcb1a3221a2d9fc46f9fd957ddd4fb49c31",
+      "merged": [],
+      "deployed": "No activation or installed-path retest/fullmoduleattestation",
+      "retested": "74guarded disposablecontracts20new/54existing;240pairedcalls, complete models/results/logicalwrites/corebytes/SQLitechanges/reload equal, all samples/tailregressions retained",
+      "resolution": "open",
+      "next_actor": "same systemic card/session; final acceptance by existing ordinary independent scheduler",
+      "id": "concern:progress-ingest-provisional-copy",
+      "finding": "Progress ingestion deep-copies untouched retained payloads and plan before a second complete postcommit copy",
+      "implemented": "Only ingest_progress provisional snapshot changes: shallow record copy with independent progress_events/progress_seen_keys containers. Existing payloads read only, normalized range helpers replace their lists. Full postcommit deep publication, prior-state isolation, SQL writes, receipts, provenance, final/operator retention and thresholds unchanged.",
+      "next_action": "Integrate ready PR through exact stable-green supervisor and independent signals. Separately verify exact activation gates and full representative mixed startup/drain/API/background/provider/peer workload; retain all remaining obligations.",
+      "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df"
+    },
+    {
+      "kind": "concern",
+      "family": "progress",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_paired_fixture_live_causal_share_unverified",
+      "artifact": "docs/benchmarks/systemic-progress-ingest-copy-20261021.json",
+      "sha256": "77f9ac34d123c61f390bd5f88a5c5fcb1a3221a2d9fc46f9fd957ddd4fb49c31",
+      "merged": [],
+      "deployed": "No activation or installed-path retest/fullmoduleattestation",
+      "retested": "74guarded disposablecontracts20new/54existing;240pairedcalls, complete models/results/logicalwrites/corebytes/SQLitechanges/reload equal, all samples/tailregressions retained",
+      "resolution": "open",
+      "next_actor": "same systemic card/session; final acceptance by existing ordinary independent scheduler",
+      "id": "concern:progress-retention-event-json-amplification",
+      "finding": "Accepted/late ingestion serializes all retained progress payloads to recalculate retention byte totals",
+      "implemented": false,
+      "next_action": "Measure safe normalized byte accounting or selected-row aggregate under delivery updates/removals/reload, preserve exact existing encoding/count/age/byte/protected history/receipt semantics and rollback. No cache/SQL aggregate repair implemented in this patch.",
+      "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -299389,6 +299426,132 @@
         "resolution": "open"
       },
       "resolution": "open"
+    },
+    "concern:progress-ack-retained-copy": {
+      "pr561_integration": {
+        "integration": {
+          "contract": "pa.exact-integration-proof/v1",
+          "observed_at": "2026-10-21T01:42:59.055219+00:00",
+          "PR": 561,
+          "watch": "6994c22c-ac6e-423e-a6fa-4938544a8ec2",
+          "head": "8795de284e9eeafa66a749a3e6140c74ccd30900",
+          "merge": "de7ab4dc589f262d70e75ec35126d7d64bd13075",
+          "merged_at": "2026-10-21T01:42:54Z",
+          "source_tree": "d69a0e591d8e0b21d06a244373962f102254cf48",
+          "merge_tree": "d69a0e591d8e0b21d06a244373962f102254cf48",
+          "parents": [
+            "45347da4092eb5b67d48fa00ab8b21fbfe0dd6e4",
+            "8795de284e9eeafa66a749a3e6140c74ccd30900"
+          ],
+          "tree_equal": true,
+          "independent_review_sha256": "69f401eee51c57e2e50941c1371271abf0ae782aa65e801dee0589eddbf429dc",
+          "stable_supervisor_sha256": "9a48b6bcc74b9b437e9ca8b2be561b87bd86c3b335dee915af882019ba830b54",
+          "main_ci_runs": [],
+          "deployed": false,
+          "restarted": false,
+          "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+        },
+        "head_ci": {
+          "observed_at": "2026-10-21T01:42:48.352151+00:00",
+          "run": 39528572741,
+          "head": "8795de284e9eeafa66a749a3e6140c74ccd30900",
+          "status": "completed",
+          "conclusion": "success",
+          "attempt": 1,
+          "jobs": [
+            {
+              "id": 118988901960,
+              "name": "smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528572741/job/118988901960"
+            },
+            {
+              "id": 118988902287,
+              "name": "test (0)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528572741/job/118988902287"
+            },
+            {
+              "id": 118988902306,
+              "name": "test (1)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528572741/job/118988902306"
+            },
+            {
+              "id": 118988902328,
+              "name": "test (3)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528572741/job/118988902328"
+            },
+            {
+              "id": 118988902420,
+              "name": "test (2)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528572741/job/118988902420"
+            }
+          ],
+          "complete_job_inventory": true,
+          "five_terminal_success": true,
+          "historical_failures_preserved": true,
+          "deployed": false,
+          "whole_acceptance": false
+        },
+        "main_ci": {
+          "observed_at": "2026-10-21T01:46:54.857572+00:00",
+          "run": 39528917368,
+          "head": "de7ab4dc589f262d70e75ec35126d7d64bd13075",
+          "status": "completed",
+          "conclusion": "success",
+          "attempt": 1,
+          "jobs": [
+            {
+              "id": 118990024240,
+              "name": "test (0)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528917368/job/118990024240"
+            },
+            {
+              "id": 118990024309,
+              "name": "test (2)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528917368/job/118990024309"
+            },
+            {
+              "id": 118990024347,
+              "name": "test (3)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528917368/job/118990024347"
+            },
+            {
+              "id": 118990024423,
+              "name": "test (1)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528917368/job/118990024423"
+            },
+            {
+              "id": 118990024680,
+              "name": "smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39528917368/job/118990024680"
+            }
+          ],
+          "complete_job_inventory": true,
+          "five_terminal_success": true,
+          "historical_failures_preserved": true,
+          "deployed": false,
+          "whole_acceptance": false
+        }
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -301618,5 +301781,16 @@
       "ci": "Originalheadfailedadmissionbudget,correctednewheadrequired",
       "resolution": "open"
     }
+  },
+  "progress_ingest_copy_stage": {
+    "artifact": "docs/benchmarks/systemic-progress-ingest-copy-20261021.json",
+    "sha256": "77f9ac34d123c61f390bd5f88a5c5fcb1a3221a2d9fc46f9fd957ddd4fb49c31",
+    "contracts": "74guarded20new/54existing",
+    "comparison": "12shapes\u00d710pairs=240calls;1000coalescedtail and smallshape regressions retained",
+    "integration": "Ready PR pending exactgates",
+    "deployment": "None; full acceptance open",
+    "serialization_repair": "UNIMPLEMENTED; separate row638 records next action",
+    "resolution": "open",
+    "report": "cb5fe055-0ddc-4512-973b-c5bde2f611df"
   }
 }
