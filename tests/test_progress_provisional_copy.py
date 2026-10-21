@@ -192,3 +192,89 @@ def test_concurrent_progress_preserves_order_all_receipts_and_reload(tmp_path):
             assert store.ingest_progress(incoming).status == "duplicate"
     finally:
         store.close()
+
+
+def retained_store(path, protected_count, ordinary_count):
+    record = DispatchRecord(
+        dispatch_id="dispatch", mutation_id="fixture", card_id="card", session_id="session",
+        authority_instance_id="authority", authority_url="https://fixture.invalid",
+        target_instance_id="origin",
+    )
+    record.progress_events = [event(i + 1) for i in range(protected_count + ordinary_count)]
+    for item in record.progress_events[:protected_count]:
+        item.phase = ProgressPhase.TURN_ENDED
+    (path / "dispatch_mutations.json").write_text(
+        json.dumps({"dispatch": record.model_dump(mode="json")})
+    )
+    return DispatchStore(path)
+
+
+@pytest.mark.parametrize("count", [1, 64, 128, 1000])
+def test_protected_only_history_is_not_serialized_for_inapplicable_byte_pruning(tmp_path, count):
+    store = retained_store(tmp_path, count, 0)
+    incoming = event(count + 1)
+    incoming.phase = ProgressPhase.TURN_ENDED
+    dumped = []
+    original_dump = DispatchProgressEventV1.model_dump_json
+    def count_dump(value, *args, **kwargs):
+        dumped.append(value.idempotency_key)
+        return original_dump(value, *args, **kwargs)
+    try:
+        with patch.object(DispatchProgressEventV1, "model_dump_json", count_dump):
+            assert store.ingest_progress(incoming).accepted
+        # The incoming payload still has its durable serialization; none of the
+        # protected history can be removed by either existing retention bound.
+        assert dumped == [incoming.idempotency_key]
+        visible = store.get("dispatch")
+        assert [item.sequence for item in visible.progress_events] == list(range(1, count + 2))
+        assert not visible.progress_compacted_ranges
+        store.close()
+        store = DispatchStore(tmp_path)
+        assert store.get("dispatch") == visible
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("protected_count", [0, 63, 64, 128])
+@pytest.mark.parametrize("byte_overflow", [False, True])
+def test_count_then_byte_retention_preserves_first_eligible_order_and_receipts(tmp_path, protected_count, byte_overflow):
+    store = retained_store(tmp_path, protected_count, 4)
+    incoming = event(protected_count + 5)
+    if byte_overflow:
+        store.MAX_PROGRESS_BYTES_PER_DISPATCH = 1  # Disposable boundary only.
+    try:
+        assert store.ingest_progress(incoming).accepted
+        visible = store.get("dispatch")
+        protected = list(range(1, protected_count + 1))
+        ordinary = list(range(protected_count + 1, protected_count + 6))
+        keep = 0 if byte_overflow else min(5, max(0, 64 - protected_count))
+        assert [item.sequence for item in visible.progress_events] == protected + (ordinary[-keep:] if keep else [])
+        removed = ordinary[:len(ordinary) - keep]
+        assert visible.progress_compacted_ranges == ([[removed[0], removed[-1]]] if removed else [])
+        assert store.ingest_progress(incoming).status == "duplicate"
+        store.close()
+        store = DispatchStore(tmp_path)
+        assert store.get("dispatch") == visible
+        assert store.ingest_progress(incoming).status == "duplicate"
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("offset", [0, -1])
+def test_retention_byte_limit_equality_and_one_byte_overflow(tmp_path, offset):
+    store = retained_store(tmp_path, 2, 2)
+    incoming = event(5)
+    before = store.get("dispatch")
+    store.MAX_PROGRESS_BYTES_PER_DISPATCH = sum(
+        len(item.model_dump_json().encode()) for item in [*before.progress_events, incoming]
+    ) + offset
+    try:
+        assert store.ingest_progress(incoming).accepted
+        visible = store.get("dispatch")
+        assert [item.sequence for item in visible.progress_events] == ([1, 2, 4, 5] if offset else [1, 2, 3, 4, 5])
+        assert visible.progress_compacted_ranges == ([[3, 3]] if offset else [])
+        store.close()
+        store = DispatchStore(tmp_path)
+        assert store.get("dispatch") == visible
+    finally:
+        store.close()
