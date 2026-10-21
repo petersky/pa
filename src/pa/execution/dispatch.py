@@ -3338,22 +3338,25 @@ class DispatchStore:
                         dispatch_id=record.dispatch_id,
                         changed_fields=changed_fields,
                     )
-            record = self._snapshot(record)
             if existing:
                 # Progress rows and their delivery state are maintained by the
                 # normalized ingestion/outbox methods.  A caller can legitimately
                 # hold a lifecycle snapshot while a heartbeat or delivery update
                 # commits; never let that stale snapshot erase the newer rows when
                 # it later advances the dispatch state.
-                record.progress_events = [
-                    event.model_copy(deep=True) for event in existing.progress_events
-                ]
-                record.progress_heartbeat = (
-                    existing.progress_heartbeat.model_copy(deep=True)
-                    if existing.progress_heartbeat
-                    else None
+                # Select the current normalized progress before deep copying;
+                # the caller's stale progress would otherwise be copied only
+                # to be discarded. The full provisional copy still detaches
+                # these payloads, as do committed publication and the return.
+                record = record.model_copy(
+                    update={
+                        "progress_events": existing.progress_events,
+                        "progress_heartbeat": existing.progress_heartbeat,
+                        "progress_seen_keys": existing.progress_seen_keys,
+                    }
                 )
-                record.progress_seen_keys = list(existing.progress_seen_keys)
+            record = self._snapshot(record)
+            if existing:
                 record.progress_next_sequence = max(
                     record.progress_next_sequence, existing.progress_next_sequence
                 )

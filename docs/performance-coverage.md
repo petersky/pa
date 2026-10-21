@@ -1,3 +1,33 @@
+# Lifecycle progress copy repair — 2026-10-21
+
+All **640 findings and 118 concerns remain open**; every prior639row is preserved. [Complete paired measurements and contracts](benchmarks/systemic-lifecycle-progress-copy-20261021.json) distinguish this source repair from deployment and whole-service acceptance.
+
+`DispatchStore.put` copied the caller's progress before discarding it in favor of current normalized progress. It now selects current events, heartbeat and seen keys before the existing full provisional deep copy. Mutation/writer/terminal-repair checks still precede copying; authority-history/maxima fences, FULL durability, complete deep committed publication and the detached return remain. New dispatch insertion is unchanged. All other application AST nodes equal pinned merged baseline7232fd9d.
+
+**111 distinct guarded disposable cases pass:8new and103existing.** They cover before/after-commit faults, exact exception identity, committed visibility and reload, detached old publication/input/return, authority-history/maxima, readonly/mutation denial before copy, first insertion, stale snapshots after12concurrent delivery failures and delivered heartbeat, existing terminal-repair stale-put denial, queue/recovery, ordering/receipts/retention and SQL observations. The initial108case subset also passed; repeated cases are not counted twice. Tests and benchmark did not overlap each other.
+
+Ten alternating pairs for each current0/128/1,000events × caller0/128/1,000events shape retain all **180 calls**, using constant128nested plan steps and both heartbeats. Complete state/delivery, unchanged caller, logical writes, SQLite changes, core bytes and reload match. Event deep copies fall **caller+3×current → 3×current**; heartbeat copies4→3. **Three full snapshots remain on both paths.**
+
+| Current events / discarded caller events | Baseline wall p50 / p95 / max ms | Source wall p50 / p95 / max ms |
+|---|---|---|
+|0:0|3.706 / 4.996 / 4.996|3.207 / 4.441 / 4.441|
+|0:128|6.191 / 8.736 / 8.736|3.266 / 4.691 / 4.691|
+|0:1000|24.096 / 31.218 / 31.218|4.301 / 7.877 / 7.877|
+|128:0|13.802 / 19.996 / 19.996|14.320 / 18.597 / 18.597|
+|128:128|18.763 / 22.857 / 22.857|14.634 / 17.948 / 17.948|
+|128:1000|36.426 / 47.769 / 47.769|12.205 / 20.945 / 20.945|
+|1000:0|81.012 / 204.606 / 204.606|87.993 / 191.250 / 191.250|
+|1000:128|101.513 / 188.195 / 188.195|102.187 / 145.533 / 145.533|
+|1000:1000|118.305 / 157.758 / 157.758|99.420 / 210.864 / 210.864|
+
+**1,000current+1,000caller events fall4,000→3,000event copies and median118.305→99.420ms, but p95/max regresses157.758→210.864ms and CPUmax125.931→202.070ms.** With no caller events,1,000current median regresses81.012→87.993ms and CPUmax171.223→180.500ms.128current/0caller and1,000current/128caller medians also regress; every shape, prior outlier and regression remains in the artifact. No rerun selected a favorable tail. At ten samples p95/p99 equalmax; shapes are not pooled. This shared-host source comparison has no controlled hardware/statistical bound and does not establish whole-PA performance acceptance.
+
+Full provisional/publication/return copies, core JSON, indexes and native SQL/CPU/disk/fsync/GC attribution remain open. Overlapping numeric phases are not additive. PR563 is already integrated7232fd9d from exactd3e710cf with equal trees and five first-attempt successful head/main checks; its earlier PR562 startup257.703ms/100ms CI failure remains an unresolved finding. No install/restart/full module attestation, new installed-path retest or representative mixed-load startup/drain/API/background/provider/peer acceptance occurred.
+
+All original valid-branch/provider/MCP/placement/workspace, sync/peers/log/retention, native wait/CPU/disk/write amplification, backup/GC/saved-plan/publication, queue/receipt and exact activation/independent acceptance obligations remain. DB89957 accepted original scope stays closed; backup0331/b527 and normal independent17d retain ownership. No live service-state mutation, unsafe workload fault, root backup/GC action, warning/threshold/default/model/permission/queue change, ambiguous resend or competing worker/verifier occurred.
+
+## Preserved prior inventory and evidence
+
 # Bounded progress byte accounting and startup CI evidence — 2026-10-21
 
 All **639 findings and 117 concerns remain open**, with every prior row unchanged. [Complete source/fixture/CI evidence](benchmarks/systemic-progress-retention-json-20261021.json) records the implemented byte-accounting repair and a separate unresolved main-CI startup finding.
