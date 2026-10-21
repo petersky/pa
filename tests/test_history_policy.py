@@ -314,6 +314,8 @@ class HistoryPolicyManagedBrowserTests(unittest.IsolatedAsyncioTestCase):
             STATIC / "vendor" / "htmx" / "htmx-2.0.10.min.js"
         ).read_text()
         full_requests: list[str] = []
+        workshop_requested = asyncio.Event()
+        release_workshop = asyncio.Event()
 
         def surface(path: str) -> str:
             route = path.split("?", 1)[0]
@@ -400,6 +402,9 @@ document.addEventListener("pa:historyDiagnostic", function (event) {{
                 path = first.split(" ")[1]
                 is_htmx = "\r\nHX-Request: true\r\n" in header
                 if is_htmx:
+                    if path == "/workshop" and not workshop_requested.is_set():
+                        workshop_requested.set()
+                        await release_workshop.wait()
                     body = surface(path).encode()
                 else:
                     full_requests.append(path)
@@ -427,26 +432,62 @@ document.addEventListener("pa:historyDiagnostic", function (event) {{
                 scope, url=f"http://127.0.0.1:{port}/agent", width=900, height=700
             )
             page = manager.resolve(scope).page
+
+            async def click_and_wait(link: str, path: str) -> dict:
+                # This is a history contract, not a 100ms navigation benchmark.
+                # Observe the completed swap before sending the next click;
+                # use the same bounded 2.5s budget as history restoration below.
+                return await page.evaluate(
+                    """new Promise((resolve, reject) => {
+                      const path = PATH;
+                      const state = () => ({
+                        path: location.pathname,
+                        root: document.querySelector("[data-live-root]")?.dataset.liveRoot,
+                        active: window.__activeControllers,
+                        cache: sessionStorage.getItem("htmx-history-cache"),
+                        errors: Number(localStorage.getItem("pa.history.test.htmx-errors") || 0)
+                      });
+                      const cleanup = () => {
+                        clearTimeout(timer);
+                        document.removeEventListener("htmx:afterSettle", settled);
+                      };
+                      const settled = () => {
+                        const current = state();
+                        if (current.path !== path || current.root !== path.slice(1)) return;
+                        cleanup();
+                        resolve(current);
+                      };
+                      const timer = setTimeout(() => {
+                        cleanup();
+                        reject(new Error("Navigation did not settle: " + JSON.stringify(state())));
+                      }, 2500);
+                      document.addEventListener("htmx:afterSettle", settled);
+                      document.querySelector(LINK).click();
+                    })""".replace("PATH", json.dumps(path)).replace("LINK", json.dumps(link))
+                )
+
             await page.evaluate(
                 """(() => {
                   localStorage.removeItem("pa.history.test.reload-prep");
                   localStorage.removeItem("pa.history.test.htmx-errors");
                   localStorage.setItem("pa.agent-chat-draft.v1:test", "DRAFT_SECRET");
-                  document.querySelector("#to-workshop").click();
                 })()"""
             )
-            await asyncio.sleep(0.1)
-            await page.evaluate('document.querySelector("#to-fleet").click()')
-            await asyncio.sleep(0.1)
-            fleet = await page.evaluate(
-                """({
-                  path: location.pathname,
-                  root: document.querySelector("[data-live-root]").dataset.liveRoot,
-                  active: window.__activeControllers,
-                  cache: sessionStorage.getItem("htmx-history-cache"),
-                  errors: Number(localStorage.getItem("pa.history.test.htmx-errors") || 0)
-                })"""
+            workshop_navigation = asyncio.create_task(
+                click_and_wait("#to-workshop", "/workshop")
             )
+            try:
+                await asyncio.wait_for(workshop_requested.wait(), timeout=2.5)
+                # A received request is not a settled destination. The response
+                # gate deterministically exercises a pending fragment swap.
+                self.assertFalse(workshop_navigation.done())
+            finally:
+                release_workshop.set()
+                workshop = await workshop_navigation
+            self.assertEqual(workshop["path"], "/workshop")
+            self.assertEqual(workshop["root"], "workshop")
+            self.assertEqual(workshop["active"], 1)
+            fleet = await click_and_wait("#to-fleet", "/fleet")
             self.assertEqual(fleet["path"], "/fleet")
             self.assertEqual(fleet["root"], "fleet")
             self.assertEqual(fleet["active"], 1)

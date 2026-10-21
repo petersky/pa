@@ -1,3 +1,13 @@
+# Managed history CI follow-up — 2026-10-21
+
+All **632 findings and 110 concerns remain open**; all 631 prior rows remain unchanged. [Retained CI evidence](benchmarks/systemic-history-ci-followup-20261021.json) records initial PR557 run39520959163 at072c784b: four successful jobs, including the corrected snapshot test, and one failed shard. The managed history test expected Fleet but still observed Workshop after two fixed100ms sleeps. The failed shard reports988 passed and168 passed subtests; this is not a clean suite. No same-head retry was requested.
+
+The test now observes `htmx:afterSettle`, matching URL and live root before sending the next click. A disposable response gate demonstrates that receiving the request is insufficient to finish the first navigation. The2.5s completion bound matches existing history restoration checks; this test does not assert a100ms navigation performance contract. **Eight history contracts pass**, including managed Chromium. Existing privacy, cache, controller, draft, back/forward and quota assertions remain. No application code, production deadline or slow-operation threshold changed. The original CI scheduling cause remains unverified and exact corrected-head CI is required.
+
+This validation repair does not establish deployed performance acceptance. All original latency, startup/drain, durability, peer/log coverage, receipt, rollout and linked backup obligations remain open. Source candidate activation is still a separate scoped decision; no install/restart, service workload, backup or GC action occurred.
+
+## Preserved prior inventory and evidence
+
 # Main CI snapshot fixture follow-up — 2026-10-21
 
 All **631 findings and 109 concerns remain open**; all 631 prior ledger rows remain unchanged. [Exact CI/fixture evidence](benchmarks/systemic-snapshot-ci-followup-20261021.json) retains main run39519841572 at integrated0f05: **four successful jobs and failed test0**, where the existing live-metadata snapshot test exceeded its unchanged200ms deadline. LinuxPython3.14.8 recorded a262ms test-task callback and a stack waiting in `asyncio.to_thread`. The failed shard also reports987 passed, one skipped and533 passed subtests; those are not a clean suite. Passing headCI39519314450 does not erase this failure.
