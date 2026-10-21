@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T02:06:48.895971+00:00",
-  "completion": "OPEN;639rows/117concerns, all638prior source rows unchanged. Count-first bounded byte accounting source-tested89distinctcases/240pairedcalls, tail regressions retained. PR562 integrated/head5green but main startup257.703ms/100msfailure remains unverified; new bounded diagnostics preserve deadline/debug/coldworkload. No deployment/restart/wholeacceptance; all original criteria and linked ownership remain.",
+  "as_of": "2026-10-21T02:28:31.429293+00:00",
+  "completion": "OPEN;640rows/118concerns. All639prior rows unchanged. Lifecycle put selects current normalized progress before full deepcopy, removing discardedcopy work with111contracts/180paired calls;1000/1000tail regression retained. PR563 exactintegration/head+main5SUCCESS is not deployment/fullmoduleattestation or wholePAacceptance. Every original scope/latency/startup/drain/peer/log/backup/GC/receipt/rollout/independent criterion remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -164,7 +164,8 @@
     "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
     "docs/benchmarks/systemic-pr561-ci-admission-20261021.json",
     "docs/benchmarks/systemic-progress-ingest-copy-20261021.json",
-    "docs/benchmarks/systemic-progress-retention-json-20261021.json"
+    "docs/benchmarks/systemic-progress-retention-json-20261021.json",
+    "docs/benchmarks/systemic-lifecycle-progress-copy-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -212299,6 +212300,23 @@
       "next_actor": "same systemic session; existing normal scheduler owns final acceptance",
       "next_action": "Use actual failure CPU/GC timelines and startup phases to attribute event-loop stall and repair confirmed cause; preserve100msbudget, cold startup/admission/readiness/provider semantics.",
       "report": "0d7eb836-7825-4665-a555-20f909bf8ac0"
+    },
+    {
+      "id": "concern:lifecycle-put-discarded-progress-copy",
+      "kind": "concern",
+      "finding": "Lifecycle put copied caller progress only to discard it, then separately copied current heartbeat",
+      "family": "dispatch",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_copy_amplification_shared_host_tails_unpartitioned",
+      "artifact": "docs/benchmarks/systemic-lifecycle-progress-copy-20261021.json",
+      "sha256": "6b235527e87bdb8387f2b91ce11a04c3d012cea6f049cc04c4b930f65f47e410",
+      "implemented": "For an existing dispatch, select current normalized events/heartbeat/seenkeys in a shallow intermediate before the existing complete provisional deepcopy. Caller progress was always discarded by put; avoid copying it first and avoid the extra separate current-heartbeat deepcopy. Mutation/terminalrepair/writer fencing, authority-history comparison/maxima, FULL transaction, all durable persistence, postcommit publication and detached return stay unchanged. New dispatch path remains a complete provisional copy. No other application AST differs.",
+      "merged": [],
+      "deployed": "None; source fixture only",
+      "retested": "111guarded8new/103existing;180pairedcalls9shapes exactstate/writes/reload parity;1000/1000p95max regression retained",
+      "resolution": "open",
+      "next_actor": "same systemic session; normal independent scheduler owns final acceptance",
+      "next_action": "Integrate exact scoped head via readyPR/supervisor/independent gates; attribute remaining copy/coreJSON/index/SQL/nativebusy/CPU/disk/GC tails and verify current concrete activation gates/representative deployed mixed startup/drain/provider/peer acceptance without floating old approval."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -299584,7 +299602,138 @@
         "resolution": "open"
       },
       "next_action": "Integrate and separately verify exactpackage/currentownership/quiescence/backup/activation gates and representative deployed mixed startup/drain/API/background/provider/peer acceptance. Fullpublication/coreJSON/index/SQL/CPU/disk/GC tails remain.",
-      "resolution": "open"
+      "resolution": "open",
+      "pr563_integration": {
+        "integration": {
+          "contract": "pa.exact-integration-proof/v1",
+          "observed_at": "2026-10-21T02:11:25.474564+00:00",
+          "PR": 563,
+          "watch": "85ed90f4-d188-4684-a0b6-d088c538f972",
+          "head": "d3e710cfe44b97c4087f86046755ed2bb1d40ce4",
+          "merge": "7232fd9d80461bdc12a5a21765ba7dcff941f929",
+          "merged_at": "2026-10-21T02:11:17Z",
+          "source_tree": "be6f61c22acd50e3c33fa38ea098a21be6464618",
+          "merge_tree": "be6f61c22acd50e3c33fa38ea098a21be6464618",
+          "parents": [
+            "b5a304e366c9a1fd83ade4341b0f841037ae2529",
+            "d3e710cfe44b97c4087f86046755ed2bb1d40ce4"
+          ],
+          "tree_equal": true,
+          "independent_review_sha256": "bf5ca119ec211fc53be7a6f50c1c7c8c0a93fec36fe95cd0b4436bd8f535bb94",
+          "stable_supervisor_sha256": "110fd5cba48b177a63a2e0260c54730b19e7cd95da59ad14d672232d6642a5d4",
+          "main_ci_runs": [
+            {
+              "id": 39531609505,
+              "status": "queued",
+              "conclusion": null,
+              "attempt": 1
+            }
+          ],
+          "deployed": false,
+          "restarted": false,
+          "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+        },
+        "head_ci": {
+          "observed_at": "2026-10-21T02:11:06.649917+00:00",
+          "run": 39531257520,
+          "head": "d3e710cfe44b97c4087f86046755ed2bb1d40ce4",
+          "status": "completed",
+          "conclusion": "success",
+          "attempt": 1,
+          "jobs": [
+            {
+              "id": 118997419376,
+              "name": "test (0)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531257520/job/118997419376"
+            },
+            {
+              "id": 118997419512,
+              "name": "test (2)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531257520/job/118997419512"
+            },
+            {
+              "id": 118997419676,
+              "name": "smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531257520/job/118997419676"
+            },
+            {
+              "id": 118997419724,
+              "name": "test (1)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531257520/job/118997419724"
+            },
+            {
+              "id": 118997420017,
+              "name": "test (3)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531257520/job/118997420017"
+            }
+          ],
+          "complete_job_inventory": true,
+          "five_terminal_success": true,
+          "historical_failures_preserved": true,
+          "deployed": false,
+          "whole_acceptance": false
+        },
+        "main_ci": {
+          "observed_at": "2026-10-21T02:14:24.368584+00:00",
+          "run": 39531609505,
+          "head": "7232fd9d80461bdc12a5a21765ba7dcff941f929",
+          "status": "completed",
+          "conclusion": "success",
+          "attempt": 1,
+          "jobs": [
+            {
+              "id": 118998556018,
+              "name": "test (1)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531609505/job/118998556018"
+            },
+            {
+              "id": 118998556220,
+              "name": "test (2)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531609505/job/118998556220"
+            },
+            {
+              "id": 118998556251,
+              "name": "test (0)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531609505/job/118998556251"
+            },
+            {
+              "id": 118998556261,
+              "name": "test (3)",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531609505/job/118998556261"
+            },
+            {
+              "id": 118998556396,
+              "name": "smoke",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/petersky/pa/actions/runs/39531609505/job/118998556396"
+            }
+          ],
+          "complete_job_inventory": true,
+          "five_terminal_success": true,
+          "historical_failures_preserved": true,
+          "deployed": false,
+          "whole_acceptance": false
+        }
+      }
     },
     "concern:progress-ingest-provisional-copy": {
       "pr562_integration": {
@@ -301967,5 +302116,14 @@
     "deployed": false,
     "resolution": "open",
     "ci_report": "0d7eb836-7825-4665-a555-20f909bf8ac0"
+  },
+  "lifecycle_progress_copy_stage": {
+    "artifact": "docs/benchmarks/systemic-lifecycle-progress-copy-20261021.json",
+    "sha256": "6b235527e87bdb8387f2b91ce11a04c3d012cea6f049cc04c4b930f65f47e410",
+    "contracts": "111distinct8new/103existing",
+    "comparison": "180calls9shapes;all tails/regressions retained;three full snapshots remain",
+    "integration": "ReadyPR pending exactgates",
+    "deployed": false,
+    "resolution": "open"
   }
 }
