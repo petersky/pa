@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
@@ -695,6 +696,15 @@ def derived_checkpoint(
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class ProgressDeliveryTarget:
+    """Immutable routing fields needed to deliver one persisted payload."""
+
+    dispatch_id: str
+    authority_instance_id: str
+    authority_url: str
+
+
 class ProgressService:
     """Derive, persist, heartbeat, and retry progress delivery to the authority."""
 
@@ -1191,12 +1201,23 @@ class ProgressService:
                 await self._heartbeat(record, phase, summary)
 
     async def _run(self) -> None:
+        # DispatchStore imports payload definitions from this module. Resolve the
+        # concrete store only when the delivery loop starts, after initialization.
+        from pa.execution.dispatch import DispatchStore
+
         while not self._closing:
             try:
                 await self._queue_periodic_heartbeats()
+                reader = self.store.pending_progress
+                if (
+                    type(self.store) is DispatchStore
+                    and getattr(reader, "__func__", None)
+                    is DispatchStore._native_pending_progress_reader
+                ):
+                    reader = self.store.pending_progress_deliveries
                 pending = await self._offload(
                     "progress.pending_read",
-                    self.store.pending_progress,
+                    reader,
                     self.instance_id,
                 )
                 for record, payload in pending:

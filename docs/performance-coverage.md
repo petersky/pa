@@ -1,3 +1,17 @@
+# Progress outbox copy repair — 2026-10-21
+
+All **633 findings and 111 concerns remain open**; all 632 prior rows remain unchanged. [Full source evidence](benchmarks/systemic-progress-outbox-projection-20261021.json) confirms the native delivery loop copied an entire retained dispatch for each pending event or heartbeat, although delivery consumes only three routing fields and the payload. With128 retained events,128 plan steps and32 pending payloads, that copied32 full snapshots and4,096 retained event models per read.
+
+The native worker now reads an immutable routing target and one detached deep copy per pending payload from the last committed index publication. Ordering, complete payload fields, origin filtering, heartbeat inclusion, retry headers and durable acknowledgment paths remain. The full-record API still returns independent snapshots, and custom readers keep their original path. A read during an in-flight acknowledgement can return the preceding committed payload and permit an additional idempotent attempt; it does not expose uncommitted mutation state.
+
+**44 guarded disposable contracts pass:11 new and33 existing.** They cover nested payload isolation, immutable targets, legacy aliases, ordering/filter/reload, native/custom reader selection, transient transport failure and retry, local acknowledgement, deferred-reader fencing, and concurrent before/after-commit publication. The initial synthetic fixture incorrectly reused the first dispatch's payload identity and was correctly rejected by migration reconciliation; that failure is retained and the guard unchanged.
+
+Ten alternating pairs per scenario on the shared macbook host show32-pending wall p50/p95/max247.665/291.175/291.175ms →2.209/11.505/11.505ms; one-pending p9513.997→0.763ms. Zero-pending median regresses0.030208→0.031000ms; all raw samples and prior prototype tails remain. At10 samples,p95/p99 equal max. SQLite change and writer counters stay unchanged during reads, but physical disk/WAL bytes and allocation bytes were not measured. These are warm source-call measurements, **not endpoint, mixed-load or deployed acceptance**. Remaining scans, ingestion/acknowledgment writes, CPU/disk tails, startup/drain and every original inventory obligation remain open.
+
+PR557 is integrated as e1091451 from exact b8cd5055 with equal trees, stable-green supervisor and independently validated five green checks, protection, zero required approvals/reviews/threads and clean mergeability. Its mainCI39522197504 still requires a final result. Initial snapshot and history failures remain retained. This newer application repair is not installed or loaded; existing source-review and backup gates do not authorize a floating rollout. No service workload, install/restart, backup/GC action, warning/deadline increase, durable-data drop or competing worker occurred.
+
+## Preserved prior inventory and evidence
+
 # Managed history CI follow-up — 2026-10-21
 
 All **632 findings and 110 concerns remain open**; all 631 prior rows remain unchanged. [Retained CI evidence](benchmarks/systemic-history-ci-followup-20261021.json) records initial PR557 run39520959163 at072c784b: four successful jobs, including the corrected snapshot test, and one failed shard. The managed history test expected Fleet but still observed Workshop after two fixed100ms sleeps. The failed shard reports988 passed and168 passed subtests; this is not a clean suite. No same-head retry was requested.

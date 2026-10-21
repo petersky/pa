@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T00:30:30.280248+00:00",
-  "completion": "OPEN;632 rows/110 concerns, all631 prior rows unchanged. PR557 initial CI has4SUCCESS/1FAILURE at fixed-sleep managed history mismatch. Test-only completion synchronization and gated response pass8existing contracts; corrected-head CI and all original product performance/activation/independent acceptance remain required.",
+  "as_of": "2026-10-21T00:37:57.629808+00:00",
+  "completion": "OPEN;633 rows/111 concerns, all632prior rows unchanged. Native outbox copy repair source-tested, not integrated/deployed acceptance. PR557 integrated e1091451 with5green head checks; mainCI pending final result. Every original family, failed stage, rollout/peer/backup/receipt and independent acceptance criterion retained.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -153,7 +153,8 @@
     "docs/benchmarks/systemic-live-runtime-20261021T0001-routes.csv",
     "docs/benchmarks/systemic-gc-publication-audit-20261020.json",
     "docs/benchmarks/systemic-snapshot-ci-followup-20261021.json",
-    "docs/benchmarks/systemic-history-ci-followup-20261021.json"
+    "docs/benchmarks/systemic-history-ci-followup-20261021.json",
+    "docs/benchmarks/systemic-progress-outbox-projection-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -211939,6 +211940,24 @@
       "resolution": "open",
       "next_actor": "Same systemic session; ordinary independent acceptance unchanged",
       "next_action": "Require exact-head terminal green CI, stable supervisor and independent GitHub validation before integration; retain initial mismatch and all original performance/deployment/backup/peer criteria."
+    },
+    {
+      "id": "concern:progress-outbox-retained-copy-amplification",
+      "kind": "concern",
+      "finding": "Progress delivery deep-copies full retained dispatch history for every pending payload",
+      "family": "progress",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_copy_amplification_live_causal_share_unverified",
+      "cause": "pending_progress deep-copies the entire retained DispatchRecord per pending event and heartbeat; _send consumes only three routing fields plus the detached payload. Confirmed unnecessary source work, not sole causal attribution for historical slow operations.",
+      "artifact": "docs/benchmarks/systemic-progress-outbox-projection-20261021.json",
+      "sha256": "a1cbb9b95fbe869b6d769b1906abab955a8f5342c1c0dd47cfdb7a424d4acd1b",
+      "implemented": "Native ProgressService uses an immutable three-field routing target and one deep detached copy per pending payload under the committed index lock. Preserve last committed publication during an in-flight writer; acknowledgements remain on the existing durable writer path. Same sort by occurred_at,sequence,idempotency_key; complete selected payload fields, origin filter and heartbeat inclusion unchanged. Legacy pending_progress continues returning independent complete DispatchRecords with payload aliases inside each snapshot. Custom adapter/subclass/instance/class reader overrides retain their original path.",
+      "merged": [],
+      "deployed": "New source not installed or loaded; latest independent process metadata2283, later activation unverified",
+      "retested": "44guarded contracts pass including11new contracts;10alternating warm source pairs per0/1/32pending case, not mixed/deployed acceptance",
+      "resolution": "open",
+      "next_actor": "Same systemic session; ordinary independent scheduler retains whole-card acceptance",
+      "next_action": "Integrate only through ready reviewed PR, stable supervisor and independently green exact-head gates. Verify actual scoped activation separately, then realistic mixed/background delivery load, remaining scan/write/CPU tails and all original acceptance criteria."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -260984,6 +261003,18 @@
         "integration": "Ready source review pending",
         "activation": "No product change, install or restart",
         "resolution": "open"
+      },
+      "pr557_integration": {
+        "head": "b8cd5055e195da12f2d4f231474878d87b117015",
+        "merge": "e1091451cff4fcc897c127abbb8a8bfb4aaeeb39",
+        "tree": "34869aba019e1dbfd4b092cc42ef7ca7024b52d0",
+        "watch": "f3549e2c-fb21-4c91-a6d7-ab6dd1ff03b6",
+        "head_ci": 39521762193,
+        "head_checks": "5SUCCESS attempt1",
+        "main_ci": 39522197504,
+        "main_ci_status": "pending final result",
+        "source_only": "test fixtures/docs; no product activation",
+        "resolution": "open"
       }
     },
     "runtime:dispatch.cancel_check": {
@@ -262400,7 +262431,33 @@
         "activation": "No product change, install or restart",
         "resolution": "open"
       },
-      "resolution": "open"
+      "resolution": "open",
+      "pr557_integration": {
+        "head": "b8cd5055e195da12f2d4f231474878d87b117015",
+        "merge": "e1091451cff4fcc897c127abbb8a8bfb4aaeeb39",
+        "tree": "34869aba019e1dbfd4b092cc42ef7ca7024b52d0",
+        "watch": "f3549e2c-fb21-4c91-a6d7-ab6dd1ff03b6",
+        "head_ci": 39521762193,
+        "head_checks": "5SUCCESS attempt1",
+        "main_ci": 39522197504,
+        "main_ci_status": "pending final result",
+        "source_only": "test fixtures/docs; no product activation",
+        "resolution": "open"
+      }
+    },
+    "concern:history-ci-navigation-readiness": {
+      "pr557_integration": {
+        "head": "b8cd5055e195da12f2d4f231474878d87b117015",
+        "merge": "e1091451cff4fcc897c127abbb8a8bfb4aaeeb39",
+        "tree": "34869aba019e1dbfd4b092cc42ef7ca7024b52d0",
+        "watch": "f3549e2c-fb21-4c91-a6d7-ab6dd1ff03b6",
+        "head_ci": 39521762193,
+        "head_checks": "5SUCCESS attempt1",
+        "main_ci": 39522197504,
+        "main_ci_status": "pending final result",
+        "source_only": "test fixtures/docs; no product activation",
+        "resolution": "open"
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -264565,5 +264622,15 @@
     "sha256": "570e36e2a8eebf80ad2f374287abbbb0423375e9053e075085cd95cf57390599",
     "cause_classification": "missing_fixture_readiness_confirmed_ci_tail_cause_unverified",
     "resolution": "open"
+  },
+  "progress_outbox_projection_stage": {
+    "artifact": "docs/benchmarks/systemic-progress-outbox-projection-20261021.json",
+    "sha256": "a1cbb9b95fbe869b6d769b1906abab955a8f5342c1c0dd47cfdb7a424d4acd1b",
+    "problem": "76249876-1d5c-423e-a63d-8d6bd06a6827 revision1",
+    "resolution": "open",
+    "implemented": "Native delivery-only committed-index projection; full API/custom readers preserved",
+    "tests": "44guarded contracts pass (11new/33existing); initial invalid synthetic migration fixture retained",
+    "integration": "Ready review pending",
+    "activation": "Not installed/loaded/retested on the service"
   }
 }

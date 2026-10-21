@@ -48,6 +48,7 @@ from pa.execution.progress import (
     DispatchProgressEventV1,
     DispatchProgressHeartbeatV1,
     ProgressIngestResult,
+    ProgressDeliveryTarget,
     progress_freshness,
     sanitize_completion_report,
     sanitize_heartbeat,
@@ -4094,6 +4095,51 @@ class DispatchStore:
                     snapshot = self._snapshot(record)
                     if snapshot.progress_heartbeat:
                         pending.append((snapshot, snapshot.progress_heartbeat))
+        return sorted(
+            pending,
+            key=lambda pair: (
+                pair[1].occurred_at,
+                pair[1].sequence,
+                pair[1].idempotency_key,
+            ),
+        )
+
+    # Preserve the exact legacy implementation identity so custom instance,
+    # subclass or class-level readers keep their existing delivery contract.
+    _native_pending_progress_reader = pending_progress
+
+    def pending_progress_deliveries(
+        self, originating_instance_id: str
+    ) -> list[
+        tuple[
+            ProgressDeliveryTarget,
+            DispatchProgressEventV1 | DispatchProgressHeartbeatV1,
+        ]
+    ]:
+        """Detach pending payloads without copying each dispatch's full history.
+
+        Published records are replaced after durable commit. Like other index
+        readers, return the last committed publication while a writer is busy;
+        delivery acknowledgements still commit through the existing writer path.
+        """
+        self._require_readable()
+        self._yield_to_index_writer()
+        pending = []
+        with measured_lock(self._index_lock):
+            for record in self._records.values():
+                if record.target_instance_id != originating_instance_id:
+                    continue
+                target = ProgressDeliveryTarget(
+                    record.dispatch_id,
+                    record.authority_instance_id,
+                    record.authority_url,
+                )
+                for event in record.progress_events:
+                    if event.delivered_at is None:
+                        pending.append((target, event.model_copy(deep=True)))
+                heartbeat = record.progress_heartbeat
+                if heartbeat and heartbeat.delivered_at is None:
+                    pending.append((target, heartbeat.model_copy(deep=True)))
         return sorted(
             pending,
             key=lambda pair: (
