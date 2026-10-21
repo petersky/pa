@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T01:30:36.488133+00:00",
-  "completion": "OPEN;636rows/114concerns, all635prior source rows unchanged. Previously durable636thack-copyrow now fullypublished with source repair/52contracts/paired evidence and retained1000deliveredp95regression. ExactPR560 integrated/head+mainCI green is not deployment/wholeacceptance. Every original latency/startup/drain/durability/order/admission/lease/receipt/sync/peer/log/backup/GC/rollout/independent acceptance criterion remains.",
+  "as_of": "2026-10-21T01:38:58.832999+00:00",
+  "completion": "OPEN;636rows/114concernsallunchanged. Ackcopysource52contractsplus1existingadmissioncontract=53distinctselectedpass; source1000deliveredtailregressionretained. PR561 initialCIadmission372.370ms/200msand381mscallbackretainedunderexistingci533row; newfailure-onlyCPU/GCdiagnostics preserveoriginalassertions,workload,debugmodeandtimingwindow. CorrectedheadCI/integration/deployment/alloriginalacceptancecriteriapending.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -161,7 +161,8 @@
     "docs/benchmarks/systemic-live-runtime-20261021T0040-routes.csv",
     "docs/benchmarks/systemic-heartbeat-copy-20261021.json",
     "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
-    "docs/benchmarks/systemic-progress-ack-copy-20261021.json"
+    "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
+    "docs/benchmarks/systemic-pr561-ci-admission-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -299372,6 +299373,22 @@
       "report": "891da3c7-b2bc-438a-ac9b-060f23bcbafd",
       "cause": "Unverified native CPU/GC/debug/scheduling; one samehead failedjob retry passing does not resolve the263.571ms/256mscallback recurrence. No threshold/debug/assertion changes.",
       "resolution": "open"
+    },
+    "concern:ci533-dispatch-admission-latency": {
+      "pr561_recurrence": {
+        "artifact": "docs/benchmarks/systemic-pr561-ci-admission-20261021.json",
+        "sha256": "80164f1f202fd3a366da826fdc0124e20199ac874b937878fc55aa20a1082f4e",
+        "problem": {
+          "id": "430b472b-9748-437b-a132-b32376265001",
+          "revision": 1,
+          "hash": "42bc9f90c0fb1b433472522844b94d62869270a26b6b88b9f22e709adf60d4ce",
+          "delivery": "pendingatresponse"
+        },
+        "cause": "UnknownnativeCPU/GC/debug/scheduling. Original372.370ms/381mscallbackretained; scopedtestdiagnosticsimprovefutureevidencewithoutrelaxing200msorpeer/receiptassertions.",
+        "corrected_head_ci": "Pendingnewhead, no same-headretry",
+        "resolution": "open"
+      },
+      "resolution": "open"
     }
   },
   "f7e8_loaded_stage": {
@@ -301592,6 +301609,14 @@
     "comparison": "9shapes\u00d710pairs; all samples retained;1000deliveredp95/maxregression",
     "integration": "Pending readyPR/exactgates",
     "deployment": "None; no acceptance",
-    "resolution": "open"
+    "resolution": "open",
+    "ci_followup": {
+      "artifact": "docs/benchmarks/systemic-pr561-ci-admission-20261021.json",
+      "sha256": "80164f1f202fd3a366da826fdc0124e20199ac874b937878fc55aa20a1082f4e",
+      "unique_selected_contracts": 53,
+      "application_source_unchanged_from_measured_candidate": true,
+      "ci": "Originalheadfailedadmissionbudget,correctednewheadrequired",
+      "resolution": "open"
+    }
   }
 }

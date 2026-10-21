@@ -1,0 +1,748 @@
+{
+  "contract": "pa.pr561-ci-admission-followup/v1",
+  "published_at": "2026-10-21T01:38:58.832999+00:00",
+  "failed_head": "ca9341b3cfed4e06a518ec193635fe90b53221de",
+  "run": 39527806951,
+  "attempt": 1,
+  "failed_job": 118986460548,
+  "failed_check": "test (1)",
+  "failed_assertion": "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait",
+  "wall_ms": 372.37045699998816,
+  "unchanged_budget_ms": 200,
+  "logged_callback_ms": 381,
+  "shard_summary": "1failed/998passed/182subtests in124.60s;other4checksSUCCESS",
+  "raw_log_sha256": "14620f0b80075930ab7c307d98e37e714d7c9eb21574c040450bee37c9f05a39",
+  "raw_log_bytes": 39456,
+  "raw_log_not_published": "May contain fixture secrets/setup metadata. Only bounded sanitized failure metrics/hash retained; no full raw log or argument/payload values.",
+  "diagnostic": {
+    "started_at": "2026-10-21T01:35:44.545716+00:00",
+    "finished_at": "2026-10-21T01:35:45.431760+00:00",
+    "exit_code": 0,
+    "wall_ms": 885.2110840380192,
+    "phases": [
+      {
+        "name": "_named_dispatch_identity",
+        "thread": 8276681088,
+        "wall_ms": 1.2978339800611138,
+        "thread_cpu_ms": 1.053542000000185,
+        "profile_top20": [
+          {
+            "function": "fleet.py:10930:_named_dispatch_identity",
+            "calls": 1,
+            "own_ms": 0.016335000000000002,
+            "cumulative_ms": 0.32416700000000004
+          },
+          {
+            "function": "fleet.py:10905:_named_dispatch_payload",
+            "calls": 1,
+            "own_ms": 0.035123,
+            "cumulative_ms": 0.305833
+          },
+          {
+            "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+            "calls": 1,
+            "own_ms": 0.12454100000000001,
+            "cumulative_ms": 0.12454100000000001
+          },
+          {
+            "function": "main.py:427:model_dump",
+            "calls": 1,
+            "own_ms": 0.011459,
+            "cumulative_ms": 0.12420900000000001
+          },
+          {
+            "function": "<method 'to_python' of 'pydantic_core._pydantic_core.SchemaSerializer' objects>",
+            "calls": 1,
+            "own_ms": 0.11275,
+            "cumulative_ms": 0.11275
+          },
+          {
+            "function": "__init__.py:185:dumps",
+            "calls": 1,
+            "own_ms": 0.010876,
+            "cumulative_ms": 0.09320900000000001
+          },
+          {
+            "function": "encoder.py:185:encode",
+            "calls": 1,
+            "own_ms": 0.014459000000000001,
+            "cumulative_ms": 0.079083
+          },
+          {
+            "function": "encoder.py:207:iterencode",
+            "calls": 1,
+            "own_ms": 0.06275000000000001,
+            "cumulative_ms": 0.06275000000000001
+          },
+          {
+            "function": "<built-in method _hashlib.openssl_sha256>",
+            "calls": 1,
+            "own_ms": 0.04725,
+            "cumulative_ms": 0.04725
+          },
+          {
+            "function": "<method 'hexdigest' of '_hashlib.HASH' objects>",
+            "calls": 1,
+            "own_ms": 0.0038330000000000005,
+            "cumulative_ms": 0.0038330000000000005
+          },
+          {
+            "function": "encoder.py:105:__init__",
+            "calls": 1,
+            "own_ms": 0.0032500000000000003,
+            "cumulative_ms": 0.0032500000000000003
+          },
+          {
+            "function": "<method 'encode' of 'str' objects>",
+            "calls": 1,
+            "own_ms": 0.002209,
+            "cumulative_ms": 0.002209
+          },
+          {
+            "function": "<built-in method builtins.isinstance>",
+            "calls": 3,
+            "own_ms": 0.0017490000000000001,
+            "cumulative_ms": 0.0017490000000000001
+          },
+          {
+            "function": "<method 'get' of 'dict' objects>",
+            "calls": 1,
+            "own_ms": 0.0011660000000000002,
+            "cumulative_ms": 0.0011660000000000002
+          },
+          {
+            "function": "<method 'strip' of 'str' objects>",
+            "calls": 1,
+            "own_ms": 0.0005000000000000001,
+            "cumulative_ms": 0.0005000000000000001
+          },
+          {
+            "function": "<method 'join' of 'str' objects>",
+            "calls": 1,
+            "own_ms": 0.0004580000000000001,
+            "cumulative_ms": 0.0004580000000000001
+          }
+        ]
+      },
+      {
+        "name": "_dispatch_store",
+        "thread": 8276681088,
+        "wall_ms": 9.413124993443489,
+        "thread_cpu_ms": 8.036874999999721,
+        "profile_top20": [
+          {
+            "function": "fleet.py:760:_dispatch_store",
+            "calls": 1,
+            "own_ms": 0.054000000000000006,
+            "cumulative_ms": 7.66375
+          },
+          {
+            "function": "run_pr561_admission_diagnostic.py:24:guarded",
+            "calls": 1,
+            "own_ms": 0.045749000000000005,
+            "cumulative_ms": 7.200792
+          },
+          {
+            "function": "dispatch.py:984:__init__",
+            "calls": 1,
+            "own_ms": 0.07866500000000001,
+            "cumulative_ms": 6.8565000000000005
+          },
+          {
+            "function": "dispatch.py:1050:_open_writer",
+            "calls": 1,
+            "own_ms": 0.739044,
+            "cumulative_ms": 6.451709000000001
+          },
+          {
+            "function": "dispatch.py:1170:_ensure_schema",
+            "calls": 1,
+            "own_ms": 0.046791,
+            "cumulative_ms": 3.658666
+          },
+          {
+            "function": "sqlite_metrics.py:99:_observe",
+            "calls": 26,
+            "own_ms": 0.045794,
+            "cumulative_ms": 3.0670010000000003
+          },
+          {
+            "function": "sqlite_metrics.py:118:execute",
+            "calls": 17,
+            "own_ms": 0.030120000000000004,
+            "cumulative_ms": 2.8254970000000004
+          },
+          {
+            "function": "sqlite_metrics.py:70:execute",
+            "calls": 17,
+            "own_ms": 0.03137500000000001,
+            "cumulative_ms": 2.7341260000000003
+          },
+          {
+            "function": "<function ObservedCursor.execute at [address omitted]>",
+            "calls": 17,
+            "own_ms": 2.6685840000000005,
+            "cumulative_ms": 2.6685840000000005
+          },
+          {
+            "function": "<method 'executescript' of 'sqlite3.Connection' objects>",
+            "calls": 1,
+            "own_ms": 1.635709,
+            "cumulative_ms": 1.635709
+          },
+          {
+            "function": "dispatch.py:1375:_migrate_legacy_if_needed",
+            "calls": 1,
+            "own_ms": 0.044124,
+            "cumulative_ms": 0.731375
+          },
+          {
+            "function": "<built-in method _sqlite3.connect>",
+            "calls": 1,
+            "own_ms": 0.47887500000000005,
+            "cumulative_ms": 0.522042
+          },
+          {
+            "function": "<built-in method builtins.next>",
+            "calls": 2,
+            "own_ms": 0.009501,
+            "cumulative_ms": 0.456667
+          },
+          {
+            "function": "dispatch.py:1127:_transaction",
+            "calls": 2,
+            "own_ms": 0.059001000000000005,
+            "cumulative_ms": 0.447166
+          },
+          {
+            "function": "contextlib.py:145:__exit__",
+            "calls": 1,
+            "own_ms": 0.0038330000000000005,
+            "cumulative_ms": 0.365292
+          },
+          {
+            "function": "sqlite_metrics.py:127:commit",
+            "calls": 2,
+            "own_ms": 0.0067090000000000006,
+            "cumulative_ms": 0.33329200000000003
+          },
+          {
+            "function": "<function ObservedConnection.commit at [address omitted]>",
+            "calls": 2,
+            "own_ms": 0.32204200000000005,
+            "cumulative_ms": 0.32204200000000005
+          },
+          {
+            "function": "mock.py:691:__getattr__",
+            "calls": 9,
+            "own_ms": 0.115042,
+            "cumulative_ms": 0.24729200000000004
+          },
+          {
+            "function": "__init__.py:932:resolve",
+            "calls": 1,
+            "own_ms": 0.032751,
+            "cumulative_ms": 0.194792
+          },
+          {
+            "function": "dispatch.py:1832:_load",
+            "calls": 1,
+            "own_ms": 0.034503000000000006,
+            "cumulative_ms": 0.179209
+          }
+        ]
+      },
+      {
+        "name": "_dispatch_public",
+        "thread": 8276681088,
+        "wall_ms": 1.591457985341549,
+        "thread_cpu_ms": 1.5895410000004162,
+        "profile_top20": [
+          {
+            "function": "fleet.py:812:_dispatch_public",
+            "calls": 1,
+            "own_ms": 0.016583,
+            "cumulative_ms": 0.9952500000000001
+          },
+          {
+            "function": "instance_identity.py:81:canonicalize_dispatch_public",
+            "calls": 1,
+            "own_ms": 0.046874000000000006,
+            "cumulative_ms": 0.929
+          },
+          {
+            "function": "instance_identity.py:71:current_instance_name",
+            "calls": 2,
+            "own_ms": 0.008208,
+            "cumulative_ms": 0.5150830000000001
+          },
+          {
+            "function": "instance_identity.py:49:resolve_instance_identity",
+            "calls": 2,
+            "own_ms": 0.022833,
+            "cumulative_ms": 0.5068750000000001
+          },
+          {
+            "function": "instance_identity.py:16:canonical_instance_identities",
+            "calls": 2,
+            "own_ms": 0.065541,
+            "cumulative_ms": 0.47800000000000004
+          },
+          {
+            "function": "dispatch.py:438:public_dict",
+            "calls": 1,
+            "own_ms": 0.12537600000000002,
+            "cumulative_ms": 0.36083400000000004
+          },
+          {
+            "function": "__init__.py:602:__init__",
+            "calls": 2,
+            "own_ms": 0.015792,
+            "cumulative_ms": 0.310583
+          },
+          {
+            "function": "__init__.py:679:update",
+            "calls": 2,
+            "own_ms": 0.010457,
+            "cumulative_ms": 0.294791
+          },
+          {
+            "function": "<built-in method builtins.isinstance>",
+            "calls": 6,
+            "own_ms": 0.012375,
+            "cumulative_ms": 0.282291
+          },
+          {
+            "function": "<frozen abc>:117:__instancecheck__",
+            "calls": 2,
+            "own_ms": 0.0037070000000000002,
+            "cumulative_ms": 0.265875
+          },
+          {
+            "function": "<built-in method _abc._abc_instancecheck>",
+            "calls": 2,
+            "own_ms": 0.007793,
+            "cumulative_ms": 0.262168
+          },
+          {
+            "function": "<frozen abc>:121:__subclasscheck__",
+            "calls": 36,
+            "own_ms": 0.020163,
+            "cumulative_ms": 0.25437499999999996
+          },
+          {
+            "function": "<built-in method _abc._abc_subclasscheck>",
+            "calls": 36,
+            "own_ms": 0.224338,
+            "cumulative_ms": 0.252375
+          },
+          {
+            "function": "main.py:427:model_dump",
+            "calls": 1,
+            "own_ms": 0.007292000000000001,
+            "cumulative_ms": 0.157083
+          },
+          {
+            "function": "<method 'to_python' of 'pydantic_core._pydantic_core.SchemaSerializer' objects>",
+            "calls": 1,
+            "own_ms": 0.149791,
+            "cumulative_ms": 0.149791
+          },
+          {
+            "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+            "calls": 1,
+            "own_ms": 0.10179200000000001,
+            "cumulative_ms": 0.10179200000000001
+          },
+          {
+            "function": "registry.py:502:list_instances",
+            "calls": 2,
+            "own_ms": 0.023417000000000004,
+            "cumulative_ms": 0.08675000000000001
+          },
+          {
+            "function": "registry.py:238:_reload_instances",
+            "calls": 2,
+            "own_ms": 0.007542000000000001,
+            "cumulative_ms": 0.061958000000000006
+          },
+          {
+            "function": "registry.py:231:_instances_disk_key",
+            "calls": 2,
+            "own_ms": 0.005374,
+            "cumulative_ms": 0.054416
+          },
+          {
+            "function": "mock.py:691:__getattr__",
+            "calls": 2,
+            "own_ms": 0.029252,
+            "cumulative_ms": 0.049667
+          }
+        ]
+      },
+      {
+        "name": "_named_dispatch_identity",
+        "thread": 8276681088,
+        "wall_ms": 0.5697499727830291,
+        "thread_cpu_ms": 0.5704579999998849,
+        "profile_top20": [
+          {
+            "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+            "calls": 1,
+            "own_ms": 0.184041,
+            "cumulative_ms": 0.184041
+          },
+          {
+            "function": "fleet.py:10930:_named_dispatch_identity",
+            "calls": 1,
+            "own_ms": 0.012916000000000002,
+            "cumulative_ms": 0.16125
+          },
+          {
+            "function": "fleet.py:10905:_named_dispatch_payload",
+            "calls": 1,
+            "own_ms": 0.020584,
+            "cumulative_ms": 0.146541
+          },
+          {
+            "function": "__init__.py:185:dumps",
+            "calls": 1,
+            "own_ms": 0.0066240000000000005,
+            "cumulative_ms": 0.065583
+          },
+          {
+            "function": "encoder.py:185:encode",
+            "calls": 1,
+            "own_ms": 0.008749,
+            "cumulative_ms": 0.057542
+          },
+          {
+            "function": "encoder.py:207:iterencode",
+            "calls": 1,
+            "own_ms": 0.04787500000000001,
+            "cumulative_ms": 0.04787500000000001
+          },
+          {
+            "function": "main.py:427:model_dump",
+            "calls": 1,
+            "own_ms": 0.002542,
+            "cumulative_ms": 0.042792
+          },
+          {
+            "function": "<method 'to_python' of 'pydantic_core._pydantic_core.SchemaSerializer' objects>",
+            "calls": 1,
+            "own_ms": 0.04025,
+            "cumulative_ms": 0.04025
+          },
+          {
+            "function": "<built-in method _hashlib.openssl_sha256>",
+            "calls": 1,
+            "own_ms": 0.011583000000000001,
+            "cumulative_ms": 0.011583000000000001
+          },
+          {
+            "function": "<method 'hexdigest' of '_hashlib.HASH' objects>",
+            "calls": 1,
+            "own_ms": 0.003958,
+            "cumulative_ms": 0.003958
+          },
+          {
+            "function": "<method 'encode' of 'str' objects>",
+            "calls": 1,
+            "own_ms": 0.002041,
+            "cumulative_ms": 0.002041
+          },
+          {
+            "function": "encoder.py:105:__init__",
+            "calls": 1,
+            "own_ms": 0.001417,
+            "cumulative_ms": 0.001417
+          },
+          {
+            "function": "<method 'get' of 'dict' objects>",
+            "calls": 1,
+            "own_ms": 0.0010840000000000001,
+            "cumulative_ms": 0.0010840000000000001
+          },
+          {
+            "function": "<built-in method builtins.isinstance>",
+            "calls": 3,
+            "own_ms": 0.0009180000000000001,
+            "cumulative_ms": 0.0009180000000000001
+          },
+          {
+            "function": "<method 'strip' of 'str' objects>",
+            "calls": 1,
+            "own_ms": 0.00041700000000000005,
+            "cumulative_ms": 0.00041700000000000005
+          },
+          {
+            "function": "<method 'join' of 'str' objects>",
+            "calls": 1,
+            "own_ms": 0.000292,
+            "cumulative_ms": 0.000292
+          }
+        ]
+      },
+      {
+        "name": "_dispatch_store",
+        "thread": 8276681088,
+        "wall_ms": 0.4748329520225525,
+        "thread_cpu_ms": 0.47508299999998727,
+        "profile_top20": [
+          {
+            "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+            "calls": 1,
+            "own_ms": 0.176125,
+            "cumulative_ms": 0.176125
+          },
+          {
+            "function": "fleet.py:760:_dispatch_store",
+            "calls": 1,
+            "own_ms": 0.011584,
+            "cumulative_ms": 0.044083000000000004
+          },
+          {
+            "function": "mock.py:691:__getattr__",
+            "calls": 2,
+            "own_ms": 0.01908,
+            "cumulative_ms": 0.031166
+          },
+          {
+            "function": "<built-in method builtins.isinstance>",
+            "calls": 3,
+            "own_ms": 0.0036680000000000003,
+            "cumulative_ms": 0.005626
+          },
+          {
+            "function": "mock.py:309:_is_magic",
+            "calls": 2,
+            "own_ms": 0.002333,
+            "cumulative_ms": 0.002333
+          },
+          {
+            "function": "mock.py:602:__class__",
+            "calls": 2,
+            "own_ms": 0.001958,
+            "cumulative_ms": 0.001958
+          },
+          {
+            "function": "<method 'get' of 'dict' objects>",
+            "calls": 3,
+            "own_ms": 0.001917,
+            "cumulative_ms": 0.001917
+          },
+          {
+            "function": "<method '__exit__' of '_thread.RLock' objects>",
+            "calls": 2,
+            "own_ms": 0.001209,
+            "cumulative_ms": 0.001209
+          },
+          {
+            "function": "<method '__enter__' of '_thread.RLock' objects>",
+            "calls": 2,
+            "own_ms": 0.001208,
+            "cumulative_ms": 0.001208
+          },
+          {
+            "function": "<method 'startswith' of 'str' objects>",
+            "calls": 2,
+            "own_ms": 0.001126,
+            "cumulative_ms": 0.001126
+          }
+        ]
+      },
+      {
+        "name": "_dispatch_public",
+        "thread": 8276681088,
+        "wall_ms": 1.0624999413266778,
+        "thread_cpu_ms": 1.0617500000003055,
+        "profile_top20": [
+          {
+            "function": "fleet.py:812:_dispatch_public",
+            "calls": 1,
+            "own_ms": 0.011749,
+            "cumulative_ms": 0.47550000000000003
+          },
+          {
+            "function": "instance_identity.py:81:canonicalize_dispatch_public",
+            "calls": 1,
+            "own_ms": 0.016334,
+            "cumulative_ms": 0.43125
+          },
+          {
+            "function": "dispatch.py:438:public_dict",
+            "calls": 1,
+            "own_ms": 0.079707,
+            "cumulative_ms": 0.26225
+          },
+          {
+            "function": "instance_identity.py:71:current_instance_name",
+            "calls": 2,
+            "own_ms": 0.003916,
+            "cumulative_ms": 0.14716600000000002
+          },
+          {
+            "function": "instance_identity.py:49:resolve_instance_identity",
+            "calls": 2,
+            "own_ms": 0.012208,
+            "cumulative_ms": 0.14325000000000002
+          },
+          {
+            "function": "main.py:427:model_dump",
+            "calls": 1,
+            "own_ms": 0.012167,
+            "cumulative_ms": 0.13008300000000003
+          },
+          {
+            "function": "instance_identity.py:16:canonical_instance_identities",
+            "calls": 2,
+            "own_ms": 0.027917,
+            "cumulative_ms": 0.125375
+          },
+          {
+            "function": "<method 'to_python' of 'pydantic_core._pydantic_core.SchemaSerializer' objects>",
+            "calls": 1,
+            "own_ms": 0.117916,
+            "cumulative_ms": 0.117916
+          },
+          {
+            "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+            "calls": 1,
+            "own_ms": 0.10125,
+            "cumulative_ms": 0.10125
+          },
+          {
+            "function": "registry.py:502:list_instances",
+            "calls": 2,
+            "own_ms": 0.009959,
+            "cumulative_ms": 0.056375
+          },
+          {
+            "function": "registry.py:238:_reload_instances",
+            "calls": 2,
+            "own_ms": 0.0050420000000000005,
+            "cumulative_ms": 0.045416
+          },
+          {
+            "function": "registry.py:231:_instances_disk_key",
+            "calls": 2,
+            "own_ms": 0.003958,
+            "cumulative_ms": 0.040374
+          },
+          {
+            "function": "__init__.py:649:stat",
+            "calls": 2,
+            "own_ms": 0.0027500000000000003,
+            "cumulative_ms": 0.036416000000000004
+          },
+          {
+            "function": "<built-in method posix.stat>",
+            "calls": 2,
+            "own_ms": 0.029582000000000004,
+            "cumulative_ms": 0.033666
+          },
+          {
+            "function": "mock.py:691:__getattr__",
+            "calls": 2,
+            "own_ms": 0.018334,
+            "cumulative_ms": 0.032501
+          },
+          {
+            "function": "__init__.py:602:__init__",
+            "calls": 2,
+            "own_ms": 0.007501000000000001,
+            "cumulative_ms": 0.029792000000000003
+          },
+          {
+            "function": "__init__.py:679:update",
+            "calls": 2,
+            "own_ms": 0.005041,
+            "cumulative_ms": 0.022291000000000002
+          },
+          {
+            "function": "<built-in method builtins.isinstance>",
+            "calls": 6,
+            "own_ms": 0.007877,
+            "cumulative_ms": 0.01596
+          },
+          {
+            "function": "<built-in method builtins.sorted>",
+            "calls": 5,
+            "own_ms": 0.009334,
+            "cumulative_ms": 0.01221
+          },
+          {
+            "function": "progress.py:517:progress_freshness",
+            "calls": 1,
+            "own_ms": 0.007083000000000001,
+            "cumulative_ms": 0.011875
+          }
+        ]
+      }
+    ],
+    "gc_events_at_least1ms_bounded32": [
+      {
+        "thread": 8276681088,
+        "generation": 1,
+        "wall_ms": 26.220250059850514,
+        "thread_cpu_ms": 24.814125000000242
+      },
+      {
+        "thread": 8276681088,
+        "generation": 2,
+        "wall_ms": 185.6303750537336,
+        "thread_cpu_ms": 169.61391699999996
+      },
+      {
+        "thread": 8276681088,
+        "generation": 2,
+        "wall_ms": 188.20416694507003,
+        "thread_cpu_ms": 182.18975000000003
+      }
+    ],
+    "log_sha256": "58aa3ab34b21c27a846b6baf4c0c99c58c83df16514258df78ffced21c235795",
+    "scope": "One original test, unchanged100/200ms/defaultdebug behavior; extra cProfile onlythree synchronous helpers plus boundedGCobservations. Ackmethods andWorkspaceconstruction denied. AllStore roots guarded disposable. Diagnostic overhead means this does not reproduceCI timing or prove its CPU/GC/scheduling cause. No product/test edits, provider/network/service workload, liveStore/activation, faults or threshold increase."
+  },
+  "diagnostic_limit": "Originalone-test diagnostic with extrahelpercProfile andboundedprocessGC collector. Ackmethods/Workspaceconstruction denied andallStore roots guarded. PassdoesnotresolveCI372ms cause.185/188ms GCdurationsnotcorrelated to originalCI or exacttimedwindow; no causal inference from them.",
+  "existing_final_case": {
+    "started_at": "2026-10-21T01:37:37.086455+00:00",
+    "finished_at": "2026-10-21T01:37:39.346989+00:00",
+    "exit_code": 0,
+    "wall_ms": 2260.0353750167415,
+    "cases": [
+      "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded disposable roots",
+    "log_sha256": "423b1d0e014eb1eab96f4420f7b344c2615be505dd574b756ac884826ca74f2d"
+  },
+  "earlier_first_eight_only_case": {
+    "started_at": "2026-10-21T01:37:15.248573+00:00",
+    "finished_at": "2026-10-21T01:37:17.179746+00:00",
+    "exit_code": 0,
+    "wall_ms": 1930.5462499614805,
+    "cases": [
+      "tests/test_fleet.py::RemoteOperationsTests::test_card_dispatch_returns_durable_admission_without_peer_wait"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded disposable roots",
+    "log_sha256": "423b1d0e014eb1eab96f4420f7b344c2615be505dd574b756ac884826ca74f2d"
+  },
+  "corrected_test_source_sha256": "8637b67c7ea17f2855b051f1258a7b6bb510718ae995e5da134637a06d540d90",
+  "original_assertions_ast_equal_ignoring_diagnostic_msg": true,
+  "two_original_admission_calls_and_body_constructions_preserved": true,
+  "default_debug_threshold_gc_behavior_preserved": true,
+  "implementation": "Only existing testfailure diagnostics: capture callingthreadCPU, countGCcycles, first8+longest GCinterval withmonotonic endpoints/thread/generation; removeobserver in finally. No warmup/pretimingadmissionconstruction, no threshold/debug/default/GCpolicy change. Eventinterval/CPU spansoverlap andarenotadditive causality. Guardedfinaltestpassesandassertsobserverremoved afterward.",
+  "selected_contracts": "52previousguardedack/source cases plus1distinctexistingadmissioncase=53; diagnosticsandrepeatedruns notadditionalunique tests.",
+  "problem": {
+    "id": "430b472b-9748-437b-a132-b32376265001",
+    "revision": 1,
+    "hash": "42bc9f90c0fb1b433472522844b94d62869270a26b6b88b9f22e709adf60d4ce",
+    "delivery": "pendingatresponse"
+  },
+  "row_id": "concern:ci533-dispatch-admission-latency",
+  "resolution": "open",
+  "same_head_ci_retry": false,
+  "next_action": "Pushcorrectedhead andrequirefreshallgreenCI/stable-supervisor/independentgates. Ifrecurrence, inspectnewboundedcausalevidence; donotlowerassertions orclaimGCcausedoriginalfailure."
+}

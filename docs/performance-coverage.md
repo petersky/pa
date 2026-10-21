@@ -24,6 +24,12 @@ Zero-history update cases target the heartbeat. Counts/core bytes are logical ev
 
 PR560 is integrated45347da4/equal trees with five successful latest head and main checks. Its original263.571ms failure against the unchanged100ms mock responsiveness budget,256ms callback and single same-head retry remain preserved under the existing open ci542 concern. This delayed PR557 notice refers to superseded072chead; fresh GitHub/current native watch confirm correctedb8cd was already merged e109/retiredmerged. No repeat repair/merge/rerun occurred. Latest separately observed installed/loadedc02e/package5917/PID78321/startupa50c predates these repairs. No activation, deployed acceptance, service workload, threshold/default/model/permission change, backup/GC action, queue policy/resend/cancellation or competing worker/verifier occurred.
 
+## PR561 CI admission recurrence and bounded diagnostics
+
+Initialheadca9341b3 CI39527806951attempt1 failed the existing durable-admission200ms assertion at**372.370ms**, with a381ms callback warning;998other cases and182subtests passed in124.60s and the otherfour checks succeeded. The original raw log SHA14620f0b is preserved locally; only [sanitized failure metadata and numeric diagnostic evidence](benchmarks/systemic-pr561-ci-admission-20261021.json) are published because the raw log maycontain fixture secrets. This recurs under existing open ci533; rowcount stays636/114, allrows unchanged. No same-head CI retry occurred.
+
+One guarded original diagnostic passes with both acknowledgment methods and Workspace construction denied, confirming the new ackpaths are unused. Helperprofiles do not reproduce the372ms delay. IsolatedprocessGC185/188ms durations lack originalCI/exacttimedwindowcorrelation and do not establish cause. The existing test now includes bounded calling-threadCPU and first8+longest GCintervals only in its failure message, with callbackcleanup in finally. Both cold admission/body constructions, every original assertion, defaultdebug and200ms threshold are preserved by ASTchecks; no warmup orGCpolicy change. The correctedexistingcase passes withobservercleanup verified. Together with52prior guarded contracts,53distinctselectedcases pass; repeateddiagnostics are not additionalunique tests. Ackapplication source/timing samples are unchanged; correctednewheadCI and originalfullacceptance remain required.
+
 ## Preserved prior inventory and evidence
 
 # Dispatch SQLite observation coverage — 2026-10-21
