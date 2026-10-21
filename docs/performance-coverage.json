@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-19T23:33:48.974514+00:00",
-  "completion": "OPEN;612rows/108concerns. All611priorrows unchanged. Selected raw-row transfer repair has60guarded contracts andpaired64row source evidence, includingall-selected regression; no deployed/wholeacceptance. Prior139operation/86route andoriginalbaseline inventories, everyfailure/startup/drain/order/GCfreshness/peer/logloss/retention/backup/rollout/independent17d gate remain open. No install/restart or newworker.",
+  "as_of": "2026-10-20T23:58:07.951020+00:00",
+  "completion": "OPEN;613 rows/109 concerns. All612 prior rows unchanged. Measured scalar progress allocation copy reduction has17 guarded contracts; source-only warm paired evidence including empty-history tail regression and failed/interrupted test stage retained. All original criteria, mixed load, startup/drain/order, peers/log loss/retention, GC safety, backup and independent acceptance remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -210896,6 +210896,28 @@
       "resolution": "open",
       "next_actor": "Same systemic session, existing releaseauthority and ordinary independent scheduler",
       "next_action": "ReadyPR/exactheadsupervisor+independentgates/mainCI; preserve backupstablebuild and pendingactivationreceipt/interaction identities; then separatelyauthorized deployedroute/mixed/large-selection/WAL/CPU/disk acceptance. Retain allselected regression and original thresholds."
+    },
+    {
+      "id": "concern:progress-sequence-double-history-copy",
+      "kind": "concern",
+      "finding": "Scalar durable progress sequence allocation deep-copied retained dispatch state twice",
+      "family": "progress",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "source_and_paired_disposable_fixture_confirmed_live_share_unverified",
+      "cause": "allocate_progress_sequence copied the entire dispatch before changing two scalars; _save then published a second deep snapshot. Retained progress/model/plan copy cost is unnecessary in the provisional record.",
+      "fix_or_existing_owner": "Same systemic session, no competing worker.",
+      "implemented": "Only the allocator provisional record uses shallow model_copy for scalar next-sequence/updated-at assignments. Existing _save transaction, acknowledgement, failure publication and post-commit deep snapshot remain unchanged. No history, durable row, receipt, index, warning or timeout removed.",
+      "merged": [],
+      "deployed": "Not installed or loaded; source fixture only. Loaded228 excludes this patch.",
+      "retested": "17 guarded disposable contracts (5 new,12 existing);20 alternating warm pairs each for0/1000 retained events; raw timings and initial failed/interrupted stage retained.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-progress-sequence-copy-20261020.json",
+        "sha256": "e8d99e7073a8a25894a51989a989f6b10e3328c3d2ffa9bcbdbf5a09051dc411"
+      },
+      "residual": "Core payload serialization, commit, post-commit full-history copy and index refresh still scale with retained dispatch data. Initial1000event baseline maximum659.7065ms/source333.317916ms; zero-history source max6.447417 exceeds baseline5.601625. No claim this single copy explains historical live warnings, mixed-load acceptance, physical I/O or write amplification improvement.",
+      "resolution": "open",
+      "next_actor": "Same systemic session; existing release owner and ordinary independent acceptance scheduler",
+      "next_action": "Ready PR, exact-head supervisor and independent gates, main CI. Coordinate immutable candidate separately with existing release owner; require scoped activation authority and deployed/mixed/CPU/disk/order/drain acceptance. Continue all prior612 rows."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -254371,5 +254393,11 @@
     "artifact": "docs/benchmarks/systemic-session-selected-transfer-20261019.json",
     "sha256": "51b75a9577898d2e0ff95af64523d7a7a25328c02fc3cf8c458da7ba115c032e",
     "resolution": "open"
+  },
+  "progress_sequence_copy_stage": {
+    "artifact": "docs/benchmarks/systemic-progress-sequence-copy-20261020.json",
+    "sha256": "e8d99e7073a8a25894a51989a989f6b10e3328c3d2ffa9bcbdbf5a09051dc411",
+    "integration": "Source patch awaiting ready PR and exact-head supervision.",
+    "activation": "Not installed/loaded. Current loaded228 and sole release owner remain separate; no new activation authority."
   }
 }

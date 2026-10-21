@@ -3704,7 +3704,9 @@ class DispatchStore:
             stored = self._records.get(dispatch_id)
             if not stored:
                 raise ValueError("dispatch not found")
-            record = self._snapshot(stored)
+            # Only scalar fields change before _save commits and publishes a
+            # detached deep snapshot. Avoid copying retained history twice.
+            record = stored.model_copy()
             sequence = max(1, record.progress_next_sequence)
             record.progress_next_sequence = sequence + 1
             record.updated_at = datetime.now(UTC)

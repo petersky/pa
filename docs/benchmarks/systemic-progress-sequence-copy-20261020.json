@@ -1,0 +1,725 @@
+{
+  "contract": "pa.progress-sequence-copy-comparison/v1",
+  "started_at": "2026-10-20T23:55:32.781238+00:00",
+  "finished_at": "2026-10-20T23:55:45.122857+00:00",
+  "baseline_revision": "a5dd5caa641026234be74e7a37f4a512581c85ca",
+  "baseline_module_sha256": "22901f2c9b7d96c535b9fd76376b7f98000e1b62bc6af8f7719d1fd659b625a6",
+  "source_module_sha256": "0b4b0e75cea011f033d199a2d5288d05dd612ebaf8403d64e54f6b401b2d7c28",
+  "scenarios": {
+    "0": {
+      "retained_events": 0,
+      "pairs": [
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 3.6606250796467066,
+            "thread_cpu_ms": 2.0844170000002826
+          },
+          "source": {
+            "wall_ms": 1.120166969485581,
+            "thread_cpu_ms": 1.108416000000112
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 1.2754170456901193,
+            "thread_cpu_ms": 1.1006250000002993
+          },
+          "baseline": {
+            "wall_ms": 2.172833075746894,
+            "thread_cpu_ms": 1.3654999999999085
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 3.300582990050316,
+            "thread_cpu_ms": 1.6477919999999813
+          },
+          "source": {
+            "wall_ms": 1.8915830878540874,
+            "thread_cpu_ms": 1.4050830000003067
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 0.9042499586939812,
+            "thread_cpu_ms": 0.8217500000000655
+          },
+          "baseline": {
+            "wall_ms": 1.8345420248806477,
+            "thread_cpu_ms": 1.2096659999998316
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 3.346624900586903,
+            "thread_cpu_ms": 1.2783749999996097
+          },
+          "source": {
+            "wall_ms": 2.165250014513731,
+            "thread_cpu_ms": 1.160082999999812
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 1.6120410291478038,
+            "thread_cpu_ms": 1.1894999999997324
+          },
+          "baseline": {
+            "wall_ms": 1.4444589614868164,
+            "thread_cpu_ms": 1.1315419999999854
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 3.8984169950708747,
+            "thread_cpu_ms": 1.5336669999999053
+          },
+          "source": {
+            "wall_ms": 0.8159169228747487,
+            "thread_cpu_ms": 0.7494159999996697
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 2.246999996714294,
+            "thread_cpu_ms": 1.0021249999998538
+          },
+          "baseline": {
+            "wall_ms": 4.822916933335364,
+            "thread_cpu_ms": 1.3292500000003926
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 2.285290975123644,
+            "thread_cpu_ms": 1.315499999999581
+          },
+          "source": {
+            "wall_ms": 1.1782089713960886,
+            "thread_cpu_ms": 1.001374999999971
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 2.34112492762506,
+            "thread_cpu_ms": 1.1319579999997664
+          },
+          "baseline": {
+            "wall_ms": 4.269416909664869,
+            "thread_cpu_ms": 1.4347500000000402
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 2.769417013041675,
+            "thread_cpu_ms": 1.5858340000001192
+          },
+          "source": {
+            "wall_ms": 3.9751670556142926,
+            "thread_cpu_ms": 1.255500000000076
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 1.0401669424027205,
+            "thread_cpu_ms": 1.0420830000001935
+          },
+          "baseline": {
+            "wall_ms": 1.8460419960319996,
+            "thread_cpu_ms": 1.377624999999938
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 4.248499986715615,
+            "thread_cpu_ms": 1.4484170000002017
+          },
+          "source": {
+            "wall_ms": 2.4027919862419367,
+            "thread_cpu_ms": 1.5442920000001692
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 1.6355830011889338,
+            "thread_cpu_ms": 1.282458000000375
+          },
+          "baseline": {
+            "wall_ms": 4.927541012875736,
+            "thread_cpu_ms": 1.5113749999997594
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 2.1214160369709134,
+            "thread_cpu_ms": 1.3104999999997702
+          },
+          "source": {
+            "wall_ms": 1.2674160534515977,
+            "thread_cpu_ms": 1.1752920000001055
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 1.5120829921215773,
+            "thread_cpu_ms": 1.0785829999999663
+          },
+          "baseline": {
+            "wall_ms": 1.6572090098634362,
+            "thread_cpu_ms": 1.3090829999997666
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 5.355458008125424,
+            "thread_cpu_ms": 1.7295000000001615
+          },
+          "source": {
+            "wall_ms": 1.5388749307021499,
+            "thread_cpu_ms": 1.2703750000002678
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 2.4965829215943813,
+            "thread_cpu_ms": 1.2678340000000787
+          },
+          "baseline": {
+            "wall_ms": 1.511415932327509,
+            "thread_cpu_ms": 1.2527499999999137
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 1.5842500142753124,
+            "thread_cpu_ms": 1.176458999999852
+          },
+          "source": {
+            "wall_ms": 0.9810000192373991,
+            "thread_cpu_ms": 0.9826249999997927
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 6.44741696305573,
+            "thread_cpu_ms": 1.4737500000001624
+          },
+          "baseline": {
+            "wall_ms": 5.601624958217144,
+            "thread_cpu_ms": 1.8254999999998134
+          }
+        }
+      ],
+      "verified": {
+        "baseline": {
+          "events": 0,
+          "allocation_commits": 20,
+          "core_bytes": 3387
+        },
+        "source": {
+          "events": 0,
+          "allocation_commits": 20,
+          "core_bytes": 3387
+        }
+      },
+      "latency_ms": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 20,
+            "p50": 2.769417,
+            "p95": 5.355458,
+            "p99": 5.601625,
+            "max": 5.601625
+          },
+          "thread_cpu_ms": {
+            "samples": 20,
+            "p50": 1.3655,
+            "p95": 1.8255,
+            "p99": 2.084417,
+            "max": 2.084417
+          }
+        },
+        "source": {
+          "wall_ms": {
+            "samples": 20,
+            "p50": 1.538875,
+            "p95": 3.975167,
+            "p99": 6.447417,
+            "max": 6.447417
+          },
+          "thread_cpu_ms": {
+            "samples": 20,
+            "p50": 1.131958,
+            "p95": 1.47375,
+            "p99": 1.544292,
+            "max": 1.544292
+          }
+        }
+      },
+      "retained_plan_steps": 0
+    },
+    "1000": {
+      "retained_events": 1000,
+      "pairs": [
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 197.33754196204245,
+            "thread_cpu_ms": 89.4179580000003
+          },
+          "source": {
+            "wall_ms": 103.54166699107736,
+            "thread_cpu_ms": 50.00358399999971
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 128.84491705335677,
+            "thread_cpu_ms": 53.39920800000009
+          },
+          "baseline": {
+            "wall_ms": 227.62266697827727,
+            "thread_cpu_ms": 109.95574999999968
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 256.65862497407943,
+            "thread_cpu_ms": 122.64462499999995
+          },
+          "source": {
+            "wall_ms": 125.62033405993134,
+            "thread_cpu_ms": 66.84770900000015
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 121.63991597481072,
+            "thread_cpu_ms": 59.65312500000009
+          },
+          "baseline": {
+            "wall_ms": 381.7657500039786,
+            "thread_cpu_ms": 182.85958299999993
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 207.4335840297863,
+            "thread_cpu_ms": 109.30404200000021
+          },
+          "source": {
+            "wall_ms": 117.31887492351234,
+            "thread_cpu_ms": 56.26904199999983
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 89.61020805872977,
+            "thread_cpu_ms": 55.53558400000025
+          },
+          "baseline": {
+            "wall_ms": 257.82404199708253,
+            "thread_cpu_ms": 111.69941700000052
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 275.39995894767344,
+            "thread_cpu_ms": 111.23449999999923
+          },
+          "source": {
+            "wall_ms": 275.20041691605,
+            "thread_cpu_ms": 65.80974999999967
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 333.3179159089923,
+            "thread_cpu_ms": 62.43616700000043
+          },
+          "baseline": {
+            "wall_ms": 659.7065000096336,
+            "thread_cpu_ms": 133.4022499999996
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 617.7851250395179,
+            "thread_cpu_ms": 127.55579199999988
+          },
+          "source": {
+            "wall_ms": 227.5889168959111,
+            "thread_cpu_ms": 67.90829200000026
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 130.19579101819545,
+            "thread_cpu_ms": 65.59241700000041
+          },
+          "baseline": {
+            "wall_ms": 346.18666605092585,
+            "thread_cpu_ms": 129.11091600000015
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 362.0274580316618,
+            "thread_cpu_ms": 130.73775000000066
+          },
+          "source": {
+            "wall_ms": 160.4581659194082,
+            "thread_cpu_ms": 76.07929099999922
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 254.8870419850573,
+            "thread_cpu_ms": 140.51275000000007
+          },
+          "baseline": {
+            "wall_ms": 237.59799997787923,
+            "thread_cpu_ms": 119.8196669999998
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 406.673000077717,
+            "thread_cpu_ms": 85.81783300000012
+          },
+          "source": {
+            "wall_ms": 151.02974988985807,
+            "thread_cpu_ms": 56.17687500000024
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 181.40529200900346,
+            "thread_cpu_ms": 67.85016700000045
+          },
+          "baseline": {
+            "wall_ms": 477.62545803561807,
+            "thread_cpu_ms": 122.58158299999965
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 397.5815000012517,
+            "thread_cpu_ms": 122.90687499999997
+          },
+          "source": {
+            "wall_ms": 134.7234999993816,
+            "thread_cpu_ms": 63.49283299999975
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 142.60362496133894,
+            "thread_cpu_ms": 58.88050000000078
+          },
+          "baseline": {
+            "wall_ms": 198.12287495005876,
+            "thread_cpu_ms": 113.01374999999948
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 184.76616602856666,
+            "thread_cpu_ms": 112.41720799999922
+          },
+          "source": {
+            "wall_ms": 94.05566600617021,
+            "thread_cpu_ms": 59.24737499999999
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 119.81304094661027,
+            "thread_cpu_ms": 70.68600000000025
+          },
+          "baseline": {
+            "wall_ms": 202.9673329088837,
+            "thread_cpu_ms": 125.87491699999998
+          }
+        },
+        {
+          "order": [
+            "baseline",
+            "source"
+          ],
+          "baseline": {
+            "wall_ms": 380.11858297977597,
+            "thread_cpu_ms": 188.4000419999996
+          },
+          "source": {
+            "wall_ms": 120.70520897395909,
+            "thread_cpu_ms": 63.733499999999665
+          }
+        },
+        {
+          "order": [
+            "source",
+            "baseline"
+          ],
+          "source": {
+            "wall_ms": 91.81816596537828,
+            "thread_cpu_ms": 53.9484580000007
+          },
+          "baseline": {
+            "wall_ms": 260.34362497739494,
+            "thread_cpu_ms": 125.36112500000041
+          }
+        }
+      ],
+      "verified": {
+        "baseline": {
+          "events": 1000,
+          "allocation_commits": 20,
+          "core_bytes": 278278
+        },
+        "source": {
+          "events": 1000,
+          "allocation_commits": 20,
+          "core_bytes": 278278
+        }
+      },
+      "latency_ms": {
+        "baseline": {
+          "wall_ms": {
+            "samples": 20,
+            "p50": 260.343625,
+            "p95": 617.785125,
+            "p99": 659.7065,
+            "max": 659.7065
+          },
+          "thread_cpu_ms": {
+            "samples": 20,
+            "p50": 122.581583,
+            "p95": 182.859583,
+            "p99": 188.400042,
+            "max": 188.400042
+          }
+        },
+        "source": {
+          "wall_ms": {
+            "samples": 20,
+            "p50": 128.844917,
+            "p95": 275.200417,
+            "p99": 333.317916,
+            "max": 333.317916
+          },
+          "thread_cpu_ms": {
+            "samples": 20,
+            "p50": 62.436167,
+            "p95": 76.079291,
+            "p99": 140.51275,
+            "max": 140.51275
+          }
+        }
+      },
+      "retained_plan_steps": 1000
+    }
+  },
+  "scope": "20 alternating warm pairs per case; real disposable SQLite commits and unchanged publication deep copy. Uncontrolled host. Core bytes are encoded payload bytes, not physical I/O. No Kernel, production state, service workload, backup action, activation or deployed acceptance.",
+  "percentile_method": "Nearest rank, ceil(fraction * sample count) - 1; original raw timings retained without rerun.",
+  "execution": {
+    "instance": "macbook",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "lease_fence": 334,
+    "host_control": "Uncontrolled shared host; hardware/disk/GIL/scheduling contributions not independently separated."
+  },
+  "tests": {
+    "final": {
+      "exit_code": 0,
+      "wall_ms": 8828.687792061828,
+      "cases": [
+        "tests/test_progress_sequence_allocation.py",
+        "tests/test_dispatch_progress.py::ProgressStoreTests",
+        "tests/test_dispatch_sqlite.py::test_failed_put_keeps_all_indexes_on_the_committed_record",
+        "tests/test_dispatch_sqlite.py::test_control_receipt_fault_boundary_replays_only_committed_result"
+      ],
+      "workspace_construction": "denied",
+      "store_construction": "guarded disposable roots",
+      "log_sha256": "f44919a3367dc52929a8af8f8919d5f9536d2eb90b5c6c6d38b1e58904be21bc"
+    },
+    "passed": 17,
+    "new": 5,
+    "existing": 12,
+    "scope": "Pre/post-commit disposable failure boundaries; durable reload and retry; detached snapshots and indexes; concurrent sequence uniqueness; existing progress provenance/order/retention/replay/control rollback regressions.",
+    "initial_stage": {
+      "exit_code": 2,
+      "wall_ms": 60400.01650003251,
+      "cases": [
+        "tests/test_progress_sequence_allocation.py",
+        "tests/test_dispatch_progress.py",
+        "tests/test_dispatch_sqlite.py"
+      ],
+      "workspace_construction": "denied",
+      "store_construction": "guarded disposable roots",
+      "log_sha256": "fecc49ebbc0027e8d5487f0e2ea7bd8280c19a3782d8aa04ef23bbb9eb83858f"
+    },
+    "initial_failures": "Two new reload-equality cases used inconsistent synthetic compacted ranges without accepted coverage; existing loader correctly reconstructed empty coverage. Corrected fixture now supplies accepted ranges/highest3. Product logic unchanged after benchmark. Broad suite interrupted after about60s to bound work; incomplete stage is not a pass. Final narrow17 overlap that stage and are not additive."
+  },
+  "implementation": "Only the allocator provisional record uses shallow model_copy for scalar next-sequence/updated-at assignments. Existing _save transaction, acknowledgement, failure publication and post-commit deep snapshot remain unchanged. No history, durable row, receipt, index, warning or timeout removed.",
+  "residual": "Core payload serialization, commit, post-commit full-history copy and index refresh still scale with retained dispatch data. Initial1000event baseline maximum659.7065ms/source333.317916ms; zero-history source max6.447417 exceeds baseline5.601625. No claim this single copy explains historical live warnings, mixed-load acceptance, physical I/O or write amplification improvement.",
+  "unchanged_baseline_dependencies_ast_verified": [
+    "_save",
+    "_publish_records_locked",
+    "_core_payload",
+    "_transaction",
+    "_persist_record_conn",
+    "_snapshot"
+  ]
+}
