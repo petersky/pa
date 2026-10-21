@@ -211991,14 +211991,15 @@
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "cause_classification": "confirmed_source_instrumentation_gap_live_cause_share_unverified",
       "artifact": "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
-      "sha256": "84a2e755dc890c9362652316ea8ec0ec76d9997a088e7effc455f797dfebb02d",
+      "sha256": "f1eced55f2f4c32f7e2965298036ce9423fbdc33f075ebc98b2b30e4eca1dc9b",
       "implemented": "Use existing numeric ObservedConnection at writer/readonly opens; all other application AST unchanged.",
       "merged": [],
       "deployed": "Source only; no activation or specific-path deployed retest",
       "retested": "35guarded contracts pass (6new/29existing); two fixture failures retained;10pairs per0/128shape preserve state/corebytes/logicalwrites, median overhead retained.",
       "resolution": "open",
       "next_actor": "Same systemic session; ordinary independent acceptance scheduler unchanged",
-      "next_action": "Integrate exact stable-green ready PR, separately scope activation/current gates, then attribute actual worker SQL/commit versus remaining publication/serialization/nativewait/CPU costs; preserve all original inventory and acceptance actions."
+      "next_action": "Integrate exact stable-green ready PR, separately scope activation/current gates, then attribute actual worker SQL/commit versus remaining publication/serialization/nativewait/CPU costs; preserve all original inventory and acceptance actions.",
+      "remaining_observation_gaps": "Bootstrap executescript and rollback duration are not observed by shared adapter; successful busy/CPU/I/O/scheduling unpartitioned. This adds execute/fetch/commit/error coverage, not complete native SQLite coverage."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -301204,7 +301205,7 @@
   },
   "dispatch_native_sql_observation_stage": {
     "artifact": "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
-    "sha256": "84a2e755dc890c9362652316ea8ec0ec76d9997a088e7effc455f797dfebb02d",
+    "sha256": "f1eced55f2f4c32f7e2965298036ce9423fbdc33f075ebc98b2b30e4eca1dc9b",
     "problem": {
       "id": "9ce5a25c-3c9d-4425-9450-b2cb326c7321",
       "revision": 1,

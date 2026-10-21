@@ -3073,7 +3073,8 @@
     "Statementelapsed includes successful nativebusy, CPU, disk and scheduling; busyerrors count failed BUSY/LOCKED only. Commit time remains unpartitioned; physicaldisk/fsync/write amplification not measured.",
     "Writer timeout30s, busy_timeout30000,WAL,NORMAL/temporaryFULL unchanged;readonly5s/noPRAGMAorDDL onopen preserved. Disposable busy test alone uses zero wait. Fault before/after commit preserves exact exceptions, publication/reload and receipt semantics.",
     "10alternating pairs per0/128retained-event/plan case, shared macbook host. Median raw\u2192observed1.188125\u21921.316875ms and8.793667\u21928.861625ms; p95/max2.241\u21922.046417ms and11.266041\u21929.608209ms. Median costs retained; small samples do not establish speedup or bounded overhead. At10samplesp95/p99=max.",
-    "No live workload or installed-path retest; last owner proofc02e/PID78321/startupa50c predates this source. No install/restart, queuechange, backup/GC, permission/default/model change, new worker/verifier or warning/deadline increase. All634prior rows and all original acceptance criteria remain open."
+    "No live workload or installed-path retest; last owner proofc02e/PID78321/startupa50c predates this source. No install/restart, queuechange, backup/GC, permission/default/model change, new worker/verifier or warning/deadline increase. All634prior rows and all original acceptance criteria remain open.",
+    "Shared ObservedConnection does not time executescript or rollback. DispatchStore schema bootstrap uses executescript; that startup span and rollback duration remain uncovered native calls. No claim of complete native SQLite attribution or every startup phase. Existing operation/transaction timings remain available; later scoped attribution required."
   ],
   "resolution": "open"
 }
