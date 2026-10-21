@@ -1,3 +1,213 @@
+# Loaded228 numeric runtime inventory — 2026-10-21 00:01 UTC
+
+All **631 findings and 109 concerns remain open**. All 613 prior rows remain unchanged; 12 operations and six route groups are newly represented. The [complete numeric API snapshot](benchmarks/systemic-live-runtime-20261021T0001.json), [source and interpretation summary](benchmarks/systemic-live-runtime-20261021T0001-summary.json), [all 170 operations and phase metrics](benchmarks/systemic-live-runtime-20261021T0001-operations.csv) and [all 75 route groups](benchmarks/systemic-live-runtime-20261021T0001-routes.csv) preserve every returned family and distribution.
+
+Source: macbook0c7d8ecb, bounded supported status/runtime/status reads **2026-10-21T00:01:28.671265Z–00:01:29.357245Z**. Before/after metadata matches loaded2283d907/package41eed1ca/PID26578/startup6c743433. This fences process identity, not complete module composition or repair activation. Individual read times377.980/168.984/137.954ms are not acceptance distributions. No fresh log files, peer files or retention inventory were read. Ordinary foreground/background/test traffic is uncontrolled.
+
+The snapshot contains **87 slow-or-failed operation names**, with cumulative **2,597 slow calls, 932 failed and 883 timed out**; these counters overlap and must not be added as distinct incidents. The 313,695 non-SSE requests total2,093,001,293 response bytes; four SSE requests are excluded. Global request process maximum152,558.416ms is separate from route rolling-window percentiles. Event-loop current600-sample p95 is123ms, while process maximum is1,066,452ms; suspension, scheduling, CPU and synchronous-callback contributions remain unverified. No pooled family quantiles are fabricated. Complete per-name p50/p95/p99/window-max/count/process-max and phase observations remain in the linked raw/CSV evidence, including successful paths and small samples.
+
+PR555 source repair mergedcb81b166 from exact3d8b2b81 after stable-green7 observations and independent five-success checks, zero required approvals/reviews/threads, full pagination, attributed commit, protection and CLEAN state. Source/merge trees match16342b30. HeadCI39518479247 succeeded; mainCI39518909020 and activation remain separate. Loaded228 excludes555 and the earlier547–553 repairs. Integration alone does not close any finding.
+
+A [static GC publication-path audit](benchmarks/systemic-gc-publication-audit-20261020.json) extends existing reportf320ad17 revision3: append/ref publication, merge/import object preparation and epoch updates have different fences; recovery repair **does** hold the ref locks and recheck its head. Saved execute/resume does not reread current inputs. Request-realm authorization is not passed into the saved-plan executor. These are source observations, not proof of production deletion, data loss, cross-realm exploitation or a complete pin/publication audit. The prior delete-spy admitted a refreshed candidate with zero object bytes deleted. Metadata batching remains unimplemented pending a current-generation/realm/epoch/ack/reachability/pin contract and bounded contention validation.
+
+All original startup/drain/order/admission/lease/receipt/sync/acceptance requirements, log-backed slow names, unexercised branches, historical failed/outlier stages, peer/log-loss/retention gaps and linked backup scope remain open. Existing release authority does not float to later source; no install/restart, service workload, live GC, backup capture/restore/ref change or new worker/verifier occurred. The original ten attachments and cap receipts remain preserved. The supervisor changed the card to Waiting at00:03:21.996509Z; a supported lane-only version-fenced update restored Active at00:03:54.802385Z. Independent requirement17d remains unchanged and unaccepted; no continuous-Active claim.
+
+| Operation family | Names | Submitted | Slow | Failed | Timed out | Highest operation process max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `acp` | 4 | 15838 | 171 | 0 | 0 | 3045.391 |
+| `agent` | 11 | 43916 | 178 | 1 | 1 | 9686.965 |
+| `browser` | 3 | 3 | 0 | 0 | 0 | 8.45 |
+| `conversation` | 2 | 39147 | 132 | 0 | 1 | 8599.475 |
+| `dispatch` | 17 | 277093 | 109 | 0 | 0 | 4011.257 |
+| `filesystem` | 2 | 21710 | 0 | 0 | 0 | 1271.886 |
+| `fleet` | 14 | 255462 | 232 | 0 | 7 | 10554.292 |
+| `goal` | 7 | 1950 | 3 | 0 | 0 | 1731.437 |
+| `health` | 1 | 6637 | 105 | 0 | 2 | 3178.927 |
+| `http` | 9 | 283791 | 3 | 919 | 871 | 21960.568 |
+| `intake` | 1 | 10 | 1 | 0 | 0 | 505.667 |
+| `maintenance` | 1 | 2 | 2 | 0 | 0 | 49648.995 |
+| `notifications` | 2 | 1986 | 10 | 0 | 0 | 21804.632 |
+| `pr_supervisor` | 5 | 250279 | 12 | 0 | 0 | 1256.474 |
+| `preferences` | 2 | 78 | 1 | 0 | 0 | 902.26 |
+| `progress` | 7 | 21854 | 323 | 0 | 0 | 7000.846 |
+| `provider` | 3 | 12 | 10 | 0 | 1 | 4346.483 |
+| `reconciliation` | 4 | 122205 | 90 | 0 | 0 | 3226.464 |
+| `selection` | 16 | 66 | 11 | 0 | 0 | 1963.241 |
+| `sqlite` | 42 | 1377111 | 793 | 1 | 0 | 10604.014 |
+| `startup` | 3 | 3 | 1 | 0 | 0 | 1035.269 |
+| `sync` | 7 | 24482 | 395 | 10 | 0 | 26670.562 |
+| `workspace` | 7 | 44 | 15 | 1 | 0 | 38075.661 |
+
+| Slow or failed operation | Submitted | Slow | Failed / timed out | Window n | p50 / p95 / p99 / max ms | Process max ms |
+|---|---:|---:|---:|---:|---:|---:|
+| `acp.pa_mcp_owner_probe` | 6 | 1 | 0 / 0 | 6 | 24.84 / 1023.609 / 1023.609 / 1023.609 | 1023.609 |
+| `acp.wire_append` | 15820 | 170 | 0 / 0 | 256 | 1.14 / 51.11 / 143.384 / 148.736 | 3045.391 |
+| `agent.history_payload` | 10 | 3 | 0 / 0 | 10 | 170.91 / 944.413 / 944.413 / 944.413 | 944.413 |
+| `agent.project_recovery_availability` | 32842 | 10 | 0 / 0 | 256 | 10.781 / 456.096 / 769.527 / 3241.656 | 3241.656 |
+| `agent.prompt_compose` | 22 | 2 | 0 / 0 | 22 | 39.632 / 669.034 / 1395.859 / 1395.859 | 1395.859 |
+| `agent.recovery_sessions` | 11018 | 161 | 0 / 1 | 256 | 232.333 / 1212.898 / 3963.203 / 9686.965 | 9686.965 |
+| `agent.session_snapshot` | 3 | 1 | 0 / 0 | 3 | 323.33 / 1154.485 / 1154.485 / 1154.485 | 1154.485 |
+| `agent.snapshot_payload` | 2 | 0 | 1 / 0 | 2 | 7.043 / 86.536 / 86.536 / 86.536 | 86.536 |
+| `agent.startup_state_read` | 1 | 1 | 0 / 0 | 1 | 1417.344 / 1417.344 / 1417.344 / 1417.344 | 1417.344 |
+| `conversation.issues` | 19573 | 79 | 0 / 0 | 256 | 32.005 / 437.881 / 3654.739 / 8599.475 | 8599.475 |
+| `conversation.session` | 19574 | 53 | 0 / 1 | 256 | 31.582 / 450.738 / 757.32 / 880.427 | 3260.964 |
+| `dispatch.completion_pending_read` | 11230 | 9 | 0 / 0 | 256 | 11.177 / 341.362 / 1134.226 / 4011.257 | 4011.257 |
+| `dispatch.followup_ack` | 16 | 1 | 0 / 0 | 16 | 91.663 / 1231.031 / 1231.031 / 1231.031 | 1231.031 |
+| `dispatch.followup_bind` | 8 | 1 | 0 / 0 | 8 | 230.46 / 828.088 / 828.088 / 828.088 | 828.088 |
+| `dispatch.followup_pending_read` | 11230 | 8 | 0 / 0 | 256 | 8.57 / 348.601 / 792.06 / 1446.152 | 1446.152 |
+| `dispatch.followup_record_write` | 24 | 7 | 0 / 0 | 24 | 375.045 / 2181.007 / 2956.119 / 2956.119 | 2956.119 |
+| `dispatch.followup_started` | 8 | 1 | 0 / 0 | 8 | 94.224 / 1142.681 / 1142.681 / 1142.681 | 1142.681 |
+| `dispatch.record_read` | 254534 | 79 | 0 / 0 | 256 | 29.757 / 109.919 / 688.823 / 1033.468 | 2818.841 |
+| `dispatch.record_write` | 12 | 1 | 0 / 0 | 12 | 51.954 / 1407.287 / 1407.287 / 1407.287 | 1407.287 |
+| `dispatch.recovery_source_read` | 1 | 1 | 0 / 0 | 1 | 758.315 / 758.315 / 758.315 / 758.315 | 758.315 |
+| `dispatch.session_link` | 1 | 1 | 0 / 0 | 1 | 575.455 / 575.455 / 575.455 / 575.455 | 575.455 |
+| `fleet.overview.mcp_bootstrap` | 3 | 3 | 0 / 0 | 3 | 6907.177 / 10554.292 / 10554.292 / 10554.292 | 10554.292 |
+| `fleet.overview.reachability` | 3710 | 7 | 0 / 2 | 256 | 10.981 / 208.616 / 588.816 / 1209.76 | 1209.76 |
+| `fleet.overview.status` | 3707 | 9 | 0 / 0 | 256 | 10.941 / 237.296 / 647.514 / 1187.899 | 1187.899 |
+| `fleet.overview.sync` | 7844 | 44 | 0 / 1 | 256 | 83.639 / 1006.68 / 1885.085 / 5276.08 | 5276.08 |
+| `fleet.overview.update` | 1 | 1 | 0 / 0 | 1 | 1621.897 / 1621.897 / 1621.897 / 1621.897 | 1621.897 |
+| `fleet.overview_cache_read` | 158981 | 77 | 0 / 0 | 256 | 9.425 / 214.008 / 2152.219 / 2235.554 | 2695.608 |
+| `fleet.overview_cache_write` | 48661 | 71 | 0 / 0 | 256 | 31.133 / 200.001 / 341.094 / 810.09 | 7708.191 |
+| `fleet.overview_response_json` | 32519 | 19 | 0 / 3 | 256 | 15.32 / 148.445 / 324.617 / 1005.506 | 2305.075 |
+| `fleet.response_json` | 23 | 1 | 0 / 1 | 22 | 1.64 / 61.672 / 781.51 / 781.51 | 781.51 |
+| `goal.dispatch_lifecycle_index` | 1933 | 3 | 0 / 0 | 256 | 0.544 / 86.859 / 750.984 / 1731.437 | 1731.437 |
+| `health.canonical_obligation` | 6637 | 105 | 0 / 2 | 256 | 11.41 / 280.933 / 846.198 / 3178.927 | 3178.927 |
+| `http.dispatch_list` | 2 | 1 | 0 / 0 | 2 | 411.303 / 660.897 / 660.897 / 660.897 | 660.897 |
+| `http.fleet_overview` | 33383 | 0 | 864 / 864 | 256 | 224.609 / 1156.092 / 1926.217 / 2342.946 | 6175.471 |
+| `http.pr_supervisor_peer` | 250228 | 0 | 55 / 7 | 256 | 43.56 / 217.002 / 665.428 / 859.515 | 15002.515 |
+| `http.session_list` | 8 | 2 | 0 / 0 | 8 | 67.962 / 507.011 / 507.011 / 507.011 | 507.011 |
+| `intake.web_prompt` | 10 | 1 | 0 / 0 | 10 | 172.337 / 505.667 / 505.667 / 505.667 | 505.667 |
+| `maintenance.run` | 2 | 2 | 0 / 0 | 2 | 37306.812 / 49648.995 / 49648.995 / 49648.995 | 49648.995 |
+| `notifications.list_page` | 993 | 2 | 0 / 0 | 256 | 4.347 / 162.317 / 434.251 / 1748.161 | 1748.161 |
+| `notifications.present_page` | 993 | 8 | 0 / 0 | 256 | 22.9 / 176.278 / 1499.601 / 21804.632 | 21804.632 |
+| `pr_supervisor.response_json` | 250133 | 12 | 0 / 0 | 256 | 0.864 / 19.6 / 42.143 / 115.827 | 1256.474 |
+| `preferences.agent_auto_approve_read` | 77 | 1 | 0 / 0 | 77 | 18.66 / 279.74 / 902.26 / 902.26 | 902.26 |
+| `progress.checkpoint_write` | 234 | 81 | 0 / 0 | 234 | 362.358 / 1752.288 / 3531.182 / 4551.745 | 4551.745 |
+| `progress.dispatch_read` | 1739 | 57 | 0 / 0 | 256 | 88.776 / 340.543 / 718.801 / 1307.134 | 3320.469 |
+| `progress.final_report_build` | 38 | 1 | 0 / 0 | 38 | 17.842 / 196.013 / 742.171 / 742.171 | 742.171 |
+| `progress.final_report_write` | 38 | 9 | 0 / 0 | 38 | 356.757 / 1484.738 / 3263.063 / 3263.063 | 3263.063 |
+| `progress.heartbeat_write` | 276 | 55 | 0 / 0 | 256 | 225.137 / 1478.977 / 4100.944 / 4686.961 | 4686.961 |
+| `progress.pending_read` | 19019 | 29 | 0 / 0 | 256 | 18.884 / 330.993 / 1065.947 / 2187.331 | 2980.594 |
+| `progress.sequence_allocate` | 510 | 91 | 0 / 0 | 256 | 227.115 / 1022.878 / 1438.985 / 2314.145 | 7000.846 |
+| `provider.status.codex` | 4 | 4 | 0 / 0 | 4 | 1561.243 / 2312.829 / 2312.829 / 2312.829 | 2312.829 |
+| `provider.status.cursor` | 4 | 4 | 0 / 1 | 4 | 3074.534 / 4346.483 / 4346.483 / 4346.483 | 4346.483 |
+| `provider.status.openinterpreter` | 4 | 2 | 0 / 0 | 4 | 476.815 / 649.279 / 649.279 / 649.279 | 649.279 |
+| `reconciliation.completion_evidence_read` | 33318 | 28 | 0 / 0 | 256 | 10.382 / 260.896 / 850.851 / 2386.406 | 3226.464 |
+| `reconciliation.completion_queue` | 19 | 6 | 0 / 0 | 19 | 151.3 / 2190.973 / 2190.973 / 2190.973 | 2190.973 |
+| `reconciliation.dispatch_read` | 55550 | 39 | 0 / 0 | 256 | 4.257 / 134.827 / 565.264 / 2327.512 | 2327.512 |
+| `reconciliation.session_read` | 33318 | 17 | 0 / 0 | 256 | 5.721 / 181.718 / 494.84 / 1291.418 | 1680.507 |
+| `selection.boundary_transcript` | 1 | 1 | 0 / 0 | 1 | 502.854 / 502.854 / 502.854 / 502.854 | 502.854 |
+| `selection.catalog_enrichment` | 4 | 1 | 0 / 0 | 4 | 10.392 / 1090.049 / 1090.049 / 1090.049 | 1090.049 |
+| `selection.prompt_identity` | 22 | 6 | 0 / 0 | 22 | 152.736 / 1168.222 / 1963.241 / 1963.241 | 1963.241 |
+| `selection.prompt_outcome` | 20 | 3 | 0 / 0 | 20 | 86.801 / 570.581 / 895.93 / 895.93 | 895.93 |
+| `sqlite.agent_runtime_checkpoint` | 78 | 15 | 0 / 0 | 78 | 80.597 / 1185.022 / 3210.373 / 3210.373 | 3210.373 |
+| `sqlite.agent_session_save` | 483 | 45 | 0 / 0 | 256 | 117.076 / 1004.561 / 1719.616 / 3009.9 | 3009.9 |
+| `sqlite.card_read` | 379681 | 62 | 0 / 0 | 256 | 1.832 / 17.943 / 73.876 / 114.388 | 3457.09 |
+| `sqlite.pr_supervisor_capability_write` | 969 | 2 | 0 / 0 | 256 | 3.984 / 97.631 / 313.26 / 533.296 | 533.296 |
+| `sqlite.pr_supervisor_completion_due_read` | 21664 | 67 | 0 / 0 | 256 | 109.372 / 757.579 / 3722.495 / 7107.101 | 8467.544 |
+| `sqlite.pr_supervisor_due_read` | 21642 | 3 | 0 / 0 | 256 | 5.033 / 108.1 / 372.484 / 2152.407 | 2152.407 |
+| `sqlite.pr_supervisor_effect_prepare` | 4 | 0 | 1 / 0 | 4 | 18.713 / 81.047 / 81.047 / 81.047 | 81.047 |
+| `sqlite.pr_supervisor_event_write` | 125113 | 32 | 0 / 0 | 256 | 4.472 / 79.365 / 532.395 / 643.11 | 3246.279 |
+| `sqlite.pr_supervisor_metric` | 100 | 1 | 0 / 0 | 100 | 3.899 / 118.962 / 498.378 / 1078.228 | 1078.228 |
+| `sqlite.pr_supervisor_watch_read` | 125214 | 52 | 0 / 0 | 256 | 7.298 / 180.43 / 445.294 / 1197.502 | 6678.958 |
+| `sqlite.pr_supervisor_watch_write` | 125113 | 61 | 0 / 0 | 256 | 11.135 / 150.821 / 476.97 / 2384.644 | 4671.162 |
+| `sqlite.project_read` | 254558 | 40 | 0 / 0 | 256 | 1.041 / 49.371 / 244.396 / 376.741 | 2257.589 |
+| `sqlite.prompt_acceptance_read` | 39 | 10 | 0 / 0 | 39 | 144.622 / 2539.368 / 5428.536 / 5428.536 | 5428.536 |
+| `sqlite.repository_read` | 254524 | 50 | 0 / 0 | 256 | 1.662 / 65.961 / 205.445 / 488.608 | 2793.138 |
+| `sqlite.restart_handoff_completion` | 22198 | 28 | 0 / 0 | 256 | 23.15 / 359.891 / 738.124 / 744.538 | 2974.555 |
+| `sqlite.restart_handoff_session` | 21887 | 12 | 0 / 0 | 256 | 6.919 / 265.169 / 916.041 / 3293.149 | 3293.149 |
+| `sqlite.restart_handoffs_pending` | 11019 | 10 | 0 / 0 | 256 | 6.775 / 311.281 / 906.467 / 1184.502 | 1214.0 |
+| `sqlite.restart_handoffs_watchdog` | 11018 | 23 | 0 / 0 | 256 | 16.116 / 634.001 / 1541.961 / 2807.831 | 2807.831 |
+| `sqlite.transcript_append` | 1632 | 279 | 0 / 0 | 256 | 66.669 / 1106.301 / 5126.402 / 5533.249 | 10604.014 |
+| `sqlite.transcript_read` | 14 | 1 | 0 / 0 | 14 | 52.298 / 872.364 / 872.364 / 872.364 | 872.364 |
+| `startup.openapi` | 1 | 1 | 0 / 0 | 1 | 1035.269 / 1035.269 / 1035.269 / 1035.269 | 1035.269 |
+| `sync.peer_http` | 579 | 0 | 10 / 0 | 256 | 26.582 / 1028.895 / 3024.395 / 3032.785 | 3032.785 |
+| `sync.reconcile_head` | 569 | 379 | 0 / 0 | 256 | 553.111 / 1189.076 / 9504.989 / 26670.562 | 26670.562 |
+| `sync.ref_read` | 22194 | 16 | 0 / 0 | 256 | 2.746 / 280.961 / 667.776 / 1113.393 | 3334.371 |
+| `workspace.collect_garbage` | 3 | 3 | 0 / 0 | 3 | 10792.93 / 38075.661 / 38075.661 / 38075.661 | 38075.661 |
+| `workspace.lease_renew` | 22 | 10 | 0 / 0 | 22 | 485.26 / 4047.011 / 6500.912 / 6500.912 | 6500.912 |
+| `workspace.project_provision` | 10 | 2 | 1 / 0 | 10 | 1856.624 / 6709.812 / 6709.812 / 6709.812 | 6709.812 |
+
+| All route groups | Count | Response bytes | Window n | p50 / p95 / p99 / max ms |
+|---|---:|---:|---:|---:|
+| `/` | 1 | 2076 | 1 | 21.08 / 21.08 / 21.08 / 21.08 |
+| `/api/agent/history/{session_id}` | 10 | 2614572 | 10 | 315.246 / 1176.822 / 1176.822 / 1176.822 |
+| `/api/agent/observability/v1/sessions` | 2 | 2107314 | 2 | 13766.826 / 22771.776 / 22771.776 / 22771.776 |
+| `/api/agent/observability/v1/sessions/{session_id}` | 42 | 207651 | 42 | 103.816 / 559.819 / 1345.638 / 1345.638 |
+| `/api/agent/prompt-capabilities` | 10 | 390 | 10 | 36.485 / 1304.306 / 1304.306 / 1304.306 |
+| `/api/agent/sessions` | 9 | 361565 | 9 | 91.953 / 21199.107 / 21199.107 / 21199.107 |
+| `/api/agent/sessions/{session_id}` | 2 | 195221 | 2 | 10.559 / 118.287 / 118.287 / 118.287 |
+| `/api/agent/sessions/{session_id}/close` | 1 | 70 | 1 | 4951.379 / 4951.379 / 4951.379 / 4951.379 |
+| `/api/agent/sessions/{session_id}/commands` | 1 | 69015 | 1 | 59.313 / 59.313 / 59.313 / 59.313 |
+| `/api/agent/sessions/{session_id}/dispatch-prompts` | 9 | 221785 | 9 | 1747.291 / 13381.535 / 13381.535 / 13381.535 |
+| `/api/agent/sessions/{session_id}/execution-catalog` | 2 | 1211 | 2 | 17.086 / 408.908 / 408.908 / 408.908 |
+| `/api/agent/sessions/{session_id}/issues` | 9794 | 321965930 | 256 | 75.923 / 1339.063 / 2414.93 / 4220.515 |
+| `/api/agent/sessions/{session_id}/prompt` | 1 | 392 | 1 | 5892.206 / 5892.206 / 5892.206 / 5892.206 |
+| `/api/agent/sessions/{session_id}/prompts/{client_prompt_id}` | 1 | 295 | 1 | 181.139 / 181.139 / 181.139 / 181.139 |
+| `/api/agent/sessions/{session_id}/queue/resume` | 1 | 22 | 1 | 111.817 / 111.817 / 111.817 / 111.817 |
+| `/api/agent/sessions/{session_id}/recover` | 1 | 1595153 | 1 | 7593.856 / 7593.856 / 7593.856 / 7593.856 |
+| `/api/agent/sessions/{session_id}/restart-handoffs` | 13 | 1970530 | 13 | 245.152 / 1788.634 / 1788.634 / 1788.634 |
+| `/api/agent/sessions/{session_id}/threads` | 9780 | 14164470 | 256 | 174.991 / 1583.086 / 3756.271 / 9542.183 |
+| `/api/backups/status` | 2 | 152742 | 2 | 64.578 / 76.436 / 76.436 / 76.436 |
+| `/api/browser/{operation}` | 28 | 478027 | 28 | 355.789 / 5964.291 / 16002.304 / 16002.304 |
+| `/api/cards/summaries` | 1 | 8519 | 1 | 31.287 / 31.287 / 31.287 / 31.287 |
+| `/api/cards/{card_id}` | 21 | 1173558 | 21 | 61.576 / 1796.177 / 2976.12 / 2976.12 |
+| `/api/configuration` | 2 | 339898 | 2 | 49.748 / 67.48 / 67.48 / 67.48 |
+| `/api/execution/catalog` | 1 | 51947 | 1 | 44.138 / 44.138 / 44.138 / 44.138 |
+| `/api/execution/defaults` | 1 | 6308 | 1 | 17.25 / 17.25 / 17.25 / 17.25 |
+| `/api/fleet/dispatch-jobs` | 2 | 3970505 | 2 | 415.629 / 673.276 / 673.276 / 673.276 |
+| `/api/fleet/dispatch-jobs/{dispatch_id}` | 971 | 172514376 | 256 | 14.206 / 69.348 / 306.679 / 1523.454 |
+| `/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint` | 34 | 6935 | 34 | 1337.165 / 4622.153 / 27976.29 / 27976.29 |
+| `/api/fleet/dispatch-jobs/{dispatch_id}/prompt` | 5 | 1496 | 5 | 9178.407 / 15713.879 / 15713.879 / 15713.879 |
+| `/api/fleet/dispatch/materialize` | 1 | 1458 | 1 | 78.362 / 78.362 / 78.362 / 78.362 |
+| `/api/fleet/dispatch/{dispatch_id}/turn-end` | 12 | 40986 | 12 | 2350.072 / 5674.995 / 5674.995 / 5674.995 |
+| `/api/fleet/instances` | 25 | 68475 | 25 | 12.638 / 1823.333 / 2548.175 / 2548.175 |
+| `/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}` | 1 | 1726856 | 1 | 143.222 / 143.222 / 143.222 / 143.222 |
+| `/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}` | 4 | 1364 | 4 | 2106.243 / 3712.524 / 3712.524 / 3712.524 |
+| `/api/fleet/instances/{instance_id}/agent/start` | 1 | 151465 | 1 | 8328.297 / 8328.297 / 8328.297 / 8328.297 |
+| `/api/fleet/overview` | 1 | 1152888 | 1 | 605.643 / 605.643 / 605.643 / 605.643 |
+| `/api/fleet/overview/dimension` | 36 | 985788 | 36 | 482.888 / 7846.268 / 10613.039 / 10613.039 |
+| `/api/fleet/overview/local` | 10628 | 95056221 | 256 | 327.171 / 5742.434 / 11443.606 / 15708.019 |
+| `/api/fleet/placement/preview` | 2 | 148674 | 2 | 3910.613 / 8424.379 / 8424.379 / 8424.379 |
+| `/api/fleet/session-route/{session_id}` | 1 | 1578 | 1 | 28.998 / 28.998 / 28.998 / 28.998 |
+| `/api/health` | 11 | 165 | 11 | 3.558 / 24.026 / 24.026 / 24.026 |
+| `/api/health-journal/receipts/{receipt_id}` | 266 | 160929 | 256 | 8.745 / 403.969 / 909.758 / 1998.257 |
+| `/api/health-journal/reports` | 14 | 4269 | 14 | 70.518 / 3071.905 / 3071.905 / 3071.905 |
+| `/api/health-journal/reports/{report_id}` | 1 | 153943 | 1 | 68.313 / 68.313 / 68.313 / 68.313 |
+| `/api/instance` | 3 | 1680 | 3 | 48.991 / 1757.805 / 1757.805 / 1757.805 |
+| `/api/items/{item_id}` | 8 | 361472 | 8 | 68.23 / 176.585 / 176.585 / 176.585 |
+| `/api/notifications` | 994 | 8967054 | 256 | 53.04 / 1504.441 / 8525.744 / 23784.549 |
+| `/api/notifications/{notification_id}` | 7 | 40875 | 7 | 985.319 / 9832.463 / 9832.463 / 9832.463 |
+| `/api/notifications/{notification_id}/respond` | 2 | 7732 | 2 | 1503.577 / 11516.637 / 11516.637 / 11516.637 |
+| `/api/operation-recovery/{idempotency_key:path}` | 5 | 2805 | 5 | 37.307 / 915.765 / 915.765 / 915.765 |
+| `/api/operations/{idempotency_key:path}` | 19 | 12414 | 19 | 121.512 / 1815.568 / 1815.568 / 1815.568 |
+| `/api/owner-ready` | 7 | 497 | 7 | 2.792 / 4.606 / 4.606 / 4.606 |
+| `/api/pr-supervisor/capabilities` | 401 | 1099542 | 256 | 5.906 / 105.389 / 463.716 / 873.378 |
+| `/api/pr-supervisor/effects/dispatch` | 4 | 201 | 4 | 71.569 / 831.443 / 831.443 / 831.443 |
+| `/api/pr-supervisor/instances/heartbeat` | 1920 | 32640 | 256 | 7.703 / 410.939 / 1639.216 / 3008.208 |
+| `/api/pr-supervisor/pull-requests` | 1 | 2147 | 1 | 2508.787 / 2508.787 / 2508.787 / 2508.787 |
+| `/api/pr-supervisor/replicas` | 254528 | 1423908615 | 256 | 57.437 / 604.877 / 2578.844 / 3800.661 |
+| `/api/pr-supervisor/watches` | 1 | 1996 | 1 | 1834.289 / 1834.289 / 1834.289 / 1834.289 |
+| `/api/pr-supervisor/watches/{watch_id}` | 8 | 198404 | 8 | 102.638 / 323.671 / 323.671 / 323.671 |
+| `/api/pr-supervisor/watches/{watch_id}/lease` | 28 | 6891 | 28 | 273.469 / 1035.877 / 1099.755 / 1099.755 |
+| `/api/pr-supervisor/watches/{watch_id}/merge-evidence` | 6 | 19385 | 6 | 16.711 / 487.19 / 487.19 / 487.19 |
+| `/api/ready` | 10628 | 1434220 | 256 | 6.034 / 70.473 / 244.722 / 376.894 |
+| `/api/status` | 10643 | 27419643 | 256 | 322.48 / 2664.571 / 5185.137 / 7027.793 |
+| `/api/sync/audit` | 2 | 71660 | 2 | 138233.502 / 152558.416 / 152558.416 / 152558.416 |
+| `/api/sync/convergence` | 2 | 2312 | 2 | 3.897 / 73.773 / 73.773 / 73.773 |
+| `/api/sync/get` | 89 | 1776329 | 89 | 7.652 / 582.159 / 2927.612 / 2927.612 |
+| `/api/sync/refs` | 570 | 147630 | 256 | 3.326 / 34.02 / 281.54 / 699.138 |
+| `/api/telemetry/live` | 1047 | 978101 | 256 | 3.446 / 18.915 / 55.109 / 76.809 |
+| `/api/ui/assets` | 963 | 76077 | 256 | 6.187 / 81.199 / 541.666 / 1365.776 |
+| `/api/workspaces` | 18 | 34018 | 18 | 75.722 / 914.595 / 914.595 / 914.595 |
+| `/favicon.ico` | 1 | 593 | 1 | 85.764 / 85.764 / 85.764 / 85.764 |
+| `/fleet` | 1 | 1329596 | 1 | 674.093 / 674.093 / 674.093 / 674.093 |
+| `/partials/home/sections` | 1 | 17022 | 1 | 4761.282 / 4761.282 / 4761.282 / 4761.282 |
+| `/{page_path:path}` | 1 | 92162 | 1 | 142.734 / 142.734 / 142.734 / 142.734 |
+| `__unmatched__` | 35 | 1120548 | 35 | 25.352 / 44.862 / 48.655 / 48.655 |
+
+## Preserved prior inventory and evidence
+
 # Reduce progress sequence allocation copying — 2026-10-20
 
 All **613 findings and 109 concerns remain open**; all 612 prior rows remain unchanged. [Numeric evidence](benchmarks/systemic-progress-sequence-copy-20261020.json) identifies a source cost in `progress.sequence_allocate`: changing the next sequence and update timestamp copied the entire dispatch, followed by another deep copy when publishing the committed record. The provisional record now uses a shallow copy for those two scalar assignments. The existing transaction, acknowledgement, failure handling and detached post-commit publication remain intact.
