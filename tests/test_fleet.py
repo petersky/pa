@@ -626,6 +626,8 @@ class FleetPageLazyLoadTests(unittest.TestCase):
                 self.assertIn("content: attr(data-label);", style)
                 self.assertNotIn(".fleet-instance-table td:nth-child", style)
 
+                self.assertIn("Capacity and connection details", page.text)
+                self.assertIn("1/4 slots used · 9 prompts queued", page.text)
                 self.assertIn('"queued_prompts": 9', page.text)
                 self.assertIn('"consumed": 1', page.text)
                 self.assertIn('"limit": 4', page.text)

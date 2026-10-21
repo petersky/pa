@@ -59,7 +59,17 @@
 	            <span class="muted small">{{ node.zone }}</span>
 	            {% set overview_policy = participation_policies.get(node.id, {}) %}
 	            <span class="muted small" data-fleet-participation>{{ overview_policy.get('summary', 'Compatibility policy') }}</span>
-	            <details><summary class="muted small">Connection details</summary><dl><dt>Instance</dt><dd>{{ instance_identity(node.id) }}</dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
+	            <details><summary class="muted small">Capacity and connection details</summary><dl>
+              <dt>Capacity</dt><dd data-fleet-capacity>
+                {% if activity.value and activity.value.capacity %}
+                {% set capacity = activity.value.capacity %}
+                {% set prompt_backlog = activity.value.queued_prompts if activity.value.queued_prompts is defined else none %}
+                <strong>{{ capacity.consumed }}/{{ capacity.limit }} slots used{% if prompt_backlog is not none %} · {{ prompt_backlog }} prompts queued{% endif %}</strong>
+                <span class="muted small">{{ capacity.source | replace('_', ' ') }}</span>
+                {% elif node.dispatch_capacity %}<strong>{{ node.dispatch_capacity }} slots configured</strong><span class="muted small">Utilization unknown</span>
+                {% else %}<span class="muted">Capacity unknown</span>{% endif %}
+              </dd>
+              <dt>Instance</dt><dd>{{ instance_identity(node.id) }}</dd><dt>Endpoint</dt><dd><a href="{{ node.url }}" target="_blank" rel="noopener">{{ node.url }}</a></dd><dt>Capabilities</dt><dd>{{ node.capabilities | join(', ') or 'None reported' }}</dd></dl></details>
           </td>
           <td data-label="Current state">
             <div data-fleet-health class="fleet-field fleet-field-{{ reach.state }}">
