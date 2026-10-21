@@ -1,0 +1,1259 @@
+{
+  "contract": "pa.progress-outbox-projection/v1",
+  "observed_at": "2026-10-21T00:37:57.629808+00:00",
+  "comparison": {
+    "contract": "pa.pending-progress-projection-comparison/v1",
+    "started_at": "2026-10-21T00:36:32.269296+00:00",
+    "scenarios": {
+      "0": {
+        "retained_events": 128,
+        "plan_steps": 128,
+        "pending_payloads": 0,
+        "transport_projection_equal": true,
+        "copy_counts_outside_timing": {
+          "baseline": {
+            "full_dispatch_snapshots": 0,
+            "retained_event_models_copied": 0
+          },
+          "projection": {
+            "full_dispatch_snapshots": 0,
+            "copied_payload_models": 0
+          }
+        },
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 0.040790997445583344,
+              "thread_cpu_ms": 0.03866699999988121
+            },
+            "projection": {
+              "wall_ms": 0.040624989196658134,
+              "thread_cpu_ms": 0.043792000000042464
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.03445800393819809,
+              "thread_cpu_ms": 0.035082999999991316
+            },
+            "baseline": {
+              "wall_ms": 0.030708033591508865,
+              "thread_cpu_ms": 0.031208000000004787
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 0.031166942790150642,
+              "thread_cpu_ms": 0.031583000000168227
+            },
+            "projection": {
+              "wall_ms": 0.031374976970255375,
+              "thread_cpu_ms": 0.03174999999999706
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.031000003218650818,
+              "thread_cpu_ms": 0.03137499999983362
+            },
+            "baseline": {
+              "wall_ms": 0.03020802978426218,
+              "thread_cpu_ms": 0.030667000000095257
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 0.030250055715441704,
+              "thread_cpu_ms": 0.03062499999995083
+            },
+            "projection": {
+              "wall_ms": 0.03087497316300869,
+              "thread_cpu_ms": 0.031208000000004787
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.031000003218650818,
+              "thread_cpu_ms": 0.03145800000003973
+            },
+            "baseline": {
+              "wall_ms": 0.029999995604157448,
+              "thread_cpu_ms": 0.030415999999977572
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 0.030082999728620052,
+              "thread_cpu_ms": 0.030458000000122
+            },
+            "projection": {
+              "wall_ms": 0.030374969355762005,
+              "thread_cpu_ms": 0.030750000000079325
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.03091595135629177,
+              "thread_cpu_ms": 0.03124999999992717
+            },
+            "baseline": {
+              "wall_ms": 0.029999995604157448,
+              "thread_cpu_ms": 0.030417000000060312
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 0.038209022022783756,
+              "thread_cpu_ms": 0.03866699999988121
+            },
+            "projection": {
+              "wall_ms": 0.03200001083314419,
+              "thread_cpu_ms": 0.03241699999989578
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.031125033274292946,
+              "thread_cpu_ms": 0.031499999999962114
+            },
+            "baseline": {
+              "wall_ms": 0.029875081963837147,
+              "thread_cpu_ms": 0.030250000000009436
+            }
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 0.030208,
+              "p95": 0.040791,
+              "p99": 0.040791,
+              "max": 0.040791
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 0.030625,
+              "p95": 0.038667,
+              "p99": 0.038667,
+              "max": 0.038667
+            }
+          },
+          "projection": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 0.031,
+              "p95": 0.040625,
+              "p99": 0.040625,
+              "max": 0.040625
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 0.031458,
+              "p95": 0.043792,
+              "p99": 0.043792,
+              "max": 0.043792
+            }
+          }
+        }
+      },
+      "1": {
+        "retained_events": 128,
+        "plan_steps": 128,
+        "pending_payloads": 1,
+        "transport_projection_equal": true,
+        "copy_counts_outside_timing": {
+          "baseline": {
+            "full_dispatch_snapshots": 1,
+            "retained_event_models_copied": 128
+          },
+          "projection": {
+            "full_dispatch_snapshots": 0,
+            "copied_payload_models": 1
+          }
+        },
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 7.355166948400438,
+              "thread_cpu_ms": 7.183916000000012
+            },
+            "projection": {
+              "wall_ms": 0.3785829758271575,
+              "thread_cpu_ms": 0.37916699999995807
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.09400001727044582,
+              "thread_cpu_ms": 0.0943339999999182
+            },
+            "baseline": {
+              "wall_ms": 8.62541701644659,
+              "thread_cpu_ms": 7.377624999999943
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 10.652832919731736,
+              "thread_cpu_ms": 9.061708000000168
+            },
+            "projection": {
+              "wall_ms": 0.763291958719492,
+              "thread_cpu_ms": 0.46458299999985186
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.17008394934237003,
+              "thread_cpu_ms": 0.15820799999999302
+            },
+            "baseline": {
+              "wall_ms": 9.84325003810227,
+              "thread_cpu_ms": 7.508083000000054
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 5.292957997880876,
+              "thread_cpu_ms": 5.151875000000139
+            },
+            "projection": {
+              "wall_ms": 0.6335410289466381,
+              "thread_cpu_ms": 0.34237500000000587
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.12608303222805262,
+              "thread_cpu_ms": 0.12620900000004376
+            },
+            "baseline": {
+              "wall_ms": 3.8918749196454883,
+              "thread_cpu_ms": 3.814249999999797
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 9.337332914583385,
+              "thread_cpu_ms": 4.955250000000078
+            },
+            "projection": {
+              "wall_ms": 0.19225000869482756,
+              "thread_cpu_ms": 0.1927500000000748
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.04733400419354439,
+              "thread_cpu_ms": 0.04758399999982288
+            },
+            "baseline": {
+              "wall_ms": 3.725165966898203,
+              "thread_cpu_ms": 3.126249999999997
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 13.997208094224334,
+              "thread_cpu_ms": 11.39633299999998
+            },
+            "projection": {
+              "wall_ms": 0.2667499938979745,
+              "thread_cpu_ms": 0.26695800000009484
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 0.055916025303304195,
+              "thread_cpu_ms": 0.05620799999994652
+            },
+            "baseline": {
+              "wall_ms": 5.993917002342641,
+              "thread_cpu_ms": 4.579083000000095
+            }
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 7.355167,
+              "p95": 13.997208,
+              "p99": 13.997208,
+              "max": 13.997208
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 5.151875,
+              "p95": 11.396333,
+              "p99": 11.396333,
+              "max": 11.396333
+            }
+          },
+          "projection": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 0.170084,
+              "p95": 0.763292,
+              "p99": 0.763292,
+              "max": 0.763292
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 0.158208,
+              "p95": 0.464583,
+              "p99": 0.464583,
+              "max": 0.464583
+            }
+          }
+        }
+      },
+      "32": {
+        "retained_events": 128,
+        "plan_steps": 128,
+        "pending_payloads": 32,
+        "transport_projection_equal": true,
+        "copy_counts_outside_timing": {
+          "baseline": {
+            "full_dispatch_snapshots": 32,
+            "retained_event_models_copied": 4096
+          },
+          "projection": {
+            "full_dispatch_snapshots": 0,
+            "copied_payload_models": 32
+          }
+        },
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 219.8603330180049,
+              "thread_cpu_ms": 174.69979199999975
+            },
+            "projection": {
+              "wall_ms": 11.45258394535631,
+              "thread_cpu_ms": 9.512041999999887
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 2.209083060733974,
+              "thread_cpu_ms": 1.9100420000000007
+            },
+            "baseline": {
+              "wall_ms": 251.9789170473814,
+              "thread_cpu_ms": 224.10804100000004
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 276.22441702988,
+              "thread_cpu_ms": 255.5484579999998
+            },
+            "projection": {
+              "wall_ms": 11.226875009015203,
+              "thread_cpu_ms": 10.145875000000082
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 1.7256670398637652,
+              "thread_cpu_ms": 1.7055000000003595
+            },
+            "baseline": {
+              "wall_ms": 289.22708390746266,
+              "thread_cpu_ms": 261.8312920000001
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 242.87374992854893,
+              "thread_cpu_ms": 224.00708300000005
+            },
+            "projection": {
+              "wall_ms": 11.505333008244634,
+              "thread_cpu_ms": 9.817124999999649
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 1.753707998432219,
+              "thread_cpu_ms": 1.7570830000002147
+            },
+            "baseline": {
+              "wall_ms": 260.00229199416935,
+              "thread_cpu_ms": 231.1818750000003
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 291.17508395574987,
+              "thread_cpu_ms": 263.64695800000027
+            },
+            "projection": {
+              "wall_ms": 10.906582931056619,
+              "thread_cpu_ms": 9.777500000000217
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 1.7425830010324717,
+              "thread_cpu_ms": 1.7438339999999997
+            },
+            "baseline": {
+              "wall_ms": 246.26337504014373,
+              "thread_cpu_ms": 225.23516700000013
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "projection"
+            ],
+            "baseline": {
+              "wall_ms": 247.66491597983986,
+              "thread_cpu_ms": 224.83170799999996
+            },
+            "projection": {
+              "wall_ms": 10.232624947093427,
+              "thread_cpu_ms": 9.783624999999851
+            }
+          },
+          {
+            "order": [
+              "projection",
+              "baseline"
+            ],
+            "projection": {
+              "wall_ms": 1.8307080026715994,
+              "thread_cpu_ms": 1.773041999999947
+            },
+            "baseline": {
+              "wall_ms": 244.67641592491418,
+              "thread_cpu_ms": 227.98095799999984
+            }
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 247.664916,
+              "p95": 291.175084,
+              "p99": 291.175084,
+              "max": 291.175084
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 225.235167,
+              "p95": 263.646958,
+              "p99": 263.646958,
+              "max": 263.646958
+            }
+          },
+          "projection": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 2.209083,
+              "p95": 11.505333,
+              "p99": 11.505333,
+              "max": 11.505333
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 1.910042,
+              "p95": 10.145875,
+              "p99": 10.145875,
+              "max": 10.145875
+            }
+          }
+        }
+      }
+    },
+    "finished_at": "2026-10-21T00:36:35.795520+00:00",
+    "scope": "Source comparison. Each case128retained events/plansteps, pending0/1/32;10alternating pairs. Real disposable migration then read-only calls; no Kernel/service/network/activation/backup or GC operation. Full old API payload identity/mutability contracts not replaced. Native delivery projection is implemented; separate concurrency, isolation, retry and adapter contracts are required. No mixed-load or deployed acceptance. Uncontrolled host, not live causal or acceptance evidence.",
+    "source_sha256": "e44f96bba8580d39c1c754583e40c46e11c673e75b1f556fdb6be9ac9ed1f723"
+  },
+  "prototype_prior_stage": {
+    "contract": "pa.pending-progress-projection-prototype/v1",
+    "started_at": "2026-10-21T00:25:22.408304+00:00",
+    "scenarios": {
+      "0": {
+        "retained_events": 128,
+        "plan_steps": 128,
+        "pending_payloads": 0,
+        "transport_projection_equal": true,
+        "copy_counts_outside_timing": {
+          "baseline": {
+            "full_dispatch_snapshots": 0,
+            "retained_event_models_copied": 0
+          },
+          "prototype": {
+            "full_dispatch_snapshots": 0,
+            "copied_payload_models": 0
+          }
+        },
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.04050007555633783,
+              "thread_cpu_ms": 0.03866700000010326
+            },
+            "prototype": {
+              "wall_ms": 0.04037492908537388,
+              "thread_cpu_ms": 0.04270899999991862
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.033958000130951405,
+              "thread_cpu_ms": 0.03449999999993736
+            },
+            "baseline": {
+              "wall_ms": 0.031166011467576027,
+              "thread_cpu_ms": 0.03158400000002892
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.03724999260157347,
+              "thread_cpu_ms": 0.037667000000185524
+            },
+            "prototype": {
+              "wall_ms": 0.031083007343113422,
+              "thread_cpu_ms": 0.03145800000003973
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.030583934858441353,
+              "thread_cpu_ms": 0.031083999999959033
+            },
+            "baseline": {
+              "wall_ms": 0.030415947549045086,
+              "thread_cpu_ms": 0.030792000000001707
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.03070791717618704,
+              "thread_cpu_ms": 0.031167000000165146
+            },
+            "prototype": {
+              "wall_ms": 0.03104202914983034,
+              "thread_cpu_ms": 0.03145800000003973
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.03079103771597147,
+              "thread_cpu_ms": 0.031083999999959033
+            },
+            "baseline": {
+              "wall_ms": 0.03658304922282696,
+              "thread_cpu_ms": 0.03700000000006476
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.030957977287471294,
+              "thread_cpu_ms": 0.031375000000055664
+            },
+            "prototype": {
+              "wall_ms": 0.030082999728620052,
+              "thread_cpu_ms": 0.030457999999899954
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.030249939300119877,
+              "thread_cpu_ms": 0.030750000000079325
+            },
+            "baseline": {
+              "wall_ms": 0.029499991796910763,
+              "thread_cpu_ms": 0.02995900000013485
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.03583298530429602,
+              "thread_cpu_ms": 0.03633299999994399
+            },
+            "prototype": {
+              "wall_ms": 0.030916999094188213,
+              "thread_cpu_ms": 0.031292000000071596
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.030374969355762005,
+              "thread_cpu_ms": 0.030792000000001707
+            },
+            "baseline": {
+              "wall_ms": 0.029708025977015495,
+              "thread_cpu_ms": 0.030125000000102986
+            }
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 0.030958,
+              "p95": 0.0405,
+              "p99": 0.0405,
+              "max": 0.0405
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 0.031375,
+              "p95": 0.038667,
+              "p99": 0.038667,
+              "max": 0.038667
+            }
+          },
+          "prototype": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 0.030791,
+              "p95": 0.040375,
+              "p99": 0.040375,
+              "max": 0.040375
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 0.031084,
+              "p95": 0.042709,
+              "p99": 0.042709,
+              "max": 0.042709
+            }
+          }
+        }
+      },
+      "1": {
+        "retained_events": 128,
+        "plan_steps": 128,
+        "pending_payloads": 1,
+        "transport_projection_equal": true,
+        "copy_counts_outside_timing": {
+          "baseline": {
+            "full_dispatch_snapshots": 1,
+            "retained_event_models_copied": 128
+          },
+          "prototype": {
+            "full_dispatch_snapshots": 0,
+            "copied_payload_models": 1
+          }
+        },
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 6.3582080183550715,
+              "thread_cpu_ms": 6.171209000000122
+            },
+            "prototype": {
+              "wall_ms": 0.36091695073992014,
+              "thread_cpu_ms": 0.3617080000000161
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.07970805745571852,
+              "thread_cpu_ms": 0.07991700000009594
+            },
+            "baseline": {
+              "wall_ms": 6.2072089640423656,
+              "thread_cpu_ms": 5.672582999999953
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 7.252375013194978,
+              "thread_cpu_ms": 6.933375000000019
+            },
+            "prototype": {
+              "wall_ms": 0.6200829520821571,
+              "thread_cpu_ms": 0.4928749999999482
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.23787491954863071,
+              "thread_cpu_ms": 0.22470799999996238
+            },
+            "baseline": {
+              "wall_ms": 9.962707990780473,
+              "thread_cpu_ms": 7.42404200000002
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 8.608666015788913,
+              "thread_cpu_ms": 8.303708000000132
+            },
+            "prototype": {
+              "wall_ms": 0.34854107070714235,
+              "thread_cpu_ms": 0.34912499999983915
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.09416695684194565,
+              "thread_cpu_ms": 0.09437499999997989
+            },
+            "baseline": {
+              "wall_ms": 7.720916997641325,
+              "thread_cpu_ms": 7.174250000000049
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 9.621749981306493,
+              "thread_cpu_ms": 9.266750000000101
+            },
+            "prototype": {
+              "wall_ms": 0.3772909985855222,
+              "thread_cpu_ms": 0.3778340000000213
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.10554096661508083,
+              "thread_cpu_ms": 0.10566699999992046
+            },
+            "baseline": {
+              "wall_ms": 8.096209028735757,
+              "thread_cpu_ms": 7.538333999999924
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 12.271000072360039,
+              "thread_cpu_ms": 11.733957999999989
+            },
+            "prototype": {
+              "wall_ms": 0.40741602424532175,
+              "thread_cpu_ms": 0.40850000000003384
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 0.09829096961766481,
+              "thread_cpu_ms": 0.09862499999990781
+            },
+            "baseline": {
+              "wall_ms": 7.514833007007837,
+              "thread_cpu_ms": 7.266999999999912
+            }
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 7.720917,
+              "p95": 12.271,
+              "p99": 12.271,
+              "max": 12.271
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 7.267,
+              "p95": 11.733958,
+              "p99": 11.733958,
+              "max": 11.733958
+            }
+          },
+          "prototype": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 0.237875,
+              "p95": 0.620083,
+              "p99": 0.620083,
+              "max": 0.620083
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 0.224708,
+              "p95": 0.492875,
+              "p99": 0.492875,
+              "max": 0.492875
+            }
+          }
+        }
+      },
+      "32": {
+        "retained_events": 128,
+        "plan_steps": 128,
+        "pending_payloads": 32,
+        "transport_projection_equal": true,
+        "copy_counts_outside_timing": {
+          "baseline": {
+            "full_dispatch_snapshots": 32,
+            "retained_event_models_copied": 4096
+          },
+          "prototype": {
+            "full_dispatch_snapshots": 0,
+            "copied_payload_models": 32
+          }
+        },
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 261.8348749820143,
+              "thread_cpu_ms": 240.80695899999992
+            },
+            "prototype": {
+              "wall_ms": 9.774375008419156,
+              "thread_cpu_ms": 9.401041999999915
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.741875079460442,
+              "thread_cpu_ms": 1.7426249999998866
+            },
+            "baseline": {
+              "wall_ms": 264.8958748904988,
+              "thread_cpu_ms": 243.13433299999997
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 416.4941670605913,
+              "thread_cpu_ms": 306.5123330000001
+            },
+            "prototype": {
+              "wall_ms": 11.281125014647841,
+              "thread_cpu_ms": 10.179791000000105
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 2.007083036005497,
+              "thread_cpu_ms": 1.9900000000001583
+            },
+            "baseline": {
+              "wall_ms": 282.1952090598643,
+              "thread_cpu_ms": 220.28041600000003
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 323.39966599829495,
+              "thread_cpu_ms": 255.8730419999997
+            },
+            "prototype": {
+              "wall_ms": 15.100124990567565,
+              "thread_cpu_ms": 11.414416000000038
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.8598750466480851,
+              "thread_cpu_ms": 1.8526250000001632
+            },
+            "baseline": {
+              "wall_ms": 286.72254201956093,
+              "thread_cpu_ms": 228.38987499999996
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 250.0260000815615,
+              "thread_cpu_ms": 236.41004200000015
+            },
+            "prototype": {
+              "wall_ms": 9.436209104023874,
+              "thread_cpu_ms": 8.951125000000282
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.6829590313136578,
+              "thread_cpu_ms": 1.6546659999994162
+            },
+            "baseline": {
+              "wall_ms": 202.79291702900082,
+              "thread_cpu_ms": 194.40374999999932
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 308.4342919755727,
+              "thread_cpu_ms": 294.3724169999999
+            },
+            "prototype": {
+              "wall_ms": 13.475249987095594,
+              "thread_cpu_ms": 9.035082999999666
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.7733329441398382,
+              "thread_cpu_ms": 1.6311249999994004
+            },
+            "baseline": {
+              "wall_ms": 275.6419579964131,
+              "thread_cpu_ms": 241.0022500000002
+            }
+          }
+        ],
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 275.641958,
+              "p95": 416.494167,
+              "p99": 416.494167,
+              "max": 416.494167
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 240.806959,
+              "p95": 306.512333,
+              "p99": 306.512333,
+              "max": 306.512333
+            }
+          },
+          "prototype": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 2.007083,
+              "p95": 15.100125,
+              "p99": 15.100125,
+              "max": 15.100125
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 1.99,
+              "p95": 11.414416,
+              "p99": 11.414416,
+              "max": 11.414416
+            }
+          }
+        }
+      }
+    },
+    "finished_at": "2026-10-21T00:25:26.238034+00:00",
+    "scope": "Prototype only, application unchanged. Each case128retained events/plansteps, pending0/1/32;10alternating pairs. Real disposable migration then read-only calls; no Kernel/service/network/activation/backup or GC operation. Full old API payload identity/mutability contracts not replaced. Need safe native-only transport projection and consumer/callback/concurrent publication/retry/adapters contracts before implementation. Uncontrolled host, not live causal or acceptance evidence.",
+    "source_sha256": "0b4b0e75cea011f033d199a2d5288d05dd612ebaf8403d64e54f6b401b2d7c28"
+  },
+  "initial_contract_failure": {
+    "stage": "initial disposable delivery projection contracts",
+    "command": "uv run pytest -q tests/test_progress_delivery_projection.py",
+    "exit_code": 1,
+    "cases": 11,
+    "failed": 10,
+    "passed": 1,
+    "error": "Migration reconciliation expected6progress events/2heartbeats but observed3/1. Both dispatch fixtures incorrectly reused payload.dispatch_id, so persistence keyed both sets to the original dispatch. The migration guard correctly rejected this invalid synthetic data before projection assertions ran.",
+    "correction": "Update the second dispatch payload and heartbeat dispatch/origin identities to match their parent record. No production implementation change or migration guard change.",
+    "full_stdout": "Provider tool output retained; no standalone full log captured for this initial invocation.",
+    "earlier_sandbox_attempt": "uv cache read denied before pytest; rerun through provider-approved escalation. No workaround or service mutation."
+  },
+  "guarded_contracts": {
+    "started_at": "2026-10-21T00:36:14.302497+00:00",
+    "finished_at": "2026-10-21T00:36:22.876491+00:00",
+    "exit_code": 0,
+    "wall_ms": 8573.201333987527,
+    "cases": [
+      "tests/test_progress_delivery_projection.py",
+      "tests/test_dispatch_progress.py",
+      "tests/test_progress_sequence_allocation.py",
+      "tests/test_dispatch_sqlite.py::test_failed_put_keeps_all_indexes_on_the_committed_record",
+      "tests/test_dispatch_sqlite.py::test_control_receipt_fault_boundary_replays_only_committed_result"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded disposable roots",
+    "log_sha256": "70bd93f29a65727e5cc0991aac37bb59b433f6d667824853361ad51e262a38ec"
+  },
+  "passed": 44,
+  "new_cases": 11,
+  "existing_cases": 33,
+  "source_hashes": {
+    "src/pa/execution/dispatch.py": "e44f96bba8580d39c1c754583e40c46e11c673e75b1f556fdb6be9ac9ed1f723",
+    "src/pa/execution/progress.py": "e9b7bcdd74320f1e2da5c8d09dc54255fe942e15f01825f66f58e899ff600434",
+    "tests/test_progress_delivery_projection.py": "eea8b025b6a3055455effa332e9bf2048650b2638a483dcbb0dbccd5f62f5961",
+    "scripts/benchmark_progress_pending_projection.py": "286214e75cc69eea824845e552ad514889e8e7cbd33cd46d204866627780997d"
+  },
+  "problem": {
+    "id": "76249876-1d5c-423e-a63d-8d6bd06a6827",
+    "revision": 1,
+    "hash": "e0a2f93b7d06fedc3c9294e4d8afbbd05f18c6832ad411401619ebe1241e9db0",
+    "delivery": "pending at report response"
+  },
+  "confirmed": "pending_progress deep-copies the entire retained DispatchRecord per pending event and heartbeat; _send consumes only three routing fields plus the detached payload. Confirmed unnecessary source work, not sole causal attribution for historical slow operations.",
+  "implementation": "Native ProgressService uses an immutable three-field routing target and one deep detached copy per pending payload under the committed index lock. Preserve last committed publication during an in-flight writer; acknowledgements remain on the existing durable writer path. Same sort by occurred_at,sequence,idempotency_key; complete selected payload fields, origin filter and heartbeat inclusion unchanged. Legacy pending_progress continues returning independent complete DispatchRecords with payload aliases inside each snapshot. Custom adapter/subclass/instance/class reader overrides retain their original path.",
+  "concurrency": "A gated disposable commit proves reads return the previous committed publication without waiting for the writer transaction; after commit publication the acknowledged event disappears. Separate before/after commit failures preserve corresponding visible and reloaded outcomes. An in-flight acknowledgement may therefore allow an additional idempotent delivery attempt from the previous committed publication; durable receipt and acknowledgment behavior is unchanged.",
+  "structural_measurement": "Baseline full snapshot calls and copied retained event counts observed outside timing. Native zero-full-snapshot behavior is enforced by a snapshot-denial contract; detached payload model count follows one-per-selected-payload source construction and returned payload parity, not a deep allocator trace.",
+  "write_observation": "Benchmark asserts SQLite total_changes and DispatchStore write counters remain unchanged after migration throughout comparison; physical disk/WAL bytes and object allocation bytes were not measured.",
+  "limits": [
+    "Ten alternating pairs per pending0/1/32 scenario,128retained protected final events and128plan steps; shared macbook host, warm source calls. At10samples nearest-rankp95/p99 both equal max. No endpoint/mixed/deployed acceptance inference.",
+    "Zero-pending wall median regression0.030208\u21920.031000ms and CPU max0.038667\u21920.043792ms retained, alongside all raw samples and earlier prototype tails.",
+    "Remaining O(all retained dispatch/events) scanning, detached selected payload CPU, durable ingestion/acknowledgment serialization, commit/index publication and physical disk amplification remain open.",
+    "No payload drop, durable write path, order/idempotency rule, warning/deadline/default change, production workload/fault, install/restart, backup or GC action."
+  ],
+  "prior_integration": {
+    "contract": "pa.exact-integration-proof/v1",
+    "observed_at": "2026-10-21T00:35:09.455590+00:00",
+    "PR": 557,
+    "watch": "f3549e2c-fb21-4c91-a6d7-ab6dd1ff03b6",
+    "head": "b8cd5055e195da12f2d4f231474878d87b117015",
+    "merge": "e1091451cff4fcc897c127abbb8a8bfb4aaeeb39",
+    "merged_at": "2026-10-21T00:35:04Z",
+    "source_tree": "34869aba019e1dbfd4b092cc42ef7ca7024b52d0",
+    "merge_tree": "34869aba019e1dbfd4b092cc42ef7ca7024b52d0",
+    "parents": [
+      "0f05a3eae21eda2dfaa229105500b962cd8514f8",
+      "b8cd5055e195da12f2d4f231474878d87b117015"
+    ],
+    "tree_equal": true,
+    "independent_review_sha256": "3981b4f0f801e26f88bc5af1df7cc4fb60c18dac34ab32e0796200a964bc5785",
+    "stable_supervisor_sha256": "ecfabc636f19cac08a68e95d248f44361b8970603d8779392618601e91cdd09f",
+    "main_ci_runs": [
+      {
+        "id": 39522197504,
+        "status": "queued",
+        "conclusion": null,
+        "attempt": 1
+      }
+    ],
+    "deployed": false,
+    "restarted": false,
+    "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+  },
+  "prior_main_ci_status": "PR557 mainCI39522197504 had smokeSUCCESS and four shards running at00:37 read; final state separately required. HeadCI39521762193 all5SUCCESS attempt1. Initial snapshot/history failures retained.",
+  "resolution": "open"
+}

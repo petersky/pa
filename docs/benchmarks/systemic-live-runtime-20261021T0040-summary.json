@@ -1,0 +1,256 @@
+{
+  "contract": "pa.performance-live-inventory/v1",
+  "published_at": "2026-10-21T00:41:48.197455+00:00",
+  "source": {
+    "host": "macbook",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "paths": [
+      "/api/status",
+      "/api/runtime",
+      "/api/status"
+    ],
+    "observed_range_utc": [
+      "2026-10-21T00:40:16.961973+00:00",
+      "2026-10-21T00:40:17.776792+00:00"
+    ],
+    "raw_artifact": "docs/benchmarks/systemic-live-runtime-20261021T0040.json",
+    "raw_sha256": "5406221b6522fd396111f39d70b03a5e006dba709b5aaa79d6cb6d616d83ffa1",
+    "fresh_log_files_scanned": false,
+    "peer_log_files_scanned": false
+  },
+  "build": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+    "package_identity": "sha256:5917d4f0801bfca2f7d4dbbe3f577e316e2dbc2dd502868514579fe7aae25b9e",
+    "pid": 78321,
+    "startup_id": "a50c19a2-c3d0-4b62-bc2a-063a41ed6f4c"
+  },
+  "install_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+  "before_after_build_equal": true,
+  "full_module_composition_attested": false,
+  "reads": [
+    {
+      "path": "/api/status",
+      "wall_ms": 437.459
+    },
+    {
+      "path": "/api/runtime",
+      "wall_ms": 237.577
+    },
+    {
+      "path": "/api/status",
+      "wall_ms": 137.374
+    }
+  ],
+  "operation_count": 121,
+  "route_count": 47,
+  "slow_or_failed_names": 49,
+  "families": {
+    "acp": {
+      "names": 4,
+      "submitted": 4794,
+      "slow_calls": 8,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 944.185
+    },
+    "agent": {
+      "names": 7,
+      "submitted": 965,
+      "slow_calls": 26,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 3471.226
+    },
+    "browser": {
+      "names": 3,
+      "submitted": 3,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 3.657
+    },
+    "conversation": {
+      "names": 2,
+      "submitted": 2394,
+      "slow_calls": 23,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1260.14
+    },
+    "dispatch": {
+      "names": 7,
+      "submitted": 7944,
+      "slow_calls": 51,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 2409.797
+    },
+    "filesystem": {
+      "names": 1,
+      "submitted": 555,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 849.705
+    },
+    "fleet": {
+      "names": 13,
+      "submitted": 8426,
+      "slow_calls": 43,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 10845.37
+    },
+    "goal": {
+      "names": 1,
+      "submitted": 60,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 133.251
+    },
+    "health": {
+      "names": 1,
+      "submitted": 398,
+      "slow_calls": 8,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 2647.507
+    },
+    "http": {
+      "names": 5,
+      "submitted": 7542,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 7042.999
+    },
+    "maintenance": {
+      "names": 1,
+      "submitted": 1,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 89448.049
+    },
+    "notifications": {
+      "names": 2,
+      "submitted": 294,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 303.207
+    },
+    "pr_supervisor": {
+      "names": 5,
+      "submitted": 6469,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 391.58
+    },
+    "preferences": {
+      "names": 1,
+      "submitted": 40,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 252.724
+    },
+    "progress": {
+      "names": 7,
+      "submitted": 1905,
+      "slow_calls": 61,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1531.849
+    },
+    "provider": {
+      "names": 3,
+      "submitted": 6,
+      "slow_calls": 6,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 3220.149
+    },
+    "reconciliation": {
+      "names": 6,
+      "submitted": 3827,
+      "slow_calls": 7,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 718.356
+    },
+    "selection": {
+      "names": 4,
+      "submitted": 15,
+      "slow_calls": 0,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 306.633
+    },
+    "sqlite": {
+      "names": 31,
+      "submitted": 38695,
+      "slow_calls": 119,
+      "failed": 3,
+      "timed_out": 0,
+      "process_max_ms": 12553.332
+    },
+    "startup": {
+      "names": 3,
+      "submitted": 3,
+      "slow_calls": 1,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 1074.573
+    },
+    "sync": {
+      "names": 10,
+      "submitted": 182622,
+      "slow_calls": 44,
+      "failed": 0,
+      "timed_out": 0,
+      "process_max_ms": 6114.915
+    },
+    "workspace": {
+      "names": 4,
+      "submitted": 16,
+      "slow_calls": 6,
+      "failed": 1,
+      "timed_out": 0,
+      "process_max_ms": 8318.475
+    }
+  },
+  "request_count": 11014,
+  "request_bytes": 85613067,
+  "request_process_max_ms": 64253.391,
+  "route_p95_at_least500ms": 15,
+  "excluded_sse": 4,
+  "event_loop": {
+    "samples": 600,
+    "latest_lag_ms": 20.0,
+    "p95_lag_ms": 68.0,
+    "max_lag_ms": 2411.0,
+    "pre_window_lag_ms": {
+      "samples": 0,
+      "max": null,
+      "p50": null,
+      "p95": null,
+      "p99": null
+    }
+  },
+  "csv_artifacts": {
+    "docs/benchmarks/systemic-live-runtime-20261021T0040-operations.csv": "72f5a56916fe3369ca6d3e10c2d1a4ef82c6ee92088c36edf987267243933548",
+    "docs/benchmarks/systemic-live-runtime-20261021T0040-routes.csv": "48e9037e71f673d0f74a7de42ff89e5890971536638d86a6355b1eb99cbf1faf"
+  },
+  "limits": [
+    "All returned operation/route metrics, including every phase distribution, are retained. Counts/maxima are cumulative process values; quantiles/window maxima are bounded rolling windows. Slow/failed/timeout counts overlap, not distinct incidents. No pooled family percentiles constructed.",
+    "Fifteen route windows have p95>=500ms; some samples are small. This does not exercise every valid route branch or external dependency.",
+    "Status/runtime/status individual times437.459/237.577/137.374ms are not acceptance distributions. Ordinary traffic, normal background tasks and recent disposable tests share an uncontrolled host.",
+    "Installed/loaded metadata nowc02e differs from the prior228 observation. Git ancestry includes PR555 but module composition, specific path activation and paired deployed performance acceptance are not attested. PR558 is newer source only; root performed no activation.",
+    "No fresh log/peer files or retention coverage were established, no service workload/backup/GC action occurred; original log-backed inventory, peer/log-loss gaps, thresholds and ordinary independent acceptance remain required."
+  ],
+  "whole_card_accepted": false
+}
