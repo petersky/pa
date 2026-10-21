@@ -1,3 +1,15 @@
+# Main CI snapshot fixture follow-up — 2026-10-21
+
+All **631 findings and 109 concerns remain open**; all 631 prior ledger rows remain unchanged. [Exact CI/fixture evidence](benchmarks/systemic-snapshot-ci-followup-20261021.json) retains main run39519841572 at integrated0f05: **four successful jobs and failed test0**, where the existing live-metadata snapshot test exceeded its unchanged200ms deadline. LinuxPython3.14.8 recorded a262ms test-task callback and a stack waiting in `asyncio.to_thread`. The failed shard also reports987 passed, one skipped and533 passed subtests; those are not a clean suite. Passing headCI39519314450 does not erase this failure.
+
+The fixture used an open-ended `MagicMock` request, which invented a manager, dispatch service and card store even though the intended metadata case has no optional dispatch service or linked cards. It now supplies an explicit empty service map, real scalar manager flags and a bounded empty card lookup. It retains actual snapshot/configuration/presentation/cards construction, a cold default executor for each unittest,4096 pending transcript entries, no transcript read/flush, and **both200ms wait and latency assertions**. Timeout notes now retain setup, request wait and loop CPU. No application code or production deadline changed.
+
+Ten alternating pairs on the shared macbook host pass in both versions: request p50/p95/max9.441/12.134/12.134ms baseline versus2.091/3.062/3.062ms explicit context; worker CPU p506.290→0.594ms. Separately instrumented invocations count31→0 child-mock constructions. One initial instrumented baseline callback118ms warning is retained, outside paired summaries and including cold first-use work. At10 samples,p95/p99 both equal the maximum. This confirms avoidable fixture work, **not the sole cause of the CI262ms tail or deployed responsiveness**. Scheduling/CPU/GC attribution remains open.
+
+**61 guarded disposable contracts pass**: the corrected existing case plus60 related session-read regressions. Twenty timed and two instrumented benchmark invocations repeat one case and are not additional unique tests. Workspace construction was denied and stores guarded to disposable roots. No same-head CI retry, warning suppression, timeout increase, install/restart, service workload, backup or GC action occurred. Existing a5dd source review remains preparation evidence only; all original criteria, failed stages, receipt recovery and ordinary independent acceptance remain open.
+
+## Preserved prior inventory and evidence
+
 # Loaded228 numeric runtime inventory — 2026-10-21 00:01 UTC
 
 All **631 findings and 109 concerns remain open**. All 613 prior rows remain unchanged; 12 operations and six route groups are newly represented. The [complete numeric API snapshot](benchmarks/systemic-live-runtime-20261021T0001.json), [source and interpretation summary](benchmarks/systemic-live-runtime-20261021T0001-summary.json), [all 170 operations and phase metrics](benchmarks/systemic-live-runtime-20261021T0001-operations.csv) and [all 75 route groups](benchmarks/systemic-live-runtime-20261021T0001-routes.csv) preserve every returned family and distribution.

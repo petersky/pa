@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import time
 import unittest
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from pa.domain.models import AgentSession
 from pa.instance.agent_session import AgentSessionRuntime
@@ -17,6 +18,9 @@ class _ContendedTranscriptStore:
     def list_transcript_events_before(self, *args, **kwargs):
         self.reads += 1
         time.sleep(1)
+        return []
+
+    def list_cards_for_session(self, session_id):
         return []
 
 
@@ -38,7 +42,17 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         runtime._pending_permissions = []
         runtime._transcript_buffer = [object()] * 4096
         runtime.store = _ContendedTranscriptStore()
-        request = MagicMock()
+        manager = SimpleNamespace(quiescing=False, startup_complete=True)
+
+        def require_service(name):
+            self.assertEqual(name, "instance_agent")
+            return manager
+
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
+            ctx=SimpleNamespace(
+                require_service=require_service, services={}, store=runtime.store,
+            ),
+        )))
 
         started_cpu = time.thread_time()
         started = time.monotonic()
@@ -54,10 +68,18 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             configured = time.monotonic()
-            snapshot = await asyncio.wait_for(
-                get_session_snapshot(request, runtime.session_id),
-                timeout=0.2,
-            )
+            try:
+                snapshot = await asyncio.wait_for(
+                    get_session_snapshot(request, runtime.session_id),
+                    timeout=0.2,
+                )
+            except TimeoutError as exc:
+                exc.add_note(
+                    f"setup={configured - started:.6f}s "
+                    f"request_wait={time.monotonic() - configured:.6f}s "
+                    f"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s"
+                )
+                raise
             request_finished = time.monotonic()
         elapsed = time.monotonic() - started
 
