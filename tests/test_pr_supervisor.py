@@ -3918,6 +3918,50 @@ class PRSupervisorTriagePageTests(unittest.TestCase):
         reset_store()
         self.tmp.cleanup()
 
+    def test_current_health_separates_history_faults_and_stale_observations(self) -> None:
+        app = Kernel.boot(settings=self.settings).build_app()
+        with patch("pa.modules.pr_supervisor.PRSupervisor.start", new=AsyncMock()), TestClient(app) as client:
+            service = app.state.ctx.require_service("pr_supervisor")
+            store = service.store
+            store.increment_metric("poll_errors", 3613)
+            service._capability = GitHubCapability(
+                instance_id=self.settings.instance_id, state="ready", authenticated=True,
+            )
+            health = {"state": "ready", "worker": {"alive": True, "stale": False,
+                      "last_progress_at": utcnow().isoformat(), "stale_after_seconds": 90}}
+            with patch.object(service, "authority_health", return_value=health):
+                page = client.get("/pull-requests").text
+                self.assertIn("Current supervisor health · healthy", page)
+                current, history = page.split('id="operations-history"', 1)
+                self.assertNotIn("3613", current)
+                self.assertIn("3613", history)
+                self.assertIn("since this supervisor data store was initialized through", history)
+                self.assertIn("freshness window 120 seconds", current)
+                for number, (watch_id, status, realm) in enumerate([
+                    ("active-error", PRWatchStatus.BLOCKED, "default"),
+                    ("terminal-error", PRWatchStatus.MERGED, "default"),
+                    ("other-realm", PRWatchStatus.BLOCKED, "other"),
+                ], start=1):
+                    store.upsert_watch(PRWatch(id=watch_id, repository="owner/repo", pr_number=number,
+                        pr_url="https://example.test/1", status=status, realm_id=realm,
+                        last_error="fetch failed"))
+                page = client.get("/pull-requests").text
+                self.assertIn("Current supervisor health · degraded", page)
+                self.assertIn("1 active watch errors", page)
+                error_page = client.get("/pull-requests?view=errors").text
+                self.assertIn('id="watch-active-error"', error_page)
+                self.assertNotIn('id="watch-terminal-error"', error_page)
+                self.assertNotIn('id="watch-other-realm"', error_page)
+                store.upsert_watch(store.get_watch("active-error").model_copy(update={"last_error": None}))
+                service._capability = service._capability.model_copy(
+                    update={"checked_at": utcnow() - timedelta(minutes=10)})
+                self.assertIn("Current supervisor health · stale", client.get("/pull-requests").text)
+                service._capability = service._capability.model_copy(update={"checked_at": utcnow()})
+                health["state"] = "authority_unverified"
+                self.assertIn("Current supervisor health · unknown", client.get("/pull-requests").text)
+                health["state"] = "authority_unreachable"
+                self.assertIn("Current supervisor health · degraded", client.get("/pull-requests").text)
+
     def test_production_history_is_bounded_and_terminal_copy_is_truthful(self) -> None:
         app = Kernel.boot(settings=self.settings).build_app()
         with TestClient(app) as client:

@@ -609,11 +609,8 @@ class FleetPageLazyLoadTests(unittest.TestCase):
 
                 for label in (
                     "Machine",
-                    "Health &amp; sync",
-                    "Software",
-                    "Authentication",
+                    "Current state",
                     "Activity",
-                    "Capacity",
                     "Freshness",
                     "Actions",
                 ):
@@ -629,12 +626,16 @@ class FleetPageLazyLoadTests(unittest.TestCase):
                 self.assertIn("content: attr(data-label);", style)
                 self.assertNotIn(".fleet-instance-table td:nth-child", style)
 
-                self.assertIn(
-                    'aria-label="1/4 slots used · 9 prompts queued"', page.text
-                )
-                self.assertIn(">1/4 slots used · 9 prompts queued</strong>", page.text)
-                self.assertNotIn(">10/4", page.text)
-                self.assertNotIn(">1/4 used</strong>", page.text)
+                self.assertIn("Capacity and connection details", page.text)
+                self.assertIn("1/4 slots used · 9 prompts queued", page.text)
+                self.assertIn('"queued_prompts": 9', page.text)
+                self.assertIn('"consumed": 1', page.text)
+                self.assertIn('"limit": 4', page.text)
+                self.assertIn('data-fleet-observation-counts', page.text)
+                self.assertIn('id="pa-fleet-detail" hidden', page.text)
+                self.assertIn('<summary>Topology and routes</summary>', page.text)
+                self.assertLess(page.text.index('id="pa-fleet-instances"'),
+                                page.text.index('id="pa-fleet-topology-view"'))
 
                 dimension = client.get(
                     "/api/fleet/overview/dimension",
@@ -1771,8 +1772,8 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn("Object.assign({}, previous", script)
         self.assertIn("Health check failed", script)
         self.assertIn("performance.measure", script)
-        self.assertIn('" · Pending: " + pending.join', script)
-        self.assertIn('" · Failed: " + failed.join', script)
+        self.assertNotIn('" · Pending: " + pending.join', script)
+        self.assertNotIn('" · Failed: " + failed.join', script)
         self.assertIn('(node.name || node.id) + " / " + dimension', script)
         self.assertIn('id="pa-fleet-refresh"', template)
 
@@ -1850,10 +1851,10 @@ class FleetUpdateUiTests(unittest.TestCase):
         self.assertIn(".fleet-edge-hit", style)
         self.assertIn(".fleet-selected", style)
         self.assertIn("@media (prefers-reduced-motion: reduce)", style)
-        self.assertNotIn("min-width: 44rem", style)
+        self.assertIn(".fleet-instance-table { min-width: 44rem; }", style)
         self.assertLess(
-            template.index('id="pa-fleet-edge-list"'),
             template.index('id="pa-fleet-detail"'),
+            template.index('id="pa-fleet-edge-list"'),
         )
 
 
