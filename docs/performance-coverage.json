@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T00:04:46.242697+00:00",
-  "completion": "OPEN;631 rows/109 concerns. All613 prior rows unchanged. Loaded228 supported process snapshot retains all170 operations/all75 route groups,87 slow-or-failed names;12 operations and6 routes newly represented.2597 slow/932 failed/883 timeout counters overlap, not distinct incidents. PR555 exact integration is separate from 5/5 green head and main CI, and separate unverified activation. No whole-PA acceptance, new worker or service workload.",
+  "as_of": "2026-10-21T00:30:30.280248+00:00",
+  "completion": "OPEN;632 rows/110 concerns, all631 prior rows unchanged. PR557 initial CI has4SUCCESS/1FAILURE at fixed-sleep managed history mismatch. Test-only completion synchronization and gated response pass8existing contracts; corrected-head CI and all original product performance/activation/independent acceptance remain required.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -151,7 +151,9 @@
     "docs/benchmarks/systemic-live-runtime-20261021T0001-summary.json",
     "docs/benchmarks/systemic-live-runtime-20261021T0001-operations.csv",
     "docs/benchmarks/systemic-live-runtime-20261021T0001-routes.csv",
-    "docs/benchmarks/systemic-gc-publication-audit-20261020.json"
+    "docs/benchmarks/systemic-gc-publication-audit-20261020.json",
+    "docs/benchmarks/systemic-snapshot-ci-followup-20261021.json",
+    "docs/benchmarks/systemic-history-ci-followup-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -211919,6 +211921,24 @@
       "resolution": "open",
       "next_actor": "Same systemic session and ordinary independent acceptance scheduler",
       "next_action": "Retain this operation/route in endpoint/background branch inventory; attribute queue/service/lock/CPU/disk/call amplification, implement measured repairs and separately verify activation and representative acceptance."
+    },
+    {
+      "id": "concern:history-ci-navigation-readiness",
+      "kind": "concern",
+      "finding": "Managed history test sends asynchronous clicks after fixed sleeps without observing completion",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "missing_fixture_readiness_confirmed_ci_tail_cause_unverified",
+      "artifact": "docs/benchmarks/systemic-history-ci-followup-20261021.json",
+      "sha256": "570e36e2a8eebf80ad2f374287abbbb0423375e9053e075085cd95cf57390599",
+      "cause": "The test sequenced two asynchronous navigations with fixed100ms sleeps and no completion observation. The log does not identify which navigation was pending or establish the sole underlying scheduling cause.",
+      "implemented": "Test-only click_and_wait registers htmx:afterSettle before one click and resolves only when location and live root match the destination. Its2.5s bound matches existing back/forward restoration loops. A disposable server response gate proves a received request does not complete navigation until its response is released; the next click follows completed Workshop swap. No click retry. Existing privacy/cache/controller/back/forward/quota/draft assertions retained.",
+      "merged": [],
+      "deployed": "Application unchanged; no install/restart",
+      "retested": "Eight history contracts pass including managed Chromium and a gated response; exact corrected-head CI pending",
+      "resolution": "open",
+      "next_actor": "Same systemic session; ordinary independent acceptance unchanged",
+      "next_action": "Require exact-head terminal green CI, stable supervisor and independent GitHub validation before integration; retain initial mismatch and all original performance/deployment/backup/peer criteria."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -260951,7 +260971,20 @@
       "followup_artifact": "docs/benchmarks/systemic-catalog-hash-reads-20261019.json",
       "ci39336082802": "Original200ms snapshot failure/callback223ms retained; one same-head retry latestgreen, causeunverified.",
       "problem": "d2781497 revision2",
-      "resolution": "open"
+      "resolution": "open",
+      "ci556_followup": {
+        "artifact": "docs/benchmarks/systemic-snapshot-ci-followup-20261021.json",
+        "sha256": "8089e4e93fd6c024976fe9e313a5df347c86b0af910085dbce7091ad6c0b085f",
+        "main_ci": 39519841572,
+        "original_outcome": "4SUCCESS/1FAILURE attempt1, retained; no rerun",
+        "fixture_only": true,
+        "application_source_unchanged": true,
+        "tests": "61guarded existing contracts pass; benchmark repeat invocations overlap",
+        "cause_certainty": "Avoidable mock branch confirmed; CI262ms cause remains unverified",
+        "integration": "Ready source review pending",
+        "activation": "No product change, install or restart",
+        "resolution": "open"
+      }
     },
     "runtime:dispatch.cancel_check": {
       "runtime_20261021T0001": {
@@ -262352,6 +262385,22 @@
       "implemented": false,
       "resolution": "open",
       "next_action": "Complete remaining pin/publication caller and lock-order audit; establish current realm/epoch/ack/head/reachability guards for execute/resume before metadata batching. No live GC/deletion authority."
+    },
+    "concern:snapshot-responsiveness-mock-setup-budget": {
+      "ci556_followup": {
+        "artifact": "docs/benchmarks/systemic-snapshot-ci-followup-20261021.json",
+        "sha256": "8089e4e93fd6c024976fe9e313a5df347c86b0af910085dbce7091ad6c0b085f",
+        "main_ci": 39519841572,
+        "original_outcome": "4SUCCESS/1FAILURE attempt1, retained; no rerun",
+        "fixture_only": true,
+        "application_source_unchanged": true,
+        "tests": "61guarded existing contracts pass; benchmark repeat invocations overlap",
+        "cause_certainty": "Avoidable mock branch confirmed; CI262ms cause remains unverified",
+        "integration": "Ready source review pending",
+        "activation": "No product change, install or restart",
+        "resolution": "open"
+      },
+      "resolution": "open"
     }
   },
   "f7e8_loaded_stage": {
@@ -264496,6 +264545,25 @@
       "live-20261021T0001:routes:/api/sync/convergence"
     ],
     "stage": "One passive numeric snapshot, not fresh log inventory or causal performance acceptance.",
+    "resolution": "open"
+  },
+  "snapshot_ci556_fixture_followup": {
+    "artifact": "docs/benchmarks/systemic-snapshot-ci-followup-20261021.json",
+    "sha256": "8089e4e93fd6c024976fe9e313a5df347c86b0af910085dbce7091ad6c0b085f",
+    "main_ci": 39519841572,
+    "original_outcome": "4SUCCESS/1FAILURE attempt1, retained; no rerun",
+    "fixture_only": true,
+    "application_source_unchanged": true,
+    "tests": "61guarded existing contracts pass; benchmark repeat invocations overlap",
+    "cause_certainty": "Avoidable mock branch confirmed; CI262ms cause remains unverified",
+    "integration": "Ready source review pending",
+    "activation": "No product change, install or restart",
+    "resolution": "open"
+  },
+  "history_ci557_readiness_followup": {
+    "artifact": "docs/benchmarks/systemic-history-ci-followup-20261021.json",
+    "sha256": "570e36e2a8eebf80ad2f374287abbbb0423375e9053e075085cd95cf57390599",
+    "cause_classification": "missing_fixture_readiness_confirmed_ci_tail_cause_unverified",
     "resolution": "open"
   }
 }

@@ -1,0 +1,38 @@
+{
+  "contract": "pa.history-ci-followup/v1",
+  "observed_at": "2026-10-21T00:30:30.280248+00:00",
+  "original_ci": {
+    "run": 39520959163,
+    "attempt": 1,
+    "head": "072c784b33062e00d20c34707fb7ae179f2e5448",
+    "jobs": "four SUCCESS, test1 FAILURE",
+    "test": "tests/test_history_policy.py::HistoryPolicyManagedBrowserTests::test_live_navigation_is_private_and_back_restores_by_clean_reload",
+    "error": "Expected /fleet, observed /workshop at line450",
+    "shard": {
+      "passed": 988,
+      "failed": 1,
+      "subtests_passed": 168,
+      "wall_seconds": 111.99
+    },
+    "log_sha256": "2e2ded2e99e523d1578a46260f818fc128f52eea82c5633568b43bd6806cbd82"
+  },
+  "problem": {
+    "id": "95fd649d-eff4-4bed-b5f0-28fc95ff7039",
+    "revision": 1,
+    "hash": "a608c2c9f1b31904affbba799615e9c417a134bba610dbbb3f7fdfbc4581441c"
+  },
+  "confirmed": "The test sequenced two asynchronous navigations with fixed100ms sleeps and no completion observation. The log does not identify which navigation was pending or establish the sole underlying scheduling cause.",
+  "implementation": "Test-only click_and_wait registers htmx:afterSettle before one click and resolves only when location and live root match the destination. Its2.5s bound matches existing back/forward restoration loops. A disposable server response gate proves a received request does not complete navigation until its response is released; the next click follows completed Workshop swap. No click retry. Existing privacy/cache/controller/back/forward/quota/draft assertions retained.",
+  "validation": {
+    "command": "uv run pytest -q tests/test_history_policy.py",
+    "exit_code": 0,
+    "passed": 8,
+    "scope": "Existing history tests including managed Chromium and Node policy contracts. One browser case additionally exercises a gated pending response. Tool returned8passed indicators and exit0; exact run start/wall timing was not persisted, no timing distribution claimed."
+  },
+  "limits": [
+    "Application source, deadlines and slow-operation thresholds unchanged. This is correctness synchronization, not a navigation latency acceptance scenario.",
+    "No original-head CI retry; corrected-head CI required. Original failure remains open.",
+    "No PA service workload, install/restart, backup/GC action or production fault injection. Disposable HTTP/browser fixture only."
+  ],
+  "resolution": "open"
+}

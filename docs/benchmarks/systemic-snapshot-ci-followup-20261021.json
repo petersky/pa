@@ -1,0 +1,387 @@
+{
+  "contract": "pa.snapshot-ci-followup/v1",
+  "published_at": "2026-10-21T00:21:13.638895+00:00",
+  "ci": {
+    "run": 39519841572,
+    "attempt": 1,
+    "head": "0f05a3eae21eda2dfaa229105500b962cd8514f8",
+    "source": "https://github.com/petersky/pa/actions/runs/39519841572",
+    "jobs": {
+      "smoke": "SUCCESS",
+      "test0": "FAILURE",
+      "test1": "SUCCESS",
+      "test2": "SUCCESS",
+      "test3": "SUCCESS"
+    },
+    "failed_test": "tests/test_agent_snapshot_responsiveness.py::AgentSnapshotResponsivenessTests::test_live_metadata_does_not_flush_or_read_large_transcript",
+    "error": "TimeoutError at unchanged0.2s asyncio.wait_for deadline; stack waiting in _offload/asyncio.to_thread",
+    "captured_test_callback_ms": 262,
+    "python": "Linux3.14.8",
+    "failed_shard_summary": {
+      "passed": 987,
+      "failed": 1,
+      "skipped": 1,
+      "subtests_passed": 533,
+      "wall_seconds": 154.36
+    },
+    "full_log_sha256": "6f5d9ab517d52654433a39fd158e1abbe568886408e7ddd717734a9d49a82b35",
+    "full_log_local": ".dev/pr556-main-ci-failure.log",
+    "prior_passing_head_ci": 39519314450,
+    "status": "Original failure retained. No same-head retry requested; isolated success is not CI stability or acceptance."
+  },
+  "problem": {
+    "id": "aaa48314-0dd5-4c88-9a2e-1f79417d83a6",
+    "revision": 2,
+    "hash": "7caf37682d6e26711bf372cff4eedbb41f50ff0f244434f777b248401f125fc3",
+    "delivery": "pending at report response",
+    "note": "Revision2 corrects provisional numeric transcription fragments in revision1 reproduction. Raw samples and separate numeric evidence were unchanged."
+  },
+  "benchmark": {
+    "contract": "pa.snapshot-fixture-comparison/v1",
+    "baseline_revision": "0f05a3eae21eda2dfaa229105500b962cd8514f8",
+    "baseline_test_sha256": "8edfa797288884de478a7de73edede0d41115715dc96518e4cb6858bd701e238",
+    "source_test_sha256": "40c096d0ac346bb7f35f6a49db5810f19763957870555342230e8d55526f3095",
+    "mock_counts_outside_timing_comparison": {
+      "baseline": {
+        "mock_child_constructions": 31,
+        "worker_wall_ms": 98.52604102343321,
+        "worker_thread_cpu_ms": 94.100167,
+        "request_wall_ms": 107.85754106473178,
+        "case_wall_ms": 130.12358301784843,
+        "passed": true
+      },
+      "explicit_context": {
+        "mock_child_constructions": 0,
+        "worker_wall_ms": 0.6699580699205399,
+        "worker_thread_cpu_ms": 0.671916,
+        "request_wall_ms": 2.8161669615656137,
+        "case_wall_ms": 10.222707991488278,
+        "passed": true
+      }
+    },
+    "pairs": [
+      {
+        "order": [
+          "baseline",
+          "explicit_context"
+        ],
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 9.30154207162559,
+          "worker_thread_cpu_ms": 7.412459,
+          "request_wall_ms": 12.134292046539485,
+          "case_wall_ms": 18.458290956914425,
+          "passed": true
+        },
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 1.0163330007344484,
+          "worker_thread_cpu_ms": 0.677708,
+          "request_wall_ms": 2.9515420319512486,
+          "case_wall_ms": 9.042708086781204,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "explicit_context",
+          "baseline"
+        ],
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.6169999251142144,
+          "worker_thread_cpu_ms": 0.6106250000000001,
+          "request_wall_ms": 2.091083093546331,
+          "case_wall_ms": 8.125207968987525,
+          "passed": true
+        },
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.556874956004322,
+          "worker_thread_cpu_ms": 6.3142499999999995,
+          "request_wall_ms": 10.100875049829483,
+          "case_wall_ms": 16.398833016864955,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "baseline",
+          "explicit_context"
+        ],
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.243624957278371,
+          "worker_thread_cpu_ms": 6.018375000000001,
+          "request_wall_ms": 9.440624970011413,
+          "case_wall_ms": 15.67787490785122,
+          "passed": true
+        },
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.5826249253004789,
+          "worker_thread_cpu_ms": 0.5847500000000001,
+          "request_wall_ms": 1.9036250887438655,
+          "case_wall_ms": 7.694666041061282,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "explicit_context",
+          "baseline"
+        ],
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.5685000214725733,
+          "worker_thread_cpu_ms": 0.569959,
+          "request_wall_ms": 1.9876660080626607,
+          "case_wall_ms": 8.070582989603281,
+          "passed": true
+        },
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.598584004677832,
+          "worker_thread_cpu_ms": 6.493833,
+          "request_wall_ms": 9.056124952621758,
+          "case_wall_ms": 15.267000067979097,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "baseline",
+          "explicit_context"
+        ],
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.828291923739016,
+          "worker_thread_cpu_ms": 6.458500000000001,
+          "request_wall_ms": 9.560041944496334,
+          "case_wall_ms": 16.23416703660041,
+          "passed": true
+        },
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.5922500276938081,
+          "worker_thread_cpu_ms": 0.593542,
+          "request_wall_ms": 1.9503339426591992,
+          "case_wall_ms": 8.812541025690734,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "explicit_context",
+          "baseline"
+        ],
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.4740840522572398,
+          "worker_thread_cpu_ms": 0.47600000000000003,
+          "request_wall_ms": 1.5984580386430025,
+          "case_wall_ms": 7.6757080387324095,
+          "passed": true
+        },
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.4627089304849505,
+          "worker_thread_cpu_ms": 6.2197499999999994,
+          "request_wall_ms": 9.149167104624212,
+          "case_wall_ms": 15.784458024427295,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "baseline",
+          "explicit_context"
+        ],
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.495291017927229,
+          "worker_thread_cpu_ms": 6.290291,
+          "request_wall_ms": 9.215625002980232,
+          "case_wall_ms": 15.791125013493001,
+          "passed": true
+        },
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.8780000498518348,
+          "worker_thread_cpu_ms": 0.751333,
+          "request_wall_ms": 3.0624999199062586,
+          "case_wall_ms": 13.401250005699694,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "explicit_context",
+          "baseline"
+        ],
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.6778331007808447,
+          "worker_thread_cpu_ms": 0.6676249999999999,
+          "request_wall_ms": 2.184833982028067,
+          "case_wall_ms": 8.267792058177292,
+          "passed": true
+        },
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.27579097636044,
+          "worker_thread_cpu_ms": 6.151083,
+          "request_wall_ms": 9.492042008787394,
+          "case_wall_ms": 15.387874911539257,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "baseline",
+          "explicit_context"
+        ],
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.4744590781629086,
+          "worker_thread_cpu_ms": 6.102584,
+          "request_wall_ms": 9.273958043195307,
+          "case_wall_ms": 15.998625080101192,
+          "passed": true
+        },
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.608875066973269,
+          "worker_thread_cpu_ms": 0.610666,
+          "request_wall_ms": 2.2195830242708325,
+          "case_wall_ms": 8.292415994219482,
+          "passed": true
+        }
+      },
+      {
+        "order": [
+          "explicit_context",
+          "baseline"
+        ],
+        "explicit_context": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 0.5753339501097798,
+          "worker_thread_cpu_ms": 0.5575840000000001,
+          "request_wall_ms": 2.154042012989521,
+          "case_wall_ms": 7.877542055211961,
+          "passed": true
+        },
+        "baseline": {
+          "mock_child_constructions": 0,
+          "worker_wall_ms": 6.6860419465228915,
+          "worker_thread_cpu_ms": 6.4005,
+          "request_wall_ms": 9.462249930948019,
+          "case_wall_ms": 16.71179197728634,
+          "passed": true
+        }
+      }
+    ],
+    "latency_ms": {
+      "baseline": {
+        "request_wall_ms": {
+          "samples": 10,
+          "p50": 9.440625,
+          "p95": 12.134292,
+          "p99": 12.134292,
+          "max": 12.134292
+        },
+        "worker_wall_ms": {
+          "samples": 10,
+          "p50": 6.495291,
+          "p95": 9.301542,
+          "p99": 9.301542,
+          "max": 9.301542
+        },
+        "worker_thread_cpu_ms": {
+          "samples": 10,
+          "p50": 6.290291,
+          "p95": 7.412459,
+          "p99": 7.412459,
+          "max": 7.412459
+        },
+        "case_wall_ms": {
+          "samples": 10,
+          "p50": 15.791125,
+          "p95": 18.458291,
+          "p99": 18.458291,
+          "max": 18.458291
+        }
+      },
+      "explicit_context": {
+        "request_wall_ms": {
+          "samples": 10,
+          "p50": 2.091083,
+          "p95": 3.0625,
+          "p99": 3.0625,
+          "max": 3.0625
+        },
+        "worker_wall_ms": {
+          "samples": 10,
+          "p50": 0.59225,
+          "p95": 1.016333,
+          "p99": 1.016333,
+          "max": 1.016333
+        },
+        "worker_thread_cpu_ms": {
+          "samples": 10,
+          "p50": 0.593542,
+          "p95": 0.751333,
+          "p99": 0.751333,
+          "max": 0.751333
+        },
+        "case_wall_ms": {
+          "samples": 10,
+          "p50": 8.125208,
+          "p95": 13.40125,
+          "p99": 13.40125,
+          "max": 13.40125
+        }
+      }
+    },
+    "scope": "10 alternating warm-host pairs; each unittest retains its own cold default executor and unchanged200ms wait/assertion. Child construction counted separately. No PA store/workspace construction, Kernel, service workload, activation or performance acceptance. Uncontrolled host; success does not resolve CI scheduling/CPU cause."
+  },
+  "benchmark_completed_at_from_file_mtime": "2026-10-21T00:18:54.791953+00:00",
+  "benchmark_sampling_start": "Not separately recorded; no exact per-call UTC range claimed.",
+  "tests": {
+    "passed": 61,
+    "new_tests": 0,
+    "corrected_fixture_cases": 1,
+    "other_existing_cases": 60,
+    "final_guarded_run": {
+      "started_at": "2026-10-21T00:19:24.592091+00:00",
+      "finished_at": "2026-10-21T00:19:37.335455+00:00",
+      "wall_ms": 12742.904,
+      "exit_code": 0,
+      "cases": [
+        "tests/test_agent_snapshot_responsiveness.py",
+        "tests/test_session_list_snapshot.py",
+        "tests/test_session_ux_regressions.py::test_session_listing_limits_hydration_and_retains_selection",
+        "tests/test_session_ux_regressions.py::test_sidebar_does_not_read_transcript_bodies_or_build_diagnostics",
+        "tests/test_agent_sidebar_freshness.py",
+        "tests/test_systemic_latency.py::test_batched_sidebar_links_and_lifecycle_keep_exact_membership_and_bounds"
+      ],
+      "workspace_construction": "denied",
+      "store_construction": "guarded to disposable root",
+      "log_sha256": "1c296f620adc850f9ed88d75c847738d725f60f1de7a89002059c40eff811d9a"
+    },
+    "overlap": "Twenty timed and two instrumented benchmark invocations repeat the same responsiveness case; they are not22additional unique tests."
+  },
+  "implementation": "Test-only explicit empty optional-service map, scalar manager state and bounded fake card lookup replace a dynamic MagicMock request graph. Preserve real snapshot/presentation/config/cards construction, own cold default executor,0.2s wait and assertion,4096pending events/no transcript read/no flush. Add bounded timeout setup/wait/loopCPU notes; application source unchanged.",
+  "confirmed": "Old fixture constructs31child mocks vs0. Timed paired worker CPU and wall differences show avoidable fixture work. Original262ms CI callback contribution remains unverified.",
+  "warning_observation": "One initial outside-timing instrumented baseline test emitted118ms asyncio callback warning. Counts beyond this observed warning were not instrumented; no zero-warning claim. This initial case is outside paired timing summaries and includes cold first-use work.",
+  "limits": [
+    "10paired samples/implementation; nearest-rankp95/p99 both equal max. Shared macbook host, not controlled CI hardware.",
+    "Partial source/fixture diagnosis, not proof of sole cause of the200ms CI timeout or deployed endpoint latency. Thread startup/scheduling/CPU/GC contributions remain open.",
+    "No deadline/threshold/warning changes, product code change, production state, service workload, activation, backup or GC action."
+  ],
+  "related_retained_failures": [
+    "PR550 mainCI39336082802 initial metadata failure; d2781497",
+    "PR552 initialCI39339742396 unchanged metadata failure; ca41cac0"
+  ],
+  "resolution": "open"
+}
