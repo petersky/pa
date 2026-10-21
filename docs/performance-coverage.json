@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T01:12:07.878363+00:00",
-  "completion": "OPEN;635rows/113concerns, all634prior rows unchanged. Dispatch native SQL numeric observation source35contracts pass, median instrumentation overhead retained. PR559 exact source integration/head+mainCI5SUCCESS is separate from deployment/retest. All original latency/startup/drain/durability/peer/log/backup/receipt/activation/independent acceptance requirements remain.",
+  "as_of": "2026-10-21T01:30:36.488133+00:00",
+  "completion": "OPEN;636rows/114concerns, all635prior source rows unchanged. Previously durable636thack-copyrow now fullypublished with source repair/52contracts/paired evidence and retained1000deliveredp95regression. ExactPR560 integrated/head+mainCI green is not deployment/wholeacceptance. Every original latency/startup/drain/durability/order/admission/lease/receipt/sync/peer/log/backup/GC/rollout/independent acceptance criterion remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -160,7 +160,8 @@
     "docs/benchmarks/systemic-live-runtime-20261021T0040-operations.csv",
     "docs/benchmarks/systemic-live-runtime-20261021T0040-routes.csv",
     "docs/benchmarks/systemic-heartbeat-copy-20261021.json",
-    "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json"
+    "docs/benchmarks/systemic-dispatch-sql-observation-20261021.json",
+    "docs/benchmarks/systemic-progress-ack-copy-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -212000,6 +212001,247 @@
       "next_actor": "Same systemic session; ordinary independent acceptance scheduler unchanged",
       "next_action": "Integrate exact stable-green ready PR, separately scope activation/current gates, then attribute actual worker SQL/commit versus remaining publication/serialization/nativewait/CPU costs; preserve all original inventory and acceptance actions.",
       "remaining_observation_gaps": "Bootstrap executescript and rollback duration are not observed by shared adapter; successful busy/CPU/I/O/scheduling unpartitioned. This adds execute/fetch/commit/error coverage, not complete native SQLite coverage."
+    },
+    {
+      "id": "concern:progress-ack-retained-copy",
+      "kind": "concern",
+      "family": "progress",
+      "finding": "Delivery success/failure acknowledgment copies all untouched retained history before a second full postcommit publication; absent-key no-op also copies history",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_copy_amplification_live_share_unverified",
+      "measurement": {
+        "source": "45347da4092eb5b67d48fa00ab8b21fbfe0dd6e4",
+        "started_at": "2026-10-21T01:20:58.418804+00:00",
+        "cases": {
+          "delivered": {
+            "snapshot_copies": [
+              {
+                "events": 128,
+                "plan_steps": 128
+              },
+              {
+                "events": 128,
+                "plan_steps": 128
+              }
+            ],
+            "wall_ms": 48.12316701281816,
+            "thread_cpu_ms": 46.489000000000004,
+            "observation": {
+              "queue_wait_ms": 0.0,
+              "python_lock_wait_ms": 0.006998889148235321,
+              "python_lock_hold_ms": 54.108833079226315,
+              "python_lock_release_ms": 0.005041016265749931,
+              "outer_lock_hold_ms": 47.59720806032419,
+              "outer_lock_release_ms": 0.0012080417945981026,
+              "lock_depth": 0,
+              "lock_events_total": 2,
+              "lock_events": [
+                {
+                  "name": "unnamed",
+                  "started_at_monotonic": 619876.627078,
+                  "acquired_at_monotonic": 619876.627081,
+                  "release_started_at_monotonic": 619876.633588,
+                  "finished_at_monotonic": 619876.633592,
+                  "wait_ms": 0.003,
+                  "held_before_release_ms": 6.508,
+                  "release_and_reschedule_ms": 0.004,
+                  "hold_ms": 6.512,
+                  "nesting_depth": 1
+                },
+                {
+                  "name": "unnamed",
+                  "started_at_monotonic": 619876.586047,
+                  "acquired_at_monotonic": 619876.586051,
+                  "release_started_at_monotonic": 619876.633647,
+                  "finished_at_monotonic": 619876.633648,
+                  "wait_ms": 0.004,
+                  "held_before_release_ms": 47.596,
+                  "release_and_reschedule_ms": 0.001,
+                  "hold_ms": 47.597,
+                  "nesting_depth": 0
+                }
+              ],
+              "worker_started_at": 0.0,
+              "worker_finished_at": 0.0,
+              "thread_cpu_ms": 0.0,
+              "sqlite_statement_ms": 0.17454102635383606,
+              "sqlite_commit_ms": 0.45620789751410484,
+              "sqlite_calls": 3,
+              "sqlite_rows": 0,
+              "sqlite_aggregate_items": 0,
+              "sqlite_aggregate_bytes": 0,
+              "sqlite_busy_failures": 0,
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "durable_rows_written": 2
+          },
+          "failed": {
+            "snapshot_copies": [
+              {
+                "events": 128,
+                "plan_steps": 128
+              },
+              {
+                "events": 128,
+                "plan_steps": 128
+              }
+            ],
+            "wall_ms": 16.355249914340675,
+            "thread_cpu_ms": 15.332707999999862,
+            "observation": {
+              "queue_wait_ms": 0.0,
+              "python_lock_wait_ms": 0.003208988346159458,
+              "python_lock_hold_ms": 22.64474902767688,
+              "python_lock_release_ms": 0.001374981366097927,
+              "outer_lock_hold_ms": 15.880540944635868,
+              "outer_lock_release_ms": 0.00033294782042503357,
+              "lock_depth": 0,
+              "lock_events_total": 2,
+              "lock_events": [
+                {
+                  "name": "unnamed",
+                  "started_at_monotonic": 619876.70548,
+                  "acquired_at_monotonic": 619876.705482,
+                  "release_started_at_monotonic": 619876.712245,
+                  "finished_at_monotonic": 619876.712246,
+                  "wait_ms": 0.002,
+                  "held_before_release_ms": 6.763,
+                  "release_and_reschedule_ms": 0.001,
+                  "hold_ms": 6.764,
+                  "nesting_depth": 1
+                },
+                {
+                  "name": "unnamed",
+                  "started_at_monotonic": 619876.696397,
+                  "acquired_at_monotonic": 619876.696399,
+                  "release_started_at_monotonic": 619876.712279,
+                  "finished_at_monotonic": 619876.71228,
+                  "wait_ms": 0.002,
+                  "held_before_release_ms": 15.88,
+                  "release_and_reschedule_ms": 0.0,
+                  "hold_ms": 15.881,
+                  "nesting_depth": 0
+                }
+              ],
+              "worker_started_at": 0.0,
+              "worker_finished_at": 0.0,
+              "thread_cpu_ms": 0.0,
+              "sqlite_statement_ms": 0.1700419234111905,
+              "sqlite_commit_ms": 0.4655420780181885,
+              "sqlite_calls": 3,
+              "sqlite_rows": 0,
+              "sqlite_aggregate_items": 0,
+              "sqlite_aggregate_bytes": 0,
+              "sqlite_busy_failures": 0,
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "durable_rows_written": 2
+          },
+          "absent": {
+            "snapshot_copies": [
+              {
+                "events": 128,
+                "plan_steps": 128
+              }
+            ],
+            "wall_ms": 4.41108294762671,
+            "thread_cpu_ms": 4.249750000000052,
+            "observation": {
+              "queue_wait_ms": 0.0,
+              "python_lock_wait_ms": 0.0020420411601662636,
+              "python_lock_hold_ms": 4.204500000923872,
+              "python_lock_release_ms": 0.0012920936569571495,
+              "outer_lock_hold_ms": 4.204500000923872,
+              "outer_lock_release_ms": 0.0012920936569571495,
+              "lock_depth": 0,
+              "lock_events_total": 1,
+              "lock_events": [
+                {
+                  "name": "unnamed",
+                  "started_at_monotonic": 619876.76754,
+                  "acquired_at_monotonic": 619876.767542,
+                  "release_started_at_monotonic": 619876.771745,
+                  "finished_at_monotonic": 619876.771746,
+                  "wait_ms": 0.002,
+                  "held_before_release_ms": 4.203,
+                  "release_and_reschedule_ms": 0.001,
+                  "hold_ms": 4.205,
+                  "nesting_depth": 0
+                }
+              ],
+              "worker_started_at": 0.0,
+              "worker_finished_at": 0.0,
+              "thread_cpu_ms": 0.0,
+              "sqlite_statement_ms": 0.0,
+              "sqlite_commit_ms": 0.0,
+              "sqlite_calls": 0,
+              "sqlite_rows": 0,
+              "sqlite_aggregate_items": 0,
+              "sqlite_aggregate_bytes": 0,
+              "sqlite_busy_failures": 0,
+              "file_lock_wait_ms": 0.0,
+              "file_lock_hold_ms": 0.0,
+              "file_lock_release_ms": 0.0,
+              "atomic_write_calls": 0,
+              "atomic_write_bytes": 0,
+              "file_fsync_calls": 0,
+              "file_fsync_ms": 0.0,
+              "directory_fsync_calls": 0,
+              "directory_fsync_ms": 0.0,
+              "fsync_failures": 0,
+              "atomic_replace_ms": 0.0,
+              "object_get_calls": 0,
+              "object_get_bytes": 0,
+              "object_get_ms": 0.0,
+              "object_put_files": 0,
+              "object_put_bytes": 0
+            },
+            "durable_rows_written": 0
+          }
+        },
+        "finished_at": "2026-10-21T01:20:58.683045+00:00",
+        "limits": "One source observation each of delivered/failed/absent ack with128retained events/plansteps. No before/after comparison or acceptance percentiles. Snapshot count confirms retained copies, not sole live cause or complete CPU attribution; SQL captured by new sourceobserver. No production Store, Kernel, network, activation, backup/GC, unsafe fault, source edit or receipt replay. Next repair needs detachment/fault/concurrency/order/durability contracts."
+      },
+      "problem": "8a0571af-4cfa-465b-87c2-417c95db271c revision1",
+      "implemented": "Only new _progress_delivery_copy helper and two ack methods differ in applicationAST. Locate first matching event before heartbeat; shallow-copy selected scalar-mutated payload and its event list/provisional record. Absent key returns before any copy/transaction. Existing scalar mutation, NORMAL transaction, SQL persistence, before/aftercommit exception/publication behavior and full deep committed publication remain unchanged.",
+      "merged": [],
+      "deployed": "Source only, no root activation or deployed path attestation/retest",
+      "retested": "52guarded contracts17new/35existing;180paired calls over9shapes preserve fullstate/logicalwrites/SQLitechanges;1000deliveredtailregression retained.",
+      "resolution": "open",
+      "next_actor": "Same original systemic session/card; no new worker/verifier",
+      "next_action": "Integrate through exact stable-green/independent readyPR gates; separately scope concrete current package/dependency/ownership/quiescence/backup/activation gates and representative acceptance. Retain one deeppublication/coreJSON/nativeCPU/disk/SQL/sync/startup/provider/peer/log/backup/GC/receipt/CI residual actions.",
+      "artifact": "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
+      "sha256": "bcb89445f1aa204ff0472b40be5fd57465b0281f88d67626d5f0a2b99c76f91b"
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -299004,6 +299246,132 @@
         "deployment": "Source integrated only; no installed-path retest;1000history tail regression retained"
       },
       "resolution": "open"
+    },
+    "concern:dispatch-native-sql-observation": {
+      "pr560_integration": {
+        "head": "77d72a22ec019503f426de783cb664e19e76c296",
+        "merge": "45347da4092eb5b67d48fa00ab8b21fbfe0dd6e4",
+        "tree": "9bac0d46ca840caa27812f207fbdeed33db53ef1",
+        "watch": "2a03ac5d-6220-4a85-8ecc-bb4004fe57f5",
+        "stable_observations": 13,
+        "head_ci": 39526037395,
+        "head_ci_attempt": 2,
+        "main_ci": 39526683011,
+        "main_ci_attempt": 1,
+        "checks": "5latestSUCCESS each; originalheadfailure retained separately",
+        "deployed": false,
+        "resolution": "open"
+      }
+    },
+    "concern:ci542-responsive-request-budget": {
+      "pr560_recurrence": {
+        "observed_at": "2026-10-21T01:18:49.025552+00:00",
+        "row_id": "concern:ci542-responsive-request-budget",
+        "current_head": "77d72a22ec019503f426de783cb664e19e76c296",
+        "failed_run": 39526037395,
+        "failed_attempt": 1,
+        "failed_job": 118980781478,
+        "attempt1_jobs": [
+          {
+            "id": 118980781192,
+            "name": "smoke",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 118980781478,
+            "name": "test (3)",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "id": 118980781502,
+            "name": "test (2)",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 118980781555,
+            "name": "test (0)",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 118980781602,
+            "name": "test (1)",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ],
+        "failed_assertion_ms": 263.5711590000085,
+        "unchanged_budget_ms": 100,
+        "logged_callback_ms": 256,
+        "failed_summary": "1failed,992passed,1skipped,133subtests;140.77s",
+        "log_sha256": "dbf9c30009d99ef23254fbee8a9739cdd3df10d8dedf420346b2fafa419d13a4",
+        "isolated_original_class": {
+          "started_at": "2026-10-21T01:16:41.254459+00:00",
+          "finished_at": "2026-10-21T01:16:46.808026+00:00",
+          "exit_code": 0,
+          "wall_ms": 5552.465416956693,
+          "cases": [
+            "tests/test_async_responsiveness.py::RequestPathResponsivenessTests"
+          ],
+          "workspace_construction": "denied",
+          "store_construction": "guarded disposable roots",
+          "log_sha256": "99db33d5c94c6f7da021687c7391181685cc33299c5435b1c861e2db3be3ec87"
+        },
+        "initial_application_identical_head": {
+          "head": "08c337dbb700b34b21e7230ae3a205dd7beb6444",
+          "run": 39525955658,
+          "attempt": 1,
+          "all5success": true
+        },
+        "problem": "891da3c7-b2bc-438a-ac9b-060f23bcbafd revision1",
+        "retry": "One bounded same-head failed-job retry requested, outcome pending at this checkpoint; not failure erasure or cause attribution.",
+        "source_change": "None in failure path/test; RequestPathResponsiveness uses SimpleNamespace mock context, no DispatchStore connection. All timing/debug assertions remain unchanged.",
+        "cause": "Native CPU/GC/debug overhead/host scheduling cause unverified; recurrence of existing open ci542 finding197.911ms/191ms callback.",
+        "resolution": "open"
+      },
+      "final_head_ci": {
+        "observed_at": "2026-10-21T01:23:52.508485+00:00",
+        "run": 39526037395,
+        "head": "77d72a22ec019503f426de783cb664e19e76c296",
+        "attempt": 2,
+        "latest_five_success": true,
+        "jobs": [
+          {
+            "id": 118982009854,
+            "name": "test (3)",
+            "conclusion": "success"
+          },
+          {
+            "id": 118982011037,
+            "name": "smoke",
+            "conclusion": "success"
+          },
+          {
+            "id": 118982011207,
+            "name": "test (0)",
+            "conclusion": "success"
+          },
+          {
+            "id": 118982051839,
+            "name": "test (1)",
+            "conclusion": "success"
+          },
+          {
+            "id": 118982057614,
+            "name": "test (2)",
+            "conclusion": "success"
+          }
+        ],
+        "original_failure_preserved": ".dev/pr560-ci-followup.json",
+        "no_test_or_debug_or_budget_change": true,
+        "resolution": "open"
+      },
+      "report": "891da3c7-b2bc-438a-ac9b-060f23bcbafd",
+      "cause": "Unverified native CPU/GC/debug/scheduling; one samehead failedjob retry passing does not resolve the263.571ms/256mscallback recurrence. No threshold/debug/assertion changes.",
+      "resolution": "open"
     }
   },
   "f7e8_loaded_stage": {
@@ -301215,6 +301583,15 @@
     "source_tests": 35,
     "integration": "Pending ready review/exact gates",
     "deployment": "No activation or live-path retest",
+    "resolution": "open"
+  },
+  "progress_ack_copy_stage": {
+    "artifact": "docs/benchmarks/systemic-progress-ack-copy-20261021.json",
+    "sha256": "bcb89445f1aa204ff0472b40be5fd57465b0281f88d67626d5f0a2b99c76f91b",
+    "contracts": "52guarded17new/35existing",
+    "comparison": "9shapes\u00d710pairs; all samples retained;1000deliveredp95/maxregression",
+    "integration": "Pending readyPR/exactgates",
+    "deployment": "None; no acceptance",
     "resolution": "open"
   }
 }
