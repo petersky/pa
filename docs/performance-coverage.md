@@ -1,3 +1,37 @@
+# Progress acknowledgment copy repair — 2026-10-21
+
+All **636 findings and 114 concerns remain open**; all635prior source rows are unchanged. The acknowledgment finding previously preserved in the durable card report is now folded into the [complete source evidence](benchmarks/systemic-progress-ack-copy-20261021.json), including its original three-call probe and full prior coverage delta. Ten original card attachments remain; the earlier extra attachment was rejected at the ten-attachment boundary and was not resent or claimed attached.
+
+Delivery success/failure used to deep-copy every retained event and plan before changing one payload, then deep-copy again for committed publication. The helper now locates the first matching event or heartbeat, shallow-copies only its scalar-mutated payload and containing event list/provisional record, and returns without copying for absent keys. Existing scalar updates/error sanitization, writer fence, SQL writes, NORMAL transaction, exact before/after-commit fault handling and full deep committed publication remain unchanged. Every other application AST node equals pinned baseline45347da4.
+
+**52 guarded disposable contracts pass:17new and35existing overlapping prior suites.** They cover event/heartbeat success/failure across both commit boundaries, exact exceptions, unchanged earlier publication, reload, deep publication/index/list order, stale nested metadata/plan/receipt isolation, absent-key no-op, readonly fencing and20concurrent delivery/attempt updates. Full snapshots fall2→1for updates and1→0for absent keys; no durable payload is dropped.
+
+Ten alternating pairs per0/128/1,000retained-event+plan shape and delivered/failed/absent action preserve complete models with identical pinned timestamps, core bytes, logical writes and SQLite totalchanges. All180calls and numeric phases are retained. **The1,000event delivered p95/max regresses114.026→138.401ms and CPUmax108.734→136.784ms despite median104.084→57.806ms improvement.** Shared-host outliers remain unclassified; no timing rerun selected a better tail. At10samples,p95/p99 equalmax; shapes are not pooled.
+
+| Retained events / action | Baseline wall p50 / p95 / max ms | Source wall p50 / p95 / max ms |
+|---|---|---|
+|0:delivered|1.170 / 1.691 / 1.691|0.916 / 1.375 / 1.375|
+|0:failed|1.066 / 1.739 / 1.739|0.919 / 1.256 / 1.256|
+|0:absent|0.170 / 0.309 / 0.309|0.023 / 0.032 / 0.032|
+|128:delivered|14.578 / 15.892 / 15.892|8.484 / 9.799 / 9.799|
+|128:failed|14.729 / 15.921 / 15.921|8.384 / 9.264 / 9.264|
+|128:absent|6.434 / 7.779 / 7.779|0.186 / 2.005 / 2.005|
+|1000:delivered|104.084 / 114.026 / 114.026|57.806 / 138.401 / 138.401|
+|1000:failed|109.139 / 191.571 / 191.571|57.272 / 78.328 / 78.328|
+|1000:absent|55.762 / 148.176 / 148.176|1.274 / 2.462 / 2.462|
+
+Zero-history update cases target the heartbeat. Counts/core bytes are logical evidence, not physical disk/fsync/serialization attribution. One complete post-commit copy, core JSON and index work remain. Original bootstrap/native wait/CPU/GC scheduling, sync amplification, valid branch/provider/MCP/placement/workspace/startup/drain, peers/log gaps, backup/GC/saved-plan/publication and rollout obligations remain open.
+
+PR560 is integrated45347da4/equal trees with five successful latest head and main checks. Its original263.571ms failure against the unchanged100ms mock responsiveness budget,256ms callback and single same-head retry remain preserved under the existing open ci542 concern. This delayed PR557 notice refers to superseded072chead; fresh GitHub/current native watch confirm correctedb8cd was already merged e109/retiredmerged. No repeat repair/merge/rerun occurred. Latest separately observed installed/loadedc02e/package5917/PID78321/startupa50c predates these repairs. No activation, deployed acceptance, service workload, threshold/default/model/permission change, backup/GC action, queue policy/resend/cancellation or competing worker/verifier occurred.
+
+## PR561 CI admission recurrence and bounded diagnostics
+
+Initialheadca9341b3 CI39527806951attempt1 failed the existing durable-admission200ms assertion at**372.370ms**, with a381ms callback warning;998other cases and182subtests passed in124.60s and the otherfour checks succeeded. The original raw log SHA14620f0b is preserved locally; only [sanitized failure metadata and numeric diagnostic evidence](benchmarks/systemic-pr561-ci-admission-20261021.json) are published because the raw log maycontain fixture secrets. This recurs under existing open ci533; rowcount stays636/114, allrows unchanged. No same-head CI retry occurred.
+
+One guarded original diagnostic passes with both acknowledgment methods and Workspace construction denied, confirming the new ackpaths are unused. Helperprofiles do not reproduce the372ms delay. IsolatedprocessGC185/188ms durations lack originalCI/exacttimedwindowcorrelation and do not establish cause. The existing test now includes bounded calling-threadCPU and first8+longest GCintervals only in its failure message, with callbackcleanup in finally. Both cold admission/body constructions, every original assertion, defaultdebug and200ms threshold are preserved by ASTchecks; no warmup orGCpolicy change. The correctedexistingcase passes withobservercleanup verified. Together with52prior guarded contracts,53distinctselectedcases pass; repeateddiagnostics are not additionalunique tests. Ackapplication source/timing samples are unchanged; correctednewheadCI and originalfullacceptance remain required.
+
+## Preserved prior inventory and evidence
+
 # Dispatch SQLite observation coverage — 2026-10-21
 
 All **635 findings and 113 concerns remain open**, with all634prior rows unchanged. [Complete evidence](benchmarks/systemic-dispatch-sql-observation-20261021.json) confirms DispatchStore used raw SQLite connections: a captured zero SQL count was missing coverage. Both writer and read-only opens now use the existing numeric observer. Every other application AST node is unchanged. Execute/lazy-fetch durations and row counts, actual commit durations and BUSY/LOCKED errors become visible without retaining SQL, parameters or results. Writer30s/readonly5s timeouts, WAL, NORMAL/temporaryFULL durability, admission and receipt fences remain unchanged.

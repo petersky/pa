@@ -1862,6 +1862,8 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
     async def test_card_dispatch_returns_durable_admission_without_peer_wait(
         self,
     ) -> None:
+        import gc
+
         from pa.modules.fleet import RemoteAgentStartBody, start_remote_agent_work
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1958,20 +1960,63 @@ class RemoteOperationsTests(unittest.IsolatedAsyncioTestCase):
                     AsyncMock(return_value={"resolvable": True}),
                 ) as materialize,
             ):
-                started = time.perf_counter()
-                result = await start_remote_agent_work(
-                    request,
-                    "mini-1",
-                    RemoteAgentStartBody(card_id=card.id, provider="codex"),
-                )
-                duplicate = await start_remote_agent_work(
-                    request,
-                    "mini-1",
-                    RemoteAgentStartBody(card_id=card.id, provider="codex"),
-                )
-                admission_elapsed = time.perf_counter() - started
+                gc_started = {}
+                gc_pauses = []
+                gc_collections = 0
+                longest_gc_pause = None
 
-            self.assertLess(admission_elapsed, 0.2)
+                def observe_admission_gc(phase, info):
+                    nonlocal gc_collections, longest_gc_pause
+                    key = (threading.get_ident(), info["generation"])
+                    if phase == "start":
+                        gc_started[key] = time.perf_counter()
+                    elif key in gc_started:
+                        began = gc_started.pop(key)
+                        ended = time.perf_counter()
+                        gc_collections += 1
+                        elapsed_ms = (ended - began) * 1000
+                        if len(gc_pauses) < 8 or longest_gc_pause is None or elapsed_ms > longest_gc_pause["elapsed_ms"]:
+                            pause = {
+                                "generation": key[1], "thread_id": key[0],
+                                "started_at_monotonic": began,
+                                "finished_at_monotonic": ended,
+                                "elapsed_ms": elapsed_ms,
+                            }
+                            if len(gc_pauses) < 8:
+                                gc_pauses.append(pause)
+                            if longest_gc_pause is None or elapsed_ms > longest_gc_pause["elapsed_ms"]:
+                                longest_gc_pause = pause
+
+                gc.callbacks.append(observe_admission_gc)
+                started = time.perf_counter()
+                cpu_started = time.thread_time()
+                try:
+                    result = await start_remote_agent_work(
+                        request,
+                        "mini-1",
+                        RemoteAgentStartBody(card_id=card.id, provider="codex"),
+                    )
+                    duplicate = await start_remote_agent_work(
+                        request,
+                        "mini-1",
+                        RemoteAgentStartBody(card_id=card.id, provider="codex"),
+                    )
+                    finished = time.perf_counter()
+                    admission_elapsed = finished - started
+                    admission_cpu_ms = (time.thread_time() - cpu_started) * 1000
+                finally:
+                    gc.callbacks.remove(observe_admission_gc)
+
+            self.assertLess(admission_elapsed, 0.2, msg={
+                "admission_wall_ms": admission_elapsed * 1000,
+                "calling_thread_cpu_ms": admission_cpu_ms,
+                "started_at_monotonic": started,
+                "finished_at_monotonic": finished,
+                "gc_collections": gc_collections,
+                "first_eight_gc_pauses": gc_pauses,
+                "longest_gc_pause": longest_gc_pause,
+                "scope": "Overlapping GC and calling-thread CPU are diagnostics, not additive cause attribution.",
+            })
             wake_release.set()
             await asyncio.sleep(0.02)
             self.assertTrue(wake_started.is_set())

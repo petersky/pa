@@ -4158,24 +4158,35 @@ class DispatchStore:
             ),
         )
 
+    @staticmethod
+    def _progress_delivery_copy(
+        stored: DispatchRecord, idempotency_key: str
+    ) -> tuple[DispatchRecord, DispatchProgressEventV1 | DispatchProgressHeartbeatV1] | None:
+        # Delivery mutations change scalar payload fields only. Detach the
+        # selected payload and its containing list before mutation; committed
+        # publication still takes a complete deep snapshot in one place.
+        for index, event in enumerate(stored.progress_events):
+            if event.idempotency_key == idempotency_key:
+                payload = event.model_copy()
+                events = list(stored.progress_events)
+                events[index] = payload
+                return stored.model_copy(update={"progress_events": events}), payload
+        heartbeat = stored.progress_heartbeat
+        if heartbeat and heartbeat.idempotency_key == idempotency_key:
+            payload = heartbeat.model_copy()
+            return stored.model_copy(update={"progress_heartbeat": payload}), payload
+        return None
+
     def mark_progress_delivered(self, dispatch_id: str, idempotency_key: str) -> None:
         with measured_lock(self._lock):
             self._require_writer()
             stored = self._records.get(dispatch_id)
             if not stored:
                 return
-            record = self._snapshot(stored)
-            payloads: list[DispatchProgressEventV1 | DispatchProgressHeartbeatV1] = (
-                list(record.progress_events)
-            )
-            if record.progress_heartbeat:
-                payloads.append(record.progress_heartbeat)
-            payload = next(
-                (item for item in payloads if item.idempotency_key == idempotency_key),
-                None,
-            )
-            if not payload:
+            selected = self._progress_delivery_copy(stored, idempotency_key)
+            if selected is None:
                 return
+            record, payload = selected
             payload.delivered_at = datetime.now(UTC)
             payload.delivery_error = None
             record.updated_at = datetime.now(UTC)
@@ -4202,18 +4213,10 @@ class DispatchStore:
             stored = self._records.get(dispatch_id)
             if not stored:
                 return
-            record = self._snapshot(stored)
-            payloads: list[DispatchProgressEventV1 | DispatchProgressHeartbeatV1] = (
-                list(record.progress_events)
-            )
-            if record.progress_heartbeat:
-                payloads.append(record.progress_heartbeat)
-            payload = next(
-                (item for item in payloads if item.idempotency_key == idempotency_key),
-                None,
-            )
-            if not payload:
+            selected = self._progress_delivery_copy(stored, idempotency_key)
+            if selected is None:
                 return
+            record, payload = selected
             payload.delivery_attempts += 1
             payload.delivery_error = sanitize_text(error, limit=240)
             record.updated_at = datetime.now(UTC)
