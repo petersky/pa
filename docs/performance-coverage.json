@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-21T00:41:48.197455+00:00",
-  "completion": "OPEN;633rows/111concerns, all633 rows unchanged. Latest installed/loaded metadata c02e;121operations/47routes,49slow-or-failed names,404slow calls/4failed/0timeouts overlapping process counters;15route p95 windows>=500ms. Outbox source repair is not deployed acceptance. PR557 head+mainCI5SUCCESS each. Every original failure, latency/startup/drain, peer/log/retention, backup, receipt and independent acceptance criterion retained.",
+  "as_of": "2026-10-21T00:56:24.914634+00:00",
+  "completion": "OPEN;634rows/112concerns, all633prior rows unchanged. Heartbeat provisional copy repair has50guarded contracts and exact-equivalent measured candidate;1000casep95regression retained, source integration/deployment/acceptance pending. PR558 head+main5SUCCESS, source integrated only. Every original performance/startup/drain/durability/peer/log/backup/receipt/activation/independent acceptance requirement remains.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -158,7 +158,8 @@
     "docs/benchmarks/systemic-live-runtime-20261021T0040.json",
     "docs/benchmarks/systemic-live-runtime-20261021T0040-summary.json",
     "docs/benchmarks/systemic-live-runtime-20261021T0040-operations.csv",
-    "docs/benchmarks/systemic-live-runtime-20261021T0040-routes.csv"
+    "docs/benchmarks/systemic-live-runtime-20261021T0040-routes.csv",
+    "docs/benchmarks/systemic-heartbeat-copy-20261021.json"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -211962,6 +211963,24 @@
       "resolution": "open",
       "next_actor": "Same systemic session; ordinary independent scheduler retains whole-card acceptance",
       "next_action": "Integrate only through ready reviewed PR, stable supervisor and independently green exact-head gates. Verify actual scoped activation separately, then realistic mixed/background delivery load, remaining scan/write/CPU tails and all original acceptance criteria."
+    },
+    {
+      "id": "concern:heartbeat-provisional-retained-copy",
+      "kind": "concern",
+      "finding": "Heartbeat provisional updates deep-copy untouched retained dispatch history before a second full publication copy",
+      "family": "progress",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_copy_amplification_live_share_unverified_tail_regression_retained",
+      "cause": "Before commit, heartbeat update changes scalar fields, replaces ranges/heartbeat and appends seen keys, without modifying retained event/plan models. Full provisional deepcopy is unnecessary when mutable seen keys detach independently.",
+      "artifact": "docs/benchmarks/systemic-heartbeat-copy-20261021.json",
+      "sha256": "bbc655a438d3fe9260d09c7f57e6622bdeafd047367793eb1baf893c17f168bf",
+      "implemented": "Only provisional heartbeat record cloning changes: shallow record copy plus independent progress_seen_keys list. Heartbeat sanitization returns a new scalar-only payload; range helpers replace fresh nested lists. Late/current branches, receipt/provenance checks, ordering, serialization, NORMAL durable transaction, fault publication/reload and full deep committed publication stay unchanged.",
+      "merged": [],
+      "deployed": "New source not installed/loaded by this session; last observed installed/loaded metadatac02e, no specific-path attestation",
+      "retested": "50guarded contracts pass (6new/44existing); exact-equivalent compiled candidate median improves but1000casep95regresses. No deployed or whole-path acceptance.",
+      "resolution": "open",
+      "next_actor": "Same systemic session; ordinary independent acceptance scheduler unchanged",
+      "next_action": "Integrate via ready PR and exact stable-green/independently validated gates. Preserve regression and remaining publication/serialization/nativeSQL/CPU/commit costs, then separately scope activation and representative acceptance; retain all original ledger actions."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -298939,6 +298958,20 @@
         "resolution": "open"
       },
       "resolution": "open"
+    },
+    "concern:progress-outbox-retained-copy-amplification": {
+      "pr558_integration": {
+        "head": "199167352d668a1dca88a9262b1a7f8847f2b820",
+        "merge": "34b599b77969bcf280b0d9f3bc02b9a68ec8cd48",
+        "tree": "063343ee07225ed083d4e050c53912dfbb008c09",
+        "watch": "1ea4562a-1fb2-4728-a3ed-c3cf68229223",
+        "head_ci": 39522901513,
+        "main_ci": 39523304994,
+        "checks": "5SUCCESS each attempt1; initial sourceCI39522549485 also5SUCCESS",
+        "deployment": "Source integrated only, last runtime metadatac02e predates558; specific-path deployment/retest open",
+        "resolution": "open"
+      },
+      "resolution": "open"
     }
   },
   "f7e8_loaded_stage": {
@@ -301126,6 +301159,16 @@
     "routes": 47,
     "slow_or_failed_names": 49,
     "rows_unchanged": 633,
+    "resolution": "open"
+  },
+  "heartbeat_provisional_copy_stage": {
+    "artifact": "docs/benchmarks/systemic-heartbeat-copy-20261021.json",
+    "sha256": "bbc655a438d3fe9260d09c7f57e6622bdeafd047367793eb1baf893c17f168bf",
+    "problem": "85515567-fba8-4319-9b2e-6d2809365e45 revision1",
+    "tests": "50guarded cases pass,6new/44existing",
+    "measurement": "AST-equivalent measured candidate; native timing not rerun;1000casep95 regression retained",
+    "integration": "Ready review pending",
+    "deployment": "No root activation or deployed acceptance",
     "resolution": "open"
   }
 }

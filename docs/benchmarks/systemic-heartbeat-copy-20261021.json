@@ -1,0 +1,749 @@
+{
+  "contract": "pa.heartbeat-provisional-copy/v1",
+  "published_at": "2026-10-21T00:56:24.914634+00:00",
+  "baseline_revision": "34b599b77969bcf280b0d9f3bc02b9a68ec8cd48",
+  "prototype_measurement": {
+    "contract": "pa.heartbeat-copy-prototype/v1",
+    "started_at": "2026-10-21T00:53:10.168943+00:00",
+    "source_sha256": "e44f96bba8580d39c1c754583e40c46e11c673e75b1f556fdb6be9ac9ed1f723",
+    "prototype_method": "def ingest_heartbeat(self, heartbeat: DispatchProgressHeartbeatV1, *, delivered: bool=False) -> ProgressIngestResult:\n    \"\"\"Replace the freshness signal without appending activity history.\"\"\"\n    sanitized = sanitize_heartbeat(heartbeat)\n    with measured_lock(self._lock):\n        self._require_writer()\n        stored = self._records.get(sanitized.dispatch_id)\n        if not stored:\n            raise ValueError('dispatch not found')\n        replayed = self._replay_progress_receipt(sanitized)\n        if replayed:\n            return replayed\n        self._validate_progress_provenance(stored, sanitized)\n        record = stored.model_copy(update={'progress_seen_keys': list(stored.progress_seen_keys)})\n        current = record.progress_heartbeat\n        if current and sanitized.sequence < current.sequence:\n            _cover_progress_sequence(record, sanitized.sequence, compacted=True)\n            record.progress_late_arrivals += 1\n            record.progress_seen_keys.append(sanitized.idempotency_key)\n            record.progress_seen_keys = record.progress_seen_keys[-MAX_PROGRESS_SEEN_KEYS:]\n            record.updated_at = datetime.now(UTC)\n            result = ProgressIngestResult(accepted=True, status='late', dispatch_id=record.dispatch_id, sequence=sanitized.sequence, idempotency_key=sanitized.idempotency_key)\n            return self._commit_progress_mutation(record, sanitized, result, persist_payload=False)\n        if delivered and sanitized.delivered_at is None:\n            sanitized.delivered_at = datetime.now(UTC)\n        if current and current.sequence != sanitized.sequence:\n            record.progress_compacted_ranges = _normalized_sequence_ranges([*record.progress_compacted_ranges, [current.sequence, current.sequence]])\n        record.progress_heartbeat = sanitized\n        record.progress_seen_keys.append(sanitized.idempotency_key)\n        record.progress_seen_keys = record.progress_seen_keys[-MAX_PROGRESS_SEEN_KEYS:]\n        record.progress_protocol_version = sanitized.schema_version\n        _cover_progress_sequence(record, sanitized.sequence)\n        record.progress_next_sequence = max(record.progress_next_sequence, sanitized.sequence + 1)\n        record.updated_at = datetime.now(UTC)\n        result = ProgressIngestResult(accepted=True, status='accepted', dispatch_id=record.dispatch_id, sequence=sanitized.sequence, idempotency_key=sanitized.idempotency_key)\n        return self._commit_progress_mutation(record, sanitized, result, persist_payload=True)",
+    "scenarios": {
+      "0": {
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 2.095957985147834,
+              "thread_cpu_ms": 2.087332999999969
+            },
+            "prototype": {
+              "wall_ms": 1.6344169853255153,
+              "thread_cpu_ms": 1.6376660000001486
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.4998329570516944,
+              "thread_cpu_ms": 1.5002920000000142
+            },
+            "baseline": {
+              "wall_ms": 1.3472919818013906,
+              "thread_cpu_ms": 1.3476660000000251
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.5676670698449016,
+              "thread_cpu_ms": 0.567832999999851
+            },
+            "prototype": {
+              "wall_ms": 0.46483404003083706,
+              "thread_cpu_ms": 0.46554199999992996
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.1395829496905208,
+              "thread_cpu_ms": 1.1402080000000314
+            },
+            "baseline": {
+              "wall_ms": 1.343665993772447,
+              "thread_cpu_ms": 1.323916000000036
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.9327919688075781,
+              "thread_cpu_ms": 0.9293329999999766
+            },
+            "prototype": {
+              "wall_ms": 1.3452909188345075,
+              "thread_cpu_ms": 1.3475419999999794
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.1302500497549772,
+              "thread_cpu_ms": 1.1310829999999772
+            },
+            "baseline": {
+              "wall_ms": 1.4367500552907586,
+              "thread_cpu_ms": 1.415916000000017
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 0.8522919379174709,
+              "thread_cpu_ms": 0.8252080000001882
+            },
+            "prototype": {
+              "wall_ms": 1.2182500213384628,
+              "thread_cpu_ms": 1.2058329999999895
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.5537920407950878,
+              "thread_cpu_ms": 1.5227499999999061
+            },
+            "baseline": {
+              "wall_ms": 1.8491670489311218,
+              "thread_cpu_ms": 1.8318750000001494
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 1.482957974076271,
+              "thread_cpu_ms": 1.4848750000000521
+            },
+            "prototype": {
+              "wall_ms": 1.9774590618908405,
+              "thread_cpu_ms": 1.760541999999976
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 1.6281669959425926,
+              "thread_cpu_ms": 1.6302079999999108
+            },
+            "baseline": {
+              "wall_ms": 1.4178750570863485,
+              "thread_cpu_ms": 1.4192920000000164
+            }
+          }
+        ],
+        "verified": {
+          "baseline": {
+            "retained_events": 0,
+            "retained_plan_steps": 0,
+            "seen_keys": 10,
+            "core_bytes": 3404,
+            "write_rows": 30
+          },
+          "prototype": {
+            "retained_events": 0,
+            "retained_plan_steps": 0,
+            "seen_keys": 10,
+            "core_bytes": 3404,
+            "write_rows": 30
+          }
+        },
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 1.347292,
+              "p95": 2.095958,
+              "p99": 2.095958,
+              "max": 2.095958
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 1.347666,
+              "p95": 2.087333,
+              "p99": 2.087333,
+              "max": 2.087333
+            }
+          },
+          "prototype": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 1.345291,
+              "p95": 1.977459,
+              "p99": 1.977459,
+              "max": 1.977459
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 1.347542,
+              "p95": 1.760542,
+              "p99": 1.760542,
+              "max": 1.760542
+            }
+          }
+        }
+      },
+      "128": {
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 9.606792009435594,
+              "thread_cpu_ms": 9.496082999999933
+            },
+            "prototype": {
+              "wall_ms": 7.263332954607904,
+              "thread_cpu_ms": 7.212041999999919
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 5.775083089247346,
+              "thread_cpu_ms": 5.5351669999998965
+            },
+            "baseline": {
+              "wall_ms": 14.25600005313754,
+              "thread_cpu_ms": 14.249291000000053
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 15.675792004913092,
+              "thread_cpu_ms": 15.579416999999873
+            },
+            "prototype": {
+              "wall_ms": 9.345083963125944,
+              "thread_cpu_ms": 9.117084000000109
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 8.547166944481432,
+              "thread_cpu_ms": 8.525000000000116
+            },
+            "baseline": {
+              "wall_ms": 16.112832934595644,
+              "thread_cpu_ms": 15.803416000000237
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 16.746750101447105,
+              "thread_cpu_ms": 16.094542000000267
+            },
+            "prototype": {
+              "wall_ms": 8.917542058043182,
+              "thread_cpu_ms": 8.792999999999829
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 8.833375060930848,
+              "thread_cpu_ms": 8.781999999999623
+            },
+            "baseline": {
+              "wall_ms": 15.09620901197195,
+              "thread_cpu_ms": 15.100542000000328
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 15.23250003810972,
+              "thread_cpu_ms": 15.213167000000194
+            },
+            "prototype": {
+              "wall_ms": 8.64183297380805,
+              "thread_cpu_ms": 8.620041999999994
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 9.308542008511722,
+              "thread_cpu_ms": 9.246708000000048
+            },
+            "baseline": {
+              "wall_ms": 15.743625001050532,
+              "thread_cpu_ms": 15.40729200000035
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 15.556583064608276,
+              "thread_cpu_ms": 15.366750000000096
+            },
+            "prototype": {
+              "wall_ms": 9.022042038850486,
+              "thread_cpu_ms": 8.982457999999749
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 8.5189170204103,
+              "thread_cpu_ms": 8.498665999999933
+            },
+            "baseline": {
+              "wall_ms": 15.649207984097302,
+              "thread_cpu_ms": 15.47320799999996
+            }
+          }
+        ],
+        "verified": {
+          "baseline": {
+            "retained_events": 128,
+            "retained_plan_steps": 128,
+            "seen_keys": 10,
+            "core_bytes": 38098,
+            "write_rows": 30
+          },
+          "prototype": {
+            "retained_events": 128,
+            "retained_plan_steps": 128,
+            "seen_keys": 10,
+            "core_bytes": 38098,
+            "write_rows": 30
+          }
+        },
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 15.556583,
+              "p95": 16.74675,
+              "p99": 16.74675,
+              "max": 16.74675
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 15.36675,
+              "p95": 16.094542,
+              "p99": 16.094542,
+              "max": 16.094542
+            }
+          },
+          "prototype": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 8.641833,
+              "p95": 9.345084,
+              "p99": 9.345084,
+              "max": 9.345084
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 8.620042,
+              "p95": 9.246708,
+              "p99": 9.246708,
+              "max": 9.246708
+            }
+          }
+        }
+      },
+      "1000": {
+        "pairs": [
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 115.60541589278728,
+              "thread_cpu_ms": 110.06741699999978
+            },
+            "prototype": {
+              "wall_ms": 60.84950000513345,
+              "thread_cpu_ms": 58.55166700000014
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 124.41429099999368,
+              "thread_cpu_ms": 120.283959
+            },
+            "baseline": {
+              "wall_ms": 110.06941692903638,
+              "thread_cpu_ms": 106.59187500000033
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 75.91829192824662,
+              "thread_cpu_ms": 70.21808299999988
+            },
+            "prototype": {
+              "wall_ms": 39.26520806271583,
+              "thread_cpu_ms": 36.59212500000031
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 67.78904201928526,
+              "thread_cpu_ms": 58.508041999999705
+            },
+            "baseline": {
+              "wall_ms": 116.32129200734198,
+              "thread_cpu_ms": 108.1856250000004
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 121.40079203527421,
+              "thread_cpu_ms": 116.94083299999924
+            },
+            "prototype": {
+              "wall_ms": 69.53616696409881,
+              "thread_cpu_ms": 57.401416999999455
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 29.99574993737042,
+              "thread_cpu_ms": 27.911957999999792
+            },
+            "baseline": {
+              "wall_ms": 57.036290992982686,
+              "thread_cpu_ms": 52.890791999999465
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 58.81287495139986,
+              "thread_cpu_ms": 51.24558400000012
+            },
+            "prototype": {
+              "wall_ms": 40.58345907833427,
+              "thread_cpu_ms": 28.428916999999387
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 30.229542055167258,
+              "thread_cpu_ms": 27.20704199999968
+            },
+            "baseline": {
+              "wall_ms": 66.07533304486424,
+              "thread_cpu_ms": 60.553332999999654
+            }
+          },
+          {
+            "order": [
+              "baseline",
+              "prototype"
+            ],
+            "baseline": {
+              "wall_ms": 110.21395807620138,
+              "thread_cpu_ms": 96.65899999999982
+            },
+            "prototype": {
+              "wall_ms": 39.622875046916306,
+              "thread_cpu_ms": 29.8203749999999
+            }
+          },
+          {
+            "order": [
+              "prototype",
+              "baseline"
+            ],
+            "prototype": {
+              "wall_ms": 32.1494999807328,
+              "thread_cpu_ms": 29.02979200000022
+            },
+            "baseline": {
+              "wall_ms": 63.78508300986141,
+              "thread_cpu_ms": 53.59454199999991
+            }
+          }
+        ],
+        "verified": {
+          "baseline": {
+            "retained_events": 1000,
+            "retained_plan_steps": 1000,
+            "seen_keys": 10,
+            "core_bytes": 274415,
+            "write_rows": 30
+          },
+          "prototype": {
+            "retained_events": 1000,
+            "retained_plan_steps": 1000,
+            "seen_keys": 10,
+            "core_bytes": 274415,
+            "write_rows": 30
+          }
+        },
+        "latency_ms": {
+          "baseline": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 75.918292,
+              "p95": 121.400792,
+              "p99": 121.400792,
+              "max": 121.400792
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 70.218083,
+              "p95": 116.940833,
+              "p99": 116.940833,
+              "max": 116.940833
+            }
+          },
+          "prototype": {
+            "wall_ms": {
+              "samples": 10,
+              "p50": 39.622875,
+              "p95": 124.414291,
+              "p99": 124.414291,
+              "max": 124.414291
+            },
+            "thread_cpu_ms": {
+              "samples": 10,
+              "p50": 29.820375,
+              "p95": 120.283959,
+              "p99": 120.283959,
+              "max": 120.283959
+            }
+          }
+        }
+      }
+    },
+    "finished_at": "2026-10-21T00:53:14.107467+00:00",
+    "scope": "Prototype only; source module unchanged. Ten alternating real disposable heartbeat commits per implementation per0/128/1000protected-history/plan-step case. Full returned state equal excluding volatile record.updated_at. No Kernel, service workload, activation, backup or GC. No physical disk/serialization phase attribution. Shared host, not deployed acceptance. Isolation, late/replay, commit-boundary and concurrency contracts still required."
+  },
+  "measurement_provenance": "Executed ten paired commits per0/128/1000case using the compiled selective-copy candidate before application edit. Current native heartbeat AST equals that measured candidate; every other module AST node equals pinned baseline. Native timing was not rerun to seek a better tail. Reproducer can compare archived baseline with current native method.",
+  "equivalence": {
+    "measured_candidate_ast_equal_native": true,
+    "every_other_module_ast_node_equal_baseline": true,
+    "source_sha256": "52443046c1bce672386062a0b4c17ea419b925ffaa96bd04af7f5c09874cd96d",
+    "baseline_sha256": "e44f96bba8580d39c1c754583e40c46e11c673e75b1f556fdb6be9ac9ed1f723"
+  },
+  "initial_contract_run": {
+    "started_at": "2026-10-21T00:53:59.556590+00:00",
+    "finished_at": "2026-10-21T00:54:07.917489+00:00",
+    "exit_code": 1,
+    "wall_ms": 8359.887375030667,
+    "cases": [
+      "tests/test_heartbeat_provisional_copy.py",
+      "tests/test_progress_delivery_projection.py",
+      "tests/test_dispatch_progress.py",
+      "tests/test_progress_sequence_allocation.py",
+      "tests/test_dispatch_sqlite.py::test_failed_put_keeps_all_indexes_on_the_committed_record",
+      "tests/test_dispatch_sqlite.py::test_control_receipt_fault_boundary_replays_only_committed_result"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded disposable roots",
+    "log_sha256": "214b6643a5d10e3ddb4c6aa66accb699457b9dc99f74caa92ee3a8dcdf9db9f3"
+  },
+  "initial_failure": "One of50cases failed because its replay rebuilt occurred_at under the same idempotency key. Receipt hash conflict guard correctly rejected different payload. Fixture now reuses exact original payload and explicitly asserts a changed payload conflicts; no receipt guard change.49other cases passed.",
+  "corrected_contract_run": {
+    "started_at": "2026-10-21T00:54:40.571777+00:00",
+    "finished_at": "2026-10-21T00:54:48.268823+00:00",
+    "exit_code": 0,
+    "wall_ms": 7696.435332996771,
+    "cases": [
+      "tests/test_heartbeat_provisional_copy.py",
+      "tests/test_progress_delivery_projection.py",
+      "tests/test_dispatch_progress.py",
+      "tests/test_progress_sequence_allocation.py",
+      "tests/test_dispatch_sqlite.py::test_failed_put_keeps_all_indexes_on_the_committed_record",
+      "tests/test_dispatch_sqlite.py::test_control_receipt_fault_boundary_replays_only_committed_result"
+    ],
+    "workspace_construction": "denied",
+    "store_construction": "guarded disposable roots",
+    "log_sha256": "5952b218382e51f578768c0a348723d5418c12143cc6d5f49d527f1d1b978a79"
+  },
+  "passed": 50,
+  "new_cases": 6,
+  "existing_cases": 44,
+  "overlap": "Existing44cases overlap the prior PR558 delivery suite; they are not an additional unique44tests. Timing samples are separate benchmark calls, not tests.",
+  "implementation": "Only provisional heartbeat record cloning changes: shallow record copy plus independent progress_seen_keys list. Heartbeat sanitization returns a new scalar-only payload; range helpers replace fresh nested lists. Late/current branches, receipt/provenance checks, ordering, serialization, NORMAL durable transaction, fault publication/reload and full deep committed publication stay unchanged.",
+  "source_hashes": {
+    "src/pa/execution/dispatch.py": "52443046c1bce672386062a0b4c17ea419b925ffaa96bd04af7f5c09874cd96d",
+    "tests/test_heartbeat_provisional_copy.py": "d89def38ca2abb7c299e435da918b1738bb6f762435df28682548d42f4a16770",
+    "scripts/benchmark_heartbeat_copy.py": "b1a17cf0c0cb3a989fa9453153e5448823a0a9fe9245f6b2c1a4437a1bbd7ff5"
+  },
+  "reproducer_validation": "Script syntax parsed and archived/native extraction reviewed; this new reproducer was not executed for another timing sample. Prototype runner and full raw samples are preserved.",
+  "problem": {
+    "id": "85515567-fba8-4319-9b2e-6d2809365e45",
+    "revision": 1,
+    "hash": "ad7f1bdfca3e0c27078f9649d8042994837770908cbc1c6e480c30128d3b2a9a",
+    "delivery": "pending at report response"
+  },
+  "limits": [
+    "1000-event/plan-step case wall median75.918292\u219239.622875ms and CPUmedian70.218083\u219229.820375ms, but p95/max121.400792\u2192124.414291ms regresses; CPUmax116.940833\u2192120.283959ms also regresses. No passing-tail or universal improvement claim.",
+    "128case wallp9516.746750\u21929.345084ms; zerocase2.095958\u21921.977459ms. All raw samples and returned model/core-byte/logical-write checks retained. At10samples nearest-rankp95/p99 equal max.",
+    "Model state compared excluding volatile record.updated_at; actual retained events/plans/watermarks/receipts/heartbeat fields preserved. Logical write counts/core payload sizes are not physical disk bytes or fsync/serialization attribution.",
+    "Shared macbook host, warm disposable source commits; no historical live cause share, HTTP/mixed/peer/startup/drain/deployed acceptance inferred. Remaining deep publication/core serialization, native SQL counters, commit/CPU/disk tails and all633prior findings remain open.",
+    "No production Store/EventLog/db/ref mutation, unsafe workload/fault, activation, backup/GC, warning/deadline/default/model/permission change or competing worker."
+  ],
+  "delayed_pr555_notice": {
+    "head": "3d8b2b813d55707de3bce0bd4c3caf24b9189f20",
+    "merge": "cb81b1666881cd9e227481668fe624a1e0304ac3",
+    "state": "alreadymerged exacthead independently refetched; watchretiredmerged/errornull",
+    "action": "No repeat merge, unchanged CI rerun or cleanup"
+  },
+  "prior_pr558": {
+    "integration": {
+      "contract": "pa.exact-integration-proof/v1",
+      "observed_at": "2026-10-21T00:46:15.759991+00:00",
+      "PR": 558,
+      "watch": "1ea4562a-1fb2-4728-a3ed-c3cf68229223",
+      "head": "199167352d668a1dca88a9262b1a7f8847f2b820",
+      "merge": "34b599b77969bcf280b0d9f3bc02b9a68ec8cd48",
+      "merged_at": "2026-10-21T00:46:07Z",
+      "source_tree": "063343ee07225ed083d4e050c53912dfbb008c09",
+      "merge_tree": "063343ee07225ed083d4e050c53912dfbb008c09",
+      "parents": [
+        "e1091451cff4fcc897c127abbb8a8bfb4aaeeb39",
+        "199167352d668a1dca88a9262b1a7f8847f2b820"
+      ],
+      "tree_equal": true,
+      "independent_review_sha256": "1cceff00d4c9b85081a9dbdc28406b6015dc52bdc3a2445f7d9cd29549533e02",
+      "stable_supervisor_sha256": "645369801e858e67e9dccc6d7c8f6b86e5ad6f3eb31d992c1cee419d14a647c0",
+      "main_ci_runs": [
+        {
+          "id": 39523304994,
+          "status": "queued",
+          "conclusion": null,
+          "attempt": 1
+        }
+      ],
+      "deployed": false,
+      "restarted": false,
+      "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+    },
+    "main_ci_final": {
+      "observed_at": "2026-10-21T00:50:11.072822+00:00",
+      "run": 39523304994,
+      "head_sha": "34b599b77969bcf280b0d9f3bc02b9a68ec8cd48",
+      "attempt": 1,
+      "jobs": [
+        {
+          "id": 118972035717,
+          "name": "test (2)",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-21T00:46:12Z",
+          "completed_at": "2026-10-21T00:49:11Z"
+        },
+        {
+          "id": 118972035939,
+          "name": "test (0)",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-21T00:46:12Z",
+          "completed_at": "2026-10-21T00:49:02Z"
+        },
+        {
+          "id": 118972035969,
+          "name": "test (3)",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-21T00:46:12Z",
+          "completed_at": "2026-10-21T00:49:17Z"
+        },
+        {
+          "id": 118972036019,
+          "name": "test (1)",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-21T00:46:12Z",
+          "completed_at": "2026-10-21T00:48:45Z"
+        },
+        {
+          "id": 118972036142,
+          "name": "smoke",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-10-21T00:46:12Z",
+          "completed_at": "2026-10-21T00:46:43Z"
+        }
+      ]
+    }
+  },
+  "resolution": "open"
+}
