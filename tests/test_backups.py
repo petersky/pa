@@ -24,7 +24,7 @@ from pa.backup.service import (
     config_from_settings,
     validate_destination,
 )
-from pa.backup.models import MAX_MANIFEST_BYTES, BackupManifest, ManifestFile
+from pa.backup.models import MAX_MANIFEST_BYTES, BackupManifest, BackupRun, ManifestFile
 from pa.config import Settings, get_settings, reset_settings
 from pa.domain.models import CardCreate, TranscriptEvent
 from pa.domain.store import Store
@@ -1161,6 +1161,43 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, ["backup.scheduled"])
         next_run = datetime.fromisoformat(self.service.status()["next_scheduled_run"])
         self.assertGreater(next_run, datetime.now(UTC))
+
+    async def test_restart_after_limited_backup_notifies_and_runs_overdue_schedule(self) -> None:
+        limited = BackupRun(
+            trigger="manual", status="success", finished_at=datetime.now(UTC),
+            verification="failed", integrity_verified=True, data_complete=False,
+            missing_transcript_object_count=1, missing_transcript_bytes=2842,
+            coverage_warning="Synthetic historical payload absent; available data preserved.",
+            missing_data_fingerprint="a" * 64,
+        )
+        self.service._state.runs.append(limited)
+        self.service._state.next_scheduled_run = datetime.now(UTC) - timedelta(seconds=1)
+        self.service._save_state()
+        await self.service.stop()
+        self.service = BackupService(self.settings, self.store)
+        notice = Mock()
+        self.service.missing_data_notifier = notice
+
+        await self.service.start(None)
+        async with asyncio.timeout(5):
+            while not any(run.trigger == "scheduled" and run.finished_at
+                          for run in self.service._state.runs):
+                if self.service._scheduler_task.done():
+                    self.service._scheduler_task.result()
+                await asyncio.sleep(0.01)
+
+        scheduled = next(run for run in self.service._state.runs if run.trigger == "scheduled")
+        self.assertEqual(scheduled.status, "success", scheduled.failure_reason)
+        self.assertEqual(len([run for run in self.service._state.runs
+                              if run.trigger == "scheduled"]), 1)
+        self.assertFalse(self.service._scheduler_task.done())
+        self.assertGreater(self.service._state.next_scheduled_run, datetime.now(UTC))
+        notice.assert_called_once_with(
+            f"backup-missing-data:{self.settings.instance_id}:never:{limited.missing_data_fingerprint}",
+            limited.coverage_warning,
+        )
+        historical = next(run for run in self.service._state.runs if run.id == limited.id)
+        self.assertEqual(historical.model_dump(), limited.model_dump())
 
 
 if __name__ == "__main__":

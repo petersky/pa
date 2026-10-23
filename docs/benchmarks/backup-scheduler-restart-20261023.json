@@ -1,0 +1,156 @@
+{
+  "schema": "pa.backup-scheduler-restart-evidence/v1",
+  "card_id": "0331d21a-f014-44c8-9176-bc1e955a9ad2",
+  "session_id": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "source_base": "35bf17b599963131ad5fee81e696023305eb7dc3",
+  "observation": {
+    "effective_backups_enabled": true,
+    "automatic_backups_paused": false,
+    "next_scheduled_run": "2026-10-20T03:59:42.752220Z",
+    "process_start_local": "2026-10-20T17:09:55-07:00",
+    "active_backup_restore_verification": false,
+    "retained_archive_count": 9,
+    "original_intact_archive_count": 8,
+    "limited_archive_count": 1,
+    "missing_payload_count": 1,
+    "missing_decoded_bytes": 2842,
+    "missing_data_fingerprint": "eeefa7b756f312842baa3ca1854f18e21222593a3e0166686f2a1e3d0cdbc84e"
+  },
+  "regression": {
+    "before": "An isolated reload of a persisted limited success raises TypeError in the missing-data notice before the scheduler loop.",
+    "before_log_sha256": "be189203eff98ead198acea95e1300352b16ded5723853fd3bd8e31595faf726",
+    "live_attribution": "The same call and helper signature occur in deployed c02e6d84. The reproduced failure explains the observed overdue schedule; the live task exception is not exposed by its API.",
+    "fix": "Pass the saved run as record=completed through the existing keyword-argument maintenance helper.",
+    "after": "The real isolated worker delivers one notice, publishes one overdue scheduled backup, advances its deadline, stays alive, and preserves the old limited run exactly.",
+    "fixture_data": "Synthetic persisted limitation metadata and a disposable store; no production data or missing historical bytes reconstructed."
+  },
+  "validation": [
+    {
+      "tests": "7",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "2.504",
+      "suite": "backup-scheduler-after",
+      "sha256": "888481a141d80337f98456cc3b8bd48c6bfbb334e5f6d9097463647b5c0d336c"
+    },
+    {
+      "tests": "88",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "118.706",
+      "suite": "backup-oct23-related",
+      "sha256": "82557fd0945891adc29ee6f00b6ccb205e599500d6a8bb813e58f94eeb03aa0e"
+    },
+    {
+      "tests": "25",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "7.586",
+      "suite": "backup-oct23-missing-data",
+      "sha256": "39dca37387fb0badc4ac14418ab3de3819605fa7f2b7e3fdfd1af7ecac4ed076"
+    }
+  ],
+  "live_read_observation": {
+    "schema": "pa.backup-read-observation/v1",
+    "observed_at": "2026-10-23T20:24:35.030884+00:00",
+    "build_before": {
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "runtime_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+        "package_identity": "sha256:5917d4f0801bfca2f7d4dbbe3f577e316e2dbc2dd502868514579fe7aae25b9e",
+        "pid": 78321,
+        "startup_id": "a50c19a2-c3d0-4b62-bc2a-063a41ed6f4c"
+      },
+      "install_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3"
+    },
+    "build_after": {
+      "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+      "runtime_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+        "package_identity": "sha256:5917d4f0801bfca2f7d4dbbe3f577e316e2dbc2dd502868514579fe7aae25b9e",
+        "pid": 78321,
+        "startup_id": "a50c19a2-c3d0-4b62-bc2a-063a41ed6f4c"
+      },
+      "install_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3"
+    },
+    "build_identity_unchanged": true,
+    "rows": [
+      {
+        "endpoint": "/api/backups/status",
+        "elapsed_ms": 29.185374965891242,
+        "result": {
+          "backup_count": 9,
+          "next_scheduled_run": "2026-10-20T03:59:42.752220Z",
+          "consecutive_failures": 0
+        }
+      },
+      {
+        "endpoint": "/api/backups",
+        "elapsed_ms": 26.589249959215522,
+        "result": {
+          "count": 9
+        }
+      },
+      {
+        "endpoint": "/api/backups/runs",
+        "elapsed_ms": 19.66858294326812,
+        "result": {
+          "id": "5659b985-2f31-48ab-b51f-6b5f34eb30aa",
+          "status": "success",
+          "finished_at": "2026-10-19T04:30:53.836565Z",
+          "integrity_verified": true,
+          "data_complete": false,
+          "missing_transcript_bytes": 2842
+        }
+      },
+      {
+        "endpoint": "/api/backups/status",
+        "elapsed_ms": 23.381208069622517,
+        "result": {
+          "backup_count": 9,
+          "next_scheduled_run": "2026-10-20T03:59:42.752220Z",
+          "consecutive_failures": 0
+        }
+      },
+      {
+        "endpoint": "/api/backups",
+        "elapsed_ms": 41.34004202205688,
+        "result": {
+          "count": 9
+        }
+      },
+      {
+        "endpoint": "/api/backups/runs",
+        "elapsed_ms": 50.020874943584204,
+        "result": {
+          "id": "5659b985-2f31-48ab-b51f-6b5f34eb30aa",
+          "status": "success",
+          "finished_at": "2026-10-19T04:30:53.836565Z",
+          "integrity_verified": true,
+          "data_complete": false,
+          "missing_transcript_bytes": 2842
+        }
+      }
+    ],
+    "mutations": 0,
+    "independent_acceptance": false,
+    "conditions": "Normal live agent traffic and isolated backup regression tests; not an idle-host experiment."
+  },
+  "remaining_gates": [
+    "Ready supervised PR and fresh stable-head integration gate.",
+    "Coordinated activation of an exact integrated build under existing release authority.",
+    "Read current scheduler/capture outcomes without replaying the original 5659 operation.",
+    "Ordinary independent_agent_v1 verification and explicit b527 acceptance on the exact card."
+  ],
+  "acceptance": false,
+  "production_mutations": 0,
+  "preservation": "All eight original archives, live references, historical failures, and the exact 2842-byte limitation remain. No restore, archive deletion, capture replay, default change, or service restart during this observation."
+}
