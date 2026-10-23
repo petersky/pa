@@ -2061,7 +2061,9 @@ class BackupService:
         async def scheduler() -> None:
             completed = next((run for run in reversed(self._state.runs) if run.status == "success"), None)
             if completed and completed.data_complete is False:
-                await self._run_maintenance("backup.missing_data_notice", self._notify_missing_data, completed)
+                await self._run_maintenance(
+                    "backup.missing_data_notice", self._notify_missing_data, record=completed,
+                )
             now = datetime.now(UTC)
             last = self._state.last_completed or self._state.last_success
             startup_due = (
