@@ -1180,8 +1180,14 @@ class BackupSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         await self.service.start(None)
         async with asyncio.timeout(5):
-            while not any(run.trigger == "scheduled" and run.finished_at
-                          for run in self.service._state.runs):
+            # The worker persists completion before its awaiting scheduler
+            # resumes and advances the deadline. Observe both transitions.
+            while not (
+                any(run.trigger == "scheduled" and run.finished_at
+                    for run in self.service._state.runs)
+                and self.service._state.next_scheduled_run is not None
+                and self.service._state.next_scheduled_run > datetime.now(UTC)
+            ):
                 if self.service._scheduler_task.done():
                     self.service._scheduler_task.result()
                 await asyncio.sleep(0.01)
