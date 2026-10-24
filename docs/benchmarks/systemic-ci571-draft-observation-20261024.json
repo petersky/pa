@@ -1,0 +1,43 @@
+{
+  "contract": "pa.ci571-draft-observation/v1",
+  "observed_at": "2026-10-24T15:34:22.261371+00:00",
+  "failed_head": "335fdda79402057a98c3bc66a5c98652073694f8",
+  "failed_ci": 40106963041,
+  "failed_job": 120910542390,
+  "raw_log_sha256": "d9cf685ee6b1fd7b1ec721c7af513149e79f550a01a602813ba88c58a0ff5627",
+  "failed_test": "tests/test_conversation_origin_browser.py::test_fork_copy_fresh_source_navigation_reload_and_narrow_layout",
+  "symptom": "Existing20s wait timed out restoring source draft after selecting source thread. Snapshot diagnostics identified source session; actual input/draft/focus/owner race cause unverified.",
+  "scope_at_failure": "The only application difference from db3b was launchd ProcessType/comment; no Python/browser/draft application source changed. This is source context, not proof that the observed draft loss is harmless or test-only.",
+  "local_followup": {
+    "source_head": "e3c6b3bc466defea00f95e8f23c9faad021c910d",
+    "targets": [
+      "tests/test_conversation_origin_browser.py::test_fork_copy_fresh_source_navigation_reload_and_narrow_layout",
+      "tests/test_followup_terminal_receipts.py",
+      "tests/test_service_process_policy.py"
+    ],
+    "pytest_result": "16 passed,341warnings in25.46s",
+    "overall_runner_result": "Failed AFTER pytest success: metadata Path(targets[0]).read_bytes tried a filename containing :: selector; parent then failed reading absent JSON. No rerun to manufacture a successful collector result.",
+    "raw_log_sha256": "4aa5e85cf7fd04a784f9cbba81692479e7d6e4b62ec7e3263568b70453e45ff7",
+    "exact_start_utc": "Not persisted because metadata construction failed; do not infer a precise run range.",
+    "log_last_modified_utc": "2026-10-24T15:33:06.366084+00:00",
+    "original_test_sha256": "2c79b5df2de8fb2a12f43a306037d27214d90fe7ad783c3cde443d9548c8bc36",
+    "guarded_runner_sha256": "6cdc95a2fcd5680afdb85c5162f4e0ecaded783815f88e3a42a881cbeaf5d8c4",
+    "isolation": "Parent-created tempPA data/workspace roots,ACPfalse; every Workspace construction asserted within parent. Log and runner preserved; per-root audit array lost with metadata failure. No real provider/service or production mutation.",
+    "meaning": "Local unchanged test pass does not independently reproduce or resolve the CI draft-restoration failure."
+  },
+  "integration_context": {
+    "backup570": "Existing18fc owner merged005fbf457ebca8934e81396069f186d4120e91de from3458e22e; terminal followup receipt fix. Systemic branch merged that exact main commit, no conflicting source edits.",
+    "combined_head": "e3c6b3bc466defea00f95e8f23c9faad021c910d",
+    "new_ci": "Fresh exact-head checks required; old335head4success/1failure retained, never claimed green.",
+    "systemic571_watch": "912285ab-ea4e-46b3-8a34-cdff82c08222"
+  },
+  "watch_registration_correction": {
+    "actual_created_pr": 571,
+    "initial_anticipated_target": 570,
+    "initial_result": "Native nonJSONerror then local parserfailure. No subsequent progress call in that script executed.",
+    "supported_reconciliation": "Systemic card lists65watches and no570/571 before correction; backup card lists9watches and existing570b6a14557-c855-43b6-955d-4189d5837eda owned18fc/c5a. Existingowner/watch untouched; actual571 then correctly registered. No incorrectly owned/new watch or retirement was observed in these bounded lists. The native error body was not retained before parsing failed, so no precise server denial or HTTP code is asserted; no retry of the wrong target occurred."
+  },
+  "resolution": "OPEN; no product/browser change, assertion or deadline adjustment. Future diagnosis must distinguish input-target/focus/layout/owner restoration/persistence behavior with bounded fixture evidence.",
+  "next_actor": "This systemic session, with existing backup/release and normal independent acceptance owners unchanged.",
+  "next_action": "Preserve original CI/local collector failures, require fresh combined exact-head CI/protection/supervisor gates, then diagnose remaining draft-input/restoration race. All650findings/124concerns and original performance/rollout/acceptance gates remain."
+}
