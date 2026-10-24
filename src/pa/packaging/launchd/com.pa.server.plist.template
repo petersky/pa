@@ -21,8 +21,10 @@
     <integer>10</integer>
     <key>ExitTimeOut</key>
     <integer>300</integer>
+    <!-- PA serves user-requested HTTP work. Its timers, SQLite I/O and
+         provider children need interactive application resource scheduling. -->
     <key>ProcessType</key>
-    <string>Background</string>
+    <string>Interactive</string>
     <key>LimitLoadToSessionType</key>
     <array>
         <string>Aqua</string>
