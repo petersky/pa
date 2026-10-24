@@ -1,3 +1,64 @@
+# Resumed full performance inventory — 2026-10-23
+
+All **644 findings and 119 concerns remain open**. Every prior640row and failure is preserved. [Complete numeric evidence](benchmarks/systemic-resume-20261023.json), [all slow names/source percentiles](benchmarks/systemic-resume-20261023-slow-operations.csv), [all local/peer runtime operations and numeric phases](benchmarks/systemic-resume-20261023-runtime-operations.csv), and [all returned route groups/bytes/windows](benchmarks/systemic-resume-20261023-runtime-routes.csv) separate source fixes, integration, installed source, deployed observations and acceptance. The user explicitly resumed all unfinished work; a missing historical backup payload is a disclosed gap, **not a blocker for the remaining work**.
+
+Fresh macbook identity and exclusive fence334 match this same session/workspace. Installed and loaded metadata remain **c02e6d84/package5917/PID78321/startupa50c**. All438installed Python files match c02e;38template entries and the package cache match. Source ancestry confirms backup548 is included. This proves installed composition plus matching runtime metadata, not execution of every loaded branch.35bf and combined8641 packages were prepared/attested only; neither was installed or restarted.
+
+The source-aware CLI returned **84,365 records**, without reaching its1,000,000line cap: structured15,385/stdout46,040/stderr22,940; respective UTC ranges22Oct20:49:42.619493–23Oct20:42:15.080839,22Oct20:49:43–23Oct20:42:19,22Oct20:49:42–23Oct20:42:21. It contains **45slow names/14prefix families,2,068raw emissions and918structured numeric phase records**. Structured/stderr copies may duplicate one invocation. Log-slice percentiles, process maxima and runtime rolling windows are different populations. Six page families and110normalized access method/path families are retained; access records lack reliable per-request latency/bytes. Recent disposable fixtures overlap this log slice.
+
+Current CLI UUID matches macbook; permitted PID/parent/descriptor checks link listener78321/parent78314 to the four reported log sources. Historical **5,640,760dropped bytes/2,396status failures** persist; this slice does not establish new loss or resolution. Older rotated retention and peer logfiles remain uninspected. Raw service/CI messages are private local evidence and are not published.
+
+| Slow prefix family | Source emission counts (not distinct incidents) |
+|---|---|
+|acp|stderr:8, structured:9|
+|agent|stderr:242, structured:184|
+|conversation|stderr:106, structured:92|
+|dispatch|stderr:69, structured:53|
+|fleet|stderr:129, structured:117|
+|goal|stderr:2, structured:1|
+|health|stderr:54, structured:37|
+|http|stderr:7, structured:7|
+|intake|stderr:1, structured:1|
+|progress|stderr:59, structured:56|
+|reconciliation|stderr:21, structured:16|
+|selection|stderr:1, structured:1|
+|sqlite|stderr:245, structured:208|
+|sync|stderr:206, structured:136|
+
+Both **100iteration exact-source mixed fixtures fail performance acceptance**, despite0operation failures/timeouts/rejections and9,600ordered retained events each. Each includes1,000history commits/30sessions/101dispatches/30watches,5,000expired retention events with16audit proofs and12,511hash-verified retained cold objects. All per-call values, runtime phases, row/byte/write counts, warning counts, GC events and failures remain in the artifact. Different revisions are not paired improvement samples; no pooled quantiles or favorable rerun selection.
+
+| Exact source | Measurement warnings | Sampled violations | Families remaining |
+|---|---|---|
+|35bf|7|12|sync.push_transaction:2, transcript.drain:3, /api/cards/fixture-card/history:1, /api/agent/history/session-0?limit=64&message_boundaries=true:1, sync.object_collect:4, maintenance.run:1|
+|8641|5|12|transcript.drain:4, sync.reconcile_head:1, /api/agent/history/session-0?limit=64&message_boundaries=true:1, /api/pr-supervisor/watches:1, sync.object_collect:4, maintenance.run:1|
+
+**35bf premeasurement OpenAPI649.140ms/631.880msCPU is separate from its7measurement warnings.** Maintenance is15,067.239ms at35bf and15,390.191ms at8641, with collection4violations each. The35bf transcript/card/sync cluster has1189.617ms append with1179.059ms lockhold/672.631msSQL/504.320mscommit, adjacent waiters1142.817/1146.007ms, card858.551ms/841.233msSQL and push790.208ms/684.204mswait. Those inclusive phases overlap; they support shared contention but do not partition native busy/disk/fsync/CPU/scheduling or prove independent slow queries. Retention/metadata/health/query amplification and GC saved-plan/publication correctness remain actionable.
+
+The installed c02e **95ordinaryGETs across10routes all succeed, but7exceed500ms**. Small5sample routes have p95/p99=max. Every request correlation/timing/decoded size is retained without response bodies. Runtime145operations are a separate current snapshot.
+
+| Installed route | Samples | p50 / p95 / p99 / max ms | >=500ms | Max decoded bytes |
+|---|---|---|---|---|
+|/|5|40.13 / 321.309 / 321.309 / 321.309|0|25464|
+|/agent|5|103.777 / 1174.745 / 1174.745 / 1174.745|2|112972|
+|/api/fleet/overview|5|247.34 / 719.35 / 719.35 / 719.35|1|973039|
+|/api/health|20|22.319 / 131.93 / 201.285 / 201.285|0|15|
+|/api/runtime|20|160.821 / 336.37 / 581.089 / 581.089|1|666338|
+|/api/status|20|75.514 / 215.689 / 265.642 / 265.642|0|2824|
+|/fleet|5|341.895 / 939.783 / 939.783 / 939.783|2|1135027|
+|/pull-requests|5|67.881 / 606.152 / 606.152 / 606.152|1|26012|
+|/settings?section=agent|5|33.93 / 227.306 / 227.306 / 227.306|0|101194|
+|/work|5|38.985 / 284.799 / 284.799 / 284.799|0|31323|
+
+All **nine bounded read-only peer GETs succeed individually below500ms**; this is not a distribution or fleet acceptance. Monica2d22 and alexf72a report loaded0d6638/packageb573; macmini02db reports1.5.9/PID41996 with runtime_buildnull, so its loaded source remains unknown. All67/60/66respective operation snapshots, request windows and phase counters remain. Monica fleet57,726failed/timedout and PR49,724failed; macmini fleet58,889failed/timedout, PR54,354failed, sync-reconcile3,463slow/processmax8,094.708ms and cachemax17,450.608ms are cumulative process observations, not new distinct incidents. Peer causal attribution, builds/log coverage and valid external branches remain open. Three newly observed names are fleet.update_check, http.pr_supervisor_lease and sqlite.pr_supervisor_eligibility_recovery; no new slow-log names were needed.
+
+PR565 is integrated86413eff, but its **main40021129306 first attempt has two failed test shards**. Existing backup owner18fc/c5a owns the scheduler correction PR566. This systemic change owns the separate UX browser readiness failure: the old effective-label predicate passed while both option groups were loading, target option absent, and assigning it left an empty selection. The deterministic original390journey fails; the corrected identical fixture passes after waiting for existing optionsLoading=false plus target presence. Both-width UX and existing settings contracts pass in fresh guarded roots. The15s budget and every real-save/permission/default-isolation assertion remain unchanged; application code is unchanged. Original CI/harness failures are retained; no same-head CI rerun or deadline increase occurred.
+
+Existing backup owner remains responsible for available-data capture/restore and normal b527 independent verification; eightverified/one limited snapshot and2,842missing historical bytes remain disclosed, without claiming an intact historical restore. Former release owner is closed. Coordination is durably queued, not claimed consumed. No competing deployment/restart occurred: the concrete exact target, head/main CI, dependency/template/config, controller ownership, quiescence and backup-overlap gates require fresh validation before one coordinated activation.
+
+Durable/projection sync heads agree; three peers report conflict while conflict list is empty. No forced refs or invented merge values. Two saved followup receipt recoveries remain delivery_ambiguous/effectunknown, with receipt-only recovery admission and no prompt resend. All original startup/drain/provider/MCP/placement/workspace, foreground/background/peer inventory, nativebusy/CPU/disk/fsync/GC/write amplification, logging/retention, GC publication/saved-plan, backup, receipt and exact rollout/retest obligations remain. DB89957 accepted original scope stays closed; systemic17d independent_agent_v1 and backupb527 retain their existing normal scheduler ownership. **No whole-card completion or performance acceptance is claimed.**
+
+## Preserved prior inventory and evidence
+
 # Lifecycle progress copy repair — 2026-10-21
 
 All **640 findings and 118 concerns remain open**; every prior639row is preserved. [Complete paired measurements and contracts](benchmarks/systemic-lifecycle-progress-copy-20261021.json) distinguish this source repair from deployment and whole-service acceptance.

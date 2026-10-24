@@ -142,7 +142,9 @@ async def test_actions_results_evidence_and_permission_labels_without_help(opera
         personal = get_preferences_store(settings.data_dir, user_id='local')
         original_instance, original_personal = instance.load(), personal.load()
         await page.navigate_and_wait(base + '/settings?section=agent')
-        await wait("document.querySelector('#pa-user-model-effective')?.textContent.includes('From Instance defaults')")
+        await wait("""document.querySelector('#pa-user-model-effective')?.textContent.includes('From Instance defaults')
+          && [...document.querySelectorAll('[data-settings-defaults-scope]')].every(e=>e.dataset.optionsLoading==='false')
+          && [...document.querySelector('#pa-user-model').options].some(e=>e.value==='model-b')""")
         assert await page.evaluate("document.querySelector('#pa-defaults-scope').value") == 'user'
         assert 'Affects only my new sessions' in await page.evaluate("document.querySelector('#pa-defaults-impact').textContent")
         await page.evaluate("""const model=document.querySelector('#pa-user-model');
