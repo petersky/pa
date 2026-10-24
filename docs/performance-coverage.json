@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T15:25:23.084712+00:00",
-  "completion": "OPEN;649findings/123concerns, all647prior rows unchanged. Shared scheduling component measured with exact alternating fixtures; narrow launchd source policy repair,26service contracts pass. Residualmaintenance1.9-2.0s, currentc02backgroundjob untouched, all broader deployed/independent acceptance criteria remain.",
+  "as_of": "2026-10-24T15:34:22.567970+00:00",
+  "completion": "OPEN;650findings/124concerns. Prior649rowsunchanged. Scheduling causal/source evidence retained; initial571CI source-draft failure and localpost-testmetadata failure retained. Combined exact-head CI, coordinated activation, remaining maintenance/peer/inventory and ordinary independent acceptance remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -212496,6 +212496,22 @@
       "deployed": "No new activation; loadedc02e remainsbackground(5)",
       "resolution": "open",
       "next_actor": "this systemic session; existing backup/release coordination and ordinary scheduler acceptance"
+    },
+    {
+      "id": "concern:ci571-source-draft-restoration",
+      "kind": "concern",
+      "finding": "CI source draft restoration times out after thread navigation",
+      "family": "browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_ci_failure_cause_unverified_local_unchanged_case_pass_collector_failed_after_tests",
+      "artifact": "docs/benchmarks/systemic-ci571-draft-observation-20261024.json",
+      "implemented": "No browser/product/assertion/deadline repair claimed. Combined branch incorporates existing backup570 receipt source.",
+      "merged": [],
+      "deployed": "No new service activation; c02e unchanged",
+      "retested": "Original335CI4success/1failure. Local16tests pass including unchanged browser case; metadata failure retained, no precise local UTCrange invented.",
+      "resolution": "open",
+      "next_actor": "This systemic session",
+      "next_action": "Preserve original CI/local collector failures, require fresh combined exact-head CI/protection/supervisor gates, then diagnose remaining draft-input/restoration race. All650findings/124concerns and original performance/rollout/acceptance gates remain."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -305272,5 +305288,11 @@
     "rows": 649,
     "concerns": 123,
     "resolution": "Allopen; sourcepolicycorrectness+measuredpartialcause, no deployed/whole-PA acceptance"
+  },
+  "ci571_draft_stage": {
+    "artifact": "docs/benchmarks/systemic-ci571-draft-observation-20261024.json",
+    "sha256": "657709a401b4638340b8a3fa6ee60294ed93141842b2c8b4f2a6ff0f9036b40e",
+    "prior649rows_unchanged": true,
+    "resolution": "Open; initialCI/localmetadata failures preserved, no stale green/deployed claim"
   }
 }

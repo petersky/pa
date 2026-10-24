@@ -1,3 +1,15 @@
+# Current integration and CI residual — 2026-10-24
+
+All **650 findings and 124 concerns remain open**; every prior649row is unchanged. [Bounded CI/local failure evidence](benchmarks/systemic-ci571-draft-observation-20261024.json) retains initial PR571 head335fdda7 CI40106963041: four checks succeed, one fails while waiting20s for source-draft restoration after navigation. No browser/product repair, assertion change or timeout increase is claimed.
+
+The unchanged browser case and15receipt/service cases pass locally, then the collector fails constructing metadata from a pytest selector used as a filename. Both failures remain; no exact local UTC range or lost per-root audit array is invented. The guarded parent confines state/workspace roots and disables ACP. A local pass is not CI reproduction or resolution of possible input/focus/layout/owner/persistence behavior.
+
+Existing backup owner PR570 is integrated005fbf45; the systemic branch merges that current main receipt repair without overlapping edits. Fresh combined-head CI/supervisor/protection/review gates remain required. PR571 is the scheduling PR; the anticipated570watch request returned an unparsed native error, and bounded supported lists show the existing backup570watch untouched before correct571registration. No incorrectly owned watch was observed; no lane override, competing owner, install or restart occurred.
+
+The scheduling comparison and maintenance residual below remain valid for their pinned db3b wheel, not the newer combined source or deployed acceptance. Exact final package/loaded definition and backup material-hold coordination, all remaining original/later families, and ordinary17d/b527 independent acceptance remain required.
+
+## Preserved scheduling, inventory and evidence
+
 # Shared macOS scheduling cause and remaining tails — 2026-10-24
 
 All **649 findings and 123 concerns remain open**; every prior647row and historical failure is preserved. [Complete causal, numeric and integration evidence](benchmarks/systemic-scheduling-20261024.json) includes all four full JSON/CSV workload populations, timer/provider counts and source limits.
