@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T15:45:10.203030+00:00",
-  "completion": "OPEN;651findings/125concerns. Prior650rowsunchanged. Both prior571CI failures and collectorfailures retained; freshprocess admission fixture keepsGCenabled/100ms/allassertions. Scheduling source stilluninstalled; maintenance/providing/peer/inventory/deployed/ordinaryacceptance obligations remain.",
+  "as_of": "2026-10-24T21:06:52.549683+00:00",
+  "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -212528,6 +212528,430 @@
       "resolution": "open",
       "next_actor": "This systemic session; existing backup owner and ordinary independent scheduler acceptance unchanged",
       "next_action": "Require fresh exact-head CI/supervisor/currentprotection gates; preserve both prior CI failures. Coordinate one containing immutable target/actualhostdefinition activation and deployed representative retest, then address remaining productionGC and maintenance tails."
+    },
+    {
+      "id": "runtime-live6573:dispatch.followup_failed",
+      "kind": "runtime_operation_followup",
+      "finding": "dispatch.followup_failed",
+      "family": "dispatch",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "current_live_observation_cause_unverified",
+      "measurement": {
+        "active": 0,
+        "atomic_replace_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "atomic_write_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "atomic_write_calls": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "cancelled": 0,
+        "completed": 1,
+        "completion_delivery_ms": {
+          "max": 0.041,
+          "p50": 0.041,
+          "p95": 0.041,
+          "p99": 0.041,
+          "samples": 1
+        },
+        "directory_fsync_calls": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "directory_fsync_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "executor_dispatch_ms": {
+          "max": 0.018,
+          "p50": 0.018,
+          "p95": 0.018,
+          "p99": 0.018,
+          "samples": 1
+        },
+        "failed": 0,
+        "file_fsync_calls": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "file_fsync_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "file_lock_hold_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "file_lock_release_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "file_lock_wait_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "filesystem_totals": {
+          "atomic_replace_ms": 0.0,
+          "atomic_write_bytes": 0,
+          "atomic_write_calls": 0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "file_lock_wait_ms": 0.0,
+          "fsync_failures": 0,
+          "object_get_bytes": 0,
+          "object_get_calls": 0,
+          "object_get_ms": 0.0,
+          "object_put_bytes": 0,
+          "object_put_files": 0
+        },
+        "fsync_failures": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "max_active": 1,
+        "max_queued": 1,
+        "max_runtime_ms": 16.747,
+        "max_wait_ms": 16.99999999254942,
+        "object_get_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "object_get_calls": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "object_get_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "object_put_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "object_put_files": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "outer_lock_hold_ms": {
+          "max": 16.259,
+          "p50": 16.259,
+          "p95": 16.259,
+          "p99": 16.259,
+          "samples": 1
+        },
+        "outer_lock_release_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "python_lock_hold_ms": {
+          "max": 20.442,
+          "p50": 20.442,
+          "p95": 20.442,
+          "p99": 20.442,
+          "samples": 1
+        },
+        "python_lock_release_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "python_lock_wait_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "queue_ms": {
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "samples": 1
+        },
+        "queued": 0,
+        "rejected": 0,
+        "runtime_ms": {
+          "max": 16.747,
+          "p50": 16.747,
+          "p95": 16.747,
+          "p99": 16.747,
+          "samples": 1
+        },
+        "slow_calls": 0,
+        "sqlite_aggregate_bytes": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "sqlite_aggregate_items": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "sqlite_busy_failures": 0,
+        "sqlite_calls": {
+          "max": 4,
+          "p50": 4,
+          "p95": 4,
+          "p99": 4,
+          "samples": 1
+        },
+        "sqlite_commit_ms": {
+          "max": 1.31,
+          "p50": 1.31,
+          "p95": 1.31,
+          "p99": 1.31,
+          "samples": 1
+        },
+        "sqlite_rows": {
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "samples": 1
+        },
+        "sqlite_statement_ms": {
+          "max": 0.134,
+          "p50": 0.134,
+          "p95": 0.134,
+          "p99": 0.134,
+          "samples": 1
+        },
+        "submitted": 1,
+        "thread_cpu_ms": {
+          "max": 15.817,
+          "p50": 15.817,
+          "p95": 15.817,
+          "p99": 15.817,
+          "samples": 1
+        },
+        "timed_out": 0,
+        "total_lock_wait_ms": 0.0,
+        "total_queue_ms": 0.0,
+        "total_runtime_ms": 16.747,
+        "total_wait_ms": 16.99999999254942,
+        "worker_service_ms": {
+          "max": 16.687,
+          "p50": 16.687,
+          "p95": 16.687,
+          "p99": 16.687,
+          "samples": 1
+        }
+      },
+      "source": {
+        "host": "macbook",
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "range_start": "2026-10-24T20:59:31.805156+00:00",
+        "range_end": "2026-10-24T20:59:39.307161+00:00",
+        "scope": "Counters/processmax since startup; bounded256window percentiles and bytes; this is not a new slow-log incident inventory."
+      },
+      "implemented": "No repair implied by name match",
+      "merged": [],
+      "deployed": "6573/c387observed",
+      "retested": "Bounded owner runtime snapshot only; branch/representative acceptance open",
+      "resolution": "open",
+      "next_actor": "this systemic card/session",
+      "next_action": "Attribute measured slow/failure or payload phases and exercise valid representative branches without unsafe production injection."
+    },
+    {
+      "id": "route-live6573:/api/backups/runs",
+      "kind": "http_route_followup",
+      "finding": "/api/backups/runs",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "current_live_observation_cause_unverified",
+      "measurement": {
+        "count": 1,
+        "latency_ms": {
+          "max": 0.486,
+          "p50": 0.486,
+          "p95": 0.486,
+          "p99": 0.486,
+          "samples": 1
+        },
+        "response_bytes": 1151,
+        "response_size_bytes": {
+          "max": 1151,
+          "p50": 1151,
+          "p95": 1151,
+          "p99": 1151,
+          "samples": 1
+        }
+      },
+      "source": {
+        "host": "macbook",
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "range_start": "2026-10-24T20:59:31.805156+00:00",
+        "range_end": "2026-10-24T20:59:39.307161+00:00",
+        "scope": "Counters/processmax since startup; bounded256window percentiles and bytes; this is not a new slow-log incident inventory."
+      },
+      "implemented": "No repair implied by name match",
+      "merged": [],
+      "deployed": "6573/c387observed",
+      "retested": "Bounded owner runtime snapshot only; branch/representative acceptance open",
+      "resolution": "open",
+      "next_actor": "this systemic card/session",
+      "next_action": "Attribute measured slow/failure or payload phases and exercise valid representative branches without unsafe production injection."
+    },
+    {
+      "id": "concern:transcript-health-directory-probes",
+      "kind": "concern",
+      "finding": "Fresh transcript health repeats per-reference filesystem probes",
+      "family": "transcript",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_call_amplification_source_repair_measured",
+      "cause": "Each of two distinct fresh maintenance health paths checks every event-derived cold hash separately;12511Path.existscalls per health measurement. Directory scan avoids ordinary per-file stat, sparse<=8refs keep individual checks; symlink/error/malformed reference semantics retained.",
+      "measurement": {
+        "individual": {
+          "wall_ms": {
+            "samples": 10,
+            "p50": 80.0315,
+            "p95": 80.99825,
+            "p99": 80.99825,
+            "max": 80.99825
+          },
+          "thread_cpu_ms": {
+            "samples": 10,
+            "p50": 79.989208,
+            "p95": 80.95525,
+            "p99": 80.95525,
+            "max": 80.95525
+          },
+          "path_exists": {
+            "samples": 10,
+            "p50": 12511,
+            "p95": 12511,
+            "p99": 12511,
+            "max": 12511
+          },
+          "directory_scans": {
+            "samples": 10,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "python_stat_calls": {
+            "samples": 10,
+            "p50": 12511,
+            "p95": 12511,
+            "p99": 12511,
+            "max": 12511
+          }
+        },
+        "directory": {
+          "wall_ms": {
+            "samples": 10,
+            "p50": 45.041458,
+            "p95": 45.850084,
+            "p99": 45.850084,
+            "max": 45.850084
+          },
+          "thread_cpu_ms": {
+            "samples": 10,
+            "p50": 44.999625,
+            "p95": 45.815083,
+            "p99": 45.815083,
+            "max": 45.815083
+          },
+          "path_exists": {
+            "samples": 10,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "directory_scans": {
+            "samples": 10,
+            "p50": 256,
+            "p95": 256,
+            "p99": 256,
+            "max": 256
+          },
+          "python_stat_calls": {
+            "samples": 10,
+            "p50": 256,
+            "p95": 256,
+            "p99": 256,
+            "max": 256
+          }
+        }
+      },
+      "implemented": "Source-only metrics directory scan; both fresh health passes/SQLquick_check/event-reference authority unchanged.",
+      "merged": [],
+      "deployed": "Not installed;6573loadedbaseline remains",
+      "retested": "78contracts incl actual case-alias and directory-search-permission parity;10alternating final fullhealthpairs,100iteration finalcandidate9600ordered/0warnings but1476.160msmaintenance residual. All prior stages retained.",
+      "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+      "resolution": "open",
+      "next_actor": "this systemic card/session",
+      "next_action": "Ready supervisedPR/exacthead independentgreen, integration and coordinated activation/retest; continue remaining collector/native/production tails."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -305316,5 +305740,1703 @@
     "sha256": "7dc83fd3455cf2b80cdc2de074aea63d0e81db8ef9bc58aac08ac722c6d1bcea",
     "prior650rows_unchanged": true,
     "resolution": "Open; bounded freshprocess fixture correction, productionGC/deployed acceptance unproven"
+  },
+  "loaded6573_health_scan_stage": {
+    "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+    "sha256": "f1148b7beaf6e1d540d3934d87ef78e60984e7eb766c8629f44fcf6e68208376",
+    "rows_preserved": 651,
+    "rows_added": 3,
+    "all_rows_open": true,
+    "activation": "6573/c387PID52322Interactive verified; sourcehealthrepairnotdeployed",
+    "existing_row_evidence_overrides": {
+      "slow:sync.reconcile_head": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.execution_binding_materialize": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.card_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.transcript_append": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:intake.web_prompt": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:workspace.collect_garbage": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview.mcp_bootstrap": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview.sync": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.recovery_sessions": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:progress.heartbeat_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_due_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:progress.dispatch_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sync.commit_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview_cache_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_completion_due_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:acp.wire_append": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.agent_session_save": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:progress.sequence_allocate": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:workspace.project_provision": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:reconciliation.completion_evidence_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.project_recovery_availability": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.startup_state_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:workspace.lease_renew": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sync.ref_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.agent_runtime_checkpoint": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:reconciliation.dispatch_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.completion_pending_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_capability_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:progress.pending_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:progress.checkpoint_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.followup_pending_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.placement_resolve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.card_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sync.json_decode": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:provider.status.cursor": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.restart_handoff_completion": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:reconciliation.session_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview_cache_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.repository_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview_response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview.status": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:provider.status.codex": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.record_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:notifications.list_page": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_watch_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.restart_handoffs_pending": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:preferences.agent_auto_approve_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_metric": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:health.canonical_obligation": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_event_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_watch_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.restart_handoffs_watchdog": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:filesystem.github_credentials_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.project_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:goal.dispatch_lifecycle_index": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.restart_handoff_session": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:pr_supervisor.response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.record_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.agent_session_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:pr_supervisor.github_response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview.repositories": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview.reachability": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.prompt_acceptance_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:selection.target_revalidation": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sqlite.pr_supervisor_capability_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:provider.status.openinterpreter": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.provider_resolve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:workspace.session_leases": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:sync.startup_reconcile": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:selection.prompt_identity": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.followup_ack": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:conversation.session": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.prompt_compose": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:notifications.present_page": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.session_snapshot": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.cancel_check": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:selection.catalog_enrichment": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:selection.configuration_receipt": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:selection.target_receipt": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:agent.recovery_snapshot": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:fleet.overview.activity": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow:dispatch.session_link": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.execution_binding_materialize": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.reconcile_head": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.card_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview.mcp_bootstrap": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:http.fleet_agent": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.peer_http": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:maintenance.run": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:progress.heartbeat_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.transcript_append": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_due_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:progress.dispatch_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:http.fleet_overview": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:http.pr_supervisor_peer": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:workspace.lease_renew": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.agent_session_save": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:progress.sequence_allocate": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:acp.wire_append": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:workspace.collect_garbage": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:http.fleet_sync_head": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:reconciliation.dispatch_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.completion_pending_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:http.github": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.startup_state_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:progress.checkpoint_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:progress.pending_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.recovery_sessions": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.ref_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.placement_resolve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.json_decode": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview.sync": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:provider.status.cursor": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:workspace.project_provision": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:intake.web_prompt": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:reconciliation.session_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview.status": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:provider.status.codex": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.restart_handoffs_pending": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:preferences.agent_auto_approve_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_metric": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_event_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.followup_pending_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_watch_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.restart_handoffs_watchdog": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_watch_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.restart_handoff_completion": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_lifecycle_index": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview_cache_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview_cache_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.restart_handoff_session": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.card_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:reconciliation.completion_evidence_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.project_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.record_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:pr_supervisor.github_response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview_response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:health.canonical_obligation": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.project_recovery_availability": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.commit_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:notifications.list_page": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.agent_session_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_completion_due_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.target_revalidation": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:filesystem.github_credentials_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_capability_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview.reachability": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:provider.status.openinterpreter": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.provider_resolve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.record_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:workspace.session_leases": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.prompt_identity": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.prompt_acceptance_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:workspace.reconcile_terminal_state": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.repository_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.prompt_compose": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:notifications.present_page": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.startup_reconcile": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:pr_supervisor.response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:http.fleet_dispatch": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:conversation.session": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.agent_runtime_checkpoint": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.catalog_enrichment": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.configuration_receipt": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.target_receipt": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview.repositories": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.overview.activity": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.session_link": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.pr_supervisor_capability_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:workspace.expire_session": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.prompt_bind": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.recovery_snapshot": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:browser.executable_lookup": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:conversation.issues": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:browser.profile_mkdir": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:browser.free_port": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.attempt_authority": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.idempotency_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.cancel_check": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.initial_prompt_ack": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.session_snapshot": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.response_json": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.initial_prompt_bind": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:preferences.agent_surface_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:acp.wire_init": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.followup_bind": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sync.gc_resume": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.followup_started": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.followup_ack": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.dispatch_queue_admit": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.session_reserve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_assigned_service_identity_bind": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:acp.pa_mcp_owner_probe": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:filesystem.sync_head_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.projection_head_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_admission_trace": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.receipt_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.session_mkdir": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:selection.card_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_reservation_release": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:sqlite.transcript_sequence": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.followup_record_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:acp.provider_resolve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_reservation_validate": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:dispatch.workspace_admission_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:github.supervision_scope": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:fleet.update_recovery": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:startup.agent_manager": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_followup_reserve": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:goal.dispatch_execution_identity_restore": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime:agent.quiesce_snapshot_clear": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/backups/status": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/dispatch": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/browser/{operation}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/sessions/{session_id}/prompts/{client_prompt_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/sessions": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/status": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/execution/catalog": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/overview/local": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/dispatch-jobs/{dispatch_id}/checkpoint": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/{page_path:path}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/notifications": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/pr-supervisor/replicas": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/sessions/{session_id}/dispatch-prompts": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/pr-supervisor/capabilities": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:__unmatched__": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/instances": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/cards/{card_id}/history": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/health-journal/receipts/{receipt_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/sessions/{session_id}/issues": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/sessions/{session_id}/restart-handoffs": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/dispatch/materialize": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/sync/refs": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/cards/{card_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/instance": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/collaboration/policies": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/pr-supervisor/instances/heartbeat": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/ui/assets": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/observability/v1/sessions/{session_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/workspaces": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/dispatch-jobs/{dispatch_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/sync/get": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/favicon.ico": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/provider-options/{provider_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/mcp-servers": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/github/supervision-scope/comparison": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/dispatch/{dispatch_id}/turn-end": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/ready": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/telemetry/live": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/github/supervision-scope": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/agent/prompt-capabilities": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route:/api/owner-ready": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime-followup:history.card_page": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime-followup:http.session_list": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime-live:sqlite.restart_handoff_queued": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime-live:sqlite.restart_handoff_resuming": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route-live:/api/agent/sessions/{session_id}/threads": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route-live:/api/health-journal/verification-intents": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:acp.pa_mcp_owner_probe": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:browser.free_port": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:conversation.issues": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:dispatch.followup_bind": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:dispatch.followup_started": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:dispatch.idempotency_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:dispatch.prompt_bind": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:goal.dispatch_admission_trace": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:goal.dispatch_execution_identity_restore": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:goal.dispatch_reservation_validate": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:history.card_page": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:http.session_list": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:preferences.agent_surface_read": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:selection.receipt_write": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:sqlite.dispatch_queue_admit": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:maintenance.run": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:workspace.reconcile_terminal_state": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime-followup:startup.async_backend_prepare": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route-live-followup:/api/backups": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "runtime-followup:startup.openapi": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "route-b808:/api/fleet/instances/{authority_instance_id}/dispatch-jobs/{dispatch_id}/{operation}": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      },
+      "slow-followup:startup.openapi": {
+        "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+        "section": "live_get95.runtime_inventory",
+        "resolution": "open",
+        "scope": "Current bounded live observation, not every branch/acceptance"
+      }
+    },
+    "final_candidate_maintenance_ms": 1476.16,
+    "final_contracts_passed": 78
   }
 }

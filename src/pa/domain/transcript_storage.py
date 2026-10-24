@@ -573,12 +573,62 @@ class TranscriptStorage:
             objects = conn.execute("SELECT COUNT(*),COALESCE(SUM(uncompressed_bytes),0),COALESCE(SUM(compressed_bytes),0),COALESCE(SUM(ref_count),0) FROM transcript_objects").fetchone()
             integrity = conn.execute("PRAGMA quick_check").fetchone()[0]
             journal = conn.execute("PRAGMA journal_mode").fetchone()[0]
-        missing = sum(1 for digest in self.referenced_hashes() if not self._object_path(digest).exists())
+        missing = self._missing_referenced_objects()
         return {"schema_version": SCHEMA_VERSION, "events": event_count, "audit_evidence": evidence_count, "objects": objects[0],
             "uncompressed_bytes": objects[1], "compressed_bytes": objects[2], "references": objects[3],
             "deduplicated_references": max(0, objects[3] - objects[0]), "missing_objects": missing,
             "journal_mode": journal, "integrity": integrity, "redaction_policy": "canonical-v1",
             "hot_payload_limit": MAX_HOT_PAYLOAD_BYTES}
+
+    def _missing_referenced_objects(self) -> int:
+        """Fresh event-derived existence checks, sharing each directory read.
+
+        No result survives this call. Directory entries avoid a separate stat
+        for every ordinary immutable object; symlinks still need the same
+        target-existence check as Path.exists. An incomplete directory read
+        falls back to individual checks rather than publishing partial health.
+        """
+        directories: dict[str, set[str]] = defaultdict(set)
+        missing = 0
+        for digest in self.referenced_hashes():
+            if len(digest) == 64 and all(c in "0123456789abcdef" for c in digest):
+                directories[digest[:2]].add(f"{digest[2:]}.zlib")
+            else:
+                # Preserve diagnostics for malformed event references, too.
+                missing += not self._object_path(digest).exists()
+        for prefix, names in directories.items():
+            directory = self.objects_dir / prefix
+            if len(names) <= 8:
+                # A sparse live directory may contain many unreferenced files;
+                # don't enumerate those to answer a handful of existence checks.
+                missing += sum(not (directory / name).exists() for name in names)
+                continue
+            found: set[str] = set()
+            try:
+                # Listing names alone does not prove search permission on the
+                # directory. Keep Path.exists behavior for read-only/no-search
+                # directories, including filesystem ACLs and symlink parents.
+                os.stat(os.fspath(directory) + "/.")
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        if entry.name in names and (
+                            not entry.is_symlink() or Path(entry.path).exists()
+                        ):
+                            found.add(entry.name)
+                            if len(found) == len(names):
+                                break
+                        elif entry.name.lower() in names and (
+                            directory / entry.name.lower()
+                        ).exists():
+                            # Existing uppercase aliases count only on a
+                            # filesystem where the original lowercase path
+                            # actually resolves (e.g. default macOS APFS).
+                            found.add(entry.name.lower())
+            except OSError:
+                missing += sum(not (directory / name).exists() for name in names)
+            else:
+                missing += len(names - found)
+        return missing
 
     def referenced_hashes(self) -> set[str]:
         """Read every event reference with bounded cursor materialization."""
