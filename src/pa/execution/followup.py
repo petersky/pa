@@ -29,9 +29,16 @@ def dispatch_followup_pending(record: DispatchRecord) -> bool:
         error = error if isinstance(error, dict) else {}
         if operation.get('state') == 'delivery_not_admitted' and not response.get('accepted'):
             continue
+        # Fleet writes status_code; older receipts can use status. Keep
+        # conflicting representations pending rather than guessing an outcome.
+        status_code = error.get('status_code', error.get('status'))
+        conflicting_status = ('status_code' in error and 'status' in error
+                              and (not isinstance(error['status'], int)
+                                   or error['status_code'] != error['status']))
         if (operation.get('state') == 'failed' and not response.get('accepted')
-                and error.get('recoverable') is False and isinstance(error.get('status'), int)
-                and 400 <= error['status'] < 500):
+                and error.get('recoverable') is False and not conflicting_status
+                and isinstance(status_code, int)
+                and 400 <= status_code < 500):
             continue
         return True
     return False
