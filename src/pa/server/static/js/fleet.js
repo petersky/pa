@@ -1675,6 +1675,11 @@
     return field && (field.last_attempt_state || field.state) || "unavailable";
   }
 
+  function observationState(field) {
+    var attempt = observationAttempt(field);
+    return attempt === "fresh" && field && field.state === "stale" ? "stale" : attempt;
+  }
+
   function observationCounts(node) {
     var counts = { failed: 0, unknown: 0, stale: 0, pending: 0 };
     Object.keys(node.dimensions || {}).forEach(function (name) {
@@ -1717,20 +1722,20 @@
   function syncStatusLabel(sync) {
     if (!sync || !sync.value) return (sync && sync.state) || "unavailable";
     if (sync.value.consistent) return "heads aligned";
-    return observationAttempt(sync) === "fresh" ? "head mismatch" : "last known heads";
+    return observationState(sync) === "fresh" ? "head mismatch" : "last known heads";
   }
 
   function requiredReadiness(node) {
     var reach = fieldValue(node, "reachability");
     var health = reach.value && reach.value.health;
-    if (health !== "up") return health === "unknown" ? observationAttempt(reach) : (health || observationAttempt(reach));
+    if (health !== "up") return health === "unknown" ? observationState(reach) : (health || observationState(reach));
     var sync = fieldValue(node, "sync");
-    if (observationAttempt(sync) === "fresh" && sync.value && sync.value.consistent === false) return "error";
+    if (observationState(sync) === "fresh" && sync.value && sync.value.consistent === false) return "error";
     var order = { error: 5, timeout: 4, unavailable: 3, stale: 2, fresh: 1 };
     var worst = "fresh";
     ["reachability", "status", "sync"].forEach(function (name) {
       var item = fieldValue(node, name);
-      var attempt = observationAttempt(item);
+      var attempt = observationState(item);
       if ((order[attempt] || 5) > (order[worst] || 1)) worst = attempt || "error";
     });
     return worst;
@@ -1744,14 +1749,14 @@
     ["reachability", "status", "sync"].forEach(function (name) {
       var field = fieldValue(node, name);
       var attempt = field.value == null && field.state === "fresh"
-        ? "unavailable" : observationAttempt(field);
+        ? "unavailable" : observationState(field);
       if ((order[attempt] || 5) > (order[freshness] || 1)) freshness = attempt;
     });
     if (freshness !== "fresh") return freshness;
     var optionalIssue = ["providers", "update", "activity", "repositories", "supervisor"]
       .some(function (name) {
         var item = fieldValue(node, name);
-        var attempt = item.last_attempt_state || item.state;
+        var attempt = observationState(item);
         return ["error", "timeout", "stale", "unavailable"].indexOf(attempt) >= 0;
       });
     return optionalIssue ? "partial" : "fresh";
@@ -2015,7 +2020,7 @@
     var syncEl = $("[data-fleet-sync]", tr);
     if (syncEl) {
       syncEl.textContent = sync.value
-        ? (sync.value.consistent ? (sync.state === "fresh" ? "in sync" : "last known in sync") : (observationAttempt(sync) === "fresh" ? "head mismatch" : "last known mismatch"))
+        ? (sync.value.consistent ? (sync.state === "fresh" ? "in sync" : "last known in sync") : (observationState(sync) === "fresh" ? "head mismatch" : "last known mismatch"))
         : sync.state;
       setFieldState(syncEl, sync.state);
     }

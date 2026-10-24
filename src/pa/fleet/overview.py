@@ -427,6 +427,32 @@ def observation_attempt(field: dict[str, Any] | None) -> str:
     return str(field.get("last_attempt_state") or field.get("state") or "unavailable")
 
 
+def _observation_state(value: dict[str, Any] | None) -> str:
+    """Keep failed attempts visible; an expired success is only last-known data."""
+    attempt = observation_attempt(value)
+    if attempt == "fresh" and value and value.get("state") == "stale":
+        return "stale"
+    return attempt
+
+
+def _cache_is_fresh(
+    value: dict[str, Any], dimension: str, *, now: datetime | None = None
+) -> bool:
+    """Use the probe's existing lifetime for cache-only presentation as well."""
+    if value.get("state") != "fresh":
+        return False
+    try:
+        observed = datetime.fromisoformat(str(value.get("observed_at")))
+        age = ((now or datetime.now(UTC)) - observed).total_seconds()
+    except (TypeError, ValueError):
+        return False
+    ttl = (
+        MCP_BOOTSTRAP_CACHE_TTL if dimension == "mcp_bootstrap"
+        else 30.0 if dimension in {"providers", "update"} else 3.0
+    )
+    return 0 <= age < ttl
+
+
 def required_readiness(dimensions: dict[str, Any] | None) -> str:
     """Classify a node from live attempts; last-good payloads are not current errors.
 
@@ -438,17 +464,17 @@ def required_readiness(dimensions: dict[str, Any] | None) -> str:
     health = (reach.get("value") or {}).get("health")
     if health != "up":
         if health == "unknown":
-            return observation_attempt(reach)
-        return str(health or observation_attempt(reach))
+            return _observation_state(reach)
+        return str(health or _observation_state(reach))
     sync = dimensions.get("sync") or {}
-    if observation_attempt(sync) == "fresh" and (sync.get("value") or {}).get(
+    if _observation_state(sync) == "fresh" and (sync.get("value") or {}).get(
         "consistent"
     ) is False:
         return "error"
     order = {"error": 5, "timeout": 4, "unavailable": 3, "stale": 2, "fresh": 1}
     worst = "fresh"
     for name in REQUIRED_DIMENSIONS:
-        attempt = observation_attempt(dimensions.get(name))
+        attempt = _observation_state(dimensions.get(name))
         if order.get(attempt, 5) > order.get(worst, 1):
             worst = attempt or "error"
     return worst
@@ -504,6 +530,8 @@ def _cached_or_default(
 ) -> dict[str, Any]:
     cached = cache.get(inst.instance_id, dimension)
     if cached:
+        if cached.get("state") == "fresh" and not _cache_is_fresh(cached, dimension):
+            return {**cached, "state": "stale"}
         return dict(cached)
     if dimension == "reachability":
         value = {"health": "up" if inst.healthy else "unknown"}
@@ -1233,7 +1261,7 @@ async def probe_dimension(
     )
     if (
         cached
-        and cached.get("state") == "fresh"
+        and _cache_is_fresh(cached, dimension)
         and (
             not force
             or (
@@ -1242,20 +1270,7 @@ async def probe_dimension(
             )
         )
     ):
-        try:
-            observed = datetime.fromisoformat(str(cached.get("observed_at")))
-            age = (datetime.now(UTC) - observed).total_seconds()
-            ttl = (
-                MCP_BOOTSTRAP_CACHE_TTL
-                if dimension == "mcp_bootstrap"
-                else 30.0
-                if dimension in {"providers", "update"}
-                else 3.0
-            )
-            if age < ttl:
-                return {**cached, "cache_hit": True}
-        except TypeError, ValueError:
-            pass
+        return {**cached, "cache_hit": True}
     key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
     async with _probe_lock:
         active = _probe_tasks.get(key)
