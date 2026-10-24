@@ -1,3 +1,48 @@
+# Exact6573 activation and fresh transcript health — 2026-10-24
+
+All **654 findings and 126 concerns remain open**; every prior651row is preserved. [Complete numeric evidence](benchmarks/systemic-loaded6573-health-scan-20261024.json) retains every live runtime/route family,95GET sample, both mixed stages, cold-session trace and paired health sample. Historical source/log/CI evidence below remains unchanged.
+
+Actual installed **65736c30/packagec387**, PID52322/startupe13a2b41 is loaded after managed handoff9f6a708f. Read-only launchctl confirms **Interactive(4)**. Handoff continuation is queued, not yet terminally delivered; this turn cannot verify its own final transcript flush. No second restart/configuration/default change.
+
+**95 sequential ordinary owner GETs:95successes,0errors,0>=500ms violations**, exact build stable. Status20samples max70.899ms; runtime20 max39.465ms; health20 max9.147ms;5samples each Agent25.695/Fleet94.222/home12.501/work16.033/PR9.755/settings7.061/overview39.481ms. Fleet HTML1,325,420bytes and overview1,150,712bytes remain amplification concerns. Small samples are not full acceptance.
+
+Installed mixed100iterations:438sourcefiles/29loadedmodules/38templates verified;9600ordered events,0failures/timeouts/rejections/workerwarnings. Maintenance remains**2521.730ms**. Candidate source keeps two distinct fresh health checks and native integrity; it groups dense directory reads, checks symlink targets and falls back to individual existence checks on incomplete scans; sparse directories avoid enumeration.78transcript/retention/GC/maintenance contracts pass. No durable mutation/order/CAS/receipt/retention policy change.
+
+Ten alternating full-health pairs on12,511synthetic cold objects return identical fields. p95/max **80.998→45.850ms**, p50 **80.032→45.041ms**, ordinary Path.exists12,511→0, directory reads0→256. Shared host/warm filesystem, no hardware isolation or pooled-percentile claim. Draft paired stage remains in the artifact.
+
+Candidate mixed100iterations:9600ordered events/0failures/timeouts/rejections/workerwarnings, but maintenance**1476.160ms** still violates the declared500ms observation. Earlier candidate phase walls remain in the artifact; final candidate phases and every raw sample are separately retained. Directory-search permissions and filesystem case aliases match the original existence semantics.256directory reads also perform256Python stat calls. The paired fixture launch overlaps the final mixed tail; shared-host samples are not pooled. Native query/busy/GIL/CPU/disk partitions remain open. Source-only candidate is **not installed/deployed**.
+
+Ten installed disposable tool-free sessions all connect/drain: first68.456ms, subsequentmax27.690ms, no drain/startup timeout. This uses a fake provider and projection/manager path; it does not establish full Kernel, real provider/MCP/network/placement cold admission.
+
+Live snapshot retains **all136operations/47registered route groups** and **15slow-or-failed families**. Counts/process maxima start at this process startup; p50/p95/p99/windowmax are bounded returned windows, often256samples. No new log/peer-log scan in this stage, no distinct-incident or exhaustive fleet audit claim.
+
+| Operation with retained slow/failure | Submitted | Slow | Failed / timeout / rejected | Processmax ms | Window p50 / p95 / p99 / max ms |
+|---|---:|---:|---:|---:|---|
+| `agent.startup_state_read` | 1 | 1 | 0 / 0 / 0 | 1030.18 | 1030.18 / 1030.18 / 1030.18 / 1030.18 |
+| `dispatch.followup_record_write` | 2 | 1 | 0 / 0 / 0 | 619.582 | 100.487 / 619.582 / 619.582 / 619.582 |
+| `dispatch.record_read` | 6540 | 1 | 0 / 0 / 0 | 643.79 | 4.548 / 10.317 / 14.747 / 18.094 |
+| `fleet.overview.mcp_bootstrap` | 2 | 2 | 0 / 0 / 0 | 3745.675 | 1048.246 / 3745.675 / 3745.675 / 3745.675 |
+| `fleet.placement_resolve` | 2 | 0 | 1 / 0 / 0 | 385.825 | 212.742 / 385.825 / 385.825 / 385.825 |
+| `health.canonical_obligation` | 304 | 1 | 0 / 0 / 0 | 1542.023 | 2.15 / 56.604 / 202.675 / 434.961 |
+| `http.fleet_overview` | 756 | 0 | 365 / 365 / 0 | 4124.455 | 34.503 / 4046.001 / 4056.593 / 4088.98 |
+| `http.pr_supervisor_peer` | 5782 | 0 | 18 / 3 / 0 | 7379.496 | 33.595 / 60.57 / 149.796 / 325.764 |
+| `provider.status.cursor` | 2 | 2 | 0 / 0 / 0 | 1525.15 | 875.683 / 1525.15 / 1525.15 / 1525.15 |
+| `reconciliation.session_read` | 630 | 1 | 0 / 0 / 0 | 647.87 | 0.656 / 2.788 / 14.561 / 102.572 |
+| `sqlite.agent_session_save` | 87 | 2 | 0 / 0 / 0 | 3356.02 | 2.542 / 34.48 / 3356.02 / 3356.02 |
+| `sync.peer_http` | 24 | 0 | 5 / 0 / 0 | 3319.964 | 53.889 / 3286.13 / 3319.964 / 3319.964 |
+| `sync.reconcile_head` | 19 | 2 | 0 / 0 / 0 | 2901.584 | 142.848 / 2901.584 / 2901.584 / 2901.584 |
+| `workspace.collect_garbage` | 3 | 3 | 0 / 0 / 0 | 11751.865 | 5159.689 / 11751.865 / 11751.865 / 11751.865 |
+| `workspace.project_provision` | 11 | 2 | 4 / 0 / 0 | 9192.946 | 2363.018 / 9192.946 / 9192.946 / 9192.946 |
+
+All returned operation/route counts/bytes/distributions and phases—not only the leading repairs—are in the JSON. Shared-cause attribution remains open for peer transport, startup/session-save/health/followup/reconciliation, provider status, workspace provisioning/GC and sync. Good current foreground reads do not erase those tails.
+
+Backup successor05a3/fc197 is independently LIVE on lease346 after18fcclosed. The obsolete18fcprompt was definitively rejected409/session_recovery_failed/correlation256a89b5; successor coordination11e427 was accepted queued, not claimed consumed. Latest backup9archives(8verified+1limited), no active capture/restore, automatic lastattempttoday17:19:54Z/next23:25:28Z. Preserve2842Bdisclosure/archives; historical missing payload is not a blocker. Normal b527 verification stays with its owner/scheduler. Systemic17d independent_agent_v1 remains unchanged; no acceptance receipt/milestone fabricated.
+
+Next: supervised source integration and coordinated activation/retest of health repair; remaining collector/production tails, valid foreground/background/peer inventory branches, log loss/retention/native busy/disk/write amplification, GC publication/saved-plan proof and ordinary independent acceptance. Existing accepted DB89957originalscope stays closed.
+
+Postactivation supported configuration revision exactly matches86968d12 before restart. Canonical requirement17d remains verification_pending/acceptedfalse withactive/verified/acceptance missing. Two saved committed followups remain delivery_ambiguous/effectunknown/reconciliationwaiting after passive exact-key lookups; no resend or resolved claim.
+
+---
 # Startup admission fixture and retained GC tail — 2026-10-24
 
 All **651 findings and 125 concerns remain open**, preserving every prior650row. [Exact CI GC overlap and source/validation evidence](benchmarks/systemic-ci571-startup-gc-20261024.json) retains c0f47559 CI40107627965 shard0 failure: startup admission263.443ms, calling-threadCPU7.236ms, with a258.566ms generation2collection on another thread. The old pytest worker heap can suspend the admission thread.
