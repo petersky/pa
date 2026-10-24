@@ -74,24 +74,26 @@
       "cases": "Canonical409 incorrectly blocked; status_code503/status409 and status_codeNull/status409 incorrectly settled."
     },
     "after": {
-      "tests": 94,
+      "tests": 112,
       "failures": 0,
       "errors": 0,
-      "seconds": 24.45,
-      "xml_sha256": "37de0f1b6716180837e7576ce8672c9db1266530bf1fba405960c596d41b7275",
+      "seconds": 28.776,
+      "xml_sha256": "4ad167e70655e3477c9105ed4aa6d2a64f6a339f9a906f4a0f81f838d51b03bb",
       "suites": [
         "followup terminal receipts",
         "dispatch followup identity",
-        "autonomous verification"
+        "autonomous verification",
+        "session lifecycle"
       ]
     },
-    "session_lifecycle": {
+    "earlier_session_lifecycle": {
       "tests": 16,
       "failures": 0,
       "errors": 0,
       "seconds": 1.688
     },
-    "combined_tests": 110,
+    "combined_tests": 112,
+    "additional_guard": "Dual status fields must both be integers. Numerically equal float/integer representations remain pending.",
     "isolated_application_boot": "passed with separate disposable data/workspace roots",
     "diff_check": "passed",
     "fixture_guards": "Real disposable dispatch/canonical/journal stores, ordinary verifier service, unchanged completion requirement, receipt fields preserved, distinct verifier actor, one admission on repeat process. No live mutation or self-acceptance."

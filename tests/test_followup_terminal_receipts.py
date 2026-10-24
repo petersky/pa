@@ -18,6 +18,8 @@ from tests.test_autonomous_verification import ordinary, system
     ({'status_code':409, 'status':503, 'recoverable':False}, False, False),
     ({'status_code':503, 'status':409, 'recoverable':False}, False, False),
     ({'status_code':None, 'status':409, 'recoverable':False}, False, False),
+    ({'status_code':409, 'status':409.0, 'recoverable':False}, False, False),
+    ({'status_code':409.0, 'status':409, 'recoverable':False}, False, False),
     ({'status_code':409}, False, False),
     ({'recoverable':False}, False, False),
 ])

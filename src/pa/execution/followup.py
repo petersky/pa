@@ -33,7 +33,8 @@ def dispatch_followup_pending(record: DispatchRecord) -> bool:
         # conflicting representations pending rather than guessing an outcome.
         status_code = error.get('status_code', error.get('status'))
         conflicting_status = ('status_code' in error and 'status' in error
-                              and error['status_code'] != error['status'])
+                              and (not isinstance(error['status'], int)
+                                   or error['status_code'] != error['status']))
         if (operation.get('state') == 'failed' and not response.get('accepted')
                 and error.get('recoverable') is False and not conflicting_status
                 and isinstance(status_code, int)
