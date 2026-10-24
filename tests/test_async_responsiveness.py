@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import threading
 import time
 import unittest
@@ -329,6 +331,35 @@ class StartupResponsivenessTests(unittest.IsolatedAsyncioTestCase):
                 await kernel.shutdown(app)
 
     async def test_provider_startup_is_backgrounded_after_manager_admission(self) -> None:
+        # Admission starts in a fresh service process. An older xdist worker's
+        # unrelated full-heap collection can suspend every Python thread. Keep
+        # GC enabled and the original 100ms assertion/diagnostics in the child.
+        child_marker = "PA_TEST_PROVIDER_ADMISSION_CHILD"
+        if os.environ.get(child_marker) != "1":
+            with tempfile.TemporaryDirectory() as tmp:
+                env = {
+                    **os.environ,
+                    child_marker: "1",
+                    "PA_DATA_DIR": str(Path(tmp) / "data"),
+                    "PA_WORKSPACE_ROOT": str(Path(tmp) / "workspaces"),
+                    "PA_AGENT_ENABLED": "false",
+                    "TMPDIR": tmp,
+                }
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "unittest", self.id(),
+                    env=env, stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+                try:
+                    output, _ = await asyncio.wait_for(process.communicate(), timeout=15)
+                except BaseException:
+                    if process.returncode is None:
+                        process.kill()
+                    await process.wait()
+                    raise
+                self.assertEqual(process.returncode, 0, output.decode(errors="replace"))
+            return
+
         import gc
 
         release = asyncio.Event()

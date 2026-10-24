@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T15:34:22.567970+00:00",
-  "completion": "OPEN;650findings/124concerns. Prior649rowsunchanged. Scheduling causal/source evidence retained; initial571CI source-draft failure and localpost-testmetadata failure retained. Combined exact-head CI, coordinated activation, remaining maintenance/peer/inventory and ordinary independent acceptance remain.",
+  "as_of": "2026-10-24T15:45:10.203030+00:00",
+  "completion": "OPEN;651findings/125concerns. Prior650rowsunchanged. Both prior571CI failures and collectorfailures retained; freshprocess admission fixture keepsGCenabled/100ms/allassertions. Scheduling source stilluninstalled; maintenance/providing/peer/inventory/deployed/ordinaryacceptance obligations remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -212512,6 +212512,22 @@
       "resolution": "open",
       "next_actor": "This systemic session",
       "next_action": "Preserve original CI/local collector failures, require fresh combined exact-head CI/protection/supervisor gates, then diagnose remaining draft-input/restoration race. All650findings/124concerns and original performance/rollout/acceptance gates remain."
+    },
+    {
+      "id": "concern:ci571-startup-admission-worker-heap-gc",
+      "kind": "concern",
+      "finding": "Fresh startup admission test shares old xdist heap and overlaps another thread generation2collection",
+      "family": "startup",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_CI_gc_overlap_fixture_isolated_production_gc_tails_open",
+      "artifact": "docs/benchmarks/systemic-ci571-startup-gc-20261024.json",
+      "implemented": "Only the test admission workload starts in a fresh isolated child process instead of the long-lived xdist worker heap. Parent temp state/workspace roots and ACPfalse are inherited; child original fake-agent scenario explicitly enables its synthetic manager. GC remains enabled; all original100ms/lifecycle/blockedprovider/diagnostic assertions are AST-identical. No application GC/runtime code or service deadline change.",
+      "merged": [],
+      "deployed": "No applicationGC or serviceactivation change",
+      "retested": "46distinct casespass; predecessor wholemoduleAST equivalent excepttwoimports/isolationguard, all100ms/lifecycle/GC diagnostics unchanged. Both prior CI failures retained.",
+      "resolution": "open",
+      "next_actor": "This systemic session; existing backup owner and ordinary independent scheduler acceptance unchanged",
+      "next_action": "Require fresh exact-head CI/supervisor/currentprotection gates; preserve both prior CI failures. Coordinate one containing immutable target/actualhostdefinition activation and deployed representative retest, then address remaining productionGC and maintenance tails."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -305294,5 +305310,11 @@
     "sha256": "657709a401b4638340b8a3fa6ee60294ed93141842b2c8b4f2a6ff0f9036b40e",
     "prior649rows_unchanged": true,
     "resolution": "Open; initialCI/localmetadata failures preserved, no stale green/deployed claim"
+  },
+  "ci571_startup_gc_stage": {
+    "artifact": "docs/benchmarks/systemic-ci571-startup-gc-20261024.json",
+    "sha256": "7dc83fd3455cf2b80cdc2de074aea63d0e81db8ef9bc58aac08ac722c6d1bcea",
+    "prior650rows_unchanged": true,
+    "resolution": "Open; bounded freshprocess fixture correction, productionGC/deployed acceptance unproven"
   }
 }

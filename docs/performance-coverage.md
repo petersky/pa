@@ -1,3 +1,15 @@
+# Startup admission fixture and retained GC tail — 2026-10-24
+
+All **651 findings and 125 concerns remain open**, preserving every prior650row. [Exact CI GC overlap and source/validation evidence](benchmarks/systemic-ci571-startup-gc-20261024.json) retains c0f47559 CI40107627965 shard0 failure: startup admission263.443ms, calling-threadCPU7.236ms, with a258.566ms generation2collection on another thread. The old pytest worker heap can suspend the admission thread.
+
+The admission contract now runs in a fresh isolated child process. **GC stays enabled, the100ms assertion and every original lifecycle/blocked-provider assertion and GC diagnostic remain AST-identical.** Only two imports and two leading isolation statements differ in the whole module AST. A15s child lifetime/import/cleanup watchdog does not change the100ms measured admission budget. Parent temp data/workspace roots and fake manager keep this outside production; cancellation kills/reaps only the owned child. No applicationGC or production threshold is changed.
+
+**46distinct outer cases pass** across service/lifecycle, StartupResponsiveness and terminal receipts; the child body is not counted twice. The harness first refused an existing output path before running tests, then used a new identity; earlier evidence is intact. Both original PR571 CI failures and the local post-test metadata failure remain. The draft-restoration failure is not resolved by its local pass, and full-service/long-livedGC tails remain open.
+
+Scheduling source, exact shared-cause fixtures and the1.881–2.029s maintenance residual below remain. Fresh exact-head gates, one coordinated immutable containing target/actual loaded host definition, deployed representative inventory and ordinary17d/b527 independent acceptance are still required. No installation or restart occurred.
+
+## Preserved integration, scheduling and inventory evidence
+
 # Current integration and CI residual — 2026-10-24
 
 All **650 findings and 124 concerns remain open**; every prior649row is unchanged. [Bounded CI/local failure evidence](benchmarks/systemic-ci571-draft-observation-20261024.json) retains initial PR571 head335fdda7 CI40106963041: four checks succeed, one fails while waiting20s for source-draft restoration after navigation. No browser/product repair, assertion change or timeout increase is claimed.

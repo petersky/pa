@@ -1,0 +1,55 @@
+{
+  "contract": "pa.ci571-startup-gc-fixture/v1",
+  "observed_at": "2026-10-24T15:45:09.803941+00:00",
+  "failed_head": "c0f47559fc996316376a96c427fafea0e770e395",
+  "failed_ci": 40107627965,
+  "failed_job": 120912502049,
+  "failed_test": "tests/test_async_responsiveness.py::StartupResponsivenessTests::test_provider_startup_is_backgrounded_after_manager_admission",
+  "original_failure": {
+    "startup_wall_ms": 263.44323300000383,
+    "calling_thread_cpu_ms": 7.23589500000088,
+    "collection_generation": 2,
+    "other_thread_gc_wall_ms": 258.5662639999953,
+    "gc_count": 1,
+    "same_heap_stop_the_world_overlap": true,
+    "original_limit_ms": 100,
+    "raw_log_sha256": "8d9f5b46ffd498d578ba6ad20022cc769a7c8b881f4e3b05364d39c3566db54f",
+    "raw_log_published": false
+  },
+  "fix_scope": "Only the test admission workload starts in a fresh isolated child process instead of the long-lived xdist worker heap. Parent temp state/workspace roots and ACPfalse are inherited; child original fake-agent scenario explicitly enables its synthetic manager. GC remains enabled; all original100ms/lifecycle/blockedprovider/diagnostic assertions are AST-identical. No application GC/runtime code or service deadline change.",
+  "ast_proof": "Entire test module equals predecessor AST after removing two imports and the first two isolation statements in this method. Original method body,100msassertion and GC callback diagnostics identical.",
+  "child_watchdog": "15s bounds only new child process lifetime/import/cleanup, not the admission measurement: original100ms budget still applies inside child. Parent kills/reaps only its own child on cancellation/timeout. No existing PID targeted.",
+  "validation": {
+    "contracts": {
+      "started_at": "2026-10-24T15:43:18.000454+00:00",
+      "finished_at": "2026-10-24T15:43:32.091458+00:00",
+      "elapsed_ms": 14090.306458063424,
+      "exit_code": 0,
+      "targets": [
+        "tests/test_service_process_policy.py",
+        "tests/test_service.py",
+        "tests/test_async_responsiveness.py::StartupResponsivenessTests",
+        "tests/test_followup_terminal_receipts.py"
+      ],
+      "workspace_roots": [
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-service-policy-ee5dy35b/tmpvtwwunkf/data"
+      ],
+      "source_sha256": "c478c9584899bbf32cdef1667e05d44a1faf6a6f219b2b796a981b39785f50d4",
+      "test_sha256": "17b41f4a6c3e96c75c258b6b3cfac93dbbc585fccbc7542e239fd028cc93ad7c",
+      "scope": "Both settings/temp roots private; every Workspace construction guarded; Rendered-plist contract and existing service mocks; no production credentials, service installation, host configuration/process policy or timer/deadline changes."
+    },
+    "result": "46distinct outer cases pass:26service,6StartupResponsiveness,14terminalreceipt cases. The one isolated admission body is not counted again as another test.",
+    "log_sha256": "449095d4a4c96312b767825392af3d37da147818db25aef687c82884bdcebac5",
+    "test_source_sha256": "b5cab2b5ab2927397bcff0a6068d090ab86721eceeeca6683d74c4204b241403",
+    "harness_guard_history": "First invocation refused to overwrite existing26case service proof before running tests. A new service-policy-startup output identity was then used; no earlier evidence overwritten.",
+    "scope": "Guarded temporary state/workspace roots, fake manager, no real provider/service/host installation or policy operation."
+  },
+  "meaning": "Confirmed overlap from another thread in the old worker heap. Test isolation verifies fresh-process admission, not elimination of full-service/long-lived GC tails or whole-PA acceptance.",
+  "unresolved": [
+    "Previous335head source-draft CI failure stillopen; unchanged local browser pass doesnotresolve cause.",
+    "Existing macOS scheduling-policy source repair remains uninstalled; mixedapplication fixtures stillretain1.881\u20132.029s maintenance500ms violations.",
+    "All651findings/125concerns remainopen; original/later runtime/routes/startup/drain/provider/peer/log/GC/retention/receipt/deployment/ordinary17d+b527criteria unchanged."
+  ],
+  "next_actor": "This systemic session; existing backup owner and ordinary independent scheduler acceptance unchanged",
+  "next_action": "Require fresh exact-head CI/supervisor/currentprotection gates; preserve both prior CI failures. Coordinate one containing immutable target/actualhostdefinition activation and deployed representative retest, then address remaining productionGC and maintenance tails."
+}
