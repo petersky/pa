@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T15:06:57.765028+00:00",
-  "completion": "OPEN;647rows/121concerns, all646prior rows unchanged. Cache-age/source correctness repair,126tests+2subtests, not deployed acceptance. All previous performance violations and control/peer/log/backup/GC/receipt gaps retained.",
+  "as_of": "2026-10-24T15:34:22.567970+00:00",
+  "completion": "OPEN;650findings/124concerns. Prior649rowsunchanged. Scheduling causal/source evidence retained; initial571CI source-draft failure and localpost-testmetadata failure retained. Combined exact-head CI, coordinated activation, remaining maintenance/peer/inventory and ordinary independent acceptance remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -212464,6 +212464,54 @@
       "resolution": "open",
       "next_actor": "this systemic session; existing backup owner controls bounded overlap; ordinary scheduler final verifier",
       "next_action": "Integrate, coordinate exact deployment and verify live age/failure contract and remaining peer transport causes; no latency closure from relabeling."
+    },
+    {
+      "id": "concern:launchd-background-resource-policy",
+      "finding": "User-requested PA server and children run under launchd background resource scheduling",
+      "family": "service",
+      "cause_classification": "confirmed_loaded_background_role_strong_alternating_disposable_shared_scheduling_component",
+      "implemented": "Source ProcessTypeBackground->Interactive; otherwise parsed template identical,26service contracts pass. Applicationchild diagnostic matches requested resource treatment, not activated launchd proof.",
+      "retested": "Four exact100iteration source stages retain9600ordered events each; steady inherited72.159/70.547s vsapplication12.170/12.193s, residualmaintenance1.881-2.029s. Every original failure retained.",
+      "next_action": "Integrate/coordinate exact immutable activation and verify actual loaded job class and deployed representative results; attribute residual maintenance without reducing durability.",
+      "kind": "concern",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-scheduling-20261024.json",
+      "merged": [],
+      "deployed": "No new activation; loadedc02e remainsbackground(5)",
+      "resolution": "open",
+      "next_actor": "this systemic session; existing backup/release coordination and ordinary scheduler acceptance"
+    },
+    {
+      "id": "concern:provider-status-call-amplification",
+      "finding": "Simultaneous provider list calls repeat each provider status and enrichment",
+      "family": "provider",
+      "cause_classification": "confirmed_source_disposable_counts_production_magnitude_and_coalescing_safety_unverified",
+      "implemented": "No provider cache/coalescing repair; auth/default/admission/profile semantics preserved.",
+      "retested": "Three20ms fakeproviders;1/4/8simultaneouslists->3/12/24statusinvocations. Fullqueue/service/CPU/completion/latency data kept, not production acceptance.",
+      "next_action": "Measure actual supported call concurrency and safe credential/profile invalidation/lifecycle before implementing narrowly scoped in-flight sharing or other confirmed fix.",
+      "kind": "concern",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-scheduling-20261024.json",
+      "merged": [],
+      "deployed": "No new activation; loadedc02e remainsbackground(5)",
+      "resolution": "open",
+      "next_actor": "this systemic session; existing backup/release coordination and ordinary scheduler acceptance"
+    },
+    {
+      "id": "concern:ci571-source-draft-restoration",
+      "kind": "concern",
+      "finding": "CI source draft restoration times out after thread navigation",
+      "family": "browser",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_ci_failure_cause_unverified_local_unchanged_case_pass_collector_failed_after_tests",
+      "artifact": "docs/benchmarks/systemic-ci571-draft-observation-20261024.json",
+      "implemented": "No browser/product/assertion/deadline repair claimed. Combined branch incorporates existing backup570 receipt source.",
+      "merged": [],
+      "deployed": "No new service activation; c02e unchanged",
+      "retested": "Original335CI4success/1failure. Local16tests pass including unchanged browser case; metadata failure retained, no precise local UTCrange invented.",
+      "resolution": "open",
+      "next_actor": "This systemic session",
+      "next_action": "Preserve original CI/local collector failures, require fresh combined exact-head CI/protection/supervisor gates, then diagnose remaining draft-input/restoration race. All650findings/124concerns and original performance/rollout/acceptance gates remain."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -302934,6 +302982,16 @@
         "deployed": "Not installed; no latency reduction claimed",
         "resolution": "open"
       }
+    },
+    "concern:fleet-cache-age-fresh-label": {
+      "integration": {
+        "head": "a7b7d7aac3fa9ce68927cc5e44856ee785a18876",
+        "merge": "db3b02548f37ba7c146b4b5b00512c39c1390120",
+        "watch": "c32fed94-f8ad-4aaa-9e25-eb093cbbad1a",
+        "head_main_ci": "5firstattemptsuccess each,main40105809587",
+        "deployed": "Uninstalled; no performance closure",
+        "resolution": "open"
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -305222,5 +305280,19 @@
     "sha256": "194db06399b1151322415573dd6c2ef8389c93c39b8b482deb65936a6032a925",
     "prior646rows_unchanged": true,
     "resolution": "All647 findings/121concerns open; freshness repair is not performance acceptance"
+  },
+  "shared_scheduling_stage": {
+    "artifact": "docs/benchmarks/systemic-scheduling-20261024.json",
+    "sha256": "67a7e4a59e2b64ea73b007dd521979cd33123c3b517d5b9583b84f621fd285e4",
+    "prior647rows_unchanged": true,
+    "rows": 649,
+    "concerns": 123,
+    "resolution": "Allopen; sourcepolicycorrectness+measuredpartialcause, no deployed/whole-PA acceptance"
+  },
+  "ci571_draft_stage": {
+    "artifact": "docs/benchmarks/systemic-ci571-draft-observation-20261024.json",
+    "sha256": "657709a401b4638340b8a3fa6ee60294ed93141842b2c8b4f2a6ff0f9036b40e",
+    "prior649rows_unchanged": true,
+    "resolution": "Open; initialCI/localmetadata failures preserved, no stale green/deployed claim"
   }
 }

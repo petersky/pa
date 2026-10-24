@@ -1,3 +1,42 @@
+# Current integration and CI residual — 2026-10-24
+
+All **650 findings and 124 concerns remain open**; every prior649row is unchanged. [Bounded CI/local failure evidence](benchmarks/systemic-ci571-draft-observation-20261024.json) retains initial PR571 head335fdda7 CI40106963041: four checks succeed, one fails while waiting20s for source-draft restoration after navigation. No browser/product repair, assertion change or timeout increase is claimed.
+
+The unchanged browser case and15receipt/service cases pass locally, then the collector fails constructing metadata from a pytest selector used as a filename. Both failures remain; no exact local UTC range or lost per-root audit array is invented. The guarded parent confines state/workspace roots and disables ACP. A local pass is not CI reproduction or resolution of possible input/focus/layout/owner/persistence behavior.
+
+Existing backup owner PR570 is integrated005fbf45; the systemic branch merges that current main receipt repair without overlapping edits. Fresh combined-head CI/supervisor/protection/review gates remain required. PR571 is the scheduling PR; the anticipated570watch request returned an unparsed native error, and bounded supported lists show the existing backup570watch untouched before correct571registration. No incorrectly owned watch was observed; no lane override, competing owner, install or restart occurred.
+
+The scheduling comparison and maintenance residual below remain valid for their pinned db3b wheel, not the newer combined source or deployed acceptance. Exact final package/loaded definition and backup material-hold coordination, all remaining original/later families, and ordinary17d/b527 independent acceptance remain required.
+
+## Preserved scheduling, inventory and evidence
+
+# Shared macOS scheduling cause and remaining tails — 2026-10-24
+
+All **649 findings and 123 concerns remain open**; every prior647row and historical failure is preserved. [Complete causal, numeric and integration evidence](benchmarks/systemic-scheduling-20261024.json) includes all four full JSON/CSV workload populations, timer/provider counts and source limits.
+
+The actual loaded `com.pa.server` job at15:16:45UTC is **background(5)**, PID78314; listener78321 and disposable inherited processes report priority4. PA's template explicitly selects `ProcessType=Background`. Six alternating disposable timer processes retain maximum waits120.058/25.067/120.086/25.081/120.043/136.417ms for inherited/application/background/application/background/inherited roles, requesting1/5/20ms. Application resource treatment materially improves wake delivery. No existing process, host power/scheduling policy, service definition or agent/model/permission default was changed. Apple primary references are linked in the numeric evidence.
+
+Four sequential **identical exactdb3b wheel** fixtures verify438source files,29loadedmodule hashes,38templates,100iterations,1000history commits,5000expiredrows/16auditproofs and12511retainedcold content hashes. Every run retains9600ordered events and has zero failures/timeouts/rejections. Premeasurement/validation remain separate from steady timing; no pooled percentiles or hardware-isolation claim.
+
+| Run | Steady workload | Worker warnings | 500ms violations | Maintenance |
+| --- | ---: | ---: | ---: | ---: |
+| inherited1 |72.159s|4|10|12.346s|
+| application1 |12.170s|0|1|2.029s|
+| application2 |12.193s|0|1|1.881s|
+| inherited2 |70.547s|0|3|12.234s|
+
+The application runs retain one maintenance violation each. First inherited drain/push/Fleet maxima517.401/509.426/311.065ms become70.586/30.540/40.904ms and45.763/55.017/43.639ms in the two application runs. This establishes a material shared scheduling component, not a sole cause for all historical lock/nativebusy/fsync/CPU/disk/provider/peer failures. Each full result retains every named family/count/p50/p95/p99/max, bytes, worker/SQL/lock/filesystem/GC phases and raw samples. Maintenance still needs retention/migration-health/final-health attribution with exact durability/order/audit/freshness intact.
+
+The source repair changes **only ProcessType toInteractive** plus an explanatory comment; the otherwise parsed plist is identical. PA's HTTP/WebUI work needs application responsiveness and does not provide XPC transactions for adaptive promotion. Existing lifecycle/rebootstrap/environment/session/resource controls remain. **26distinct service contracts pass**; the isolated baseline policy assertion fails as expected. Existing unchanged loop contracts pass in all four current children (8executions,2distincttests); those passes do not reproduce or erase the older3/3main+3/3patch failures. Application-child `taskpolicy -a` is a diagnostic resource treatment, not exact activated launchd proof. The first wrong taskpolicy path failed before creating a child; corrected unstarted modes and all failure evidence remain.
+
+A separate disposable provider inventory shows1/4/8concurrentlist calls invoke3/12/24provider statuses and repeat enrichment. Fixed20ms fake dependencies establish source call amplification; actual production magnitude and safe credential/profile invalidation/coalescing remain unverified. No provider authentication cache or source repair is claimed.
+
+PR569 is integrateddb3b0254 with equal source/merge trees and five first-attempt successful head/main40105809587 checks. Exactdb3 package724d67 is prepared only; this new policy source requires its own containing package proof. Fresh15:15Z control remains installed+loadedc02e/package5917/PID78321/startupa50c, unchanged configuration and24terminal own handoffs. The remote retired569audit reportsDone using an old completion version; current authority card GET remainsWaiting/verification_pending, active+verified+acceptancemissing,17dunaccepted. No acceptance or lane-CAS loop is inferred from the audit.
+
+Backup18fc retains its bounded stable-build window through16:03Z; queued coordination is not capture clearance and expiry alone cannot authorize overlap. Existing548/565/566 repairs are reused. Missing historical2842bytes stays disclosed without blocking available-data work. Actual loaded definition/package/module/dependency activation, complete deployed startup/drain/API/background/provider/peer inventory, all log/retention/GC/receipt gaps and ordinary systemic17d/backupb527 scheduler-owned independent acceptance remain required. DB89957 accepted original scope stays closed. No install or restart occurred; thresholds and all original residuals remain.
+
+## Preserved prior inventory and evidence
+
 # Fleet cache age and current readiness — 2026-10-24
 
 All **647 findings and 121 concerns remain open**. The [complete numeric membership/cache snapshots and source/test evidence](benchmarks/systemic-fleet-cache-age-20261024.json) preserves every prior646row and stage failure. This corrects observation freshness; it does not fix peer transport failures or establish performance acceptance.
