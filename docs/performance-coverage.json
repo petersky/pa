@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-23T23:58:43.797507+00:00",
-  "completion": "OPEN;644rows/119concerns. Every prior640row unchanged. Fresh45slow-name/145local-operation/all3peer inventory, two exact100iteration stages each12violations, installed95GET7violations, and deterministic test-only UX readiness correction. NO new source deployment or whole-PA acceptance; all criteria remain.",
+  "as_of": "2026-10-24T01:45:50.210045+00:00",
+  "completion": "OPEN;646rows/120concerns, all644priorrows unchanged. Three-peer status/readiness/provider/localFleet observations retain six slowprovider requests and every historical failure. Complete Codex status duration repaired at source only;70contracts pass; no new installed/deployed acceptance. All original criteria remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -212416,6 +212416,38 @@
       "resolution": "open",
       "next_actor": "this systemic session; backupowner retains separate PR566 scheduler correction",
       "next_action": "Integrate readyPR through exact supervisor/head/main gates, retain both original main565 failures and all service acceptance obligations."
+    },
+    {
+      "id": "concern:provider-status-incomplete-duration",
+      "kind": "concern",
+      "finding": "Codex status duration excludes final CLI version probe",
+      "family": "provider",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_timing_gap_disposable_clock_reproduction",
+      "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+      "implemented": "Capture the same existing CLI version once before calculating total duration; pass that value to the same ProviderStatus field. All other application AST nodes equal pinned9f473273.",
+      "merged": [],
+      "deployed": "None for this source; exact9f separately prepared only",
+      "retested": "2new deterministic contracts plus68existing pass; baseline43reported/243complete fails; initial guard denial preserved",
+      "resolution": "open",
+      "next_actor": "this systemic session; normal scheduler owns final acceptance",
+      "next_action": "Integrate exact scoped source and verify actual installed attribution; diagnose provider latency without unsafe stale-auth/default/timeout semantics."
+    },
+    {
+      "id": "route-followup:/api/agent/providers",
+      "kind": "http_route_followup",
+      "finding": "/api/agent/providers",
+      "family": "provider",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_slow_peer_endpoint_reported_cursor_dominance_subprocess_share_unverified",
+      "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+      "implemented": "Timing diagnostic repair does not reduce provider probe latency",
+      "merged": [],
+      "deployed": "Per-peer metadata in artifact;0d6638 onmonica/alex, macmini buildunknown",
+      "retested": "Six individual endpoint requests exceed500ms across3peers, allHTTP200; first3 and detail3 populations separate",
+      "resolution": "open",
+      "next_actor": "this systemic session with existing peer authority",
+      "next_action": "Attribute supported CLI/version/auth and queue/enrichment/completion costs, preserve fresh credentials/default/admission semantics and prove actual representative deployed responsiveness."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -230086,6 +230118,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "runtime:provider.status.codex": {
@@ -230440,6 +230479,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "slow:provider.status.cursor": {
@@ -230468,6 +230514,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "runtime:provider.status.cursor": {
@@ -230822,6 +230875,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "slow:provider.status.openinterpreter": {
@@ -230850,6 +230910,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "runtime:provider.status.openinterpreter": {
@@ -231204,6 +231271,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "slow:reconciliation.completion_evidence_read": {
@@ -293316,6 +293390,13 @@
         },
         "scope": "Matched process metadata, uncontrolled passive numeric snapshot; not fresh log/whole-fleet/branch or deployed acceptance. Process counters/maxima and rolling distributions separate.",
         "resolution": "open"
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "route:/api/fleet/session-route/{session_id}": {
@@ -294007,6 +294088,13 @@
         },
         "scope": "Matched process metadata, uncontrolled passive numeric snapshot; not fresh log/whole-fleet/branch or deployed acceptance. Process counters/maxima and rolling distributions separate.",
         "resolution": "open"
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "route-followup:/api/instance/maintenance": {
@@ -295810,6 +295898,13 @@
         },
         "scope": "Matched process metadata, uncontrolled passive numeric snapshot; not fresh log/whole-fleet/branch or deployed acceptance. Process counters/maxima and rolling distributions separate.",
         "resolution": "open"
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "route:/api/runtime": {
@@ -295972,6 +296067,13 @@
         "scope": "Exact numeric current evidence, not every branch/full acceptance; historical measurement rows unchanged",
         "next_actor": "this systemic session; linked backup scope owner retained",
         "next_action": "Complete valid branch and exact installed/deployed representative acceptance; attribute residuals before closing."
+      },
+      "peer_provider_followup": {
+        "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+        "scope": "Fresh bounded peer GETs and provider-reported duration; not log/process-wide acceptance",
+        "resolution": "open",
+        "next_actor": "this systemic session with existing peer authority",
+        "next_action": "Retain all prior failure counters and unknown causal/loaded-source/log coverage; complete actual branch/deployment verification."
       }
     },
     "route:/api/sync/get": {
@@ -302795,6 +302897,17 @@
         "deployed": "Current installed c02e older; exact35bf/8641 source fixture only",
         "resolution": "open"
       }
+    },
+    "concern:ci565-settings-options-readiness": {
+      "integration": {
+        "head": "6acfeb07d36d8236ceab2e5e215f2636f8af118b",
+        "merge": "9f47327355a8de0b1282cf3aea886490398969f2",
+        "watch": "11a22864-3228-4b3d-810b-bdac996f7b83",
+        "main_ci": 40046825860,
+        "checks": "Five first-attempt head/main successes; independent gates/equal trees verified",
+        "resolution": "open",
+        "deployed": "Test-only readiness correction; no performance closure"
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -305069,5 +305182,13 @@
     ],
     "new_concern": "ci565-settings-options-readiness",
     "status": "All644open; no blanket acceptance"
+  },
+  "peer_provider_status_stage": {
+    "artifact": "docs/benchmarks/systemic-peer-provider-status-20261024.json",
+    "sha256": "eaa184f4ab58d9cbe19627c49494e9e585c7f3d623d3f130d44730223c61bfee",
+    "new_concern": "provider-status-incomplete-duration",
+    "new_route": "/api/agent/providers",
+    "prior_rows_unchanged": 644,
+    "resolution": "All646open/120concerns; no deployed performance acceptance"
   }
 }
