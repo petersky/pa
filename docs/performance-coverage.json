@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T21:06:52.549683+00:00",
+  "as_of": "2026-10-24T21:49:21.905449+00:00",
   "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -165,7 +165,10 @@
     "docs/benchmarks/systemic-pr561-ci-admission-20261021.json",
     "docs/benchmarks/systemic-progress-ingest-copy-20261021.json",
     "docs/benchmarks/systemic-progress-retention-json-20261021.json",
-    "docs/benchmarks/systemic-lifecycle-progress-copy-20261021.json"
+    "docs/benchmarks/systemic-lifecycle-progress-copy-20261021.json",
+    "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+    "docs/benchmarks/systemic-fleet-required-refresh-initial-scale-20261024.json.gz",
+    "docs/benchmarks/systemic-fleet-required-refresh-clock-instrumented-repeat-20261024.json.gz"
   ],
   "followup_artifact": "benchmarks/systemic-inventory-v4.json",
   "rows": [
@@ -212952,6 +212955,335 @@
       "resolution": "open",
       "next_actor": "this systemic card/session",
       "next_action": "Ready supervisedPR/exacthead independentgreen, integration and coordinated activation/retest; continue remaining collector/native/production tails."
+    },
+    {
+      "id": "concern:fleet-required-refresh-cadence",
+      "kind": "concern",
+      "finding": "Required peer freshness expires before normal background refresh",
+      "family": "fleet",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_cadence_mismatch_live_timeline",
+      "cause": "Required cache freshness3s vs backgroundloop15s; successful peer observations refresh~15s. Passive37s/eightcachedGET samples71of72peer requiredfields stale;0newslow/failed/timedoutcalls duringwindow. Historicaltransporttimeoutcause remainsunverified.",
+      "implemented": "One owned worker per active instance/required dimension renews before the unchanged expiry with bounded duration headroom (0.3\u20131.5s), using existing single-flight even for early renewal. Local monotonic start floor1.5s prevents corrupt/invalidation/publication busy loops; unsuccessful probes retain15s delay. Membership still polls15s. Cancel/reap owned workers on removal/shutdown; shielded probes retain existing publication ownership.",
+      "merged": [],
+      "deployed": "Not installed; running6573 retains old cadence",
+      "retested": "121contracts;24s baseline/candidate synthetic private peer/cache fixture retains every sample and logical amplification",
+      "resolution": "open",
+      "next_actor": "this original systemic session",
+      "next_action": "Require source integration/scale and exact deployed validation; maintain3s freshness/15s failure backoff and truthful failure. Historical transport and whole-system acceptance remain open.",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "artifact_sha256": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
+      "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance."
+    },
+    {
+      "id": "route-peer6573:/api/agent/providers/mcp-bootstrap",
+      "kind": "http_route_followup",
+      "finding": "/api/agent/providers/mcp-bootstrap",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "cause_classification": "retained_peer_runtime_route_cause_unverified",
+      "measurement": {
+        "macmini": {
+          "count": 8,
+          "response_bytes": 480,
+          "latency_ms": {
+            "samples": 8,
+            "max": 6945.9,
+            "p50": 5721.387,
+            "p95": 6945.9,
+            "p99": 6945.9
+          },
+          "response_size_bytes": {
+            "samples": 8,
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
+          }
+        },
+        "monica": {
+          "count": 3,
+          "response_bytes": 180,
+          "latency_ms": {
+            "samples": 3,
+            "max": 1995.918,
+            "p50": 1817.443,
+            "p95": 1995.918,
+            "p99": 1995.918
+          },
+          "response_size_bytes": {
+            "samples": 3,
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
+          }
+        },
+        "alex": {
+          "count": 3,
+          "response_bytes": 180,
+          "latency_ms": {
+            "samples": 3,
+            "max": 1362.598,
+            "p50": 1354.745,
+            "p95": 1362.598,
+            "p99": 1362.598
+          },
+          "response_size_bytes": {
+            "samples": 3,
+            "max": 60,
+            "p50": 60,
+            "p95": 60,
+            "p99": 60
+          }
+        }
+      },
+      "scope": "Returned peer process route counters/maxima and rolling windows; prefix/api restored from router mount. Not a newly exercised current source branch or deployed workload distribution.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Peer builds differ; macmini sourceunknown/monica+alex0d6638",
+      "retested": "Read-only returned runtime metadata; no route replay or peer logs",
+      "resolution": "open",
+      "next_actor": "This original systemic session",
+      "next_action": "Retain numeric route/bytes/window evidence, attribute valid path and peer failures; coordinate exact-source branch/activation/acceptance with existing ownership."
+    },
+    {
+      "id": "route-peer6573:/api/fleet/peer-update-check",
+      "kind": "http_route_followup",
+      "finding": "/api/fleet/peer-update-check",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "cause_classification": "retained_peer_runtime_route_cause_unverified",
+      "measurement": {
+        "macmini": {
+          "count": 11,
+          "response_bytes": 1408,
+          "latency_ms": {
+            "samples": 11,
+            "max": 724.544,
+            "p50": 505.455,
+            "p95": 724.544,
+            "p99": 724.544
+          },
+          "response_size_bytes": {
+            "samples": 11,
+            "max": 128,
+            "p50": 128,
+            "p95": 128,
+            "p99": 128
+          }
+        },
+        "monica": {
+          "count": 4,
+          "response_bytes": 512,
+          "latency_ms": {
+            "samples": 4,
+            "max": 662.375,
+            "p50": 339.239,
+            "p95": 662.375,
+            "p99": 662.375
+          },
+          "response_size_bytes": {
+            "samples": 4,
+            "max": 128,
+            "p50": 128,
+            "p95": 128,
+            "p99": 128
+          }
+        },
+        "alex": {
+          "count": 4,
+          "response_bytes": 512,
+          "latency_ms": {
+            "samples": 4,
+            "max": 2047.394,
+            "p50": 328.124,
+            "p95": 2047.394,
+            "p99": 2047.394
+          },
+          "response_size_bytes": {
+            "samples": 4,
+            "max": 128,
+            "p50": 128,
+            "p95": 128,
+            "p99": 128
+          }
+        }
+      },
+      "scope": "Returned peer process route counters/maxima and rolling windows; prefix/api restored from router mount. Not a newly exercised current source branch or deployed workload distribution.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Peer builds differ; macmini sourceunknown/monica+alex0d6638",
+      "retested": "Read-only returned runtime metadata; no route replay or peer logs",
+      "resolution": "open",
+      "next_actor": "This original systemic session",
+      "next_action": "Retain numeric route/bytes/window evidence, attribute valid path and peer failures; coordinate exact-source branch/activation/acceptance with existing ownership."
+    },
+    {
+      "id": "route-peer6573:/api/fleet/peer-update/{operation_id}",
+      "kind": "http_route_followup",
+      "finding": "/api/fleet/peer-update/{operation_id}",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "cause_classification": "retained_peer_runtime_route_cause_unverified",
+      "measurement": {
+        "alex": {
+          "count": 1,
+          "response_bytes": 868,
+          "latency_ms": {
+            "samples": 1,
+            "max": 45.665,
+            "p50": 45.665,
+            "p95": 45.665,
+            "p99": 45.665
+          },
+          "response_size_bytes": {
+            "samples": 1,
+            "max": 868,
+            "p50": 868,
+            "p95": 868,
+            "p99": 868
+          }
+        }
+      },
+      "scope": "Returned peer process route counters/maxima and rolling windows; prefix/api restored from router mount. Not a newly exercised current source branch or deployed workload distribution.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Peer builds differ; macmini sourceunknown/monica+alex0d6638",
+      "retested": "Read-only returned runtime metadata; no route replay or peer logs",
+      "resolution": "open",
+      "next_actor": "This original systemic session",
+      "next_action": "Retain numeric route/bytes/window evidence, attribute valid path and peer failures; coordinate exact-source branch/activation/acceptance with existing ownership."
+    },
+    {
+      "id": "route-peer6573:/api/health-journal/gathered",
+      "kind": "http_route_followup",
+      "finding": "/api/health-journal/gathered",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "cause_classification": "retained_peer_runtime_route_cause_unverified",
+      "measurement": {
+        "macmini": {
+          "count": 11510,
+          "response_bytes": 1350380,
+          "latency_ms": {
+            "samples": 256,
+            "max": 5048.184,
+            "p50": 58.704,
+            "p95": 182.263,
+            "p99": 463.68
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 118,
+            "p50": 117,
+            "p95": 118,
+            "p99": 118
+          }
+        },
+        "monica": {
+          "count": 141,
+          "response_bytes": 7191,
+          "latency_ms": {
+            "samples": 141,
+            "max": 33.754,
+            "p50": 8.274,
+            "p95": 26.23,
+            "p99": 31.701
+          },
+          "response_size_bytes": {
+            "samples": 141,
+            "max": 51,
+            "p50": 51,
+            "p95": 51,
+            "p99": 51
+          }
+        },
+        "alex": {
+          "count": 112,
+          "response_bytes": 5712,
+          "latency_ms": {
+            "samples": 112,
+            "max": 35.77,
+            "p50": 4.686,
+            "p95": 5.759,
+            "p99": 30.883
+          },
+          "response_size_bytes": {
+            "samples": 112,
+            "max": 51,
+            "p50": 51,
+            "p95": 51,
+            "p99": 51
+          }
+        }
+      },
+      "scope": "Returned peer process route counters/maxima and rolling windows; prefix/api restored from router mount. Not a newly exercised current source branch or deployed workload distribution.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Peer builds differ; macmini sourceunknown/monica+alex0d6638",
+      "retested": "Read-only returned runtime metadata; no route replay or peer logs",
+      "resolution": "open",
+      "next_actor": "This original systemic session",
+      "next_action": "Retain numeric route/bytes/window evidence, attribute valid path and peer failures; coordinate exact-source branch/activation/acceptance with existing ownership."
+    },
+    {
+      "id": "route-peer6573:/api/health-journal/outbox",
+      "kind": "http_route_followup",
+      "finding": "/api/health-journal/outbox",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "cause_classification": "retained_peer_runtime_route_cause_unverified",
+      "measurement": {
+        "macmini": {
+          "count": 2481,
+          "response_bytes": 1196907,
+          "latency_ms": {
+            "samples": 256,
+            "max": 51.707,
+            "p50": 10.016,
+            "p95": 25.199,
+            "p99": 44.371
+          },
+          "response_size_bytes": {
+            "samples": 256,
+            "max": 14448,
+            "p50": 156,
+            "p95": 10651,
+            "p99": 14414
+          }
+        }
+      },
+      "scope": "Returned peer process route counters/maxima and rolling windows; prefix/api restored from router mount. Not a newly exercised current source branch or deployed workload distribution.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "Peer builds differ; macmini sourceunknown/monica+alex0d6638",
+      "retested": "Read-only returned runtime metadata; no route replay or peer logs",
+      "resolution": "open",
+      "next_actor": "This original systemic session",
+      "next_action": "Retain numeric route/bytes/window evidence, attribute valid path and peer failures; coordinate exact-source branch/activation/acceptance with existing ownership."
+    },
+    {
+      "id": "concern:wall-monotonic-clock-discontinuity",
+      "kind": "concern",
+      "family": "runtime",
+      "finding": "Disposable mixed-peer fixture observes wall/monotonic clock discontinuity; earlier scale stale cause remains unverified",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+      "cause_classification": "confirmed_process_clock_discontinuity_cause_and_production_impact_unverified",
+      "cause": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
+      "implemented": false,
+      "merged": [],
+      "deployed": "No clock/time/power/service mutation or new activation",
+      "retested": "Bounded clock-instrumented24s perstage private fixture only; original552stale samples and both complete stages retained",
+      "resolution": "open",
+      "next_actor": "This original systemic session",
+      "next_action": "Correlate bounded wall/monotonic behavior and production observation/deadline freshness evidence without changing clocks/power/thresholds. Do not infer attribution for previous scale or historical service failures. Preserve truthful stale states and all acceptance gaps."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -307438,5 +307770,38 @@
     },
     "final_candidate_maintenance_ms": 1476.16,
     "final_contracts_passed": 78
+  },
+  "fleet_required_refresh_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+    "coverage": {
+      "prior_rows_preserved": 654,
+      "rows": 661,
+      "concerns": 128,
+      "new_peer_routes": [
+        "/api/agent/providers/mcp-bootstrap",
+        "/api/fleet/peer-update-check",
+        "/api/fleet/peer-update/{operation_id}",
+        "/api/health-journal/gathered",
+        "/api/health-journal/outbox"
+      ],
+      "peer_operation_counts": {
+        "macmini": 66,
+        "monica": 67,
+        "alex": 60
+      },
+      "all_peer_operation_names_already_covered": true
+    },
+    "deployment": "Source candidate, running6573unchanged",
+    "scale_followup": {
+      "initial_scale": {
+        "raw_artifact": "docs/benchmarks/systemic-fleet-required-refresh-initial-scale-20261024.json.gz",
+        "sha256": "1adaeb0c0717a205321acf64b29e05ffa964d1673c6d7116ad9e56dcd3329cfc"
+      },
+      "clock_instrumented_repeat": {
+        "raw_artifact": "docs/benchmarks/systemic-fleet-required-refresh-clock-instrumented-repeat-20261024.json.gz",
+        "sha256": "294489badbf5bb56c803e4d98a80de59ea0fdad9fbfa48130d43ec4503d08605"
+      }
+    },
+    "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance."
   }
 }

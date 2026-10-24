@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
@@ -446,11 +447,102 @@ def _cache_is_fresh(
         age = ((now or datetime.now(UTC)) - observed).total_seconds()
     except (TypeError, ValueError):
         return False
-    ttl = (
+    ttl = _cache_lifetime(dimension)
+    return 0 <= age < ttl
+
+
+def _cache_lifetime(dimension: str) -> float:
+    return (
         MCP_BOOTSTRAP_CACHE_TTL if dimension == "mcp_bootstrap"
         else 30.0 if dimension in {"providers", "update"} else 3.0
     )
-    return 0 <= age < ttl
+
+
+def required_refresh_delay(
+    cached: dict[str, Any] | None, dimension: str, *, now: datetime | None = None
+) -> float:
+    """Renew successes before expiry, retaining the failed-attempt backoff.
+
+    Reserve the last probe's duration (at least a tenth of the lifetime) for
+    renewal, capped at half the lifetime. Each dimension therefore starts at
+    most two background probes per lifetime, plus its initial missing read.
+    This is scheduling headroom, never an extension of cache freshness.
+    """
+    if not cached:
+        return 0.0
+    stamp = now or datetime.now(UTC)
+    successful = observation_attempt(cached) == "fresh"
+    raw = cached.get("observed_at" if successful else "last_attempted_at")
+    try:
+        observed = datetime.fromisoformat(str(raw))
+        if observed.tzinfo is None:
+            if successful:
+                return 0.0
+            observed = observed.replace(tzinfo=UTC)
+        age = (stamp - observed).total_seconds()
+    except (TypeError, ValueError):
+        return 0.0
+    if age < 0:
+        return 0.0
+    if not successful:
+        return max(0.0, BACKGROUND_FAILED_RETRY_AFTER - age)
+    lifetime = _cache_lifetime(dimension)
+    try:
+        duration = float(cached.get("last_attempt_duration_ms") or 0) / 1000
+    except (TypeError, ValueError):
+        duration = 0.0
+    if not math.isfinite(duration):
+        duration = 0.0
+    margin = min(lifetime / 2, max(lifetime / 10, duration))
+    return max(0.0, lifetime - margin - age)
+
+
+async def refresh_required_dimension_loop(
+    ctx: Any,
+    instances: dict[str, FleetInstance],
+    instance_id: str,
+    dimension: str,
+) -> None:
+    """Refresh one required field independently of slow peers and siblings."""
+    from pa.server.shutdown import is_shutting_down, wait_for_shutdown
+
+    if dimension not in REQUIRED_DIMENSIONS:
+        raise ValueError("Background refresh only supports required dimensions")
+    next_attempt = 0.0
+    while not is_shutting_down():
+        inst = instances.get(instance_id)
+        if inst is None:
+            return
+        try:
+            cache = await _offload(
+                ctx, "fleet.overview_cache_read", cache_for, ctx.settings.data_dir
+            )
+            cached = await _offload(
+                ctx, "fleet.overview_cache_read", cache.get, instance_id, dimension
+            )
+            delay = max(
+                required_refresh_delay(cached, dimension),
+                next_attempt - time.monotonic(),
+            )
+            if delay:
+                if await wait_for_shutdown(delay):
+                    return
+                continue
+            # Only this background renewal bypasses the still-fresh cache.
+            # probe_dimension still joins any live foreground/background work.
+            # Clock anomalies, invalidation or a failed cache publication must
+            # not turn a due field into a tight retry loop.
+            next_attempt = time.monotonic() + _cache_lifetime(dimension) / 2
+            await probe_dimension(ctx, inst, dimension, force=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Periodic fleet overview refresh failed instance=%s dimension=%s",
+                instance_id, dimension,
+            )
+            if await wait_for_shutdown(BACKGROUND_FAILED_RETRY_AFTER):
+                return
 
 
 def required_readiness(dimensions: dict[str, Any] | None) -> str:

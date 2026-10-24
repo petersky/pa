@@ -166,7 +166,8 @@ from pa.fleet.overview import (
     cache_for,
     overview_refresh_enabled,
     probe_dimension,
-    refresh_required_dimensions,
+    REQUIRED_DIMENSIONS,
+    refresh_required_dimension_loop,
 )
 from pa.fleet.placement import (
     PlacementCandidate,
@@ -5270,17 +5271,46 @@ async def _overview_refresh_loop(ctx: AppContext) -> None:
 
     if await wait_for_shutdown(BACKGROUND_STARTUP_DELAY):
         return
-    while not is_shutting_down():
-        try:
-            fleet = ctx.services.get("fleet_registry")
-            instances = list(fleet.list_instances()) if fleet else []
-            await refresh_required_dimensions(ctx, instances)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Periodic fleet overview refresh failed")
-        if await wait_for_shutdown(BACKGROUND_REFRESH_INTERVAL):
-            return
+    instances: dict[str, FleetInstance] = {}
+    tasks: dict[tuple[str, str], asyncio.Task] = {}
+    try:
+        while not is_shutting_down():
+            try:
+                fleet = ctx.services.get("fleet_registry")
+                current = {
+                    inst.instance_id: inst
+                    for inst in (fleet.list_instances() if fleet else [])
+                    if getattr(inst, "lifecycle_state", "active") == "active"
+                }
+                # Keep one mapping so workers use refreshed endpoint metadata.
+                instances.clear()
+                instances.update(current)
+                retired = [key for key in tasks if key[0] not in instances]
+                for key in retired:
+                    tasks[key].cancel()
+                await asyncio.gather(
+                    *(tasks.pop(key) for key in retired), return_exceptions=True
+                )
+                for instance_id in instances:
+                    for dimension in REQUIRED_DIMENSIONS:
+                        key = (instance_id, dimension)
+                        if key not in tasks or tasks[key].done():
+                            tasks[key] = asyncio.create_task(
+                                refresh_required_dimension_loop(
+                                    ctx, instances, instance_id, dimension
+                                ),
+                                name=f"fleet-refresh-{instance_id}-{dimension}",
+                            )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Periodic fleet overview membership read failed")
+            if await wait_for_shutdown(BACKGROUND_REFRESH_INTERVAL):
+                return
+    finally:
+        for task in tasks.values():
+            task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
 
 
 def _require_instance(request: Request) -> None:

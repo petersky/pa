@@ -1,3 +1,126 @@
+# Independent required Fleet refresh and complete peer inventory — 2026-10-24
+
+All **661 findings / 128 concerns remain open**. Every prior654row is byte-for-value preserved; the previously disclosed cadence concern and five newly retained peer route families are included. [Complete numeric evidence](benchmarks/systemic-fleet-required-refresh-20261024.json) retains all returned peer operations/routes/bytes/phase windows, passive freshness samples and both synthetic comparison stages.
+
+Confirmed cause: required fields expire after3s while the old background loop waits all probes plus15s. Passive37s/eight cached GETs observed71/72peer required fields stale despite successful~15s refreshes and0new slow/failed/timeout counter deltas. This is a cadence defect; historical Fleet/PR/sync transport failures remain unattributed.
+
+Candidate: independently owned per-required-field workers renew before existing expiry, reserve0.3–1.5s based on prior probe duration, and enforce a1.5s monotonic minimum between background starts. Failed/unavailable results and unexpected failures retain15s backoff. Foreground/background requests still single-flight; readiness/last-good/error semantics and durable cache publication remain unchanged. Membership is still polled15s; workers retire on removal/shutdown. No provider/default/permission/TTL/deadline change.
+
+**121selected contracts pass, including11new cases.** The single-flight test uses explicit caller arrival rather than a scheduling yield. Three synthetic peers/nine required fields run24s per stage (two20–40ms peers; one4s failed fake transport; first1.2s excluded only from freshness). Healthy stale samples **2040/2742→0/2742**; failed fields falsely fresh **0/1371 in both stages**. Failed peer attempts remain2per dimension; healthy attempts2→9per dimension. All probe/sample/write values remain separate by stage.
+
+Cost: logical durable cache writes **18→60**, bytes **9959→32345**; process CPU144.042→264.391ms over24s. Event-loop drift p95/max baseline2.229/3.046ms, candidate2.227/2.331ms. This intentional extra renewal work must be assessed at fleet scale and on the installed build; bytes are logical, not physical disk/WAL/fsync amplification. One sequential comparison on a shared host is not performance acceptance.
+
+Nine-peer scale evidence is also retained, including a failure. Initial24s/stage comparison: healthy stale8168/10968→552/10968; logical writes54→222/bytes29147→118814, candidate loop driftmax102.220ms. Probe starts remain~2.7s. The first scale fixture omitted wall/observation timestamps, so the cause of552stale samples is **unverified**, not retroactively attributed.
+
+Adding those timestamps without changing the application, the second9peer comparison yields8150/10968→0/10968stale; writes54→222/bytes29147→118814; candidate processCPU580.120ms/24s, loop driftp95/max2.197/2.268ms. It directly observes wall-minus-monotonic offset range**51.011seconds in baseline**,8.208ms in candidate. This is a confirmed disposable-process clock discontinuity; clock source, host suspension/correction and production-server impact remain unknown. No time/power/deadline/TTL change. Neither repeat clears the prior552samples or establishes acceptance. [Full initial scale samples](benchmarks/systemic-fleet-required-refresh-initial-scale-20261024.json.gz) and [full clock-instrumented repeat](benchmarks/systemic-fleet-required-refresh-clock-instrumented-repeat-20261024.json.gz) are lossless gzip JSON with hashes in the adjacent numeric artifact. Distributions remain separate by host/stage/population.
+
+New supported peer reads21:09:45.618859–21:09:46.309851Z: one identity/readiness/status/runtime per current canonical origin, all12HTTP200,5.539–253.474ms. macmini66operations/version1.5.9/runtime_buildnull; monica67/alex60operations/source0d6638/packageb573. All operation names already exist in the ledger; five additional registered route families are retained. No peer log files/older retention were read, and fast individual GETs do not erase historical counters. One normal non-forced reachability GET per peer21:11:07Z returned fresh18.880–21.785ms; those normal GETs may refresh derived caches, not production configuration.
+
+Current catalogs each provide one canonical origin per instance; alternative-endpoint attribution is unsupported. Cached payload partition remains large: nodes768279B, edges211879B; local repositories323551B (workspaces304329B). No fields were dropped. All structural counts are retained without private payload values.
+
+The following is **every retained slow-or-failed peer operation in this snapshot**, not selected leaders. Counts/maxima span each peer process lifetime; quantiles are returned bounded windows. Different builds/hosts/scopes are never pooled. Full numeric route families and their bytes/windows are adjacent in JSON.
+
+| Host / operation | Submitted / slow / failed / timed out | Process max ms | Window samples / p50 / p95 / p99 / max ms |
+|---|---:|---:|---|
+| macmini `agent.recovery_sessions` | 106411/20/0/0 | 1707.931 | 256/1.386/6.117/14.663/24.596 |
+| macmini `dispatch.completion_pending_read` | 106448/17/0/0 | 4903.452 | 256/0.885/2.514/6.425/37.702 |
+| macmini `dispatch.followup_pending_read` | 106448/11/0/0 | 4952.999 | 256/0.638/2.171/6.862/22.052 |
+| macmini `dispatch.record_read` | 758363/36/0/0 | 4934.316 | 256/0.302/1.095/13.705/14.258 |
+| macmini `filesystem.github_credentials_read` | 89146/2/0/0 | 4041.635 | 256/1.202/4.992/22.041/41.196 |
+| macmini `filesystem.workspace_completion` | 2769/1/0/0 | 728.48 | 256/3.111/18.328/50.3/86.044 |
+| macmini `fleet.overview.mcp_bootstrap` | 8/8/0/0 | 6933.87 | 8/5684.926/6933.87/6933.87/6933.87 |
+| macmini `fleet.overview.reachability` | 34817/21/0/0 | 1000.861 | 256/7.788/22.55/47.386/70.426 |
+| macmini `fleet.overview.status` | 34817/20/0/0 | 1106.885 | 256/8.181/22.292/40.584/70.298 |
+| macmini `fleet.overview.sync` | 70989/154/0/1 | 4762.023 | 256/25.34/65.469/125.988/154.866 |
+| macmini `fleet.overview_cache_read` | 1449333/262/0/0 | 17450.608 | 256/1.307/9.618/25.396/29.551 |
+| macmini `fleet.overview_cache_write` | 453999/363/0/0 | 5348.94 | 256/9.71/25.409/46.219/52.783 |
+| macmini `fleet.overview_response_json` | 238379/69/0/0 | 2073.231 | 256/3.902/16.091/31.275/67.985 |
+| macmini `fleet.update_check` | 11/6/0/0 | 719.252 | 11/500.222/719.252/719.252/719.252 |
+| macmini `goal.dispatch_lifecycle_index` | 17700/2/0/0 | 1436.093 | 256/0.321/0.823/4.757/191.457 |
+| macmini `health.canonical_obligation` | 16980/39/0/0 | 3719.334 | 256/17.37/74.534/93.022/123.946 |
+| macmini `http.fleet_overview` | 313344/0/74952/74952 | 5505.735 | 256/56.122/129.321/203.006/265.267 |
+| macmini `http.pr_supervisor_lease` | 254/0/62/0 | 5638.95 | 254/154.654/5006.894/5069.487/5638.95 |
+| macmini `http.pr_supervisor_peer` | 824767/0/68859/673 | 28029.592 | 256/31.904/49.59/86.831/111.412 |
+| macmini `pr_supervisor.response_json` | 756099/11/0/0 | 1589.224 | 256/0.559/1.588/3.155/13.075 |
+| macmini `progress.pending_read` | 176887/52/0/0 | 8718.668 | 256/8.346/13.953/26.294/30.362 |
+| macmini `provider.status.codex` | 15/15/0/0 | 951.951 | 15/672.823/951.951/951.951/951.951 |
+| macmini `provider.status.cursor` | 15/15/0/0 | 3074.316 | 15/2672.76/3074.316/3074.316/3074.316 |
+| macmini `provider.status.openinterpreter` | 15/3/0/0 | 572.511 | 15/464.1/572.511/572.511/572.511 |
+| macmini `reconciliation.dispatch_read` | 106456/21/0/0 | 4913.284 | 256/1.163/2.951/6.96/38.815 |
+| macmini `sqlite.card_read` | 1165607/55/0/0 | 4181.126 | 256/1.338/2.933/21.272/62.302 |
+| macmini `sqlite.pr_supervisor_capability_write` | 8195/3/0/0 | 1067.229 | 256/4.217/9.886/87.578/149.627 |
+| macmini `sqlite.pr_supervisor_completion_due_read` | 89144/286/0/0 | 15722.403 | 256/15.265/68.905/159.432/340.195 |
+| macmini `sqlite.pr_supervisor_due_read` | 89144/28/0/0 | 1751.326 | 256/3.661/8.715/22.148/45.614 |
+| macmini `sqlite.pr_supervisor_event_write` | 408237/52/0/0 | 3792.358 | 256/3.68/21.715/68.92/253.896 |
+| macmini `sqlite.pr_supervisor_metric` | 53891/16/0/0 | 6887.018 | 256/4.66/13.995/58.049/97.631 |
+| macmini `sqlite.pr_supervisor_watch_read` | 419766/133/0/0 | 4269.201 | 256/6.012/17.691/53.051/200.675 |
+| macmini `sqlite.pr_supervisor_watch_write` | 408299/141/0/0 | 7590.731 | 256/10.912/72.914/92.142/169.607 |
+| macmini `sqlite.project_read` | 758363/44/0/0 | 5527.281 | 256/0.922/4.095/13.294/63.097 |
+| macmini `sqlite.repository_read` | 758488/52/0/0 | 8615.552 | 256/0.986/4.251/20.875/24.202 |
+| macmini `sqlite.restart_handoffs_pending` | 106412/10/0/0 | 3920.177 | 256/0.529/2.728/6.381/26.807 |
+| macmini `sqlite.restart_handoffs_watchdog` | 106411/23/0/0 | 10965.057 | 256/0.908/6.617/22.764/121.179 |
+| macmini `sync.commit_read` | 2551236/27/0/0 | 990.702 | 256/0.61/0.915/1.471/2.204 |
+| macmini `sync.object_has` | 5063832/39/0/0 | 4124.37 | 256/0.229/0.275/0.317/0.374 |
+| macmini `sync.peer_http` | 5811/0/1143/0 | 11186.968 | 256/16.576/3012.459/3032.598/3199.66 |
+| macmini `sync.reconcile_head` | 4083/4083/0/0 | 8094.708 | 256/841.761/1576.847/1901.59/6619.549 |
+| macmini `sync.ref_read` | 204894/23/0/0 | 5219.851 | 256/0.708/8.963/46.694/203.658 |
+| macmini `workspace.reconcile_terminal_state` | 1/1/0/0 | 3585.384 | 1/3585.384/3585.384/3585.384/3585.384 |
+| monica `agent.recovery_sessions` | 104779/1/0/0 | 530.097 | 256/3.646/7.876/24.444/28.556 |
+| monica `dispatch.completion_pending_read` | 514851/16/0/0 | 1622.483 | 256/14.558/24.279/33.881/174.99 |
+| monica `dispatch.record_read` | 1121523/1/0/0 | 509.496 | 256/0.352/0.894/22.361/23.006 |
+| monica `fleet.overview.mcp_bootstrap` | 3/3/0/0 | 1964.752 | 3/1807.389/1964.752/1964.752/1964.752 |
+| monica `fleet.overview.reachability` | 33714/1/0/0 | 528.0 | 256/5.08/8.72/13.793/27.686 |
+| monica `fleet.overview.status` | 33714/1/0/0 | 529.427 | 256/4.946/8.553/15.486/22.756 |
+| monica `fleet.overview.sync` | 70006/18/0/0 | 572.124 | 256/4.545/40.812/53.391/59.103 |
+| monica `fleet.overview_cache_read` | 1407651/9/0/0 | 523.39 | 256/2.434/14.761/46.069/49.388 |
+| monica `fleet.overview_cache_write` | 440873/265/0/0 | 1526.919 | 256/34.667/64.669/70.305/72.436 |
+| monica `fleet.overview_response_json` | 229836/6/0/0 | 550.534 | 256/13.116/37.515/49.048/57.093 |
+| monica `fleet.update_check` | 4/1/0/0 | 647.196 | 4/337.584/647.196/647.196/647.196 |
+| monica `health.canonical_obligation` | 16861/1/0/0 | 900.194 | 256/7.831/16.218/29.182/34.537 |
+| monica `http.fleet_overview` | 303426/0/73578/73578 | 4532.66 | 256/72.923/342.345/831.359/945.679 |
+| monica `http.pr_supervisor_lease` | 692/0/145/3 | 15002.039 | 256/491.328/5005.341/15000.865/15002.039 |
+| monica `http.pr_supervisor_peer` | 1237599/0/62388/671 | 15231.588 | 256/29.628/59.978/147.597/172.606 |
+| monica `pr_supervisor.response_json` | 1175695/1/0/0 | 527.661 | 256/0.765/3.786/13.693/16.738 |
+| monica `provider.status.cursor` | 6/6/0/0 | 1414.143 | 6/1322.619/1414.143/1414.143/1414.143 |
+| monica `sqlite.card_read` | 1530426/1/0/0 | 1273.486 | 256/1.218/3.456/19.762/25.073 |
+| monica `sqlite.pr_supervisor_capability_write` | 7462/2/0/0 | 974.017 | 256/16.047/26.139/36.152/774.946 |
+| monica `sqlite.pr_supervisor_completion_due_read` | 79193/3/0/0 | 1130.28 | 256/7.433/20.369/29.293/33.077 |
+| monica `sqlite.pr_supervisor_due_read` | 79193/1/0/0 | 529.47 | 256/1.338/2.327/20.389/25.526 |
+| monica `sqlite.pr_supervisor_metric` | 57012/13/0/0 | 1815.243 | 256/17.636/24.947/35.487/46.67 |
+| monica `sqlite.pr_supervisor_watch_write` | 410584/51/0/0 | 1400.014 | 256/17.141/31.131/39.087/66.105 |
+| monica `sqlite.project_read` | 1122215/2/0/0 | 1074.05 | 256/0.672/19.648/20.812/23.096 |
+| monica `startup.openapi` | 1/1/0/0 | 1839.094 | 1/1839.094/1839.094/1839.094/1839.094 |
+| monica `sync.commit_read` | 1992236/1/0/0 | 528.066 | 256/0.12/0.203/0.28/0.8 |
+| monica `sync.object_has` | 3966847/1/0/0 | 522.574 | 256/0.074/0.128/0.135/0.136 |
+| monica `sync.peer_http` | 5636/0/1139/0 | 3630.472 | 256/16.975/3004.932/3013.306/3038.029 |
+| monica `workspace.collect_garbage` | 1/1/0/0 | 1054.374 | 1/1054.374/1054.374/1054.374/1054.374 |
+| alex `fleet.overview.mcp_bootstrap` | 3/3/0/0 | 1351.923 | 3/1344.798/1351.923/1351.923/1351.923 |
+| alex `fleet.overview.reachability` | 33749/2/0/0 | 515.717 | 256/1.895/4.111/13.699/17.748 |
+| alex `fleet.overview.status` | 33749/3/0/0 | 519.522 | 256/1.699/4.093/15.849/18.74 |
+| alex `fleet.overview.sync` | 70062/4/0/0 | 1017.805 | 256/2.32/8.214/18.003/29.638 |
+| alex `fleet.overview_cache_read` | 1408783/18/0/0 | 525.82 | 256/1.088/4.816/22.499/33.607 |
+| alex `fleet.overview_cache_write` | 441313/600/0/0 | 1843.715 | 256/21.793/52.75/75.793/76.786 |
+| alex `fleet.overview_response_json` | 230332/3/0/0 | 957.569 | 256/7.794/23.957/28.885/35.977 |
+| alex `fleet.update_check` | 4/1/0/0 | 2045.982 | 4/326.539/2045.982/2045.982/2045.982 |
+| alex `health.canonical_obligation` | 16627/1/0/0 | 866.771 | 256/1.311/11.871/23.017/33.805 |
+| alex `http.fleet_overview` | 303741/0/73402/73402 | 4379.453 | 256/58.018/286.536/352.992/833.875 |
+| alex `provider.status.cursor` | 6/6/0/0 | 1165.968 | 6/1113.759/1165.968/1165.968/1165.968 |
+| alex `sqlite.card_read` | 818810/1/0/0 | 772.812 | 256/0.739/1.205/1.743/3.115 |
+| alex `sqlite.pr_supervisor_capability_write` | 8745/5/0/0 | 522.881 | 256/18.197/19.602/32.722/521.744 |
+| alex `sqlite.pr_supervisor_completion_due_read` | 250748/1/0/0 | 525.246 | 256/3.873/5.02/13.241/29.655 |
+| alex `sqlite.pr_supervisor_watch_read` | 409086/2/0/0 | 1075.0 | 256/1.789/2.26/5.545/16.82 |
+| alex `sqlite.pr_supervisor_watch_write` | 409670/41/0/0 | 1558.331 | 256/14.609/18.725/24.803/29.923 |
+| alex `startup.openapi` | 1/1/0/0 | 1257.608 | 1/1257.608/1257.608/1257.608/1257.608 |
+| alex `sync.commit_read` | 2037564/2/0/0 | 930.404 | 256/0.08/0.093/0.101/0.145 |
+| alex `sync.object_has` | 4089662/2/0/0 | 930.028 | 256/0.059/0.068/0.084/0.102 |
+| alex `sync.peer_http` | 5660/0/1165/0 | 12008.228 | 256/13.014/3002.836/3003.21/9482.236 |
+
+Source is not installed: running6573/PID52322/startupe13a2b41 is unchanged. PR572health source23de is integrated/head+main green but also not installed. Existing9f managed continuation remains queued; no second restart or capture. Fresh canonical backupb527 is requirements_satisfied/acceptedtrue/missingnone; original backup and DB89957 scopes stay closed. Historical missing2842B/eight intact archives remain preserved. Systemic17d independent_agent_v1 remains unaccepted; no self-appointed verification or completion from a merged PR.
+
+Next: supervised integration, broader fleet-scale/stalled-concurrency/call/write amplification checks, then fresh one-actor immutable activation after existing handoff settles. Maintenance/source1476ms and installed2522ms tails, startup/session-save/provider/workspace/GC/sync/peer failures, all unexercised route/leaf branches, GC publication/saved-plan correctness, native busy/CPU/disk/lock/fsync, dropped logs/retention and ordinary independent acceptance remain required. No row is closed by this repair.
+
+## Preserved prior inventory and evidence
+
 # Exact6573 activation and fresh transcript health — 2026-10-24
 
 All **654 findings and 126 concerns remain open**; every prior651row is preserved. [Complete numeric evidence](benchmarks/systemic-loaded6573-health-scan-20261024.json) retains every live runtime/route family,95GET sample, both mixed stages, cold-session trace and paired health sample. Historical source/log/CI evidence below remains unchanged.
