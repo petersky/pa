@@ -1,0 +1,2498 @@
+{
+  "contract": "pa.fleet-cache-age-evidence/v1",
+  "created_at": "2026-10-24T15:06:57.246839+00:00",
+  "source_base": "186f5ebdd146fbd366ca44b59c9042bd255dff37",
+  "provenance": {
+    "instance": "macbook",
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "authority_instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+    "dispatch_id": "2df203b7-e511-4438-bf07-1705aeb1171f",
+    "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+    "project_id": "fdc04d91-1222-447b-859c-38e67bcab6eb",
+    "repository": "https://github.com/petersky/pa",
+    "repository_id": "5ce49cd8-f632-5f6d-a0d5-0b9eaf61f9cd",
+    "branch": "pa/7894e44b-eef9-4d-45ae26f1-1eb4393e-26a0-47-a7396366-266ade2c",
+    "original_base": "4697ed583f6a5eceead72217d07ba2ebaf4ccc83",
+    "worktree": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c",
+    "lease_id": "d24899f49011107365c237bbf09a300f63beb5a5c9658eac682770304ade52f2",
+    "lease_fence": 334,
+    "lease_expiry_at_last_verified": "2026-10-24T20:18:07.491767Z",
+    "scope": "Same existing exclusive PA worktree/session; fresh lease/Git/identity required before new work. Never use service data dir as cwd or direct Store/EventLog writer."
+  },
+  "completion": "OPEN. A freshness/observation correctness repair, not a peer timeout or performance acceptance claim. All prior646 rows and stage failures preserved.",
+  "inputs": {
+    "membership": {
+      "sha256": "27a0028944d8fcc9be07a2b0c451421983fc4e9661d5b8d901a6c66cd1ca9a7e",
+      "value": {
+        "contract": "pa.fleet-membership-observation/v1",
+        "started_at": "2026-10-24T03:25:26.875231+00:00",
+        "scope": "One passive supported GET /api/fleet/instances per local/previously verified3peer authority. Endpoint origins stripped of userinfo/path/query; no policies/defaults/registration/retirement edits, probes of unverified endpoints, force/retry, cache/source file or direct store access. Does not exercise the routed request_peer transport or establish a cause from catalog data.",
+        "authorities": [
+          {
+            "source": "local-bound-api",
+            "identity": {
+              "id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+              "name": "macbook"
+            },
+            "path": "/api/fleet/instances",
+            "started_at": "2026-10-24T03:25:26.878460+00:00",
+            "status": 200,
+            "members": [
+              {
+                "instance_id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.851681Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.78.2.112:8080",
+                "endpoint_origins": [
+                  "http://100.78.2.112:8080"
+                ]
+              },
+              {
+                "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.869211Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.120.151.77:8080",
+                "endpoint_origins": [
+                  "http://100.120.151.77:8080"
+                ]
+              },
+              {
+                "instance_id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:15:30.361809Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.100.186.43:8080",
+                "endpoint_origins": [
+                  "http://100.100.186.43:8080"
+                ]
+              },
+              {
+                "instance_id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:16:03.936610Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.113.226.91:8080",
+                "endpoint_origins": [
+                  "http://100.113.226.91:8080"
+                ]
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 139.783,
+            "finished_at": "2026-10-24T03:25:27.018280+00:00"
+          },
+          {
+            "source": "http://100.100.186.43:8080",
+            "identity": {
+              "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+              "name": "monica"
+            },
+            "path": "/api/fleet/instances",
+            "started_at": "2026-10-24T03:25:27.018813+00:00",
+            "status": 200,
+            "decoded_response_bytes": 2739,
+            "correlation_id": "85349f8d-fc17-4b58-baf8-69df0d281ede",
+            "members": [
+              {
+                "instance_id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.851681Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.78.2.112:8080",
+                "endpoint_origins": [
+                  "http://100.78.2.112:8080"
+                ]
+              },
+              {
+                "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.869211Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.120.151.77:8080",
+                "endpoint_origins": [
+                  "http://100.120.151.77:8080"
+                ]
+              },
+              {
+                "instance_id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:15:30.361809Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.100.186.43:8080",
+                "endpoint_origins": [
+                  "http://100.100.186.43:8080"
+                ]
+              },
+              {
+                "instance_id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:16:03.936610Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.113.226.91:8080",
+                "endpoint_origins": [
+                  "http://100.113.226.91:8080"
+                ]
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 35.208,
+            "finished_at": "2026-10-24T03:25:27.054064+00:00"
+          },
+          {
+            "source": "http://100.78.2.112:8080",
+            "identity": {
+              "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+              "name": "macmini"
+            },
+            "path": "/api/fleet/instances",
+            "started_at": "2026-10-24T03:25:27.054680+00:00",
+            "status": 200,
+            "decoded_response_bytes": 2739,
+            "correlation_id": "65826e79-ff79-4ab5-a7e8-9a953adc7cb2",
+            "members": [
+              {
+                "instance_id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.851681Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.78.2.112:8080",
+                "endpoint_origins": [
+                  "http://100.78.2.112:8080"
+                ]
+              },
+              {
+                "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.869211Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.120.151.77:8080",
+                "endpoint_origins": [
+                  "http://100.120.151.77:8080"
+                ]
+              },
+              {
+                "instance_id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:15:30.361809Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.100.186.43:8080",
+                "endpoint_origins": [
+                  "http://100.100.186.43:8080"
+                ]
+              },
+              {
+                "instance_id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:16:03.936610Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.113.226.91:8080",
+                "endpoint_origins": [
+                  "http://100.113.226.91:8080"
+                ]
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 50.068,
+            "finished_at": "2026-10-24T03:25:27.104783+00:00"
+          },
+          {
+            "source": "http://100.113.226.91:8080",
+            "identity": {
+              "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+              "name": "alex"
+            },
+            "path": "/api/fleet/instances",
+            "started_at": "2026-10-24T03:25:27.105451+00:00",
+            "status": 200,
+            "decoded_response_bytes": 2739,
+            "correlation_id": "1fad2fd9-4826-438c-b060-6e6ff4c8c801",
+            "members": [
+              {
+                "instance_id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.851681Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.78.2.112:8080",
+                "endpoint_origins": [
+                  "http://100.78.2.112:8080"
+                ]
+              },
+              {
+                "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:14:14.869211Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.120.151.77:8080",
+                "endpoint_origins": [
+                  "http://100.120.151.77:8080"
+                ]
+              },
+              {
+                "instance_id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:15:30.361809Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.100.186.43:8080",
+                "endpoint_origins": [
+                  "http://100.100.186.43:8080"
+                ]
+              },
+              {
+                "instance_id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "lifecycle_state": "active",
+                "role": null,
+                "updated_at": "2026-10-18T19:16:03.936610Z",
+                "last_seen_at": null,
+                "retired_at": null,
+                "primary_origin": "http://100.113.226.91:8080",
+                "endpoint_origins": [
+                  "http://100.113.226.91:8080"
+                ]
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 38.618,
+            "finished_at": "2026-10-24T03:25:27.144102+00:00"
+          }
+        ],
+        "finished_at": "2026-10-24T03:25:27.144841+00:00"
+      }
+    },
+    "cached_overviews": {
+      "sha256": "b07adf73d3a7270b6dde5808228b15f1cefc728af81f6ad69b835cec3a5bee43",
+      "value": {
+        "contract": "pa.cached-fleet-dimension-observation/v1",
+        "started_at": "2026-10-24T03:39:42.456379+00:00",
+        "scope": "One ordinary cached-first /api/fleet/overview GET per verified authority. No forced probes, retry, policy, membership, direct file/store or configuration changes. Only dimension state/timing/failure code and hashed error/classification retained; no values/session/provider/dispatch proofs or response bodies. Single snapshots do not establish cause of historical process counters.",
+        "authorities": [
+          {
+            "source": "local-bound-api",
+            "identity": {
+              "id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+              "name": "macbook"
+            },
+            "path": "/api/fleet/overview",
+            "started_at": "2026-10-24T03:39:42.457048+00:00",
+            "status": 200,
+            "nodes": [
+              {
+                "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 76.6,
+                    "observed_at": "2026-10-24T03:39:34.925496+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.925496+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 361.3,
+                    "observed_at": "2026-10-24T03:39:35.215037+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.215037+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "fresh",
+                    "duration_ms": 2670.5,
+                    "observed_at": "2026-10-21T00:14:53.011590+00:00",
+                    "last_attempted_at": "2026-10-21T00:14:53.011590+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 5524.3,
+                    "observed_at": "2026-10-21T00:14:56.009257+00:00",
+                    "last_attempted_at": "2026-10-21T00:14:56.009257+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 874.1,
+                    "observed_at": "2026-10-21T00:14:51.598667+00:00",
+                    "last_attempted_at": "2026-10-21T00:14:51.598667+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 183.4,
+                    "observed_at": "2026-10-21T00:14:51.659956+00:00",
+                    "last_attempted_at": "2026-10-21T00:14:51.659956+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 94.0,
+                    "observed_at": "2026-10-24T03:39:34.946322+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.946322+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 185.8,
+                    "observed_at": "2026-10-21T00:12:44.016128+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:44.016128+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 128.1,
+                    "observed_at": "2026-10-21T00:12:44.526589+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:44.526589+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "local": true,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-21T00:10:06.544955+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.544519+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.544519+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.544531+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.544531+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:42.544495+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 9503.3,
+                    "observed_at": "2026-10-21T00:12:56.640941+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:56.640941+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 400.6,
+                    "observed_at": "2026-10-21T00:12:50.467309+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:50.467309+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.634467+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.634467+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.651539+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.651539+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.682989+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.682989+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.764567+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.764567+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:15:30.361372+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 40.4,
+                    "observed_at": "2026-10-24T03:39:34.896005+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.896005+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 52.6,
+                    "observed_at": "2026-10-24T03:39:34.904161+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.904161+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "fresh",
+                    "duration_ms": 1502.1,
+                    "observed_at": "2026-10-21T00:12:52.799445+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:52.799445+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 1832.6,
+                    "observed_at": "2026-10-21T00:12:54.940317+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:54.940317+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 576.5,
+                    "observed_at": "2026-10-21T00:12:55.673337+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:55.673337+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 389.1,
+                    "observed_at": "2026-10-21T00:12:56.380393+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:56.380393+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 54.6,
+                    "observed_at": "2026-10-24T03:39:34.914288+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.914288+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 205.5,
+                    "observed_at": "2026-10-21T00:12:57.054616+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:57.054616+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 268.2,
+                    "observed_at": "2026-10-21T00:12:57.371005+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:57.371005+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:16:03.936375+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 38.3,
+                    "observed_at": "2026-10-24T03:39:34.895871+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.895871+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 39.7,
+                    "observed_at": "2026-10-24T03:39:34.904017+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.904017+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "fresh",
+                    "duration_ms": 1195.1,
+                    "observed_at": "2026-10-21T00:12:58.745403+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:58.745403+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 1539.5,
+                    "observed_at": "2026-10-21T00:12:59.097360+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:59.097360+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 477.6,
+                    "observed_at": "2026-10-21T00:12:59.502033+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:59.502033+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 314.7,
+                    "observed_at": "2026-10-21T00:12:59.817436+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:59.817436+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 51.4,
+                    "observed_at": "2026-10-24T03:39:34.913697+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:34.913697+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 178.5,
+                    "observed_at": "2026-10-21T00:13:00.490799+00:00",
+                    "last_attempted_at": "2026-10-21T00:13:00.490799+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 94.4,
+                    "observed_at": "2026-10-21T00:13:00.732353+00:00",
+                    "last_attempted_at": "2026-10-21T00:13:00.732353+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 409.352,
+            "finished_at": "2026-10-24T03:39:42.866438+00:00"
+          },
+          {
+            "source": "http://100.100.186.43:8080",
+            "identity": {
+              "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+              "name": "monica"
+            },
+            "path": "/api/fleet/overview",
+            "started_at": "2026-10-24T03:39:42.867772+00:00",
+            "status": 200,
+            "decoded_response_bytes": 1925028,
+            "correlation_id": "0c4d906b-4326-4a09-8c97-01a53aa61aa6",
+            "nodes": [
+              {
+                "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 79.4,
+                    "observed_at": "2026-10-24T03:39:31.636540+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.636540+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 340.9,
+                    "observed_at": "2026-10-24T03:39:31.904738+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.904738+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "stale",
+                    "duration_ms": 3822.1,
+                    "observed_at": "2026-08-23T06:25:57.598829+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:45.800099+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "b124a19e16641e02f0bf040693d75e10ce1eed02d461864c542d9fd4fd5405d9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "mcp_bootstrap": {
+                    "state": "stale",
+                    "duration_ms": 10337.5,
+                    "observed_at": "2026-08-23T06:49:59.952743+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:19.515772+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "6bfdb74cfccef2cd5b37ac83e9050405a3bd708d4f6957017bc3adf80278b771",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "update": {
+                    "state": "stale",
+                    "duration_ms": 2645.0,
+                    "observed_at": "2026-08-23T06:35:51.439509+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.012700+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "72a469df4766d6c4de8808423c927364ac414ef3679a8809806b4c5edda9a6c5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "activity": {
+                    "state": "stale",
+                    "duration_ms": 3405.1,
+                    "observed_at": "2026-08-23T06:27:43.651833+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:45.800638+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 92.1,
+                    "observed_at": "2026-10-24T03:39:31.654856+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.654856+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "stale",
+                    "duration_ms": 1301.3,
+                    "observed_at": "2026-08-23T06:34:03.328137+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.311776+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "8c0468d0df29c05c4236ba526ffc2de879f437403aa12a42233653456bfb572c",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "supervisor": {
+                    "state": "stale",
+                    "duration_ms": 761.8,
+                    "observed_at": "2026-08-23T06:34:03.328251+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.350187+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d6a5256e92d7804f13e72c8a143944fe07b9768f44935294fcabde03cb15b623",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "timeout",
+                "dimensions": {
+                  "reachability": {
+                    "state": "stale",
+                    "duration_ms": 153.2,
+                    "observed_at": "2026-10-24T02:50:57.633458+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.565038+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d82a90ee04597158c0946637bbc6003b6bf6ac056ad0886bb86d0b7a3c12eb1e",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "status": {
+                    "state": "stale",
+                    "duration_ms": 422.2,
+                    "observed_at": "2026-10-24T02:50:57.910165+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.570069+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "e68aace58c6705cf2290b47df0422fc70c92a5de4f519a9ac95880ea024f1db9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "providers": {
+                    "state": "stale",
+                    "duration_ms": 3316.2,
+                    "observed_at": "2026-08-23T06:49:59.491598+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:45.800701+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "b124a19e16641e02f0bf040693d75e10ce1eed02d461864c542d9fd4fd5405d9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "mcp_bootstrap": {
+                    "state": "stale",
+                    "duration_ms": 313.3,
+                    "observed_at": "2026-08-23T06:49:56.588091+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.536900+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "6bfdb74cfccef2cd5b37ac83e9050405a3bd708d4f6957017bc3adf80278b771",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "update": {
+                    "state": "stale",
+                    "duration_ms": 666.2,
+                    "observed_at": "2026-08-23T06:49:57.316018+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.578120+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "72a469df4766d6c4de8808423c927364ac414ef3679a8809806b4c5edda9a6c5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "activity": {
+                    "state": "stale",
+                    "duration_ms": 272.6,
+                    "observed_at": "2026-08-23T06:27:40.520681+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:45.801157+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "stale",
+                    "duration_ms": 433.4,
+                    "observed_at": "2026-10-24T02:50:57.912581+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.565300+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "e5ac242ac0a33c10e1e174a759e4d3f6e668b659ee10d54d466c2a278144a6a1",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "repositories": {
+                    "state": "stale",
+                    "duration_ms": 3671.7,
+                    "observed_at": "2026-08-23T06:50:02.817372+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.703084+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "8c0468d0df29c05c4236ba526ffc2de879f437403aa12a42233653456bfb572c",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "supervisor": {
+                    "state": "stale",
+                    "duration_ms": 3869.5,
+                    "observed_at": "2026-08-23T06:50:03.428711+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:20.742862+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d6a5256e92d7804f13e72c8a143944fe07b9768f44935294fcabde03cb15b623",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "local": true,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:15:30.361372+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.979370+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.979370+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.979382+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.979382+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:42.979350+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 1733.3,
+                    "observed_at": "2026-10-21T00:12:54.926380+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:54.926380+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 679.2,
+                    "observed_at": "2026-08-23T16:18:21.565778+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:21.565778+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.984401+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.984401+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.989501+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.989501+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.993519+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.993519+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:42.995993+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:42.995993+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:16:03.936375+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 51.2,
+                    "observed_at": "2026-10-24T03:39:31.619767+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.619767+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 74.8,
+                    "observed_at": "2026-10-24T03:39:31.636228+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.636228+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "stale",
+                    "duration_ms": 173.9,
+                    "observed_at": "2026-08-23T06:50:03.155847+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:45.824720+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "b124a19e16641e02f0bf040693d75e10ce1eed02d461864c542d9fd4fd5405d9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "mcp_bootstrap": {
+                    "state": "stale",
+                    "duration_ms": 3041.3,
+                    "observed_at": "2026-08-23T06:50:06.110630+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:21.173238+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "6bfdb74cfccef2cd5b37ac83e9050405a3bd708d4f6957017bc3adf80278b771",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "update": {
+                    "state": "stale",
+                    "duration_ms": 338.9,
+                    "observed_at": "2026-08-23T06:50:03.554562+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:21.244352+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "72a469df4766d6c4de8808423c927364ac414ef3679a8809806b4c5edda9a6c5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "activity": {
+                    "state": "stale",
+                    "duration_ms": 23.2,
+                    "observed_at": "2026-08-23T06:50:03.505502+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:45.823369+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 81.4,
+                    "observed_at": "2026-10-24T03:39:31.653499+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:31.653499+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "stale",
+                    "duration_ms": 239.6,
+                    "observed_at": "2026-08-23T06:50:03.903308+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:21.603985+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "8c0468d0df29c05c4236ba526ffc2de879f437403aa12a42233653456bfb572c",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "supervisor": {
+                    "state": "stale",
+                    "duration_ms": 26.6,
+                    "observed_at": "2026-08-23T06:50:03.954873+00:00",
+                    "last_attempted_at": "2026-08-23T16:18:21.643246+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d6a5256e92d7804f13e72c8a143944fe07b9768f44935294fcabde03cb15b623",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  }
+                }
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 443.992,
+            "finished_at": "2026-10-24T03:39:43.311816+00:00"
+          },
+          {
+            "source": "http://100.78.2.112:8080",
+            "identity": {
+              "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+              "name": "macmini"
+            },
+            "path": "/api/fleet/overview",
+            "started_at": "2026-10-24T03:39:43.313219+00:00",
+            "status": 200,
+            "decoded_response_bytes": 2549015,
+            "correlation_id": "5087f5cb-3dc6-4726-af92-e65a0ca11cb5",
+            "nodes": [
+              {
+                "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "local": true,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:43.336256+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.336256+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:43.336276+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.336276+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:43.336175+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 5237.1,
+                    "observed_at": "2026-10-21T00:14:55.923669+00:00",
+                    "last_attempted_at": "2026-10-21T00:14:55.923669+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 440.1,
+                    "observed_at": "2026-08-07T02:18:06.837775+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:06.837775+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:43.349626+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.349626+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:43.372820+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.372820+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:43.392776+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.392776+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:43.401159+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.401159+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "timeout",
+                "dimensions": {
+                  "reachability": {
+                    "state": "stale",
+                    "duration_ms": 242.8,
+                    "observed_at": "2026-10-24T03:33:34.523909+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.028010+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d82a90ee04597158c0946637bbc6003b6bf6ac056ad0886bb86d0b7a3c12eb1e",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "status": {
+                    "state": "stale",
+                    "duration_ms": 240.3,
+                    "observed_at": "2026-10-24T03:33:34.525388+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.031657+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "e68aace58c6705cf2290b47df0422fc70c92a5de4f519a9ac95880ea024f1db9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "providers": {
+                    "state": "stale",
+                    "duration_ms": 2518.5,
+                    "observed_at": "2026-09-07T05:24:00.643783+00:00",
+                    "last_attempted_at": "2026-09-07T15:17:07.477038+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "b124a19e16641e02f0bf040693d75e10ce1eed02d461864c542d9fd4fd5405d9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 10758.4,
+                    "observed_at": "2026-08-07T02:18:21.196430+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:21.196430+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 1090.3,
+                    "observed_at": "2026-08-07T02:18:12.857254+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:12.857254+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "stale",
+                    "duration_ms": 2872.8,
+                    "observed_at": "2026-09-07T05:24:34.208288+00:00",
+                    "last_attempted_at": "2026-09-07T15:17:07.471192+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "stale",
+                    "duration_ms": 245.9,
+                    "observed_at": "2026-10-24T03:33:34.532483+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.037358+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "e5ac242ac0a33c10e1e174a759e4d3f6e668b659ee10d54d466c2a278144a6a1",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 436.5,
+                    "observed_at": "2026-08-07T02:18:13.820626+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:13.820626+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 1233.3,
+                    "observed_at": "2026-08-07T02:18:14.772091+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:14.772091+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:15:30.361372+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 131.6,
+                    "observed_at": "2026-10-24T03:39:35.160345+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.160345+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 129.6,
+                    "observed_at": "2026-10-24T03:39:35.161298+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.161298+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "stale",
+                    "duration_ms": 3728.6,
+                    "observed_at": "2026-08-30T21:05:26.718380+00:00",
+                    "last_attempted_at": "2026-09-07T15:17:07.899735+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "b124a19e16641e02f0bf040693d75e10ce1eed02d461864c542d9fd4fd5405d9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 4680.0,
+                    "observed_at": "2026-08-07T02:18:19.422173+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:19.422173+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 96.1,
+                    "observed_at": "2026-08-07T02:18:15.110445+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:15.110445+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "stale",
+                    "duration_ms": 4008.6,
+                    "observed_at": "2026-08-30T21:05:27.000687+00:00",
+                    "last_attempted_at": "2026-09-07T15:17:07.895975+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 121.2,
+                    "observed_at": "2026-10-24T03:39:35.158732+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.158732+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 27.3,
+                    "observed_at": "2026-08-07T02:18:18.453702+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:18.453702+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 91.1,
+                    "observed_at": "2026-08-07T02:18:18.688638+00:00",
+                    "last_attempted_at": "2026-08-07T02:18:18.688638+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:16:03.936375+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 110.1,
+                    "observed_at": "2026-10-24T03:39:35.158881+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.158881+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 108.2,
+                    "observed_at": "2026-10-24T03:39:35.160671+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.160671+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "stale",
+                    "duration_ms": 2489.6,
+                    "observed_at": "2026-08-30T21:03:43.624688+00:00",
+                    "last_attempted_at": "2026-09-07T15:17:07.900676+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "b124a19e16641e02f0bf040693d75e10ce1eed02d461864c542d9fd4fd5405d9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "mcp_bootstrap": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:43.401499+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:43.401511+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "stale",
+                    "duration_ms": 3823.7,
+                    "observed_at": "2026-08-30T21:05:10.876856+00:00",
+                    "last_attempted_at": "2026-09-07T15:17:07.899069+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 113.6,
+                    "observed_at": "2026-10-24T03:39:35.159001+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:35.159001+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:43.401525+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:43.401533+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 670.959,
+            "finished_at": "2026-10-24T03:39:43.984223+00:00"
+          },
+          {
+            "source": "http://100.113.226.91:8080",
+            "identity": {
+              "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+              "name": "alex"
+            },
+            "path": "/api/fleet/overview",
+            "started_at": "2026-10-24T03:39:43.985719+00:00",
+            "status": 200,
+            "decoded_response_bytes": 82349,
+            "correlation_id": "c766a00e-5835-4d80-aa56-4506cd90e1f0",
+            "nodes": [
+              {
+                "id": "02dbcd47-8f40-44eb-8403-5eb57545afc8",
+                "name": "macmini",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 60.3,
+                    "observed_at": "2026-10-24T03:39:43.908006+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.908006+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 415.0,
+                    "observed_at": "2026-10-24T03:39:28.834940+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:28.834940+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:44.036107+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "timeout",
+                    "duration_ms": 15001.6,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:08.419782+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "6bfdb74cfccef2cd5b37ac83e9050405a3bd708d4f6957017bc3adf80278b771",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "update": {
+                    "state": "timeout",
+                    "duration_ms": 4001.3,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:30:57.511978+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "72a469df4766d6c4de8808423c927364ac414ef3679a8809806b4c5edda9a6c5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "activity": {
+                    "state": "timeout",
+                    "duration_ms": 4000.7,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:01.447752+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 91.1,
+                    "observed_at": "2026-10-24T03:39:43.940452+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.940452+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "timeout",
+                    "duration_ms": 4001.0,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:01.526950+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "8c0468d0df29c05c4236ba526ffc2de879f437403aa12a42233653456bfb572c",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "supervisor": {
+                    "state": "timeout",
+                    "duration_ms": 4001.4,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:04.027814+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d6a5256e92d7804f13e72c8a143944fe07b9768f44935294fcabde03cb15b623",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+                "name": "macbook",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:14:14.849277+00:00",
+                "topology_status": "timeout",
+                "dimensions": {
+                  "reachability": {
+                    "state": "stale",
+                    "duration_ms": 75.3,
+                    "observed_at": "2026-10-24T02:03:49.888052+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.853602+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d82a90ee04597158c0946637bbc6003b6bf6ac056ad0886bb86d0b7a3c12eb1e",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "status": {
+                    "state": "stale",
+                    "duration_ms": 200.9,
+                    "observed_at": "2026-10-24T02:03:50.009379+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.855639+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "e68aace58c6705cf2290b47df0422fc70c92a5de4f519a9ac95880ea024f1db9",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:44.036159+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "stale",
+                    "duration_ms": 12506.4,
+                    "observed_at": "2026-08-16T16:39:49.230146+00:00",
+                    "last_attempted_at": "2026-08-16T18:31:16.561221+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "6bfdb74cfccef2cd5b37ac83e9050405a3bd708d4f6957017bc3adf80278b771",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "update": {
+                    "state": "stale",
+                    "duration_ms": 280.3,
+                    "observed_at": "2026-08-16T16:39:38.112363+00:00",
+                    "last_attempted_at": "2026-08-16T18:31:05.562112+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "72a469df4766d6c4de8808423c927364ac414ef3679a8809806b4c5edda9a6c5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "activity": {
+                    "state": "timeout",
+                    "duration_ms": 4001.4,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:08.062003+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "stale",
+                    "duration_ms": 112.9,
+                    "observed_at": "2026-10-24T02:03:49.925077+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.847697+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "e5ac242ac0a33c10e1e174a759e4d3f6e668b659ee10d54d466c2a278144a6a1",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "repositories": {
+                    "state": "timeout",
+                    "duration_ms": 4001.2,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:09.582953+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "8c0468d0df29c05c4236ba526ffc2de879f437403aa12a42233653456bfb572c",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "supervisor": {
+                    "state": "timeout",
+                    "duration_ms": 4000.9,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:12.083442+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "d6a5256e92d7804f13e72c8a143944fe07b9768f44935294fcabde03cb15b623",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf",
+                "name": "monica",
+                "local": false,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:15:30.361372+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 31.5,
+                    "observed_at": "2026-10-24T03:39:43.884412+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.884412+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 58.2,
+                    "observed_at": "2026-10-24T03:39:43.908165+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.908165+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:44.036187+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 6778.6,
+                    "observed_at": "2026-08-16T18:31:16.384012+00:00",
+                    "last_attempted_at": "2026-08-16T18:31:16.384012+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "timeout",
+                    "duration_ms": 4000.3,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:16.108736+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "72a469df4766d6c4de8808423c927364ac414ef3679a8809806b4c5edda9a6c5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "activity": {
+                    "state": "timeout",
+                    "duration_ms": 4000.7,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:16.568187+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "abfe92af89dc6d7b6e0840c18d4f32fecead3b88524a7c566daca9ed1a49dca5",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 54.9,
+                    "observed_at": "2026-10-24T03:39:43.908612+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:43.908612+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "timeout",
+                    "duration_ms": 5434.9,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-08-16T18:31:21.575445+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null,
+                    "error_sha256": "8c0468d0df29c05c4236ba526ffc2de879f437403aa12a42233653456bfb572c",
+                    "error_markers": [
+                      "deadline",
+                      "exceeded"
+                    ]
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 5172.8,
+                    "observed_at": "2026-08-16T18:31:21.575152+00:00",
+                    "last_attempted_at": "2026-08-16T18:31:21.575152+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              },
+              {
+                "id": "f72a46d3-1ea0-4cab-bead-419333bb1089",
+                "name": "alex",
+                "local": true,
+                "lifecycle_state": "active",
+                "last_seen": "2026-10-18T19:16:03.936375+00:00",
+                "topology_status": "fresh",
+                "dimensions": {
+                  "reachability": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:44.036225+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:44.036225+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "status": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:44.036233+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:44.036233+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "providers": {
+                    "state": "unavailable",
+                    "duration_ms": null,
+                    "observed_at": null,
+                    "last_attempted_at": "2026-10-24T03:39:44.036209+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "mcp_bootstrap": {
+                    "state": "fresh",
+                    "duration_ms": 1352.4,
+                    "observed_at": "2026-10-21T00:12:59.068761+00:00",
+                    "last_attempted_at": "2026-10-21T00:12:59.068761+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "update": {
+                    "state": "fresh",
+                    "duration_ms": 587.9,
+                    "observed_at": "2026-08-16T18:31:22.206128+00:00",
+                    "last_attempted_at": "2026-08-16T18:31:22.206128+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "activity": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:44.036784+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:44.036784+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "sync": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:44.041218+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:44.041218+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "repositories": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:44.041977+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:44.041977+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  },
+                  "supervisor": {
+                    "state": "fresh",
+                    "duration_ms": 0,
+                    "observed_at": "2026-10-24T03:39:44.043761+00:00",
+                    "last_attempted_at": "2026-10-24T03:39:44.043761+00:00",
+                    "failure_code": null,
+                    "retry_after": null,
+                    "cache_hit": null
+                  }
+                }
+              }
+            ],
+            "ok": true,
+            "elapsed_ms": 140.119,
+            "finished_at": "2026-10-24T03:39:44.125865+00:00"
+          }
+        ],
+        "finished_at": "2026-10-24T03:39:44.127570+00:00"
+      }
+    },
+    "control": {
+      "sha256": "00e3170aafd101ac2ab3092561b6a94247d95bb03c059a504788329ecb864272",
+      "value": {
+        "started_at": "2026-10-24T15:03:22.851167+00:00",
+        "finished_at": "2026-10-24T15:03:23.181085+00:00",
+        "instance": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+        "install_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+        "runtime_build": {
+          "loaded_module_version": "1.5.9",
+          "source_revision": "c02e6d84c1f2d928e916ec491df466795a37b2f3",
+          "package_identity": "sha256:5917d4f0801bfca2f7d4dbbe3f577e316e2dbc2dd502868514579fe7aae25b9e",
+          "pid": 78321,
+          "startup_id": "a50c19a2-c3d0-4b62-bc2a-063a41ed6f4c"
+        },
+        "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+        "card": {
+          "id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+          "lane": "waiting",
+          "updated_at": "2026-10-24T04:10:43.246586Z",
+          "completion_status": {
+            "reason_code": "verification_pending",
+            "missing": [
+              "active",
+              "verified",
+              "acceptance"
+            ],
+            "satisfied": [
+              "integrated"
+            ],
+            "accepted": false
+          }
+        },
+        "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+        "handoffs": [
+          {
+            "id": "f6c4e9e1-1d62-5161-b497-45e525490d0c",
+            "idempotency_key": "systemic-pr492-activate4297b56-20261017-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-17T22:27:04.652945Z",
+            "delivered_at": "2026-10-17T22:27:04.652945Z",
+            "error": null
+          },
+          {
+            "id": "ae7bd5ae-e589-5fc2-95a4-20cb77f47b67",
+            "idempotency_key": "systemic-pr497-activate175ccb4f-20261017-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-17T23:02:42.151260Z",
+            "delivered_at": "2026-10-17T23:02:42.151260Z",
+            "error": null
+          },
+          {
+            "id": "8c99c30b-db6c-5809-9e60-f69d410bbf87",
+            "idempotency_key": "systemic-pr499-activate309751f5-20261017-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T03:07:48.524949Z",
+            "delivered_at": "2026-10-18T03:07:48.524949Z",
+            "error": null
+          },
+          {
+            "id": "689e2c99-5e25-5670-bb25-5d36f83f7753",
+            "idempotency_key": "systemic-pr502-activateb808b039-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T03:32:18.510342Z",
+            "delivered_at": "2026-10-18T03:32:18.510342Z",
+            "error": null
+          },
+          {
+            "id": "15bc75d8-b0de-58c0-a073-10a59d112597",
+            "idempotency_key": "systemic-pr503-activatea90d89d0-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T03:54:50.411463Z",
+            "delivered_at": "2026-10-18T03:54:50.411463Z",
+            "error": null
+          },
+          {
+            "id": "c081d989-741c-5ef0-bce0-62f3b1a3f7e5",
+            "idempotency_key": "systemic-pr504-activate134044d3-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T04:24:41.481502Z",
+            "delivered_at": "2026-10-18T04:24:41.481502Z",
+            "error": null
+          },
+          {
+            "id": "da59cf99-8534-525f-8d3e-4fbf2df4649e",
+            "idempotency_key": "systemic-pr505506-activate5024f789-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T05:42:54.990125Z",
+            "delivered_at": "2026-10-18T05:42:54.990125Z",
+            "error": null
+          },
+          {
+            "id": "780c6de7-4eb2-50e0-8040-39377e82e3e6",
+            "idempotency_key": "systemic-pr508-activate806b4b9d-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T06:20:41.777159Z",
+            "delivered_at": "2026-10-18T06:20:41.777159Z",
+            "error": null
+          },
+          {
+            "id": "e7ddc0ee-9781-53fb-97c2-c8c52b3e8ecb",
+            "idempotency_key": "systemic-pr510-activateaa58a0d7-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T06:54:54.334539Z",
+            "delivered_at": "2026-10-18T06:54:54.334539Z",
+            "error": null
+          },
+          {
+            "id": "b0bfb0e1-0662-5f50-9ba8-a34a9e5c439d",
+            "idempotency_key": "systemic-pr511-activatee6b88f02-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T07:11:28.329504Z",
+            "delivered_at": "2026-10-18T07:11:28.329504Z",
+            "error": null
+          },
+          {
+            "id": "8a28438f-ee48-591c-bb3b-b16af045a62b",
+            "idempotency_key": "systemic-pr512-activate5fb32b7a-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T07:40:11.992673Z",
+            "delivered_at": "2026-10-18T07:40:11.992673Z",
+            "error": null
+          },
+          {
+            "id": "36489b59-e801-5392-9d95-76ab5869a11d",
+            "idempotency_key": "systemic-pr513-activate6d2febce-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T08:14:12.557110Z",
+            "delivered_at": "2026-10-18T08:14:12.557110Z",
+            "error": null
+          },
+          {
+            "id": "9887e4d9-68a1-54f3-aea2-55a3afa8ef5c",
+            "idempotency_key": "systemic-pr514-activate9e5c7c55-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T09:08:30.315360Z",
+            "delivered_at": "2026-10-18T09:08:30.315360Z",
+            "error": null
+          },
+          {
+            "id": "ba0a0095-f6b9-53f9-b14d-b0b96f2544cb",
+            "idempotency_key": "systemic-pr515-activate17a06018-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T09:57:07.390452Z",
+            "delivered_at": "2026-10-18T09:57:07.390452Z",
+            "error": null
+          },
+          {
+            "id": "1ea6a273-9d91-5a44-aaee-59e84b8ec49f",
+            "idempotency_key": "systemic-pr516-activatebcd5c690-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T10:37:27.609212Z",
+            "delivered_at": "2026-10-18T10:37:27.609212Z",
+            "error": null
+          },
+          {
+            "id": "9ee8c0ea-cfd1-5a95-8792-1fc43e92a537",
+            "idempotency_key": "systemic-pr518-activatef7e87710-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T11:27:27.098386Z",
+            "delivered_at": "2026-10-18T11:27:27.098386Z",
+            "error": null
+          },
+          {
+            "id": "b7055097-5e48-5009-9bb5-89f2fc1850df",
+            "idempotency_key": "systemic-pr520-activatec43f15ca-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T12:13:46.280653Z",
+            "delivered_at": "2026-10-18T12:13:46.280653Z",
+            "error": null
+          },
+          {
+            "id": "bbcc5388-282e-51a1-9817-48aa00a75eca",
+            "idempotency_key": "systemic-pr521-activate6b7ec220-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T12:47:54.557073Z",
+            "delivered_at": "2026-10-18T12:47:54.557073Z",
+            "error": null
+          },
+          {
+            "id": "38e967dd-b7ca-5312-b617-f7b15a18da84",
+            "idempotency_key": "systemic-pr522-activatede576ebb-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T13:09:25.979385Z",
+            "delivered_at": "2026-10-18T13:09:25.979385Z",
+            "error": null
+          },
+          {
+            "id": "fe5746f9-de72-557f-8763-8fa60d19111f",
+            "idempotency_key": "systemic-pr523-activatebfe0a81a-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T13:37:56.247621Z",
+            "delivered_at": "2026-10-18T13:37:56.247621Z",
+            "error": null
+          },
+          {
+            "id": "e3eb46fc-5b13-583c-a404-91b95687f805",
+            "idempotency_key": "systemic-pr524-activated6e4ca08-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T14:04:20.802707Z",
+            "delivered_at": "2026-10-18T14:04:20.802707Z",
+            "error": null
+          },
+          {
+            "id": "76b3b4eb-7051-5f9f-a740-98a1088c7127",
+            "idempotency_key": "systemic-pr525-activatebc5116a9-20261018-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-18T17:09:51.559983Z",
+            "delivered_at": "2026-10-18T17:09:51.559983Z",
+            "error": null
+          },
+          {
+            "id": "d44863ff-b7cd-5c55-94bf-53e7877ec5fe",
+            "idempotency_key": "systemic-pr527-activate3f358a66-20261018-v1",
+            "status": "failed",
+            "updated_at": "2026-10-18T17:30:16.372396Z",
+            "delivered_at": null,
+            "error": "Quiesce deadline: session=8524edb1-0a2c-4716-9ca1-901d49dcc245 queued=1 prompt=3eed15f8-31cc-56cf-be44-480ff667b433 tool=exec-6ef009c1-7afb-4e97-9571-3901f7f53358 tool_status=None transcript_batches=0"
+          },
+          {
+            "id": "e877ac9c-1ea6-524d-bc60-190a7840dcad",
+            "idempotency_key": "systemic-pr542-exact53b42-approved-20261019-v1",
+            "status": "continuation_delivered",
+            "updated_at": "2026-10-19T00:35:55.909550Z",
+            "delivered_at": "2026-10-19T00:35:55.909550Z",
+            "error": null
+          }
+        ],
+        "scope": "Bounded supported GETs; no service writes/restart/configuration change or full prompts/private evidence."
+      }
+    }
+  },
+  "confirmed_cause": "Cache-only _cached_or_default returned persisted fresh fields verbatim without consulting existing probe TTL. Python and browser readiness preferred historical last_attempt_state=fresh over aged state=stale, including stale sync mismatch.",
+  "change": "Share the existing 3s/30s probe lifetime with cache-only composition; classify expired or unverifiable successful observations as stale in the response only. Keep historical last_attempt_state/timestamps/durations/error/value and persisted bytes/revision unchanged. Derive topology/readiness/sync labels from observation freshness while retaining failed-attempt diagnostics. Future timestamps cannot satisfy cache-hit freshness.",
+  "unchanged": [
+    "Existing 3s/30s cache lifetimes and all HTTP/provider/MCP/worker deadlines and warning thresholds",
+    "No new network probes, timers, persistence writes, TTL extension or background refresh frequency changes",
+    "Last-good payload, exact historical successful and failed probe fields, persistence, attempt fencing and single-flight semantics",
+    "Admission, permission/model defaults, provider authentication and durable store/eventlog/receipt semantics"
+  ],
+  "tests": {
+    "baseline": {
+      "started_at": "2026-10-24T15:04:37.168312+00:00",
+      "finished_at": "2026-10-24T15:04:40.901216+00:00",
+      "elapsed_ms": 3732.2407079627737,
+      "exit_code": 1,
+      "targets": [
+        "tests/test_fleet_cache_age.py",
+        "tests/test_fleet_overview_ui.py"
+      ],
+      "workspace_roots": [],
+      "source_sha256": "e45128562dee39cf2d5ab00dd992cb381eede5aed51227e8d0fd3a3aed046b36",
+      "test_sha256": "85e3e70ac216b45a6cbdf1903f17b5c5c9cb762a63aa7def1db2ba1d020ba12b",
+      "scope": "Both settings/temp roots private; every Workspace construction guarded; deterministic clock and fixed new provider status stubs; no production credentials, PA service state or timer/deadline changes. Existing provider suite retains its own subprocess mocks."
+    },
+    "baseline_result": "23 expected failures /20 passes, cache-only expired/invalid/future freshness and historical mismatch reproduced in Python and Node.",
+    "initial_patch": {
+      "started_at": "2026-10-24T15:04:59.269032+00:00",
+      "finished_at": "2026-10-24T15:05:22.699609+00:00",
+      "elapsed_ms": 23429.555125068873,
+      "exit_code": 1,
+      "targets": [
+        "tests/test_fleet_cache_age.py",
+        "tests/test_fleet_overview_ui.py",
+        "tests/test_fleet.py",
+        "tests/test_mcp_bootstrap_regressions.py"
+      ],
+      "workspace_roots": [
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-fleet-age-c63w_jpg/tmped3x3s2r",
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-fleet-age-c63w_jpg/tmpdmlp718b",
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-fleet-age-c63w_jpg/tmp1mqzfuat"
+      ],
+      "source_sha256": "6a7b4bf0ebc900f20b789720ae4c30ed08b2dcb3e50123f365ebd29e16be7ac1",
+      "test_sha256": "85e3e70ac216b45a6cbdf1903f17b5c5c9cb762a63aa7def1db2ba1d020ba12b",
+      "scope": "Both settings/temp roots private; every Workspace construction guarded; fixed cache timestamps and existing Node browser-state harness; no production credentials, PA service state or timer/deadline changes. Existing Fleet/MCP tests retain their own mocks."
+    },
+    "initial_result": "125 passed/2subtests,1 existing UI fixture failed because its live-mismatch phase left reachability stale but expected all observations fresh. Failure retained.",
+    "final": {
+      "started_at": "2026-10-24T15:05:41.147025+00:00",
+      "finished_at": "2026-10-24T15:06:03.049507+00:00",
+      "elapsed_ms": 21901.949541992508,
+      "exit_code": 0,
+      "targets": [
+        "tests/test_fleet_cache_age.py",
+        "tests/test_fleet_overview_ui.py",
+        "tests/test_fleet.py",
+        "tests/test_mcp_bootstrap_regressions.py"
+      ],
+      "workspace_roots": [
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-fleet-age-6i6x7ph1/tmpf7ps1rxl",
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-fleet-age-6i6x7ph1/tmpolahi0mp",
+        "/private/var/folders/_3/zrngl3k91ps2c_x54whdbjh00000gn/T/pa-fleet-age-6i6x7ph1/tmpgobjf2bo"
+      ],
+      "source_sha256": "6a7b4bf0ebc900f20b789720ae4c30ed08b2dcb3e50123f365ebd29e16be7ac1",
+      "test_sha256": "85e3e70ac216b45a6cbdf1903f17b5c5c9cb762a63aa7def1db2ba1d020ba12b",
+      "scope": "Both settings/temp roots private; every Workspace construction guarded; fixed cache timestamps and existing Node browser-state harness; no production credentials, PA service state or timer/deadline changes. Existing Fleet/MCP tests retain their own mocks."
+    },
+    "final_result": "126 passed/2subtests; existing UI fixture now first asserts stale reachability, then refreshes reachability before checking fresh observation state; mismatch/error assertions retained.",
+    "raw_logs": {
+      "baseline": {
+        "sha256": "87cbbcdeaddd3d76557935528c4b9d56c06cbe9606440853461fb43ebc2cfad1",
+        "published": false
+      },
+      "contracts": {
+        "sha256": "b2ef4c5ffc3d5a37290929f7a3770044fbebcf8da73801b9fd41036f6f884d58",
+        "published": false
+      },
+      "contracts_final": {
+        "sha256": "65132842f72f85af52eaa2652269c0974d494c7187b21897f6b7514cc3becf3f",
+        "published": false
+      }
+    }
+  },
+  "source_files": {
+    "src/pa/fleet/overview.py": "6a7b4bf0ebc900f20b789720ae4c30ed08b2dcb3e50123f365ebd29e16be7ac1",
+    "src/pa/server/static/js/fleet.js": "02211aacf846e141ba1acbd0c000a3370fcd08e31a04998674db1700f0154581",
+    "tests/test_fleet_cache_age.py": "85e3e70ac216b45a6cbdf1903f17b5c5c9cb762a63aa7def1db2ba1d020ba12b",
+    "tests/test_fleet_overview_ui.py": "a9441c0bd1c3b09815ef7333851b93b76a961a90e12319ffc8584d1d647b6ddd"
+  },
+  "integration": {
+    "568": {
+      "contract": "pa.exact-integration-proof/v1",
+      "observed_at": "2026-10-24T04:06:38.182577+00:00",
+      "PR": 568,
+      "watch": "fd1ef818-675f-48bd-84c0-ab7ed0df67ca",
+      "head": "984bac42e091aab36a803706715de30e6094d972",
+      "merge": "186f5ebdd146fbd366ca44b59c9042bd255dff37",
+      "merged_at": "2026-10-24T04:06:27Z",
+      "source_tree": "c7f659ffbd251c18007cfffcfc2d04edcf7c0bc7",
+      "merge_tree": "c7f659ffbd251c18007cfffcfc2d04edcf7c0bc7",
+      "parents": [
+        "9f47327355a8de0b1282cf3aea886490398969f2",
+        "984bac42e091aab36a803706715de30e6094d972"
+      ],
+      "tree_equal": true,
+      "independent_review_sha256": "6f200e5725d7673da20f4eb5f916695ff8f14548fee66d592b633b07928f67ab",
+      "stable_supervisor_sha256": "655b5bec19292746fdd129cb657700a6fac83303c4c88f65592201ca4bb13adc",
+      "main_ci_runs": [
+        {
+          "id": 40061027168,
+          "status": "queued",
+          "conclusion": null,
+          "attempt": 1
+        }
+      ],
+      "deployed": false,
+      "restarted": false,
+      "acceptance": "Open; integration is not deployed/whole-card acceptance. Original main failures and performance residuals remain retained."
+    },
+    "568_main_ci": {
+      "observed_at": "2026-10-24T04:13:32.817564+00:00",
+      "run": 40061027168,
+      "head": "186f5ebdd146fbd366ca44b59c9042bd255dff37",
+      "status": "completed",
+      "conclusion": "success",
+      "attempt": 1,
+      "jobs": [
+        {
+          "id": 120774354191,
+          "name": "smoke",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/petersky/pa/actions/runs/40061027168/job/120774354191"
+        },
+        {
+          "id": 120774354363,
+          "name": "test (2)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/petersky/pa/actions/runs/40061027168/job/120774354363"
+        },
+        {
+          "id": 120774354382,
+          "name": "test (3)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/petersky/pa/actions/runs/40061027168/job/120774354382"
+        },
+        {
+          "id": 120774354388,
+          "name": "test (1)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/petersky/pa/actions/runs/40061027168/job/120774354388"
+        },
+        {
+          "id": 120774354392,
+          "name": "test (0)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/petersky/pa/actions/runs/40061027168/job/120774354392"
+        }
+      ],
+      "complete_job_inventory": true,
+      "five_terminal_success": true,
+      "historical_failures_preserved": true,
+      "deployed": false,
+      "whole_acceptance": false
+    }
+  },
+  "coordination": {
+    "backup_owner": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
+    "dispatch": "c5a697e5-c62b-4d76-9523-def2f5fc852d",
+    "prompt_id": "9571aeae-f23b-5d37-a1d8-37cd1a08d1bf",
+    "state": "Accepted queued, not claimed consumed; stable current c02 build window through16:03Z announced, no install/restart/competing backup edit. Expiry alone is not capture clearance. Existing565/566 repairs reused; no duplicate repair requested.",
+    "missing_historical_bytes": 2842,
+    "missing_bytes_not_whole_work_blocker": true
+  },
+  "limits": [
+    "Four membership catalogs agree on four active canonical origins; no catalog mismatch or permission to edit fleet membership established.",
+    "Four cached overviews are snapshots, not fresh peer probes. Across144dimensions87fresh/35stale/11unavailable/11timeout; macmini670.959ms HTTPviolation retained. Cached last-good duration is not the latest failed-attempt latency. All3 peers show required macbook observations stale with deadline markers; transport/CPU/queue cause remains unverified.",
+    "This changes source observation labeling, not the performance of the historical requests or the failed refresh cause. Source/module/dependency/template/installed deployment validation is still separate.",
+    "Installed/loaded c02e at15:03Z/package5917/PID78321/startupa50c is unchanged; exact186 package remains prepared only and is not this new candidate. No old target approvals or receipts floated.",
+    "All prior slow/runtime/route/page/startup/provider/background families and remote/log/GC/retention/receipt gaps remain. Both100iteration mixed stages12violations,95installedGET7violations and lifecycle p95/max157.758->210.864ms regression preserved.",
+    "Systemic17d independent_agent_v1 and backupb527 normal scheduler acceptance remain pending. DB89957 original accepted scope stays closed. No self-appointed verifier, competing worker, restart, capture, GC deletion, unsafe fault injection or ambiguous mutation replay."
+  ],
+  "next_actions": [
+    "Integrate exact source through ready PR, durable supervisor and independent current-head gates; preserve all failures.",
+    "Coordinate one exact final activation after actual backup/controller/material-hold/current-capture/quiescence/configuration/package gates; new source requires its own package proof.",
+    "Attribute peer-to-macbook deadlines and provider/shared SQL/CPU/disk/fsync/queue/GC/write amplification without changing budgets or stale authentication shortcuts.",
+    "Complete deployed representative cold-start/drain/API/background/validbranch and peer inventory, normal independent acceptance for all647 findings."
+  ],
+  "reproducer_sources": {
+    "tests": "\"\"\"Fleet cache age must not turn historical success into current readiness.\"\"\"\nfrom datetime import UTC, datetime, timedelta\nfrom unittest.mock import patch\n\nimport pytest\nfrom pa.domain.models import FleetInstance\nfrom pa.fleet.overview import (\n    DIMENSIONS, FleetOverviewCache, _cached_or_default, field, required_readiness,\n)\n\nNOW = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)\nINSTANCE = FleetInstance(instance_id=\"remote\", name=\"remote\", url=\"http://remote:8080\")\n\n\n@pytest.mark.parametrize(\"dimension\", DIMENSIONS)\ndef test_cached_success_expires_without_replacing_attempt_or_persisting(tmp_path, dimension):\n    cache = FleetOverviewCache(tmp_path)\n    value = field(\"fresh\", {\"kept\": [\"complete\"]},\n                  observed_at=(NOW - timedelta(days=1)).isoformat(), duration_ms=17)\n    cache.put(\"remote\", dimension, value, attempt_id=1)\n    original = cache.get(\"remote\", dimension)\n    revision = cache.revision\n    with patch(\"pa.fleet.overview.datetime\") as clock:\n        clock.now.return_value = NOW\n        clock.fromisoformat.side_effect = datetime.fromisoformat\n        aged = _cached_or_default(cache, INSTANCE, dimension)\n    assert aged[\"state\"] == \"stale\"\n    assert {k: v for k, v in aged.items() if k != \"state\"} == {\n        k: v for k, v in original.items() if k != \"state\"\n    }\n    assert aged[\"last_attempt_state\"] == \"fresh\"\n    assert cache.revision == revision\n    assert cache.get(\"remote\", dimension) == original\n    assert FleetOverviewCache(tmp_path).get(\"remote\", dimension) == original\n\n\n@pytest.mark.parametrize(\"dimension,ttl\", [(\"status\", 3), (\"providers\", 30),\n                                         (\"update\", 30), (\"mcp_bootstrap\", 30)])\n@pytest.mark.parametrize(\"offset,expected\", [(-0.001, \"fresh\"), (0, \"stale\"), (0.001, \"stale\")])\ndef test_cached_age_uses_existing_probe_ttl(tmp_path, dimension, ttl, offset, expected):\n    cache = FleetOverviewCache(tmp_path)\n    cache.put(\"remote\", dimension, field(\"fresh\", {},\n              observed_at=(NOW - timedelta(seconds=ttl + offset)).isoformat()))\n    with patch(\"pa.fleet.overview.datetime\") as clock:\n        clock.now.return_value = NOW\n        clock.fromisoformat.side_effect = datetime.fromisoformat\n        assert _cached_or_default(cache, INSTANCE, dimension)[\"state\"] == expected\n\n\n@pytest.mark.parametrize(\"observed\", [None, \"invalid\", \"2026-10-24T15:00:00\", \"2026-10-25T15:00:00+00:00\"])\ndef test_unverifiable_timestamp_does_not_claim_fresh(tmp_path, observed):\n    cache = FleetOverviewCache(tmp_path)\n    cache.put(\"remote\", \"providers\", field(\"fresh\", [], observed_at=observed))\n    with patch(\"pa.fleet.overview.datetime\") as clock:\n        clock.now.return_value = NOW\n        clock.fromisoformat.side_effect = datetime.fromisoformat\n        assert _cached_or_default(cache, INSTANCE, \"providers\")[\"state\"] == \"stale\"\n\n\ndef test_failed_refresh_diagnostics_are_unchanged(tmp_path):\n    cache = FleetOverviewCache(tmp_path)\n    cache.put(\"remote\", \"sync\", field(\"fresh\", {\"consistent\": False}, observed_at=NOW.isoformat()), attempt_id=1)\n    cache.put(\"remote\", \"sync\", field(\"timeout\", None, error=\"deadline\", duration_ms=4000), attempt_id=2)\n    original = cache.get(\"remote\", \"sync\")\n    assert _cached_or_default(cache, INSTANCE, \"sync\") == original\n    assert original[\"last_attempt_state\"] == \"timeout\"\n    assert original[\"value\"] == {\"consistent\": False}\n\n\ndef test_expired_success_is_stale_and_mismatch_is_historical():\n    dimensions = {name: field(\"fresh\", {\"health\": \"up\"} if name == \"reachability\" else {}, observed_at=NOW.isoformat())\n                  for name in (\"reachability\", \"status\", \"sync\")}\n    dimensions[\"sync\"] = {**field(\"fresh\", {\"consistent\": False}, observed_at=NOW.isoformat()), \"state\": \"stale\"}\n    assert required_readiness(dimensions) == \"stale\"\n    dimensions[\"status\"] = field(\"timeout\", None, error=\"deadline\")\n    assert required_readiness(dimensions) == \"timeout\"\n    dimensions[\"sync\"][\"state\"] = \"fresh\"\n    assert required_readiness(dimensions) == \"error\"\n",
+    "isolated_runner": "import hashlib,json,os,subprocess,sys,tempfile,time\nfrom datetime import UTC,datetime\nfrom pathlib import Path\nlabel=sys.argv[1]\noutput=Path('.dev/fleet-age-'+label+'-20261024.json')\nif '--child' not in sys.argv:\n    assert not output.exists()\n    with tempfile.TemporaryDirectory(prefix='pa-fleet-age-') as temporary:\n        env=os.environ.copy();env.update(PA_DATA_DIR=temporary+'/data',PA_WORKSPACE_ROOT=temporary+'/workspaces',PA_AGENT_ENABLED='false')\n        with output.with_suffix('.log').open('x') as log:\n            result=subprocess.run([sys.executable,__file__,label,'--child'],env=env,stdout=log,stderr=subprocess.STDOUT)\n    print(json.dumps(json.loads(output.read_text())))\n    raise SystemExit(result.returncode)\nsys.path.insert(0,str(Path.cwd()))\nimport pytest\nfrom pa.repository.workspace import WorkspaceManager\nroot=Path(os.environ['PA_DATA_DIR']).parent.resolve()\ntempfile.tempdir=str(root)\noriginal=WorkspaceManager.__init__;roots=[]\ndef guarded(self,settings,store):\n    assert Path(settings.data_dir).resolve().is_relative_to(root)\n    assert Path(settings.workspace_root).resolve().is_relative_to(root)\n    roots.append(str(settings.data_dir))\n    return original(self,settings,store)\nWorkspaceManager.__init__=guarded\nstarted=datetime.now(UTC).isoformat();clock=time.perf_counter()\npaths=['tests/test_fleet_cache_age.py','tests/test_fleet_overview_ui.py']\nif label.startswith('contracts'):paths.extend(['tests/test_fleet.py','tests/test_mcp_bootstrap_regressions.py'])\ncode=pytest.main(['-q','-o','addopts=',*paths])\noutput.write_text(json.dumps({'started_at':started,'finished_at':datetime.now(UTC).isoformat(),'elapsed_ms':(time.perf_counter()-clock)*1000,'exit_code':int(code),'targets':paths,'workspace_roots':roots,'source_sha256':hashlib.sha256(Path('src/pa/fleet/overview.py').read_bytes()).hexdigest(),'test_sha256':hashlib.sha256(Path(paths[0]).read_bytes()).hexdigest(),'scope':'Both settings/temp roots private; every Workspace construction guarded; fixed cache timestamps and existing Node browser-state harness; no production credentials, PA service state or timer/deadline changes. Existing Fleet/MCP tests retain their own mocks.'},indent=2)+'\\n')\nraise SystemExit(code)\n"
+  }
+}

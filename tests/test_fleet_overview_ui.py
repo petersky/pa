@@ -308,10 +308,35 @@ current.nodes[0].dimensions.sync = {
 current.nodes[0].dimensions.status = field("status", "fresh");
 const live = model.createSnapshot(current, null, { kind: "node", id: "local" });
 assert.strictEqual(live.nodesById.local.topologyStatus, "error");
-assert.strictEqual(live.nodesById.local.freshness, "fresh", "sync mismatch is a current fault with fresh evidence");
+assert.strictEqual(live.nodesById.local.freshness, "stale", "reachability has not been refreshed yet");
+current.nodes[0].dimensions.reachability = field("reachability", "fresh");
+const refreshed = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(refreshed.nodesById.local.freshness, "fresh", "sync mismatch is a current fault with fresh evidence");
 assert.strictEqual(model.syncStatusLabel(current.nodes[0].dimensions.sync), "head mismatch");
 """
         )
+
+    def test_expired_success_is_not_current_readiness_or_sync_fault(self) -> None:
+        self.run_node(r"""
+const current = overview(["local"]);
+current.nodes[0].dimensions.sync = {
+  state: "stale", last_attempt_state: "fresh", value: { consistent: false },
+  observed_at: "2026-07-22T12:00:00Z", error: null
+};
+let snapshot = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.nodesById.local.topologyStatus, "stale");
+assert.strictEqual(snapshot.nodesById.local.freshness, "stale");
+assert.strictEqual(model.syncStatusLabel(current.nodes[0].dimensions.sync), "last known heads");
+assert.strictEqual(current.nodes[0].dimensions.sync.last_attempt_state, "fresh");
+current.nodes[0].dimensions.status = { state: "stale", last_attempt_state: "timeout", value: {} };
+snapshot = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.nodesById.local.topologyStatus, "timeout");
+current.nodes[0].dimensions.sync = field("sync", "fresh");
+current.nodes[0].dimensions.status = field("status", "fresh");
+current.nodes[0].dimensions.providers = { state: "stale", last_attempt_state: "fresh", value: [] };
+snapshot = model.createSnapshot(current, null, { kind: "node", id: "local" });
+assert.strictEqual(snapshot.nodesById.local.freshness, "partial");
+""")
 
     def test_required_sync_timeout_still_marks_node_timed_out(self) -> None:
         self.run_node(

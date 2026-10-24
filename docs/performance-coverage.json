@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T01:45:50.210045+00:00",
-  "completion": "OPEN;646rows/120concerns, all644priorrows unchanged. Three-peer status/readiness/provider/localFleet observations retain six slowprovider requests and every historical failure. Complete Codex status duration repaired at source only;70contracts pass; no new installed/deployed acceptance. All original criteria remain.",
+  "as_of": "2026-10-24T15:06:57.765028+00:00",
+  "completion": "OPEN;647rows/121concerns, all646prior rows unchanged. Cache-age/source correctness repair,126tests+2subtests, not deployed acceptance. All previous performance violations and control/peer/log/backup/GC/receipt gaps retained.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -212448,6 +212448,22 @@
       "resolution": "open",
       "next_actor": "this systemic session with existing peer authority",
       "next_action": "Attribute supported CLI/version/auth and queue/enrichment/completion costs, preserve fresh credentials/default/admission semantics and prove actual representative deployed responsiveness."
+    },
+    {
+      "id": "concern:fleet-cache-age-fresh-label",
+      "kind": "concern",
+      "finding": "Fleet cache-only freshness and historical successful-attempt readiness",
+      "family": "fleet",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_source_and_deterministic_python_browser_regression",
+      "artifact": "docs/benchmarks/systemic-fleet-cache-age-20261024.json",
+      "implemented": "Share the existing 3s/30s probe lifetime with cache-only composition; classify expired or unverifiable successful observations as stale in the response only. Keep historical last_attempt_state/timestamps/durations/error/value and persisted bytes/revision unchanged. Derive topology/readiness/sync labels from observation freshness while retaining failed-attempt diagnostics. Future timestamps cannot satisfy cache-hit freshness.",
+      "merged": [],
+      "deployed": "Uninstalled source; runtime c02e unchanged at15:03Z",
+      "retested": "126 passed/2subtests; existing UI fixture now first asserts stale reachability, then refreshes reachability before checking fresh observation state; mismatch/error assertions retained.",
+      "resolution": "open",
+      "next_actor": "this systemic session; existing backup owner controls bounded overlap; ordinary scheduler final verifier",
+      "next_action": "Integrate, coordinate exact deployment and verify live age/failure contract and remaining peer transport causes; no latency closure from relabeling."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -302908,6 +302924,16 @@
         "resolution": "open",
         "deployed": "Test-only readiness correction; no performance closure"
       }
+    },
+    "concern:provider-status-incomplete-duration": {
+      "integration_followup": {
+        "head": "984bac42e091aab36a803706715de30e6094d972",
+        "merge": "186f5ebdd146fbd366ca44b59c9042bd255dff37",
+        "watch": "fd1ef818-675f-48bd-84c0-ab7ed0df67ca",
+        "head_main_ci": "5/5success each; main40061027168 firstattempt",
+        "deployed": "Not installed; no latency reduction claimed",
+        "resolution": "open"
+      }
     }
   },
   "f7e8_loaded_stage": {
@@ -305190,5 +305216,11 @@
     "new_route": "/api/agent/providers",
     "prior_rows_unchanged": 644,
     "resolution": "All646open/120concerns; no deployed performance acceptance"
+  },
+  "fleet_cache_age_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-cache-age-20261024.json",
+    "sha256": "194db06399b1151322415573dd6c2ef8389c93c39b8b482deb65936a6032a925",
+    "prior646rows_unchanged": true,
+    "resolution": "All647 findings/121concerns open; freshness repair is not performance acceptance"
   }
 }
