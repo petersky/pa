@@ -1,0 +1,46 @@
+{
+  "schema": "pa.backup-scheduler-ci-followup/v1",
+  "card_id": "0331d21a-f014-44c8-9176-bc1e955a9ad2",
+  "session_id": "18fc3aac-661c-4c9f-ae1e-4b050c304973",
+  "source_base": "86413effb095edff14070572d0364159667f8306",
+  "original_pr": "https://github.com/petersky/pa/pull/565",
+  "original_pr_ci": {
+    "run_id": 40019283984,
+    "checks": 5,
+    "conclusion": "success",
+    "source_tree": "8dfc8216853494f96ad3a1b8e20ac55bc4b029f1"
+  },
+  "merged_main_ci": {
+    "run_id": 40021129306,
+    "attempt": 1,
+    "checks_success": 3,
+    "checks_failure": 2,
+    "source_tree_identical_to_tested_pr": true,
+    "failures": [
+      {
+        "job_id": 120645658699,
+        "test": "tests/test_backups.py::BackupSchedulerTests::test_restart_after_limited_backup_notifies_and_runs_overdue_schedule",
+        "symptom": "Future deadline asserted after worker finished but before its awaiting scheduler resumed.",
+        "scheduled_backup_succeeded_at": "2026-10-23T20:43:05.171093Z",
+        "assertion_at": "2026-10-23T20:43:05.173391Z",
+        "deadline_observed": "2026-10-23T20:43:04.127639Z",
+        "fix": "Wait for both the persisted finished scheduled run and a future next_scheduled_run before asserting the complete behavior.",
+        "unchanged_guards": "Original five-second deadline, real backup worker, one capture, live scheduler, one disclosure, and exact historical-run preservation. No arbitrary sleep added."
+      },
+      {
+        "job_id": 120645658622,
+        "test": "tests/test_ux_guidance_browser.py::test_actions_results_evidence_and_permission_labels_without_help[390]",
+        "symptom": "Timed out waiting for model-b / From My defaults and an enabled submit button.",
+        "source_changed_by_backup_pr": false,
+        "isolated_reproduction": {"tests": 1, "failures": 0, "errors": 0, "seconds": 19.454},
+        "cause": "Unresolved. Passing isolated reproduction does not prove the original CI failure harmless."
+      }
+    ]
+  },
+  "validation": {"scheduler_tests": 7, "failures": 0, "errors": 0},
+  "runtime_change_in_followup": false,
+  "ci_reruns_admitted": 0,
+  "production_mutations": 0,
+  "independent_acceptance": false,
+  "remaining_gate": "Fresh full CI, stable PR supervisor and independent merge checks, coordinated activation, then ordinary exact-card independent verification and explicit acceptance. Original failures remain retained."
+}
