@@ -111,6 +111,9 @@ class CodexProvider:
         version = None
         if direct:
             version = _run_version([str(direct), "--version"])
+        codex_cli_version = (
+            _run_version([codex_cli, "--version"]) if codex_cli else None
+        )
         duration_ms = (time.perf_counter() - started) * 1000
         return ProviderStatus(
             id=self.id,
@@ -138,9 +141,7 @@ class CodexProvider:
             login_in_progress=login_job is not None,
             codex_cli_installed=codex_cli is not None,
             codex_cli_path=codex_cli,
-            codex_cli_version=_run_version([codex_cli, "--version"])
-            if codex_cli
-            else None,
+            codex_cli_version=codex_cli_version,
             install_method=meta.install_method
             if meta
             else ("npm" if direct else "npx"),
