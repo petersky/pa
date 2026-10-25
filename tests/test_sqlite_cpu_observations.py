@@ -1,6 +1,9 @@
 """Real SQLite calls retain timing evidence without changing results or errors."""
 import json
 import sqlite3
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from unittest.mock import patch
 
@@ -59,11 +62,14 @@ def test_inactive_observer_reads_no_additional_cpu_clock():
 
 
 @pytest.mark.asyncio
-async def test_cpu_reaches_bounded_worker_diagnostics_and_retention_phases():
+@pytest.mark.parametrize("completed_before_wait", [False, True])
+async def test_cpu_reaches_bounded_worker_diagnostics_and_retention_phases(completed_before_wait):
     private = 'private-sql-result-must-not-appear'
     phases = {}
+    loop_thread = threading.get_ident()
 
     def query():
+        assert threading.get_ident() != loop_thread
         with capture_retention_phases(phases), retention_phase('retention_selection'):
             with closing(sqlite3.connect(':memory:', factory=ObservedConnection)) as conn:
                 assert conn.execute('SELECT ?', (private,)).fetchone() == (private,)
@@ -73,7 +79,24 @@ async def test_cpu_reaches_bounded_worker_diagnostics_and_retention_phases():
 
     runtime = AsyncRuntime(max_workers=1, slow_call_seconds=0)
     try:
-        assert await runtime.run_blocking('fixture.sqlite_cpu', query) == 42
+        if completed_before_wait:
+            # Exercise an executor result already done before shield is awaited.
+            # The real SQLite work still runs on a separate private thread.
+            loop = asyncio.get_running_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                def already_complete(_executor, bound):
+                    result = executor.submit(bound).result(timeout=5)
+                    future = loop.create_future()
+                    future.set_result(result)
+                    return future
+                with patch.object(loop, 'run_in_executor', side_effect=already_complete):
+                    assert await runtime.run_blocking('fixture.sqlite_cpu', query) == 42
+        else:
+            assert await runtime.run_blocking('fixture.sqlite_cpu', query) == 42
+        # Awaiting a completed future need not yield to its metrics callback.
+        # Drain only this private runtime before asserting completed evidence;
+        # do not change production completion semantics or any request deadline.
+        await runtime.close()
         snapshot = runtime.snapshot()
         operation = snapshot['operations']['fixture.sqlite_cpu']
         assert operation['sqlite_statement_thread_cpu_ms']['max'] > 0
