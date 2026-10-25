@@ -1,3 +1,15 @@
+# PR #588 first-attempt failure and observer settlement
+
+The [new follow-up evidence](benchmarks/systemic-pr588-cpu-observer-followup-20261025.json) preserves the first failed PR #588 head and the separate complete **92-operation / 39-route** local snapshot. It does not rewrite the preceding activation evidence. **All 670 findings and 136 concerns remain open.**
+
+First-attempt head CI `40235521753` failed one job; four succeeded. The failed job retained **1,042 passing tests, one failure and 117 passing subtests**. The unchanged SQLite CPU-observation test read a `None` maximum before its scheduled metrics callback had completed. No blind retry was issued. Five deterministic private schedules reproduced this missing-settlement mechanism using real in-memory SQLite on a separate worker and an already-completed asyncio future: all five had empty CPU samples before drain and positive samples afterward. The negative control that omits drain fails the same `NoneType` assertion. This is a demonstrated mechanism compatible with CI; the exact historical schedule was not directly observed.
+
+The correction changes private tests only: explicitly drain their runtime before checking completed telemetry and cover both ordinary and already-completed futures. Every CPU, SQL, result and privacy assertion remains. Production runtime behavior, caller deadlines, cancellation/worker ownership and the **200 ms snapshot assertion** remain unchanged. Older PR #580 and #586 first-attempt failures remain unclassified and intact. Corrected regression results and complete input hashes are retained alongside the original failure.
+
+A provider-approved read-only native descriptor observation confirms the supervisor currently has `server.log` and `server.err.log` open for writing; the listener has `pa.jsonl` open and stdout/stderr pipes. Only descriptors 0–64 were inspected. Open lock-file descriptors do not prove held locks; pipe endpoints were not independently paired. This narrows current source attribution without establishing historical rotation ownership, per-line build identity, retention or dropped-log causes. The supported snapshot confirms the actual service still runs `f4ba2d76`; the natural scheduled backup is in progress under its existing owner. No manual backup action, merge, deployment, restart or whole-card acceptance is inferred.
+
+---
+
 # Actual activation, retained failures and bounded failure observations
 
 The [complete activation and retest evidence](benchmarks/systemic-exact587-activation-retest-20261025.json) and adjacent lossless numeric bundle preserve every returned runtime window, process maximum, fixture sample, SQL/CPU/lock/fsync/byte counter and prior failure. **All 670 findings and 136 concerns remain open**, with every prior row field and immutable artifact retained. New local populations **117/45, 117/47, 117/48, 80/21 and 80/34 operations/routes remain separate** from all earlier populations, log tails and fixtures.

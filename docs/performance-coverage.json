@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T21:26:03.548040+00:00",
+  "as_of": "2026-10-25T21:32:02.037802+00:00",
   "completion": "OPEN: all 670 findings / 136 concerns. Actual f4ba2d76 activation is proven; maintenance still exceeds 500 ms. The failure observer is not yet deployed and does not classify historical causes.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -186101,6 +186101,13 @@
         "loaded": true,
         "accepted": false,
         "scope": "95GET/3violations/81ops24routes47slowrecords31processtails/workspacefailure/36.906smaintenance; no full branch/fleet/log acceptance."
+      },
+      "pr588_cpu_observer_and_fd_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-pr588-cpu-observer-followup-20261025.json",
+        "sha256": "be797e604cc1ed3f3d597e36dc27d36c0954763893ef2c07e7988bd1440b151a",
+        "resolution": "open",
+        "source_fix": "Private observer test explicitly settles completion; no PA runtime semantic change for this correction.",
+        "next_action": "Run corrected-head required CI and inspect exact artifacts; preserve all first-attempt failures. Native FD observation is only a current point; historical rotation, retention, per-line attribution and failure causes remain open."
       }
     },
     {
@@ -211486,6 +211493,13 @@
         "source_observer_deployment": "not yet",
         "scope": "Complete prior numeric populations retained separately; scoped activation/retests do not satisfy whole-PA acceptance. Every prior field remains historical and unchanged.",
         "next_action": "Protect and integrate bounded failure evidence through exact supervisor/head+main checks; continue maintenance/native wait and all peer/provider/full startup obligations. No subsequent install/restart before positive current-handoff settlement."
+      },
+      "pr588_cpu_observer_and_fd_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-pr588-cpu-observer-followup-20261025.json",
+        "sha256": "be797e604cc1ed3f3d597e36dc27d36c0954763893ef2c07e7988bd1440b151a",
+        "resolution": "open",
+        "source_fix": "Private observer test explicitly settles completion; no PA runtime semantic change for this correction.",
+        "next_action": "Run corrected-head required CI and inspect exact artifacts; preserve all first-attempt failures. Native FD observation is only a current point; historical rotation, retention, per-line attribution and failure causes remain open."
       }
     },
     {
@@ -309439,6 +309453,16 @@
       "sha256": "1b21fbcf946606341b510c0dd71a4a7263a48d97f79a097b0889c37320d9411e",
       "bytes": 457900,
       "original_local_bundle_sha256": "0a2a50aed847c7924664cbdfb6df7187e2cc104d376badb6c9ebc343febb6bde"
+    },
+    "all_prior_fields_preserved": true
+  },
+  "pr588_cpu_observer_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-pr588-cpu-observer-followup-20261025.json",
+    "sha256": "be797e604cc1ed3f3d597e36dc27d36c0954763893ef2c07e7988bd1440b151a",
+    "raw": {
+      "path": "docs/benchmarks/systemic-pr588-cpu-observer-followup-20261025.raw.json.gz",
+      "sha256": "b1e758cc6387cbd47142bbf771095010a1cdb4859c04213f2ca45c72148480a7",
+      "bytes": 39018
     },
     "all_prior_fields_preserved": true
   }

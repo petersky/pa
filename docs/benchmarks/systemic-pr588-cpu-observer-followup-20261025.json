@@ -1,0 +1,165 @@
+{
+  "contract": "pa.pr588-cpu-observer-followup/v1",
+  "observed_at": "2026-10-25T21:32:02.037802+00:00",
+  "host": "macbook / 0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "actual_loaded": "f4ba2d7639b5d70800d7d6ab0ce52532b08de80c",
+  "failed_head": "024e69a860ee6719e4a0e6aa622689365eb4da51",
+  "first_attempt": {
+    "run": 40235521753,
+    "job": 121296139839,
+    "attempt": 1,
+    "result": "failure",
+    "success_jobs": 4,
+    "failed_jobs": 1,
+    "failed_tests": 1,
+    "passed_tests": 1042,
+    "passing_subtests": 117,
+    "log_sha256": "a3d3890ddc7060034657222a5f4fa69e0d5972e69dff7f056141141c48ef9a97",
+    "log_bytes": 35802,
+    "retry_issued": false,
+    "failure": "Unchanged CPU-observation test compared None > 0 before scheduled metrics callback completion."
+  },
+  "mechanism": {
+    "reproduced": 5,
+    "shape": "Real private in-memory SQLite on a separate thread returns an already-completed asyncio future. Awaiting shield can return before the separately scheduled aggregation callback, leaving CPU samples empty until explicit drain.",
+    "before_drain": "Five empty CPU maxima and active=1 observations",
+    "after_drain": "Five positive CPU maxima and active=0 observations",
+    "negative_control": "The new completed-future test without the explicit observer drain fails the same NoneType assertion. Local negative-control source and tool result retained.",
+    "fix": "Only the private CPU-observation test now drains its runtime before asserting metrics and exercises both ordinary and already-completed schedules; the new failure-evidence test also explicitly settles its observer before asserting completion evidence.",
+    "limits": "Demonstrates a deterministic mechanism compatible with the CI failure; exact historical scheduling is not directly observed. It does not classify prior PR #580/#586 snapshot deadline failures. Production runtime semantics, worker ownership and every original CPU/SQL/privacy assertion remain unchanged; 200 ms snapshot deadline and all warning thresholds remain unchanged."
+  },
+  "regressions": {
+    "started_at": "2026-10-25T21:31:19.295106+00:00",
+    "finished_at": "2026-10-25T21:31:33.841199+00:00",
+    "elapsed_seconds": 14.545999333029613,
+    "exit_code": 0,
+    "arguments": [
+      "uv",
+      "run",
+      "pytest",
+      "-o",
+      "addopts=",
+      "-q",
+      "tests/test_runtime_failure_evidence.py",
+      "tests/test_async_runtime.py",
+      "tests/test_work_performance.py",
+      "tests/test_database_api_performance.py",
+      "tests/test_runtime_diagnostic_capacity.py",
+      "tests/test_agent_snapshot_responsiveness.py",
+      "tests/test_agent_snapshot_timing_evidence.py",
+      "tests/test_mutation_idempotency.py",
+      "tests/test_sync_recovery_owned.py",
+      "tests/test_session_list_snapshot.py",
+      "tests/test_shutdown.py",
+      "tests/test_sqlite_cpu_observations.py",
+      "tests/test_retention_phase_observation.py"
+    ],
+    "log_sha256": "b70706b0c29e9cd364e1a4e69d7e108d4f7b98d454b1c626426dee621f7477d4",
+    "source_sha256": "a6c3124d7522e0198dedd2927e00715391e71b6ed4d2cc972fe5bbb5ffac7ca1",
+    "scope": "Isolated private roots before all PA imports; targeted runtime failure/timeout/cancellation/receipt/durability/snapshot/shutdown regressions, overlapping prior suites. No service mutation or real provider workload."
+  },
+  "corrected_tests_passed": 166,
+  "negative_control_source_sha256": "1bd8040f3838f04c5c48ed3e63d2cbecc7d7c39e7233196e425a068c28236fb5",
+  "native_log_descriptors": {
+    "contract": "pa.native-log-descriptor-observation/v1",
+    "recorded_at": "2026-10-25T21:28:34.840528+00:00",
+    "source": "Provider-approved read-only lsof -a -p 37231,37226 -d 1,2 -Fpcfin followed by descriptors0\u201364 -Fpcfaitn; tool outputs retained in session history.",
+    "actual_loaded": "f4ba2d7639b5d70800d7d6ab0ce52532b08de80c",
+    "startup_id": "6d722af2-1af4-4988-9482-dca602a32518",
+    "observations": [
+      {
+        "pid": 37226,
+        "role": "supervisor",
+        "descriptor": 2,
+        "access": "u",
+        "file": "supervisor-bootstrap.log",
+        "inode": 79574339
+      },
+      {
+        "pid": 37226,
+        "role": "supervisor",
+        "descriptor": 3,
+        "access": "u",
+        "file": ".service-log-supervisor.lock",
+        "inode": 79574556
+      },
+      {
+        "pid": 37226,
+        "role": "supervisor",
+        "descriptor": 4,
+        "access": "w",
+        "file": "server.log",
+        "inode": 159040307
+      },
+      {
+        "pid": 37226,
+        "role": "supervisor",
+        "descriptor": 5,
+        "access": "w",
+        "file": "server.err.log",
+        "inode": 159040022
+      },
+      {
+        "pid": 37231,
+        "role": "listener",
+        "descriptor": 1,
+        "type": "PIPE"
+      },
+      {
+        "pid": 37231,
+        "role": "listener",
+        "descriptor": 2,
+        "type": "PIPE"
+      },
+      {
+        "pid": 37231,
+        "role": "listener",
+        "descriptor": 13,
+        "access": "w",
+        "file": "pa.jsonl",
+        "inode": 162572381
+      }
+    ],
+    "limits": [
+      "One native point observation, not historical FD or rotation ownership. Only descriptors0\u201364 were selected; no assertion that every descriptor was inspected.",
+      "Open lock-file descriptor alone does not prove an exclusive lock is held. Pipe endpoints were not independently paired; supervisor pump routing remains source-supported but not proven by this metadata alone.",
+      "Native log paths match supported CLI source basenames. This does not establish per-line build, production-versus-fixture attribution, older retention coverage or any dropped-log/status-failure cause.",
+      "No log content, database content, credentials or private answers inspected; no signal, service/config/default/permission/power/clock change, direct store mutation or workload injection. Non-log descriptor metadata from tool output is not republished."
+    ]
+  },
+  "local_population": {
+    "path": ".dev/pr588-pending-control-20261025.json",
+    "operations": 92,
+    "routes": 39,
+    "backup": {
+      "backup_state": "in_progress",
+      "backup_count": 9,
+      "verified_backup_count": 8,
+      "limited_backup_count": 1,
+      "automatic_backups_paused": false,
+      "next_scheduled_run": "2026-10-25T21:29:14.512979Z",
+      "consecutive_failures": 0
+    },
+    "active_backup_runs": [
+      {
+        "id": "55b0890f-de6d-4b41-a657-241afa9e5fa7",
+        "status": "running"
+      }
+    ],
+    "scope": "Process lifetime counts/maxima and bounded windows remain distinct, never pooled with 80/34 or earlier populations. Naturally scheduled backup is in progress; no manual action or acceptance change."
+  },
+  "acceptance": {
+    "findings": 670,
+    "concerns": 136,
+    "all_resolution": "open",
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "lane": "active"
+  },
+  "deployment": "Actual service remains f4ba2d76. Failure observation patch is source only, not yet integrated or deployed. No additional install/restart while managed continuation `619f` remains unsettled.",
+  "raw": {
+    "path": "docs/benchmarks/systemic-pr588-cpu-observer-followup-20261025.raw.json.gz",
+    "sha256": "b1e758cc6387cbd47142bbf771095010a1cdb4859c04213f2ca45c72148480a7",
+    "bytes": 39018
+  }
+}

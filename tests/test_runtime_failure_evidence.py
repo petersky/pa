@@ -22,6 +22,7 @@ async def test_failed_only_window_excludes_success_and_preserves_original_error(
         with pytest.raises(HTTPException) as caught:
             await runtime.run_blocking("fixture.short", fail)
         assert caught.value is error
+        await runtime.close()  # A completed worker result can precede its metrics callback.
         snapshot = runtime.snapshot()
         operation = snapshot["operations"]["fixture.short"]
         assert (operation["completed"], operation["failed"]) == (1, 1)
