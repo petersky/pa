@@ -404,6 +404,10 @@ async def run_app(app, root, *, history, iterations, inventory_reads=False, rete
                                   "pa.core.kernel", "pa.openapi", "pa.server.schema_generation",
                                   "pa.server.readiness", "pa.server.template_cache", "pa.modules.ui_shell")}
     diagnostics = ctx.services.get("runtime_diagnostics")
+    if "pa.server.fleet_compression" in sys.modules:
+        source_hashes["pa.server.fleet_compression"] = hashlib.sha256(
+            Path(sys.modules["pa.server.fleet_compression"].__file__).read_bytes()
+        ).hexdigest()
     diagnostics_before = diagnostics.snapshot() if diagnostics else {}
     before_io = resource.getrusage(resource.RUSAGE_SELF)
     started = time.perf_counter()

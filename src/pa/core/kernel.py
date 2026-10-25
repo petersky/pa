@@ -701,6 +701,11 @@ class Kernel:
             self._install_debug_middleware(app)
 
         self._install_cache_middleware(app)
+        from pa.server.fleet_compression import FleetCompressionMiddleware
+
+        # Keep timing and byte accounting outside compression so both include
+        # the actual encoded representation sent to the client.
+        app.add_middleware(FleetCompressionMiddleware)
         self._install_identity_middleware(app)
         self._install_responsiveness_middleware(app)
         self._install_runtime_error_handlers(app)
