@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T21:57:47.252827+00:00",
-  "completion": "OPEN: all 671 findings / 137 concerns. Actual 16821dc9 activation and scoped retests proven; mixed/natural maintenance, stale Macmini fields/status 500 and every broader criterion remain open. Lifecycle metadata repair is source only.",
+  "as_of": "2026-10-25T22:07:40.685732+00:00",
+  "completion": "OPEN: all 672 findings / 138 concerns. Exact `16821dc9` scoped activation/retests are complete; maintenance, stale peer fields and status HTTP 500 remain. The first PR #589 CI drain-start 200 ms violation is unclassified; numeric diagnostics are not a causal repair or acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -215205,6 +215205,45 @@
       "resolution": "open",
       "next_actor": "Same systemic session; normal PA scheduler owns final independent verification",
       "next_action": "Integrate only after durable stable-head gate and independent exact signals/head+main CI; prove exact activation and representative lifecycle/provider closure. Retain enumeration/matching/dispatch/session/lease/native contention and every broader residual."
+    },
+    {
+      "id": "concern:restart-drain-start-ci-deadline",
+      "kind": "concern",
+      "finding": "Unchanged synchronous restart drain scheduling exceeds 200 ms in first PR589 Linux CI attempt",
+      "family": "validation",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "historical_ci_tail_cause_unverified",
+      "cause": "First-attempt _start_drain takes 379.662 ms before receipt/snapshot work; no CPU/GC attribution in that span. Isolated/full-collection private passes do not classify it.",
+      "fix_or_existing_owner": "Same systemic session. Test-only numeric deadline/CPU/GC evidence added; no claimed causal source repair.",
+      "implemented": "Bounded private test diagnostics only, no assertion/deadline/GC change",
+      "merged": [],
+      "deployed": "No production delta for this diagnostic; actual service stays `16821dc9`.",
+      "retested": "107 tests /10 subtests pass; unchanged private isolated and 4172-item full-collection source probes pass with explicit platform/observer limits.",
+      "artifact": "docs/benchmarks/systemic-pr589-drain-deadline-followup-20261025.json",
+      "sha256": "afc8dbdcd915cc77be57517d8c14be48478816fe80bd8ab6dfcc6fe2004310eb",
+      "measurement": {
+        "head": "c58c79f55a815c76a3244d79a2638f7252cbdd65",
+        "run": 40237985987,
+        "job": 121303572580,
+        "attempt": 1,
+        "result": "failure",
+        "success_jobs": 4,
+        "failed_jobs": 1,
+        "passed_tests": 1041,
+        "failed_tests": 1,
+        "skipped_tests": 1,
+        "passing_subtests": 182,
+        "drain_start_wall_ms": 379.661598,
+        "deadline_ms": 200,
+        "stage": "Synchronous _start_drain assertion before receipt/snapshot/heartbeat phase",
+        "cpu_gc_attribution": "Unavailable for this historical span; cause unverified",
+        "retry_issued": false,
+        "original_log_sha256": "408828a49fb902dbdaf665ab72875a4318609ffe896572d9d326fe1bfc9d1517",
+        "original_log_bytes": 38827
+      },
+      "resolution": "open",
+      "next_actor": "Same systemic session; normal scheduler owns final independent verification",
+      "next_action": "Inspect new exact-head CI and numeric artifact; retain original first failure and obtain causal scheduling/CPU/GC/native evidence on recurrence. Do not infer resolution from a passing subset or rerun blindly."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -310017,6 +310056,16 @@
       "path": "docs/benchmarks/systemic-exact588-activation-lifecycle-20261025.raw.json.gz",
       "sha256": "4e1ee4835d124ee539b4c8de26998887f87c54286c7f45f5309ba30d6dd5002f",
       "bytes": 662315
+    },
+    "all_prior_fields_preserved": true
+  },
+  "pr589_drain_deadline_followup_stage": {
+    "artifact": "docs/benchmarks/systemic-pr589-drain-deadline-followup-20261025.json",
+    "sha256": "afc8dbdcd915cc77be57517d8c14be48478816fe80bd8ab6dfcc6fe2004310eb",
+    "raw": {
+      "path": "docs/benchmarks/systemic-pr589-drain-deadline-followup-20261025.raw.json.gz",
+      "sha256": "b81e5a0901ca99cb6076399b412f9b771c9988c9bff3c9faef15ac5450a8d320",
+      "bytes": 44766
     },
     "all_prior_fields_preserved": true
   }

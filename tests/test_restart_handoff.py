@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from typer.testing import CliRunner
 
 from pa.cli.main import app
+from tests.deadline_evidence import DeadlineEvidence
 from pa.config import Settings
 from pa.domain.models import AgentSession, CardCreate, RestartHandoff
 from pa.domain.projection import CardProjection
@@ -1386,35 +1387,40 @@ def test_delayed_receipt_read_keeps_heartbeat_and_snapshot_responsive(tmp_path):
             return original(handoff_id)
         timer = threading.Timer(1, release.set)
         timer.start()
-        try:
-            with patch.object(store, 'get_restart_handoff', side_effect=delayed):
-                started = time.monotonic()
-                runtime._start_drain()
-                assert time.monotonic() - started < .2
-                for _ in range(100):
-                    if entered.is_set(): break
-                    await asyncio.sleep(.005)
-                assert entered.is_set() and not release.is_set()
-                ticks = []
-                async def heartbeat():
-                    for _ in range(4):
-                        await asyncio.sleep(.01)
-                        ticks.append(time.monotonic())
-                pulse = asyncio.create_task(heartbeat())
-                started = time.monotonic()
-                snapshot = runtime.snapshot(include_transcript=False)
-                assert time.monotonic() - started < .2
-                assert snapshot['queue'][0]['id'] == receipt.continuation_prompt_id
-                await asyncio.wait_for(pulse, timeout=.2)
-                assert len(ticks) == 4 and not release.is_set()
-                assert all(t != threading.get_ident() for t in threads)
-                runtime._run_prompt.assert_not_called()
+        with DeadlineEvidence("restart-drain-start") as evidence:
+            try:
+                with patch.object(store, 'get_restart_handoff', side_effect=delayed):
+                    started = time.monotonic()
+                    evidence.begin(started)
+                    try:
+                        runtime._start_drain()
+                    finally:
+                        evidence.finish(time.monotonic())
+                    assert time.monotonic() - started < .2, evidence.describe()
+                    for _ in range(100):
+                        if entered.is_set(): break
+                        await asyncio.sleep(.005)
+                    assert entered.is_set() and not release.is_set()
+                    ticks = []
+                    async def heartbeat():
+                        for _ in range(4):
+                            await asyncio.sleep(.01)
+                            ticks.append(time.monotonic())
+                    pulse = asyncio.create_task(heartbeat())
+                    started = time.monotonic()
+                    snapshot = runtime.snapshot(include_transcript=False)
+                    assert time.monotonic() - started < .2
+                    assert snapshot['queue'][0]['id'] == receipt.continuation_prompt_id
+                    await asyncio.wait_for(pulse, timeout=.2)
+                    assert len(ticks) == 4 and not release.is_set()
+                    assert all(t != threading.get_ident() for t in threads)
+                    runtime._run_prompt.assert_not_called()
+                    release.set()
+                    await runtime._drain_task
+                    runtime._run_prompt.assert_awaited_once()
+            finally:
                 release.set()
-                await runtime._drain_task
-                runtime._run_prompt.assert_awaited_once()
-        finally:
-            release.set()
-            timer.cancel()
+                timer.cancel()
     asyncio.run(scenario())
 
 
