@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T16:24:29.099894+00:00",
+  "as_of": "2026-10-25T16:48:39.158738+00:00",
   "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -213268,6 +213268,65 @@
             "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
             "stage_history": []
           }
+        },
+        {
+          "as_of": "before_loaded7460_awake_retest",
+          "values": {
+            "id": "concern:fleet-required-refresh-cadence",
+            "kind": "concern",
+            "finding": "Required peer freshness expires before normal background refresh",
+            "family": "fleet",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "confirmed_cadence_mismatch_live_timeline",
+            "cause": "Required cache freshness3s vs backgroundloop15s; successful peer observations refresh~15s. Passive37s/eightcachedGET samples71of72peer requiredfields stale;0newslow/failed/timedoutcalls duringwindow. Historicaltransporttimeoutcause remainsunverified.",
+            "implemented": "One owned worker per active instance/required dimension renews before the unchanged expiry with bounded duration headroom (0.3\u20131.5s), using existing single-flight even for early renewal. Local monotonic start floor1.5s prevents corrupt/invalidation/publication busy loops; unsuccessful probes retain15s delay. Membership still polls15s. Cancel/reap owned workers on removal/shutdown; shielded probes retain existing publication ownership.",
+            "merged": [
+              "https://github.com/petersky/pa/pull/573"
+            ],
+            "deployed": "Exact87e/package921c50/PID68901/startupa74e/Interactive4 verified. Deployedtimeline interrupted byclamshellsleep;34/72peer fields stale; awakeacceptance pending.",
+            "retested": "121contracts;24s baseline/candidate synthetic private peer/cache fixture retains every sample and logical amplification",
+            "resolution": "open",
+            "next_actor": "this original systemic session",
+            "next_action": "Retest continuousawake cadence/scale/failedpeer paths andaddedHTTP/cachewritecost; preserve3sTTL/15sfailurebackoff. Historicaltransport andinitial552samples stillunattributed.",
+            "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+            "artifact_sha256": "5bf92ef625c2968fd6ba0d0caec9cce6c2ce43dfc83073e13efef5bc30df0b50",
+            "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
+            "stage_history": [
+              {
+                "as_of": "before_loaded87e4_stage",
+                "values": {
+                  "id": "concern:fleet-required-refresh-cadence",
+                  "kind": "concern",
+                  "finding": "Required peer freshness expires before normal background refresh",
+                  "family": "fleet",
+                  "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+                  "cause_classification": "confirmed_cadence_mismatch_live_timeline",
+                  "cause": "Required cache freshness3s vs backgroundloop15s; successful peer observations refresh~15s. Passive37s/eightcachedGET samples71of72peer requiredfields stale;0newslow/failed/timedoutcalls duringwindow. Historicaltransporttimeoutcause remainsunverified.",
+                  "implemented": "One owned worker per active instance/required dimension renews before the unchanged expiry with bounded duration headroom (0.3\u20131.5s), using existing single-flight even for early renewal. Local monotonic start floor1.5s prevents corrupt/invalidation/publication busy loops; unsuccessful probes retain15s delay. Membership still polls15s. Cancel/reap owned workers on removal/shutdown; shielded probes retain existing publication ownership.",
+                  "merged": [],
+                  "deployed": "Not installed; running6573 retains old cadence",
+                  "retested": "121contracts;24s baseline/candidate synthetic private peer/cache fixture retains every sample and logical amplification",
+                  "resolution": "open",
+                  "next_actor": "this original systemic session",
+                  "next_action": "Require source integration/scale and exact deployed validation; maintain3s freshness/15s failure backoff and truthful failure. Historical transport and whole-system acceptance remain open.",
+                  "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+                  "artifact_sha256": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
+                  "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
+                  "stage_history": []
+                }
+              }
+            ],
+            "loaded87e4_followup": {
+              "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+              "sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+              "resolution": "open"
+            },
+            "evidence_hash_correction": {
+              "previous": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
+              "reason": "Priorrow hashc26365ac names auxiliary6573passiveFleet timeline, not the mainartifactpath. Originaltimeline/inputmanifest retained; primaryartifact pointer corrected.",
+              "corrected_sha256": "5bf92ef625c2968fd6ba0d0caec9cce6c2ce43dfc83073e13efef5bc30df0b50"
+            }
+          }
         }
       ],
       "loaded87e4_followup": {
@@ -213279,6 +213338,17 @@
         "previous": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
         "reason": "Priorrow hashc26365ac names auxiliary6573passiveFleet timeline, not the mainartifactpath. Originaltimeline/inputmanifest retained; primaryartifact pointer corrected.",
         "corrected_sha256": "5bf92ef625c2968fd6ba0d0caec9cce6c2ce43dfc83073e13efef5bc30df0b50"
+      },
+      "loaded7460_followup": {
+        "artifact": "docs/benchmarks/systemic-loaded7460-awake-20261025.json",
+        "sha256": "ddc7f142652878fbc3c9e13043df3514fe4c95c359b632ce2e6af18d3191372c",
+        "raw": "docs/benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz",
+        "raw_sha256": "1a3b79b8ceab51f4361971643e25d82ca9198e1bf813fe84391fa6719d1f2545",
+        "as_of": "2026-10-25T16:48:39.158738+00:00",
+        "source": "7460b4d51f46d338c56d665599053cedaff07fcb",
+        "package": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
+        "actual_loaded": true,
+        "accepted": false
       }
     },
     {
@@ -213788,6 +213858,83 @@
             "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure.",
             "stage_history": []
           }
+        },
+        {
+          "as_of": "before_loaded7460_awake_retest",
+          "values": {
+            "id": "concern:transcript-health-digest-validation",
+            "kind": "concern",
+            "finding": "Python character-loop CPU during fresh transcript hash validation",
+            "family": "transcript",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "confirmed_leaf_cpu_cost_with_mixed_and_deployed_residuals",
+            "cause": "All-lowercase64-ASCII-hex validation performs up to800704 Python character iterations for12511 valid references on each fresh health call; compiled fullmatch preserves that exact language in native code. Both fresh health calls and nativequick_check remain distinct and uncached.",
+            "implemented": "Compiled ASCII64lowercasehex fullmatch; fresh references/nativeintegrity/case/searchpermissions/symlink/error/fallback/twohealthreads unchanged.",
+            "merged": [
+              "https://github.com/petersky/pa/pull/575"
+            ],
+            "deployed": false,
+            "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
+            "measurement": {
+              "artifact": "docs/benchmarks/systemic-health-digest-validation-20261025.json",
+              "sha256": "360826b7358fdda79ddba2d4249494e01bb7183806b7aeb3d1b38c3d2d66dfbf",
+              "raw": "docs/benchmarks/systemic-health-digest-validation-20261025.raw.json.gz",
+              "source_base": "d244274ba50a5c057040471403bfbb7dedade9f6",
+              "findings_after": 663,
+              "concerns_after": 130,
+              "tests": 86,
+              "maintenance_ms": 867.696,
+              "deployed": false,
+              "whole_card_accepted": false
+            },
+            "resolution": "open",
+            "next_actor": "This same systemic session; PA scheduler owns final independent acceptance.",
+            "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure.",
+            "stage_history": [
+              {
+                "as_of": "before_pr575_integration",
+                "values": {
+                  "id": "concern:transcript-health-digest-validation",
+                  "kind": "concern",
+                  "finding": "Python character-loop CPU during fresh transcript hash validation",
+                  "family": "transcript",
+                  "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+                  "cause_classification": "confirmed_leaf_cpu_cost_with_mixed_and_deployed_residuals",
+                  "cause": "All-lowercase64-ASCII-hex validation performs up to800704 Python character iterations for12511 valid references on each fresh health call; compiled fullmatch preserves that exact language in native code. Both fresh health calls and nativequick_check remain distinct and uncached.",
+                  "implemented": "Compiled ASCII64lowercasehex fullmatch; fresh references/nativeintegrity/case/searchpermissions/symlink/error/fallback/twohealthreads unchanged.",
+                  "merged": [],
+                  "deployed": false,
+                  "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
+                  "measurement": {
+                    "artifact": "docs/benchmarks/systemic-health-digest-validation-20261025.json",
+                    "sha256": "360826b7358fdda79ddba2d4249494e01bb7183806b7aeb3d1b38c3d2d66dfbf",
+                    "raw": "docs/benchmarks/systemic-health-digest-validation-20261025.raw.json.gz",
+                    "source_base": "d244274ba50a5c057040471403bfbb7dedade9f6",
+                    "findings_after": 663,
+                    "concerns_after": 130,
+                    "tests": 86,
+                    "maintenance_ms": 867.696,
+                    "deployed": false,
+                    "whole_card_accepted": false
+                  },
+                  "resolution": "open",
+                  "next_actor": "This same systemic session; PA scheduler owns final independent acceptance.",
+                  "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure.",
+                  "stage_history": []
+                }
+              }
+            ],
+            "integration_followup": {
+              "pr": 575,
+              "head": "65683d9877c903b9f6fff768014da73cc3573105",
+              "merge": "4292415709ae3777dc705b4d974392b1f80b95a9",
+              "watch": "cf658b5b-440c-4c1b-bea3-35754fc55481",
+              "head_ci": 40210732138,
+              "main_ci": 40211048052,
+              "head_main_ci": "5firstattemptsuccess each",
+              "source_merge_tree": "0b5b429c05ecf275f5f2d4647184741d594e502b"
+            }
+          }
         }
       ],
       "integration_followup": {
@@ -213799,6 +213946,17 @@
         "main_ci": 40211048052,
         "head_main_ci": "5firstattemptsuccess each",
         "source_merge_tree": "0b5b429c05ecf275f5f2d4647184741d594e502b"
+      },
+      "loaded7460_followup": {
+        "artifact": "docs/benchmarks/systemic-loaded7460-awake-20261025.json",
+        "sha256": "ddc7f142652878fbc3c9e13043df3514fe4c95c359b632ce2e6af18d3191372c",
+        "raw": "docs/benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz",
+        "raw_sha256": "1a3b79b8ceab51f4361971643e25d82ca9198e1bf813fe84391fa6719d1f2545",
+        "as_of": "2026-10-25T16:48:39.158738+00:00",
+        "source": "7460b4d51f46d338c56d665599053cedaff07fcb",
+        "package": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
+        "actual_loaded": true,
+        "accepted": false
       }
     }
   ],
@@ -308410,6 +308568,17 @@
     "route_groups": 50,
     "new_names": 0,
     "deployed": false,
+    "accepted": false
+  },
+  "loaded7460_awake_retest_stage": {
+    "artifact": "docs/benchmarks/systemic-loaded7460-awake-20261025.json",
+    "sha256": "ddc7f142652878fbc3c9e13043df3514fe4c95c359b632ce2e6af18d3191372c",
+    "raw": "docs/benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz",
+    "raw_sha256": "1a3b79b8ceab51f4361971643e25d82ca9198e1bf813fe84391fa6719d1f2545",
+    "as_of": "2026-10-25T16:48:39.158738+00:00",
+    "source": "7460b4d51f46d338c56d665599053cedaff07fcb",
+    "package": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
+    "actual_loaded": true,
     "accepted": false
   }
 }

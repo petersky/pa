@@ -1,0 +1,878 @@
+{
+  "contract": "pa.loaded7460-awake-retest/v1",
+  "as_of": "2026-10-25T16:48:39.158738+00:00",
+  "source": "7460b4d51f46d338c56d665599053cedaff07fcb",
+  "package": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
+  "loaded": {
+    "contract": "pa.exact7460-loaded-awake-control/v1",
+    "started_at": "2026-10-25T16:46:45.883533+00:00",
+    "finished_at": "2026-10-25T16:46:45.944207+00:00",
+    "wall_minus_monotonic_before": 1792242045.467794,
+    "wall_minus_monotonic_after": 1792242045.4677942,
+    "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+    "install_revision": "7460b4d51f46d338c56d665599053cedaff07fcb",
+    "runtime_build": {
+      "loaded_module_version": "1.5.9",
+      "source_revision": "7460b4d51f46d338c56d665599053cedaff07fcb",
+      "package_identity": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
+      "pid": 88315,
+      "startup_id": "591ffd90-ca7f-49fa-ae78-5f24e77476a5"
+    },
+    "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+    "backup": {
+      "backup_state": "limited",
+      "backup_count": 9,
+      "verified_backup_count": 8,
+      "limited_backup_count": 1,
+      "next_scheduled_run": "2026-10-25T21:29:14.512979Z"
+    },
+    "active_runs": [],
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "completion_status": {
+      "reason_code": "verification_pending",
+      "missing": [
+        "active",
+        "verified",
+        "acceptance"
+      ],
+      "satisfied": [
+        "integrated"
+      ],
+      "accepted": false
+    },
+    "native_process_proof": {
+      "supervisor_pid": 88312,
+      "listener_pid": 88315,
+      "listener_parent": 88312,
+      "launchd_spawn_type": "interactive(4)",
+      "nice": 0,
+      "started_local": "2026-10-25 09:42:52"
+    },
+    "scope": "Supported owner GET metadata only; no power/configuration/default changes or backup capture. The correlated interaction was applied only to its originating acceptance-window request; no private response value retained."
+  },
+  "installation": {
+    "contract": "pa.exact-installed-attestation/v1",
+    "observed_at": "2026-10-25T16:38:37.985644+00:00",
+    "source": "7460b4d51f46d338c56d665599053cedaff07fcb",
+    "expected_package_identity": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
+    "source_files_verified": 438,
+    "package_records_verified": 439,
+    "template_entries": 38,
+    "template_cache_sha256": "fcb9a8ee8099db2aebeebdf06e98412cb3cfa0bcaf71ad2c297553cf3d87acfb",
+    "all52_dependency_versions_identical": true,
+    "python_base_executable": "/Users/petersky/.local/share/uv/python/cpython-3.14.2-macos-aarch64-none/bin/python3.14",
+    "install_exit_code": 0,
+    "install_sha256": "ba0a3878c32b8480474c9f189752dc11f9b02cd2aeb19e5fdfef3766e246d560",
+    "gate_sha256": "da5a5d27f51e3f183a023753674eb15d3fd6e2849b711fce8d0245cd6a02ecfd",
+    "after_source_sha256": "d098fe9e9d15de81bdc048450b2a3d41eeda64006652c332cbd4a77862faffd9",
+    "after_artifact_sha256": "007710177241f9f4ba37a49988d15077236c735e8ae955b1564436e13cdef532",
+    "after_records_sha256": "6c715250203fbdcff9896b34f7efee5d7d94bae685d3cc7cc830ee4e0c7ec7fb",
+    "state": "INSTALLED AND INDEPENDENTLY ATTESTED; actual activation/loaded execution and broader acceptance pending"
+  },
+  "raw": {
+    "path": "docs/benchmarks/systemic-loaded7460-awake-20261025.raw.json.gz",
+    "sha256": "1a3b79b8ceab51f4361971643e25d82ca9198e1bf813fe84391fa6719d1f2545",
+    "bytes": 281201,
+    "scope": "Lossless installation attestations, loaded source proof/control, every95GET sample, fullbefore/after Fleet runtime operation/route inventories and8freshness samples, installed mixed100 rawlatencies/bytes/counters/phases/proof,10cold starts/drains and helper source."
+  },
+  "foreground": {
+    "started_at": "2026-10-25T16:45:52.528620+00:00",
+    "finished_at": "2026-10-25T16:46:00.153932+00:00",
+    "routes": {
+      "/": {
+        "all_attempt_latency_ms": {
+          "max": 13.855,
+          "p50": 7.387,
+          "p95": 13.855,
+          "p99": 13.855,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 25464,
+          "p50": 25464,
+          "p95": 25464,
+          "p99": 25464,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 13.855,
+          "p50": 7.387,
+          "p95": 13.855,
+          "p99": 13.855,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/agent": {
+        "all_attempt_latency_ms": {
+          "max": 17.565,
+          "p50": 15.604,
+          "p95": 17.565,
+          "p99": 17.565,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 114593,
+          "p50": 114593,
+          "p95": 114593,
+          "p99": 114593,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 17.565,
+          "p50": 15.604,
+          "p95": 17.565,
+          "p99": 17.565,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/fleet/overview": {
+        "all_attempt_latency_ms": {
+          "max": 34.538,
+          "p50": 29.167,
+          "p95": 34.538,
+          "p99": 34.538,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 1183234,
+          "p50": 1183232,
+          "p95": 1183234,
+          "p99": 1183234,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 34.538,
+          "p50": 29.167,
+          "p95": 34.538,
+          "p99": 34.538,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/health": {
+        "all_attempt_latency_ms": {
+          "max": 30.308,
+          "p50": 10.153,
+          "p95": 17.684,
+          "p99": 30.308,
+          "samples": 20
+        },
+        "decoded_response_bytes": {
+          "max": 15,
+          "p50": 15,
+          "p95": 15,
+          "p99": 15,
+          "samples": 20
+        },
+        "errors": 0,
+        "requested": 20,
+        "successes": 20,
+        "successful_latency_ms": {
+          "max": 30.308,
+          "p50": 10.153,
+          "p95": 17.684,
+          "p99": 30.308,
+          "samples": 20
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/runtime": {
+        "all_attempt_latency_ms": {
+          "max": 36.017,
+          "p50": 22.052,
+          "p95": 29.324,
+          "p99": 36.017,
+          "samples": 20
+        },
+        "decoded_response_bytes": {
+          "max": 356240,
+          "p50": 356200,
+          "p95": 356238,
+          "p99": 356240,
+          "samples": 20
+        },
+        "errors": 0,
+        "requested": 20,
+        "successes": 20,
+        "successful_latency_ms": {
+          "max": 36.017,
+          "p50": 22.052,
+          "p95": 29.324,
+          "p99": 36.017,
+          "samples": 20
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/api/status": {
+        "all_attempt_latency_ms": {
+          "max": 42.635,
+          "p50": 24.637,
+          "p95": 32.794,
+          "p99": 42.635,
+          "samples": 20
+        },
+        "decoded_response_bytes": {
+          "max": 2824,
+          "p50": 2824,
+          "p95": 2824,
+          "p99": 2824,
+          "samples": 20
+        },
+        "errors": 0,
+        "requested": 20,
+        "successes": 20,
+        "successful_latency_ms": {
+          "max": 42.635,
+          "p50": 24.637,
+          "p95": 32.794,
+          "p99": 42.635,
+          "samples": 20
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/fleet": {
+        "all_attempt_latency_ms": {
+          "max": 47.728,
+          "p50": 37.044,
+          "p95": 47.728,
+          "p99": 47.728,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 1133315,
+          "p50": 1133315,
+          "p95": 1133315,
+          "p99": 1133315,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 47.728,
+          "p50": 37.044,
+          "p95": 47.728,
+          "p99": 47.728,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/pull-requests": {
+        "all_attempt_latency_ms": {
+          "max": 12.794,
+          "p50": 9.208,
+          "p95": 12.794,
+          "p99": 12.794,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 26012,
+          "p50": 26012,
+          "p95": 26012,
+          "p99": 26012,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 12.794,
+          "p50": 9.208,
+          "p95": 12.794,
+          "p99": 12.794,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/settings?section=agent": {
+        "all_attempt_latency_ms": {
+          "max": 9.228,
+          "p50": 6.964,
+          "p95": 9.228,
+          "p99": 9.228,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 101194,
+          "p50": 101194,
+          "p95": 101194,
+          "p99": 101194,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 9.228,
+          "p50": 6.964,
+          "p95": 9.228,
+          "p99": 9.228,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      },
+      "/work": {
+        "all_attempt_latency_ms": {
+          "max": 26.455,
+          "p50": 12.704,
+          "p95": 26.455,
+          "p99": 26.455,
+          "samples": 5
+        },
+        "decoded_response_bytes": {
+          "max": 31323,
+          "p50": 31323,
+          "p95": 31323,
+          "p99": 31323,
+          "samples": 5
+        },
+        "errors": 0,
+        "requested": 5,
+        "successes": 5,
+        "successful_latency_ms": {
+          "max": 26.455,
+          "p50": 12.704,
+          "p95": 26.455,
+          "p99": 26.455,
+          "samples": 5
+        },
+        "threshold_violations_all_attempts": 0
+      }
+    },
+    "total": 95,
+    "errors": 0,
+    "threshold_violations": 0,
+    "max_ms": 47.728
+  },
+  "fleet": {
+    "started_at": "2026-10-25T16:46:02.136754+00:00",
+    "finished_at": "2026-10-25T16:46:39.258496+00:00",
+    "samples": 8,
+    "nominal_monotonic_seconds": 37,
+    "wall_minus_monotonic_change_seconds": -0.0004315376281738281,
+    "freshness_by_node": {
+      "02dbcd47-8f40-44eb-8403-5eb57545afc8": {
+        "local": false,
+        "fresh": 0,
+        "stale": 24,
+        "other": 0
+      },
+      "0c7d8ecb-7e45-4579-8fa0-35159492d3f1": {
+        "local": true,
+        "fresh": 24,
+        "stale": 0,
+        "other": 0
+      },
+      "2d22a9e1-a1a0-4900-8a8e-8284627aa6bf": {
+        "local": false,
+        "fresh": 24,
+        "stale": 0,
+        "other": 0
+      },
+      "f72a46d3-1ea0-4cab-bead-419333bb1089": {
+        "local": false,
+        "fresh": 24,
+        "stale": 0,
+        "other": 0
+      }
+    },
+    "counter_deltas": {
+      "fleet.overview.reachability": {
+        "submitted": 14,
+        "completed": 14,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview.status": {
+        "submitted": 14,
+        "completed": 14,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview.sync": {
+        "submitted": 14,
+        "completed": 14,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview_cache_read": {
+        "submitted": 940,
+        "completed": 940,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview_cache_write": {
+        "submitted": 132,
+        "completed": 132,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.overview_response_json": {
+        "submitted": 81,
+        "completed": 81,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.response_json": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "fleet.update_recovery": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "http.fleet_agent": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "http.fleet_overview": {
+        "submitted": 90,
+        "completed": 81,
+        "failed": 9,
+        "timed_out": 9,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "http.pr_supervisor_peer": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      },
+      "sync.peer_http": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "slow_calls": 0
+      }
+    },
+    "cache_write_deltas": {
+      "atomic_write_calls": 132,
+      "atomic_write_bytes": 1405562,
+      "file_fsync_calls": 132,
+      "directory_fsync_calls": 132
+    },
+    "residual": "Macmini02dbcd47 all24 required-field samples stale with timeout attempts. Cause remains unverified; current stable clock offset does not establish historical causes. Other2peers48/48 andlocal24/24 fresh. No forced refresh or peer configuration change."
+  },
+  "mixed": {
+    "started_at": "2026-10-25T16:46:54.735592+00:00",
+    "finished_at": "2026-10-25T16:47:20.844960+00:00",
+    "monotonic_seconds": 26.109214124968275,
+    "clock_offset_change_seconds": -0.00030350685119628906,
+    "matched_source_files": 438,
+    "matched_loaded_modules": 29,
+    "transcript_retained": 9600,
+    "warnings": {},
+    "threshold_violations": {
+      "maintenance.run": 1
+    },
+    "latency": {
+      "/api/health": {
+        "samples": 100,
+        "max_ms": 3.577,
+        "p50_ms": 0.333,
+        "p95_ms": 0.549,
+        "p99_ms": 0.698
+      },
+      "progress.sequence_allocate": {
+        "samples": 100,
+        "max_ms": 9.104,
+        "p50_ms": 1.054,
+        "p95_ms": 3.317,
+        "p99_ms": 4.992
+      },
+      "fleet.overview_cache_write": {
+        "samples": 100,
+        "max_ms": 10.016,
+        "p50_ms": 1.796,
+        "p95_ms": 4.55,
+        "p99_ms": 9.928
+      },
+      "sqlite.execution_binding_materialize": {
+        "samples": 100,
+        "max_ms": 56.542,
+        "p50_ms": 4.114,
+        "p95_ms": 23.192,
+        "p99_ms": 29.396
+      },
+      "fleet.overview_cache_read": {
+        "samples": 100,
+        "max_ms": 2.318,
+        "p50_ms": 0.274,
+        "p95_ms": 1.192,
+        "p99_ms": 1.86
+      },
+      "acp.wire_append": {
+        "samples": 100,
+        "max_ms": 22.13,
+        "p50_ms": 0.549,
+        "p95_ms": 1.516,
+        "p99_ms": 6.967
+      },
+      "progress.checkpoint_write": {
+        "samples": 100,
+        "max_ms": 23.356,
+        "p50_ms": 1.382,
+        "p95_ms": 2.858,
+        "p99_ms": 4.777
+      },
+      "sync.commit_read": {
+        "samples": 100,
+        "max_ms": 5.468,
+        "p50_ms": 0.474,
+        "p95_ms": 1.783,
+        "p99_ms": 2.32
+      },
+      "dispatch.runnable_read": {
+        "samples": 100,
+        "max_ms": 2.89,
+        "p50_ms": 0.308,
+        "p95_ms": 1.239,
+        "p99_ms": 2.409
+      },
+      "reconciliation.dispatch_read": {
+        "samples": 100,
+        "max_ms": 3.817,
+        "p50_ms": 0.308,
+        "p95_ms": 1.367,
+        "p99_ms": 1.575
+      },
+      "sync.push_transaction": {
+        "samples": 100,
+        "max_ms": 38.362,
+        "p50_ms": 8.538,
+        "p95_ms": 21.152,
+        "p99_ms": 37.679
+      },
+      "/api/agent/sessions?view=chats": {
+        "samples": 100,
+        "max_ms": 38.474,
+        "p50_ms": 4.649,
+        "p95_ms": 12.661,
+        "p99_ms": 32.876
+      },
+      "transcript.drain": {
+        "samples": 300,
+        "max_ms": 50.69,
+        "p50_ms": 13.008,
+        "p95_ms": 26.861,
+        "p99_ms": 40.783
+      },
+      "sqlite.card_write": {
+        "samples": 10,
+        "max_ms": 18.193,
+        "p50_ms": 9.291,
+        "p95_ms": 18.193,
+        "p99_ms": 18.193
+      },
+      "/agent": {
+        "samples": 100,
+        "max_ms": 35.455,
+        "p50_ms": 6.634,
+        "p95_ms": 13.739,
+        "p99_ms": 22.934
+      },
+      "/partials/home/sections": {
+        "samples": 100,
+        "max_ms": 8.164,
+        "p50_ms": 2.122,
+        "p95_ms": 5.872,
+        "p99_ms": 8.005
+      },
+      "/api/status": {
+        "samples": 100,
+        "max_ms": 17.619,
+        "p50_ms": 9.884,
+        "p95_ms": 11.878,
+        "p99_ms": 13.907
+      },
+      "/api/runtime?section=sse": {
+        "samples": 100,
+        "max_ms": 2.159,
+        "p50_ms": 0.72,
+        "p95_ms": 0.885,
+        "p99_ms": 1.172
+      },
+      "sync.reconcile_head": {
+        "samples": 100,
+        "max_ms": 60.145,
+        "p50_ms": 6.631,
+        "p95_ms": 22.001,
+        "p99_ms": 42.172
+      },
+      "/api/fleet/dispatch-jobs": {
+        "samples": 100,
+        "max_ms": 30.655,
+        "p50_ms": 4.658,
+        "p95_ms": 7.252,
+        "p99_ms": 10.994
+      },
+      "/api/cards": {
+        "samples": 100,
+        "max_ms": 2.431,
+        "p50_ms": 1.123,
+        "p95_ms": 1.79,
+        "p99_ms": 2.411
+      },
+      "/api/cards/fixture-card": {
+        "samples": 100,
+        "max_ms": 2.558,
+        "p50_ms": 0.618,
+        "p95_ms": 1.068,
+        "p99_ms": 1.686
+      },
+      "/api/cards/fixture-card/history": {
+        "samples": 100,
+        "max_ms": 27.032,
+        "p50_ms": 3.661,
+        "p95_ms": 6.433,
+        "p99_ms": 19.432
+      },
+      "/api/agent/history/session-0?limit=64": {
+        "samples": 100,
+        "max_ms": 30.399,
+        "p50_ms": 5.521,
+        "p95_ms": 10.884,
+        "p99_ms": 21.446
+      },
+      "/api/agent/history/session-0?limit=64&message_boundaries=true": {
+        "samples": 100,
+        "max_ms": 61.859,
+        "p50_ms": 24.427,
+        "p95_ms": 54.31,
+        "p99_ms": 58.509
+      },
+      "/api/notifications": {
+        "samples": 100,
+        "max_ms": 4.539,
+        "p50_ms": 0.763,
+        "p95_ms": 1.948,
+        "p99_ms": 2.74
+      },
+      "/api/agent/preferences": {
+        "samples": 100,
+        "max_ms": 1.678,
+        "p50_ms": 0.633,
+        "p95_ms": 1.133,
+        "p99_ms": 1.501
+      },
+      "/api/execution/defaults": {
+        "samples": 100,
+        "max_ms": 5.488,
+        "p50_ms": 0.63,
+        "p95_ms": 0.899,
+        "p99_ms": 1.123
+      },
+      "/api/fleet/dispatch-queue": {
+        "samples": 100,
+        "max_ms": 4.714,
+        "p50_ms": 0.832,
+        "p95_ms": 1.395,
+        "p99_ms": 2.979
+      },
+      "/api/pr-supervisor/watches": {
+        "samples": 100,
+        "max_ms": 4.589,
+        "p50_ms": 0.87,
+        "p95_ms": 1.392,
+        "p99_ms": 2.594
+      },
+      "/api/pr-supervisor/capabilities": {
+        "samples": 100,
+        "max_ms": 11.185,
+        "p50_ms": 0.861,
+        "p95_ms": 1.796,
+        "p99_ms": 2.863
+      },
+      "/api/workspaces": {
+        "samples": 100,
+        "max_ms": 4.699,
+        "p50_ms": 0.736,
+        "p95_ms": 2.181,
+        "p99_ms": 3.455
+      },
+      "/api/health-journal/status": {
+        "samples": 100,
+        "max_ms": 5.755,
+        "p50_ms": 0.907,
+        "p95_ms": 1.966,
+        "p99_ms": 3.224
+      },
+      "/api/sync/status": {
+        "samples": 100,
+        "max_ms": 10.297,
+        "p50_ms": 1.49,
+        "p95_ms": 3.379,
+        "p99_ms": 9.392
+      },
+      "/api/sync/refs": {
+        "samples": 100,
+        "max_ms": 3.09,
+        "p50_ms": 0.486,
+        "p95_ms": 1.613,
+        "p99_ms": 1.995
+      },
+      "/settings?section=agent": {
+        "samples": 100,
+        "max_ms": 12.664,
+        "p50_ms": 2.26,
+        "p95_ms": 4.784,
+        "p99_ms": 9.258
+      },
+      "/settings?section=backups": {
+        "samples": 100,
+        "max_ms": 13.321,
+        "p50_ms": 1.889,
+        "p95_ms": 3.711,
+        "p99_ms": 10.837
+      },
+      "/fleet": {
+        "samples": 100,
+        "max_ms": 47.282,
+        "p50_ms": 11.863,
+        "p95_ms": 22.685,
+        "p99_ms": 44.829
+      },
+      "/pull-requests": {
+        "samples": 100,
+        "max_ms": 21.827,
+        "p50_ms": 4.071,
+        "p95_ms": 8.993,
+        "p99_ms": 15.142
+      },
+      "sync.object_collect": {
+        "samples": 10,
+        "max_ms": 196.347,
+        "p50_ms": 44.322,
+        "p95_ms": 196.347,
+        "p99_ms": 196.347
+      },
+      "/": {
+        "samples": 100,
+        "max_ms": 8.035,
+        "p50_ms": 1.267,
+        "p95_ms": 2.65,
+        "p99_ms": 5.295
+      },
+      "/work": {
+        "samples": 100,
+        "max_ms": 6.538,
+        "p50_ms": 1.39,
+        "p95_ms": 3.785,
+        "p99_ms": 4.31
+      },
+      "/api/runtime": {
+        "samples": 100,
+        "max_ms": 13.301,
+        "p50_ms": 4.989,
+        "p95_ms": 5.734,
+        "p99_ms": 8.976
+      },
+      "maintenance.run": {
+        "samples": 1,
+        "max_ms": 998.796,
+        "p50_ms": 998.796,
+        "p95_ms": 998.796,
+        "p99_ms": 998.796
+      }
+    },
+    "sync_outcomes": {
+      "push_applied_1": 100,
+      "reconcile_merged": 10,
+      "inventory_pages": 10,
+      "inventory_objects": 5120,
+      "inventory_bytes": 2521758,
+      "reconcile_fast_forward": 90
+    },
+    "scope": "Installed package private fixture; no production Store/EventLog writes, GC deletion, real provider or peer probes. One maintenance sample998.796ms fails500ms. No pooled speedup claim against earlier stages."
+  },
+  "cold": {
+    "samples": 10,
+    "latencies_ms": [
+      73.5810830956325,
+      24.98829097021371,
+      26.18391695432365,
+      25.345125002786517,
+      26.282208040356636,
+      24.588042055256665,
+      24.16541601996869,
+      24.62249994277954,
+      24.499041959643364,
+      24.698833003640175
+    ],
+    "first_ms": 73.581,
+    "subsequent_max_ms": 26.282,
+    "scope": "Private installed fakeprovider/tool-free session starts and drains. No observed startup/drain failures/timeouts; fullKernel/realprovider/MCP/network/placement not covered."
+  },
+  "interaction": {
+    "request_id": "systemic-awake-window-20261025-v1",
+    "status": "Correlated response applied only to originating acceptance-window checks; no private response value retained. No power/clock/configuration/default/permission change."
+  },
+  "restart": {
+    "id": "0f633276-7fa6-5205-ab54-acc83de1e1a0",
+    "key": "systemic-exact7460-gc-health-managed-restart-20261025-v1",
+    "status": "continuation_queued",
+    "effect": "pending",
+    "scope": "Passive owner receipt; actual loaded build separately verified. Preserve queue, no replay/rearm."
+  },
+  "acceptance": {
+    "revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "policy": "independent_agent_v1",
+    "findings_open": 663,
+    "concerns_open": 130,
+    "remaining": "Maintenance998.796ms, remote timeouts/stale fields, realprovider/MCP/placement/workspace/queue/concurrency/admission/lease/receipt/CAS/sync branches, payload/call amplification, nativebusy/GIL/CPU/disk/fsync/GC attribution, peer build/log gaps, historical logloss/retention and unknown effects. All prior criteria/history remain. Originalbackupb527 andDB89957 accepted scopes stayclosed."
+  },
+  "sandbox_observations": "Read-only ps and uv cache access initially denied; provider-approved bounded reruns succeeded. No alternate boundary workaround or process policy change."
+}
