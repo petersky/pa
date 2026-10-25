@@ -1,3 +1,17 @@
+# Forced Fleet probe joins; main CI failures retained
+
+The ledger retains **666 open findings and 133 concerns**, including every prior finding. [Complete final evidence](benchmarks/systemic-fleet-entry-final-20261025.json) and its lossless raw bundle preserve the new concurrency branch, both main CI failures and the complete **98-operation / 40-route** runtime snapshot from macbook at 18:05:24.932583–18:05:25.014638 UTC. Process maxima and bounded percentile windows remain separate from fixture samples.
+
+PR #580 is integrated as `11a251acb4cfd18120eac0b1806892b6df02b53e`; its exact head passed all five CI jobs. Main CI attempt one failed in two shards. The unchanged snapshot contract took **352.840 ms against 200 ms**, with **305.086 ms loop-thread CPU**. Three isolated unchanged runs pass, but they do not explain the xdist failure; GC remains unproved as its cause. Fleet also observed **two probes against the required one**. The retry guard discovered that second failure and stopped before issuing any retry. The prepared `11a251ac` package was never installed.
+
+A deterministic private fixture reproduces the Fleet race: a forced caller performs asynchronous cache reads before joining the older active probe. If the older probe finishes during those reads, the caller starts another request. Forced callers now capture live work under the existing lock before cache reads and await it through the cancellation shield outside the lock. MCP bootstrap retains its connected-cache fast path; otherwise it joins the captured task even if that task finished during the cache reads. The controlled branch changes from **two probes to one**. Non-forced cache freshness, no-flight creation, peer deadlines, attempt fencing, cache publication and retained last-good values remain unchanged. The original xdist schedule was not traced; the source race is independently demonstrated.
+
+**146 contracts plus two subtests pass**, including the original manual-refresh assertion, cancellation safety, cold MCP coalescing and the unchanged connected-MCP cache fast path. An initial source suite had 142 passes and one fixture timeout: its observer waited for a cache read that the early-join path correctly avoids. That fixture now observes the actual shielded join; its count, retained-value assertions and five-second synchronization deadlines remain unchanged. A subsequent MCP fixture initially omitted its observation timestamp, so its value correctly missed the fresh-cache fast path; the fixture now supplies a current timestamp. The earlier 144-pass stage and every failed stage remain in their original artifact and the final bundle.
+
+All earlier maintenance failures, including **948.832 ms against 500 ms**, remain. This concurrency repair does not establish whole-path speedup, real-provider or fleet acceptance. Running code remains `aa711e4b`; the corrected combined target must pass protected review, integration, fresh head/main CI, exact activation and representative retests. Original independently accepted backup and DB scopes stay closed. No threshold, GC policy, configuration, dependency, permission, model, power or clock changes were made.
+
+---
+
 # Migration cursor seek; maintenance acceptance remains open
 
 The ledger now retains **665 open findings and 132 concerns**, including every prior row unchanged. [Complete source evidence](benchmarks/systemic-legacy-cursor-seek-20261025.json) preserves all samples, counts, bytes, phases, warnings and failures in its adjacent lossless raw bundle.

@@ -144,11 +144,11 @@ class RequiredRefreshWorkerTests(unittest.IsolatedAsyncioTestCase):
             cache.put("peer", "status", field("fresh", {"version": "retained"}, observed_at="2026-10-24T00:00:00+00:00"))
             entered, joined, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
             calls = []
-            original_offload = overview._offload
+            original_shield = asyncio.shield
 
-            async def offload(*args, **kwargs):
-                result = await original_offload(*args, **kwargs)
-                if asyncio.current_task().get_name() == "fixture-foreground" and args[2] == cache.get:
+            def shield(awaitable):
+                result = original_shield(awaitable)
+                if asyncio.current_task().get_name() == "fixture-foreground":
                     joined.set()
                 return result
 
@@ -163,7 +163,7 @@ class RequiredRefreshWorkerTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch("pa.fleet.overview._probe", side_effect=probe),
-                patch("pa.fleet.overview._offload", side_effect=offload),
+                patch("pa.fleet.overview.asyncio.shield", side_effect=shield),
                 patch("pa.server.shutdown.is_shutting_down", return_value=False),
                 patch("pa.server.shutdown.wait_for_shutdown", side_effect=stop),
             ):
