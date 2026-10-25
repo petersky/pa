@@ -874,5 +874,1630 @@
     "concerns_open": 130,
     "remaining": "Maintenance998.796ms, remote timeouts/stale fields, realprovider/MCP/placement/workspace/queue/concurrency/admission/lease/receipt/CAS/sync branches, payload/call amplification, nativebusy/GIL/CPU/disk/fsync/GC attribution, peer build/log gaps, historical logloss/retention and unknown effects. All prior criteria/history remain. Originalbackupb527 andDB89957 accepted scopes stayclosed."
   },
-  "sandbox_observations": "Read-only ps and uv cache access initially denied; provider-approved bounded reruns succeeded. No alternate boundary workaround or process policy change."
+  "sandbox_observations": "Read-only ps and uv cache access initially denied; provider-approved bounded reruns succeeded. No alternate boundary workaround or process policy change.",
+  "current_runtime_inventory": {
+    "range": [
+      "2026-10-25T16:46:02.136754+00:00",
+      "2026-10-25T16:46:39.258496+00:00"
+    ],
+    "operations": 100,
+    "route_groups": 38,
+    "all_slow_or_failed": {
+      "agent.startup_state_read": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 891.0000000614673,
+        "max_wait_ms": 891.0000000614673,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 832.942,
+        "max_runtime_ms": 832.942,
+        "slow_calls": 1,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 1,
+          "max": 832.942,
+          "p50": 832.942,
+          "p95": 832.942,
+          "p99": 832.942
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 797.835,
+          "p50": 797.835,
+          "p95": 797.835,
+          "p99": 797.835
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.093,
+          "p50": 0.093,
+          "p95": 0.093,
+          "p99": 0.093
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 35.014,
+          "p50": 35.014,
+          "p95": 35.014,
+          "p99": 35.014
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 66.429,
+          "p50": 66.429,
+          "p95": 66.429,
+          "p99": 66.429
+        },
+        "outer_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_release_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "outer_lock_release_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 789.344,
+          "p50": 789.344,
+          "p95": 789.344,
+          "p99": 789.344
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 3,
+          "p50": 3,
+          "p95": 3,
+          "p99": 3
+        },
+        "sqlite_rows": {
+          "samples": 1,
+          "max": 380,
+          "p50": 380,
+          "p95": 380,
+          "p99": 380
+        },
+        "sqlite_aggregate_items": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_release_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "atomic_write_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_write_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "directory_fsync_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "directory_fsync_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "fsync_failures": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_replace_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_get_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_put_files": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_put_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "http.fleet_overview": {
+        "submitted": 528,
+        "completed": 483,
+        "failed": 45,
+        "timed_out": 45,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 6,
+        "max_queued": 0,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 0.0,
+        "max_wait_ms": 0.0,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 29833.851,
+        "max_runtime_ms": 4018.713,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0,
+          "file_lock_hold_ms": 0,
+          "file_lock_release_ms": 0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 256,
+          "max": 154.71,
+          "p50": 23.012,
+          "p95": 99.452,
+          "p99": 119.306
+        },
+        "queue_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "python_lock_wait_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "python_lock_hold_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "worker_service_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "executor_dispatch_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "completion_delivery_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "thread_cpu_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "outer_lock_hold_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "python_lock_release_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "outer_lock_release_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_statement_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_commit_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_rows": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_aggregate_items": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_lock_wait_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_lock_hold_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_lock_release_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "atomic_write_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "atomic_write_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_fsync_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_fsync_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "directory_fsync_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "directory_fsync_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "fsync_failures": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "atomic_replace_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_get_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_get_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_get_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_put_files": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_put_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        }
+      },
+      "sqlite.agent_session_save": {
+        "submitted": 56,
+        "completed": 56,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 2,
+        "max_queued": 1,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 2644.999999552965,
+        "max_wait_ms": 1733.9999999385327,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 2633.576,
+        "max_runtime_ms": 1733.256,
+        "slow_calls": 2,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 56,
+          "max": 1733.256,
+          "p50": 2.235,
+          "p95": 57.583,
+          "p99": 1733.256
+        },
+        "queue_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_wait_ms": {
+          "samples": 56,
+          "max": 622.704,
+          "p50": 0.0,
+          "p95": 0.415,
+          "p99": 622.704
+        },
+        "python_lock_hold_ms": {
+          "samples": 56,
+          "max": 1732.929,
+          "p50": 1.642,
+          "p95": 22.15,
+          "p99": 1732.929
+        },
+        "worker_service_ms": {
+          "samples": 56,
+          "max": 1732.985,
+          "p50": 2.05,
+          "p95": 29.509,
+          "p99": 1732.985
+        },
+        "executor_dispatch_ms": {
+          "samples": 56,
+          "max": 2.577,
+          "p50": 0.051,
+          "p95": 0.347,
+          "p99": 2.577
+        },
+        "completion_delivery_ms": {
+          "samples": 56,
+          "max": 55.036,
+          "p50": 0.046,
+          "p95": 0.588,
+          "p99": 55.036
+        },
+        "thread_cpu_ms": {
+          "samples": 56,
+          "max": 198.594,
+          "p50": 1.766,
+          "p95": 6.45,
+          "p99": 198.594
+        },
+        "outer_lock_hold_ms": {
+          "samples": 56,
+          "max": 1732.929,
+          "p50": 1.642,
+          "p95": 22.15,
+          "p99": 1732.929
+        },
+        "python_lock_release_ms": {
+          "samples": 56,
+          "max": 0.014,
+          "p50": 0.0,
+          "p95": 0.002,
+          "p99": 0.014
+        },
+        "outer_lock_release_ms": {
+          "samples": 56,
+          "max": 0.014,
+          "p50": 0.0,
+          "p95": 0.002,
+          "p99": 0.014
+        },
+        "sqlite_statement_ms": {
+          "samples": 56,
+          "max": 1186.966,
+          "p50": 0.517,
+          "p95": 21.768,
+          "p99": 1186.966
+        },
+        "sqlite_commit_ms": {
+          "samples": 56,
+          "max": 545.652,
+          "p50": 0.077,
+          "p95": 2.008,
+          "p99": 545.652
+        },
+        "sqlite_calls": {
+          "samples": 56,
+          "max": 5,
+          "p50": 3,
+          "p95": 5,
+          "p99": 5
+        },
+        "sqlite_rows": {
+          "samples": 56,
+          "max": 1,
+          "p50": 0,
+          "p95": 1,
+          "p99": 1
+        },
+        "sqlite_aggregate_items": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_lock_wait_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_hold_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_release_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "atomic_write_calls": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_write_bytes": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_calls": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "directory_fsync_calls": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "directory_fsync_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "fsync_failures": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_replace_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_get_calls": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_bytes": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_ms": {
+          "samples": 56,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_put_files": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_put_bytes": {
+          "samples": 56,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "sync.peer_http": {
+        "submitted": 15,
+        "completed": 14,
+        "failed": 1,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 3,
+        "max_queued": 0,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 0.0,
+        "max_wait_ms": 0.0,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 31056.114,
+        "max_runtime_ms": 12078.216,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0,
+          "file_lock_hold_ms": 0,
+          "file_lock_release_ms": 0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 15,
+          "max": 12078.216,
+          "p50": 100.996,
+          "p95": 12078.216,
+          "p99": 12078.216
+        },
+        "queue_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "python_lock_wait_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "python_lock_hold_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "worker_service_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "executor_dispatch_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "completion_delivery_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "thread_cpu_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "outer_lock_hold_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "python_lock_release_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "outer_lock_release_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_statement_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_commit_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_rows": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_aggregate_items": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_lock_wait_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_lock_hold_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_lock_release_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "atomic_write_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "atomic_write_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_fsync_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "file_fsync_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "directory_fsync_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "directory_fsync_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "fsync_failures": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "atomic_replace_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_get_calls": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_get_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_get_ms": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_put_files": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "object_put_bytes": {
+          "samples": 0,
+          "max": null,
+          "p50": null,
+          "p95": null,
+          "p99": null
+        }
+      },
+      "workspace.collect_garbage": {
+        "submitted": 1,
+        "completed": 1,
+        "failed": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 1,
+        "max_queued": 1,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 1815.9999998752028,
+        "max_wait_ms": 1815.9999998752028,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 1815.079,
+        "max_runtime_ms": 1815.079,
+        "slow_calls": 1,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 1,
+          "max": 1815.079,
+          "p50": 1815.079,
+          "p95": 1815.079,
+          "p99": 1815.079
+        },
+        "queue_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 1,
+          "max": 1814.434,
+          "p50": 1814.434,
+          "p95": 1814.434,
+          "p99": 1814.434
+        },
+        "executor_dispatch_ms": {
+          "samples": 1,
+          "max": 0.468,
+          "p50": 0.468,
+          "p95": 0.468,
+          "p99": 0.468
+        },
+        "completion_delivery_ms": {
+          "samples": 1,
+          "max": 0.169,
+          "p50": 0.169,
+          "p95": 0.169,
+          "p99": 0.169
+        },
+        "thread_cpu_ms": {
+          "samples": 1,
+          "max": 329.893,
+          "p50": 329.893,
+          "p95": 329.893,
+          "p99": 329.893
+        },
+        "outer_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_release_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "outer_lock_release_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_statement_ms": {
+          "samples": 1,
+          "max": 46.839,
+          "p50": 46.839,
+          "p95": 46.839,
+          "p99": 46.839
+        },
+        "sqlite_commit_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 1,
+          "max": 80,
+          "p50": 80,
+          "p95": 80,
+          "p99": 80
+        },
+        "sqlite_rows": {
+          "samples": 1,
+          "max": 42,
+          "p50": 42,
+          "p95": 42,
+          "p99": 42
+        },
+        "sqlite_aggregate_items": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_lock_wait_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_hold_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_release_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "atomic_write_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_write_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "directory_fsync_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "directory_fsync_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "fsync_failures": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_replace_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_get_calls": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_ms": {
+          "samples": 1,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_put_files": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_put_bytes": {
+          "samples": 1,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      },
+      "workspace.project_provision": {
+        "submitted": 7,
+        "completed": 6,
+        "failed": 1,
+        "timed_out": 0,
+        "cancelled": 0,
+        "rejected": 0,
+        "active": 0,
+        "queued": 0,
+        "max_active": 2,
+        "max_queued": 1,
+        "total_queue_ms": 0.0,
+        "total_wait_ms": 5557.000000029802,
+        "max_wait_ms": 1605.9999999124557,
+        "total_lock_wait_ms": 0.0,
+        "total_runtime_ms": 5557.126,
+        "max_runtime_ms": 1605.978,
+        "slow_calls": 0,
+        "sqlite_busy_failures": 0,
+        "filesystem_totals": {
+          "file_lock_wait_ms": 0.0,
+          "file_lock_hold_ms": 0.0,
+          "file_lock_release_ms": 0.0,
+          "atomic_write_calls": 0,
+          "atomic_write_bytes": 0,
+          "file_fsync_calls": 0,
+          "file_fsync_ms": 0.0,
+          "directory_fsync_calls": 0,
+          "directory_fsync_ms": 0.0,
+          "fsync_failures": 0,
+          "atomic_replace_ms": 0.0,
+          "object_get_calls": 0,
+          "object_get_bytes": 0,
+          "object_get_ms": 0.0,
+          "object_put_files": 0,
+          "object_put_bytes": 0
+        },
+        "runtime_ms": {
+          "samples": 7,
+          "max": 1605.978,
+          "p50": 742.855,
+          "p95": 1605.978,
+          "p99": 1605.978
+        },
+        "queue_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_wait_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_hold_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "worker_service_ms": {
+          "samples": 7,
+          "max": 1605.773,
+          "p50": 742.614,
+          "p95": 1605.773,
+          "p99": 1605.773
+        },
+        "executor_dispatch_ms": {
+          "samples": 7,
+          "max": 0.045,
+          "p50": 0.033,
+          "p95": 0.045,
+          "p99": 0.045
+        },
+        "completion_delivery_ms": {
+          "samples": 7,
+          "max": 0.199,
+          "p50": 0.148,
+          "p95": 0.199,
+          "p99": 0.199
+        },
+        "thread_cpu_ms": {
+          "samples": 7,
+          "max": 61.503,
+          "p50": 56.79,
+          "p95": 61.503,
+          "p99": 61.503
+        },
+        "outer_lock_hold_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "python_lock_release_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "outer_lock_release_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_statement_ms": {
+          "samples": 7,
+          "max": 3.749,
+          "p50": 0.938,
+          "p95": 3.749,
+          "p99": 3.749
+        },
+        "sqlite_commit_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sqlite_calls": {
+          "samples": 7,
+          "max": 8,
+          "p50": 8,
+          "p95": 8,
+          "p99": 8
+        },
+        "sqlite_rows": {
+          "samples": 7,
+          "max": 383,
+          "p50": 383,
+          "p95": 383,
+          "p99": 383
+        },
+        "sqlite_aggregate_items": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "sqlite_aggregate_bytes": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_lock_wait_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_hold_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "file_lock_release_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "atomic_write_calls": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_write_bytes": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_calls": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "file_fsync_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "directory_fsync_calls": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "directory_fsync_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "fsync_failures": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "atomic_replace_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_get_calls": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_bytes": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_get_ms": {
+          "samples": 7,
+          "max": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "object_put_files": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "object_put_bytes": {
+          "samples": 7,
+          "max": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        }
+      }
+    },
+    "interpretation": "Process lifetime counters/maxima for new7460listener88315; bounded windows distinct. Includes startup/otheractivity before awakeobserver; no causal attribution from fixture or sleep inference. Full all100operations/routes/fields retained in rawbundle. Normal worker-specific budgets mean not every500msruntime raises slow_calls."
+  }
 }

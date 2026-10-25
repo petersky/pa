@@ -21,6 +21,17 @@ Actual owner95ordinaryGETs all succeeded with **zero500msviolations, max47.728ms
 
 Eight cached Fleet reads over37monotonic seconds: local24/24required fields fresh; two peers48/48fresh; macmini02dbcd47 all24stale with timed-out refresh attempts. Clock offset changed only−0.000432s in this window; transport/remote cause remains unverified. Runtime deltas retain90Fleet HTTP submissions/81completions/9timeouts,132durable cache writes/1405562bytes/132filefsyncs/132directoryfsyncs. These process counter deltas include normal background work; they are not the8observerrequests alone or physical disk bytes. Full inventories and all phase windows/maxima are in the raw bundle.
 
+Every slow-or-failed family in the new7460process snapshot is listed below, including activity before the awake observer. Full100operations/38routes and every field remain in the bundle. Counts/maxima are process lifetime; percentile windows are bounded and can omit earlier tails. Causes of these startup/session/workspace/peer failures remain unverified. Worker-specific budgets explain why some500msoutliers have zero slow_calls; they remain explicit latency concerns.
+
+| Operation | Submitted / slow / failed / timed out | Process max ms | Window samples / p50 / p95 / p99 / max ms |
+|---|---:|---:|---|
+| `agent.startup_state_read` | 1 / 1 / 0 / 0 | 832.942 | 1 / 832.942 / 832.942 / 832.942 / 832.942 |
+| `http.fleet_overview` | 528 / 0 / 45 / 45 | 4018.713 | 256 / 23.012 / 99.452 / 119.306 / 154.71 |
+| `sqlite.agent_session_save` | 56 / 2 / 0 / 0 | 1733.256 | 56 / 2.235 / 57.583 / 1733.256 / 1733.256 |
+| `sync.peer_http` | 15 / 0 / 1 / 0 | 12078.216 | 15 / 100.996 / 12078.216 / 12078.216 / 12078.216 |
+| `workspace.collect_garbage` | 1 / 1 / 0 / 0 | 1815.079 | 1 / 1815.079 / 1815.079 / 1815.079 / 1815.079 |
+| `workspace.project_provision` | 7 / 0 / 1 / 0 | 1605.978 | 7 / 742.855 / 1605.978 / 1605.978 / 1605.978 |
+
 Installed-package private100iteration mixed workload retained9600ordered events, with0workerwarnings/failures/timeouts/rejections; **maintenance998.796ms remains the sole500msviolation**. All raw p50/p95/p99/max, SQL/row/byte/fsync/call counters remain. This is not a deployed production mixed load or a paired statistical speedup. Ten private fakeprovider/tool-free starts/drains passed: first73.581ms, subsequentmax26.282ms; fullKernel/realprovider/MCP/network/placement remain untested here. All private default roots were isolated before imports; no production GC deletion or fault injection.
 
 The same session owns remaining maintenance/reference query compatibility and nativewait/GIL/CPU/disk/fsync attribution, remote failures, realprovider/MCP/placement/workspace/queue/concurrency/order/admission/lease/receipt/CAS/sync/acceptance, payload/call amplification, peer build/log/retention/logloss and unknown effects. All prior rows/history remain. NormalPA scheduler owns final17dindependentverification; originalbackupb527/DB89957 accepted scopes stayclosed. Fastsubset/installation/restart never establishes whole-card acceptance.
