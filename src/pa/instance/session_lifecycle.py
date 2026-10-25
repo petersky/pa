@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import heapq
 import logging
 import threading
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -23,6 +24,38 @@ _SINGLE_PURPOSE_LABELS = frozenset(
 )
 _SINGLE_PURPOSE_LABEL_PREFIXES = ("card-enrichment:",)
 _ACTIVE_WATCH_STATUSES = frozenset({PRWatchStatus.ACTIVE, PRWatchStatus.BLOCKED})
+
+
+class _WatchLinkIndex:
+    """Index one sweep's immutable watch links, preserving read order and duplicates."""
+
+    def __init__(self, watches: list[Any]) -> None:
+        self._sessions: dict[str | None, list[tuple[int, Any]]] = defaultdict(list)
+        self._cards: dict[str | None, list[tuple[int, Any]]] = defaultdict(list)
+        for position, watch in enumerate(watches):
+            row = (position, watch)
+            self._sessions[watch.originating_session_id].append(row)
+            self._cards[watch.card_id].append(row)
+
+    @classmethod
+    def read(cls, store: Any) -> _WatchLinkIndex:
+        return cls(store.lifecycle_watch_links())
+
+    def for_session(self, session: AgentSession) -> list[Any]:
+        rows = heapq.merge(
+            self._sessions.get(session.id, ()),
+            self._cards.get(session.card_id, ()) if session.card_id else (),
+            key=lambda row: row[0],
+        )
+        result = []
+        previous = -1
+        for position, watch in rows:
+            # A row linked by both keys occurs once, as in the original OR.
+            # Distinct rows remain even if their three field values are equal.
+            if position != previous:
+                result.append(watch)
+            previous = position
+        return result
 
 
 class SessionLifecyclePolicy:
@@ -102,10 +135,11 @@ class SessionLifecyclePolicy:
             watches = (
                 await self._offload(
                     "session_lifecycle.watches",
-                    supervisor.store.lifecycle_watch_links,
+                    _WatchLinkIndex.read,
+                    supervisor.store,
                 )
                 if supervisor and getattr(supervisor, "store", None)
-                else []
+                else _WatchLinkIndex([])
             )
             leases = await self._offload(
                 "session_lifecycle.leases", self.manager.workspace_manager.list
@@ -275,7 +309,7 @@ class SessionLifecyclePolicy:
         *,
         sessions: list[AgentSession],
         dispatches: list[Any],
-        watches: list[Any],
+        watches: list[Any] | _WatchLinkIndex,
         leases: list[Any],
         now: datetime,
     ) -> tuple[str, str]:
@@ -321,9 +355,12 @@ class SessionLifecyclePolicy:
             if dispatch.state in {"failed", "cancelled"} and dispatch.recoverable:
                 return "retained", "dispatch_recoverable"
 
+        watch_candidates = (
+            watches.for_session(session) if isinstance(watches, _WatchLinkIndex) else watches
+        )
         linked_watches = [
             watch
-            for watch in watches
+            for watch in watch_candidates
             if watch.originating_session_id == session.id
             or (session.card_id and watch.card_id == session.card_id)
         ]

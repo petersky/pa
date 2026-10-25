@@ -14,7 +14,7 @@ from pa.domain.models import AgentSession, CardLane
 from pa.core.async_runtime import AsyncRuntime
 from pa.domain.projection import CardProjection
 from pa.execution.dispatch import DispatchRecord
-from pa.instance.session_lifecycle import SessionLifecyclePolicy
+from pa.instance.session_lifecycle import SessionLifecyclePolicy, _WatchLinkIndex
 from pa.pr_supervisor.models import PRWatch, PRWatchStatus
 from pa.pr_supervisor.store import PRSupervisorStore
 
@@ -81,6 +81,73 @@ def _dispatch(**values):
 
 
 class SessionLifecycleDecisionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_watch_index_preserves_or_order_and_distinct_equal_rows(self):
+        def link(session_id, card_id):
+            return SimpleNamespace(originating_session_id=session_id, card_id=card_id,
+                                   status=PRWatchStatus.MERGED)
+
+        watches = [link("other", "shared"), link("session-1", "other"),
+                   link("session-1", "shared"), link("session-1", "shared"),
+                   link(None, None), link("another", ""), link("", "shared")]
+        index = _WatchLinkIndex(watches)
+        for session_id in ("session-1", "another", "unrelated"):
+            for card_id in ("shared", "other", "", None):
+                with self.subTest(session_id=session_id, card_id=card_id):
+                    session = _session(id=session_id, card_id=card_id)
+                    expected = [w for w in watches if w.originating_session_id == session.id
+                                or (session.card_id and w.card_id == session.card_id)]
+                    self.assertEqual([id(w) for w in index.for_session(session)],
+                                     [id(w) for w in expected])
+        # Lookups use the session's current keys; there is no session-result cache.
+        session = _session(card_id="shared")
+        session.card_id = "other"
+        self.assertEqual(index.for_session(session), [watches[1], watches[2], watches[3]])
+
+    async def test_sweep_builds_fresh_watch_index_once_on_reserved_worker(self):
+        watches = [SimpleNamespace(originating_session_id="session-1", card_id=None,
+                                   status=PRWatchStatus.ACTIVE)]
+        store = SimpleNamespace(lifecycle_watch_links=lambda: list(watches))
+        manager = _Manager()
+        manager.store.list_sessions = lambda **kwargs: [_session(), _session(id="unrelated")]
+        manager.workspace_manager.list = lambda: []
+        policy = SessionLifecyclePolicy(manager, {"pr_supervisor": SimpleNamespace(store=store)})
+        loop_thread = threading.get_ident()
+        reads = []
+        original = _WatchLinkIndex.read
+
+        def read(store):
+            self.assertNotEqual(threading.get_ident(), loop_thread)
+            reads.append(True)
+            return original(store)
+
+        decision = AsyncMock(return_value=("retained", "fixture"))
+        try:
+            with patch.object(_WatchLinkIndex, "read", read), patch.object(policy, "_decision", decision):
+                await policy.run_once()
+                self.assertEqual([call.kwargs["watches"].for_session(call.args[0])
+                                  for call in decision.call_args_list],
+                                 [[watches[0]], []])
+                decision.reset_mock()
+                watches.clear()
+                await policy.run_once()
+                self.assertEqual([call.kwargs["watches"].for_session(call.args[0])
+                                  for call in decision.call_args_list], [[], []])
+            self.assertEqual(len(reads), 2)
+        finally:
+            await policy.close()
+
+    async def test_pending_prompt_does_not_materialize_indexed_watch_links(self):
+        runtime = SimpleNamespace(prompting=True, _queue=[])
+        policy = SessionLifecyclePolicy(_Manager(runtime=runtime), {})
+        index = _WatchLinkIndex([])
+        try:
+            with patch.object(index, "for_session", side_effect=AssertionError("early watch work")):
+                self.assertEqual(await policy._decision(
+                    _session(), sessions=[], dispatches=[], watches=index, leases=[],
+                    now=datetime.now(UTC)), ("retained", "prompt_pending"))
+        finally:
+            await policy.close()
+
     async def test_watch_metadata_preserves_every_status_retirement_and_link(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = PRSupervisorStore(Path(tmp) / "watches.db")
