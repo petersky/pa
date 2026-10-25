@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T17:07:50.720654+00:00",
-  "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
+  "as_of": "2026-10-25T17:46:54.054498+00:00",
+  "completion": "OPEN: all 664 findings and 131 concerns. Exact aa711 activation and bounded retests are recorded; remaining maintenance violations, full inventory and independent acceptance requirements remain.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -206234,10 +206234,10 @@
         "pid": 28400,
         "startup_id": "ddfb24fe-1a5a-4440-9741-45f7da7dbf75"
       },
-      "retested": "OnebuildfencedcachedGET;runtimecountsmayincludeotherordinaryreads,notmaintenanceacceptance",
+      "retested": "One passive cached GET on actual aa711 took 4.298 ms; previous service run lasted 7,429.060 ms. Full phases and exact ranges are in the linked artifact.",
       "resolution": "open",
       "next_actor": "same systemic session",
-      "next_action": "Measuredshared-cause repairs preservingintegrity/freshness/defaults; no manualproductionmaintenance",
+      "next_action": "Continue live maintenance/database/native wait/health attribution while preserving the passive status endpoint and full integrity/durability semantics. Do not trigger extra production maintenance.",
       "route_5fb3_followup": {
         "artifact": "docs/benchmarks/systemic-mirror-inventory-20261018.json",
         "observed_at": "2026-10-18T07:22:57.585106+00:00",
@@ -206315,7 +206315,20 @@
         },
         "resolution": "open",
         "scope": "Laterseparatesnapshot; primaryanddiagnosticexecutor namespaces distinct. Not95GETwindow, exhaustivebranch/fleet audit orperformanceacceptance."
-      }
+      },
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-aa711-live-maintenance-20261025.json",
+          "sha256": "63b10932ebd68a0d505458ad9c354c864bfaeb6307371726cc40e0baad5495f4",
+          "observations": 1,
+          "observer_elapsed_ms": 4.29766601882875,
+          "previous_fields": {
+            "retested": "OnebuildfencedcachedGET;runtimecountsmayincludeotherordinaryreads,notmaintenanceacceptance",
+            "next_action": "Measuredshared-cause repairs preservingintegrity/freshness/defaults; no manualproductionmaintenance"
+          },
+          "scope": "Supported GET returns the existing cached maintenance snapshot; source trace confirms no run trigger or fresh health scan. One observer latency is not a representative request distribution."
+        }
+      ]
     },
     {
       "id": "concern:transcript-cold-reference-scan",
@@ -206774,10 +206787,10 @@
       "implemented": "Local string glob rooted literally with hidden names; one basename Path.stem and reused digest; full Path only for original unlink policy. No bulkfetch.",
       "merged": [],
       "deployed": "Unverified candidate; actual server17a precedes this repair.",
-      "retested": "62 broad tests (including5 new),65 backup tests plus16 subtests,4 native SQLite contracts,2 permanent benchmark guards pass. Initial native-error test assumption failure and setup/import/empty-trace gaps retained.",
+      "retested": "See complete activated baseline, two instrumented diagnostics, 106 contracts and source candidate in the artifact. Both fresh health checks remain; maintenance 732.093 / 780.031 / 734.046 / 846.458 ms stages all fail 500 ms.",
       "resolution": "open",
       "next_actor": "this card/session",
-      "next_action": "Ready PR, durable supervisor, exact-head independent green integration/main CI; after prior ba0 continuation terminal, safely activate exact build and retest. Continue GC publication-lock/SQL/host tails and every other inventory/acceptance gap.",
+      "next_action": "Review and integrate the measured GC allocation follow-up, then exact activation and representative retest; continue filesystem/GIL/native IO attribution and all other open branches. Never infer closure from this subset.",
       "ci_correction": {
         "artifact": "docs/benchmarks/systemic-gc-path-ci-correction-20261018.json",
         "sha256": "7899d4ae641c93f49427720a49e7edde6b8a86a2ec5f6a5adb6f28b71a31aa54",
@@ -206791,7 +206804,19 @@
           "revision": 1,
           "hash": "3f4718ed5f3b5e06cd9191c83bc3d9d15a7894d0de01d97e1b1679c773cd6778"
         }
-      }
+      },
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json",
+          "sha256": "148a421ac49039eceda83186ad2e0020dc13eb5406d92883215e7b5a68b478dd",
+          "previous_fields": {
+            "deployed": "Unverified candidate; actual server17a precedes this repair.",
+            "retested": "62 broad tests (including5 new),65 backup tests plus16 subtests,4 native SQLite contracts,2 permanent benchmark guards pass. Initial native-error test assumption failure and setup/import/empty-trace gaps retained.",
+            "next_action": "Ready PR, durable supervisor, exact-head independent green integration/main CI; after prior ba0 continuation terminal, safely activate exact build and retest. Continue GC publication-lock/SQL/host tails and every other inventory/acceptance gap."
+          },
+          "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
+        }
+      ]
     },
     {
       "id": "concern:benchmark-validation-boundary",
@@ -209082,11 +209107,11 @@
       "fix_or_existing_owner": "This systemic session; shared health cost linked to bounded backup scope without changing backup data/recovery ownership or original accepted database-card scope.",
       "implemented": "Source boundedJSONpages with pinnedsnapshot/nativefallback/aggregateaccounting; reviewpending.",
       "merged": [],
-      "deployed": false,
-      "retested": "105contracts,8standalonechecks,5idlewholehealthpairs and finalmixed100/9600ordered. Idlemedian26.166->26.984ms; maintenance883.442ms stillfails.",
+      "deployed": "Exact aa711 source/package/PID/startup verified on macbook; configuration and dependencies unchanged. Not whole-path acceptance.",
+      "retested": "See complete activated baseline, two instrumented diagnostics, 106 contracts and source candidate in the artifact. Both fresh health checks remain; maintenance 732.093 / 780.031 / 734.046 / 846.458 ms stages all fail 500 ms.",
       "resolution": "open",
       "next_actor": "this same systemic session",
-      "next_action": "Integrate only exactstablegreen supervisedhead; activation requires settlingoldnativehandoff, exactfrozenattestation and representative retest. Continue residualattribution.",
+      "next_action": "Review and integrate the measured GC allocation follow-up, then exact activation and representative retest; continue filesystem/GIL/native IO attribution and all other open branches. Never infer closure from this subset.",
       "stage_history": [
         {
           "as_of": "before_context_sensitive_json_page_diagnostic",
@@ -209565,7 +209590,19 @@
         "as_of": "2026-10-25T17:07:50.720654+00:00",
         "deployed": false,
         "accepted": false
-      }
+      },
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json",
+          "sha256": "148a421ac49039eceda83186ad2e0020dc13eb5406d92883215e7b5a68b478dd",
+          "previous_fields": {
+            "deployed": false,
+            "retested": "105contracts,8standalonechecks,5idlewholehealthpairs and finalmixed100/9600ordered. Idlemedian26.166->26.984ms; maintenance883.442ms stillfails.",
+            "next_action": "Integrate only exactstablegreen supervisedhead; activation requires settlingoldnativehandoff, exactfrozenattestation and representative retest. Continue residualattribution."
+          },
+          "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
+        }
+      ]
     },
     {
       "id": "concern:pr537-concurrent-base-integration",
@@ -213430,12 +213467,12 @@
       "merged": [
         "https://github.com/petersky/pa/pull/572"
       ],
-      "deployed": "Exact87e/package921c50/PID68901/startupa74e/Interactive4 independently verified; wholepath/acceptance stillopen.",
-      "retested": "78contracts incl actual case-alias and directory-search-permission parity;10alternating final fullhealthpairs,100iteration finalcandidate9600ordered/0warnings but1476.160msmaintenance residual. All prior stages retained.",
+      "deployed": "Exact aa711 source/package/PID/startup verified on macbook; configuration and dependencies unchanged. Not whole-path acceptance.",
+      "retested": "See complete activated baseline, two instrumented diagnostics, 106 contracts and source candidate in the artifact. Both fresh health checks remain; maintenance 732.093 / 780.031 / 734.046 / 846.458 ms stages all fail 500 ms.",
       "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
       "resolution": "open",
       "next_actor": "this systemic card/session",
-      "next_action": "Continue bothfreshhealthread/nativeintegrity CPU/SQL/IO attribution and broader deployedacceptance; no snapshot caching/substitution.",
+      "next_action": "Review and integrate the measured GC allocation follow-up, then exact activation and representative retest; continue filesystem/GIL/native IO attribution and all other open branches. Never infer closure from this subset.",
       "stage_history": [
         {
           "as_of": "before_loaded87e4_stage",
@@ -213539,7 +213576,19 @@
         "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
         "sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
         "resolution": "open"
-      }
+      },
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json",
+          "sha256": "148a421ac49039eceda83186ad2e0020dc13eb5406d92883215e7b5a68b478dd",
+          "previous_fields": {
+            "deployed": "Exact87e/package921c50/PID68901/startupa74e/Interactive4 independently verified; wholepath/acceptance stillopen.",
+            "retested": "78contracts incl actual case-alias and directory-search-permission parity;10alternating final fullhealthpairs,100iteration finalcandidate9600ordered/0warnings but1476.160msmaintenance residual. All prior stages retained.",
+            "next_action": "Continue bothfreshhealthread/nativeintegrity CPU/SQL/IO attribution and broader deployedacceptance; no snapshot caching/substitution."
+          },
+          "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
+        }
+      ]
     },
     {
       "id": "concern:fleet-required-refresh-cadence",
@@ -214016,13 +214065,13 @@
       "cause": "12511all-live coldobjects cross SQLite/Python boundary per sweep althoughonlypossibleunreferencedcandidates needfreshlockedrecheck;196SQLcalls/12511rows in mixedstage.",
       "implemented": "Bound128candidate JSONparameter andNOTEXISTSpositive-reference query returnonlyunreferencedhashes; finalfreshpublicationlock/referencequery/objectreaders/unlink behavior unchanged.",
       "merged": [],
-      "deployed": false,
-      "retested": "85contracts/3new, archivedbaseline2newfailures; final5alternatingpairs12511->0rows/allbytespreserved; exactcandidate mixed1009600ordered/0warnings/errors butmaintenance1098.053ms remains.",
+      "deployed": "Exact aa711 source/package/PID/startup verified on macbook; configuration and dependencies unchanged. Not whole-path acceptance.",
+      "retested": "See complete activated baseline, two instrumented diagnostics, 106 contracts and source candidate in the artifact. Both fresh health checks remain; maintenance 732.093 / 780.031 / 734.046 / 846.458 ms stages all fail 500 ms.",
       "resolution": "open",
       "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
       "artifact_sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
       "next_actor": "This originalsystemic session, then normal17dindependentverifier",
-      "next_action": "Integrate exactreviewedhead through stablegreen+independentchecks, then exactactivation/retest aftercurrentbbcontinuation settles. Continue residualhealth phases/fullinventory; no closurefromthissourcefix.",
+      "next_action": "Review and integrate the measured GC allocation follow-up, then exact activation and representative retest; continue filesystem/GIL/native IO attribution and all other open branches. Never infer closure from this subset.",
       "residual": "Source/microcases cannotestablishwholePA acceptance. Successfulbusy/GIL/scheduling/physicaldiskwriteamp remainunseparated; maintainfreshdurableorder/admission/receipt/CAS/sync/acceptance semantics.",
       "stage_history": [
         {
@@ -214111,7 +214160,19 @@
           "sha256": "489f1f6d75926df88a423503b1d5b8b1b2fe5276d7d530fd1313b668ae5b3ab6",
           "notice": "All5firstattemptsuccess independently revalidated after original evidence assembly; previouspendingstate retained above."
         }
-      }
+      },
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json",
+          "sha256": "148a421ac49039eceda83186ad2e0020dc13eb5406d92883215e7b5a68b478dd",
+          "previous_fields": {
+            "deployed": false,
+            "retested": "85contracts/3new, archivedbaseline2newfailures; final5alternatingpairs12511->0rows/allbytespreserved; exactcandidate mixed1009600ordered/0warnings/errors butmaintenance1098.053ms remains.",
+            "next_action": "Integrate exactreviewedhead through stablegreen+independentchecks, then exactactivation/retest aftercurrentbbcontinuation settles. Continue residualhealth phases/fullinventory; no closurefromthissourcefix."
+          },
+          "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
+        }
+      ]
     },
     {
       "id": "concern:transcript-health-digest-validation",
@@ -214125,8 +214186,8 @@
       "merged": [
         "https://github.com/petersky/pa/pull/575"
       ],
-      "deployed": false,
-      "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
+      "deployed": "Exact aa711 source/package/PID/startup verified on macbook; configuration and dependencies unchanged. Not whole-path acceptance.",
+      "retested": "See complete activated baseline, two instrumented diagnostics, 106 contracts and source candidate in the artifact. Both fresh health checks remain; maintenance 732.093 / 780.031 / 734.046 / 846.458 ms stages all fail 500 ms.",
       "measurement": {
         "artifact": "docs/benchmarks/systemic-health-digest-validation-20261025.json",
         "sha256": "360826b7358fdda79ddba2d4249494e01bb7183806b7aeb3d1b38c3d2d66dfbf",
@@ -214141,7 +214202,7 @@
       },
       "resolution": "open",
       "next_actor": "This same systemic session; PA scheduler owns final independent acceptance.",
-      "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure.",
+      "next_action": "Review and integrate the measured GC allocation follow-up, then exact activation and representative retest; continue filesystem/GIL/native IO attribution and all other open branches. Never infer closure from this subset.",
       "stage_history": [
         {
           "as_of": "before_pr575_integration",
@@ -214273,7 +214334,19 @@
         "package": "sha256:a4d2a3751d3ff48572c9f05261b912c0942ee06248f0322014a8c07ac60b676f",
         "actual_loaded": true,
         "accepted": false
-      }
+      },
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json",
+          "sha256": "148a421ac49039eceda83186ad2e0020dc13eb5406d92883215e7b5a68b478dd",
+          "previous_fields": {
+            "deployed": false,
+            "retested": "86existing/expandedcontracts and fivealternating12511-object exactsource healthpairs; exactcandidatewheel mixed100/9600ordered/0warningsorfailures/one867.696msmaintenanceviolation.",
+            "next_action": "Ready supervisedPR/exactheadCI/independentgreen/protectedmerge; after currentbbcontinuation settles safely activate exactmergedtarget and retest. Continue every residual; no blanketclosure."
+          },
+          "stage": "Exact aa711 activation verified; GC allocation follow-up remains uninstalled and maintenance acceptance fails."
+        }
+      ]
     },
     {
       "id": "concern:ci577-history-recovery-request-count",
@@ -308942,5 +309015,40 @@
     "as_of": "2026-10-25T17:07:50.720654+00:00",
     "deployed": false,
     "accepted": false
+  },
+  "aa711_activation_gc_digest_stage": {
+    "artifact": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.json",
+    "sha256": "148a421ac49039eceda83186ad2e0020dc13eb5406d92883215e7b5a68b478dd",
+    "raw": {
+      "path": "docs/benchmarks/systemic-aa711-activation-gc-digest-20261025.raw.json.gz",
+      "sha256": "670a83bc370652b7071d11188baf26c61550ccb70447d9b2db6b388e06e97bca",
+      "bytes": 586916,
+      "json_inputs": 31,
+      "text_inputs": 5
+    },
+    "all_prior_ids_retained": true,
+    "status": "All 664 findings and 131 concerns remain open. Exact aa711 is active; new allocation repair is source-only. No whole-card acceptance.",
+    "adjacent_live_maintenance": {
+      "path": "docs/benchmarks/systemic-aa711-live-maintenance-20261025.json",
+      "sha256": "63b10932ebd68a0d505458ad9c354c864bfaeb6307371726cc40e0baad5495f4",
+      "range": [
+        "2026-10-25T17:48:25.959787+00:00",
+        "2026-10-25T17:48:26.023432+00:00"
+      ],
+      "actual_last_run": [
+        "2026-10-25T17:32:52.037302+00:00",
+        "2026-10-25T17:32:59.466361+00:00"
+      ],
+      "observer_request_ms": 4.29766601882875,
+      "scope": "A later passive cached snapshot, published separately from the fixed 31-input raw bundle. No new maintenance invoked. Complete native subphases and counts are in the adjacent artifact."
+    },
+    "modified_existing_rows": [
+      "concern:gc-speculative-live-row-hydration",
+      "concern:transcript-gc-path-materialization",
+      "concern:transcript-health-digest-validation",
+      "concern:transcript-health-directory-probes",
+      "concern:transcript-health-reference-fetch-amplification",
+      "route-followup:/api/instance/maintenance"
+    ]
   }
 }

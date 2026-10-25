@@ -1,0 +1,427 @@
+{
+  "contract": "pa.live-maintenance-snapshot/v1",
+  "instance_id": "0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "source": "/api/instance/maintenance",
+  "started_at": "2026-10-25T17:48:25.959787+00:00",
+  "finished_at": "2026-10-25T17:48:26.023432+00:00",
+  "runtime_build": {
+    "loaded_module_version": "1.5.9",
+    "source_revision": "aa711e4b702781118562117ec90ca649138d7683",
+    "package_identity": "sha256:b8d75cd184884d329a11ed06bf2451f7dbd4f52d884b871e739a6b5741469e0e",
+    "pid": 96776,
+    "startup_id": "eed43c5c-990f-4ba6-a83e-ff3c9733b67d"
+  },
+  "observer_request_ms": 4.29766601882875,
+  "snapshot": {
+    "available": true,
+    "running": true,
+    "interval_seconds": 86400,
+    "transcript_retention_days": 14,
+    "mutation_operation_retention_days": 14,
+    "last_started_at": "2026-10-25T17:32:52.037302+00:00",
+    "last_finished_at": "2026-10-25T17:32:59.466361+00:00",
+    "last_result": {
+      "ran_at": "2026-10-25T17:32:52.037680+00:00",
+      "transcript_cutoff": "2026-10-11T17:32:52.037680+00:00",
+      "mutation_cutoff": "2026-10-11T17:32:52.037680+00:00",
+      "transcript_events_deleted": 0,
+      "mutation_operations_deleted": 0,
+      "dispatch_compact": {
+        "events": 0,
+        "receipts": 0
+      },
+      "sqlite": {
+        "compacted": true,
+        "status": "ok",
+        "phases": {
+          "connect": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.5965,
+            "thread_cpu_ms": 0.169875
+          },
+          "size_initial": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.401792,
+            "thread_cpu_ms": 0.385667
+          },
+          "integrity_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 1157.249209,
+            "thread_cpu_ms": 272.02225
+          },
+          "optimize": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.113542,
+            "thread_cpu_ms": 0.113666
+          },
+          "checkpoint_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 1.067333,
+            "thread_cpu_ms": 0.450791
+          },
+          "size_pre_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.019791,
+            "thread_cpu_ms": 0.019875
+          },
+          "disk_space": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.033417,
+            "thread_cpu_ms": 0.0335
+          },
+          "vacuum": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 2296.536375,
+            "thread_cpu_ms": 1027.986917
+          },
+          "integrity_after": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 241.857042,
+            "thread_cpu_ms": 195.487375
+          },
+          "checkpoint_after": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 14.110416,
+            "thread_cpu_ms": 8.0535
+          },
+          "size_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.130792,
+            "thread_cpu_ms": 0.131
+          },
+          "close": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.218833,
+            "thread_cpu_ms": 0.219
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 3712.541916,
+            "thread_cpu_ms": 1505.266458
+          }
+        },
+        "before": {
+          "page_count": 106477,
+          "page_size": 4096,
+          "freelist_count": 79,
+          "bytes": 436129792,
+          "free_bytes": 323584
+        },
+        "after": {
+          "page_count": 104550,
+          "page_size": 4096,
+          "freelist_count": 75,
+          "bytes": 428236800,
+          "free_bytes": 307200
+        },
+        "page_count": 104550,
+        "page_size": 4096,
+        "freelist_count": 75,
+        "bytes": 428236800,
+        "free_bytes": 307200,
+        "quick_check": "ok",
+        "wal_busy": 0,
+        "wal_log": 0,
+        "wal_checkpointed": 0
+      },
+      "transcript_storage": {
+        "schema_version": 1,
+        "events": 825430,
+        "audit_evidence": 1052,
+        "objects": 22983,
+        "uncompressed_bytes": 374655056,
+        "compressed_bytes": 80644319,
+        "references": 23275,
+        "deduplicated_references": 292,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 847436,
+        "migration": "running",
+        "migration_examined": 226500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-25T17:32:59.465836+00:00",
+        "measurement_state": "measured"
+      },
+      "phases": {
+        "retention_selection": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 40.687958,
+          "thread_cpu_ms": 6.835583,
+          "sqlite_calls": 274,
+          "sqlite_rows": 271,
+          "sqlite_statement_ms": 39.83658051583916,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0
+        },
+        "retention_discovery": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 22.775458,
+          "thread_cpu_ms": 1.074416,
+          "sqlite_calls": 2,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 22.711000056006014,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0
+        },
+        "retention_transaction": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 28.743542,
+          "thread_cpu_ms": 3.002292,
+          "sqlite_calls": 5,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 28.321624035015702,
+          "sqlite_commit_ms": 0.00666698906570673,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0002919696271419525,
+          "python_lock_hold_ms": 28.73174997512251,
+          "outer_lock_hold_ms": 28.73174997512251
+        },
+        "retention_object_collection": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 371.3015,
+          "thread_cpu_ms": 118.716792,
+          "sqlite_calls": 360,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 54.09605335444212,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.000250060111284256,
+          "python_lock_hold_ms": 0.0009579816833138466,
+          "outer_lock_hold_ms": 0.0009579816833138466
+        },
+        "retention_canonical": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 400.069333,
+          "thread_cpu_ms": 121.741833,
+          "sqlite_calls": 365,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 82.41767738945782,
+          "sqlite_commit_ms": 0.00666698906570673,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0005420297384262085,
+          "python_lock_hold_ms": 28.732707956805825,
+          "outer_lock_hold_ms": 28.732707956805825
+        },
+        "retention_mirror": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 35.071583,
+          "thread_cpu_ms": 1.045333,
+          "sqlite_calls": 2,
+          "sqlite_rows": 0,
+          "sqlite_statement_ms": 34.98037497047335,
+          "sqlite_commit_ms": 0.0,
+          "sqlite_busy_failures": 0,
+          "python_lock_wait_ms": 0.0,
+          "python_lock_hold_ms": 0.0,
+          "outer_lock_hold_ms": 0.0
+        },
+        "transcript_retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 475.866792,
+          "thread_cpu_ms": 129.657708
+        },
+        "mutation_retention": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 0.701792,
+          "thread_cpu_ms": 0.122833
+        },
+        "transcript_migration_and_health": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 2503.78825,
+          "thread_cpu_ms": 665.171291
+        },
+        "dispatch_compact": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 187.374834,
+          "thread_cpu_ms": 102.381333
+        },
+        "projection_database": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 3712.55825,
+          "thread_cpu_ms": 1505.282417
+        },
+        "transcript_database": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 242.883084,
+          "thread_cpu_ms": 242.537333
+        },
+        "transcript_health_final": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 305.020375,
+          "thread_cpu_ms": 302.512292
+        },
+        "total": {
+          "calls": 1,
+          "errors": 0,
+          "wall_ms": 7428.273542,
+          "thread_cpu_ms": 2947.7295
+        }
+      },
+      "transcript_migration": {
+        "schema_version": 1,
+        "events": 825430,
+        "audit_evidence": 1052,
+        "objects": 22983,
+        "uncompressed_bytes": 374655056,
+        "compressed_bytes": 80644319,
+        "references": 23275,
+        "deduplicated_references": 292,
+        "missing_objects": 1,
+        "journal_mode": "wal",
+        "integrity": "ok",
+        "redaction_policy": "canonical-v1",
+        "hot_payload_limit": 2048,
+        "compatibility_rows": 847436,
+        "migration": "running",
+        "migration_examined": 226500,
+        "migration_changed": 84973,
+        "migration_error": null,
+        "measured_at": "2026-10-25T17:32:55.018014+00:00",
+        "measurement_state": "measured"
+      },
+      "transcript_sqlite": {
+        "compacted": false,
+        "status": "ok",
+        "phases": {
+          "connect": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.202708,
+            "thread_cpu_ms": 0.203
+          },
+          "size_initial": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.130459,
+            "thread_cpu_ms": 0.130541
+          },
+          "integrity_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 242.23925,
+            "thread_cpu_ms": 241.916
+          },
+          "optimize": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.025,
+            "thread_cpu_ms": 0.025125
+          },
+          "checkpoint_before": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.159458,
+            "thread_cpu_ms": 0.138375
+          },
+          "size_pre_compact": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.012584,
+            "thread_cpu_ms": 0.012708
+          },
+          "size_final": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.00775,
+            "thread_cpu_ms": 0.007833
+          },
+          "close": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 0.054042,
+            "thread_cpu_ms": 0.054209
+          },
+          "total": {
+            "calls": 1,
+            "errors": 0,
+            "wall_ms": 242.870292,
+            "thread_cpu_ms": 242.524875
+          }
+        },
+        "before": {
+          "page_count": 150463,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 616296448,
+          "free_bytes": 0
+        },
+        "after": {
+          "page_count": 150463,
+          "page_size": 4096,
+          "freelist_count": 0,
+          "bytes": 616296448,
+          "free_bytes": 0
+        },
+        "page_count": 150463,
+        "page_size": 4096,
+        "freelist_count": 0,
+        "bytes": 616296448,
+        "free_bytes": 0,
+        "quick_check": "ok",
+        "wal_busy": 0,
+        "wal_log": 0,
+        "wal_checkpointed": 0
+      }
+    },
+    "transcript_storage": {
+      "schema_version": 1,
+      "events": 825430,
+      "audit_evidence": 1052,
+      "objects": 22983,
+      "uncompressed_bytes": 374655056,
+      "compressed_bytes": 80644319,
+      "references": 23275,
+      "deduplicated_references": 292,
+      "missing_objects": 1,
+      "journal_mode": "wal",
+      "integrity": "ok",
+      "redaction_policy": "canonical-v1",
+      "hot_payload_limit": 2048,
+      "compatibility_rows": 847436,
+      "migration": "running",
+      "migration_examined": 226500,
+      "migration_changed": 84973,
+      "migration_error": null,
+      "measured_at": "2026-10-25T17:32:59.465836+00:00",
+      "measurement_state": "measured"
+    }
+  },
+  "last_error_present": false,
+  "scope": "Supported owner GET of a cached snapshot. No new maintenance, GC, retention, backup or fault workload was invoked. Last-run phases are inclusive wall/thread-CPU spans; process maxima, phase durations and observer latency are distinct. Native busy/GIL/scheduling/physical IO remain unseparated."
+}

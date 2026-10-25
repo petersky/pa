@@ -51,6 +51,16 @@ def _canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode()
 
 
+def _gc_candidate_hash(directory: str, name: str) -> str:
+    # Ordinary cold filenames have one exact suffix and 62 hexadecimal digits.
+    # Keep Path.stem for every other spelling, including hidden or odd suffixes.
+    if len(name) == 67 and name.endswith(".zlib"):
+        digest = directory + name[:-5]
+        if _COLD_HASH.fullmatch(digest) is not None:
+            return digest
+    return directory + Path(name).stem
+
+
 def redact_payload(value: Any, *, key: str = "") -> Any:
     """Return deterministic, provider-neutral transcript content."""
     if _SECRET_KEY.search(key):
@@ -539,7 +549,7 @@ class TranscriptStorage:
         paths = iglob("*/*.zlib", root_dir=self.objects_dir, include_hidden=True)
         while batch := list(islice(paths, 128)):
             digests = [
-                directory + Path(name).stem
+                _gc_candidate_hash(directory, name)
                 for directory, name in map(os.path.split, batch)
             ]
             # Keep live hashes inside SQLite instead of materializing every
