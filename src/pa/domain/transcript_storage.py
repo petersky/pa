@@ -541,15 +541,19 @@ class TranscriptStorage:
                 directory + Path(name).stem
                 for directory, name in map(os.path.split, batch)
             ]
-            # A speculative positive reference can only keep bytes for this
-            # pass. Avoid contending with publishers for wholly live batches;
-            # every possible deletion still needs fresh proof under their lock.
+            # Keep live hashes inside SQLite instead of materializing every
+            # retained row in Python. This bounded speculative filter can only
+            # defer collection; every possible deletion still needs fresh proof
+            # under the publication lock below.
             with self._conn() as conn:
-                marks = ",".join("?" for _ in digests)
-                prelive = {row[0] for row in conn.execute(
-                    f"SELECT hash FROM transcript_objects WHERE ref_count>0 AND hash IN ({marks})", digests,
+                unreferenced = {row[0] for row in conn.execute(
+                    """SELECT candidate.value FROM json_each(?) AS candidate
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM transcript_objects AS obj
+                           WHERE obj.hash=candidate.value AND obj.ref_count>0
+                       )""", (json.dumps(digests),),
                 ).fetchall()}
-            candidates = [(path, digest) for path, digest in zip(batch, digests) if digest not in prelive]
+            candidates = [(path, digest) for path, digest in zip(batch, digests) if digest in unreferenced]
             if not candidates:
                 continue
             batch, digests = map(list, zip(*candidates))

@@ -1,7 +1,7 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-24T21:49:21.905449+00:00",
+  "as_of": "2026-10-25T16:00:40.863594+00:00",
   "completion": "OPEN: all findings retain unverified scope; no whole-PA acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
@@ -212948,13 +212948,119 @@
         }
       },
       "implemented": "Source-only metrics directory scan; both fresh health passes/SQLquick_check/event-reference authority unchanged.",
-      "merged": [],
-      "deployed": "Not installed;6573loadedbaseline remains",
+      "merged": [
+        "https://github.com/petersky/pa/pull/572"
+      ],
+      "deployed": "Exact87e/package921c50/PID68901/startupa74e/Interactive4 independently verified; wholepath/acceptance stillopen.",
       "retested": "78contracts incl actual case-alias and directory-search-permission parity;10alternating final fullhealthpairs,100iteration finalcandidate9600ordered/0warnings but1476.160msmaintenance residual. All prior stages retained.",
       "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
       "resolution": "open",
       "next_actor": "this systemic card/session",
-      "next_action": "Ready supervisedPR/exacthead independentgreen, integration and coordinated activation/retest; continue remaining collector/native/production tails."
+      "next_action": "Continue bothfreshhealthread/nativeintegrity CPU/SQL/IO attribution and broader deployedacceptance; no snapshot caching/substitution.",
+      "stage_history": [
+        {
+          "as_of": "before_loaded87e4_stage",
+          "values": {
+            "id": "concern:transcript-health-directory-probes",
+            "kind": "concern",
+            "finding": "Fresh transcript health repeats per-reference filesystem probes",
+            "family": "transcript",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "confirmed_call_amplification_source_repair_measured",
+            "cause": "Each of two distinct fresh maintenance health paths checks every event-derived cold hash separately;12511Path.existscalls per health measurement. Directory scan avoids ordinary per-file stat, sparse<=8refs keep individual checks; symlink/error/malformed reference semantics retained.",
+            "measurement": {
+              "individual": {
+                "wall_ms": {
+                  "samples": 10,
+                  "p50": 80.0315,
+                  "p95": 80.99825,
+                  "p99": 80.99825,
+                  "max": 80.99825
+                },
+                "thread_cpu_ms": {
+                  "samples": 10,
+                  "p50": 79.989208,
+                  "p95": 80.95525,
+                  "p99": 80.95525,
+                  "max": 80.95525
+                },
+                "path_exists": {
+                  "samples": 10,
+                  "p50": 12511,
+                  "p95": 12511,
+                  "p99": 12511,
+                  "max": 12511
+                },
+                "directory_scans": {
+                  "samples": 10,
+                  "p50": 0,
+                  "p95": 0,
+                  "p99": 0,
+                  "max": 0
+                },
+                "python_stat_calls": {
+                  "samples": 10,
+                  "p50": 12511,
+                  "p95": 12511,
+                  "p99": 12511,
+                  "max": 12511
+                }
+              },
+              "directory": {
+                "wall_ms": {
+                  "samples": 10,
+                  "p50": 45.041458,
+                  "p95": 45.850084,
+                  "p99": 45.850084,
+                  "max": 45.850084
+                },
+                "thread_cpu_ms": {
+                  "samples": 10,
+                  "p50": 44.999625,
+                  "p95": 45.815083,
+                  "p99": 45.815083,
+                  "max": 45.815083
+                },
+                "path_exists": {
+                  "samples": 10,
+                  "p50": 0,
+                  "p95": 0,
+                  "p99": 0,
+                  "max": 0
+                },
+                "directory_scans": {
+                  "samples": 10,
+                  "p50": 256,
+                  "p95": 256,
+                  "p99": 256,
+                  "max": 256
+                },
+                "python_stat_calls": {
+                  "samples": 10,
+                  "p50": 256,
+                  "p95": 256,
+                  "p99": 256,
+                  "max": 256
+                }
+              }
+            },
+            "implemented": "Source-only metrics directory scan; both fresh health passes/SQLquick_check/event-reference authority unchanged.",
+            "merged": [],
+            "deployed": "Not installed;6573loadedbaseline remains",
+            "retested": "78contracts incl actual case-alias and directory-search-permission parity;10alternating final fullhealthpairs,100iteration finalcandidate9600ordered/0warnings but1476.160msmaintenance residual. All prior stages retained.",
+            "artifact": "docs/benchmarks/systemic-loaded6573-health-scan-20261024.json",
+            "resolution": "open",
+            "next_actor": "this systemic card/session",
+            "next_action": "Ready supervisedPR/exacthead independentgreen, integration and coordinated activation/retest; continue remaining collector/native/production tails.",
+            "stage_history": []
+          }
+        }
+      ],
+      "loaded87e4_followup": {
+        "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+        "sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+        "resolution": "open"
+      }
     },
     {
       "id": "concern:fleet-required-refresh-cadence",
@@ -212965,15 +213071,52 @@
       "cause_classification": "confirmed_cadence_mismatch_live_timeline",
       "cause": "Required cache freshness3s vs backgroundloop15s; successful peer observations refresh~15s. Passive37s/eightcachedGET samples71of72peer requiredfields stale;0newslow/failed/timedoutcalls duringwindow. Historicaltransporttimeoutcause remainsunverified.",
       "implemented": "One owned worker per active instance/required dimension renews before the unchanged expiry with bounded duration headroom (0.3\u20131.5s), using existing single-flight even for early renewal. Local monotonic start floor1.5s prevents corrupt/invalidation/publication busy loops; unsuccessful probes retain15s delay. Membership still polls15s. Cancel/reap owned workers on removal/shutdown; shielded probes retain existing publication ownership.",
-      "merged": [],
-      "deployed": "Not installed; running6573 retains old cadence",
+      "merged": [
+        "https://github.com/petersky/pa/pull/573"
+      ],
+      "deployed": "Exact87e/package921c50/PID68901/startupa74e/Interactive4 verified. Deployedtimeline interrupted byclamshellsleep;34/72peer fields stale; awakeacceptance pending.",
       "retested": "121contracts;24s baseline/candidate synthetic private peer/cache fixture retains every sample and logical amplification",
       "resolution": "open",
       "next_actor": "this original systemic session",
-      "next_action": "Require source integration/scale and exact deployed validation; maintain3s freshness/15s failure backoff and truthful failure. Historical transport and whole-system acceptance remain open.",
+      "next_action": "Retest continuousawake cadence/scale/failedpeer paths andaddedHTTP/cachewritecost; preserve3sTTL/15sfailurebackoff. Historicaltransport andinitial552samples stillunattributed.",
       "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
-      "artifact_sha256": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
-      "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance."
+      "artifact_sha256": "5bf92ef625c2968fd6ba0d0caec9cce6c2ce43dfc83073e13efef5bc30df0b50",
+      "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
+      "stage_history": [
+        {
+          "as_of": "before_loaded87e4_stage",
+          "values": {
+            "id": "concern:fleet-required-refresh-cadence",
+            "kind": "concern",
+            "finding": "Required peer freshness expires before normal background refresh",
+            "family": "fleet",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "cause_classification": "confirmed_cadence_mismatch_live_timeline",
+            "cause": "Required cache freshness3s vs backgroundloop15s; successful peer observations refresh~15s. Passive37s/eightcachedGET samples71of72peer requiredfields stale;0newslow/failed/timedoutcalls duringwindow. Historicaltransporttimeoutcause remainsunverified.",
+            "implemented": "One owned worker per active instance/required dimension renews before the unchanged expiry with bounded duration headroom (0.3\u20131.5s), using existing single-flight even for early renewal. Local monotonic start floor1.5s prevents corrupt/invalidation/publication busy loops; unsuccessful probes retain15s delay. Membership still polls15s. Cancel/reap owned workers on removal/shutdown; shielded probes retain existing publication ownership.",
+            "merged": [],
+            "deployed": "Not installed; running6573 retains old cadence",
+            "retested": "121contracts;24s baseline/candidate synthetic private peer/cache fixture retains every sample and logical amplification",
+            "resolution": "open",
+            "next_actor": "this original systemic session",
+            "next_action": "Require source integration/scale and exact deployed validation; maintain3s freshness/15s failure backoff and truthful failure. Historical transport and whole-system acceptance remain open.",
+            "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+            "artifact_sha256": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
+            "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
+            "stage_history": []
+          }
+        }
+      ],
+      "loaded87e4_followup": {
+        "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+        "sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+        "resolution": "open"
+      },
+      "evidence_hash_correction": {
+        "previous": "c26365ac5f725208d92b061192d61d1c9e68b14d3422c33f0cadd01077d8e850",
+        "reason": "Priorrow hashc26365ac names auxiliary6573passiveFleet timeline, not the mainartifactpath. Originaltimeline/inputmanifest retained; primaryartifact pointer corrected.",
+        "corrected_sha256": "5bf92ef625c2968fd6ba0d0caec9cce6c2ce43dfc83073e13efef5bc30df0b50"
+      }
     },
     {
       "id": "route-peer6573:/api/agent/providers/mcp-bootstrap",
@@ -213275,7 +213418,7 @@
       "finding": "Disposable mixed-peer fixture observes wall/monotonic clock discontinuity; earlier scale stale cause remains unverified",
       "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
       "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
-      "cause_classification": "confirmed_process_clock_discontinuity_cause_and_production_impact_unverified",
+      "cause_classification": "current_host_sleep_correlated_historical_causes_unverified",
       "cause": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
       "implemented": false,
       "merged": [],
@@ -213283,7 +213426,55 @@
       "retested": "Bounded clock-instrumented24s perstage private fixture only; original552stale samples and both complete stages retained",
       "resolution": "open",
       "next_actor": "This original systemic session",
-      "next_action": "Correlate bounded wall/monotonic behavior and production observation/deadline freshness evidence without changing clocks/power/thresholds. Do not infer attribution for previous scale or historical service failures. Preserve truthful stale states and all acceptance gaps."
+      "next_action": "Obtain uninterruptedawake acceptance window ordeclare hardwareavailabilitylimits; do not alter power/clockpolicy. Preserve earlierclock/fleet cases withoutretroattribution.",
+      "stage_history": [
+        {
+          "as_of": "before_loaded87e4_stage",
+          "values": {
+            "id": "concern:wall-monotonic-clock-discontinuity",
+            "kind": "concern",
+            "family": "runtime",
+            "finding": "Disposable mixed-peer fixture observes wall/monotonic clock discontinuity; earlier scale stale cause remains unverified",
+            "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+            "artifact": "docs/benchmarks/systemic-fleet-required-refresh-20261024.json",
+            "cause_classification": "confirmed_process_clock_discontinuity_cause_and_production_impact_unverified",
+            "cause": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance.",
+            "implemented": false,
+            "merged": [],
+            "deployed": "No clock/time/power/service mutation or new activation",
+            "retested": "Bounded clock-instrumented24s perstage private fixture only; original552stale samples and both complete stages retained",
+            "resolution": "open",
+            "next_actor": "This original systemic session",
+            "next_action": "Correlate bounded wall/monotonic behavior and production observation/deadline freshness evidence without changing clocks/power/thresholds. Do not infer attribution for previous scale or historical service failures. Preserve truthful stale states and all acceptance gaps.",
+            "stage_history": []
+          }
+        }
+      ],
+      "loaded87e4_followup": {
+        "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+        "sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+        "resolution": "open"
+      },
+      "current_observation": "Read-onlypmsetrecords ClamshellSleep23:44:34Z andDarkWake23:51:38Z concurrentwith422.557s wall-minus-monotonicstep. Exact28power-events afterexcludingWakeRequests; original parser outputretained separately."
+    },
+    {
+      "id": "concern:gc-speculative-live-row-hydration",
+      "kind": "concern",
+      "finding": "Speculative GC hydrates every retained livehash before filtering possible deletion candidates",
+      "family": "maintenance",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_row_materialization_amplification",
+      "cause": "12511all-live coldobjects cross SQLite/Python boundary per sweep althoughonlypossibleunreferencedcandidates needfreshlockedrecheck;196SQLcalls/12511rows in mixedstage.",
+      "implemented": "Bound128candidate JSONparameter andNOTEXISTSpositive-reference query returnonlyunreferencedhashes; finalfreshpublicationlock/referencequery/objectreaders/unlink behavior unchanged.",
+      "merged": [],
+      "deployed": "Notinstalled; currentservice87e retainsoldGCquery.",
+      "retested": "85contracts/3new, archivedbaseline2newfailures; final5alternatingpairs12511->0rows/allbytespreserved; exactcandidate mixed1009600ordered/0warnings/errors butmaintenance1098.053ms remains.",
+      "resolution": "open",
+      "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+      "artifact_sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+      "next_actor": "This originalsystemic session, then normal17dindependentverifier",
+      "next_action": "Integrate exactreviewedhead through stablegreen+independentchecks, then exactactivation/retest aftercurrentbbcontinuation settles. Continue residualhealth phases/fullinventory; no closurefromthissourcefix.",
+      "residual": "Source/microcases cannotestablishwholePA acceptance. Successfulbusy/GIL/scheduling/physicaldiskwriteamp remainunseparated; maintainfreshdurableorder/admission/receipt/CAS/sync/acceptance semantics."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -307803,5 +307994,71 @@
       }
     },
     "residual": "All stages retained. Initial9peer candidate has552/10968healthy samples stale despite regular~2.7s starts; exact cause unverified because wall/observed timestamps were not retained there. New timestamp/clock-instrumented9peer repeat (application unchanged) has0/10968candidate stale. Repeat baseline observed51.011154652s wall-minus-monotonic offset range; candidate8.208275ms range. This confirms a clock discontinuity in that disposable process, not its source, production-server clock behavior or cause of the previous552stale samples. Never pool or replace stages, hide staleness, extendTTL, change host time/power policy or claim acceptance."
+  },
+  "loaded87e4_gc_candidate_stage": {
+    "artifact": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json",
+    "sha256": "3c96463597afcfedc40f0c3caac500110ab4378e9cbb56b9b1dc690ea95df655",
+    "raw": "docs/benchmarks/systemic-loaded87e4-gc-prefilter-20261025.raw.json.gz",
+    "source_base": "87e49ca8e256d4ef3641e10b5b0a2de06fb3a17f",
+    "activation": {
+      "runtime_build": {
+        "loaded_module_version": "1.5.9",
+        "source_revision": "87e49ca8e256d4ef3641e10b5b0a2de06fb3a17f",
+        "package_identity": "sha256:921c50e3c847d7ad15c149d74c76ce4a29bd059e7db476e89ea488ec5dcdfadb",
+        "pid": 68901,
+        "startup_id": "a74e6236-d493-4254-80fc-34f08f029917"
+      },
+      "configuration_revision": "86968d122a80e240ea560052f275872c5d22699a35b218618200da9e62fc1767",
+      "installed_source_files": 438,
+      "package_records": 439,
+      "templates": 38,
+      "unchanged_dependency_versions": 52,
+      "listener_interpreter": "/Users/petersky/.local/share/uv/tools/pa/bin/python3",
+      "listener_parent_pid": 68898,
+      "launchd_spawn": "Interactive(4)",
+      "native_receipt": {
+        "id": "bb51550b-0022-55a3-a8dc-b59f3cda75ac",
+        "idempotency_key": "systemic-exact87e4-health-fleet-managed-restart-20261024-v1",
+        "status": "continuation_queued",
+        "delivered_at": null,
+        "error": null,
+        "observation": {
+          "identity": {
+            "version": 1,
+            "owner": "restart",
+            "realm_id": "default",
+            "idempotency_key": "systemic-exact87e4-health-fleet-managed-restart-20261024-v1",
+            "operation": "agent_restart_handoff",
+            "request_fingerprint": null
+          },
+          "status": "continuation_queued",
+          "accepted": true,
+          "committed": true,
+          "projected": null,
+          "effect": "pending",
+          "phase": "running",
+          "phase_version": 5,
+          "attempt": 1,
+          "reason_code": "continuation_queued",
+          "next_action": "finish_continuation_turn",
+          "effect_state": "pending",
+          "worker_state": "active",
+          "domain_stage": "continuation_queued",
+          "session_id": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+          "handoff_id": "bb51550b-0022-55a3-a8dc-b59f3cda75ac",
+          "continuation_prompt_id": "restart-handoff:bb51550b-0022-55a3-a8dc-b59f3cda75ac"
+        }
+      },
+      "limit": "Loaded identity/installed interpreter and438installedsourcefiles verified. No arbitrary live-memory module introspection API was used; every loaded branch is not thereby exercised."
+    },
+    "runtime_inventory": {
+      "operations": 85,
+      "routes": 30,
+      "new_names": 0
+    },
+    "tested_contracts": 85,
+    "findings_after": 662,
+    "concerns_after": 129,
+    "whole_card_accepted": false
   }
 }

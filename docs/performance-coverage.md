@@ -1,3 +1,44 @@
+# Loaded87e4, host availability and bounded GC candidate filtering — 2026-10-25
+
+All **662 findings / 129 concerns remain open**. Every prior661finding and historical stage remains; one measured GC materialization concern is added. [Complete stage evidence](benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json) and [lossless complete raw inputs](benchmarks/systemic-loaded87e4-gc-prefilter-20261025.raw.json.gz) retain every returned operation/route, count/window/maximum/byte value, raw sample and failed/interrupted stage. No two-cause or integration blanket closure.
+
+Actual activation: macbook `0c7d8ecb` loaded `87e49ca8` / package `921c50` / PID68901 / startupa74e; installed438sourcefiles/439RECORDchecksums/38templates/Python3.14.2/unchanged52dependencies verified, launchdInteractive4/config86968 unchanged. PR572 and573 are merged; currentGCcandidate is **source-only**. Nativebb51550b continuation is running and settles after this turn; no additionalrestart is requested.
+
+Deployed95ordinaryGETs on2026-10-24T23:44:14.936516Z–23:44:23.306735Z:95success/0errors/0>=500ms, max81.500ms. FleetHTML1,131,281B/overview969,854B remain payload concerns. Private10fakeprovider cold sessions/drains first61.743ms/subsequentmax30.876ms; this excludes fullKernel/realprovider/network/placement acceptance.
+
+Host interruption is now directly correlated for the current observation: read-onlypowerlog ClamshellSleep23:44:34Z→DarkWake23:51:38Z overlaps422.557s wall-minus-monotonic change. EightcachedFleetreads span37monotonic/459.682wallseconds, with34/72peer fields stale and24/24localfresh. These samples remain a **failed/interrupted deployed scenario**, not an awake-cadence pass. InitialWakeRequests parser misclassification and alloriginalsamples are retained/corrected. Earlier552stalesamples and historicalpeer failures are not retroattributed. No power/clock setting or sleep prevention changed; durable awake-window request13076 remains pending, independent source work continues.
+
+Confirmed source cost: speculativeGC returns all livehashes only to discard them. The patch sends at most128digests through one JSONparameter and returns only possible unreferencedhashes. It retains the finalfresh check under the originalpublicationlock, readerpins,128pathbatches, positive-onlyreferences and nativeunlinkerrors. **85contracts pass,3new cases;2new contracts fail against archived87e.** Boot550routes/build/diffcheck pass.
+
+Final five alternating all-live pairs12511objects: SQLite rows12511→0 eachsweep, same198observedcalls (includingconnectionPRAGMAs), everyfilebyteunchanged. Medianwall34.361→31.197ms, max36.050→32.066ms. This is a small one-worker comparison, not realisticwhole-PA acceptance; originalprototype/timing failures are separately retained. Reproduce with `uv run python scripts/benchmark_transcript_gc_candidates.py --output /tmp/pa-gc-comparison.json`.
+
+Exact438source-file/29loadedmodule/38template mixed100 stages remain separate. Candidate first04:25:51–04:26:19Z: maintenance1098.053ms; separateinstalledbaseline04:27:43–04:28:11Z:1737.598ms. Clock-offset changes <0.065ms both,9600ordered retained events/0warnings/failures/timeouts/rejections each; **one500msmaintenance violation remains in each**. Collector rows12511→0, baseline870.006ms/193.788CPU vs candidate236.791ms/78.612CPU; this shared-host single sequential comparison is not a statistical wholepathspeedup claim. Both fresh health reads/nativequick_check remain; candidate health phases329.057/392.908ms still dominate. Earlierinstalled4511.336ms interrupted13wallminute/46.737monotonic stage, threadnumeric2550.254ms and invalid-cross-threadcProfile3490.885ms are all retained.
+
+Naturalbackupd27f completed with323,670,886available-data bytes/integritytrue/data_completefalse/exact2842B historicalgap; normalexistingretention pruned5d3a4333. Its95foregroundrequests allpassed/max191.122ms. No agentcapture/restore/delete/replay occurred. Originalbackupb527 andDB89957 acceptedscopes stayclosed; whole-system17dindependent_agent_v1 remains verification_pending/missingactive+verified+acceptance. Tenoriginalattachments/history remain.
+
+Complete currentruntime snapshot: macbook source87e/PID68901, 2026-10-25T13:31:46.819104+00:00–2026-10-25T13:31:46.916227+00:00, **85operations /30registeredroutegroups**, all namesalreadyretained. The table below is every slow-or-failed operation in that snapshot. Counts/processmaxima span theprocess lifetime includingordinary background andsleep/wake; quantilesare returnedboundedwindows. Fast95GETs do not erase1056Fleettimeouts,7PRpeer failures,6syncpeer failures orhealth/provision outcomes. Full85operation and30route numeric records are losslessly retained.
+
+| Operation | Submitted / slow / failed / timed out | Process max ms | Window samples / p50 / p95 / p99 / max ms |
+|---|---:|---:|---|
+| `fleet.overview.sync` | 1088/1/0/0 | 1302.002 | 256/6.261/47.231/57.821/93.088 |
+| `fleet.overview_cache_write` | 8982/3/0/0 | 1442.988 | 256/2.125/8.362/71.554/73.313 |
+| `health.canonical_obligation` | 535/1/0/1 | 1012.603 | 256/2.058/27.367/387.701/1012.603 |
+| `http.fleet_overview` | 5708/0/1056/1056 | 4164.244 | 256/17.38/4022.3/4035.164/4035.861 |
+| `http.pr_supervisor_peer` | 84/0/7/0 | 5005.141 | 84/41.016/4526.326/5005.141/5005.141 |
+| `progress.sequence_allocate` | 261/1/0/0 | 1328.78 | 256/27.08/61.548/124.196/1328.78 |
+| `sqlite.agent_session_save` | 74/2/0/0 | 1628.396 | 74/3.559/49.247/1628.396/1628.396 |
+| `sync.peer_http` | 42/0/6/0 | 3117.256 | 42/27.363/3012.137/3117.256/3117.256 |
+| `sync.reconcile_head` | 36/2/0/0 | 865.822 | 36/136.063/566.248/865.822/865.822 |
+| `workspace.collect_garbage` | 1/1/0/0 | 1697.723 | 1/1697.723/1697.723/1697.723/1697.723 |
+| `workspace.project_provision` | 7/0/1/0 | 1352.002 | 7/913.404/1352.002/1352.002/1352.002 |
+
+Remaining named actors: this same systemic session owns sourceintegration/exactactivation/awake retest, residualhealth/SQL/GIL/nativebusy/CPU/disk/fsync/writeamp/payload/provider/MCP/placement/workspace/queue/receipt/CAS/lease/sync/GCpublication/savedplan/peer/logloss/retention inventory. NormalPAscheduler owns17dindependent finalverification. No warning/deadline/TTL/durability/default/permission/acceptance requirement changed. All unexercised181baselineoperation/115route branches remain open.
+
+Evidence-pointer correction: the cadence row previously paired its mainartifact path with auxiliarypassive-timelineSHA c26365ac. That originaltimeline remains in the inputmanifest; mainartifactSHA is corrected to its actual file digest and the oldrow values are retained in stage_history.
+
+---
+
+The following older summary and base ledger retain their original as-of status; the loaded87e4 stage above and JSONstage_history supply the current deployment updates.
 # Independent required Fleet refresh and complete peer inventory — 2026-10-24
 
 All **661 findings / 128 concerns remain open**. Every prior654row is byte-for-value preserved; the previously disclosed cadence concern and five newly retained peer route families are included. [Complete numeric evidence](benchmarks/systemic-fleet-required-refresh-20261024.json) retains all returned peer operations/routes/bytes/phase windows, passive freshness samples and both synthetic comparison stages.

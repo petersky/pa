@@ -37,8 +37,9 @@ def after_first_live_query(storage, monkeypatch, action):
     def observed():
         selected = []
         with original() as conn:
-            conn.set_trace_callback(lambda sql: selected.append(True) if sql.startswith(
-                "SELECT hash FROM transcript_objects WHERE ref_count>0") else None)
+            conn.set_trace_callback(lambda sql: selected.append(True) if (
+                sql.lstrip().startswith("SELECT") and "transcript_objects" in sql
+            ) else None)
             try:
                 yield conn
             finally:
