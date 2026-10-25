@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import uuid4
 
 from pa.core.sqlite_metrics import ObservedConnection
@@ -29,6 +29,12 @@ def _dt(value: str | None) -> datetime | None:
 
 class StaleFenceError(RuntimeError):
     pass
+
+
+class _LifecycleWatchLink(NamedTuple):
+    originating_session_id: str | None
+    card_id: str | None
+    status: PRWatchStatus
 
 
 class PRSupervisorStore:
@@ -421,6 +427,24 @@ class PRSupervisorStore:
         with self._conn() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._row_to_watch(row) for row in rows]
+
+    def lifecycle_watch_links(self) -> list[_LifecycleWatchLink]:
+        """Fresh lifecycle obligations without retained observations or proofs.
+
+        Keep every realm, terminal watch and retired watch. Lifecycle's active
+        status guard deliberately differs from the default live-watch filter,
+        and terminal links are also evidence for its existing close decision.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT originating_session_id, card_id, status FROM pr_watches "
+                "ORDER BY updated_at DESC"
+            ).fetchall()
+        return [
+            _LifecycleWatchLink(row["originating_session_id"], row["card_id"],
+                                PRWatchStatus(row["status"]))
+            for row in rows
+        ]
 
     def session_watch_summaries(self, session) -> list[dict]:
         """Sidebar links without hydrating watch observations or policy proofs."""

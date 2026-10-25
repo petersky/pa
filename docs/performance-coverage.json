@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T21:32:02.037802+00:00",
-  "completion": "OPEN: all 670 findings / 136 concerns. Actual f4ba2d76 activation is proven; maintenance still exceeds 500 ms. The failure observer is not yet deployed and does not classify historical causes.",
+  "as_of": "2026-10-25T21:57:47.252827+00:00",
+  "completion": "OPEN: all 671 findings / 137 concerns. Actual 16821dc9 activation and scoped retests proven; mixed/natural maintenance, stale Macmini fields/status 500 and every broader criterion remain open. Lifecycle metadata repair is source only.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -186051,6 +186051,12 @@
         "stage": "One current bounded identity/readiness/status/runtime read per peer, no source/files/remote-log or fleet acceptance proof.",
         "next_actor": "this systemic card/session",
         "next_action": "Retain separate host/build populations; establish Macmini loaded-source proof and supported peer logs/causality, coordinate exact protected activation and realistic retests without overriding placement or defaults."
+      },
+      "exact588_activation_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact588-activation-lifecycle-20261025.json",
+        "sha256": "29a661d9d5a54b66525cea3727c17af475cd8bb774feb24f5c59402709b77cbb",
+        "resolution": "open",
+        "next_action": "Retain exact separate numeric current failures, peer status 500 and logging gaps; establish causal evidence through supported authority, no peer restart/update or credential fallback."
       }
     },
     {
@@ -186108,6 +186114,12 @@
         "resolution": "open",
         "source_fix": "Private observer test explicitly settles completion; no PA runtime semantic change for this correction.",
         "next_action": "Run corrected-head required CI and inspect exact artifacts; preserve all first-attempt failures. Native FD observation is only a current point; historical rotation, retention, per-line attribution and failure causes remain open."
+      },
+      "exact588_activation_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact588-activation-lifecycle-20261025.json",
+        "sha256": "29a661d9d5a54b66525cea3727c17af475cd8bb774feb24f5c59402709b77cbb",
+        "resolution": "open",
+        "next_action": "Retain exact separate numeric current failures, peer status 500 and logging gaps; establish causal evidence through supported authority, no peer restart/update or credential fallback."
       }
     },
     {
@@ -214661,6 +214673,538 @@
       "resolution": "open",
       "next_actor": "this systemic card/session",
       "next_action": "Verify source/build route registration, request validity and actual endpoint/background branches; retain bytes/windows/errors separately from local route naming."
+    },
+    {
+      "id": "concern:session-lifecycle-watch-proof-hydration",
+      "kind": "concern",
+      "finding": "Session lifecycle sweeps hydrate retained PR watch proofs only to read three metadata fields",
+      "family": "session_lifecycle",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_application_materialization_amplification_historical_latency_unpartitioned",
+      "cause": "Sweep reads every complete PR watch, but decisions use only originating_session_id, card_id and status. Query selects those three columns without model/proof hydration. Every realm/status/terminal/retired link and fresh subsequent status remain; no schema/cadence/closure/fencing change.",
+      "fix_or_existing_owner": "Same systemic session; scoped PRSupervisorStore.lifecycle_watch_links read used by existing sweep.",
+      "implemented": "Source patch, ready protected PR and integration gates pending",
+      "merged": [],
+      "deployed": "Not deployed; loaded source remains 16821dc9",
+      "retested": "88 passed and 10 passing subtests; status/retirement/link parity and SQL authorizer forbid reading proof columns; fresh transitions preserved.",
+      "measurement": {
+        "contract": "pa.lifecycle-watch-links-benchmark/v1",
+        "started_at": "2026-10-25T21:54:44.448249+00:00",
+        "samples": [
+          {
+            "pair": 0,
+            "variant": "full",
+            "wall_ms": 13.954208,
+            "thread_cpu_ms": 13.137916,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 0,
+            "variant": "links",
+            "wall_ms": 1.221959,
+            "thread_cpu_ms": 1.198875,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 1,
+            "variant": "links",
+            "wall_ms": 1.009125,
+            "thread_cpu_ms": 0.985834,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 1,
+            "variant": "full",
+            "wall_ms": 13.366,
+            "thread_cpu_ms": 12.6145,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 2,
+            "variant": "full",
+            "wall_ms": 13.420916,
+            "thread_cpu_ms": 12.70475,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 2,
+            "variant": "links",
+            "wall_ms": 1.108708,
+            "thread_cpu_ms": 1.093916,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 3,
+            "variant": "links",
+            "wall_ms": 0.994958,
+            "thread_cpu_ms": 0.981041,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 3,
+            "variant": "full",
+            "wall_ms": 13.926458,
+            "thread_cpu_ms": 12.759041,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 4,
+            "variant": "full",
+            "wall_ms": 13.4515,
+            "thread_cpu_ms": 12.779792,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 4,
+            "variant": "links",
+            "wall_ms": 1.165167,
+            "thread_cpu_ms": 1.141292,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 5,
+            "variant": "links",
+            "wall_ms": 1.092958,
+            "thread_cpu_ms": 1.071875,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 5,
+            "variant": "full",
+            "wall_ms": 13.99725,
+            "thread_cpu_ms": 13.31725,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 6,
+            "variant": "full",
+            "wall_ms": 13.674417,
+            "thread_cpu_ms": 12.828916,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 6,
+            "variant": "links",
+            "wall_ms": 1.223167,
+            "thread_cpu_ms": 1.204959,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 7,
+            "variant": "links",
+            "wall_ms": 1.206375,
+            "thread_cpu_ms": 1.178875,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 7,
+            "variant": "full",
+            "wall_ms": 16.897625,
+            "thread_cpu_ms": 16.185166,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 8,
+            "variant": "full",
+            "wall_ms": 14.076875,
+            "thread_cpu_ms": 13.386917,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 8,
+            "variant": "links",
+            "wall_ms": 1.509958,
+            "thread_cpu_ms": 1.488917,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 9,
+            "variant": "links",
+            "wall_ms": 1.2755,
+            "thread_cpu_ms": 1.251958,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 9,
+            "variant": "full",
+            "wall_ms": 15.419792,
+            "thread_cpu_ms": 14.724333,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 10,
+            "variant": "full",
+            "wall_ms": 14.70125,
+            "thread_cpu_ms": 13.522333,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 10,
+            "variant": "links",
+            "wall_ms": 1.475584,
+            "thread_cpu_ms": 1.451584,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 11,
+            "variant": "links",
+            "wall_ms": 1.09575,
+            "thread_cpu_ms": 1.082333,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 11,
+            "variant": "full",
+            "wall_ms": 14.834083,
+            "thread_cpu_ms": 13.846208,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 12,
+            "variant": "full",
+            "wall_ms": 14.410625,
+            "thread_cpu_ms": 13.709416,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 12,
+            "variant": "links",
+            "wall_ms": 1.300041,
+            "thread_cpu_ms": 1.282792,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 13,
+            "variant": "links",
+            "wall_ms": 1.185083,
+            "thread_cpu_ms": 1.11675,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 13,
+            "variant": "full",
+            "wall_ms": 14.1735,
+            "thread_cpu_ms": 13.479208,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 14,
+            "variant": "full",
+            "wall_ms": 14.448959,
+            "thread_cpu_ms": 13.854291,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 14,
+            "variant": "links",
+            "wall_ms": 1.39825,
+            "thread_cpu_ms": 1.375417,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 15,
+            "variant": "links",
+            "wall_ms": 1.174542,
+            "thread_cpu_ms": 1.152541,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 15,
+            "variant": "full",
+            "wall_ms": 14.652417,
+            "thread_cpu_ms": 13.963833,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 16,
+            "variant": "full",
+            "wall_ms": 15.013084,
+            "thread_cpu_ms": 14.396125,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 16,
+            "variant": "links",
+            "wall_ms": 1.351541,
+            "thread_cpu_ms": 1.328583,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 17,
+            "variant": "links",
+            "wall_ms": 1.099916,
+            "thread_cpu_ms": 1.079666,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 17,
+            "variant": "full",
+            "wall_ms": 15.1545,
+            "thread_cpu_ms": 14.5095,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 18,
+            "variant": "full",
+            "wall_ms": 14.686708,
+            "thread_cpu_ms": 13.802541,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 18,
+            "variant": "links",
+            "wall_ms": 1.296792,
+            "thread_cpu_ms": 1.278666,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 19,
+            "variant": "links",
+            "wall_ms": 1.221,
+            "thread_cpu_ms": 1.204166,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 19,
+            "variant": "full",
+            "wall_ms": 15.091208,
+            "thread_cpu_ms": 13.820958,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 20,
+            "variant": "full",
+            "wall_ms": 13.810125,
+            "thread_cpu_ms": 13.103,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 20,
+            "variant": "links",
+            "wall_ms": 1.119333,
+            "thread_cpu_ms": 1.092208,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 21,
+            "variant": "links",
+            "wall_ms": 1.003625,
+            "thread_cpu_ms": 0.983375,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 21,
+            "variant": "full",
+            "wall_ms": 20.164958,
+            "thread_cpu_ms": 13.422625,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 22,
+            "variant": "full",
+            "wall_ms": 16.15475,
+            "thread_cpu_ms": 13.281958,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 22,
+            "variant": "links",
+            "wall_ms": 1.22725,
+            "thread_cpu_ms": 1.210958,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 23,
+            "variant": "links",
+            "wall_ms": 1.1035,
+            "thread_cpu_ms": 1.086583,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 23,
+            "variant": "full",
+            "wall_ms": 13.610208,
+            "thread_cpu_ms": 12.88525,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 24,
+            "variant": "full",
+            "wall_ms": 13.622,
+            "thread_cpu_ms": 12.91475,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 24,
+            "variant": "links",
+            "wall_ms": 1.134916,
+            "thread_cpu_ms": 1.119125,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 25,
+            "variant": "links",
+            "wall_ms": 1.043708,
+            "thread_cpu_ms": 1.02475,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 25,
+            "variant": "full",
+            "wall_ms": 13.906792,
+            "thread_cpu_ms": 13.157958,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 26,
+            "variant": "full",
+            "wall_ms": 13.975166,
+            "thread_cpu_ms": 12.683917,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 26,
+            "variant": "links",
+            "wall_ms": 1.141167,
+            "thread_cpu_ms": 1.125875,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 27,
+            "variant": "links",
+            "wall_ms": 1.041042,
+            "thread_cpu_ms": 1.028042,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 27,
+            "variant": "full",
+            "wall_ms": 14.517458,
+            "thread_cpu_ms": 13.145875,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 28,
+            "variant": "full",
+            "wall_ms": 13.803958,
+            "thread_cpu_ms": 13.013083,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          },
+          {
+            "pair": 28,
+            "variant": "links",
+            "wall_ms": 1.080583,
+            "thread_cpu_ms": 1.066541,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 29,
+            "variant": "links",
+            "wall_ms": 1.035333,
+            "thread_cpu_ms": 1.019208,
+            "hydrated_models": 0,
+            "materialized_json_bytes": 0
+          },
+          {
+            "pair": 29,
+            "variant": "full",
+            "wall_ms": 14.049125,
+            "thread_cpu_ms": 13.163709,
+            "hydrated_models": 100,
+            "materialized_json_bytes": 6587000
+          }
+        ],
+        "complete": true,
+        "module_path": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/pr_supervisor/store.py",
+        "module_sha256": "982287af988e4c50f193cee280b590331521aa2bc9b2f1d25cfc0898669104e2",
+        "watches": 100,
+        "pairs": 30,
+        "proof_bytes_each": 65536,
+        "decision_fields_equal": true,
+        "latency_ms": {
+          "full": {
+            "samples": 30,
+            "p50": 14.076875,
+            "p95": 16.897625,
+            "p99": 20.164958,
+            "max": 20.164958
+          },
+          "links": {
+            "samples": 30,
+            "p50": 1.141167,
+            "p95": 1.475584,
+            "p99": 1.509958,
+            "max": 1.509958
+          }
+        },
+        "finished_at": "2026-10-25T21:54:45.109828+00:00",
+        "clock_offset_before": 1792242045.475663,
+        "clock_offset_after": 1792242045.4756656,
+        "scope": "Thirty alternating pairs in one private synthetic store. Every status, realm and retired/terminal link is retained. Timers cover only the read, excluding comparison and observer persistence. Materialized JSON bytes are application copy work, not physical disk traffic. No provider closure, production workload, cadence/threshold change or whole-path speedup/acceptance is inferred. Both roots are private before PA imports."
+      },
+      "artifact": "docs/benchmarks/systemic-exact588-activation-lifecycle-20261025.json",
+      "sha256": "29a661d9d5a54b66525cea3727c17af475cd8bb774feb24f5c59402709b77cbb",
+      "resolution": "open",
+      "next_actor": "Same systemic session; normal PA scheduler owns final independent verification",
+      "next_action": "Integrate only after durable stable-head gate and independent exact signals/head+main CI; prove exact activation and representative lifecycle/provider closure. Retain enumeration/matching/dispatch/session/lease/native contention and every broader residual."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309463,6 +310007,16 @@
       "path": "docs/benchmarks/systemic-pr588-cpu-observer-followup-20261025.raw.json.gz",
       "sha256": "b1e758cc6387cbd47142bbf771095010a1cdb4859c04213f2ca45c72148480a7",
       "bytes": 39018
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact588_activation_lifecycle_stage": {
+    "artifact": "docs/benchmarks/systemic-exact588-activation-lifecycle-20261025.json",
+    "sha256": "29a661d9d5a54b66525cea3727c17af475cd8bb774feb24f5c59402709b77cbb",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact588-activation-lifecycle-20261025.raw.json.gz",
+      "sha256": "4e1ee4835d124ee539b4c8de26998887f87c54286c7f45f5309ba30d6dd5002f",
+      "bytes": 662315
     },
     "all_prior_fields_preserved": true
   }

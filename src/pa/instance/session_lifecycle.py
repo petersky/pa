@@ -102,8 +102,7 @@ class SessionLifecyclePolicy:
             watches = (
                 await self._offload(
                     "session_lifecycle.watches",
-                    supervisor.store.list_watches,
-                    include_retired=True,
+                    supervisor.store.lifecycle_watch_links,
                 )
                 if supervisor and getattr(supervisor, "store", None)
                 else []
