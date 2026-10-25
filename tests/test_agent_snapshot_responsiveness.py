@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 from pa.domain.models import AgentSession
 from pa.instance.agent_session import AgentSessionRuntime
-from pa.modules.agent_chat import get_session_snapshot
+from pa.modules.agent_chat import _session_snapshot, get_session_snapshot
+from tests.deadline_evidence import DeadlineEvidence
 
 
 class _ContendedTranscriptStore:
@@ -54,46 +55,53 @@ class AgentSnapshotResponsivenessTests(unittest.IsolatedAsyncioTestCase):
             ),
         )))
 
-        started_cpu = time.thread_time()
-        started = time.monotonic()
-        with (
-            patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
-            patch(
-                "pa.modules.agent_chat._session_reconciliation",
-                return_value={"state": "not_requested"},
-            ),
-            patch(
-                "pa.modules.agent_chat._observability",
-                return_value={"session_state": "busy"},
-            ),
-        ):
-            configured = time.monotonic()
-            try:
-                snapshot = await asyncio.wait_for(
-                    get_session_snapshot(request, runtime.session_id),
-                    timeout=0.2,
-                )
-            except TimeoutError as exc:
-                exc.add_note(
-                    f"setup={configured - started:.6f}s "
-                    f"request_wait={time.monotonic() - configured:.6f}s "
-                    f"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s"
-                )
-                raise
-            request_finished = time.monotonic()
-        elapsed = time.monotonic() - started
+        with DeadlineEvidence("agent-snapshot") as evidence:
+            started_cpu = time.thread_time()
+            started = time.monotonic()
+            with (
+                patch("pa.modules.agent_chat._session_snapshot", new=evidence.wrap(_session_snapshot)),
+                patch("pa.modules.agent_chat._runtime_or_404", return_value=runtime),
+                patch(
+                    "pa.modules.agent_chat._session_reconciliation",
+                    return_value={"state": "not_requested"},
+                ),
+                patch(
+                    "pa.modules.agent_chat._observability",
+                    return_value={"session_state": "busy"},
+                ),
+            ):
+                configured = time.monotonic()
+                evidence.begin(configured)
+                try:
+                    snapshot = await asyncio.wait_for(
+                        get_session_snapshot(request, runtime.session_id),
+                        timeout=0.2,
+                    )
+                except TimeoutError as exc:
+                    evidence.finish(time.monotonic())
+                    exc.add_note(
+                        f"setup={configured - started:.6f}s "
+                        f"request_wait={time.monotonic() - configured:.6f}s "
+                        f"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s "
+                        f"{evidence.describe()}"
+                    )
+                    raise
+                request_finished = time.monotonic()
+                evidence.finish(request_finished)
+            elapsed = time.monotonic() - started
 
-        # Mock construction is fixture work, outside the request's deadline.
-        # Retain setup/teardown and full loop CPU in failure diagnostics.
-        self.assertLess(
-            request_finished - configured, 0.2,
-            f"setup={configured - started:.6f}s "
-            f"request={request_finished - configured:.6f}s "
-            f"teardown={elapsed - (request_finished - started):.6f}s "
-            f"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s",
-        )
-        self.assertEqual(runtime.store.reads, 0)
-        self.assertEqual(len(runtime._transcript_buffer), 4096)
-        self.assertNotIn("transcript", snapshot)
-        self.assertNotIn("transcript_page", snapshot)
-        self.assertEqual(snapshot["last_event_seq"], 4096)
+            # Mock construction is fixture work, outside the request's deadline.
+            # Retain setup/teardown and full loop CPU in failure diagnostics.
+            self.assertLess(
+                request_finished - configured, 0.2,
+                f"setup={configured - started:.6f}s "
+                f"request={request_finished - configured:.6f}s "
+                f"teardown={elapsed - (request_finished - started):.6f}s "
+                f"loop_thread_cpu={time.thread_time() - started_cpu:.6f}s "
+                f"{evidence.describe()}",
+            )
+            self.assertEqual(runtime.store.reads, 0)
+            self.assertEqual(len(runtime._transcript_buffer), 4096)
+            self.assertNotIn("transcript", snapshot)
+            self.assertNotIn("transcript_page", snapshot)
+            self.assertEqual(snapshot["last_event_seq"], 4096)

@@ -18,6 +18,7 @@ jobs:
         shard: [0, 1, 2, 3]
     env:
       PYTEST_SHARD: ${{ matrix.shard }}/4
+      PA_TEST_TIMING_ARTIFACT_DIR: test-timing-evidence
     steps:
       - uses: actions/checkout@v5
 
@@ -45,6 +46,14 @@ jobs:
           --ignore=tests/test_header_layout.py
           --ignore=tests/test_fleet_topology_layout.py
           --ignore=tests/test_browser_e2e.py
+
+      - name: Retain bounded deadline evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deadline-evidence-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: test-timing-evidence/*.json
+          if-no-files-found: ignore
 
   smoke:
     runs-on: ubuntu-latest
