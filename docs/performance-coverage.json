@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T22:07:40.685732+00:00",
-  "completion": "OPEN: all 672 findings / 138 concerns. Exact `16821dc9` scoped activation/retests are complete; maintenance, stale peer fields and status HTTP 500 remain. The first PR #589 CI drain-start 200 ms violation is unclassified; numeric diagnostics are not a causal repair or acceptance.",
+  "as_of": "2026-10-25T22:33:55.404976+00:00",
+  "completion": "OPEN: all 672 findings / 138 concerns. Actual f789c0bb activation/scoped retests proven; maintenance 816.726 ms private / 5213.879 ms natural and all peer/log/full-path criteria remain. Watch matching repair is source only.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -215204,7 +215204,110 @@
       "sha256": "29a661d9d5a54b66525cea3727c17af475cd8bb774feb24f5c59402709b77cbb",
       "resolution": "open",
       "next_actor": "Same systemic session; normal PA scheduler owns final independent verification",
-      "next_action": "Integrate only after durable stable-head gate and independent exact signals/head+main CI; prove exact activation and representative lifecycle/provider closure. Retain enumeration/matching/dispatch/session/lease/native contention and every broader residual."
+      "next_action": "Integrate only after durable stable-head gate and independent exact signals/head+main CI; prove exact activation and representative lifecycle/provider closure. Retain enumeration/matching/dispatch/session/lease/native contention and every broader residual.",
+      "exact589_activation_matching_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact589-activation-watch-matching-20261025.json",
+        "sha256": "8ab225fab4338b951d81dee9c2059ce9343e60cc602e626dbb42565b5c81db53",
+        "source": {
+          "base_source": "f789c0bb053ec3435132d519e4d0e93d5350bb6a",
+          "source_sha256": "8fe2874743747b699a40ba999095582a54de11c41c4667717c124590f3bbe66a",
+          "cause": "Every session filters all immutable watch links. A sweep-scoped index joins the same session-id OR nonempty-card-id keys while preserving original row order, distinct equal rows, retirement/status and the original early prompt/dispatch guards.",
+          "matching": {
+            "contract": "pa.lifecycle-watch-matching-benchmark/v1",
+            "observed_at": "2026-10-25T22:33:00.762397+00:00",
+            "sessions": 1000,
+            "watches": 1000,
+            "pairs": 5,
+            "samples": [
+              {
+                "pair": 0,
+                "variant": "full",
+                "wall_ms": 67.261375,
+                "thread_cpu_ms": 67.263167
+              },
+              {
+                "pair": 0,
+                "variant": "index",
+                "wall_ms": 2.171625,
+                "thread_cpu_ms": 2.172458
+              },
+              {
+                "pair": 1,
+                "variant": "index",
+                "wall_ms": 2.095875,
+                "thread_cpu_ms": 2.096209
+              },
+              {
+                "pair": 1,
+                "variant": "full",
+                "wall_ms": 67.154125,
+                "thread_cpu_ms": 67.154625
+              },
+              {
+                "pair": 2,
+                "variant": "full",
+                "wall_ms": 67.360708,
+                "thread_cpu_ms": 67.363041
+              },
+              {
+                "pair": 2,
+                "variant": "index",
+                "wall_ms": 2.067875,
+                "thread_cpu_ms": 2.068041
+              },
+              {
+                "pair": 3,
+                "variant": "index",
+                "wall_ms": 6.235292,
+                "thread_cpu_ms": 6.238459
+              },
+              {
+                "pair": 3,
+                "variant": "full",
+                "wall_ms": 67.435708,
+                "thread_cpu_ms": 67.438541
+              },
+              {
+                "pair": 4,
+                "variant": "full",
+                "wall_ms": 67.319583,
+                "thread_cpu_ms": 67.3225
+              },
+              {
+                "pair": 4,
+                "variant": "index",
+                "wall_ms": 2.021917,
+                "thread_cpu_ms": 2.0245
+              }
+            ],
+            "decisions_equal": true,
+            "source_module": "/Users/petersky/.pa-workspaces/worktrees/7894e44b-eef9-4d-45ae26f1/1eb4393e-26a0-47-a7396366/5ce49cd8-f632-5f6d-a-b2354070266ade2c/src/pa/instance/session_lifecycle.py",
+            "source_sha256": "8fe2874743747b699a40ba999095582a54de11c41c4667717c124590f3bbe66a",
+            "scope": "Private sparse-link comparison: five alternating actual decision sweeps, sparse immutable metadata links, candidate index construction included. No durable close, SQL, provider, service policy or PA store mutation. Does not measure the whole lifecycle sweep or establish historical cause. Uses the actual imported candidate index and actual decision method. Source or installed module path/hash is retained; the caller must distinguish these scopes."
+          },
+          "latency_ms": {
+            "full": {
+              "samples": 5,
+              "p50": 67.319583,
+              "p95": 67.435708,
+              "p99": 67.435708,
+              "max": 67.435708
+            },
+            "index": {
+              "samples": 5,
+              "p50": 2.095875,
+              "p95": 6.235292,
+              "p99": 6.235292,
+              "max": 6.235292
+            }
+          },
+          "tests": "91 passed / 22 subtests; index order/OR/duplicate/null-card parity, fresh worker construction and early prompt guard tested; prior 90-test stage retained.",
+          "implemented": "Source only; protected ready PR, integration and exact activation/retests pending.",
+          "residual": "Sparse-link comparison only, not whole sweep or historical cause. Worst-case shared-card matches remain; all-watch enumeration, session/dispatch/lease hydration/matching, lifecycle closure/concurrency/native contention and all maintenance/peer/log criteria remain open."
+        },
+        "deployed_previous_repair": "PR #589 / actual loaded f789c0bb proven by exact files, records, native identity and declared scoped retests; full lifecycle acceptance remains open.",
+        "resolution": "open"
+      }
     },
     {
       "id": "concern:restart-drain-start-ci-deadline",
@@ -310066,6 +310169,16 @@
       "path": "docs/benchmarks/systemic-pr589-drain-deadline-followup-20261025.raw.json.gz",
       "sha256": "b81e5a0901ca99cb6076399b412f9b771c9988c9bff3c9faef15ac5450a8d320",
       "bytes": 44766
+    },
+    "all_prior_fields_preserved": true
+  },
+  "exact589_activation_matching_stage": {
+    "artifact": "docs/benchmarks/systemic-exact589-activation-watch-matching-20261025.json",
+    "sha256": "8ab225fab4338b951d81dee9c2059ce9343e60cc602e626dbb42565b5c81db53",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact589-activation-watch-matching-20261025.raw.json.gz",
+      "sha256": "f227267b1a590c2803c7cac6878cf156ed3d2215c509f89da506a89082e67f53",
+      "bytes": 701102
     },
     "all_prior_fields_preserved": true
   }
