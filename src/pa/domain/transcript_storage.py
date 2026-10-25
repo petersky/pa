@@ -386,7 +386,8 @@ class TranscriptStorage:
             raw = zlib.decompress(path.read_bytes())
         except (OSError, zlib.error):
             return {**hot, "availability": "corrupt", "cold_hash": digest}
-        if hashlib.sha256(raw).hexdigest() != digest or hashlib.sha256(raw).hexdigest() != row["payload_hash"]:
+        content_hash = hashlib.sha256(raw).hexdigest()
+        if content_hash != digest or content_hash != row["payload_hash"]:
             return {**hot, "availability": "corrupt", "cold_hash": digest}
         return json.loads(raw)
 
