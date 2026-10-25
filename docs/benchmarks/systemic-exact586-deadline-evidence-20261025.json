@@ -1,0 +1,199 @@
+{
+  "contract": "pa.snapshot-deadline-evidence/v1",
+  "observed_at": "2026-10-25T20:57:00.442159+00:00",
+  "host": "macbook / 0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "session": "1eb4393e-26a0-471b-9b01-0b96763d2c01",
+  "original_failure": {
+    "job": 121281950520,
+    "test": "tests/test_agent_snapshot_responsiveness.py::AgentSnapshotResponsivenessTests::test_live_metadata_does_not_flush_or_read_large_transcript",
+    "request_ms": 245.256071,
+    "deadline_ms": 200,
+    "loop_thread_cpu_ms": 244.021,
+    "setup_ms": 0.381,
+    "teardown_ms": 0.016,
+    "cause": "Unverified. Similar to prior PR580 timing failure, not attributed to the transcript type-guard change or GC by coincidence."
+  },
+  "main_ci": {
+    "run": 40230817865,
+    "attempt": 1,
+    "status": "failure",
+    "success_jobs": 4,
+    "failed_jobs": 1,
+    "retry_issued": false
+  },
+  "actual_loaded": "24c85fc7546336efc52c6074d7c2853771e2ed48",
+  "prepared_only": "0d0c2dd74841b60a3aa2b2ccf3cb4770369f2a42",
+  "service_install_or_restart": false,
+  "diagnostics": {
+    "implementation": "Test-only bounded GC callback and snapshot-worker intervals with monotonic/thread-CPU clocks, active/completed counts and fixed safe artifact names. A requested CI artifact is published after assertions and uploaded on success or failure with pinned official upload-artifact action. Original exceptions survive publication failures; no payloads/SQL/frames/arguments/results retained.",
+    "unchanged": "200 ms timeout and assertion, complete no-transcript/no-flush/ordering checks, GC thresholds and enabled state, all PA production source and defaults.",
+    "tests": {
+      "initial": 33,
+      "final": 34,
+      "private_python3149": 36,
+      "notice": "Overlapping targeted suites, not additive. Two initial private Python shard environment failures retained; targeted corrected fixture cases pass. No passing full CI-equivalent suite claim."
+    },
+    "observer_cost": {
+      "samples": [
+        {
+          "observed": false,
+          "wall_ms": 0.2072920324280858,
+          "thread_cpu_ms": 0.20683300000000002,
+          "calls": 10001,
+          "retained": 0,
+          "dropped": 0
+        },
+        {
+          "observed": true,
+          "wall_ms": 5.025082966312766,
+          "thread_cpu_ms": 5.024999999999999,
+          "calls": 10001,
+          "retained": 32,
+          "dropped": 9969
+        },
+        {
+          "observed": true,
+          "wall_ms": 5.015083006583154,
+          "thread_cpu_ms": 5.015041999999998,
+          "calls": 10001,
+          "retained": 32,
+          "dropped": 9969
+        },
+        {
+          "observed": false,
+          "wall_ms": 0.20887493155896664,
+          "thread_cpu_ms": 0.2089159999999965,
+          "calls": 10001,
+          "retained": 0,
+          "dropped": 0
+        },
+        {
+          "observed": false,
+          "wall_ms": 0.19854202400892973,
+          "thread_cpu_ms": 0.19862500000000088,
+          "calls": 10001,
+          "retained": 0,
+          "dropped": 0
+        },
+        {
+          "observed": true,
+          "wall_ms": 5.0492919981479645,
+          "thread_cpu_ms": 5.049375000000002,
+          "calls": 10001,
+          "retained": 32,
+          "dropped": 9969
+        },
+        {
+          "observed": true,
+          "wall_ms": 5.129207973368466,
+          "thread_cpu_ms": 5.129208000000003,
+          "calls": 10001,
+          "retained": 32,
+          "dropped": 9969
+        },
+        {
+          "observed": false,
+          "wall_ms": 0.1972910249605775,
+          "thread_cpu_ms": 0.1972920000000017,
+          "calls": 10001,
+          "retained": 0,
+          "dropped": 0
+        },
+        {
+          "observed": false,
+          "wall_ms": 0.21712505258619785,
+          "thread_cpu_ms": 0.21716600000000474,
+          "calls": 10001,
+          "retained": 0,
+          "dropped": 0
+        },
+        {
+          "observed": true,
+          "wall_ms": 5.164874950423837,
+          "thread_cpu_ms": 5.164874999999999,
+          "calls": 10001,
+          "retained": 32,
+          "dropped": 9969
+        }
+      ],
+      "plain_median_ms": 0.2072920324280858,
+      "observed_median_ms": 5.0492919981479645,
+      "additional_microseconds_per_call": 0.4841515814138465,
+      "scope": "Private numeric observer cost over no-op calls; includes observer allocation/clocks, not a speedup or faithful application/CI workload. No GC settings or deadline changed. Service untouched."
+    }
+  },
+  "probes": [
+    {
+      "python": "3.14.2",
+      "shape": "full collection, one target",
+      "collected": 4156,
+      "target_ms": 9.196,
+      "gen2_gc_overlap": false,
+      "result": "pass",
+      "limit": "Profiled serial macOS fixture, not CI xdist Linux"
+    },
+    {
+      "python": "3.14.2",
+      "shape": "private shard 0/4, two workers",
+      "passed": 1030,
+      "failed": 7,
+      "subtests_passed": 69,
+      "result": "interrupted",
+      "target_ms": 2.449,
+      "limit": "Agent-disabled fixture differs from CI; all seven failures and targeted SIGINT/interruption retained."
+    },
+    {
+      "python": "3.14.9",
+      "shape": "full collection, one target",
+      "collected": 4156,
+      "target_ms": 6.133084,
+      "gen2_gc_overlap": false,
+      "result": "pass",
+      "limit": "Private official macOS interpreter with read-only project dependencies; no service/project/default change."
+    },
+    {
+      "python": "3.14.9",
+      "shape": "private shard 0/4, two workers",
+      "passed": 1037,
+      "failed": 2,
+      "subtests_passed": 69,
+      "target_ms": 3.540208,
+      "loop_cpu_ms": 2.2635,
+      "retained_gc_events": 110,
+      "dropped_gc_events": 0,
+      "gen2_gc_overlap": false,
+      "result": "failure",
+      "limit": "Incomplete private base interpreter lacked isolated-import pa and console script. Corrected private wheel environment separately passes both failing cases; this failed shard is not erased or claimed passing."
+    }
+  ],
+  "runtime_populations": [
+    {
+      "path": ".dev/after586-integration-control-20261025.json",
+      "operations": 98,
+      "routes": 39
+    },
+    {
+      "path": ".dev/after586-ci-failure-control-20261025.json",
+      "operations": 101,
+      "routes": 41
+    }
+  ],
+  "acceptance": {
+    "findings": 670,
+    "concerns": 136,
+    "requirement_revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "lane": "active"
+  },
+  "residuals": [
+    "The original 245.256 ms request / 244.021 ms loop-thread CPU deadline failure remains unexplained. Passing native probes do not establish cause, green rerun authority or performance acceptance. PR580 first-attempt failures remain separate.",
+    "Actual deployed private maintenance 750.355 ms and PR586 source maintenance 924.873 ms still violate the unchanged 500 ms observation; full real provider/MCP/placement/admission/startup/drain/concurrency acceptance remains open.",
+    "All operation/route branches, peer latency/build/log gaps, native successful busy/holder/GIL/scheduling/CPU/GC/disk/fsync attribution, query/serialization/payload/write-amplification concerns and unknown receipts remain open.",
+    "Original backup and DB independent acceptance, ten original attachments, every historical failing/interrupted stage and unknown/ambiguous request identity are preserved. No replay or competing worker."
+  ],
+  "raw": {
+    "path": "docs/benchmarks/systemic-exact586-deadline-evidence-20261025.raw.json.gz",
+    "sha256": "9b2ea248456063c566452d99f75cc79bbc6d71e69b20c6dd8d6ecf12c6b3cbc6",
+    "bytes": 100279
+  }
+}

@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T20:23:10.228785+00:00",
-  "completion": "OPEN: all 670 findings / 136 concerns. Exact 24c85fc7 local activation/retests verified; new type guard source repair is not deployed. Three current peer populations retained, no fleet acceptance.",
+  "as_of": "2026-10-25T20:57:00.442159+00:00",
+  "completion": "OPEN: all 670 findings / 136 concerns. Original main CI deadline failure remains unclassified; bounded test-only evidence is not a performance repair or deployment acceptance.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -211452,7 +211452,14 @@
       },
       "resolution": "open",
       "next_actor": "Existing systemic session and ordinary independent scheduler",
-      "next_action": "Require corrected exactheadCI terminalgreen and independent fresh review/supervisor gates; preserve initial failures and unknown snapshot CPU/scheduling attribution."
+      "next_action": "Require corrected exactheadCI terminalgreen and independent fresh review/supervisor gates; preserve initial failures and unknown snapshot CPU/scheduling attribution.",
+      "snapshot_deadline_evidence_followup_20261025": {
+        "artifact": "docs/benchmarks/systemic-exact586-deadline-evidence-20261025.json",
+        "sha256": "376b3ecf9ad07e9213bf34b8718c3be05aa812dc7f4a46d1d1b83e04e3b6f1ae",
+        "resolution": "open",
+        "cause": "Original snapshot loop CPU cause remains unverified; bounded in-CI worker/GC evidence now implemented, not a latency fix.",
+        "next_action": "Protected ready PR and exact required CI/supervisor/independent signals. Inspect same-attempt bounded CI artifacts before any causal claim; preserve original failures and continue full scope."
+      }
     },
     {
       "id": "concern:session-list-unselected-raw-transfer",
@@ -309386,5 +309393,15 @@
     },
     "prior_rows_preserved": 669,
     "new_rows": 1
+  },
+  "snapshot_deadline_evidence_stage": {
+    "artifact": "docs/benchmarks/systemic-exact586-deadline-evidence-20261025.json",
+    "sha256": "376b3ecf9ad07e9213bf34b8718c3be05aa812dc7f4a46d1d1b83e04e3b6f1ae",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact586-deadline-evidence-20261025.raw.json.gz",
+      "sha256": "9b2ea248456063c566452d99f75cc79bbc6d71e69b20c6dd8d6ecf12c6b3cbc6",
+      "bytes": 100279
+    },
+    "all_prior_fields_preserved": true
   }
 }
