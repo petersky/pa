@@ -1,3 +1,61 @@
+# Exact `aa711e4b` activation and retained maintenance cost — 2026-10-25
+
+All **664 findings and 131 concerns remain open**. [Complete activation and repair evidence](benchmarks/systemic-aa711-activation-gc-digest-20261025.json) and [lossless raw inputs](benchmarks/systemic-aa711-activation-gc-digest-20261025.raw.json.gz) preserve every stage, source identity, sample, counter, byte total and diagnostic. Earlier stages below retain their original as-of statements; this section supersedes their deployment status.
+
+The actual listener is now PID `96776`, startup `eed43c5c-990f-4ba6-a83e-ff3c9733b67d`, running reviewed source `aa711e4b702781118562117ec90ca649138d7683` and package `b8d75cd1…`. Native launchd policy remains Interactive (4), nice 0. All 438 installed source files, 439 package records, 38 templates, Python 3.14.2 and 52 unchanged dependency versions were checked. Configuration remains `86968d12…`. Runtime identity is separate from the current native continuation receipt, which remains active until its turn completes. No installation or restart is repeated from a stale notice.
+
+All 95 ordinary owner GETs succeeded, with zero errors or 500 ms violations and a maximum of **52.074 ms**. These small sequential samples are not whole-PA load acceptance. Large Fleet responses remain a concern. Counts and decoded payload bytes are retained; these are not compressed wire bytes.
+
+| Ordinary owner request | Count | p50 / p95 / p99 / max (ms) | Maximum decoded bytes |
+|---|---:|---|---:|
+| `/` | 5 | 7.58 / 13.334 / 13.334 / 13.334 | 25464 |
+| `/agent` | 5 | 25.37 / 52.074 / 52.074 / 52.074 | 114957 |
+| `/api/fleet/overview` | 5 | 32.216 / 47.67 / 47.67 / 47.67 | 985308 |
+| `/api/health` | 20 | 13.823 / 18.64 / 18.943 / 18.943 | 15 |
+| `/api/runtime` | 20 | 22.869 / 34.516 / 48.113 / 48.113 | 286423 |
+| `/api/status` | 20 | 31.794 / 33.168 / 34.464 / 34.464 | 2824 |
+| `/fleet` | 5 | 36.476 / 43.992 / 43.992 / 43.992 | 1147610 |
+| `/pull-requests` | 5 | 18.517 / 32.208 / 32.208 / 32.208 | 26012 |
+| `/settings?section=agent` | 5 | 21.688 / 25.159 / 25.159 / 25.159 | 101194 |
+| `/work` | 5 | 12.812 / 17.44 / 17.44 / 17.44 | 31323 |
+
+Eight cached Fleet reads across 37 seconds retained 96 required-field observations: local 24/24 fresh, two peers 24/24 fresh each, and macmini 23/24 fresh with one stale field. Clock offset changed by about −0.0004 seconds. Field observations are not distinct incidents; all attempt states, timestamps and before/after HTTP/cache write counters remain in the raw bundle. This window does not resolve historical peer failures, unknown builds, uninspected logs or sleep-interrupted earlier stages.
+
+The final supported owner snapshot contains **84 operations and 30 route groups**. Full values for every family are retained, along with the previous 121-operation / 53-route snapshot from the older process. The following is every operation with a slow call, failed/timed-out/rejected submission or a process maximum of at least 500 ms. Process totals and maxima differ from bounded percentile windows. Fast effect failures may be fencing denials; their underlying errors are not independently classified as latency causes.
+
+The actual service recorded **7,429.060 ms** for `maintenance.run`, separate from the private fixture below. Its zero configured slow-call count does not meet the universal 500 ms target. The live startup/background workload, native wait and filesystem causes still need attribution; the small GC allocation repair does not resolve this tail.
+
+[The passive cached maintenance snapshot](benchmarks/systemic-aa711-live-maintenance-20261025.json) identifies the run at 17:32:52–17:32:59 UTC. Projection database maintenance takes 3,712.558 ms wall / 1,505.282 ms thread CPU; migration plus health takes 2,503.788 / 665.171 ms; final fresh health takes 305.020 / 302.512 ms; retention takes 475.867 / 129.658 ms. The snapshot GET itself takes 4.298 ms and invokes no new maintenance or GC. Full native database subphases and all result counts remain in that artifact. Nested spans are not additive, and physical IO, native busy waits and GIL/scheduling are not independently separated.
+
+| Operation | Submitted / slow / failed / timed out | Process max (ms) | Window samples / p50 / p95 / p99 / max (ms) |
+|---|---:|---:|---|
+| `health.canonical_obligation` | 118 / 1 / 0 / 0 | 543.062 | 118 / 1.967 / 31.792 / 374.51 / 543.062 |
+| `http.fleet_overview` | 2292 / 0 / 0 / 0 | 1669.221 | 256 / 18.665 / 298.243 / 387.886 / 805.555 |
+| `maintenance.run` | 1 / 0 / 0 / 0 | 7429.06 | 1 / 7429.06 / 7429.06 / 7429.06 / 7429.06 |
+| `reconciliation.session_read` | 423 / 1 / 0 / 0 | 592.887 | 256 / 0.687 / 2.504 / 3.234 / 6.009 |
+| `sqlite.agent_session_save` | 75 / 2 / 0 / 0 | 1807.842 | 75 / 3.271 / 54.555 / 1807.842 / 1807.842 |
+| `sync.peer_http` | 21 / 0 / 0 / 0 | 879.282 | 21 / 20.463 / 878.645 / 879.282 / 879.282 |
+| `sync.reconcile_head` | 21 / 3 / 0 / 0 | 1078.595 | 21 / 165.25 / 765.592 / 1078.595 / 1078.595 |
+| `workspace.collect_garbage` | 1 / 1 / 0 / 0 | 1743.015 | 1 / 1743.015 / 1743.015 / 1743.015 / 1743.015 |
+| `workspace.project_provision` | 7 / 0 / 1 / 0 | 1335.46 | 7 / 897.726 / 1335.46 / 1335.46 / 1335.46 |
+| `workspace.reconcile_terminal_state` | 1 / 0 / 0 / 0 | 881.569 | 1 / 881.569 / 881.569 / 881.569 / 881.569 |
+
+The installed private 100-iteration workload retains all **9,600 ordered events**, with zero worker warnings, failures, timeouts or rejections, but **maintenance remains 732.093 ms**. Retention is about 286 ms, and the two required fresh health phases are about 203 ms each. Ten private fake-provider, tool-free starts and drains pass: first 87.076 ms, subsequent maximum 29.293 ms. These exclude full Kernel, real provider, MCP, network and placement acceptance.
+
+Two separate private instrumented stages still fail maintenance at **780.031 ms** and **734.046 ms**. The latter preserves the original health function AST after removing two timing contexts. Reference delivery takes about 26–33 ms per read; directory resolution takes about 118–152 ms, and GC candidate collection about 241 ms. Each reference read still accounts for all 12,511 items and 838,337 aggregate bytes, despite only 99 returned SQL rows. Nested timings are inclusive and must not be added. Native busy waits, GIL/scheduling and physical IO remain unseparated; zero busy failures does not exclude successful busy waits.
+
+A scoped source repair avoids allocating a `Path` for a canonical lower-case hexadecimal GC filename. Every other spelling keeps the exact original `Path.stem` fallback. Candidate filtering, final fresh locked checks, reader pins, publication and native unlink behavior stay unchanged. Pure derivation matches across 22,639 cases. The new collector allocation regression fails against archived `aa711e4b`; all **106** storage, health, GC, maintenance and backup contracts pass. Private boot builds 550 routes in 946.183 ms; source distribution and wheel builds pass.
+
+Five alternating same-input, 12,511-object GC pairs improve median **32.907 → 26.632 ms**, with identical retained file bytes. This removes 12,511 ordinary `Path` constructions per sweep. The separate source mixed run still fails maintenance at **846.458 ms**, worse than this turn's installed sample. Both outcomes are retained: this is a measured local allocation reduction, not a whole-path speedup or acceptance claim. The new repair is not installed.
+
+The user's readability feedback is traced separately. The example missing spaces occur literally in the local evidence-writing templates and committed Markdown. The helpers prepend those literals and existing history; this supports an authored-source readability defect. It does not establish PA ingestion or Markdown renderer corruption, nor fully attest every historical helper execution. No historical evidence was rewritten; new narrative uses ordinary spacing, units and code-formatted identifiers.
+
+The same session continues every original foreground/background inventory and branch, real provider/MCP/placement/workspace/queue/order/concurrency/admission/lease/receipt/CAS/sync requirement, maintenance/native waits/CPU/disk/fsync/GC/query/serialization/call amplification/payloads, peer build/log/retention gaps and unknown effects. Original independently accepted backup and DB scopes remain closed; the historical 2,842-byte disclosure and all ten attachments stay intact. Normal PA policy owns final independent verification under requirement `17d034a6-efc7-4a9d-badc-d3fe012d0b57`. Neither activation, the paired microbenchmark nor a fast subset closes this card.
+
+---
+
+Prior stages retain their original as-of state and evidence.
+
 # Snapshot-preserving reference pages — 2026-10-25
 
 All **664 findings /131 concerns remain open**. [Complete source evidence](benchmarks/systemic-reference-pages-20261025.json) and [lossless raw inputs](benchmarks/systemic-reference-pages-20261025.raw.json.gz) retain every earlier stage, including failures and slower idle results. This source repair is not deployed.

@@ -1,6 +1,7 @@
 """Speculative GC avoids hydrating retained rows and preserves path semantics."""
 import pytest
 
+import pa.domain.transcript_storage as module
 from pa.core.async_runtime import AsyncRuntime
 from pa.core.performance import capture_retention_phases, retention_phase
 from pa.domain.models import TranscriptEvent
@@ -59,3 +60,35 @@ def test_candidate_json_keeps_literal_unicode_quotes_and_positive_reference_sema
     assert storage.collect_unreferenced_objects() == 2
     assert retained.read_bytes() == b"literal fixture"
     assert not zero.exists() and not absent.exists()
+
+
+def test_canonical_candidates_avoid_path_allocation_and_keep_noncanonical_oracle(tmp_path, monkeypatch):
+    storage = TranscriptStorage(tmp_path / "fixture.db")
+    storage.append([
+        TranscriptEvent(session_id="retained", seq=i+1, event_type="chunk",
+                        payload={"text": f"{i}:" + "retained fixture " * 300})
+        for i in range(2)
+    ])
+    before = {path:path.read_bytes() for path in storage.objects_dir.glob("*/*.zlib")}
+    for i in range(3):
+        path = storage._object_path(f"fe{i:062x}")
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"unreferenced canonical fixture")
+    odd_names = (".zlib", "...zlib", "雪.zlib")
+    directory = storage.objects_dir / ".hidden"
+    directory.mkdir()
+    for name in odd_names:
+        (directory / name).write_bytes(b"unreferenced noncanonical fixture")
+    original = module.Path
+    constructed = []
+
+    def observed(name):
+        constructed.append(name)
+        return original(name)
+
+    monkeypatch.setattr(module, "Path", observed)
+    assert storage.collect_unreferenced_objects() == 6
+    assert sorted(constructed) == sorted(odd_names)
+    assert all(path.read_bytes() == raw for path,raw in before.items())
+    assert set(storage.objects_dir.glob("*/*.zlib")) == set(before)
+    assert [row.seq for row in storage.list_range("retained")] == [1,2]
