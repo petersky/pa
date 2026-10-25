@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T18:04:04.365395+00:00",
-  "completion": "OPEN: all 665 findings and 132 concerns. The migration cursor seek is a scoped source repair; maintenance and all original independent acceptance requirements remain open.",
+  "as_of": "2026-10-25T18:18:36.018454+00:00",
+  "completion": "OPEN: all 666 findings and 133 concerns. Main CI failures, source concurrency repair, maintenance and every original independent acceptance requirement remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -208031,7 +208031,19 @@
       "implemented": "Failure-only setup/request/teardown/loop-threadCPU diagnostics; original200msbudgetandtimerregion unchanged. No confirmed productioncause/fix.",
       "deployed": "Notdeployed; no productcode change fromthisCIstage.",
       "retested": "Local3instrumentedoriginal tests+onevalueaudit pass withoutreproducingCI; oneunguarded directinvocationpass isnotisolationproof. Guardednewdiagnostic test1pass4.67s,exit0persisted. Counts overlap; no wholePAacceptance.",
-      "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green."
+      "next_action": "Pushnewdiagnostichead, retainoriginalfailedCI, requireallterminalgreen/stablesupervisor/freshindependentgates beforeintegration; investigate any recurringphasefailure withoutbudgetchange orretry-to-green.",
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-fleet-entry-20261025.json",
+          "sha256": "6a90192632e0a4e26026bf0e2a28613e4bb47103cb4de05960f6c7951b9d6c1a",
+          "stage": "PR #580 merge CI repeats the unchanged 200 ms snapshot failure at 352.840 ms, loop CPU 305.086 ms. Three isolated passes do not establish its cause or resolution."
+        },
+        {
+          "artifact": "docs/benchmarks/systemic-fleet-entry-final-20261025.json",
+          "sha256": "1cc496e6c2841fd478ca564e0444e486e94251798c15b7e0c8d07b8bff10a248",
+          "stage": "Final Fleet compatibility source stage; original snapshot CPU/deadline cause remains unverified."
+        }
+      ]
     },
     {
       "id": "concern:full-fork-boundary-membership",
@@ -214405,6 +214417,34 @@
       "resolution": "open",
       "next_actor": "This card/session",
       "next_action": "Complete protected review, exact integration and activation after the current handoff settles. Measure a representative late migration batch and continue per-row validation/health/native maintenance attribution."
+    },
+    {
+      "id": "concern:fleet-forced-probe-entry-race",
+      "kind": "concern",
+      "finding": "Forced Fleet viewers can miss a live probe while awaiting cache reads",
+      "family": "fleet",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_deterministic_private_interleaving_original_ci_schedule_untraced",
+      "cause": "A forced caller performs asynchronous cache reads before looking up the live probe. If that probe completes during those reads, the caller starts another request. A deterministic private gate reproduces two probes on the unchanged method.",
+      "fix_or_existing_owner": "This systemic card/session; join the existing flight before forced cache reads.",
+      "implemented": "Source early-join repair; protected review/integration pending.",
+      "merged": [],
+      "deployed": false,
+      "retested": "146 contracts and two subtests pass, including deterministic ordinary/cold-MCP coalescing, cancellation safety and the connected-MCP cache fast path. All intermediate failures remain.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-fleet-entry-final-20261025.json",
+        "sha256": "1cc496e6c2841fd478ca564e0444e486e94251798c15b7e0c8d07b8bff10a248"
+      },
+      "resolution": "open",
+      "next_actor": "This card/session",
+      "next_action": "Complete ready PR, stable supervisor green, independent protected integration and head/main CI. Activate the exact combined target, retest representative Fleet concurrency/freshness and continue all remaining performance criteria.",
+      "evidence_updates": [
+        {
+          "artifact": "docs/benchmarks/systemic-fleet-entry-20261025.json",
+          "sha256": "6a90192632e0a4e26026bf0e2a28613e4bb47103cb4de05960f6c7951b9d6c1a",
+          "stage": "First source suite; preserved unchanged."
+        }
+      ]
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309082,5 +309122,25 @@
       "sha256": "f6f7678028d8e425c2146ba4681ff4aa9c94aca2ea73bf33cc7161415d6d8f24",
       "bytes": 86277
     }
+  },
+  "fleet_entry_race_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-entry-20261025.json",
+    "sha256": "6a90192632e0a4e26026bf0e2a28613e4bb47103cb4de05960f6c7951b9d6c1a",
+    "raw": {
+      "path": "docs/benchmarks/systemic-fleet-entry-20261025.raw.json.gz",
+      "sha256": "8357efc506490eaf6d3cbdb675a0774ac56f0dae50809b66d20dde11c044920b",
+      "bytes": 43839
+    },
+    "all_prior_ids_retained": true
+  },
+  "fleet_entry_race_final_stage": {
+    "artifact": "docs/benchmarks/systemic-fleet-entry-final-20261025.json",
+    "sha256": "1cc496e6c2841fd478ca564e0444e486e94251798c15b7e0c8d07b8bff10a248",
+    "raw": {
+      "path": "docs/benchmarks/systemic-fleet-entry-final-20261025.raw.json.gz",
+      "sha256": "da9dbdbd04ed5dafb2e26a807ea277a0648a105f42e508c69d84f8b9d4153ad1",
+      "bytes": 45256
+    },
+    "all_prior_stages_retained": true
   }
 }

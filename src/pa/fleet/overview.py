@@ -1345,6 +1345,17 @@ async def probe_dimension(
     force: bool = False,
 ) -> dict[str, Any]:
     """Single-flight a bounded probe and preserve the previous good value."""
+    key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
+    joined = None
+    if force:
+        # Join work that is live when this forced viewer arrives. Cache reads
+        # yield to workers; waiting until after them can miss that same probe
+        # finishing and unnecessarily start another peer request.
+        async with _probe_lock:
+            active = _probe_tasks.get(key)
+            joined = active[1] if active is not None and not active[1].done() else None
+        if joined is not None and dimension != "mcp_bootstrap":
+            return await asyncio.shield(joined)
     cache = await _offload(
         ctx, "fleet.overview_cache_read", cache_for, ctx.settings.data_dir
     )
@@ -1363,7 +1374,10 @@ async def probe_dimension(
         )
     ):
         return {**cached, "cache_hit": True}
-    key = (str(ctx.settings.data_dir), inst.instance_id, dimension)
+    # Connected MCP bootstrap cache values retain their existing fast path.
+    # Otherwise join the task captured at entry even if it finished during IO.
+    if joined is not None:
+        return await asyncio.shield(joined)
     async with _probe_lock:
         active = _probe_tasks.get(key)
         # A forced refresh bypasses a warm cache, but never supersedes live
