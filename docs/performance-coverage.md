@@ -1,3 +1,23 @@
+# Fresh transcript health digest CPU — 2026-10-25
+
+All **663 findings / 130 concerns remain open**; every prior finding and stage is retained. [Complete evidence](benchmarks/systemic-health-digest-validation-20261025.json) and [lossless full raw inputs](benchmarks/systemic-health-digest-validation-20261025.raw.json.gz) include the rejected query prototype, source proofs, each separate mixed stage, every returned operation/route, count/window/maximum/byte value and raw sample.
+
+Confirmed leaf cost: each health call validates 12,511 ordinary hashes with up to 800,704 Python character iterations. A compiled full match accepts the same 64 lowercase ASCII hexadecimal characters. Both distinct fresh health reads, event-derived references, native quick_check, missing/malformed paths, case aliases, search permissions, symlinks and native errors remain. No caching, threshold/default/permission/durability change.
+
+**86 relevant contracts pass**, including expanded malformed-reference filesystem cases; private boot550routes and wheel build pass. Final five alternating exact-source fresh-health pairs: baseline median/max42.641/44.754ms, candidate27.743/34.236ms; every object byte and full health result unchanged. Reproduce with `uv run python scripts/benchmark_transcript_health.py --output /tmp/pa-health-comparison.json`. Earlier in-memory prototype median40.494→25.436ms is retained separately.
+
+Exact-wheel mixed100: 9,600 ordered events retained, zero worker warnings/failures/timeouts/rejections, but **maintenance867.696ms remains the sole500ms violation**. The earlier application-byte-identical d244 baseline1098.053ms remains separate; all438applicationfiles and benchmark script match, but timestamps/hostload differ and this is not a randomized wholepath speedup claim. Full p50/p95/p99/max, maintenance phases, bytes, logical write counts and process/rolling-window scopes remain in the numeric evidence.
+
+Rejected prototype: bounded JSON reference pages preserved text/NUL/Unicode and one-snapshot concurrent-publication parity, but fullhealth median41.203→40.953ms in five pairs saves less than1ms; nontext/error/cancellation compatibility remains incomplete. It was not implemented. No favorable-only result selection or warning suppression.
+
+PR574 is now merged asd244274b from exacthead45acb2c1; supervisor stablegreen12observations and independent5success/no required approvals/reviews/threads/fullpagination/attribution/protection/CLEAN revalidated, trees equal4a406091. MainCI40210418655 was pending at initial assembly; subsequent independent read confirms all five first-attempt checks terminal success, retained in the numeric followup. Actual loaded runtime remains87e/package921c50/PID68901/startupa74e/Interactive4/config86968; neither the GC repair nor this digest candidate is deployed. Currentbb51550b restart continuation must settle after this turn before another exact activation. Awake-window request13076 remains pending; no host power/clock change or sleep prevention.
+
+Whole-system17d independent_agent_v1 remains unaccepted. This same session owns integration/activation/retest and all remaining health/nativebusy/GIL/CPU/disk/fsync/writeamp/payload/provider/MCP/placement/workspace/queue/order/CAS/receipt/lease/sync/GCpublication/savedplan/peer/logloss/retention gaps. The normal PA scheduler owns final verification. Original backupb527 andDB89957 accepted scopes stay closed; all earlier failures, interrupted clock stages and ten attachments remain.
+
+---
+
+The following previous stages retain their original as-of status; current integration/source-only status is above and in JSON stage history.
+
 # Loaded87e4, host availability and bounded GC candidate filtering — 2026-10-25
 
 All **662 findings / 129 concerns remain open**. Every prior661finding and historical stage remains; one measured GC materialization concern is added. [Complete stage evidence](benchmarks/systemic-loaded87e4-gc-prefilter-20261025.json) and [lossless complete raw inputs](benchmarks/systemic-loaded87e4-gc-prefilter-20261025.raw.json.gz) retain every returned operation/route, count/window/maximum/byte value, raw sample and failed/interrupted stage. No two-cause or integration blanket closure.

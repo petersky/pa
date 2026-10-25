@@ -82,9 +82,12 @@ def test_health_uses_event_references_even_without_object_metadata(tmp_path):
     assert store.referenced_hashes() == hashes
 
 
-def test_malformed_reference_uses_existing_path_resolution(tmp_path):
+@pytest.mark.parametrize("bad", [
+    "legacy-reference", "a" * 63, "A" * 64, "0" * 63 + "g",
+    "é" * 64, "0" * 63 + "\n",
+])
+def test_malformed_reference_uses_existing_path_resolution(tmp_path, bad):
     store = fixture(tmp_path)
-    bad = "legacy-reference"
     path = store._object_path(bad)
     path.parent.mkdir(exist_ok=True)
     with patch.object(store, "referenced_hashes", return_value={bad}):
