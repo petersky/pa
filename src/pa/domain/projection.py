@@ -6462,11 +6462,13 @@ class CardProjection:
         cursor = json.loads(operation["cursor"]) if operation.get("cursor") else ["", -1]
         try:
             with self._conn() as conn:
+                # A tuple lower bound seeks the existing composite index. The
+                # equivalent OR predicate scans earlier sessions on every batch.
                 rows = conn.execute(
                     """SELECT * FROM agent_transcript_events
-                       WHERE session_id > ? OR (session_id=? AND seq>?)
+                       WHERE (session_id,seq) > (?,?)
                        ORDER BY session_id,seq LIMIT ?""",
-                    (cursor[0], cursor[0], cursor[1], batch_size),
+                    (cursor[0], cursor[1], batch_size),
                 ).fetchall()
             # Avoid rescanning compatibility rows already represented in cold DB.
             pending = []

@@ -1,0 +1,705 @@
+{
+  "contract": "pa.legacy-transcript-cursor-seek/v1",
+  "observed_at": "2026-10-25T18:04:04.365395+00:00",
+  "instance": "macbook / 0c7d8ecb-7e45-4579-8fa0-35159492d3f1",
+  "source_base": "a7b03c7a1678872683af788030b4b9618cf11d54",
+  "actual_loaded": "aa711e4b702781118562117ec90ca649138d7683",
+  "source_file_sha256": "aa865e23f39b787d1972e8ab3d83265f5626c84dee656898a992bc2a05974caf",
+  "confirmed_cause": "The legacy migration OR cursor predicate scans the existing composite index from earlier sessions. A tuple lower bound seeks that same index and returns identical ordered rows in the declared synthetic cases.",
+  "change": "Only the cursor predicate and parameter tuple change. Batch size, canonical per-row hydration and validation, append, durable cursor save, exception handling and completion behavior remain unchanged.",
+  "query_plans": {
+    "baseline": [
+      [
+        5,
+        0,
+        223,
+        "SCAN agent_transcript_events USING INDEX idx_transcript_session_seq"
+      ]
+    ],
+    "candidate": [
+      [
+        5,
+        0,
+        204,
+        "SEARCH agent_transcript_events USING INDEX idx_transcript_session_seq ((session_id,seq)>(?,?))"
+      ]
+    ]
+  },
+  "instruction_observations": {
+    "baseline": {
+      "callbacks": 554,
+      "instruction_interval": 1000,
+      "vm_steps_lower_bound": 554000
+    },
+    "candidate": {
+      "callbacks": 8,
+      "instruction_interval": 1000,
+      "vm_steps_lower_bound": 8000
+    }
+  },
+  "parity_cases": [
+    {
+      "cursor": [
+        "",
+        -1
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-000",
+        0
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-000",
+        1000
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-050",
+        500
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-090",
+        900
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-099",
+        1000
+      ],
+      "rows": 0
+    },
+    {
+      "cursor": [
+        "\u96ea",
+        0
+      ],
+      "rows": 0
+    },
+    {
+      "cursor": [
+        null,
+        0
+      ],
+      "rows": 0
+    },
+    {
+      "cursor": [
+        "session-050",
+        null
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-050",
+        "bad"
+      ],
+      "rows": 500
+    },
+    {
+      "cursor": [
+        "session-050",
+        1.5
+      ],
+      "rows": 500
+    }
+  ],
+  "alternating_pairs": [
+    {
+      "baseline": {
+        "wall_ms": 3.271917,
+        "thread_cpu_ms": 3.272791,
+        "rows": 500
+      },
+      "candidate": {
+        "wall_ms": 0.247375,
+        "thread_cpu_ms": 0.248167,
+        "rows": 500
+      }
+    },
+    {
+      "candidate": {
+        "wall_ms": 0.247625,
+        "thread_cpu_ms": 0.247875,
+        "rows": 500
+      },
+      "baseline": {
+        "wall_ms": 3.339167,
+        "thread_cpu_ms": 3.339417,
+        "rows": 500
+      }
+    },
+    {
+      "baseline": {
+        "wall_ms": 3.422875,
+        "thread_cpu_ms": 3.39675,
+        "rows": 500
+      },
+      "candidate": {
+        "wall_ms": 0.277167,
+        "thread_cpu_ms": 0.276333,
+        "rows": 500
+      }
+    },
+    {
+      "candidate": {
+        "wall_ms": 0.260625,
+        "thread_cpu_ms": 0.257666,
+        "rows": 500
+      },
+      "baseline": {
+        "wall_ms": 3.419416,
+        "thread_cpu_ms": 3.419,
+        "rows": 500
+      }
+    },
+    {
+      "baseline": {
+        "wall_ms": 3.369334,
+        "thread_cpu_ms": 3.362959,
+        "rows": 500
+      },
+      "candidate": {
+        "wall_ms": 0.256584,
+        "thread_cpu_ms": 0.256834,
+        "rows": 500
+      }
+    }
+  ],
+  "timing_summary": {
+    "baseline": {
+      "median_ms": 3.369334,
+      "max_ms": 3.422875
+    },
+    "candidate": {
+      "median_ms": 0.256584,
+      "max_ms": 0.277167
+    }
+  },
+  "validation": {
+    "contracts": 107,
+    "archived_negative": "The same new regression fails with the archived a7b03c7a method: 553 callbacks at 1,000 instructions exceed the test-only 50,000-instruction bound.",
+    "boot": {
+      "routes": 550,
+      "wall_ms": 1052.6862080441788,
+      "scope": "Private isolated boot; ACP disabled, not real-provider acceptance."
+    }
+  },
+  "source_mixed": {
+    "proof": {
+      "started_at": "2026-10-25T18:02:26.823650+00:00",
+      "finished_at": "2026-10-25T18:02:52.783924+00:00",
+      "monotonic_seconds": 25.960425707977265,
+      "wall_minus_monotonic_before": 1792242045.4530745,
+      "wall_minus_monotonic_after": 1792242045.452943,
+      "exit_code": 0,
+      "source_file_sha256": "aa865e23f39b787d1972e8ab3d83265f5626c84dee656898a992bc2a05974caf",
+      "log_sha256": "c32ffc29fb9b98e85350c597c364026a6f4f3307e272d0472e29e44c1d49af5b",
+      "scope": "Current uninstalled worktree source, based on a7b03c7a. Both default roots are private before imports; ACP disabled. No monkeypatch, production state mutation, external provider/peer, installation, restart or changed warning threshold. Every raw sample and module hash retained.",
+      "result_sha256": "95cbf7a4a72e794083ff6e11aa7351b4c0b25dacbfd41bf31f1da10d7853fe7b",
+      "warnings": {},
+      "threshold_violations": {
+        "maintenance.run": 1
+      },
+      "maintenance": {
+        "samples": 1,
+        "max_ms": 948.832,
+        "p50_ms": 948.832,
+        "p95_ms": 948.832,
+        "p99_ms": 948.832
+      }
+    },
+    "latency": {
+      "/api/health": {
+        "samples": 100,
+        "max_ms": 4.416,
+        "p50_ms": 0.334,
+        "p95_ms": 0.562,
+        "p99_ms": 0.716
+      },
+      "progress.sequence_allocate": {
+        "samples": 100,
+        "max_ms": 15.242,
+        "p50_ms": 1.117,
+        "p95_ms": 8.274,
+        "p99_ms": 14.431
+      },
+      "fleet.overview_cache_write": {
+        "samples": 100,
+        "max_ms": 27.613,
+        "p50_ms": 1.946,
+        "p95_ms": 9.991,
+        "p99_ms": 24.793
+      },
+      "sqlite.execution_binding_materialize": {
+        "samples": 100,
+        "max_ms": 57.744,
+        "p50_ms": 5.114,
+        "p95_ms": 22.865,
+        "p99_ms": 56.292
+      },
+      "fleet.overview_cache_read": {
+        "samples": 100,
+        "max_ms": 10.5,
+        "p50_ms": 0.292,
+        "p95_ms": 1.568,
+        "p99_ms": 6.154
+      },
+      "progress.checkpoint_write": {
+        "samples": 100,
+        "max_ms": 11.567,
+        "p50_ms": 1.607,
+        "p95_ms": 3.614,
+        "p99_ms": 9.694
+      },
+      "acp.wire_append": {
+        "samples": 100,
+        "max_ms": 8.971,
+        "p50_ms": 0.646,
+        "p95_ms": 3.109,
+        "p99_ms": 6.248
+      },
+      "dispatch.runnable_read": {
+        "samples": 100,
+        "max_ms": 23.692,
+        "p50_ms": 0.348,
+        "p95_ms": 2.498,
+        "p99_ms": 7.117
+      },
+      "sync.commit_read": {
+        "samples": 100,
+        "max_ms": 24.787,
+        "p50_ms": 0.576,
+        "p95_ms": 2.46,
+        "p99_ms": 4.153
+      },
+      "reconciliation.dispatch_read": {
+        "samples": 100,
+        "max_ms": 4.007,
+        "p50_ms": 0.345,
+        "p95_ms": 1.887,
+        "p99_ms": 3.563
+      },
+      "sync.push_transaction": {
+        "samples": 100,
+        "max_ms": 43.044,
+        "p50_ms": 9.038,
+        "p95_ms": 25.815,
+        "p99_ms": 36.976
+      },
+      "/api/agent/sessions?view=chats": {
+        "samples": 100,
+        "max_ms": 39.905,
+        "p50_ms": 4.553,
+        "p95_ms": 8.97,
+        "p99_ms": 19.616
+      },
+      "transcript.drain": {
+        "samples": 300,
+        "max_ms": 90.047,
+        "p50_ms": 12.798,
+        "p95_ms": 44.52,
+        "p99_ms": 57.653
+      },
+      "sqlite.card_write": {
+        "samples": 10,
+        "max_ms": 37.781,
+        "p50_ms": 6.882,
+        "p95_ms": 37.781,
+        "p99_ms": 37.781
+      },
+      "/agent": {
+        "samples": 100,
+        "max_ms": 92.546,
+        "p50_ms": 6.4,
+        "p95_ms": 16.011,
+        "p99_ms": 25.429
+      },
+      "/partials/home/sections": {
+        "samples": 100,
+        "max_ms": 24.675,
+        "p50_ms": 2.13,
+        "p95_ms": 5.606,
+        "p99_ms": 8.052
+      },
+      "/api/status": {
+        "samples": 100,
+        "max_ms": 21.368,
+        "p50_ms": 9.573,
+        "p95_ms": 14.296,
+        "p99_ms": 17.118
+      },
+      "/api/runtime?section=sse": {
+        "samples": 100,
+        "max_ms": 4.989,
+        "p50_ms": 0.697,
+        "p95_ms": 0.951,
+        "p99_ms": 1.131
+      },
+      "sync.reconcile_head": {
+        "samples": 100,
+        "max_ms": 100.314,
+        "p50_ms": 7.868,
+        "p95_ms": 20.95,
+        "p99_ms": 48.007
+      },
+      "/api/fleet/dispatch-jobs": {
+        "samples": 100,
+        "max_ms": 33.372,
+        "p50_ms": 4.581,
+        "p95_ms": 12.738,
+        "p99_ms": 31.47
+      },
+      "/api/cards": {
+        "samples": 100,
+        "max_ms": 5.795,
+        "p50_ms": 1.099,
+        "p95_ms": 1.79,
+        "p99_ms": 4.959
+      },
+      "/api/cards/fixture-card": {
+        "samples": 100,
+        "max_ms": 3.826,
+        "p50_ms": 0.607,
+        "p95_ms": 1.517,
+        "p99_ms": 3.288
+      },
+      "/api/cards/fixture-card/history": {
+        "samples": 100,
+        "max_ms": 14.654,
+        "p50_ms": 3.606,
+        "p95_ms": 8.127,
+        "p99_ms": 14.343
+      },
+      "/api/agent/history/session-0?limit=64": {
+        "samples": 100,
+        "max_ms": 26.263,
+        "p50_ms": 5.376,
+        "p95_ms": 11.65,
+        "p99_ms": 23.668
+      },
+      "/api/agent/history/session-0?limit=64&message_boundaries=true": {
+        "samples": 100,
+        "max_ms": 56.312,
+        "p50_ms": 24.103,
+        "p95_ms": 44.357,
+        "p99_ms": 55.8
+      },
+      "/api/notifications": {
+        "samples": 100,
+        "max_ms": 5.273,
+        "p50_ms": 0.783,
+        "p95_ms": 1.855,
+        "p99_ms": 4.256
+      },
+      "/api/agent/preferences": {
+        "samples": 100,
+        "max_ms": 2.163,
+        "p50_ms": 0.621,
+        "p95_ms": 1.004,
+        "p99_ms": 1.818
+      },
+      "/api/execution/defaults": {
+        "samples": 100,
+        "max_ms": 6.5,
+        "p50_ms": 0.637,
+        "p95_ms": 0.896,
+        "p99_ms": 1.22
+      },
+      "/api/fleet/dispatch-queue": {
+        "samples": 100,
+        "max_ms": 5.014,
+        "p50_ms": 0.845,
+        "p95_ms": 1.356,
+        "p99_ms": 3.16
+      },
+      "/api/pr-supervisor/watches": {
+        "samples": 100,
+        "max_ms": 11.035,
+        "p50_ms": 0.879,
+        "p95_ms": 1.687,
+        "p99_ms": 4.853
+      },
+      "/api/pr-supervisor/capabilities": {
+        "samples": 100,
+        "max_ms": 6.964,
+        "p50_ms": 0.899,
+        "p95_ms": 1.841,
+        "p99_ms": 3.514
+      },
+      "/api/workspaces": {
+        "samples": 100,
+        "max_ms": 7.241,
+        "p50_ms": 0.766,
+        "p95_ms": 2.209,
+        "p99_ms": 6.726
+      },
+      "/api/health-journal/status": {
+        "samples": 100,
+        "max_ms": 4.532,
+        "p50_ms": 0.895,
+        "p95_ms": 1.427,
+        "p99_ms": 1.685
+      },
+      "/api/sync/status": {
+        "samples": 100,
+        "max_ms": 15.6,
+        "p50_ms": 1.498,
+        "p95_ms": 3.376,
+        "p99_ms": 8.778
+      },
+      "/api/sync/refs": {
+        "samples": 100,
+        "max_ms": 5.38,
+        "p50_ms": 0.499,
+        "p95_ms": 0.821,
+        "p99_ms": 2.809
+      },
+      "/settings?section=agent": {
+        "samples": 100,
+        "max_ms": 48.841,
+        "p50_ms": 2.217,
+        "p95_ms": 5.397,
+        "p99_ms": 8.921
+      },
+      "/settings?section=backups": {
+        "samples": 100,
+        "max_ms": 13.527,
+        "p50_ms": 1.87,
+        "p95_ms": 5.048,
+        "p99_ms": 8.754
+      },
+      "/fleet": {
+        "samples": 100,
+        "max_ms": 59.101,
+        "p50_ms": 11.8,
+        "p95_ms": 21.867,
+        "p99_ms": 38.746
+      },
+      "/pull-requests": {
+        "samples": 100,
+        "max_ms": 40.137,
+        "p50_ms": 4.078,
+        "p95_ms": 9.219,
+        "p99_ms": 19.367
+      },
+      "sync.object_collect": {
+        "samples": 10,
+        "max_ms": 311.628,
+        "p50_ms": 45.768,
+        "p95_ms": 311.628,
+        "p99_ms": 311.628
+      },
+      "/": {
+        "samples": 100,
+        "max_ms": 14.702,
+        "p50_ms": 1.236,
+        "p95_ms": 3.943,
+        "p99_ms": 5.49
+      },
+      "/work": {
+        "samples": 100,
+        "max_ms": 26.05,
+        "p50_ms": 1.358,
+        "p95_ms": 5.134,
+        "p99_ms": 8.827
+      },
+      "/api/runtime": {
+        "samples": 100,
+        "max_ms": 29.352,
+        "p50_ms": 4.893,
+        "p95_ms": 5.577,
+        "p99_ms": 6.0
+      },
+      "maintenance.run": {
+        "samples": 1,
+        "max_ms": 948.832,
+        "p50_ms": 948.832,
+        "p95_ms": 948.832,
+        "p99_ms": 948.832
+      }
+    },
+    "warnings": {},
+    "violations": {
+      "maintenance.run": 1
+    },
+    "retained": 9600,
+    "maintenance_phases": {
+      "retention_selection": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 1.692584,
+        "thread_cpu_ms": 0.140458,
+        "sqlite_calls": 3,
+        "sqlite_rows": 1,
+        "sqlite_statement_ms": 0.2910831244662404,
+        "sqlite_commit_ms": 0.0,
+        "sqlite_busy_failures": 0,
+        "python_lock_wait_ms": 0.0,
+        "python_lock_hold_ms": 0.0,
+        "outer_lock_hold_ms": 0.0
+      },
+      "retention_discovery": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 0.379083,
+        "thread_cpu_ms": 0.2815,
+        "sqlite_calls": 3,
+        "sqlite_rows": 1,
+        "sqlite_statement_ms": 0.3673761384561658,
+        "sqlite_commit_ms": 0.0,
+        "sqlite_busy_failures": 0,
+        "python_lock_wait_ms": 0.0,
+        "python_lock_hold_ms": 0.0,
+        "outer_lock_hold_ms": 0.0
+      },
+      "retention_transaction": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 71.25975,
+        "thread_cpu_ms": 9.963667,
+        "sqlite_calls": 10,
+        "sqlite_rows": 1,
+        "sqlite_statement_ms": 9.004791034385562,
+        "sqlite_commit_ms": 21.80337510071695,
+        "sqlite_busy_failures": 0,
+        "python_lock_wait_ms": 40.34320800565183,
+        "python_lock_hold_ms": 30.90974991209805,
+        "outer_lock_hold_ms": 30.90974991209805
+      },
+      "retention_object_collection": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 302.938458,
+        "thread_cpu_ms": 72.088083,
+        "sqlite_calls": 196,
+        "sqlite_rows": 0,
+        "sqlite_statement_ms": 29.563260730355978,
+        "sqlite_commit_ms": 0.0,
+        "sqlite_busy_failures": 0,
+        "python_lock_wait_ms": 45.34154199063778,
+        "python_lock_hold_ms": 0.004875008016824722,
+        "outer_lock_hold_ms": 0.004875008016824722
+      },
+      "retention_canonical": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 374.212459,
+        "thread_cpu_ms": 82.06475,
+        "sqlite_calls": 206,
+        "sqlite_rows": 1,
+        "sqlite_statement_ms": 38.56805176474154,
+        "sqlite_commit_ms": 21.80337510071695,
+        "sqlite_busy_failures": 0,
+        "python_lock_wait_ms": 85.68474999628961,
+        "python_lock_hold_ms": 30.914624920114875,
+        "outer_lock_hold_ms": 30.914624920114875
+      },
+      "retention_mirror": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 30.876333,
+        "thread_cpu_ms": 8.618334,
+        "sqlite_calls": 8,
+        "sqlite_rows": 2,
+        "sqlite_statement_ms": 28.546583140268922,
+        "sqlite_commit_ms": 2.2558339405804873,
+        "sqlite_busy_failures": 0,
+        "python_lock_wait_ms": 0.0,
+        "python_lock_hold_ms": 0.0,
+        "outer_lock_hold_ms": 0.0
+      },
+      "transcript_retention": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 406.803292,
+        "thread_cpu_ms": 90.8435
+      },
+      "mutation_retention": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 0.268167,
+        "thread_cpu_ms": 0.04825
+      },
+      "transcript_migration_and_health": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 271.205416,
+        "thread_cpu_ms": 77.703541
+      },
+      "dispatch_compact": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 0.032,
+        "thread_cpu_ms": 0.032292
+      },
+      "projection_database": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 66.1,
+        "thread_cpu_ms": 51.593542
+      },
+      "transcript_database": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 19.789459,
+        "thread_cpu_ms": 13.10625
+      },
+      "transcript_health_final": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 176.63375,
+        "thread_cpu_ms": 64.855417
+      },
+      "total": {
+        "calls": 1,
+        "errors": 0,
+        "wall_ms": 940.873791,
+        "thread_cpu_ms": 298.217334
+      }
+    }
+  },
+  "previous_integration": {
+    "pr": 579,
+    "head": "81ae03718e78b0a5621b51e6dd7acc5881f9e3fa",
+    "merge": "a7b03c7a1678872683af788030b4b9618cf11d54",
+    "watch": "252aa0f9-2981-4b0d-8c70-d4dc1e1a3fc6",
+    "head_ci": 40218395511,
+    "main_ci": 40218794043,
+    "checks": "Five first-attempt successful jobs each; independent stable green/protection/reviews/attribution/clean merge verified before merge.",
+    "deployed": false
+  },
+  "limits": [
+    "The synthetic 100,000-row in-memory query comparison is not sole attribution for the live 2,503.788 ms migration plus health phase.",
+    "The source private mixed scenario still fails: maintenance 948.832 ms against 500 ms. Earlier 732.093 / 846.458 ms stages remain; separate runs and host load do not establish statistical whole-path speedup.",
+    "The mixed fixture does not exercise a large late migration cursor; the separate VM-work regression covers that branch. Per-row hydration and two fresh health reads remain.",
+    "Full live projection maintenance 3,712.558 ms, including VACUUM and native checks, remains open. No compaction policy, checks or warning limits were changed.",
+    "No new installation or restart while the current exact aa711 continuation is active. Both source repairs remain undeployed.",
+    "Native busy waits, GIL/scheduling, physical IO, provider/peer failures, logging/retention gaps and all original acceptance requirements remain open."
+  ],
+  "raw": {
+    "path": "docs/benchmarks/systemic-legacy-cursor-seek-20261025.raw.json.gz",
+    "sha256": "f6f7678028d8e425c2146ba4681ff4aa9c94aca2ea73bf33cc7161415d6d8f24",
+    "bytes": 86277
+  },
+  "reproducer": "uv run python scripts/benchmark_legacy_transcript_cursor.py --output /private/tmp/pa-legacy-cursor-probe.json",
+  "acceptance": {
+    "revision": "17d034a6-efc7-4a9d-badc-d3fe012d0b57",
+    "accepted": false,
+    "findings": 665,
+    "concerns": 132,
+    "lane": "active"
+  }
+}
