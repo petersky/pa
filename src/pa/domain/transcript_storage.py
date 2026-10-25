@@ -671,12 +671,19 @@ class TranscriptStorage:
                 # This first SELECT pins the read snapshot before either the
                 # fallback or successive keyset pages. Publication/deletion
                 # between pages must not create a mixed health view.
-                nontext = conn.execute(
-                    "SELECT 1 FROM transcript_events WHERE cold_hash IS NOT NULL "
-                    "AND typeof(cold_hash) != 'text' LIMIT 1"
+                # SQLite sorts numbers before text and blobs after text,
+                # without storage-class conversion. The two index endpoints
+                # therefore detect any non-text value without scanning every
+                # retained event on the normal all-text path. Empty endpoints
+                # are NULL; reference paging and native fallback stay fresh.
+                reference_types = conn.execute(
+                    "SELECT (SELECT typeof(cold_hash) FROM transcript_events "
+                    "WHERE cold_hash IS NOT NULL ORDER BY cold_hash LIMIT 1), "
+                    "(SELECT typeof(cold_hash) FROM transcript_events "
+                    "WHERE cold_hash IS NOT NULL ORDER BY cold_hash DESC LIMIT 1)"
                 ).fetchone()
                 hashes = set()
-                if nontext:
+                if any(kind is not None and kind != "text" for kind in reference_types):
                     return native_references()
                 last = None
                 while True:
