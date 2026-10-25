@@ -1,8 +1,8 @@
 {
   "contract": "pa.performance-coverage/v1",
   "card_id": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
-  "as_of": "2026-10-25T18:40:17.693900+00:00",
-  "completion": "OPEN: all 667 findings and 134 concerns. Exact 1e827977 activation and bounded retests are verified; maintenance, peer freshness, logging gaps and all original independent acceptance requirements remain open.",
+  "as_of": "2026-10-25T19:10:16.324890+00:00",
+  "completion": "OPEN: all 668 findings and 135 concerns. Exact 4b1ded17 activation and bounded retests verified; maintenance, peer/logging gaps and all independent acceptance requirements remain open.",
   "baseline_source_head": "630890e3e7da7dd18a18bbd69b98120ba3c134fc",
   "baseline_merge_commit": "2b601f94e1498de1299274ba95065b817a6fd133",
   "followup_source_evidence": {
@@ -214466,6 +214466,27 @@
       "next_actor": "This card/session",
       "retested": "109 contracts and three subtests pass; archived method fails work-count regression. Source mixed retains 9,600 events but maintenance remains 892.344 ms.",
       "next_action": "Complete protected PR/supervisor/head and main CI, then exact activation after the current continuation settles. Continue maintenance, peer, logging and every original acceptance obligation."
+    },
+    {
+      "id": "concern:fleet-buffered-transport-encoding",
+      "kind": "concern",
+      "finding": "Uncompressed complete Fleet HTML and overview responses",
+      "family": "http",
+      "owner_card": "7894e44b-eef9-4da8-9f7f-7d3ae82c0b54",
+      "cause_classification": "confirmed_transport_byte_amplification_underlying_serialization_open",
+      "cause": "Complete Fleet HTML and overview responses transmit their full uncompressed representation despite client gzip support.",
+      "fix_or_existing_owner": "This systemic session; bounded negotiated lossless encoding preserves full inspection detail.",
+      "implemented": "Source repair; protected review/integration pending.",
+      "merged": [],
+      "deployed": "Not deployed; actual loaded source remains exact 4b1ded17.",
+      "measurement": {
+        "artifact": "docs/benchmarks/systemic-exact582-fleet-encoding-20261025.json",
+        "sha256": "d85d6e31f9ea3c13fcfd9318a1ca71203468c9e830b15ca85f99309fa6944876"
+      },
+      "resolution": "open",
+      "next_actor": "This card/session",
+      "retested": "188 contracts and 47 subtests pass; archived app wiring fails integration regression. Synthetic and observer byte/CPU samples are separate. Source mixed retains 9,600 events but maintenance is 904.513 ms.",
+      "next_action": "Complete protected PR/supervisor/head and main CI. After this continuation settles, exact package attestation/activation and declared retests. Continue underlying serialization, maintenance and every original acceptance obligation."
     }
   ],
   "resume_artifact": "docs/benchmarks/systemic-resume-20261017.json",
@@ -309176,5 +309197,18 @@
     "loaded_source": "1e82797763020e25685868fa6d4be62f77a33a76",
     "new_source_repair_deployed": false,
     "interpretation": "This top-level stage supersedes only current activation observations; historical per-row labels and every older failed/interrupted stage remain unchanged. Every row remains open, including unobserved branches."
+  },
+  "exact582_activation_fleet_encoding_stage": {
+    "artifact": "docs/benchmarks/systemic-exact582-fleet-encoding-20261025.json",
+    "sha256": "d85d6e31f9ea3c13fcfd9318a1ca71203468c9e830b15ca85f99309fa6944876",
+    "raw": {
+      "path": "docs/benchmarks/systemic-exact582-fleet-encoding-20261025.raw.json.gz",
+      "sha256": "2d7203661a64b1bb4c020a6177614bb4bc2807b3e536785607142892dd72a23f",
+      "bytes": 373986
+    },
+    "all_prior_rows_unchanged": true,
+    "loaded_source": "4b1ded17b56a43de6982e2eb4c62fd19ba797bb0",
+    "new_source_repair_deployed": false,
+    "interpretation": "Supersedes only current observed activation paths. Historical row labels and all failed/interrupted stages remain unchanged; every row stays open."
   }
 }
